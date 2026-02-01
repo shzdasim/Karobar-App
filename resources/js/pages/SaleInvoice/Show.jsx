@@ -80,7 +80,9 @@ export default function SaleInvoiceShow() {
     () => Math.max(invTotal - invReceived, 0),
     [invTotal, invReceived]
   );
-  const needsChoice = invReceived > 0;
+  // Show choice dialog for all credit invoices
+  const isCreditInvoice = inv?.invoice_type === 'credit';
+  const needsChoice = !!isCreditInvoice;
 
   // After delete, go to previous or index
   const goToPrevOrIndex = async (deletedId) => {
@@ -606,13 +608,12 @@ export default function SaleInvoiceShow() {
               </div>
             )}
 
-            {/* Step 2: Choose Credit or Refund */}
+            {/* Step 2: Choose Store Credit or Refund */}
             {deleteStep === 2 && (
               <div>
-                <h2 className="text-lg font-semibold mb-2 dark:text-gray-200">Credit or Refund?</h2>
+                <h2 className="text-lg font-semibold mb-2 dark:text-gray-200">Store Credit or Refund?</h2>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                  This invoice has <b className="dark:text-gray-300">Received {invReceived.toLocaleString()}</b> and
-                  <b className="dark:text-gray-300"> Remaining {invRemaining.toLocaleString()}</b>. Choose how to handle the money:
+                  Choose how to handle this invoice:
                 </p>
                 <div className="space-y-2 text-sm dark:text-gray-300">
                   <label className="flex items-start gap-2">
@@ -623,8 +624,8 @@ export default function SaleInvoiceShow() {
                       onChange={() => setDeleteMode("credit")}
                     />
                     <span>
-                      <b>Credit the customer (recommended)</b><br />
-                      Keep the received amount as an unapplied credit in the ledger.
+                      <b>Store Credit (recommended)</b><br />
+                      Create a negative entry in customer's ledger (credit them).
                     </span>
                   </label>
                   <label className="flex items-start gap-2">
@@ -635,8 +636,8 @@ export default function SaleInvoiceShow() {
                       onChange={() => setDeleteMode("refund")}
                     />
                     <span>
-                      <b>Refund the customer</b><br />
-                      Record a refund payment for the received amount.
+                      <b>Refund</b><br />
+                      Delete all ledger entries (no credit recorded).
                     </span>
                   </label>
                 </div>

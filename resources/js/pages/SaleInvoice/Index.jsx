@@ -110,9 +110,10 @@ export default function SaleInvoicesIndex() {
   const invRemaining = Math.max(invTotal - invReceived, 0);
 
   const [deleteMode, setDeleteMode] = useState("none"); // 'credit' | 'refund' | 'none'
-  // Only show Credit/Refund dialog for credit invoices with received amount > 0
+  // Show choice dialog for all credit invoices
   // Debit invoices skip this step and go directly to password confirmation
-  const needsChoice = !!selectedInvoice && selectedInvoice.invoice_type === 'credit' && invReceived > 0;
+  const isCreditInvoice = selectedInvoice?.invoice_type === 'credit';
+  const needsChoice = !!isCreditInvoice;
 
   const openDeleteModal = (id) => {
     if (!can.delete) return toast.error("You don't have permission to delete sale invoices.");
@@ -473,13 +474,12 @@ const confirmAndDelete = async () => {
                   </>
                 )}
 
-                {/* Step 2: Choose Credit or Refund (only when needed) */}
+                {/* Step 2: Choose Store Credit or Refund */}
                 {deleteStep === 2 && (
                   <>
-                    <h3 className="font-medium text-sm">Credit or Refund?</h3>
-                    <p className="text-sm text-gray-600">
-                      This invoice has <b>Received {invReceived.toLocaleString()}</b> and
-                      <b> Remaining {invRemaining.toLocaleString()}</b>. Choose how to handle the money:
+                    <h3 className="font-medium text-sm">Store Credit or Refund?</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Choose how to handle this invoice:
                     </p>
 
                     <div className="space-y-2 text-sm">
@@ -491,8 +491,8 @@ const confirmAndDelete = async () => {
                           onChange={() => setDeleteMode("credit")}
                         />
                         <span>
-                          <b>Credit the customer (recommended)</b><br />
-                          Keep the received amount as an unapplied credit in the ledger.
+                          <b>Store Credit (recommended)</b><br />
+                          Create a negative entry in customer's ledger (credit them).
                         </span>
                       </label>
                       <label className="flex items-start gap-2">
@@ -503,8 +503,8 @@ const confirmAndDelete = async () => {
                           onChange={() => setDeleteMode("refund")}
                         />
                         <span>
-                          <b>Refund the customer</b><br />
-                          Record a refund payment for the received amount.
+                          <b>Refund</b><br />
+                          Delete all ledger entries (no credit recorded).
                         </span>
                       </label>
                     </div>

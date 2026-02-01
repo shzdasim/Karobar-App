@@ -360,71 +360,40 @@ class SaleInvoiceController extends Controller
         return DB::transaction(function () use ($invoice, $mode, $invTotal, $received, $remaining) {
             $this->revertItems($invoice);
 
-            $hasImpact = ($received > 0) || ($remaining > 0);
-            
-            // Only create customer ledger entries for credit invoices
+            // Only handle customer ledger entries for credit invoices
             // Debit invoices (cash sales) are not tracked in customer ledger
             $isCreditInvoice = ($invoice->invoice_type ?? 'debit') === 'credit';
 
-            if ($hasImpact && $isCreditInvoice) {
+            if ($isCreditInvoice) {
+                // Delete the original ledger entry for this invoice
+                CustomerLedger::where('sale_invoice_id', $invoice->id)->delete();
+
                 $customerId   = (int)$invoice->customer_id;
                 $postedNumber = $invoice->posted_number;
                 $entryDate    = $invoice->date ?? now()->toDateString();
                 $userId       = optional(Auth::user())->id;
 
-                if ($mode === 'credit' || $mode === 'refund') {
-                    $rev = new CustomerLedger();
-                    $rev->customer_id       = $customerId;
-                    $rev->entry_type        = 'manual';
-                    $rev->is_manual         = true;
-                    $rev->entry_date        = $entryDate;
-                    $rev->posted_number     = $postedNumber;
-                    $rev->invoice_total     = -$invTotal;
-                    $rev->total_received    = 0;
-                    $rev->balance_remaining = max($rev->invoice_total - $rev->total_received, 0);
-                    $rev->credited_amount   = 0;
-                    $rev->payment_ref       = null;
-                    $rev->sale_invoice_id   = null;
-                    $rev->description       = 'Reversal of deleted invoice '.$postedNumber;
-                    $rev->created_by        = $userId;
-                    $rev->save();
+                // mode 'credit' = Store Credit (create negative entry to credit the customer)
+                if ($mode === 'credit') {
+                    $creditEntry = new CustomerLedger();
+                    $creditEntry->customer_id       = $customerId;
+                    $creditEntry->entry_type        = 'manual';
+                    $creditEntry->is_manual         = true;
+                    $creditEntry->entry_date        = $entryDate;
+                    $creditEntry->posted_number     = $postedNumber;
+                    $creditEntry->invoice_total     = -$invTotal;
+                    $creditEntry->total_received    = 0;
+                    $creditEntry->balance_remaining = 0;
+                    $creditEntry->credited_amount   = 0;
+                    $creditEntry->payment_ref       = null;
+                    $creditEntry->sale_invoice_id   = null;
+                    $creditEntry->description       = 'Store credit for deleted invoice ' . $postedNumber;
+                    $creditEntry->created_by        = $userId;
+                    $creditEntry->save();
                 }
 
-                if ($mode === 'refund' && $received > 0) {
-                    $refund = new CustomerLedger();
-                    $refund->customer_id       = $customerId;
-                    $refund->entry_type        = 'payment';
-                    $refund->is_manual         = true;
-                    $refund->entry_date        = $entryDate;
-                    $refund->posted_number     = $postedNumber;
-                    $refund->invoice_total     = 0;
-                    $refund->total_received    = 0;
-                    $refund->balance_remaining = 0;
-                    $refund->credited_amount   = -$received;
-                    $refund->payment_ref       = 'Refund for '.$postedNumber;
-                    $refund->sale_invoice_id   = null;
-                    $refund->description       = 'Refund for deleted invoice '.$postedNumber;
-                    $refund->created_by        = $userId;
-                    $refund->save();
-                }
-
-                if ($mode === 'none') {
-                    $rev = new CustomerLedger();
-                    $rev->customer_id       = $customerId;
-                    $rev->entry_type        = 'manual';
-                    $rev->is_manual         = true;
-                    $rev->entry_date        = $entryDate;
-                    $rev->posted_number     = $postedNumber;
-                    $rev->invoice_total     = -$invTotal;
-                    $rev->total_received    = 0;
-                    $rev->balance_remaining = 0;
-                    $rev->credited_amount   = 0;
-                    $rev->payment_ref       = null;
-                    $rev->sale_invoice_id   = null;
-                    $rev->description       = 'Reversal (default credit) of deleted invoice '.$postedNumber;
-                    $rev->created_by        = optional(Auth::user())->id;
-                    $rev->save();
-                }
+                // mode 'refund' = Refund (delete everything, no ledger entries)
+                // No additional ledger entries created - just delete the original entry
             }
 
             $invoice->items()->delete();
