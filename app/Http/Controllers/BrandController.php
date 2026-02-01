@@ -1,0 +1,123 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Brand;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+
+class BrandController extends Controller
+{
+    public function search(Request $req)
+    {
+        $this->authorize('viewAny', Brand::class);
+
+        $q     = trim($req->input('q', ''));
+        $limit = max(1, min((int)$req->input('limit', 20), 100));
+
+        $query = Brand::select('id','name')->orderBy('name');
+
+        if ($q !== '') {
+            $query->where('name','like',"%{$q}%");
+        }
+
+        return $query->limit($limit)->get();
+    }
+
+    public function index(Request $req)
+    {
+        $this->authorize('viewAny', Brand::class);
+
+        $perPage = max(1, min((int)$req->input('per_page', 25), 100));
+        $qName = trim((string)$req->input('q_name', ''));
+
+        $q = Brand::query()->select(['id','name','image'])->withCount('products');
+
+        if ($qName !== '') {
+            $q->where('name', 'like', "%{$qName}%");
+        }
+
+        $q->orderBy('name');
+
+        return response()->json($q->paginate($perPage));
+    }
+
+    public function store(Request $request)
+    {
+        $this->authorize('create', Brand::class);
+
+        $validated = $request->validate([
+            'name'  => 'required|unique:brands,name',
+            'image' => 'nullable|image|max:2048',
+        ]);
+
+        if ($request->hasFile('image')) {
+            $validated['image'] = $request->file('image')->store('brands', 'public');
+        }
+
+        $brand = Brand::create($validated);
+
+        return response()->json($brand, 201);
+    }
+
+    public function show(Brand $brand)
+    {
+        $this->authorize('view', $brand);
+        return $brand;
+    }
+
+    public function update(Request $request, Brand $brand)
+    {
+        $this->authorize('update', $brand);
+
+        $validated = $request->validate([
+            'name'  => 'required|unique:brands,name,' . $brand->id,
+            'image' => 'nullable|image|max:2048',
+        ]);
+
+        if ($request->hasFile('image')) {
+            if ($brand->image) Storage::disk('public')->delete($brand->image);
+            $validated['image'] = $request->file('image')->store('brands', 'public');
+        }
+
+        $brand->update($validated);
+
+        return response()->json($brand);
+    }
+
+    public function destroy(Brand $brand)
+    {
+        $this->authorize('delete', $brand);
+
+        if ($brand->products()->exists()) {
+            return response()->json([
+                'message' => 'Cannot delete: brand is used by one or more products.'
+            ], 422);
+        }
+
+        if ($brand->image) Storage::disk('public')->delete($brand->image);
+        $brand->delete();
+
+        return response()->json(null, 204);
+    }
+
+    public function export(): StreamedResponse
+    {
+        $this->authorize('export', Brand::class);
+
+        $file = 'brands_'.now()->format('Y-m-d_H-i-s').'.csv';
+
+        return response()->streamDownload(function () {
+            $out = fopen('php://output', 'w');
+            fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF)); // BOM
+            fputcsv($out, ['name','image']);
+            Brand::select('name','image')->orderBy('name')->chunk(1000, function ($chunk) use ($out) {
+                foreach ($chunk as $b) {
+                    fputcsv($out, [(string)($b->name ?? ''), (string)($b->image ?? '')]);
+                }
+            });
+            fclose($out);
+        }, $file, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+}
