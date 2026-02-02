@@ -11,9 +11,23 @@ use ZipArchive;
 class UpdateService
 {
     private string $owner = 'shzdasim';
-    private string $repo = 'pharmacy-erp';
-    private string $branch = 'Sale-Invoice';
+    private string $repo = 'Karobar-App';
+    private string $branch = 'main';
     private string $apiBase = 'https://api.github.com';
+
+    /**
+     * Get repository information
+     */
+    public function getRepositoryInfo(): array
+    {
+        return [
+            'owner' => $this->owner,
+            'repo' => $this->repo,
+            'branch' => $this->branch,
+            'url' => "https://github.com/{$this->owner}/{$this->repo}",
+            'api_url' => "{$this->apiBase}/repos/{$this->owner}/{$this->repo}",
+        ];
+    }
     
     // Update settings storage key (using cache)
     private const SETTINGS_CACHE_KEY = 'update_settings';

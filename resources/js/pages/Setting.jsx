@@ -169,9 +169,9 @@ export default function Setting() {
     last_checked_at: null,
     repository: {
       owner: 'shzdasim',
-      repo: 'pharmacy-erp',
-      branch: 'Sale-Invoice',
-      url: 'https://github.com/shzdasim/pharmacy-erp',
+      repo: 'Karobar-App',
+      branch: 'main',
+      url: 'https://github.com/shzdasim/Karobar-App',
     },
   });
   const [updateSettings, setUpdateSettings] = useState({
