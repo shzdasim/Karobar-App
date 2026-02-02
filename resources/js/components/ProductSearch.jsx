@@ -208,7 +208,7 @@ function DetailPane({ detail, loading, error, onOpen }) {
 }
 
 /* ─────────────── Main ─────────────── */
-export default function ProductSearch() {
+export default function ProductSearch({ navigationStyle = "sidebar" }) {
   const [q, setQ] = useState("");
   const [panelOpen, setPanelOpen] = useState(false);
 
@@ -332,14 +332,15 @@ export default function ProductSearch() {
   };
 
   return (
-    <div className="relative z-[35] max-w-[calc(100vw-2rem)]" ref={boxRef}>
+    <div className={`relative z-[35] max-w-[calc(100vw-2rem)] ${navigationStyle === 'topbar' ? 'z-[1000000]' : ''}`} ref={boxRef}>
       {/* Search bar */}
       <div
-        className={[
-          "flex items-center gap-2 rounded-lg px-3 h-9 w-full max-w-[320px]",
-          "bg-white dark:bg-slate-700 ring-1 ring-slate-200 dark:ring-slate-600 shadow-sm",
-          "transition-all",
-        ].join(" ")}
+          className={[
+            "flex items-center gap-2 rounded-lg px-3 h-9 w-full",
+            navigationStyle === 'topbar' ? "max-w-2xl" : "max-w-[320px]",
+            "bg-white dark:bg-slate-700 ring-1 ring-slate-200 dark:ring-slate-600 shadow-sm",
+            "transition-all",
+          ].join(" ")}
       >
         <MagnifyingGlassIcon className="w-4 h-4 text-slate-400" />
         <GlassInput
@@ -382,7 +383,7 @@ export default function ProductSearch() {
 
       {/* Results panel */}
       {panelOpen && (
-        <div className="absolute left-0 mt-2 w-[700px] max-w-[calc(100vw-2rem)]">
+        <div className={`absolute left-0 mt-2 w-[700px] max-w-[calc(100vw-2rem)] ${navigationStyle === 'topbar' ? 'z-[1000001]' : ''}`}>
           <GlassCard className="overflow-hidden bg-white dark:bg-slate-800 shadow-2xl ring-1 ring-slate-200/50 dark:ring-slate-700/50">
 
             {/* Toolbar */}

@@ -19,6 +19,11 @@ import {
   UserGroupIcon,
   KeyIcon,
   ChevronDownIcon,
+  ShoppingCartIcon,
+  UserPlusIcon,
+  TruckIcon,
+  CurrencyDollarIcon,
+  ClipboardDocumentIcon,
 } from "@heroicons/react/24/outline";
 import { usePermissions } from "@/api/usePermissions";
 
@@ -31,65 +36,71 @@ export default function TopNavigation() {
   const buttonRefs = useRef({});
   const dropdownRef = useRef(null);
 
-  // Organized menu with sections and items
+  // Organized menu with sections and items - Reorganized for logical flow
   const menuSections = useMemo(() => [
     {
-      name: "Masters",
-      icon: <Squares2X2Icon className="w-4 h-4" />,
+      name: "Products",
+      icon: <CubeIcon className="w-5 h-5" />,
       items: [
-        { name: "Suppliers", path: "/suppliers", icon: <BuildingStorefrontIcon className="w-4 h-4" />, perm: "supplier.view" },
-        { name: "Customers", path: "/customers", icon: <UsersIcon className="w-4 h-4" />, perm: "customer.view" },
-        { name: "Categories", path: "/categories", icon: <Squares2X2Icon className="w-4 h-4" />, perm: "category.view" },
-        { name: "Brands", path: "/brands", icon: <TagIcon className="w-4 h-4" />, perm: "brand.view" },
-        { name: "Products", path: "/products", icon: <CubeIcon className="w-4 h-4" />, perm: "product.view" },
+        { name: "Products", path: "/products", icon: <CubeIcon className="w-5 h-5" />, perm: "product.view" },
+        { name: "Categories", path: "/categories", icon: <Squares2X2Icon className="w-5 h-5" />, perm: "category.view" },
+        { name: "Brands", path: "/brands", icon: <TagIcon className="w-5 h-5" />, perm: "brand.view" },
+      ]
+    },
+    {
+      name: "Parties",
+      icon: <UserGroupIcon className="w-5 h-5" />,
+      items: [
+        { name: "Suppliers", path: "/suppliers", icon: <TruckIcon className="w-5 h-5" />, perm: "supplier.view" },
+        { name: "Customers", path: "/customers", icon: <UserPlusIcon className="w-5 h-5" />, perm: "customer.view" },
       ]
     },
     {
       name: "Transactions",
-      icon: <ClipboardDocumentListIcon className="w-4 h-4" />,
+      icon: <ShoppingCartIcon className="w-5 h-5" />,
       items: [
-        { name: "Purchase Invoice", path: "/purchase-invoices", icon: <ClipboardDocumentListIcon className="w-4 h-4" />, perm: "purchase-invoice.view" },
-        { name: "Purchase Return", path: "/purchase-returns", icon: <ArrowUturnLeftIcon className="w-4 h-4" />, perm: "purchase-return.view" },
-        { name: "Sale Invoice", path: "/sale-invoices", icon: <DocumentCurrencyDollarIcon className="w-4 h-4" />, perm: "sale-invoice.view" },
-        { name: "Sale Return", path: "/sale-returns", icon: <ArrowUturnDownIcon className="w-4 h-4" />, perm: "sale-return.view" },
-        { name: "Purchase Orders", path: "/purchase-orders", icon: <ClipboardDocumentCheckIcon className="w-4 h-4" />, perm: "purchase-order.view" },
-        { name: "Stock Adjustments", path: "/stock-adjustments", icon: <ArrowsRightLeftIcon className="w-4 h-4" />, perm: "stock-adjustment.view" },
+        { name: "Purchase Invoice", path: "/purchase-invoices", icon: <ClipboardDocumentListIcon className="w-5 h-5" />, perm: "purchase-invoice.view" },
+        { name: "Sale Invoice", path: "/sale-invoices", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, perm: "sale-invoice.view" },
+        { name: "Purchase Return", path: "/purchase-returns", icon: <ArrowUturnLeftIcon className="w-5 h-5" />, perm: "purchase-return.view" },
+        { name: "Sale Return", path: "/sale-returns", icon: <ArrowUturnDownIcon className="w-5 h-5" />, perm: "sale-return.view" },
+        { name: "Purchase Orders", path: "/purchase-orders", icon: <ClipboardDocumentCheckIcon className="w-5 h-5" />, perm: "purchase-order.view" },
+        { name: "Stock Adjustments", path: "/stock-adjustments", icon: <ArrowsRightLeftIcon className="w-5 h-5" />, perm: "stock-adjustment.view" },
       ]
     },
     {
-      name: "Ledger",
-      icon: <BanknotesIcon className="w-4 h-4" />,
+      name: "Finance",
+      icon: <CurrencyDollarIcon className="w-5 h-5" />,
       items: [
-        { name: "Supplier Ledger", path: "/supplier-ledger", icon: <BanknotesIcon className="w-4 h-4" />, perm: "ledger.supplier.view" },
-        { name: "Customer Ledger", path: "/customer-ledger", icon: <BanknotesIcon className="w-4 h-4" />, perm: "ledger.customer.view" },
+        { name: "Supplier Ledger", path: "/supplier-ledger", icon: <BuildingStorefrontIcon className="w-5 h-5" />, perm: "ledger.supplier.view" },
+        { name: "Customer Ledger", path: "/customer-ledger", icon: <UsersIcon className="w-5 h-5" />, perm: "ledger.customer.view" },
       ]
     },
     {
       name: "Reports",
-      icon: <ChartBarIcon className="w-4 h-4" />,
+      icon: <ChartBarIcon className="w-5 h-5" />,
       items: [
-        { name: "Cost of Sale", path: "/reports/cost-of-sale", icon: <ChartBarIcon className="w-4 h-4" />, perm: "report.cost-of-sale.view" },
-        { name: "Purchase Detail", path: "/reports/purchase-detail", icon: <ChartBarIcon className="w-4 h-4" />, perm: "report.purchase-detail.view" },
-        { name: "Sale Detail", path: "/reports/sale-detail", icon: <ChartBarIcon className="w-4 h-4" />, perm: "report.sale-detail.view" },
-        { name: "Current Stock", path: "/reports/current-stock", icon: <CubeIcon className="w-4 h-4" />, perm: "report.current-stock.view" },
-        { name: "Stock Adjustment", path: "/reports/stock-adjustment", icon: <ArrowsRightLeftIcon className="w-4 h-4" />, perm: "report.stock-adjustment.view" },
-        { name: "Product Report", path: "/reports/product-comprehensive", icon: <ChartBarIcon className="w-4 h-4" />, perm: "report.product-comprehensive.view" },
+        { name: "Current Stock", path: "/reports/current-stock", icon: <CubeIcon className="w-5 h-5" />, perm: "report.current-stock.view" },
+        { name: "Cost of Sale", path: "/reports/cost-of-sale", icon: <ChartBarIcon className="w-5 h-5" />, perm: "report.cost-of-sale.view" },
+        { name: "Purchase Detail", path: "/reports/purchase-detail", icon: <ClipboardDocumentIcon className="w-5 h-5" />, perm: "report.purchase-detail.view" },
+        { name: "Sale Detail", path: "/reports/sale-detail", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, perm: "report.sale-detail.view" },
+        { name: "Stock Adjustment", path: "/reports/stock-adjustment", icon: <ArrowsRightLeftIcon className="w-5 h-5" />, perm: "report.stock-adjustment.view" },
+        { name: "Product Comprehensive", path: "/reports/product-comprehensive", icon: <ChartBarIcon className="w-5 h-5" />, perm: "report.product-comprehensive.view" },
       ]
     },
     {
       name: "System",
-      icon: <Cog6ToothIcon className="w-4 h-4" />,
+      icon: <Cog6ToothIcon className="w-5 h-5" />,
       items: [
-        { name: "Settings", path: "/settings", icon: <Cog6ToothIcon className="w-4 h-4" />, perm: "settings.view" },
-        { name: "Users", path: "/users", icon: <UserGroupIcon className="w-4 h-4" />, perm: "user.view" },
-        { name: "Roles", path: "/roles", icon: <KeyIcon className="w-4 h-4" />, perm: "role.view" },
+        { name: "Settings", path: "/settings", icon: <Cog6ToothIcon className="w-5 h-5" />, perm: "settings.view" },
+        { name: "Users", path: "/users", icon: <UserGroupIcon className="w-5 h-5" />, perm: "user.view" },
+        { name: "Roles", path: "/roles", icon: <KeyIcon className="w-5 h-5" />, perm: "role.view" },
       ]
     },
   ], []);
 
   // Flat menu for Dashboard
   const flatMenu = useMemo(() => [
-    { name: "Dashboard", path: "/dashboard", icon: <HomeIcon className="w-4 h-4" />, perm: null },
+    { name: "Dashboard", path: "/dashboard", icon: <HomeIcon className="w-5 h-5" />, perm: null },
   ], []);
 
   // Filter items based on permissions
@@ -155,7 +166,7 @@ export default function TopNavigation() {
         border-b border-gray-200/60 dark:border-slate-700/60
         shadow-sm
       ">
-        <div className="flex items-stretch h-11">
+        <div className="flex items-stretch h-12">
           {/* Logo & Brand */}
           <div className="flex items-center gap-2 px-4 border-r border-gray-200/60 dark:border-slate-700/60 flex-shrink-0">
             <picture>
@@ -174,7 +185,7 @@ export default function TopNavigation() {
           {/* Navigation Items */}
           <nav
             className="
-              flex-1 flex items-center gap-0.5
+              flex-1 flex items-center gap-1
               overflow-x-auto
               px-3
             "
@@ -187,8 +198,8 @@ export default function TopNavigation() {
                 key={item.path}
                 to={item.path}
                 className={`
-                  flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5
-                  rounded-lg text-xs font-medium
+                  flex-shrink-0 flex items-center gap-1.5 px-3 py-2
+                  rounded-lg text-sm font-medium
                   transition-all duration-200
                   whitespace-nowrap
                   ${isActive(item.path)
@@ -205,7 +216,7 @@ export default function TopNavigation() {
             ))}
 
             {/* Section Divider */}
-            <div className="flex-shrink-0 w-px h-5 bg-gray-200 dark:bg-slate-600 my-auto mx-2" />
+            <div className="flex-shrink-0 w-px h-6 bg-gray-200 dark:bg-slate-600 my-auto mx-2" />
 
             {/* Dropdown Sections */}
             {menuSections.map((section) => {
@@ -221,8 +232,8 @@ export default function TopNavigation() {
                     ref={el => buttonRefs.current[section.name] = el}
                     onClick={() => toggleDropdown(section.name)}
                     className={`
-                      flex items-center gap-1 px-3 py-1.5
-                      rounded-lg text-xs font-medium
+                      flex items-center gap-1.5 px-3 py-2
+                      rounded-lg text-sm font-medium
                       transition-all duration-200
                       whitespace-nowrap
                       ${isActiveSection
@@ -235,7 +246,7 @@ export default function TopNavigation() {
                       {section.icon}
                     </span>
                     <span>{section.name}</span>
-                    <ChevronDownIcon className={`w-3 h-3 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                    <ChevronDownIcon className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
                   </button>
                 </div>
               );
@@ -248,12 +259,12 @@ export default function TopNavigation() {
       {openDropdown && (
         <div
           ref={dropdownRef}
-          className="fixed bg-white dark:bg-slate-800 rounded-xl shadow-xl ring-1 ring-black/5 dark:ring-white/10 py-1.5 z-[99999]"
+          className="fixed bg-white dark:bg-slate-800 rounded-xl shadow-xl ring-1 ring-black/5 dark:ring-white/10 py-2 z-[99999]"
           style={{
             top: dropdownPosition.top,
             left: dropdownPosition.left,
-            minWidth: '200px',
-            maxHeight: '400px',
+            minWidth: '220px',
+            maxHeight: '450px',
             overflowY: 'auto'
           }}
         >
@@ -262,8 +273,8 @@ export default function TopNavigation() {
               key={item.path}
               onClick={() => handleMenuClick(item.path)}
               className={`
-                w-full flex items-center gap-2 px-4 py-2
-                text-xs font-medium
+                w-full flex items-center gap-3 px-4 py-2.5
+                text-sm font-medium
                 transition-colors duration-150
                 text-left
                 ${isActive(item.path)

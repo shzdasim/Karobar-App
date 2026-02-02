@@ -20,7 +20,7 @@ function formatRemaining(ms) {
   return `${sec}s`;
 }
 
-export default function Topbar() {
+export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
   const btnRef = useRef(null);
@@ -78,9 +78,7 @@ export default function Topbar() {
   }, [open]);
 
   return (
-    <div
-      className="w-full z-40"
-    >
+    <div className="w-full z-40">
       <header
         role="banner"
         className={[
@@ -91,8 +89,8 @@ export default function Topbar() {
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Left: Search */}
-          <div className="flex-1 min-w-[200px] max-w-[480px]">
-            <ProductSearch />
+          <div className={`flex-1 min-w-[200px] ${navigationStyle === 'topbar' ? 'max-w-3xl' : 'max-w-[480px]'}`}>
+            <ProductSearch navigationStyle={navigationStyle} />
           </div>
 
           {/* Right: License badge + Quick actions + Theme Toggle + User */}
@@ -180,6 +178,7 @@ export default function Topbar() {
                   className={[
                     "absolute right-0 mt-2 w-48 rounded-xl overflow-hidden",
                     "bg-white/95 backdrop-blur ring-1 ring-gray-200/70 shadow-xl",
+                    navigationStyle === 'topbar' ? 'z-[1000000]' : '',
                   ].join(" ")}
                 >
                   <button

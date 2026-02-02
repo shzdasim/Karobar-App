@@ -21,6 +21,11 @@ import {
   Cog6ToothIcon,
   UserGroupIcon,
   KeyIcon,
+  ShoppingCartIcon,
+  UserPlusIcon,
+  TruckIcon,
+  CurrencyDollarIcon,
+  ClipboardDocumentIcon,
 } from "@heroicons/react/24/outline";
 import { usePermissions } from "@/api/usePermissions";
 
@@ -38,37 +43,39 @@ export default function Sidebar() {
     () => [
       { name: "Dashboard", path: "/dashboard", icon: <HomeIcon className="w-6 h-6" /> },
 
-      { type: "section", name: "Masters" },
-      { name: "Suppliers",  path: "/suppliers",  icon: <BuildingStorefrontIcon className="w-6 h-6" />, perm: "supplier.view" },
-      { name: "Customers",  path: "/customers",  icon: <UsersIcon className="w-6 h-6" />, perm: "customer.view" },
+      { type: "section", name: "Products" },
+      { name: "Products", path: "/products", icon: <CubeIcon className="w-6 h-6" />, perm: "product.view" },
       { name: "Categories", path: "/categories", icon: <Squares2X2Icon className="w-6 h-6" />, perm: "category.view" },
-      { name: "Brands",     path: "/brands",     icon: <TagIcon className="w-6 h-6" />, perm: "brand.view" },
-      { name: "Products",   path: "/products",   icon: <CubeIcon className="w-6 h-6" />, perm: "product.view" },
+      { name: "Brands", path: "/brands", icon: <TagIcon className="w-6 h-6" />, perm: "brand.view" },
+
+      { type: "section", name: "Parties" },
+      { name: "Suppliers", path: "/suppliers", icon: <TruckIcon className="w-6 h-6" />, perm: "supplier.view" },
+      { name: "Customers", path: "/customers", icon: <UserPlusIcon className="w-6 h-6" />, perm: "customer.view" },
 
       { type: "section", name: "Transactions" },
-      { name: "Purchase Invoice",  path: "/purchase-invoices",  icon: <ClipboardDocumentListIcon className="w-6 h-6" />, perm: "purchase-invoice.view" },
-      { name: "Purchase Return",   path: "/purchase-returns",   icon: <ArrowUturnLeftIcon className="w-6 h-6" />, perm: "purchase-return.view" },
-      { name: "Sale Invoice",      path: "/sale-invoices",      icon: <DocumentCurrencyDollarIcon className="w-6 h-6" />, perm: "sale-invoice.view" },
-      { name: "Sale Return",       path: "/sale-returns",       icon: <ArrowUturnDownIcon className="w-6 h-6" />, perm: "sale-return.view" },
-      { name: "Purchase Orders",   path: "/purchase-orders",    icon: <ClipboardDocumentCheckIcon className="w-6 h-6" />, perm: "purchase-order.view" },
-      { name: "Stock Adjustments", path: "/stock-adjustments",  icon: <ArrowsRightLeftIcon className="w-6 h-6" />, perm: "stock-adjustment.view" },
+      { name: "Purchase Invoice", path: "/purchase-invoices", icon: <ClipboardDocumentListIcon className="w-6 h-6" />, perm: "purchase-invoice.view" },
+      { name: "Sale Invoice", path: "/sale-invoices", icon: <DocumentCurrencyDollarIcon className="w-6 h-6" />, perm: "sale-invoice.view" },
+      { name: "Purchase Return", path: "/purchase-returns", icon: <ArrowUturnLeftIcon className="w-6 h-6" />, perm: "purchase-return.view" },
+      { name: "Sale Return", path: "/sale-returns", icon: <ArrowUturnDownIcon className="w-6 h-6" />, perm: "sale-return.view" },
+      { name: "Purchase Orders", path: "/purchase-orders", icon: <ClipboardDocumentCheckIcon className="w-6 h-6" />, perm: "purchase-order.view" },
+      { name: "Stock Adjustments", path: "/stock-adjustments", icon: <ArrowsRightLeftIcon className="w-6 h-6" />, perm: "stock-adjustment.view" },
 
-      { type: "section", name: "Ledger" },
-      { name: "Supplier Ledger", path: "/supplier-ledger", icon: <BanknotesIcon className="w-6 h-6" />, perm: "ledger.supplier.view" },
-      { name: "Customer Ledger", path: "/customer-ledger", icon: <BanknotesIcon className="w-6 h-6" />, perm: "ledger.customer.view" },
+      { type: "section", name: "Finance" },
+      { name: "Supplier Ledger", path: "/supplier-ledger", icon: <BuildingStorefrontIcon className="w-6 h-6" />, perm: "ledger.supplier.view" },
+      { name: "Customer Ledger", path: "/customer-ledger", icon: <UsersIcon className="w-6 h-6" />, perm: "ledger.customer.view" },
 
       { type: "section", name: "Reports" },
-      { name: "Cost of Sale Report",        path: "/reports/cost-of-sale",        icon: <ChartBarIcon className="w-6 h-6" />, perm: "report.cost-of-sale.view" },
-      { name: "Purchase Detail Report",     path: "/reports/purchase-detail",     icon: <ChartBarIcon className="w-6 h-6" />, perm: "report.purchase-detail.view" },
-      { name: "Sale Detail Report",         path: "/reports/sale-detail",         icon: <ChartBarIcon className="w-6 h-6" />, perm: "report.sale-detail.view" },
-      { name: "Current Stock Report",       path: "/reports/current-stock",       icon: <CubeIcon className="w-6 h-6" />, perm: "report.current-stock.view" },
-      { name: "Stock Adjustment Report",    path: "/reports/stock-adjustment",    icon: <ArrowsRightLeftIcon className="w-6 h-6" />, perm: "report.stock-adjustment.view" },
-      { name: "Product Comprehensive",      path: "/reports/product-comprehensive", icon: <ChartBarIcon className="w-6 h-6" />, perm: "report.product-comprehensive.view" },
+      { name: "Current Stock Report", path: "/reports/current-stock", icon: <CubeIcon className="w-6 h-6" />, perm: "report.current-stock.view" },
+      { name: "Cost of Sale Report", path: "/reports/cost-of-sale", icon: <ChartBarIcon className="w-6 h-6" />, perm: "report.cost-of-sale.view" },
+      { name: "Purchase Detail Report", path: "/reports/purchase-detail", icon: <ClipboardDocumentIcon className="w-6 h-6" />, perm: "report.purchase-detail.view" },
+      { name: "Sale Detail Report", path: "/reports/sale-detail", icon: <DocumentCurrencyDollarIcon className="w-6 h-6" />, perm: "report.sale-detail.view" },
+      { name: "Stock Adjustment Report", path: "/reports/stock-adjustment", icon: <ArrowsRightLeftIcon className="w-6 h-6" />, perm: "report.stock-adjustment.view" },
+      { name: "Product Comprehensive", path: "/reports/product-comprehensive", icon: <ChartBarIcon className="w-6 h-6" />, perm: "report.product-comprehensive.view" },
 
       { type: "section", name: "System" },
       { name: "Settings", path: "/settings", icon: <Cog6ToothIcon className="w-6 h-6" />, perm: "settings.view" },
-      { name: "Users",    path: "/users",    icon: <UserGroupIcon className="w-6 h-6" />, perm: "user.view" },
-      { name: "Roles",    path: "/roles",    icon: <KeyIcon className="w-6 h-6" />, perm: "role.view" },
+      { name: "Users", path: "/users", icon: <UserGroupIcon className="w-6 h-6" />, perm: "user.view" },
+      { name: "Roles", path: "/roles", icon: <KeyIcon className="w-6 h-6" />, perm: "role.view" },
     ],
     []
   );

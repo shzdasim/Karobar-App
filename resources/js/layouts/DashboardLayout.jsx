@@ -115,11 +115,12 @@ export default function DashboardLayout({ children }) {
 
       {/* Topbar: top-right cell */}
       <div className="row-start-1 col-start-2 relative z-40">
+        {/* TopNavigation on top - only in topbar mode */}
+        {navigationStyle === "topbar" && <TopNavigation />}
         <Topbar 
           pageTitle={pageTitle} 
+          navigationStyle={navigationStyle}
         />
-        {/* TopNavigation below Topbar - only in topbar mode */}
-        {navigationStyle === "topbar" && <TopNavigation />}
       </div>
 
       {/* Main content: bottom-right cell */}
