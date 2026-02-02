@@ -704,45 +704,6 @@ export default function Setting() {
             <span>General</span>
           </button>
           
-          {/* Printer Settings Tab */}
-          <button
-            onClick={() => setActiveTab("printer")}
-            className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
-              activeTab === "printer"
-                ? "border-blue-600 text-blue-700 bg-white/70 dark:bg-slate-800/70 dark:text-blue-400 dark:border-blue-400"
-                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
-            }`}
-          >
-            <PrinterIcon className="w-5 h-5" />
-            <span>Printer Settings</span>
-          </button>
-          
-          {/* License Settings Tab */}
-          <button
-            onClick={() => setActiveTab("license")}
-            className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
-              activeTab === "license"
-                ? "border-blue-600 text-blue-700 bg-white/70 dark:bg-slate-800/70 dark:text-blue-400 dark:border-blue-400"
-                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
-            }`}
-          >
-            <DocumentTextIcon className="w-5 h-5" />
-            <span>License Settings</span>
-          </button>
-
-          {/* Backup & Restore Tab */}
-          <button
-            onClick={() => setActiveTab("backup")}
-            className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
-              activeTab === "backup"
-                ? "border-blue-600 text-blue-700 bg-white/70 dark:bg-slate-800/70 dark:text-blue-400 dark:border-blue-400"
-                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
-            }`}
-          >
-            <ServerIcon className="w-5 h-5" />
-            <span>Backup & Restore</span>
-          </button>
-
           {/* Navigation Settings Tab */}
           <button
             onClick={() => setActiveTab("navigation")}
@@ -754,6 +715,45 @@ export default function Setting() {
           >
             <Bars3Icon className="w-5 h-5" />
             <span>Navigation</span>
+          </button>
+
+          {/* Printer Settings Tab */}
+          <button
+            onClick={() => setActiveTab("printer")}
+            className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
+              activeTab === "printer"
+                ? "border-blue-600 text-blue-700 bg-white/70 dark:bg-slate-800/70 dark:text-blue-400 dark:border-blue-400"
+                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
+            }`}
+          >
+            <PrinterIcon className="w-5 h-5" />
+            <span>Printer Setting</span>
+          </button>
+          
+          {/* Backup & Restore Tab */}
+          <button
+            onClick={() => setActiveTab("backup")}
+            className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
+              activeTab === "backup"
+                ? "border-blue-600 text-blue-700 bg-white/70 dark:bg-slate-800/70 dark:text-blue-400 dark:border-blue-400"
+                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
+            }`}
+          >
+            <ServerIcon className="w-5 h-5" />
+            <span>Backup and restore</span>
+          </button>
+
+          {/* License Settings Tab */}
+          <button
+            onClick={() => setActiveTab("license")}
+            className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
+              activeTab === "license"
+                ? "border-blue-600 text-blue-700 bg-white/70 dark:bg-slate-800/70 dark:text-blue-400 dark:border-blue-400"
+                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
+            }`}
+          >
+            <DocumentTextIcon className="w-5 h-5" />
+            <span>License</span>
           </button>
         </div>
       </GlassCard>
@@ -1519,10 +1519,10 @@ export default function Setting() {
               </span>}
               subtitle="Choose how you want to navigate through the application"
             />
-            <GlassToolbar className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <GlassToolbar className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
               {/* Sidebar Option */}
               <div
-                className={`relative p-6 rounded-xl border-2 cursor-pointer transition-all ${
+                className={`relative p-6 rounded-xl border-2 cursor-pointer transition-all h-full flex flex-col ${
                   form.navigation_style === "sidebar"
                     ? "border-blue-500 bg-blue-50/50 dark:bg-blue-900/20 ring-2 ring-blue-200 dark:ring-blue-800"
                     : "border-gray-200 hover:border-gray-300 dark:border-slate-600 dark:hover:border-slate-500"
@@ -1601,7 +1601,7 @@ export default function Setting() {
 
               {/* Topbar Option */}
               <div
-                className={`relative p-6 rounded-xl border-2 cursor-pointer transition-all ${
+                className={`relative p-6 rounded-xl border-2 cursor-pointer transition-all h-full flex flex-col ${
                   form.navigation_style === "topbar"
                     ? "border-blue-500 bg-blue-50/50 dark:bg-blue-900/20 ring-2 ring-blue-200 dark:ring-blue-800"
                     : "border-gray-200 hover:border-gray-300 dark:border-slate-600 dark:hover:border-slate-500"
