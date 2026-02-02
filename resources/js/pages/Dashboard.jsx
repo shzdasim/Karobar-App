@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import Select from "react-select";
+import AsyncSelect from "react-select/async";
+import { createFilter } from "react-select";
+import { useTheme } from "@/context/ThemeContext";
 import {
   AreaChart,
   Area,
@@ -30,6 +32,53 @@ import {
   CheckCircleIcon,
 } from "@heroicons/react/24/outline";
 import { GlassCard, GlassSectionHeader, GlassToolbar, GlassInput, GlassBtn } from "@/components/Glass";
+
+// Dark mode compatible select styles
+const getSmallSelectStyles = (isDark = false) => ({
+  control: (base) => ({
+    ...base,
+    minHeight: 32,
+    height: 32,
+    borderRadius: 12,
+    borderColor: isDark ? "rgba(71,85,105,0.8)" : "rgba(229,231,235,0.8)",
+    backgroundColor: isDark ? "rgba(51,65,85,0.7)" : "rgba(255,255,255,0.7)",
+    backdropFilter: "blur(6px)",
+    boxShadow: isDark ? "0 1px 2px rgba(0,0,0,0.2)" : "0 1px 2px rgba(15,23,42,0.06)",
+  }),
+  valueContainer: (base) => ({ ...base, height: 32, padding: "0 8px" }),
+  indicatorsContainer: (base) => ({ ...base, height: 32 }),
+  input: (base) => ({ ...base, margin: 0, padding: 0, color: isDark ? "#f1f5f9" : "#111827" }),
+  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+  menu: (base) => ({
+    ...base,
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: isDark ? "rgba(30,41,59,0.95)" : "rgba(255,255,255,0.95)",
+    backdropFilter: "blur(10px)",
+    boxShadow: isDark ? "0 10px 30px -10px rgba(0,0,0,0.4)" : "0 10px 30px -10px rgba(30,64,175,0.18)",
+    border: isDark ? "1px solid rgba(71,85,105,0.5)" : "none",
+  }),
+  option: (base, state) => ({
+    ...base,
+    backgroundColor: isDark
+      ? state.isFocused
+        ? "rgba(71,85,105,1)"
+        : "rgba(51,65,85,1)"
+      : state.isFocused
+        ? "rgba(241,245,249,1)"
+        : "rgba(255,255,255,1)",
+    color: isDark ? "#f1f5f9" : "#111827",
+    cursor: "pointer",
+  }),
+  singleValue: (base) => ({
+    ...base,
+    color: isDark ? "#f1f5f9" : "#111827",
+  }),
+  placeholder: (base) => ({
+    ...base,
+    color: isDark ? "#64748b" : "#9ca3af",
+  }),
+});
 
 // Modern color palette for charts
 const COLORS = {
@@ -116,42 +165,16 @@ function buildNetSeries(series) {
   return Array.from(map.entries()).map(([date, value]) => ({ date, value }));
 }
 
-/* ===================== React-Select styles ===================== */
-const smallSelectStyles = {
-  control: (base, state) => ({
-    ...base,
-    minHeight: 36,
-    height: 36,
-    paddingLeft: 4,
-    borderColor: state.isFocused ? "#3b82f6" : "rgba(229,231,235,0.7)",
-    boxShadow: state.isFocused ? "0 0 0 2px rgba(59,130,246,0.4)" : "none",
-    backgroundColor: "rgba(255,255,255,0.7)",
-    backdropFilter: "blur(4px)",
-    borderRadius: 12,
-    fontSize: "0.875rem",
-  }),
-  valueContainer: (base) => ({ ...base, padding: "0 8px" }),
-  indicatorsContainer: (base) => ({ ...base, height: 36 }),
-  dropdownIndicator: (base) => ({ ...base, padding: "0 6px" }),
-  option: (base, state) => ({
-    ...base,
-    fontSize: "0.875rem",
-    backgroundColor: state.isFocused ? "#eff6ff" : state.isSelected ? "#dbeafe" : "white",
-    color: "#111827",
-  }),
-};
-
 /* ===================== Component ===================== */
 export default function Dashboard() {
+  const { isDark } = useTheme();
   const [from, setFrom] = useState(todayStr());
   const [to, setTo] = useState(todayStr());
   const [expiryMonths, setExpiryMonths] = useState(3);
   const [supplierId, setSupplierId] = useState("");
   const [brandId, setBrandId] = useState("");
-  const [supplierValue, setSupplierValue] = useState({ value: "", label: "All Suppliers" });
-  const [brandValue, setBrandValue] = useState({ value: "", label: "All Brands" });
-  const [supplierOptions, setSupplierOptions] = useState([{ value: "", label: "All Suppliers" }]);
-  const [brandOptions, setBrandOptions] = useState([{ value: "", label: "All Brands" }]);
+  const [supplierValue, setSupplierValue] = useState(null);
+  const [brandValue, setBrandValue] = useState(null);
   const [nearExpiryRows, setNearExpiryRows] = useState([]);
   const [loadingExpiry, setLoadingExpiry] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -194,16 +217,45 @@ export default function Dashboard() {
   }, [from, to]);
 
   useEffect(() => {
-    fetchExpiryFilters();
-  }, []);
-
-  useEffect(() => {
     fetchNearExpiry();
   }, [expiryMonths, supplierId, brandId]);
 
   useEffect(() => {
     fetchDashboardMetrics();
   }, [from, to]);
+
+  /* ===================== Async Select Helpers ===================== */
+  const loadSuppliers = useMemo(
+    () =>
+      async (input) => {
+        const q = String(input || "").trim();
+        if (!q) return [{ value: "", label: "All Suppliers" }];
+        try {
+          const res = await axios.get("/api/suppliers/search", { params: { q, limit: 30 } });
+          const rows = Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : [];
+          return rows.map((r) => ({ value: r.id, label: r.name ?? `#${r.id}` }));
+        } catch {
+          return [{ value: "", label: "No results" }];
+        }
+      },
+    []
+  );
+
+  const loadBrands = useMemo(
+    () =>
+      async (input) => {
+        const q = String(input || "").trim();
+        if (!q) return [{ value: "", label: "All Brands" }];
+        try {
+          const res = await axios.get("/api/brands/search", { params: { q, limit: 30 } });
+          const rows = Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : [];
+          return rows.map((r) => ({ value: r.id, label: r.name ?? `#${r.id}` }));
+        } catch {
+          return [{ value: "", label: "No results" }];
+        }
+      },
+    []
+  );
 
   async function fetchDashboardMetrics() {
     try {
@@ -221,18 +273,6 @@ export default function Dashboard() {
       }
     } catch (err) {
       console.error("Failed to fetch dashboard metrics:", err);
-    }
-  }
-
-  async function fetchExpiryFilters() {
-    try {
-      const { data } = await axios.get("/api/dashboard/near-expiry/filters");
-      const sup = (data?.suppliers || []).map((s) => ({ value: String(s.id), label: s.name }));
-      const br = (data?.brands || []).map((b) => ({ value: String(b.id), label: b.name }));
-      setSupplierOptions([{ value: "", label: "All Suppliers" }, ...sup]);
-      setBrandOptions([{ value: "", label: "All Brands" }, ...br]);
-    } catch (err) {
-      console.error(err);
     }
   }
 
@@ -434,52 +474,44 @@ export default function Dashboard() {
               <div className="flex items-center gap-2 shrink-0" style={{ minWidth: 220 }}>
                 <span className="text-gray-700 dark:text-gray-300 text-sm">Supplier</span>
                 <div className="w-44 relative z-50">
-                  <Select
-                    classNamePrefix="rs"
-                    isSearchable
-                    menuPlacement="auto"
-                    menuPosition="fixed"
-                    menuPortalTarget={document.body}
-                    options={supplierOptions}
+                  <AsyncSelect
+                    cacheOptions
+                    defaultOptions={[{ value: "", label: "All Suppliers" }]}
+                    loadOptions={loadSuppliers}
+                    isClearable
                     value={supplierValue}
                     onChange={(opt) => {
-                      setSupplierValue(opt || { value: "", label: "All Suppliers" });
+                      setSupplierValue(opt);
                       setSupplierId(opt?.value || "");
                     }}
-                    styles={{
-                      ...smallSelectStyles,
-                      menu: (base) => ({ ...base, zIndex: 9999 }),
-                      menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-                    }}
+                    styles={getSmallSelectStyles(isDark)}
+                    menuPortalTarget={document.body}
+                    filterOption={createFilter({ matchFrom: "start", trim: true })}
                   />
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0" style={{ minWidth: 200 }}>
                 <span className="text-gray-700 dark:text-gray-300 text-sm">Brand</span>
                 <div className="w-44 relative z-50">
-                  <Select
-                    classNamePrefix="rs"
-                    isSearchable
-                    menuPlacement="auto"
-                    menuPosition="fixed"
-                    menuPortalTarget={document.body}
-                    options={brandOptions}
+                  <AsyncSelect
+                    cacheOptions
+                    defaultOptions={[{ value: "", label: "All Brands" }]}
+                    loadOptions={loadBrands}
+                    isClearable
                     value={brandValue}
                     onChange={(opt) => {
-                      setBrandValue(opt || { value: "", label: "All Brands" });
+                      setBrandValue(opt);
                       setBrandId(opt?.value || "");
                     }}
-                    styles={{
-                      ...smallSelectStyles,
-                      menu: (base) => ({ ...base, zIndex: 9999 }),
-                      menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-                    }}
+                    styles={getSmallSelectStyles(isDark)}
+                    menuPortalTarget={document.body}
+                    filterOption={createFilter({ matchFrom: "start", trim: true })}
                   />
                 </div>
               </div>
               <GlassBtn variant="ghost" onClick={() => {
-                setSupplierValue({ value: "", label: "All Suppliers" });
-                setBrandValue({ value: "", label: "All Brands" });
+                setSupplierValue(null);
+                setBrandValue(null);
                 setSupplierId("");
                 setBrandId("");
               }}>
@@ -506,25 +538,25 @@ export default function Dashboard() {
             <tbody>
               {nearExpiryRows.length === 0 ? (
                 <tr>
-                  <td className="px-3 py-6 text-gray-500" colSpan={6}>
+                  <td className="px-3 py-6 text-gray-500 dark:text-gray-400" colSpan={6}>
                     {loadingExpiry ? "Loading…" : "No near-expiry items found."}
                   </td>
                 </tr>
               ) : (
                 nearExpiryRows.map((r) => (
-                  <tr key={`b-${r.batch_id}`} className="odd:bg-white/60 even:bg-white/40 hover:bg-blue-50/60">
-                    <td className="px-3 py-2">
+                  <tr key={`b-${r.batch_id}`} className="odd:bg-white/60 even:bg-white/40 dark:odd:bg-slate-700/60 dark:even:bg-slate-800/60 hover:bg-blue-50/60 dark:hover:bg-slate-600/60 transition-colors">
+                    <td className="px-3 py-2 text-gray-900 dark:text-gray-100">
                       <div className="max-w-[280px] truncate" title={r.product_name}>{r.product_name}</div>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 text-gray-900 dark:text-gray-100">
                       <div className="max-w-[220px] truncate">{r.supplier_name || "—"}</div>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 text-gray-900 dark:text-gray-100">
                       <div className="max-w-[200px] truncate">{r.brand_name || "—"}</div>
                     </td>
-                    <td className="px-3 py-2">{r.batch_number}</td>
-                    <td className="px-3 py-2">{(r.expiry_date || "").slice(0, 10)}</td>
-                    <td className="px-3 py-2 text-right">{Number(r.quantity ?? 0).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{r.batch_number}</td>
+                    <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{(r.expiry_date || "").slice(0, 10)}</td>
+                    <td className="px-3 py-2 text-right text-gray-900 dark:text-gray-100">{Number(r.quantity ?? 0).toLocaleString()}</td>
                   </tr>
                 ))
               )}
@@ -562,8 +594,8 @@ export default function Dashboard() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.15} stroke="#6366f1" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} tickFormatter={(val) => `Rs ${(val / 1000).toFixed(0)}k`} />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={{ stroke: '#475569' }} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(val) => `Rs ${(val / 1000).toFixed(0)}k`} />
                 <Tooltip contentStyle={customTooltipStyle} formatter={(val) => [`Rs ${fmtCurrency(val)}`, 'Net Sales']} labelFormatter={(label) => `Date: ${label}`} />
                 <Area type="monotone" dataKey="value" stroke="url(#netStroke)" strokeWidth={3} fill="url(#netColor)" />
               </AreaChart>
@@ -591,8 +623,8 @@ export default function Dashboard() {
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={mergeTwo(series.purchases, series.purchaseReturns)} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.15} stroke="#10b981" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} tickFormatter={(val) => `Rs ${(val / 1000).toFixed(0)}k`} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={{ stroke: '#475569' }} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(val) => `Rs ${(val / 1000).toFixed(0)}k`} />
                   <Tooltip contentStyle={customTooltipStyle} formatter={(val, name) => [`Rs ${fmtCurrency(val)}`, name === 'a' ? 'Purchases' : 'Returns']} />
                   <Legend iconType="circle" wrapperStyle={{ paddingTop: '10px' }} />
                   <Area type="monotone" dataKey="a" name="Purchases" fill="url(#purchaseGrad)" stroke="#10b981" strokeWidth={2} />
@@ -626,8 +658,8 @@ export default function Dashboard() {
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={mergeTwo(series.sales, series.saleReturns)} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.15} stroke="#8b5cf6" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} tickFormatter={(val) => `Rs ${(val / 1000).toFixed(0)}k`} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={{ stroke: '#475569' }} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(val) => `Rs ${(val / 1000).toFixed(0)}k`} />
                   <Tooltip contentStyle={customTooltipStyle} formatter={(val, name) => [`Rs ${fmtCurrency(val)}`, name === 'a' ? 'Sales' : 'Returns']} />
                   <Legend iconType="circle" wrapperStyle={{ paddingTop: '10px' }} />
                   <Bar dataKey="a" name="Sales" fill="url(#salesGrad)" radius={[4, 4, 0, 0]} barSize={12} />
@@ -649,17 +681,18 @@ export default function Dashboard() {
 }
 
 function ModernStatCard({ title, value, icon, color, gradient }) {
+  const { isDark } = useTheme();
   return (
-    <GlassCard className="relative overflow-hidden group">
+    <GlassCard className={`relative overflow-hidden group ${isDark ? "dark" : ""}`}>
       <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300`} />
       <div className="p-4 relative z-10">
         <div className="flex items-center gap-2 mb-1">
           <div className="p-1.5 rounded-lg" style={{ backgroundColor: `${color}15` }}>
             <div style={{ color }}>{icon}</div>
           </div>
-          <span className="text-sm text-gray-500 font-medium">{title}</span>
+          <span className={`text-sm font-medium ${isDark ? "text-slate-400" : "text-gray-500"}`}>{title}</span>
         </div>
-        <div className="text-2xl font-bold text-gray-800">{value}</div>
+        <div className={`text-2xl font-bold ${isDark ? "text-slate-100" : "text-gray-800"}`}>{value}</div>
         <div className="h-8 mt-3">
           <svg viewBox="0 0 100 30" className="w-full h-full" preserveAspectRatio="none">
             <path d="M0 25 Q 15 20, 25 22 T 50 18 T 75 20 T 100 15" fill="none" stroke={color} strokeWidth="2" className="opacity-60" />
