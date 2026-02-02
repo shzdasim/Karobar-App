@@ -1041,7 +1041,7 @@ export default function Setting() {
                 setFiles(fl);
               }}
               allowMultiple={false}
-              acceptedFileTypes={['application/zip', 'application/x-zip-compressed', 'application/gzip', 'application/x-gzip', 'application/octet-stream']}
+              acceptedFileTypes={['image/png', 'image/jpeg', 'image/jpg', 'image/webp']}
               disabled={disableInputs}
               labelIdle='Drag & Drop your logo or <span class="filepond--label-action">Browse</span>'
               credits={false}
