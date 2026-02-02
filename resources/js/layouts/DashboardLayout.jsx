@@ -4,6 +4,7 @@ import axios from "axios";
 import { useLocation } from "react-router-dom";
 import Sidebar from "../components/Sidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
+import TopNavigation from "../components/TopNavigation.jsx";
 import { Toaster } from "react-hot-toast";
 
 export default function DashboardLayout({ children }) {
@@ -12,7 +13,13 @@ export default function DashboardLayout({ children }) {
   // Brand from /api/settings
   const [appName, setAppName] = useState("ERP");
   const [logoUrl, setLogoUrl] = useState(null);
+  
+  // Navigation style - read from localStorage first for instant effect
+  const [navigationStyle, setNavigationStyle] = useState(() => {
+    return localStorage.getItem('navigation_style') || 'sidebar';
+  });
 
+  // Fetch settings from API and sync with localStorage
   useEffect(() => {
     (async () => {
       try {
@@ -20,14 +27,34 @@ export default function DashboardLayout({ children }) {
         const sn = (data?.store_name || "").trim();
         setAppName(sn || "ERP");
         setLogoUrl(data?.logo_url || null);
+        
+        // Get navigation_style from API, fallback to localStorage, then default
+        const apiNavStyle = data?.navigation_style || localStorage.getItem('navigation_style') || 'sidebar';
+        setNavigationStyle(apiNavStyle);
+        localStorage.setItem('navigation_style', apiNavStyle);
       } catch {
         setAppName("ERP");
         setLogoUrl(null);
+        // Keep localStorage value on error
       }
     })();
   }, []);
 
-  // Page titles (tip: fix '/Products' -> '/products')
+  // Listen for settings changes from other components
+  useEffect(() => {
+    const handleSettingsChange = (event) => {
+      const { navigation_style } = event.detail;
+      if (navigation_style) {
+        setNavigationStyle(navigation_style);
+        localStorage.setItem('navigation_style', navigation_style);
+      }
+    };
+
+    window.addEventListener('settingsChanged', handleSettingsChange);
+    return () => window.removeEventListener('settingsChanged', handleSettingsChange);
+  }, []);
+
+  // Page titles
   const titles = {
     "/dashboard": "Dashboard",
     "/profile": "Profile",
@@ -64,6 +91,7 @@ export default function DashboardLayout({ children }) {
     document.title = `${pageTitle} - ${appName || "ERP"}`;
   }, [pageTitle, appName]);
 
+  // Use original grid-based layout
   return (
     <div
       className="
@@ -73,21 +101,25 @@ export default function DashboardLayout({ children }) {
         transform-gpu
       "
     >
-      {/* Sidebar: left column, spans both rows; stays visible thanks to sticky */}
+      {/* Sidebar: left column, spans both rows */}
       <div className="row-span-2 col-start-1 relative">
-        <div className="sticky top-0 h-screen min-h-0">
-          <Sidebar appName={appName} logoUrl={logoUrl} />
-        </div>
+        {navigationStyle === "sidebar" && (
+          <div className="sticky top-0 h-screen min-h-0">
+            <Sidebar appName={appName} logoUrl={logoUrl} />
+          </div>
+        )}
       </div>
 
-      {/* Topbar: top-right cell; sticky within its cell */}
-      <div className="row-start-1 col-start-2 relative z-30">
+      {/* Topbar: top-right cell */}
+      <div className="row-start-1 col-start-2 relative z-40">
         <Topbar pageTitle={pageTitle} />
+        {/* TopNavigation below Topbar - only in topbar mode */}
+        {navigationStyle === "topbar" && <TopNavigation />}
       </div>
 
-      {/* Main content: bottom-right cell; independent scroll */}
+      {/* Main content: bottom-right cell */}
       <main className="row-start-2 col-start-2 min-h-0 overflow-y-auto">
-        <div className="p-0">
+        <div className="p-4 md:p-6">
           <Toaster position="top-right" reverseOrder={false} />
           {children}
         </div>

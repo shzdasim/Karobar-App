@@ -16,6 +16,7 @@ class SettingController extends Controller
         $setting = Setting::firstOrCreate(['id' => 1], [
             'printer_type' => 'thermal',
             'thermal_template' => 'standard',
+            'navigation_style' => 'sidebar',
         ]);
 
         return response()->json($setting);
@@ -35,6 +36,7 @@ class SettingController extends Controller
             'note'           => ['nullable','string','max:2000'],
             'printer_type'   => ['required', Rule::in(['thermal','a4'])],
             'thermal_template' => ['nullable', Rule::in(['standard','minimal','detailed','compact','bold','barcode'])],
+            'navigation_style' => ['nullable', Rule::in(['sidebar','topbar'])],
             'logo'           => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],
         ]);
 
@@ -50,6 +52,12 @@ class SettingController extends Controller
 
         // Fill other fields
         $setting->fill(collect($validated)->except('logo')->toArray());
+        
+        // Ensure navigation_style is always updated (it might not be in validated if null)
+        if ($request->has('navigation_style')) {
+            $setting->navigation_style = $request->input('navigation_style');
+        }
+        
         $setting->save();
 
         return response()->json($setting->fresh());

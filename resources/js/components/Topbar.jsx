@@ -79,14 +79,14 @@ export default function Topbar() {
 
   return (
     <div
-      className="sticky top-0 z-40 px-3 pt-3 bg-transparent"
+      className="w-full z-40"
     >
       <header
         role="banner"
         className={[
-          "mx-auto rounded-2xl bg-white/55 backdrop-blur-sm ring-1 ring-white/30 dark:bg-slate-800/70 dark:ring-white/10 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.25)]",
+          "w-full bg-white/55 backdrop-blur-sm ring-1 ring-white/30 dark:bg-slate-800/70 dark:ring-white/10 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.25)]",
           "relative px-4 py-3",
-          "before:absolute before:inset-0 before:rounded-2xl before:ring-1 before:ring-white/30 dark:before:ring-white/10",
+          "before:absolute before:inset-0 before:ring-1 before:ring-white/30 dark:before:ring-white/10",
         ].join(" ")}
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
