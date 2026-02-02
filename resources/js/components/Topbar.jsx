@@ -79,10 +79,7 @@ export default function Topbar() {
 
   return (
     <div
-      className="sticky top-0 z-40 px-3 pt-3 bg-transparent
-      after:content-[''] after:pointer-events-none after:absolute after:left-0 after:right-0 after:top-[78px]
-      after:h-4 after:bg-gradient-to-b after:from-white/50 after:to-transparent
-      dark:after:from-slate-900/50 dark:after:to-transparent"
+      className="sticky top-0 z-40 px-3 pt-3 bg-transparent"
     >
       <header
         role="banner"
@@ -105,11 +102,12 @@ export default function Topbar() {
 
             {/* License badge */}
             <button
-              onClick={() => navigate("/activate")}
+              onClick={() => navigate("/settings#license")}
               className={[
                 "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-white text-xs font-semibold",
                 "bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/30",
                 "transition-all hover:shadow-emerald-500/40 hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-emerald-400/50",
+                "relative z-50",
               ].join(" ")}
               title={licValid ? "License is active" : "License required – click to activate"}
             >
@@ -125,6 +123,7 @@ export default function Topbar() {
                 "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-white text-xs font-semibold",
                 "bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/30",
                 "transition-all hover:shadow-emerald-500/40 hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-emerald-400/50",
+                "relative z-50",
               ].join(" ")}
             >
               <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
@@ -139,6 +138,7 @@ export default function Topbar() {
                 "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-white text-xs font-semibold",
                 "bg-gradient-to-r from-indigo-500 to-indigo-600 shadow-lg shadow-indigo-500/30",
                 "transition-all hover:shadow-indigo-500/40 hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-indigo-400/50",
+                "relative z-50",
               ].join(" ")}
             >
               <ShoppingCartIcon className="w-3.5 h-3.5" />

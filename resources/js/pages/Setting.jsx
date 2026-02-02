@@ -73,6 +73,13 @@ export default function Setting() {
   // Tab state
   const [activeTab, setActiveTab] = useState("general");
   
+  // Check for hash in URL on mount to open specific tab
+  useEffect(() => {
+    if (window.location.hash === "#license") {
+      setActiveTab("license");
+    }
+  }, []);
+  
   // Thermal template selection
   const [selectedThermalTemplate, setSelectedThermalTemplate] = useState("standard");
   

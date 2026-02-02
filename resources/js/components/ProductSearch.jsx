@@ -7,6 +7,9 @@ import {
   ExclamationTriangleIcon,
   ArrowTopRightOnSquareIcon,
   PhotoIcon,
+  TagIcon,
+  FolderIcon,
+  Squares2X2Icon,
 } from "@heroicons/react/24/solid";
 import { GlassCard, GlassInput, GlassToolbar, GlassBtn } from "@/components/glass";
 
@@ -24,41 +27,57 @@ function ResultRow({ p, active, onHover, onOpen }) {
   return (
     <li
       onMouseEnter={onHover}
-      className={[
-        "px-4 py-3 transition select-none cursor-pointer",
-        active ? "bg-slate-100 dark:bg-slate-700" : "hover:bg-slate-50 dark:hover:bg-slate-700/50",
-      ].join(" ")}
       onClick={onOpen}
+      className={[
+        "px-3 py-2 transition-all duration-150 cursor-pointer border-b border-slate-100 dark:border-slate-700/50 last:border-0",
+        active 
+          ? "bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/20" 
+          : "hover:bg-slate-50 dark:hover:bg-slate-700/30",
+      ].join(" ")}
       title="Open product"
       aria-label="Open product"
     >
-      <div className="flex items-start justify-between gap-3 bg-white dark:bg-slate-800">
-        <div className="min-w-0">
-          <div className="font-medium text-slate-800 dark:text-slate-100 truncate">{p.name || "—"}</div>
-          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-0.5 text-xs text-slate-600 dark:text-slate-400">
+      <div className="flex items-center gap-3">
+        {/* Product Info - No image in list */}
+        <div className="flex-1 min-w-0 space-y-1">
+          <div className="font-medium text-slate-800 dark:text-slate-100 text-sm truncate">
+            {p.name || "—"}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
             {p.brand?.name && (
-              <span>
-                Brand: <b>{p.brand.name}</b>
+              <span className="inline-flex items-center gap-1 text-[10px] text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-600 px-1.5 py-0.5 rounded-full">
+                <TagIcon className="w-2.5 h-2.5" />
+                {p.brand.name}
               </span>
             )}
-            {p.supplier?.name && (
-              <span>
-                Supplier: <b>{p.supplier.name}</b>
+            {p.category?.name && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded-full">
+                <FolderIcon className="w-2.5 h-2.5" />
+                {p.category.name}
               </span>
             )}
             {p.pack_size != null && (
-              <span>
-                Pack: <b>{p.pack_size}</b>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                Pack: {p.pack_size}
+              </span>
+            )}
+            {p.supplier?.name && (
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[100px]">
+                {p.supplier.name}
               </span>
             )}
           </div>
         </div>
-        <div className="shrink-0 text-right">
-          <div className="text-[11px] text-slate-500 dark:text-slate-400">Pack Prices</div>
-          <div className="text-sm">
-            <span className="text-slate-700 dark:text-slate-200">{fmtMoney(p.pack_sale_price)}</span>
-            <span className="text-slate-400"> / </span>
-            <span className="text-slate-500 dark:text-slate-400">{fmtMoney(p.pack_purchase_price)}</span>
+        
+        {/* Price */}
+        <div className="flex-shrink-0 text-right space-y-0.5">
+          <div className="px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40">
+            <div className="text-xs font-bold text-emerald-700 dark:text-emerald-400">
+              {fmtMoney(p.pack_sale_price)}
+            </div>
+          </div>
+          <div className="text-[10px] text-slate-500 dark:text-slate-400">
+            {fmtMoney(p.pack_purchase_price)}
           </div>
         </div>
       </div>
@@ -68,84 +87,122 @@ function ResultRow({ p, active, onHover, onOpen }) {
 
 /* ─────────────── Detail Pane ─────────────── */
 function DetailPane({ detail, loading, error, onOpen }) {
-  return (
-    <div className="hidden md:block border-l border-slate-200 dark:border-white/10 min-h-[280px] bg-white dark:bg-slate-800">
-      {loading && <div className="p-6 text-sm text-slate-500 dark:text-slate-400">Loading details…</div>}
-      {!loading && error && <div className="p-6 text-sm text-rose-600 dark:text-rose-400">{error}</div>}
-      {!loading && !detail && !error && (
-        <div className="p-6 text-sm text-slate-500 dark:text-slate-400">
-          Hover or select a product to preview details.
+  if (loading) {
+    return (
+      <div className="hidden md:flex items-center justify-center h-full bg-white dark:bg-slate-800">
+        <div className="flex flex-col items-center gap-2">
+          <ArrowPathIcon className="w-6 h-6 animate-spin text-blue-500" />
+          <span className="text-xs text-slate-500">Loading...</span>
         </div>
-      )}
-      {!loading && detail && (
-        <div className="p-4">
-          <div className="flex items-start gap-4">
-            <div className="w-24 h-24 rounded-xl overflow-hidden bg-white dark:bg-slate-700 ring-1 ring-slate-200 dark:ring-white/10">
-              {detail.image ? (
-                <img
-                  src={
-                    detail.image.startsWith("http")
-                      ? detail.image
-                      : `/storage/${detail.image}`
-                  }
-                  alt={detail.name}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full grid place-items-center text-slate-400">
-                  <PhotoIcon className="w-7 h-7" />
-                </div>
-              )}
-            </div>
-            <div className="min-w-0">
-              <div className="font-semibold text-slate-800 dark:text-slate-100">{detail.name}</div>
-              <div className="mt-0.5 text-sm text-slate-600 dark:text-slate-400">
-                {detail.formulation || "—"}
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400">Category:</span>{" "}
-                  <b className="text-slate-700 dark:text-slate-200">{detail.category?.name || "—"}</b>
-                </div>
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400">Brand:</span>{" "}
-                  <b className="text-slate-700 dark:text-slate-200">{detail.brand?.name || "—"}</b>
-                </div>
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400">Supplier:</span>{" "}
-                  <b className="text-slate-700 dark:text-slate-200">{detail.supplier?.name || "—"}</b>
-                </div>
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400">Pack Size:</span>{" "}
-                  <b className="text-slate-700 dark:text-slate-200">{detail.pack_size ?? "—"}</b>
-                </div>
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400">Pack Purchase:</span>{" "}
-                  <b className="text-slate-700 dark:text-slate-200">{fmtMoney(detail.pack_purchase_price)}</b>
-                </div>
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400">Pack Sale:</span>{" "}
-                  <b className="text-slate-700 dark:text-slate-200">{fmtMoney(detail.pack_sale_price)}</b>
-                </div>
-              </div>
-            </div>
-          </div>
+      </div>
+    );
+  }
 
-          {/* Glassy button from your primitives */}
-          <div className="mt-4">
-            <GlassBtn
-              variant="ghost"
-              title="Open product"
-              aria-label="Open product"
-              onClick={onOpen}
-              className="inline-flex items-center gap-2"
-            >
-              <ArrowTopRightOnSquareIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-              <span className="text-slate-800 dark:text-slate-100">Open Product</span>
-            </GlassBtn>
+  if (error) {
+    return (
+      <div className="hidden md:flex items-center justify-center h-full bg-white dark:bg-slate-800">
+        <div className="flex flex-col items-center gap-2 text-rose-500">
+          <ExclamationTriangleIcon className="w-6 h-6" />
+          <span className="text-xs">{error}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!detail) {
+    return (
+      <div className="hidden md:flex items-center justify-center h-full bg-white dark:bg-slate-800">
+        <div className="flex flex-col items-center gap-2 text-slate-400">
+          <PhotoIcon className="w-8 h-8" />
+          <span className="text-xs">Hover to preview</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="hidden md:block border-l border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 h-full">
+      <div className="p-3 space-y-3">
+        {/* Header with image */}
+        <div className="flex items-start gap-3">
+          <div className="w-16 h-16 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-700 flex-shrink-0 shadow-sm">
+            {detail.image ? (
+              <img
+                src={detail.image.startsWith("http") ? detail.image : `/storage/${detail.image}`}
+                alt={detail.name}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full grid place-items-center text-slate-400">
+                <Squares2X2Icon className="w-6 h-6" />
+              </div>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-slate-800 dark:text-slate-100 text-sm leading-tight">
+              {detail.name}
+            </h3>
+            {detail.formulation && (
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                {detail.formulation}
+              </p>
+            )}
           </div>
         </div>
-      )}
+
+        {/* Pricing */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/30 dark:to-emerald-800/20 border border-emerald-200 dark:border-emerald-800">
+            <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 block">Sale</span>
+            <span className="text-sm font-bold text-emerald-700 dark:text-emerald-300">
+              {fmtMoney(detail.pack_sale_price)}
+            </span>
+          </div>
+          <div className="p-2 rounded-lg bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-800/20 border border-amber-200 dark:border-amber-800">
+            <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 block">Purchase</span>
+            <span className="text-sm font-bold text-amber-700 dark:text-amber-300">
+              {fmtMoney(detail.pack_purchase_price)}
+            </span>
+          </div>
+        </div>
+
+        {/* Details grid */}
+        <div className="space-y-1">
+          {detail.category?.name && (
+            <div className="flex items-center justify-between p-1.5 rounded bg-slate-50 dark:bg-slate-700/50">
+              <span className="text-[10px] text-slate-500 dark:text-slate-400">Category</span>
+              <span className="text-xs font-medium text-slate-700 dark:text-slate-200">{detail.category.name}</span>
+            </div>
+          )}
+          {detail.brand?.name && (
+            <div className="flex items-center justify-between p-1.5 rounded bg-slate-50 dark:bg-slate-700/50">
+              <span className="text-[10px] text-slate-500 dark:text-slate-400">Brand</span>
+              <span className="text-xs font-medium text-slate-700 dark:text-slate-200">{detail.brand.name}</span>
+            </div>
+          )}
+          {detail.supplier?.name && (
+            <div className="flex items-center justify-between p-1.5 rounded bg-slate-50 dark:bg-slate-700/50">
+              <span className="text-[10px] text-slate-500 dark:text-slate-400">Supplier</span>
+              <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate max-w-[120px]">{detail.supplier.name}</span>
+            </div>
+          )}
+          {detail.pack_size != null && (
+            <div className="flex items-center justify-between p-1.5 rounded bg-slate-50 dark:bg-slate-700/50">
+              <span className="text-[10px] text-slate-500 dark:text-slate-400">Pack Size</span>
+              <span className="text-xs font-medium text-slate-700 dark:text-slate-200">{detail.pack_size}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Action button */}
+        <button
+          onClick={onOpen}
+          className="w-full py-2 px-3 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-xs font-medium shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-1.5"
+        >
+          <ArrowTopRightOnSquareIcon className="w-4 h-4" />
+          Open Details
+        </button>
+      </div>
     </div>
   );
 }
@@ -275,16 +332,16 @@ export default function ProductSearch() {
   };
 
   return (
-    <div className="relative z-40 w-full max-w-md bg-white dark:bg-slate-800" ref={boxRef}>
-      {/* Search bar (glassy input) */}
+    <div className="relative z-[35] max-w-[calc(100vw-2rem)]" ref={boxRef}>
+      {/* Search bar */}
       <div
         className={[
-          "flex items-center gap-2 rounded-2xl px-3 h-10",
+          "flex items-center gap-2 rounded-lg px-3 h-9 w-full max-w-[320px]",
           "bg-white dark:bg-slate-700 ring-1 ring-slate-200 dark:ring-slate-600 shadow-sm",
-          "transition-all hover:-translate-y-[1px] hover:shadow-md",
+          "transition-all",
         ].join(" ")}
       >
-        <MagnifyingGlassIcon className="w-5 h-5 text-slate-500" />
+        <MagnifyingGlassIcon className="w-4 h-4 text-slate-400" />
         <GlassInput
           ref={inputRef}
           value={q}
@@ -294,96 +351,99 @@ export default function ProductSearch() {
           }}
           onFocus={() => setPanelOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder="Search products… (Alt+/)"
-          className="w-full bg-white dark:bg-slate-700 border-0 ring-0 focus:ring-0 focus:border-0 placeholder:text-slate-400 dark:placeholder:text-slate-500 text-slate-900 dark:text-slate-100"
+          placeholder="Search products..."
+          className="w-full bg-transparent border-0 ring-0 focus:ring-0 focus:border-0 placeholder:text-slate-400 dark:placeholder:text-slate-500 text-sm text-slate-900 dark:text-slate-100"
           title="Search products (Alt+/)"
           aria-label="Search products"
         />
         {loading ? (
-          <ArrowPathIcon
-            className="w-4 h-4 animate-spin text-slate-500"
-            title="Loading"
-            aria-label="Loading"
-          />
+          <ArrowPathIcon className="w-4 h-4 animate-spin text-slate-400" />
         ) : q ? (
-          <GlassBtn
-            variant="chip"
-            title="Clear search"
-            aria-label="Clear search"
+          <button
             onClick={() => {
               setQ("");
               setResults([]);
               setActiveIdx(-1);
               setDetail(null);
             }}
+            className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
+            title="Clear search"
           >
-            Clear
-          </GlassBtn>
+            <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         ) : (
-          <kbd className="text-[11px] border border-slate-300 dark:border-slate-600 rounded px-1 py-0.5 bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-400">
+          <kbd className="text-[10px] border border-slate-200 dark:border-slate-600 rounded px-1.5 py-0.5 bg-slate-50 dark:bg-slate-600 text-slate-500 dark:text-slate-400 font-mono">
             Alt+/
           </kbd>
         )}
       </div>
 
-      {/* Results panel (solid card for readability; still using GlassCard infra) */}
+      {/* Results panel */}
       {panelOpen && (
-        <GlassCard className="absolute left-0 mt-2 overflow-hidden bg-white dark:bg-slate-800 w-[900px] max-w-[calc(100vw-2rem)]">
-          <GlassToolbar className="items-center justify-between pb-2 pt-2 bg-white dark:bg-slate-800">
-            <div className="text-sm text-slate-600 dark:text-slate-300">
-              {q ? (
-                <>
-                  Showing results for <span className="font-medium">"{q}"</span>
-                </>
-              ) : (
-                <>Type to search products…</>
-              )}
-            </div>
-            <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
-              <span>
-                <kbd className="border px-1 rounded">↑</kbd>/
-                <kbd className="border px-1 rounded">↓</kbd> navigate
-              </span>
-              <span>
-                <kbd className="border px-1 rounded">Enter</kbd> open
-              </span>
-              <span>
-                <kbd className="border px-1 rounded">Esc</kbd> close
-              </span>
-            </div>
-          </GlassToolbar>
+        <div className="absolute left-0 mt-2 w-[700px] max-w-[calc(100vw-2rem)]">
+          <GlassCard className="overflow-hidden bg-white dark:bg-slate-800 shadow-2xl ring-1 ring-slate-200/50 dark:ring-slate-700/50">
 
-          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] border-t border-gray-200/60 dark:border-white/10 bg-white dark:bg-slate-800">
-            {/* Left list */}
-            <div className="max-h-[56vh] overflow-auto bg-white dark:bg-slate-800">
-              {!loading && q && results.length === 0 && (
-                <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2 bg-white dark:bg-slate-800">
-                  <ExclamationTriangleIcon className="w-4 h-4" />
-                  No products found.
-                </div>
-              )}
-              <ul role="list" className="divide-y divide-slate-200 dark:divide-white/10 bg-white dark:bg-slate-800">
-                {results.map((p, idx) => (
-                  <ResultRow
-                    key={p.id}
-                    p={p}
-                    active={idx === activeIdx}
-                    onHover={() => setActiveIdx(idx)}
-                    onOpen={() => onOpen(p.id)}
-                  />
-                ))}
-              </ul>
-            </div>
+            {/* Toolbar */}
+            <GlassToolbar className="items-center justify-between py-2 px-4 bg-slate-50/80 dark:bg-slate-800/80 border-b border-slate-100 dark:border-slate-700">
+              <div className="text-xs text-slate-600 dark:text-slate-300">
+                {q ? (
+                  <>
+                    <span className="font-bold">{results.length}</span> for <span className="font-medium">"{q}"</span>
+                  </>
+                ) : (
+                  <>Type to search...</>
+                )}
+              </div>
+              <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                <span className="hidden sm:flex items-center gap-1"><kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">↑↓</kbd></span>
+                <span className="hidden sm:flex items-center gap-1"><kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">↵</kbd></span>
+                <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">Esc</kbd></span>
+              </div>
+            </GlassToolbar>
 
-            {/* Right detail */}
-            <DetailPane
-              detail={detail}
-              loading={detailLoading}
-              error={detailError}
-              onOpen={() => detail && onOpen(detail.id)}
-            />
-          </div>
-        </GlassCard>
+            {/* Results grid */}
+            <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,420px)] max-h-[60vh]">
+              {/* Results list */}
+              <div className="overflow-y-auto bg-white dark:bg-slate-800 max-h-[60vh]">
+                {loading && (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="flex flex-col items-center gap-2">
+                      <ArrowPathIcon className="w-6 h-6 animate-spin text-blue-500" />
+                      <span className="text-xs text-slate-500">Searching...</span>
+                    </div>
+                  </div>
+                )}
+                {!loading && q && results.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-8 text-slate-400">
+                    <ExclamationTriangleIcon className="w-8 h-8 mb-2" />
+                    <span className="text-sm">No products found</span>
+                  </div>
+                )}
+                <ul role="list" className="divide-y divide-slate-100 dark:divide-slate-700/50">
+                  {results.map((p, idx) => (
+                    <ResultRow
+                      key={p.id}
+                      p={p}
+                      active={idx === activeIdx}
+                      onHover={() => setActiveIdx(idx)}
+                      onOpen={() => onOpen(p.id)}
+                    />
+                  ))}
+                </ul>
+              </div>
+
+              {/* Detail pane */}
+              <DetailPane
+                detail={detail}
+                loading={detailLoading}
+                error={detailError}
+                onOpen={() => detail && onOpen(detail.id)}
+              />
+            </div>
+          </GlassCard>
+        </div>
       )}
     </div>
   );
