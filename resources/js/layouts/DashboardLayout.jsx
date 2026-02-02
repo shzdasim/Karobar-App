@@ -13,7 +13,7 @@ export default function DashboardLayout({ children }) {
   // Brand from /api/settings
   const [appName, setAppName] = useState("ERP");
   const [logoUrl, setLogoUrl] = useState(null);
-  
+
   // Navigation style - read from localStorage first for instant effect
   const [navigationStyle, setNavigationStyle] = useState(() => {
     return localStorage.getItem('navigation_style') || 'sidebar';
@@ -105,14 +105,19 @@ export default function DashboardLayout({ children }) {
       <div className="row-span-2 col-start-1 relative">
         {navigationStyle === "sidebar" && (
           <div className="sticky top-0 h-screen min-h-0">
-            <Sidebar appName={appName} logoUrl={logoUrl} />
+            <Sidebar 
+              appName={appName} 
+              logoUrl={logoUrl} 
+            />
           </div>
         )}
       </div>
 
       {/* Topbar: top-right cell */}
       <div className="row-start-1 col-start-2 relative z-40">
-        <Topbar pageTitle={pageTitle} />
+        <Topbar 
+          pageTitle={pageTitle} 
+        />
         {/* TopNavigation below Topbar - only in topbar mode */}
         {navigationStyle === "topbar" && <TopNavigation />}
       </div>

@@ -156,6 +156,21 @@ export default function TopNavigation() {
         shadow-sm
       ">
         <div className="flex items-stretch h-11">
+          {/* Logo & Brand */}
+          <div className="flex items-center gap-2 px-4 border-r border-gray-200/60 dark:border-slate-700/60 flex-shrink-0">
+            <picture>
+              <source srcSet="/storage/logos/logo.png" media="(prefers-color-scheme: light)" />
+              <img
+                src="/logo.png"
+                alt="Karobar App"
+                className="h-7 w-7 object-contain rounded"
+              />
+            </picture>
+            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 whitespace-nowrap">
+              Karobar App
+            </span>
+          </div>
+          
           {/* Navigation Items */}
           <nav
             className="
