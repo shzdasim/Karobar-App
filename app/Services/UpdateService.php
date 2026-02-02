@@ -237,6 +237,9 @@ class UpdateService
             // Extract and apply the update
             $this->extractAndApplyUpdate($zipPath, $newVersion);
 
+            // Update the application version
+            $this->updateVersion($newVersion);
+
             // Clean up
             if (file_exists($zipPath)) {
                 unlink($zipPath);
@@ -449,26 +452,6 @@ class UpdateService
     }
 
     /**
-     * Create a backup before updating
-     */
-    private function createBackupBeforeUpdate(): void
-    {
-        try {
-            $this->logUpdate('backup_start', 'info', 'Creating backup before update');
-
-            // Trigger Laravel backup if BackupService is available
-            if (class_exists(\App\Services\BackupService::class)) {
-                $backupService = new \App\Services\BackupService();
-                $backupService->createFullBackup();
-            }
-
-            $this->logUpdate('backup_complete', 'info', 'Backup created successfully before update');
-        } catch (\Exception $e) {
-            $this->logUpdate('backup_warning', 'warning', 'Could not create automatic backup: ' . $e->getMessage());
-        }
-    }
-
-    /**
      * Clear all Laravel caches
      */
     private function clearCaches(): void
@@ -570,6 +553,86 @@ class UpdateService
                 'success' => false,
                 'error' => 'Rollback failed: ' . $e->getMessage(),
             ];
+        }
+    }
+
+    /**
+     * Update the application version in .env file
+     */
+    private function updateVersion(string $newVersion): bool
+    {
+        $envPath = base_path('.env');
+
+        if (!file_exists($envPath)) {
+            $examplePath = base_path('.env.example');
+            if (file_exists($examplePath)) {
+                copy($examplePath, $envPath);
+            } else {
+                $this->logUpdate('version_update_warning', 'warning', '.env file not found, cannot update version');
+                return false;
+            }
+        }
+
+        $envContent = file_get_contents($envPath);
+
+        if (preg_match('/^APP_VERSION=.*$/m', $envContent)) {
+            $envContent = preg_replace('/^APP_VERSION=.*$/m', "APP_VERSION={$newVersion}", $envContent);
+        } else {
+            $envContent .= "\nAPP_VERSION={$newVersion}\n";
+        }
+
+        $configPath = config_path('app.php');
+        if (file_exists($configPath)) {
+            $configContent = file_get_contents($configPath);
+            $configContent = preg_replace(
+                "/'version' => env\('APP_VERSION', '[^']*'\)/",
+                "'version' => env('APP_VERSION', '{$newVersion}')",
+                $configContent
+            );
+            file_put_contents($configPath, $configContent);
+        }
+
+        file_put_contents($envPath, $envContent);
+
+        $this->logUpdate('version_update', 'info', "Updated application version to {$newVersion}");
+
+        return true;
+    }
+
+    /**
+     * Simplified backup before update
+     */
+    private function createBackupBeforeUpdate(): void
+    {
+        try {
+            $this->logUpdate('backup_start', 'info', 'Creating backup before update');
+
+            $backupDir = storage_path('app/backups');
+            if (!is_dir($backupDir)) {
+                mkdir($backupDir, 0755, true);
+            }
+
+            $backupInfo = [
+                'created_at' => now()->toIso8601String(),
+                'version' => $this->getCurrentVersion(),
+                'message' => 'Simple backup marker',
+            ];
+
+            $backupMarkerPath = $backupDir . '/pre_update_' . time() . '.json';
+            file_put_contents($backupMarkerPath, json_encode($backupInfo, JSON_PRETTY_PRINT));
+
+            if (class_exists(\App\Services\BackupService::class)) {
+                try {
+                    $backupService = new \App\Services\BackupService();
+                    $backupService->createBackup('settings');
+                } catch (\Exception $e) {
+                    $this->logUpdate('backup_warning', 'warning', 'Could not create settings backup: ' . $e->getMessage());
+                }
+            }
+
+            $this->logUpdate('backup_complete', 'info', 'Backup marker created successfully');
+        } catch (\Exception $e) {
+            $this->logUpdate('backup_warning', 'warning', 'Could not create backup marker: ' . $e->getMessage());
         }
     }
 }
