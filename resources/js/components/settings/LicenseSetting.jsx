@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { 
@@ -6,7 +6,15 @@ import {
   ShieldCheckIcon, 
   ShieldExclamationIcon,
   ClipboardDocumentIcon,
-  LockClosedIcon 
+  LockClosedIcon,
+  EyeIcon,
+  EyeSlashIcon,
+  DocumentTextIcon,
+  CheckBadgeIcon,
+  CalendarIcon,
+  ClockIcon,
+  BuildingOfficeIcon,
+  CpuChipIcon
 } from "@heroicons/react/24/solid";
 import { GlassCard, GlassSectionHeader, GlassToolbar, GlassBtn } from "@/components/glass.jsx";
 
@@ -21,6 +29,12 @@ export default function LicenseSetting({
   const [passwordAction, setPasswordAction] = useState(null);
   const [password, setPassword] = useState("");
   const [verifying, setVerifying] = useState(false);
+  const [showLicenseDetails, setShowLicenseDetails] = useState(false);
+
+  // Clear license details when license status changes (e.g., license deactivated)
+  useEffect(() => {
+    setShowLicenseDetails(false);
+  }, [licenseStatus?.valid]);
 
   const openPasswordModal = (action) => {
     setPasswordAction(action);
@@ -64,7 +78,8 @@ export default function LicenseSetting({
         closePasswordModal();
         if (passwordAction === "view-details") {
           await fetchLicenseStatus();
-          toast.success("License details loaded");
+          setShowLicenseDetails(true);
+          toast.success("License details unlocked");
         }
       } else {
         toast.error("Invalid password");
@@ -74,6 +89,22 @@ export default function LicenseSetting({
     } finally {
       setVerifying(false);
     }
+  };
+
+  // Helper to format license payload fields
+  const formatPayloadValue = (value) => {
+    if (value === null || value === undefined) return "Not specified";
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (Array.isArray(value)) return value.length > 0 ? value.join(", ") : "None";
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
+  };
+
+  // Get payload fields to display
+  const getPayloadEntries = () => {
+    const payload = licenseStatus?.payload || {};
+    const excludeKeys = ['exp', 'nbf', 'machine']; // Already shown elsewhere
+    return Object.entries(payload).filter(([key]) => !excludeKeys.includes(key));
   };
 
   return (
@@ -132,7 +163,7 @@ export default function LicenseSetting({
             )}
           </div>
 
-          {/* Machine ID */}
+        {/* Machine ID */}
           <div className="p-4 rounded-xl bg-white/60 dark:bg-slate-700/60">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Machine ID</span>
@@ -149,6 +180,78 @@ export default function LicenseSetting({
               {licenseStatus?.machine_id || "Unable to load"}
             </div>
           </div>
+
+          {/* License Details - Protected Section */}
+          {showLicenseDetails && licenseStatus?.valid ? (
+            <div className="col-span-1 md:col-span-2 mt-4">
+              <div className="p-4 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <DocumentTextIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    <span className="font-semibold text-gray-800 dark:text-gray-200">License Details</span>
+                    <span className="px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400">
+                      <CheckBadgeIcon className="w-3.5 h-3.5 inline mr-1" />
+                      Verified
+                    </span>
+                  </div>
+                  <GlassBtn
+                    onClick={() => setShowLicenseDetails(false)}
+                    className="h-7 px-3 text-xs bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+                  >
+                    <EyeSlashIcon className="w-3.5 h-3.5 mr-1" />
+                    Hide
+                  </GlassBtn>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {/* Expiry Date */}
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-white/60 dark:bg-slate-800/60">
+                    <CalendarIcon className="w-4 h-4 text-amber-600" />
+                    <div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Expires</div>
+                      <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {formatExpiryDate(licenseStatus.expires_at) || "Lifetime"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Days Remaining */}
+                  {licenseStatus.expires_at && (
+                    <div className="flex items-center gap-2 p-2 rounded-lg bg-white/60 dark:bg-slate-800/60">
+                      <ClockIcon className="w-4 h-4 text-emerald-600" />
+                      <div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Days Remaining</div>
+                        <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          {Math.max(0, Math.ceil((Number(licenseStatus.expires_at) * 1000 - Date.now()) / (1000 * 60 * 60 * 24)))} days
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Dynamic payload fields */}
+                  {getPayloadEntries().map(([key, value]) => (
+                    <div key={key} className="flex items-start gap-2 p-2 rounded-lg bg-white/60 dark:bg-slate-800/60">
+                      {key.toLowerCase().includes('owner') || key.toLowerCase().includes('company') ? (
+                        <BuildingOfficeIcon className="w-4 h-4 text-blue-600 mt-0.5" />
+                      ) : key.toLowerCase().includes('type') || key.toLowerCase().includes('edition') ? (
+                        <ShieldCheckIcon className="w-4 h-4 text-purple-600 mt-0.5" />
+                      ) : (
+                        <CpuChipIcon className="w-4 h-4 text-gray-500 mt-0.5" />
+                      )}
+                      <div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                        </div>
+                        <div className="text-sm font-medium text-gray-700 dark:text-gray-300 break-words">
+                          {formatPayloadValue(value)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
         </GlassToolbar>
       </GlassCard>
 
