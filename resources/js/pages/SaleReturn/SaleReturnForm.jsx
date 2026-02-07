@@ -272,7 +272,9 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
         setForm((prev) => ({ ...prev, posted_number: codeRes?.data?.posted_number || "" }));
 
         if (customersArr.length) {
-          const firstId = customersArr[0]?.id;
+          // Select customer with lowest ID (not highest)
+          const sortedCustomers = [...customersArr].sort((a, b) => a.id - b.id);
+          const firstId = sortedCustomers[0]?.id;
           setForm((prev) => ({ ...prev, customer_id: firstId }));
           await fetchSaleInvoices(firstId);
         }

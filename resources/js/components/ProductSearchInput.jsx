@@ -81,7 +81,7 @@ const ProductSearchInput = forwardRef(
       setHighlightIndex(0);
       setSearch(
         typeof seedChar === "string" && seedChar.length === 1
-          ? seedChar
+          ? (search + seedChar).toLowerCase()  // Append character to existing search
           : (display || "")
       );
     };
