@@ -26,11 +26,76 @@ import {
   TruckIcon,
   CurrencyDollarIcon,
   ClipboardDocumentIcon,
+  DocumentTextIcon,
+  ArrowPathIcon,
+  CalculatorIcon,
+  ClipboardDocumentListIcon as ReportIcon,
 } from "@heroicons/react/24/outline";
 import { usePermissions } from "@/api/usePermissions";
 
+// Section configuration with color schemes
+const SECTION_CONFIG = {
+  dashboard: {
+    gradient: "from-violet-500 to-purple-600",
+    bgLight: "bg-violet-50",
+    bgDark: "dark:bg-violet-900/20",
+    borderColor: "border-violet-200 dark:border-violet-700",
+    iconColor: "text-violet-600 dark:text-violet-400",
+  },
+  core: {
+    gradient: "from-blue-500 to-cyan-600",
+    bgLight: "bg-blue-50",
+    bgDark: "dark:bg-blue-900/20",
+    borderColor: "border-blue-200 dark:border-blue-700",
+    iconColor: "text-blue-600 dark:text-blue-400",
+  },
+  invoices: {
+    gradient: "from-emerald-500 to-teal-600",
+    bgLight: "bg-emerald-50",
+    bgDark: "dark:bg-emerald-900/20",
+    borderColor: "border-emerald-200 dark:border-emerald-700",
+    iconColor: "text-emerald-600 dark:text-emerald-400",
+  },
+  returns: {
+    gradient: "from-orange-500 to-amber-600",
+    bgLight: "bg-orange-50",
+    bgDark: "dark:bg-orange-900/20",
+    borderColor: "border-orange-200 dark:border-orange-700",
+    iconColor: "text-orange-600 dark:text-orange-400",
+  },
+  transactions: {
+    gradient: "from-indigo-500 to-blue-600",
+    bgLight: "bg-indigo-50",
+    bgDark: "dark:bg-indigo-900/20",
+    borderColor: "border-indigo-200 dark:border-indigo-700",
+    iconColor: "text-indigo-600 dark:text-indigo-400",
+  },
+  finance: {
+    gradient: "from-green-500 to-emerald-600",
+    bgLight: "bg-green-50",
+    bgDark: "dark:bg-green-900/20",
+    borderColor: "border-green-200 dark:border-green-700",
+    iconColor: "text-green-600 dark:text-green-400",
+  },
+  reports: {
+    gradient: "from-amber-500 to-orange-600",
+    bgLight: "bg-amber-50",
+    bgDark: "dark:bg-amber-900/20",
+    borderColor: "border-amber-200 dark:border-amber-700",
+    iconColor: "text-amber-600 dark:text-amber-400",
+  },
+  system: {
+    gradient: "from-slate-500 to-gray-600",
+    bgLight: "bg-slate-50",
+    bgDark: "dark:bg-slate-700/30",
+    borderColor: "border-slate-200 dark:border-slate-600",
+    iconColor: "text-slate-600 dark:text-slate-400",
+  },
+};
+
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
+  const [hoveredSection, setHoveredSection] = useState(null);
   const { pathname } = useLocation();
   const navigate = useNavigate();
 
@@ -41,41 +106,43 @@ export default function Sidebar() {
 
   const rawMenu = useMemo(
     () => [
-      { name: "Dashboard", path: "/dashboard", icon: <HomeIcon className="w-6 h-6" /> },
+      { type: "section", name: "Dashboard", key: "dashboard", icon: <HomeIcon className="w-5 h-5" />, standalone: true },
+      
+      { type: "section", name: "Management", key: "core", icon: <CubeIcon className="w-5 h-5" /> },
+      { name: "Products", path: "/products", icon: <CubeIcon className="w-5 h-5" />, perm: "product.view", parent: "core" },
+      { name: "Categories", path: "/categories", icon: <Squares2X2Icon className="w-5 h-5" />, perm: "category.view", parent: "core" },
+      { name: "Brands", path: "/brands", icon: <TagIcon className="w-5 h-5" />, perm: "brand.view", parent: "core" },
+      { name: "Suppliers", path: "/suppliers", icon: <TruckIcon className="w-5 h-5" />, perm: "supplier.view", parent: "core" },
+      { name: "Customers", path: "/customers", icon: <UserPlusIcon className="w-5 h-5" />, perm: "customer.view", parent: "core" },
 
-      { type: "section", name: "Products" },
-      { name: "Products", path: "/products", icon: <CubeIcon className="w-6 h-6" />, perm: "product.view" },
-      { name: "Categories", path: "/categories", icon: <Squares2X2Icon className="w-6 h-6" />, perm: "category.view" },
-      { name: "Brands", path: "/brands", icon: <TagIcon className="w-6 h-6" />, perm: "brand.view" },
+      { type: "section", name: "Invoices", key: "invoices", icon: <DocumentTextIcon className="w-5 h-5" /> },
+      { name: "Purchase Invoice", path: "/purchase-invoices", icon: <ClipboardDocumentListIcon className="w-5 h-5" />, perm: "purchase-invoice.view", parent: "invoices" },
+      { name: "Sale Invoice", path: "/sale-invoices", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, perm: "sale-invoice.view", parent: "invoices" },
 
-      { type: "section", name: "Parties" },
-      { name: "Suppliers", path: "/suppliers", icon: <TruckIcon className="w-6 h-6" />, perm: "supplier.view" },
-      { name: "Customers", path: "/customers", icon: <UserPlusIcon className="w-6 h-6" />, perm: "customer.view" },
+      { type: "section", name: "Returns", key: "returns", icon: <ArrowUturnLeftIcon className="w-5 h-5" /> },
+      { name: "Purchase Return", path: "/purchase-returns", icon: <ArrowUturnDownIcon className="w-5 h-5" />, perm: "purchase-return.view", parent: "returns" },
+      { name: "Sale Return", path: "/sale-returns", icon: <ArrowUturnLeftIcon className="w-5 h-5" />, perm: "sale-return.view", parent: "returns" },
 
-      { type: "section", name: "Transactions" },
-      { name: "Purchase Invoice", path: "/purchase-invoices", icon: <ClipboardDocumentListIcon className="w-6 h-6" />, perm: "purchase-invoice.view" },
-      { name: "Sale Invoice", path: "/sale-invoices", icon: <DocumentCurrencyDollarIcon className="w-6 h-6" />, perm: "sale-invoice.view" },
-      { name: "Purchase Return", path: "/purchase-returns", icon: <ArrowUturnLeftIcon className="w-6 h-6" />, perm: "purchase-return.view" },
-      { name: "Sale Return", path: "/sale-returns", icon: <ArrowUturnDownIcon className="w-6 h-6" />, perm: "sale-return.view" },
-      { name: "Purchase Orders", path: "/purchase-orders", icon: <ClipboardDocumentCheckIcon className="w-6 h-6" />, perm: "purchase-order.view" },
-      { name: "Stock Adjustments", path: "/stock-adjustments", icon: <ArrowsRightLeftIcon className="w-6 h-6" />, perm: "stock-adjustment.view" },
+      { type: "section", name: "Transactions", key: "transactions", icon: <ShoppingCartIcon className="w-5 h-5" /> },
+      { name: "Purchase Orders", path: "/purchase-orders", icon: <ClipboardDocumentCheckIcon className="w-5 h-5" />, perm: "purchase-order.view", parent: "transactions" },
+      { name: "Stock Adjustments", path: "/stock-adjustments", icon: <ArrowsRightLeftIcon className="w-5 h-5" />, perm: "stock-adjustment.view", parent: "transactions" },
 
-      { type: "section", name: "Finance" },
-      { name: "Supplier Ledger", path: "/supplier-ledger", icon: <BuildingStorefrontIcon className="w-6 h-6" />, perm: "ledger.supplier.view" },
-      { name: "Customer Ledger", path: "/customer-ledger", icon: <UsersIcon className="w-6 h-6" />, perm: "ledger.customer.view" },
+      { type: "section", name: "Finance", key: "finance", icon: <CurrencyDollarIcon className="w-5 h-5" /> },
+      { name: "Supplier Ledger", path: "/supplier-ledger", icon: <BuildingStorefrontIcon className="w-5 h-5" />, perm: "ledger.supplier.view", parent: "finance" },
+      { name: "Customer Ledger", path: "/customer-ledger", icon: <UsersIcon className="w-5 h-5" />, perm: "ledger.customer.view", parent: "finance" },
 
-      { type: "section", name: "Reports" },
-      { name: "Current Stock Report", path: "/reports/current-stock", icon: <CubeIcon className="w-6 h-6" />, perm: "report.current-stock.view" },
-      { name: "Cost of Sale Report", path: "/reports/cost-of-sale", icon: <ChartBarIcon className="w-6 h-6" />, perm: "report.cost-of-sale.view" },
-      { name: "Purchase Detail Report", path: "/reports/purchase-detail", icon: <ClipboardDocumentIcon className="w-6 h-6" />, perm: "report.purchase-detail.view" },
-      { name: "Sale Detail Report", path: "/reports/sale-detail", icon: <DocumentCurrencyDollarIcon className="w-6 h-6" />, perm: "report.sale-detail.view" },
-      { name: "Stock Adjustment Report", path: "/reports/stock-adjustment", icon: <ArrowsRightLeftIcon className="w-6 h-6" />, perm: "report.stock-adjustment.view" },
-      { name: "Product Comprehensive", path: "/reports/product-comprehensive", icon: <ChartBarIcon className="w-6 h-6" />, perm: "report.product-comprehensive.view" },
+      { type: "section", name: "Reports", key: "reports", icon: <ChartBarIcon className="w-5 h-5" /> },
+      { name: "Current Stock", path: "/reports/current-stock", icon: <CubeIcon className="w-5 h-5" />, perm: "report.current-stock.view", parent: "reports" },
+      { name: "Cost of Sale", path: "/reports/cost-of-sale", icon: <CalculatorIcon className="w-5 h-5" />, perm: "report.cost-of-sale.view", parent: "reports" },
+      { name: "Purchase Detail", path: "/reports/purchase-detail", icon: <ClipboardDocumentIcon className="w-5 h-5" />, perm: "report.purchase-detail.view", parent: "reports" },
+      { name: "Sale Detail", path: "/reports/sale-detail", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, perm: "report.sale-detail.view", parent: "reports" },
+      { name: "Stock Adjustment", path: "/reports/stock-adjustment", icon: <ArrowsRightLeftIcon className="w-5 h-5" />, perm: "report.stock-adjustment.view", parent: "reports" },
+      { name: "Product Comprehensive", path: "/reports/product-comprehensive", icon: <ReportIcon className="w-5 h-5" />, perm: "report.product-comprehensive.view", parent: "reports" },
 
-      { type: "section", name: "System" },
-      { name: "Settings", path: "/settings", icon: <Cog6ToothIcon className="w-6 h-6" />, perm: "settings.view" },
-      { name: "Users", path: "/users", icon: <UserGroupIcon className="w-6 h-6" />, perm: "user.view" },
-      { name: "Roles", path: "/roles", icon: <KeyIcon className="w-6 h-6" />, perm: "role.view" },
+      { type: "section", name: "System", key: "system", icon: <Cog6ToothIcon className="w-5 h-5" /> },
+      { name: "Settings", path: "/settings", icon: <Cog6ToothIcon className="w-5 h-5" />, perm: "settings.view", parent: "system" },
+      { name: "Users", path: "/users", icon: <UserGroupIcon className="w-5 h-5" />, perm: "user.view", parent: "system" },
+      { name: "Roles", path: "/roles", icon: <KeyIcon className="w-5 h-5" />, perm: "role.view", parent: "system" },
     ],
     []
   );
@@ -149,60 +216,153 @@ export default function Sidebar() {
 
   const widthCls = collapsed ? "w-20" : "w-64";
 
-  // Floating shell
+  // Floating shell with subtle background
   const shell =
     "relative h-screen px-3 py-3 " +
-    "bg-transparent";
+    "bg-gradient-to-br from-gray-100/50 to-gray-50/30 dark:from-slate-900/50 dark:to-slate-800/30";
 
   const card =
     "relative flex h-full flex-col rounded-2xl " +
-    "bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10 shadow-xl " +
+    "bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl ring-1 ring-gray-200/60 dark:ring-white/10 shadow-2xl " +
     "transition-[width] duration-300 overflow-hidden " + widthCls;
 
-  // Scroll shadows (optimized with simpler gradients for better performance)
+  // Enhanced scroll shadows with better visibility
   const scrollShadow =
-    "before:pointer-events-none before:content-[''] before:absolute before:left-0 before:right-0 before:top-[64px] before:h-4 before:bg-gradient-to-b before:from-white/50 before:to-transparent dark:before:from-slate-800/50 dark:before:to-transparent " +
-    "after:pointer-events-none after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-[56px] after:h-4 after:bg-gradient-to-t after:from-white/50 after:to-transparent dark:after:from-slate-800/50 dark:after:to-transparent";
+    "before:pointer-events-none before:content-[''] before:absolute before:left-0 before:right-0 before:top-[72px] before:h-5 before:bg-gradient-to-b before:from-white/80 before:to-transparent dark:before:from-slate-800/80 dark:before:to-transparent " +
+    "after:pointer-events-none after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-[60px] after:h-5 after:bg-gradient-to-t after:from-white/80 after:to-transparent dark:after:from-slate-800/80 dark:after:to-transparent";
 
-  // Item styles
+  // Get section config for a menu item
+  const getSectionConfig = (item) => {
+    if (item.standalone) return SECTION_CONFIG.dashboard;
+    const key = item.parent || item.key;
+    return SECTION_CONFIG[key] || SECTION_CONFIG.core;
+  };
+
+  // Get color for active item based on section
+  const getActiveColor = (item) => {
+    const config = getSectionConfig(item);
+    return `${config.iconColor.replace('text-', 'bg-').split(' ')[0]} shadow-lg`;
+  };
+
+  // Item styles with section-based coloring
   const itemBase =
-    "group relative mx-2 mt-2 flex items-center gap-3 rounded-xl px-3 py-2 text-gray-900 dark:text-gray-100 " +
-    "hover:translate-y-[-2px] hover:bg-white/80 dark:hover:bg-slate-700/80 hover:shadow-md transition focus:outline-none " +
-    "focus:ring-2 focus:ring-blue-400/60 focus:ring-offset-2 focus:ring-offset-transparent";
-  const itemActive = "bg-white dark:bg-slate-700 shadow-md ring-1 ring-blue-200/70 dark:ring-blue-800/50";
-  const leftRail =
-    "absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-full transition-all";
+    "group relative mx-2 mt-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-gray-900 dark:text-gray-100 " +
+    "hover:translate-y-[-1px] hover:bg-white/90 dark:hover:bg-slate-700/90 hover:shadow-lg transition-all duration-200 " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-transparent";
 
-  // Custom thin scrollbar (WebKit) – safe fallback elsewhere
+  const itemActive =
+    "bg-white dark:bg-slate-700 shadow-lg ring-1 ring-gray-200/70 dark:ring-white/10 " +
+    "hover:scale-[1.02]";
+
+  const leftRail =
+    "absolute left-0 top-1/2 -translate-y-1/2 h-8 w-1.5 rounded-r-lg transition-all duration-300";
+
+  // Custom thin scrollbar with better styling
   const scrollAreaCls =
-    "flex-1 overflow-y-auto min-h-0 mt-2 pb-4 " +
+    "flex-1 overflow-y-auto min-h-0 mt-1 pb-4 " +
     "[&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full " +
     "[&::-webkit-scrollbar-thumb]:bg-gray-300/70 hover:[&::-webkit-scrollbar-thumb]:bg-gray-400/70 " +
     "[&::-webkit-scrollbar-track]:bg-transparent";
 
+  // Section header styles
+  const sectionHeaderCollapsed =
+    "flex items-center justify-center p-2 mx-2 mt-4 rounded-xl " +
+    "bg-gradient-to-br from-gray-100/80 to-gray-50/50 dark:from-slate-700/60 dark:to-slate-800/40 " +
+    "ring-1 ring-gray-200/60 dark:ring-white/10 shadow-sm";
+
+  const sectionHeaderExpanded =
+    "flex items-center gap-2 px-3 py-2 mx-2 mt-4 rounded-xl " +
+    "bg-gradient-to-r from-gray-50/80 to-gray-100/60 dark:from-slate-700/60 dark:to-slate-800/40 " +
+    "ring-1 ring-gray-200/60 dark:ring-white/10 shadow-sm";
+
+  // Render section header
+  const renderSectionHeader = (section, index) => {
+    const config = SECTION_CONFIG[section.key] || SECTION_CONFIG.core;
+    const isHovered = hoveredSection === section.key;
+
+    if (collapsed) {
+      return (
+        <div
+          key={`sec-${section.name}-${index}`}
+          className={sectionHeaderCollapsed}
+          onMouseEnter={() => setHoveredSection(section.key)}
+          onMouseLeave={() => setHoveredSection(null)}
+        >
+          <div className={`p-1.5 rounded-lg ${config.bgLight} ${config.bgDark} transition-all duration-300 ${isHovered ? 'scale-110' : ''}`}>
+            <span className={`${config.iconColor} ${isHovered ? 'scale-110' : ''} transition-transform`}>
+              {React.cloneElement(section.icon, { className: "w-5 h-5" })}
+            </span>
+          </div>
+          {/* Tooltip on hover */}
+          {isHovered && (
+            <div className="absolute left-full ml-2 px-3 py-1.5 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-xs font-medium rounded-lg shadow-xl whitespace-nowrap z-50">
+              {section.name}
+              <div className="absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 w-2 h-2 bg-gray-900 dark:bg-gray-100 rotate-45" />
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div
+        key={`sec-${section.name}-${index}`}
+        className={sectionHeaderExpanded}
+        onMouseEnter={() => setHoveredSection(section.key)}
+        onMouseLeave={() => setHoveredSection(null)}
+      >
+        <div className={`p-1.5 rounded-lg ${config.bgLight} ${config.bgDark} transition-all duration-300 ${isHovered ? 'scale-105' : ''}`}>
+          <span className={`${config.iconColor} ${isHovered ? 'scale-110' : ''} transition-transform`}>
+            {React.cloneElement(section.icon, { className: "w-4 h-4" })}
+          </span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className={`text-xs font-bold uppercase tracking-wider ${config.iconColor} truncate`}>
+            {section.name}
+          </div>
+        </div>
+        {/* Decorative gradient bar */}
+        <div className={`h-1 w-8 rounded-full bg-gradient-to-r ${config.gradient} opacity-60`} />
+      </div>
+    );
+  };
+
   return (
     <aside className={shell}>
       <div className={`${card} ${scrollShadow}`}>
-        {/* Sticky header */}
-        <div className="sticky top-0 z-10 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-b border-gray-200/60 dark:border-white/10 px-4 py-3">
+        {/* Sticky header with enhanced design */}
+        <div className="sticky top-0 z-10 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border-b border-gray-200/60 dark:border-white/10 px-4 py-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 overflow-hidden">
-              <picture>
-                {logoCandidates.map((src) => (
-                  <img
-                    key={src}
-                    src={src}
-                    alt={brandName}
-                    className="h-10 w-10 object-contain rounded hidden"
-                    onLoad={(e) => {
-                      const imgs = e.currentTarget.parentElement.querySelectorAll("img");
-                      imgs.forEach((im) => (im.style.display = "none"));
-                      e.currentTarget.style.display = "block";
-                    }}
-                  />
-                ))}
-              </picture>
-              {!collapsed && <span className="text-base font-semibold truncate text-gray-900 dark:text-gray-100">{brandName}</span>}
+            <div className="flex items-center gap-3 overflow-hidden">
+              <div className="relative">
+                <picture>
+                  {logoCandidates.map((src) => (
+                    <img
+                      key={src}
+                      src={src}
+                      alt={brandName}
+                      className="h-10 w-10 object-contain rounded-xl shadow-md hidden"
+                      onLoad={(e) => {
+                        const imgs = e.currentTarget.parentElement.querySelectorAll("img");
+                        imgs.forEach((im) => (im.style.display = "none"));
+                        e.currentTarget.style.display = "block";
+                      }}
+                    />
+                  ))}
+                </picture>
+                {/* Decorative ring for logo */}
+                <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 dark:from-violet-400/20 dark:to-purple-400/20" />
+              </div>
+              {!collapsed && (
+                <div className="flex flex-col min-w-0">
+                  <span className="text-sm font-bold bg-gradient-to-r from-gray-900 to-gray-700 dark:from-white dark:to-gray-300 bg-clip-text text-transparent truncate">
+                    {brandName}
+                  </span>
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">
+                    Management System
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -217,19 +377,13 @@ export default function Sidebar() {
         >
           {menu.map((item, i) => {
             if (item.type === "section") {
-              return (
-                <div key={`sec-${item.name}-${i}`} className={`px-4 ${collapsed ? "mt-5" : "pt-4 pb-1 mt-3"}`}>
-                  {!collapsed && (
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                      {item.name}
-                    </div>
-                  )}
-                </div>
-              );
+              return renderSectionHeader(item, i);
             }
 
             const focusIdx = flatMenu.findIndex((fm) => fm.path === item.path);
             const active = isActive(item.path);
+            const sectionConfig = getSectionConfig(item);
+            const isHovered = hoveredSection === item.path;
 
             return (
               <Link
@@ -238,56 +392,90 @@ export default function Sidebar() {
                 ref={(el) => (itemRefs.current[focusIdx] = el)}
                 className={[
                   itemBase,
-                  active ? itemActive : "hover:ring-1 hover:ring-gray-200/70",
+                  active ? itemActive : `${sectionConfig.bgLight} ${sectionConfig.bgDark}`,
+                  `hover:ring-1 hover:ring-${sectionConfig.iconColor.split('-')[1]}-300/50 dark:hover:ring-${sectionConfig.iconColor.split('-')[2]}-600/50`,
                 ].join(" ")}
                 tabIndex={focusedIndex === focusIdx ? 0 : -1}
                 onFocus={() => setFocusedIndex(focusIdx)}
                 aria-current={active ? "page" : undefined}
                 title={collapsed ? item.name : undefined}
+                onMouseEnter={() => setHoveredSection(item.path)}
+                onMouseLeave={() => setHoveredSection(null)}
               >
-                {/* active left rail */}
+                {/* Active left rail with gradient and glow */}
                 <span
-                  className={`${leftRail} ${active ? "bg-blue-500 w-1.5 opacity-100" : "bg-transparent w-0 opacity-0"}`}
+                  className={`${leftRail} ${
+                    active
+                      ? `bg-gradient-to-b ${sectionConfig.gradient} w-1.5 opacity-100 shadow-lg shadow-${sectionConfig.iconColor.split('-')[1]}-400/30`
+                      : "bg-transparent w-0 opacity-0"
+                  }`}
                 />
+
+                {/* Icon with enhanced styling */}
                 <span
                   className={[
-                    "shrink-0",
-                    active ? "text-blue-600 dark:text-blue-400" : "text-gray-700 dark:text-gray-300 group-hover:text-blue-600 dark:group-hover:text-blue-400",
+                    "shrink-0 transition-all duration-200",
+                    active
+                      ? sectionConfig.iconColor
+                      : "text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-200",
+                    isHovered && !active ? "scale-110" : "",
                   ].join(" ")}
                 >
-                  {item.icon}
+                  {React.cloneElement(item.icon, { className: "w-5 h-5" })}
                 </span>
 
-                {/* Label with smart reveal:
-                   - Shown when expanded
-                   - In collapsed mode: hidden but slides in on hover to hint discoverability */}
+                {/* Label with smart reveal */}
                 <span
                   className={[
-                    "whitespace-nowrap",
+                    "whitespace-nowrap transition-all duration-200",
                     collapsed
-                      ? "pointer-events-none select-none translate-x-2 opacity-0 group-hover:opacity-100 group-hover:translate-x-0 transition"
+                      ? "pointer-events-none select-none translate-x-2 opacity-0 group-hover:opacity-100 group-hover:translate-x-0"
                       : "",
-                    active ? "text-blue-700 dark:text-blue-300 font-medium" : "text-gray-900 dark:text-gray-100",
+                    active
+                      ? `font-semibold ${sectionConfig.iconColor}`
+                      : "text-gray-700 dark:text-gray-200",
                   ].join(" ")}
                 >
                   {!collapsed && item.name}
                   {collapsed && <span className="sr-only">{item.name}</span>}
                 </span>
+
+                {/* Active indicator dot for collapsed mode */}
+                {collapsed && active && (
+                  <div className={`absolute right-2 w-1.5 h-1.5 rounded-full bg-gradient-to-r ${sectionConfig.gradient}`} />
+                )}
               </Link>
             );
           })}
-          <div className="h-2" />
+          <div className="h-3" />
         </nav>
 
-        {/* Sticky footer (collapse/expand) */}
-        <div className="sticky bottom-0 z-10 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-t border-gray-200/60 dark:border-white/10 px-2 py-2">
+        {/* Sticky footer (collapse/expand) with enhanced design */}
+        <div className="sticky bottom-0 z-10 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border-t border-gray-200/60 dark:border-white/10 px-2 py-3">
           <button
             onClick={() => setCollapsed((v) => !v)}
-            className="w-full flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-slate-700 hover:shadow focus:outline-none focus:ring-2 focus:ring-blue-400/60"
+            className="w-full flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium 
+              text-gray-600 dark:text-gray-300 
+              hover:bg-gradient-to-r hover:from-gray-100 hover:to-gray-50 dark:hover:from-slate-700 dark:hover:to-slate-600
+              hover:shadow-lg hover:scale-[1.02]
+              focus:outline-none focus:ring-2 focus:ring-blue-400/50 dark:focus:ring-indigo-400/50
+              transition-all duration-200"
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {collapsed ? <ChevronRightIcon className="w-5 h-5" /> : <ChevronLeftIcon className="w-5 h-5" />}
-            {!collapsed && <span>Collapse</span>}
+            <div className="relative">
+              {collapsed ? (
+                <ChevronRightIcon className="w-5 h-5" />
+              ) : (
+                <ChevronLeftIcon className="w-5 h-5" />
+              )}
+              {/* Subtle glow effect */}
+              <div className="absolute inset-0 rounded-full bg-gradient-to-r from-blue-500/20 to-indigo-500/20 blur-sm" />
+            </div>
+            {!collapsed && (
+              <span className="bg-gradient-to-r from-gray-700 to-gray-900 dark:from-gray-200 dark:to-gray-400 bg-clip-text text-transparent">
+                Collapse
+              </span>
+            )}
           </button>
         </div>
       </div>
