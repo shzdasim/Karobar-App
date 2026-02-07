@@ -1,5 +1,5 @@
 // src/pages/products/ProductForm.jsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import axios from "axios";
 import Select from "react-select";
 import AsyncSelect from "react-select/async";
@@ -8,12 +8,10 @@ import { Link, useNavigate } from "react-router-dom";
 
 // Icons (glassy header/buttons)
 import {
-  PhotoIcon,
   ArrowLeftIcon,
   PlusCircleIcon,
   PencilSquareIcon,
-  ClipboardDocumentCheckIcon,
-  Squares2X2Icon,
+  CubeIcon,
 } from "@heroicons/react/24/solid";
 
 // FilePond
@@ -26,7 +24,7 @@ import "filepond/dist/filepond.min.css";
 import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
 
 // 🧊 glass primitives
-import { GlassCard, GlassSectionHeader, GlassToolbar, GlassInput, GlassBtn } from "@/components/glass.jsx";
+import { GlassCard, GlassInput, GlassBtn } from "@/components/glass.jsx";
 import { useTheme } from "@/context/ThemeContext";
 
 registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);
@@ -34,9 +32,254 @@ registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);
 // 👉 Normalize Laravel paginate payloads (or plain arrays) to a simple array
 const asList = (payload) => (Array.isArray(payload) ? payload : (payload?.data ?? payload?.items ?? []));
 
+// ===== Form Fields Component =====
+const ProductFormFields = forwardRef(({ form, files, batches, categories, suppliers, brandOption, isEdit, handleChange, loadBrandOptions, getSmallSelectStyles, isDark, onFilesChange, setFiles }, ref) => {
+  // Create refs locally
+  const nameRef = useRef(null);
+  const formulationRef = useRef(null);
+  const packSizeRef = useRef(null);
+  const categorySelectRef = useRef(null);
+  const brandSelectRef = useRef(null);
+  const supplierSelectRef = useRef(null);
+
+  // Expose focus methods to parent
+  useImperativeHandle(ref, () => ({
+    focusName: () => nameRef.current?.focus(),
+  }));
+
+  return (
+    <>
+      {/* Image - moved to top, compact */}
+      <div className="flex gap-3 items-start">
+        <div className="w-32 shrink-0">
+          <label className="block text-xs font-medium mb-1">Image</label>
+          <div className="rounded-xl bg-white/60 backdrop-blur-sm ring-1 ring-gray-200/60 p-1.5">
+            <FilePond
+              files={files}
+              onupdatefiles={onFilesChange}
+              allowMultiple={false}
+              acceptedFileTypes={["image/*"]}
+              labelIdle='<span class="text-xs">Drop or Browse</span>'
+              credits={false}
+              stylePanelLayout="compact"
+              styleLoadPlaceholder="Loading..."
+            />
+          </div>
+        </div>
+        
+        {/* Code / Barcode inline */}
+        <div className="flex-1 grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs font-medium mb-1">Product Code</label>
+            <GlassInput type="text" name="product_code" value={form.product_code || ""} disabled className="w-full bg-white/70 text-sm h-8" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">Barcode</label>
+            <GlassInput type="text" name="barcode" value={form.barcode || ""} disabled className="w-full bg-white/70 text-sm h-8" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">Rack</label>
+            <GlassInput type="text" name="rack" value={form.rack || ""} onChange={handleChange} className="w-full text-sm h-8" />
+          </div>
+          <div className="flex items-end">
+            <label className="inline-flex items-center gap-1.5 text-xs">
+              <input
+                type="checkbox"
+                name="narcotic"
+                checked={form.narcotic === "yes"}
+                onChange={(e) => handleChange({ target: { name: "narcotic", value: e.target.checked ? "yes" : "no" } })}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <span>Narcotic</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* Name / Formulation / Pack Size */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div>
+          <label className="block text-xs font-medium mb-1">Name *</label>
+          <GlassInput
+            ref={nameRef}
+            type="text"
+            name="name"
+            value={form.name || ""}
+            onChange={handleChange}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                formulationRef.current?.focus();
+              }
+            }}
+            className="w-full text-sm h-8"
+            placeholder="Product name"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium mb-1">Formulation</label>
+          <GlassInput
+            ref={formulationRef}
+            type="text"
+            name="formulation"
+            value={form.formulation || ""}
+            onChange={handleChange}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                packSizeRef.current?.focus();
+              }
+            }}
+            className="w-full text-sm h-8"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium mb-1">Pack Size</label>
+          <GlassInput
+            ref={packSizeRef}
+            type="text"
+            name="pack_size"
+            value={form.pack_size || ""}
+            onChange={handleChange}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                categorySelectRef.current?.focus();
+              }
+            }}
+            className="w-full text-sm h-8"
+          />
+        </div>
+      </div>
+
+      {/* Category / Brand / Supplier */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div>
+          <label className="block text-xs font-medium mb-1">Category</label>
+          <Select
+            ref={categorySelectRef}
+            options={asList(categories).map((c) => ({ value: c.id, label: c.name }))}
+            value={asList(categories).map((c) => ({ value: c.id, label: c.name })).find((opt) => opt.value === Number(form.category_id)) || null}
+            onChange={(opt) => {
+              handleChange({ target: { name: "category_id", value: opt?.value } });
+              setTimeout(() => brandSelectRef.current?.focus(), 0);
+            }}
+            classNamePrefix="rs"
+            isSearchable
+            styles={getSmallSelectStyles(isDark)}
+            menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium mb-1">Brand</label>
+          <AsyncSelect
+            ref={brandSelectRef}
+            cacheOptions
+            defaultOptions
+            loadOptions={loadBrandOptions}
+            value={brandOption}
+            onChange={(opt) => {
+              handleChange({ target: { name: "brand_id", value: opt?.value ?? null } });
+              setTimeout(() => supplierSelectRef.current?.focus(), 0);
+            }}
+            classNamePrefix="rs"
+            isSearchable
+            styles={getSmallSelectStyles(isDark)}
+            placeholder="Search brand..."
+            noOptionsMessage={() => "Type to search..."}
+            menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium mb-1">Supplier</label>
+          <Select
+            ref={supplierSelectRef}
+            options={asList(suppliers).map((s) => ({ value: s.id, label: s.name }))}
+            value={asList(suppliers).map((s) => ({ value: s.id, label: s.name })).find((opt) => opt.value === Number(form.supplier_id)) || null}
+            onChange={(opt) => {
+              handleChange({ target: { name: "supplier_id", value: opt?.value } });
+              setTimeout(() => saveBtnRef.current?.focus(), 0);
+            }}
+            classNamePrefix="rs"
+            isSearchable
+            styles={getSmallSelectStyles(isDark)}
+            menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+          />
+        </div>
+      </div>
+
+      {/* Description - compact */}
+      <div>
+        <label className="block text-xs font-medium mb-1">Description</label>
+        <textarea
+          name="description"
+          value={form.description || ""}
+          onChange={handleChange}
+          className="w-full h-16 px-3 py-2 rounded-xl bg-white/70 backdrop-blur-sm border border-gray-200/70 ring-1 ring-transparent focus:ring-blue-400/40 shadow-sm focus:outline-none text-sm resize-none"
+          placeholder="Optional notes..."
+        />
+      </div>
+
+      {/* Compact pricing table */}
+      <div>
+        <div className="rounded-xl overflow-hidden ring-1 ring-gray-200/70 bg-white/70 backdrop-blur-sm">
+          <table className="w-full text-[11px] text-gray-900">
+            <thead className="bg-white/80 backdrop-blur-sm border-b border-gray-200/70">
+              <tr className="text-left">
+                <th className="px-2 py-1.5">Qty</th>
+                <th className="px-2 py-1.5">Pack P.</th>
+                <th className="px-2 py-1.5">Pack S.</th>
+                <th className="px-2 py-1.5">Unit P.</th>
+                <th className="px-2 py-1.5">Unit S.</th>
+                <th className="px-2 py-1.5">Avg</th>
+                <th className="px-2 py-1.5">Mrg%</th>
+                <th className="px-2 py-1.5 w-16">Max.Disc</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="odd:bg-white/90 even:bg-white/70">
+                {[
+                  { name: "quantity", disabled: true, value: form.quantity || "" },
+                  { name: "pack_purchase_price", disabled: true, value: form.pack_purchase_price || "" },
+                  { name: "pack_sale_price", disabled: true, value: form.pack_sale_price || "" },
+                  { name: "unit_purchase_price", disabled: true, value: form.unit_purchase_price || "" },
+                  { name: "unit_sale_price", disabled: true, value: form.unit_sale_price || "" },
+                  { name: "avg_price", disabled: true, value: form.avg_price || "" },
+                  { name: "margin", disabled: true, value: form.margin || "" },
+                ].map((cfg) => (
+                  <td key={cfg.name} className="px-1 py-1">
+                    <GlassInput
+                      type="number"
+                      name={cfg.name}
+                      value={cfg.value}
+                      disabled={cfg.disabled}
+                      className="h-7 w-full bg-white/70 text-center appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                  </td>
+                ))}
+                <td className="px-1 py-1">
+                  <GlassInput
+                    type="number"
+                    name="max_discount"
+                    value={form.max_discount || ""}
+                    onChange={handleChange}
+                    className="h-7 w-full text-center appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+});
+ProductFormFields.displayName = "ProductFormFields";
+
 export default function ProductForm({ initialData = null, onSubmitSuccess }) {
   const isEdit = !!initialData;
   const navigate = useNavigate();
+  const formFieldsRef = useRef(null);
 
   const [form, setForm] = useState({
     ...initialData,
@@ -46,39 +289,20 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [files, setFiles] = useState([]);
-  const [batches, setBatches] = useState([]); // for batch table
-
-  // Keep a local option object for Brand (so AsyncSelect shows the label)
+  const [batches, setBatches] = useState([]);
   const [brandOption, setBrandOption] = useState(null);
+  const [isLoaded, setIsLoaded] = useState(false);
 
-  // === Refs for focus & navigation ===
-  const nameRef = useRef(null);
-  const formulationRef = useRef(null);
-  const packSizeRef = useRef(null);
-  const categorySelectRef = useRef(null);
-  const brandSelectRef = useRef(null);
-  const supplierSelectRef = useRef(null);
-  const saveBtnRef = useRef(null);
-
-  // 🧊 iOS-style tinted glass palette (same as index.jsx)
-  const tintBlue   = "bg-blue-500/85 text-white shadow-[0_6px_20px_-6px_rgba(37,99,235,0.45)] ring-1 ring-white/20 hover:bg-blue-500/95";
-  const tintIndigo = "bg-indigo-500/85 text-white shadow-[0_6px_20px_-6px_rgba(99,102,241,0.45)] ring-1 ring-white/20 hover:bg-indigo-500/95";
-  const tintSlate  = "bg-slate-900/80 text-white shadow-[0_6px_20px_-6px_rgba(15,23,42,0.45)] ring-1 ring-white/15 hover:bg-slate-900/90";
-  const tintAmber  = "bg-amber-500/85 text-white shadow-[0_6px_20px_-6px_rgba(245,158,11,0.45)] ring-1 ring-white/20 hover:bg-amber-500/95";
-  const tintRed    = "bg-rose-500/85 text-white shadow-[0_6px_20px_-6px_rgba(244,63,94,0.45)] ring-1 ring-white/20 hover:bg-rose-500/95";
-  const tintGlass  = "bg-white/60 text-slate-700 ring-1 ring-white/30 hover:bg-white/75 dark:text-gray-100 dark:bg-slate-700/60 dark:ring-slate-600/30 dark:hover:bg-slate-600/75";
-
-  // Get dark mode state
   const { isDark } = useTheme();
 
-  // ---- Load dropdown data (categories + suppliers only; Brand is async search) ----
+  // ===== Load dropdown data =====
   const fetchDropdowns = async () => {
     const [catRes, supRes] = await Promise.all([axios.get("/api/categories"), axios.get("/api/suppliers")]);
     setCategories(asList(catRes.data));
     setSuppliers(asList(supRes.data));
   };
 
-  // ---- Preload a new product code (for add mode) ----
+  // ===== Preload a new product code =====
   const fetchNewCodes = async () => {
     const res = await axios.get("/api/products/new-code");
     setForm((prev) => ({
@@ -88,7 +312,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     }));
   };
 
-  // ---- Load batches on edit ----
+  // ===== Load batches on edit =====
   const fetchBatches = async () => {
     if (isEdit && initialData?.id) {
       try {
@@ -100,7 +324,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     }
   };
 
-  // ---- Preload selected Brand label on edit (so AsyncSelect shows it) ----
+  // ===== Preload selected Brand label on edit =====
   const preloadBrandOption = async (brandId) => {
     if (!brandId) return;
     try {
@@ -112,26 +336,35 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     }
   };
 
+  // Initial data fetch
   useEffect(() => {
-    fetchDropdowns();
-    if (!isEdit) {
-      fetchNewCodes();
-    } else {
-      if (initialData?.image) {
-        const imageUrl = `${window.location.origin}/storage/${initialData.image}`;
-        setFiles([{ source: imageUrl, options: { type: "remote" } }]);
+    const loadData = async () => {
+      await fetchDropdowns();
+      if (!isEdit) {
+        await fetchNewCodes();
+      } else {
+        if (initialData?.image) {
+          const imageUrl = `${window.location.origin}/storage/${initialData.image}`;
+          setFiles([{ source: imageUrl, options: { type: "remote" } }]);
+        }
+        await fetchBatches();
+        if (initialData?.brand_id) await preloadBrandOption(initialData.brand_id);
       }
-      fetchBatches();
-      if (initialData?.brand_id) preloadBrandOption(initialData.brand_id);
-    }
+      setIsLoaded(true);
+    };
+    loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Focus Name on mount (and after re-renders)
+  // Focus Name after form is loaded and rendered
   useEffect(() => {
-    const t = setTimeout(() => nameRef.current?.focus(), 120);
-    return () => clearTimeout(t);
-  }, []);
+    if (isLoaded) {
+      const timer = setTimeout(() => {
+        formFieldsRef.current?.focusName();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoaded, isEdit]);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -161,12 +394,11 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
           headers: { "Content-Type": "multipart/form-data" },
         });
         toast.success("✅ Product added!");
-        // stay on form for adding another → reset relevant fields & refocus Name
         setForm({ narcotic: "no" });
         setFiles([]);
         setBrandOption(null);
-        fetchNewCodes();
-        setTimeout(() => nameRef.current?.focus(), 50);
+        await fetchNewCodes();
+        setTimeout(() => formFieldsRef.current?.focusName(), 50);
       }
 
       if (onSubmitSuccess) onSubmitSuccess();
@@ -182,15 +414,13 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     }
   };
 
-  // 🔑 Keyboard Shortcuts & enter-flow navigation
+  // ===== Keyboard Shortcuts =====
   useEffect(() => {
     const handleShortcut = (e) => {
-      // Save (Alt+S) and Save (Alt+N)
       if (e.altKey && (e.key.toLowerCase() === "s" || e.key.toLowerCase() === "n")) {
         e.preventDefault();
-        saveBtnRef.current?.click();
+        document.getElementById("save-product-btn-top")?.click();
       }
-      // Back to list
       if (e.altKey && e.key.toLowerCase() === "c") {
         e.preventDefault();
         navigate("/products");
@@ -200,71 +430,19 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [navigate]);
 
-  // Small react-select styles with dark mode support
-  const smallSelectStyles = {
-    control: (base) => ({
-      ...base,
-      minHeight: "36px",
-      height: "36px",
-      fontSize: "13px",
-      borderRadius: 12,
-      borderColor: "rgba(229,231,235,0.8)",
-      backgroundColor: "rgba(255,255,255,0.7)",
-      backdropFilter: "blur(6px)",
-      boxShadow: "0 1px 2px rgba(15,23,42,0.06)",
-    }),
-    controlDark: (base) => ({
-      ...base,
-      minHeight: "36px",
-      height: "36px",
-      fontSize: "13px",
-      borderRadius: 12,
-      borderColor: "rgba(71,85,105,0.8)",
-      backgroundColor: "rgba(51,65,85,0.7)",
-      backdropFilter: "blur(6px)",
-      boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
-    }),
-    valueContainer: (base) => ({ ...base, height: "36px", padding: "0 10px" }),
-    indicatorsContainer: (base) => ({ ...base, height: "36px" }),
-    input: (base) => ({ ...base, margin: 0, padding: 0, color: "#111827" }),
-    inputDark: (base) => ({ ...base, margin: 0, padding: 0, color: "#f1f5f9" }),
-    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-    menu: (base) => ({
-      ...base,
-      fontSize: "13px",
-      borderRadius: 12,
-      overflow: "hidden",
-      backgroundColor: "rgba(255,255,255,0.95)",
-      backdropFilter: "blur(10px)",
-      boxShadow: "0 10px 30px -10px rgba(30,64,175,0.18)",
-    }),
-    menuDark: (base) => ({
-      ...base,
-      fontSize: "13px",
-      borderRadius: 12,
-      overflow: "hidden",
-      backgroundColor: "rgba(30,41,59,0.95)",
-      backdropFilter: "blur(10px)",
-      boxShadow: "0 10px 30px -10px rgba(0,0,0,0.4)",
-      border: "1px solid rgba(71,85,105,0.5)",
-    }),
-    option: (base) => ({
-      ...base,
-      backgroundColor: "rgba(255,255,255,1)",
-      color: "#111827",
-    }),
-    optionDark: (base) => ({
-      ...base,
-      backgroundColor: "rgba(51,65,85,1)",
-      color: "#f1f5f9",
-    }),
-    singleValue: (base) => ({ ...base, color: "#111827" }),
-    singleValueDark: (base) => ({ ...base, color: "#f1f5f9" }),
-    placeholder: (base) => ({ ...base, color: "#9ca3af" }),
-    placeholderDark: (base) => ({ ...base, color: "#64748b" }),
+  // ===== Brand: async server-side search =====
+  const loadBrandOptions = async (inputValue) => {
+    try {
+      const res = await axios.get("/api/brands", {
+        params: { q_name: inputValue || "", per_page: 25 },
+      });
+      return asList(res.data).map((b) => ({ value: b.id, label: b.name }));
+    } catch {
+      return [];
+    }
   };
 
-  // Helper to merge dark mode styles - returns function-based styles for react-select
+  // ===== Helper for react-select styles =====
   const getSmallSelectStyles = (isDarkMode = false) => ({
     control: (base) => ({
       ...base,
@@ -318,339 +496,172 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     }),
   });
 
-  // ===== Brand: async server-side search (searches the whole table) =====
-  const loadBrandOptions = async (inputValue) => {
-    try {
-      const res = await axios.get("/api/brands", {
-        params: { q_name: inputValue || "", per_page: 25 },
-      });
-      return asList(res.data).map((b) => ({ value: b.id, label: b.name }));
-    } catch {
-      return [];
-    }
-  };
+  // ===== Button styles =====
+  const tintBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
+  const tintGlass  = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
 
-  return (
-    <div className="p-4 md:p-6 space-y-4">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* ===== Left: Form ===== */}
-        <GlassCard className="lg:col-span-2">
-          <GlassSectionHeader
-            title={
-              <span className="inline-flex items-center gap-2">
-                <PhotoIcon className="w-5 h-5 text-indigo-600" />
-                <span>Product Details</span>
-              </span>
-            }
-            right={
-              <span className="hidden md:inline-flex items-center gap-2 text-xs text-gray-600">
-                <ClipboardDocumentCheckIcon className="w-4 h-4" /> Fill the required fields and press Save
-              </span>
-            }
-          />
+  // ===== Loading State =====
+  if (!isLoaded) {
+    return (
+      <div className="p-3 md:p-4">
+        <GlassCard>
+          <div className="flex items-center justify-center py-12">
+            <span className="text-gray-500">Loading...</span>
+          </div>
+        </GlassCard>
+      </div>
+    );
+  }
 
-          {/* FORM BODY */}
-          <form id="product-form" onSubmit={handleSubmit} className="px-4 pb-4 pt-3 space-y-6">
-            {/* Image */}
-            <div>
-              <label className="block text-sm font-medium mb-1">Image</label>
-              <div className="rounded-2xl bg-white/60 backdrop-blur-sm ring-1 ring-gray-200/60 p-2">
-                <FilePond
-                  files={files}
-                  onupdatefiles={setFiles}
-                  allowMultiple={false}
-                  acceptedFileTypes={["image/*"]}
-                  labelIdle='Drag & Drop your image or <span class="filepond--label-action">Browse</span>'
-                  credits={false}
-                />
+  // ===== Add Mode: Full Width Card =====
+  if (!isEdit) {
+    return (
+      <div className="p-3 md:p-4">
+        <GlassCard>
+          {/* Modern Card Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 shadow-sm`}>
+                <CubeIcon className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Add Product</h1>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Enter product details</p>
               </div>
             </div>
-
-            {/* Code / Barcode / Rack */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Product Code</label>
-                <GlassInput type="text" name="product_code" value={form.product_code || ""} disabled className="w-full bg-white/70" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Barcode</label>
-                <GlassInput type="text" name="barcode" value={form.barcode || ""} disabled className="w-full bg-white/70" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Product Rack</label>
-                <GlassInput type="text" name="rack" value={form.rack || ""} onChange={handleChange} className="w-full" />
-              </div>
-            </div>
-
-            {/* Name / Formulation / Pack Size */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Name</label>
-                <GlassInput
-                  ref={nameRef}
-                  type="text"
-                  name="name"
-                  value={form.name || ""}
-                  onChange={handleChange}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      formulationRef.current?.focus();
-                    }
-                  }}
-                  className="w-full"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Formulation</label>
-                <GlassInput
-                  ref={formulationRef}
-                  type="text"
-                  name="formulation"
-                  value={form.formulation || ""}
-                  onChange={handleChange}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      packSizeRef.current?.focus();
-                    }
-                  }}
-                  className="w-full"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Pack Size</label>
-                <GlassInput
-                  ref={packSizeRef}
-                  type="text"
-                  name="pack_size"
-                  value={form.pack_size || ""}
-                  onChange={handleChange}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      categorySelectRef.current?.focus();
-                    }
-                  }}
-                  className="w-full"
-                />
-              </div>
-            </div>
-
-            {/* Description */}
-            <div>
-              <label className="block text-sm font-medium mb-1">Description</label>
-              <textarea
-                name="description"
-                value={form.description || ""}
-                onChange={handleChange}
-                className="w-full h-28 px-3 py-2 rounded-2xl bg-white/70 backdrop-blur-sm border border-gray-200/70 ring-1 ring-transparent focus:ring-blue-400/40 shadow-sm focus:outline-none"
-              />
-            </div>
-
-            {/* Category / Brand / Supplier */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Category</label>
-                <Select
-                  ref={categorySelectRef}
-                  options={asList(categories).map((c) => ({ value: c.id, label: c.name }))}
-                  value={
-                    asList(categories)
-                      .map((c) => ({ value: c.id, label: c.name }))
-                      .find((opt) => opt.value === Number(form.category_id)) || null
-                  }
-                  onChange={(opt) => {
-                    setForm({ ...form, category_id: opt?.value });
-                    setTimeout(() => brandSelectRef.current?.focus(), 0);
-                  }}
-                  classNamePrefix="rs"
-                  isSearchable
-                  styles={getSmallSelectStyles(isDark)}
-                  menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Brand</label>
-                <AsyncSelect
-                  ref={brandSelectRef}
-                  cacheOptions
-                  defaultOptions
-                  loadOptions={loadBrandOptions}
-                  value={brandOption}
-                  onChange={(opt) => {
-                    setBrandOption(opt || null);
-                    setForm({ ...form, brand_id: opt?.value ?? null });
-                    setTimeout(() => supplierSelectRef.current?.focus(), 0);
-                  }}
-                  classNamePrefix="rs"
-                  isSearchable
-                  styles={getSmallSelectStyles(isDark)}
-                  placeholder="Search brand..."
-                  noOptionsMessage={() => "Type to search brands..."}
-                  menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Supplier</label>
-                <Select
-                  ref={supplierSelectRef}
-                  options={asList(suppliers).map((s) => ({ value: s.id, label: s.name }))}
-                  value={
-                    asList(suppliers)
-                      .map((s) => ({ value: s.id, label: s.name }))
-                      .find((opt) => opt.value === Number(form.supplier_id)) || null
-                  }
-                  onChange={(opt) => {
-                    setForm({ ...form, supplier_id: opt?.value });
-                    setTimeout(() => saveBtnRef.current?.focus(), 0);
-                  }}
-                  classNamePrefix="rs"
-                  isSearchable
-                  styles={getSmallSelectStyles(isDark)}
-                  menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-                />
-              </div>
-            </div>
-
-            {/* Mini meta table */}
-            <div>
-              <div className="rounded-2xl overflow-hidden ring-1 ring-gray-200/70 bg-white/70 backdrop-blur-sm">
-                <table className="w-full text-[12px] text-gray-900">
-                  <thead className="bg-white/80 backdrop-blur-sm border-b border-gray-200/70">
-                    <tr className="text-left">
-                      <th className="px-2 py-2">Total Qty</th>
-                      <th className="px-2 py-2">Pack P.Price</th>
-                      <th className="px-2 py-2">Pack S.Price</th>
-                      <th className="px-2 py-2">Unit P.Price</th>
-                      <th className="px-2 py-2">Unit S.Price</th>
-                      <th className="px-2 py-2">Avg Price</th>
-                      <th className="px-2 py-2">Margin %</th>
-                      <th className="px-2 py-2">Max Discount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="odd:bg-white/90 even:bg-white/70">
-                      {[
-                        { name: "quantity", disabled: true, value: form.quantity || "" },
-                        { name: "pack_purchase_price", disabled: true, value: form.pack_purchase_price || "" },
-                        { name: "pack_sale_price", disabled: true, value: form.pack_sale_price || "" },
-                        { name: "unit_purchase_price", disabled: true, value: form.unit_purchase_price || "" },
-                        { name: "unit_sale_price", disabled: true, value: form.unit_sale_price || "" },
-                        { name: "avg_price", disabled: true, value: form.avg_price || "" },
-                        { name: "margin", disabled: true, value: form.margin || "" },
-                      ].map((cfg) => (
-                        <td key={cfg.name} className="px-2 py-2">
-                          <GlassInput
-                            type="number"
-                            name={cfg.name}
-                            value={cfg.value}
-                            disabled={cfg.disabled}
-                            className="h-8 w-full bg-white/70 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          />
-                        </td>
-                      ))}
-                      <td className="px-2 py-2">
-                        <GlassInput
-                          type="number"
-                          name="max_discount"
-                          value={form.max_discount || ""}
-                          onChange={handleChange}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              saveBtnRef.current?.focus();
-                            }
-                          }}
-                          className="h-8 w-full appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Narcotic */}
-            <div className="flex items-center">
-              <label className="inline-flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  name="narcotic"
-                  checked={form.narcotic === "yes"}
-                  onChange={(e) => setForm({ ...form, narcotic: e.target.checked ? "yes" : "no" })}
-                  className="h-4 w-4 rounded border-gray-300"
-                />
-                <span>Narcotic</span>
-              </label>
-            </div>
-
-            {/* Save / Back (duplicate controls at bottom for long forms) */}
-            <div className="flex flex-wrap gap-2 pt-2">
-              <GlassBtn
-                id="save-product-btn-bottom"
-                type="submit"
-                className={`min-w-[160px] ${tintBlue}`}
-                onClick={() => saveBtnRef.current?.focus()}
-                title="Save (Alt+S / Alt+N)"
-              >
-                {isEdit ? (
-                  <span className="inline-flex items-center gap-2">
-                    <PencilSquareIcon className="w-5 h-5" />
-                    Save Changes
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-2">
-                    <PlusCircleIcon className="w-5 h-5" />
-                    Save Product
-                  </span>
-                )}
-              </GlassBtn>
-
-              <Link to="/products" className={`inline-flex items-center gap-2 h-9 px-3 rounded-xl ${tintGlass}`} title="Back to Products (Alt+C)">
-                <ArrowLeftIcon className="w-5 h-5" />
-                Back to Products
+            <div className="flex items-center gap-2">
+              <Link to="/products" className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg ${tintGlass}`} title="Back (Alt+C)">
+                <ArrowLeftIcon className="w-4 h-4" />
+                <span className="text-sm">Back</span>
               </Link>
+              <button
+                id="save-product-btn-top"
+                type="submit"
+                form="product-form"
+                className={`inline-flex items-center gap-1.5 h-8 px-4 rounded-lg ${tintBlue}`}
+                title="Save (Alt+S)"
+              >
+                <PlusCircleIcon className="w-4 h-4" />
+                <span className="text-sm font-medium">Save Product</span>
+              </button>
             </div>
+          </div>
+
+          <form id="product-form" onSubmit={handleSubmit} className="p-3 space-y-3">
+            <ProductFormFields
+              ref={formFieldsRef}
+              form={form}
+              files={files}
+              batches={batches}
+              categories={categories}
+              suppliers={suppliers}
+              brandOption={brandOption}
+              isEdit={isEdit}
+              handleChange={handleChange}
+              loadBrandOptions={loadBrandOptions}
+              getSmallSelectStyles={getSmallSelectStyles}
+              isDark={isDark}
+              onFilesChange={setFiles}
+              setFiles={setFiles}
+            />
+          </form>
+        </GlassCard>
+      </div>
+    );
+  }
+
+  // ===== Edit Mode: 2-Column Grid with Batches Panel =====
+  return (
+    <div className="p-3 md:p-4 space-y-3">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        {/* Left: Form */}
+        <GlassCard className="lg:col-span-2">
+          {/* Modern Card Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 shadow-sm`}>
+                <CubeIcon className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Product</h1>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Update product information</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Link to="/products" className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg ${tintGlass}`} title="Back (Alt+C)">
+                <ArrowLeftIcon className="w-4 h-4" />
+                <span className="text-sm">Back</span>
+              </Link>
+              <button
+                id="save-product-btn-top"
+                type="submit"
+                form="product-form"
+                className={`inline-flex items-center gap-1.5 h-8 px-4 rounded-lg ${tintBlue}`}
+                title="Save (Alt+S)"
+              >
+                <PencilSquareIcon className="w-4 h-4" />
+                <span className="text-sm font-medium">Save Changes</span>
+              </button>
+            </div>
+          </div>
+
+          <form id="product-form" onSubmit={handleSubmit} className="p-3 space-y-3">
+            <ProductFormFields
+              ref={formFieldsRef}
+              form={form}
+              files={files}
+              batches={batches}
+              categories={categories}
+              suppliers={suppliers}
+              brandOption={brandOption}
+              isEdit={isEdit}
+              handleChange={handleChange}
+              loadBrandOptions={loadBrandOptions}
+              getSmallSelectStyles={getSmallSelectStyles}
+              isDark={isDark}
+              onFilesChange={setFiles}
+              setFiles={setFiles}
+            />
           </form>
         </GlassCard>
 
-        {/* ===== Right: Batches (Edit only) ===== */}
-        {isEdit && (
-          <GlassCard className="lg:col-span-1">
-            <GlassSectionHeader
-              title={<span className="font-semibold">Batches</span>}
-              right={<span className="text-xs text-gray-500">Read-only</span>}
-            />
-            <div className="px-4 pb-4 pt-3">
-              {batches.length > 0 ? (
-                <div className="rounded-2xl overflow-hidden ring-1 ring-gray-200/70 bg-white/60">
-                  <table className="w-full text-sm">
-                    <thead className="bg-white/80 backdrop-blur-sm border-b border-gray-200/70 text-left">
-                      <tr>
-                        <th className="p-2">Batch #</th>
-                        <th className="p-2">Expiry</th>
-                        <th className="p-2">Qty</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {batches.map((batch, i) => (
-                        <tr key={batch.id} className={`text-gray-900 ${i % 2 ? "bg-white/70" : "bg-white/90"}`}>
-                          <td className="p-2">{batch.batch_number}</td>
-                          <td className="p-2">{batch.expiry_date}</td>
-                          <td className="p-2">{batch.quantity}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="text-gray-600 text-sm">No batches available.</p>
-              )}
+        {/* Right: Batches Panel */}
+        <GlassCard className="lg:col-span-1">
+          <div className="px-3 py-2 border-b border-gray-200/60 dark:border-gray-700/60">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-sm">Batches</span>
+              <span className="text-xs text-gray-500">{batches.length} items</span>
             </div>
-          </GlassCard>
-        )}
+          </div>
+          <div className="p-3">
+            {batches.length > 0 ? (
+              <div className="rounded-xl overflow-hidden ring-1 ring-gray-200/70 bg-white/60">
+                <table className="w-full text-xs">
+                  <thead className="bg-white/80 backdrop-blur-sm border-b border-gray-200/70 text-left">
+                    <tr>
+                      <th className="p-2">Batch #</th>
+                      <th className="p-2">Expiry</th>
+                      <th className="p-2 text-right">Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {batches.map((batch, i) => (
+                      <tr key={batch.id} className={`text-gray-900 ${i % 2 ? "bg-white/70" : "bg-white/90"}`}>
+                        <td className="p-2 font-medium">{batch.batch_number}</td>
+                        <td className="p-2 text-gray-600">{batch.expiry_date}</td>
+                        <td className="p-2 text-right">{batch.quantity}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-gray-600 text-sm text-center py-4">No batches available</p>
+            )}
+          </div>
+        </GlassCard>
       </div>
     </div>
   );
 }
+

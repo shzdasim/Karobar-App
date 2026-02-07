@@ -38,8 +38,7 @@ export default function CreateProduct() {
   if (!can.create) return <div className="p-6 text-sm text-gray-700">You don’t have permission to add products.</div>;
 
   return (
-    <div className="p-6">
-      <h1 className="text-xl font-bold mb-4">Add Product</h1>
+    <div className="p-3 md:p-4">
       <ProductForm onSubmit={handleCreate} />
     </div>
   );

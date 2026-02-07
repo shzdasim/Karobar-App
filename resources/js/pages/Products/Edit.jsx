@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import ProductForm from "./ProductForm";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 
@@ -60,23 +60,19 @@ export default function EditProduct() {
   };
 
   if (permsLoading) return <div className="p-6">Loading…</div>;
-  if (!can.view) return <div className="p-6 text-sm text-gray-700">You don’t have permission to view products.</div>;
+  if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view products.</div>;
   if (loading) return <div className="p-6">Loading product…</div>;
   if (fetchErr) return <div className="p-6 text-red-600">{fetchErr}</div>;
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-bold">Edit Product</h1>
-        <Link to="/products" className="text-blue-600 hover:underline">← Back</Link>
-      </div>
-
+    <div className="p-3 md:p-4">
       <Guard when={can.update}>
         <ProductForm initialData={initialData} onSubmit={handleUpdate} />
       </Guard>
       {!can.update && (
-        <div className="text-sm text-gray-700">You don’t have permission to update products.</div>
+        <div className="text-sm text-gray-700">You don't have permission to update products.</div>
       )}
     </div>
   );
 }
+
