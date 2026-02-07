@@ -7,28 +7,28 @@ import {
   TrashIcon,
   PencilSquareIcon,
   PlusCircleIcon,
-  MagnifyingGlassIcon,
-  XMarkIcon,
   ArrowUpTrayIcon,
   ArrowDownTrayIcon,
-  ShieldExclamationIcon,
   TagIcon,
   BuildingStorefrontIcon,
   Squares2X2Icon,
   ArrowPathIcon,
 } from "@heroicons/react/24/solid";
-import AsyncSelect from "react-select/async";
-import ProductImportModal from "../../components/ProductImportModal.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 
-// 🧊 glass primitives
+// Reusable components
 import {
   GlassCard,
   GlassSectionHeader,
   GlassToolbar,
   GlassInput,
   GlassBtn,
-} from "@/components/glass.jsx";
+  ProductImportModal,
+  DeleteConfirmationModal,
+  BulkEditModal,
+  BulkDeleteModal,
+  TextSearch,
+} from "@/components";
 import { useTheme } from "@/context/ThemeContext";
 
 /** ---- helpers ---- */
@@ -83,6 +83,11 @@ export default function ProductsIndex() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [showBulkDelete, setShowBulkDelete] = useState(false);
+
+  // Delete modal state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deletingProduct, setDeletingProduct] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const navigate = useNavigate();
 
@@ -149,21 +154,21 @@ export default function ProductsIndex() {
     }
   };
 
-// keep fetchProducts but pass filters as args
-const fetchProducts = useCallback(async (signal, opts = {}) => {
-  const { pageArg = page, pageSizeArg = pageSize, qNameArg = qName, qBrandArg = qBrand, qSupplierArg = qSupplier } = opts;
-  try {
-    setLoading(true);
-    const { data } = await axios.get("/api/products", {
-      params: {
-        page: pageArg,
-        per_page: pageSizeArg,
-        q_name: qNameArg.trim(),
-        q_brand: qBrandArg.trim(),
-        q_supplier: qSupplierArg.trim(),
-      },
-      signal,
-    });
+  // keep fetchProducts but pass filters as args
+  const fetchProducts = useCallback(async (signal, opts = {}) => {
+    const { pageArg = page, pageSizeArg = pageSize, qNameArg = qName, qBrandArg = qBrand, qSupplierArg = qSupplier } = opts;
+    try {
+      setLoading(true);
+      const { data } = await axios.get("/api/products", {
+        params: {
+          page: pageArg,
+          per_page: pageSizeArg,
+          q_name: qNameArg.trim(),
+          q_brand: qBrandArg.trim(),
+          q_supplier: qSupplierArg.trim(),
+        },
+        signal,
+      });
 
     const items = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
     setRows(items);
@@ -211,13 +216,7 @@ useEffect(() => {
   const start = rows.length ? (page - 1) * pageSize + 1 : 0;
   const end = rows.length ? start + rows.length - 1 : 0;
 
-  // ===== secure delete modal state & handlers =====
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [deleteStep, setDeleteStep] = useState(1); // 1 = confirm, 2 = password
-  const [deletingProduct, setDeletingProduct] = useState(null); // { id, name }
-  const [password, setPassword] = useState("");
-  const [deleting, setDeleting] = useState(false);
-
+  // ===== delete modal handlers =====
   const openDeleteModal = (product) => {
     if (!can.delete) return toast.error("You don't have permission to delete products.");
     const qty = Number(product.quantity || 0);
@@ -229,26 +228,19 @@ useEffect(() => {
     }
 
     setDeletingProduct({ id: product.id, name: product.name });
-    setPassword("");
-    setDeleteStep(1);
     setDeleteModalOpen(true);
   };
 
   const closeDeleteModal = () => {
-    if (deleting) return;
     setDeleteModalOpen(false);
-    setDeleteStep(1);
     setDeletingProduct(null);
-    setPassword("");
   };
 
-  const proceedToPassword = () => setDeleteStep(2);
-
-  const confirmAndDelete = async () => {
+  const handleConfirmDelete = async (password) => {
     if (!deletingProduct?.id) return;
     if (!can.delete) return toast.error("You don't have permission to delete products.");
+    
     try {
-      setDeleting(true);
       await axios.post("/api/auth/confirm-password", { password });
       await axios.delete(`/api/products/${deletingProduct.id}`);
       toast.success("Product deleted");
@@ -271,8 +263,6 @@ useEffect(() => {
         err?.response?.data?.message ||
         (status === 422 ? "Incorrect password" : status === 403 ? "You don't have permission to delete products." : "Delete failed");
       toast.error(apiMsg);
-    } finally {
-      setDeleting(false);
     }
   };
 
@@ -316,7 +306,7 @@ useEffect(() => {
   const visibleColumns = 1 /*select*/ + 6 /*code,name,image,category,brand,supplier*/ + (hasActions ? 1 : 0);
 
   if (permsLoading) return <div className="p-6">Loading…</div>;
-  if (!can.view) return <div className="p-6 text-sm text-gray-700">You don’t have permission to view products.</div>;
+  if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view products.</div>;
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -609,6 +599,7 @@ useEffect(() => {
       {/* Bulk Edit Modal */}
       {showBulkModal && (
         <BulkEditModal
+          isOpen={showBulkModal}
           onClose={() => setShowBulkModal(false)}
           selectedCount={selectedIds.size}
           selectedIds={[...selectedIds]}
@@ -620,102 +611,33 @@ useEffect(() => {
             setShowBulkModal(false);
             setSelectedIds(new Set());
           }}
-          tintBlue={tintBlue}
-          tintGlass={tintGlass}
+          tintClasses={{ blue: tintBlue, glass: tintGlass }}
         />
       )}
 
       {/* Import modal */}
       <ProductImportModal open={importOpen} onClose={() => setImportOpen(false)} onImported={fetchProducts} />
 
-      {/* Single Delete confirmation modal (glassy) */}
-      {deleteModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) closeDeleteModal();
-          }}
-        >
-          <div className="absolute inset-0 bg-black/40" />
-          <div className="relative w-full max-w-md">
-            <GlassCard>
-              <GlassSectionHeader
-                title={<span className="inline-flex items-center gap-2">
-                  <ShieldExclamationIcon className="w-5 h-5 text-rose-600" />
-                  <span>Delete product</span>
-                </span>}
-                right={
-                  <GlassBtn className={`h-8 px-3 ${tintGlass}`} onClick={closeDeleteModal} title="Close">
-                    <XMarkIcon className="w-5 h-5" />
-                  </GlassBtn>
-                }
-              />
-              <div className="px-4 py-4 space-y-4">
-                {deleteStep === 1 && (
-                  <>
-                    <p className="text-sm text-gray-700">
-                      {deletingProduct?.name ? (
-                        <>Are you sure you want to delete <strong>{deletingProduct.name}</strong>? </>
-                      ) : "Are you sure you want to delete this product? "}
-                      This action cannot be undone.
-                    </p>
-                    <div className="flex justify-end gap-2">
-                      <GlassBtn className={`min-w-[100px] ${tintGlass}`} onClick={closeDeleteModal}>
-                        Cancel
-                      </GlassBtn>
-                      <GlassBtn className={`min-w-[140px] ${tintRed}`} onClick={proceedToPassword}>
-                        Yes, continue
-                      </GlassBtn>
-                    </div>
-                  </>
-                )}
-
-                {deleteStep === 2 && (
-                  <>
-                    <p className="text-sm text-gray-700">For security, please re-enter your password to delete this product.</p>
-                    <GlassInput
-                      type="password"
-                      autoFocus
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Your password"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") confirmAndDelete();
-                        if (e.key === "Escape") closeDeleteModal();
-                      }}
-                      className="w-full"
-                    />
-                    <div className="flex justify-between">
-                      <GlassBtn className={`min-w-[90px] ${tintGlass}`} onClick={() => setDeleteStep(1)} disabled={deleting}>
-                        ← Back
-                      </GlassBtn>
-                      <div className="flex gap-2">
-                        <GlassBtn className={`min-w-[100px] ${tintGlass}`} onClick={closeDeleteModal} disabled={deleting}>
-                          Cancel
-                        </GlassBtn>
-                        <GlassBtn
-                          className={`min-w-[170px] ${tintRed} disabled:opacity-60`}
-                          onClick={confirmAndDelete}
-                          disabled={deleting || password.trim() === ""}
-                        >
-                          {deleting ? "Deleting…" : "Confirm & Delete"}
-                        </GlassBtn>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </GlassCard>
-          </div>
-        </div>
-      )}
+      {/* Single Delete confirmation modal */}
+      <DeleteConfirmationModal
+        isOpen={deleteModalOpen}
+        onClose={closeDeleteModal}
+        onConfirm={handleConfirmDelete}
+        itemName={deletingProduct?.name || "this product"}
+        title="Delete product"
+        isDeleting={deleting}
+        setIsDeleting={setDeleting}
+        tintClasses={{ red: tintRed, glass: tintGlass }}
+      />
 
       {/* Bulk Delete Modal */}
       {showBulkDelete && (
         <BulkDeleteModal
+          isOpen={showBulkDelete}
           onClose={() => setShowBulkDelete(false)}
+          selectedCount={selectedIds.size}
           selectedIds={[...selectedIds]}
-          onDone={async (result) => {
+          onDeleted={async (result) => {
             if (result?.deleted) toast.success(`Deleted ${result.deleted} product(s).`);
             if (result?.failed?.length) {
               const firstFew = result.failed.slice(0, 3).map(f => `${f.name ?? `#${f.id}`}: ${f.reason}`);
@@ -730,293 +652,11 @@ useEffect(() => {
             setSelectedIds(new Set());
             setShowBulkDelete(false);
           }}
-          tintGlass={tintGlass}
-          tintRed={tintRed}
+          itemType="product(s)"
+          tintClasses={{ red: tintRed, glass: tintGlass }}
         />
       )}
     </div>
   );
 }
 
-function TextSearch({ value, onChange, placeholder, icon }) {
-  return (
-    <div className="relative">
-      {icon ? (
-        <span className="absolute left-3 top-1/2 -translate-y-1/2">{icon}</span>
-      ) : (
-        <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-      )}
-      <GlassInput
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="pl-10 w-full"
-      />
-    </div>
-  );
-}
-
-/** Bulk edit modal */
-function BulkEditModal({ onClose, selectedCount, selectedIds, onSaved, tintBlue, tintGlass }) {
-  const [saving, setSaving] = useState(false);
-  const { isDark } = useTheme();
-
-  const [catOpt, setCatOpt] = useState(null);
-  const [brandOpt, setBrandOpt] = useState(null);
-  const [suppOpt, setSuppOpt] = useState(null);
-
-  // Helper to merge dark mode styles - returns function-based styles for react-select
-  const getSelectStyles = (isDarkMode = false) => ({
-    control: (base) => ({
-      ...base,
-      minHeight: 36,
-      height: 36,
-      borderColor: isDarkMode ? "rgba(71,85,105,0.8)" : "rgba(229,231,235,0.8)",
-      backgroundColor: isDarkMode ? "rgba(51,65,85,0.7)" : "rgba(255,255,255,0.7)",
-      backdropFilter: "blur(6px)",
-      boxShadow: isDarkMode ? "0 1px 2px rgba(0,0,0,0.2)" : "0 1px 2px rgba(15,23,42,0.06)",
-      borderRadius: 12,
-    }),
-    valueContainer: (base) => ({ ...base, height: 36, padding: "0 10px" }),
-    indicatorsContainer: (base) => ({ ...base, height: 36 }),
-    input: (base) => ({
-      ...base,
-      margin: 0,
-      padding: 0,
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-    }),
-    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-    menu: (base) => ({
-      ...base,
-      borderRadius: 12,
-      overflow: "hidden",
-      backgroundColor: isDarkMode ? "rgba(30,41,59,0.95)" : "rgba(255,255,255,0.95)",
-      backdropFilter: "blur(10px)",
-      boxShadow: isDarkMode ? "0 10px 30px -10px rgba(0,0,0,0.4)" : "0 10px 30px -10px rgba(30,64,175,0.18)",
-      border: isDarkMode ? "1px solid rgba(71,85,105,0.5)" : "none",
-    }),
-    option: (base, state) => ({
-      ...base,
-      backgroundColor: isDarkMode
-        ? state.isFocused
-          ? "rgba(71,85,105,1)"
-          : "rgba(51,65,85,1)"
-        : state.isFocused
-          ? "rgba(241,245,249,1)"
-          : "rgba(255,255,255,1)",
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-      cursor: "pointer",
-    }),
-    singleValue: (base) => ({
-      ...base,
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-    }),
-    placeholder: (base) => ({
-      ...base,
-      color: isDarkMode ? "#64748b" : "#9ca3af",
-    }),
-  });
-
-  const fetchOptions = async (endpoint, inputValue) => {
-    const { data } = await axios.get(endpoint, { params: { q: inputValue || "", limit: 20 } });
-    const list = normalizeList(data);
-    return list.map((i) => ({ value: i.id, label: i.name }));
-  };
-
-  const loadCategories = React.useMemo(
-    () => debouncePromise((input) => fetchOptions("/api/categories/search", input), 300),
-    []
-  );
-  const loadBrands = React.useMemo(
-    () => debouncePromise((input) => fetchOptions("/api/brands/search", input), 300),
-    []
-  );
-  const loadSuppliers = React.useMemo(
-    () => debouncePromise((input) => fetchOptions("/api/suppliers/search", input), 300),
-    []
-  );
-
-  const submit = async () => {
-    try {
-      if (!catOpt && !brandOpt && !suppOpt) return toast.error("Choose at least one field to update.");
-      setSaving(true);
-      await axios.patch("/api/products/bulk-update-meta", {
-        product_ids: selectedIds,
-        category_id: catOpt?.value ?? null,
-        brand_id: brandOpt?.value ?? null,
-        supplier_id: suppOpt?.value ?? null,
-      });
-      toast.success("Products updated successfully");
-      await onSaved();
-    } catch (e) {
-      const apiMsg = e?.response?.data?.message || "Bulk update failed";
-      toast.error(apiMsg);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div className="w-full max-w-xl">
-          <GlassCard>
-            <GlassSectionHeader
-              title={<span className="font-semibold">Bulk Edit ({selectedCount} selected)</span>}
-              right={
-                <GlassBtn className={`h-8 px-3 ${tintGlass}`} onClick={onClose} title="Close">
-                  <XMarkIcon className="w-5 h-5" />
-                </GlassBtn>
-              }
-            />
-            <div className="px-4 pt-3 pb-4 space-y-4">
-              <p className="text-sm text-gray-600">Leave any field blank to keep current values for that field.</p>
-
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Category</label>
-                  <AsyncSelect
-                    classNamePrefix="rs"
-                    cacheOptions
-                    defaultOptions
-                    loadOptions={loadCategories}
-                    isSearchable
-                    isClearable
-                    value={catOpt}
-                    onChange={setCatOpt}
-                    menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-                    styles={getSelectStyles(isDark)}
-                    placeholder="(No change)"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-1">Brand</label>
-                  <AsyncSelect
-                    classNamePrefix="rs"
-                    cacheOptions
-                    defaultOptions
-                    loadOptions={loadBrands}
-                    isSearchable
-                    isClearable
-                    value={brandOpt}
-                    onChange={setBrandOpt}
-                    menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-                    styles={getSelectStyles(isDark)}
-                    placeholder="(No change)"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-1">Supplier</label>
-                  <AsyncSelect
-                    classNamePrefix="rs"
-                    cacheOptions
-                    defaultOptions
-                    loadOptions={loadSuppliers}
-                    isSearchable
-                    isClearable
-                    value={suppOpt}
-                    onChange={setSuppOpt}
-                    menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-                    styles={getSelectStyles(isDark)}
-                    placeholder="(No change)"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="px-4 pb-4 flex items-center justify-end gap-2">
-              <GlassBtn className={`min-w-[110px] ${tintGlass}`} onClick={onClose} disabled={saving}>
-                Cancel
-              </GlassBtn>
-              <GlassBtn className={`min-w-[150px] ${tintBlue}`} onClick={submit} disabled={saving}>
-                {saving ? "Saving…" : "Save Changes"}
-              </GlassBtn>
-            </div>
-          </GlassCard>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Bulk delete modal */
-function BulkDeleteModal({ onClose, selectedIds, onDone, tintGlass, tintRed }) {
-  const [password, setPassword] = useState("");
-  const [working, setWorking] = useState(false);
-
-  const submit = async () => {
-    try {
-      setWorking(true);
-      await axios.post("/api/auth/confirm-password", { password });
-      const { data } = await axios.post("/api/products/bulk-destroy", {
-        product_ids: selectedIds,
-      });
-      await onDone?.(data);
-    } catch (e) {
-      const msg = e?.response?.data?.message || "Bulk delete failed";
-      toast.error(msg);
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="absolute inset-0 bg-black/40" />
-      <div className="relative w-full max-w-md">
-        <GlassCard>
-          <GlassSectionHeader
-            title={<span className="inline-flex items-center gap-2">
-              <ShieldExclamationIcon className="w-5 h-5 text-rose-600" />
-              <span>Delete selected products</span>
-            </span>}
-            right={
-              <GlassBtn className={`h-8 px-3 ${tintGlass}`} onClick={onClose} title="Close">
-                <XMarkIcon className="w-5 h-5" />
-              </GlassBtn>
-            }
-          />
-          <div className="px-4 py-4 space-y-4">
-            <p className="text-sm text-gray-700">
-              You are about to permanently delete <strong>{selectedIds.length}</strong> product(s). This action cannot be undone.
-            </p>
-
-            <div className="space-y-2">
-              <label className="block text-sm font-medium">Confirm your password</label>
-              <GlassInput
-                type="password"
-                value={password}
-                autoFocus
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Your password"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && password.trim()) submit();
-                  if (e.key === "Escape") onClose();
-                }}
-              />
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <GlassBtn className={`min-w-[110px] ${tintGlass}`} onClick={onClose} disabled={working}>
-                Cancel
-              </GlassBtn>
-              <GlassBtn
-                className={`min-w-[160px] ${tintRed}`}
-                onClick={submit}
-                disabled={working || password.trim() === ""}
-              >
-                {working ? "Deleting…" : "Confirm & Delete"}
-              </GlassBtn>
-            </div>
-          </div>
-        </GlassCard>
-      </div>
-    </div>
-  );
-}
