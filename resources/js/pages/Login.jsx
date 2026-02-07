@@ -250,7 +250,7 @@ export default function Login() {
               <span className="text-white/70 text-sm group-hover:text-white transition-colors">Remember me (24h)</span>
             </label>
             
-            <a href="#" className="text-white/50 text-sm hover:text-[#639EA0] transition-colors duration-300">
+            <a href="/forgot-password" className="text-white/50 text-sm hover:text-[#639EA0] transition-colors duration-300">
               Forgot Password?
             </a>
           </div>

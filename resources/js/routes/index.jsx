@@ -2,6 +2,8 @@ import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import Login from "../pages/Login";
+import ForgotPassword from "../pages/ForgotPassword";
+import ResetPassword from "../pages/ResetPassword";
 import DashboardLayout from "../layouts/DashboardLayout.jsx";
 import ProtectedRoute from "../components/ProtectedRoute.jsx";
 import AuthGuard from "../components/AuthGuard.jsx";
@@ -57,6 +59,25 @@ export default function AppRoutes() {
         <Route path="/" element={
           <AuthGuard requireAuth={false}>
             <Login />
+          </AuthGuard>
+        } />
+
+        {/* Public - Forgot Password page */}
+        <Route path="/forgot-password" element={
+          <AuthGuard requireAuth={false}>
+            <ForgotPassword />
+          </AuthGuard>
+        } />
+
+        {/* Public - Reset Password page */}
+        <Route path="/reset-password/:token" element={
+          <AuthGuard requireAuth={false}>
+            <ResetPassword />
+          </AuthGuard>
+        } />
+        <Route path="/reset-password/:token/:email" element={
+          <AuthGuard requireAuth={false}>
+            <ResetPassword />
           </AuthGuard>
         } />
 

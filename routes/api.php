@@ -41,6 +41,10 @@ Route::middleware(['auth:sanctum', 'token.expiry'])->get('/user', [AuthControlle
 Route::middleware(['auth:sanctum', 'token.expiry'])->put('/profile', [AuthController::class, 'updateProfile']);
 Route::middleware(['auth:sanctum', 'token.expiry'])->post('/logout', [AuthController::class, 'logout']);
 
+// Password reset routes (public)
+Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+
 /*
 |--------------------------------------------------------------------------
 | Auth-only (NO license gate) — allow shell to render & license to activate

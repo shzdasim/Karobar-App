@@ -5,6 +5,11 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\SaleInvoiceController;
 use App\Http\Controllers\SupplierLedgerController;
 
+// --- Password Reset Route ---
+Route::get('/password/reset/{token}/{email}', function ($token, $email) {
+    return redirect("/reset-password/{$token}/{$email}");
+})->name('password.reset');
+
 // --- Server-rendered routes FIRST ---
 Route::get('/print/sale-invoices/{invoice}', [SaleInvoiceController::class, 'print'])
     ->whereNumber('invoice')
