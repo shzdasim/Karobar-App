@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "../pages/Login";
 import DashboardLayout from "../layouts/DashboardLayout.jsx";
 import ProtectedRoute from "../components/ProtectedRoute.jsx";
+import AuthGuard from "../components/AuthGuard.jsx";
 import Profile from "../pages/Profile.jsx";
 import Suppliers from "../pages/Suppliers.jsx";
 import Customers from "../pages/Customers.jsx";
@@ -52,8 +53,12 @@ import ActivateLicense from "../pages/ActivateLicense.jsx";
 export default function AppRoutes() {
   return (
       <Routes>
-        {/* Public */}
-        <Route path="/" element={<Login />} />
+        {/* Public - Login page (redirects to dashboard if already authenticated) */}
+        <Route path="/" element={
+          <AuthGuard requireAuth={false}>
+            <Login />
+          </AuthGuard>
+        } />
 
          {/* Protected Routes */}
   <Route
@@ -496,12 +501,6 @@ export default function AppRoutes() {
       />
       {/* License Activation - no DashboardLayout */}
       <Route path="/activate" element={<ActivateLicense />} />
-
-        <Route path="/" element={
-          <ProtectedRoute>
-            <Dashboard />
-          </ProtectedRoute>
-        } />
 
 </Routes>
   );

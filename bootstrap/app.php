@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureLicensed;
+use App\Http\Middleware\CheckTokenExpiry;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -22,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission'           => PermissionMiddleware::class,
             'roles_or_permissions' => RoleOrPermissionMiddleware::class,
             'licensed'             => EnsureLicensed::class,
+            'token.expiry'        => CheckTokenExpiry::class,
         ]);
 
         // DO NOT append 'licensed' globally to the 'api' group.

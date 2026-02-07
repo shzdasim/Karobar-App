@@ -13,6 +13,10 @@ class AuthController extends Controller
 {
     protected LicenseService $licenseService;
 
+    // Token expiry times in minutes
+    protected const REMEMBER_ME_EXPIRY = 1440; // 24 hours
+    protected const DEFAULT_EXPIRY = 20; // 20 minutes
+
     public function __construct(LicenseService $licenseService)
     {
         $this->licenseService = $licenseService;
@@ -41,12 +45,27 @@ class AuthController extends Controller
         // Check license and auto-revoke if machine changed (software copied to new device)
         $licenseCleared = $this->licenseService->clearLicenseIfMachineChanged();
 
-        // Generate API token (Sanctum)
-        $token = $user->createToken('api_token')->plainTextToken;
+        // Determine token expiry based on remember me flag
+        $rememberMe = $request->boolean('remember');
+        $expiryMinutes = $rememberMe ? self::REMEMBER_ME_EXPIRY : self::DEFAULT_EXPIRY;
+        $expiresAt = now()->addMinutes($expiryMinutes);
+
+        // Delete any existing personal access tokens first
+        $user->tokens()->delete();
+
+        // Generate API token (Sanctum) with custom expiry via TTL
+        $token = $user->createToken('api_token', ['expires_at' => $expiresAt])->plainTextToken;
+
+        // Store remember token expiry in database
+        $user->update([
+            'remember_token_expires_at' => $expiresAt,
+        ]);
 
         $response = [
             'token' => $token,
             'user'  => $user->load('roles'),
+            'expires_at' => $expiresAt->toIso8601String(),
+            'remember_me' => $rememberMe,
         ];
 
         // If license was cleared due to machine change, inform the client

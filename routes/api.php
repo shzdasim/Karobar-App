@@ -37,16 +37,16 @@ use App\Http\Controllers\UserController;
 |--------------------------------------------------------------------------
 */
 Route::post('/login', [AuthController::class, 'login']);
-Route::middleware(['auth:sanctum'])->get('/user', [AuthController::class, 'user']);
-Route::middleware('auth:sanctum')->put('/profile', [AuthController::class, 'updateProfile']);
-Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
+Route::middleware(['auth:sanctum', 'token.expiry'])->get('/user', [AuthController::class, 'user']);
+Route::middleware(['auth:sanctum', 'token.expiry'])->put('/profile', [AuthController::class, 'updateProfile']);
+Route::middleware(['auth:sanctum', 'token.expiry'])->post('/logout', [AuthController::class, 'logout']);
 
 /*
 |--------------------------------------------------------------------------
 | Auth-only (NO license gate) — allow shell to render & license to activate
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth:sanctum'])->group(function () {
+Route::middleware(['auth:sanctum', 'token.expiry'])->group(function () {
     // Password verification (for license management in settings)
     Route::post('/verify-password', [AuthController::class, 'confirmPassword']);
 
@@ -64,7 +64,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 | Auth + Licensed — EVERYTHING ELSE is gated
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth:sanctum', 'licensed'])->group(function () {
+Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function () {
     Route::post('/auth/confirm-password', [AuthController::class, 'confirmPassword']);
 
     // Users

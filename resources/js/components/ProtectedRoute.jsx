@@ -13,9 +13,10 @@ export default function ProtectedRoute({ children }) {
   // Check license validity
   const { loading, valid } = useLicense();
 
-  // Show nothing while checking license status
+  // While checking license status, show children (they might be in loading state too)
+  // Only redirect to /activate if we've confirmed the license is invalid
   if (loading) {
-    return null;
+    return children;
   }
 
   // Redirect to activation page if license is invalid or missing
