@@ -17,11 +17,8 @@ import {
 import BrandImportModal from "../components/BrandImportModal.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 
-// 🧊 Glass primitives
 import {
   GlassCard,
-  GlassSectionHeader,
-  GlassToolbar,
   GlassInput,
   GlassBtn,
 } from "@/components/glass.jsx";
@@ -149,7 +146,7 @@ export default function Brands() {
   const start = rows.length ? (page - 1) * pageSize + 1 : 0;
   const end = rows.length ? start + rows.length - 1 : 0;
 
-  // ===== Preview helpers (revoke blob URLs to prevent leaks & stale previews) =====
+  // ===== Preview helpers =====
   const revokeIfBlob = (url) => {
     if (url && typeof url === "string" && url.startsWith("blob:")) {
       try {
@@ -159,7 +156,7 @@ export default function Brands() {
   };
 
   useEffect(() => {
-    return () => revokeIfBlob(preview); // cleanup on unmount
+    return () => revokeIfBlob(preview);
   }, [preview]);
 
   // ===== Form handlers =====
@@ -167,17 +164,15 @@ export default function Brands() {
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0] ?? null;
-    // if we had a previous blob preview, revoke it before replacing
     if (preview) revokeIfBlob(preview);
     setForm((prev) => ({ ...prev, image: file }));
     setPreview(file ? URL.createObjectURL(file) : (editingId ? null : null));
   };
 
   const resetForm = () => {
-    // cleanup old blob url if any
     revokeIfBlob(preview);
     setForm({ name: "", image: null });
-    setPreview(null); // ✅ ensure preview clears
+    setPreview(null);
     setEditingId(null);
     setTimeout(() => nameRef.current?.focus(), 0);
   };
@@ -215,10 +210,7 @@ export default function Brands() {
         toast.success("Brand saved");
       }
 
-      // ✅ this clears the file + preview after create/update
       resetForm();
-
-      // refetch current page
       if (controllerRef.current) controllerRef.current.abort();
       const ctrl = new AbortController();
       controllerRef.current = ctrl;
@@ -241,14 +233,10 @@ export default function Brands() {
 
   const handleEdit = (b) => {
     if (!can.update) return toast.error("You don't have permission to edit brands.");
-
     setForm({ name: b.name || "", image: null });
-
-    // ✅ when switching to Edit, clear any blob preview first
     if (preview) revokeIfBlob(preview);
     const nextPreview = b.image ? `/storage/${b.image}` : null;
     setPreview(nextPreview);
-
     setEditingId(b.id);
   };
 
@@ -260,24 +248,15 @@ export default function Brands() {
     try {
       await axios.delete(`/api/brands/${b.id}`);
       toast.success("Brand deleted");
-
       if (controllerRef.current) controllerRef.current.abort();
       const ctrl = new AbortController();
       controllerRef.current = ctrl;
       await fetchBrands(ctrl.signal);
-
       if (editingId === b.id) resetForm();
     } catch (err) {
       if (err?.response?.status === 403)
         toast.error("You don't have permission to delete brands.");
       else toast.error(err?.response?.data?.message || "Could not delete brand.");
-    }
-  };
-
-  const handleButtonKeyDown = (e, action) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      action();
     }
   };
 
@@ -309,247 +288,250 @@ export default function Brands() {
 
   // perms loading / no-view states
   if (permsLoading) return <div className="p-6">Loading…</div>;
-  if (!can.view)
-    return <div className="p-6 text-sm text-gray-700">You don’t have permission to view brands.</div>;
+  if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view brands.</div>;
 
   const hasActions = can.update || can.delete;
 
-  // 🧊 iOS-style tinted glass palette — shared
-  const tintBlue   = "bg-blue-500/85 text-white shadow-[0_6px_20px_-6px_rgba(37,99,235,0.45)] ring-1 ring-white/20 hover:bg-blue-500/95";
-  const tintIndigo = "bg-indigo-500/85 text-white shadow-[0_6px_20px_-6px_rgba(99,102,241,0.45)] ring-1 ring-white/20 hover:bg-indigo-500/95";
-  const tintSlate  = "bg-slate-900/80 text-white shadow-[0_6px_20px_-6px_rgba(15,23,42,0.45)] ring-1 ring-white/15 hover:bg-slate-900/90";
-  const tintAmber  = "bg-amber-500/85 text-white shadow-[0_6px_20px_-6px_rgba(245,158,11,0.45)] ring-1 ring-white/20 hover:bg-amber-500/95";
-  const tintRed    = "bg-rose-500/85 text-white shadow-[0_6px_20px_-6px_rgba(244,63,94,0.45)] ring-1 ring-white/20 hover:bg-rose-500/95";
-  const tintGlass  = "bg-white/60 text-gray-900 ring-1 ring-white/30 hover:bg-white/75 dark:text-gray-100";
+  // 🎨 Modern button palette (matching sidebar and index design language)
+  const tintBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
+  const tintIndigo = "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all duration-200";
+  const tintSlate  = "bg-gradient-to-br from-slate-700 to-slate-800 text-white shadow-lg shadow-slate-500/25 ring-1 ring-white/10 hover:shadow-xl hover:shadow-slate-500/30 hover:scale-[1.02] hover:from-slate-800 hover:to-slate-900 active:scale-[0.98] transition-all duration-200";
+  const tintAmber  = "bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] hover:from-amber-600 hover:to-amber-700 active:scale-[0.98] transition-all duration-200";
+  const tintRed    = "bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700 active:scale-[0.98] transition-all duration-200";
+  const tintViolet = "bg-gradient-to-br from-violet-500 to-violet-600 text-white shadow-lg shadow-violet-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-violet-500/30 hover:scale-[1.02] hover:from-violet-600 hover:to-violet-700 active:scale-[0.98] transition-all duration-200";
+  const tintGlass  = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
+
+  // ===== Section config =====
+  const SECTION_CONFIG = {
+    management: {
+      gradient: "from-violet-500 to-purple-600",
+      bgLight: "bg-violet-50",
+      bgDark: "dark:bg-violet-900/20",
+      iconColor: "text-violet-600 dark:text-violet-400",
+    },
+  };
 
   return (
-    <div className="p-4 md:p-6 space-y-4">
-      {/* Header card */}
+    <div className="p-3 md:p-4 space-y-3">
+      {/* Header Card */}
       <GlassCard>
-        <GlassSectionHeader
-          title={
-            <span className="inline-flex items-center gap-2">
-              <TagIcon className="w-5 h-5 text-blue-600" />
-              <span>Brands</span>
-            </span>
-          }
-          right={
-            <div className="flex items-center gap-2">
-              <GlassBtn
-                className={`h-10 min-w-[120px] ${tintSlate}`}
-                onClick={() => {
-                  if (controllerRef.current) controllerRef.current.abort();
-                  const ctrl = new AbortController();
-                  controllerRef.current = ctrl;
-                  fetchBrands(ctrl.signal);
-                }}
-                title="Refresh"
-                aria-label="Refresh list"
-              >
-                <span className="inline-flex items-center gap-2">
-                  <ArrowPathIcon className="w-5 h-5" />
-                  Refresh
-                </span>
-              </GlassBtn>
+        {/* Modern Card Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.management.gradient} shadow-sm`}>
+              <TagIcon className="w-5 h-5 text-white" />
             </div>
-          }
-        />
-        <GlassToolbar className="gap-3">
-          <div className="relative w-full md:w-96">
-            <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <GlassInput
-              value={qName}
-              onChange={(e) => setQName(e.target.value)}
-              placeholder="Search brand by name…"
-              className="pl-10 w-full"
-              aria-label="Search brands"
-            />
+            <div>
+              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Brands</h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{total} items</p>
+            </div>
           </div>
-
-          <div className="ml-auto flex items-center gap-2">
-            <Guard when={can.import}>
-              <GlassBtn
-                className={`h-10 min-w-[150px] ${tintIndigo}`}
-                onClick={() => setImportOpen(true)}
-                title="Import Brands (CSV)"
-                aria-label="Import brands from CSV"
-              >
-                <span className="inline-flex items-center gap-2">
-                  <ArrowUpTrayIcon className="w-5 h-5" />
-                  Import CSV
-                </span>
-              </GlassBtn>
-            </Guard>
-
-            <Guard when={can.export}>
-              <GlassBtn
-                className={`h-10 min-w-[150px] ${tintGlass}`}
-                onClick={handleExport}
-                disabled={exporting}
-                title="Export all brands to CSV"
-                aria-label="Export all brands to CSV"
-              >
-                <span className="inline-flex items-center gap-2">
-                  <ArrowDownTrayIcon className="w-5 h-5" />
-                  {exporting ? "Exporting…" : "Export CSV"}
-                </span>
-              </GlassBtn>
-            </Guard>
+          <div className="flex items-center gap-2">
+            <GlassBtn className={`h-9 px-3 ${tintSlate}`} onClick={() => {
+              if (controllerRef.current) controllerRef.current.abort();
+              const ctrl = new AbortController();
+              controllerRef.current = ctrl;
+              fetchBrands(ctrl.signal);
+            }}>
+              <span className="inline-flex items-center gap-1.5">
+                <ArrowPathIcon className="w-4 h-4" />
+                <span className="hidden sm:inline">Refresh</span>
+              </span>
+            </GlassBtn>
           </div>
-        </GlassToolbar>
+        </div>
+
+        {/* Search and Actions */}
+        <div className="px-4 py-3 bg-gray-50/50 dark:bg-slate-800/50">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1 max-w-md">
+              <MagnifyingGlassIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <GlassInput
+                value={qName}
+                onChange={(e) => setQName(e.target.value)}
+                placeholder="Search brands..."
+                className="pl-9 w-full h-9"
+              />
+            </div>
+            <div className="flex items-center gap-2 sm:ml-auto">
+              <Guard when={can.import}>
+                <GlassBtn className={`h-9 px-3 ${tintIndigo}`} onClick={() => setImportOpen(true)}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <ArrowUpTrayIcon className="w-4 h-4" />
+                    <span className="hidden sm:inline">Import</span>
+                  </span>
+                </GlassBtn>
+              </Guard>
+              <Guard when={can.export}>
+                <GlassBtn className={`h-9 px-3 ${tintGlass}`} onClick={handleExport} disabled={exporting}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <ArrowDownTrayIcon className={`w-4 h-4 ${exporting ? "animate-spin" : ""}`} />
+                    <span className="hidden sm:inline">{exporting ? "..." : "Export"}</span>
+                  </span>
+                </GlassBtn>
+              </Guard>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer with stats */}
+        <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 dark:border-slate-700 text-xs">
+          <span className="text-gray-500 dark:text-gray-400">
+            {loading ? (
+              <span className="inline-flex items-center gap-1">
+                <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
+                Loading...
+              </span>
+            ) : (
+              `${rows.length === 0 ? 0 : start + 1}-${Math.min(rows.length, start + pageSize)} of ${total}`
+            )}
+          </span>
+          <div className="flex items-center gap-2">
+            <label className="text-gray-500 dark:text-gray-400">Show</label>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+            </select>
+          </div>
+        </div>
       </GlassCard>
 
-      {/* Grid: Left form / Right list */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Left: Form */}
-        <Guard when={can.create || (can.update && editingId !== null)}>
-          <GlassCard className="lg:col-span-1">
-            <GlassSectionHeader
-              title={
-                <span className="inline-flex items-center gap-2">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        {/* Left: Form Card */}
+        {(can.create || (can.update && editingId !== null)) && (
+          <GlassCard>
+            {/* Form Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg bg-gradient-to-br ${editingId ? "from-amber-500 to-orange-600" : "from-blue-500 to-blue-600"} shadow-sm`}>
                   {editingId ? (
-                    <>
-                      <PencilSquareIcon className="w-5 h-5 text-amber-600" />
-                      <span>Edit Brand</span>
-                    </>
+                    <PencilSquareIcon className="w-5 h-5 text-white" />
                   ) : (
-                    <>
-                      <PlusIcon className="w-5 h-5 text-blue-600" />
-                      <span>Add Brand</span>
-                    </>
+                    <PlusIcon className="w-5 h-5 text-white" />
                   )}
-                </span>
-              }
-              right={
-                editingId ? (
-                  <GlassBtn className={`h-9 px-3 ${tintGlass}`} onClick={resetForm} title="Cancel editing">
-                    <span className="inline-flex items-center gap-2">
-                      <XMarkIcon className="w-5 h-5" />
-                      Cancel
-                    </span>
-                  </GlassBtn>
-                ) : null
-              }
-            />
-
-            <div className="px-4 pb-4 pt-2">
-              <form onSubmit={(e) => e.preventDefault()} className="space-y-3" encType="multipart/form-data">
+                </div>
                 <div>
-                  <label className="block text-xs text-gray-700 mb-1">Name</label>
-                  <GlassInput
-                    type="text"
-                    name="name"
-                    placeholder="Brand name"
-                    value={form.name}
-                    onChange={handleInputChange}
-                    onKeyDown={onEnterFocusSave}
-                    ref={nameRef}
-                    required
+                  <h2 className="text-base font-semibold text-gray-900 dark:text-white">
+                    {editingId ? "Edit Brand" : "Add Brand"}
+                  </h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {editingId ? "Update brand information" : "Enter brand details"}
+                  </p>
+                </div>
+              </div>
+              {editingId && (
+                <GlassBtn className={`h-8 px-3 ${tintGlass}`} onClick={resetForm}>
+                  <XMarkIcon className="w-4 h-4" />
+                </GlassBtn>
+              )}
+            </div>
+
+            <form onSubmit={(e) => e.preventDefault()} className="p-3 space-y-3" encType="multipart/form-data">
+              <div>
+                <label className="block text-xs font-medium mb-1">Name</label>
+                <GlassInput
+                  type="text"
+                  name="name"
+                  placeholder="Brand name"
+                  value={form.name}
+                  onChange={handleInputChange}
+                  onKeyDown={onEnterFocusSave}
+                  ref={nameRef}
+                  disabled={!can.create && !editingId}
+                  className="w-full h-9"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 items-end">
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium mb-1">Image (optional)</label>
+                  <input
+                    key={editingId || "new"}
+                    type="file"
+                    name="image"
+                    accept="image/*"
+                    onChange={handleFileChange}
                     disabled={!can.create && !editingId}
-                    className="w-full"
+                    className="h-9 w-full rounded-lg bg-white/70 dark:bg-slate-700/70 border border-gray-200/60 dark:border-slate-600/60 text-xs file:mr-2 file:px-2 file:rounded-lg file:border-0 file:bg-white/70 file:text-slate-700"
                   />
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs text-gray-700 mb-1">Image (optional)</label>
-                    <input
-                      key={editingId || "new"}
-                      type="file"
-                      name="image"
-                      accept="image/*"
-                      onChange={handleFileChange}
-                      disabled={!can.create && !editingId}
-                      className="h-10 w-full rounded-xl bg-white/70 backdrop-blur-sm border border-gray-200/70 ring-1 ring-transparent focus:ring-blue-400/40 shadow-sm file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border-0 file:bg-white/70 file:text-slate-700"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-1">
-                    {preview ? (
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={preview}
-                          alt="Preview"
-                          className="w-16 h-16 rounded-2xl object-contain ring-1 ring-gray-200/70 bg-white/70"
-                        />
-                        <span className="text-xs text-gray-500">Preview</span>
-                      </div>
-                    ) : (
-                      <div className="text-xs text-gray-400">No preview</div>
-                    )}
-                  </div>
+                <div>
+                  {preview ? (
+                    <img src={preview} alt="Preview" className="w-12 h-12 rounded-xl object-contain ring-1 ring-gray-200/70 bg-white/70" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-slate-700 flex items-center justify-center">
+                      <span className="text-[10px] text-gray-400">No img</span>
+                    </div>
+                  )}
                 </div>
-
-                <div className="flex items-center justify-end gap-2">
-                  <GlassBtn
-                    type="button"
-                    onClick={resetForm}
-                    className={`min-w-[110px] ${tintGlass}`}
-                    disabled={saving}
-                  >
-                    Clear
-                  </GlassBtn>
-                  <GlassBtn
-                    type="button"
-                    onClick={handleSubmit}
-                    ref={saveBtnRef}
-                    title={(editingId ? "Update" : "Save") + " (Alt+S)"}
-                    aria-keyshortcuts="Alt+S"
-                    className={`h-10 min-w-[168px] ${editingId ? tintAmber : tintBlue} disabled:opacity-60`}
-                    disabled={saving || (!can.create && !can.update)}
-                  >
-                    <span className="inline-flex items-center gap-2">
-                      <CheckCircleIcon className="w-5 h-5" />
-                      {editingId ? (saving ? "Updating…" : "Update") : saving ? "Saving…" : "Save"}
-                    </span>
-                  </GlassBtn>
-                </div>
-
-                <div className="text-[11px] text-gray-500 text-right">Shortcut: Alt+S</div>
-              </form>
-            </div>
-          </GlassCard>
-        </Guard>
-
-        {/* Right: List */}
-        <GlassCard className={`lg:col-span-${(can.create || can.update) ? "2" : "3"}`}>
-          <GlassSectionHeader
-            title={
-              <span className="inline-flex items-center gap-2">
-                <TagIcon className="w-5 h-5 text-blue-600" />
-                <span>Brand List</span>
-              </span>
-            }
-            right={
-              <div className="text-sm text-gray-700">
-                {loading ? (
-                  "Loading…"
-                ) : (
-                  <>
-                    Showing <strong>{rows.length === 0 ? 0 : start}-{end}</strong> of{" "}
-                    <strong>{total}</strong>
-                  </>
-                )}
               </div>
-            }
-          />
 
-          <div className="px-3 pb-3">
-            <div className="w-full overflow-x-auto rounded-2xl ring-1 ring-gray-200/60 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm">
-              <table className="w-full text-sm text-gray-900 dark:text-gray-100">
-                <thead className="sticky top-0 bg-white/85 dark:bg-slate-700/85 backdrop-blur-sm z-10 border-b border-gray-200/70 dark:border-slate-600/70">
-                  <tr className="text-left">
-                    <th className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">Name</th>
-                    <th className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">Image</th>
-                    {hasActions && <th className="px-4 py-3 font-medium text-center text-gray-900 dark:text-gray-100">Actions</th>}
+              <div className="flex items-center gap-2">
+                <GlassBtn
+                  type="button"
+                  onClick={resetForm}
+                  className={`h-9 px-3 ${tintGlass}`}
+                  disabled={saving}
+                >
+                  Clear
+                </GlassBtn>
+                <GlassBtn
+                  type="button"
+                  onClick={handleSubmit}
+                  ref={saveBtnRef}
+                  className={`flex-1 h-9 ${editingId ? tintAmber : tintBlue}`}
+                  disabled={saving || (!can.create && !can.update)}
+                >
+                  <span className="inline-flex items-center justify-center gap-1.5">
+                    <CheckCircleIcon className="w-4 h-4" />
+                    {editingId ? (saving ? "Updating..." : "Update") : saving ? "Saving..." : "Save"}
+                  </span>
+                </GlassBtn>
+              </div>
+
+              <div className="text-[10px] text-gray-500 text-center">Alt+S to save</div>
+            </form>
+          </GlassCard>
+        )}
+
+        {/* Right: List Card */}
+        <GlassCard className={can.create || can.update ? "lg:col-span-2" : "lg:col-span-3"}>
+          {/* List Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
+            <div className="flex items-center gap-2">
+              <div className={`p-1.5 rounded ${SECTION_CONFIG.management.bgDark}`}>
+                <TagIcon className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+              </div>
+              <span className="font-medium text-sm">Brand List</span>
+            </div>
+            <span className="text-xs text-gray-400">{rows.length} items</span>
+          </div>
+
+          <div className="p-3">
+            <div className="rounded-xl overflow-hidden ring-1 ring-gray-200/70 bg-white/60 dark:bg-slate-800/60">
+              <table className="w-full text-sm">
+                <thead className="bg-white/80 dark:bg-slate-700/80 sticky top-0">
+                  <tr className="border-b border-gray-200/70 dark:border-slate-600/70 text-left">
+                    <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase">Name</th>
+                    <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase w-20">Image</th>
+                    {hasActions && (
+                      <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase text-center w-32">Actions</th>
+                    )}
                   </tr>
                 </thead>
-
                 <tbody>
                   {rows.length === 0 && !loading && (
                     <tr>
-                      <td className="px-4 py-10 text-center text-gray-600 dark:text-gray-400" colSpan={hasActions ? 3 : 2}>
-                        No brands found.
+                      <td className="px-3 py-10 text-center text-gray-500 dark:text-gray-400" colSpan={hasActions ? 3 : 2}>
+                        <div className="flex flex-col items-center gap-2">
+                          <TagIcon className="w-8 h-8 text-gray-400" />
+                          <p className="text-sm">No brands found</p>
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -557,68 +539,41 @@ export default function Brands() {
                   {rows.map((b) => {
                     const used = Number(b.products_count || 0) > 0;
                     return (
-                      <tr key={b.id} className="odd:bg-white/60 even:bg-white/40 hover:bg-blue-50/70 dark:odd:bg-slate-700/60 dark:even:bg-slate-800/60 dark:hover:bg-slate-600/70 transition-colors">
-                        <td className="px-4 py-3 text-gray-900 dark:text-gray-100">{b.name}</td>
-                        <td className="px-4 py-3">
+                      <tr key={b.id} className="odd:bg-white/90 even:bg-white/70 dark:odd:bg-slate-700/60 dark:even:bg-slate-800/60 hover:bg-blue-50/70 dark:hover:bg-slate-600/50 transition-colors">
+                        <td className="px-3 py-2.5">
+                          <span className="font-medium text-gray-900 dark:text-gray-100">{b.name}</span>
+                        </td>
+                        <td className="px-3 py-2.5">
                           {b.image ? (
-                            <img
-                              src={`/storage/${b.image}`}
-                              alt={b.name}
-                              className="w-16 h-16 rounded-2xl object-contain ring-1 ring-gray-200/70 bg-white/70 dark:bg-slate-700/70"
-                            />
+                            <img src={`/storage/${b.image}`} alt={b.name} className="w-12 h-12 rounded-xl object-contain ring-1 ring-gray-200/70 bg-white/70" />
                           ) : (
-                            <span className="text-gray-500 dark:text-gray-400 text-sm">No image</span>
+                            <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-slate-700 flex items-center justify-center">
+                              <span className="text-[10px] text-gray-400">—</span>
+                            </div>
                           )}
                         </td>
-
                         {hasActions && (
-                          <td className="px-4 py-3">
-                            <div className="flex flex-wrap gap-2 justify-center">
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center justify-center gap-1.5">
                               <Guard when={can.update}>
-                                <GlassBtn
-                                  onClick={() => handleEdit(b)}
-                                  onKeyDown={(e) => handleButtonKeyDown(e, () => handleEdit(b))}
-                                  className={`h-9 min-w-[128px] ${tintAmber}`}
-                                  title={`Edit ${b.name}`}
-                                  aria-label={`Edit brand ${b.name}`}
-                                >
-                                  <span className="inline-flex items-center gap-2">
-                                    <PencilSquareIcon className="w-5 h-5" />
-                                    Edit
-                                  </span>
-                                </GlassBtn>
+                                <button onClick={() => handleEdit(b)} className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${tintAmber}`}>
+                                  <PencilSquareIcon className="w-3.5 h-3.5" />
+                                  Edit
+                                </button>
                               </Guard>
-
                               <Guard when={can.delete}>
-                                <GlassBtn
-                                  onClick={() =>
-                                    used
-                                      ? toast.error("Cannot delete: brand is used by products.")
-                                      : handleDelete(b)
-                                  }
-                                  onKeyDown={(e) =>
-                                    handleButtonKeyDown(e, () =>
-                                      used
-                                        ? toast.error("Cannot delete: brand is used by products.")
-                                        : handleDelete(b)
-                                    )
-                                  }
-                                  className={`h-9 min-w-[128px] ${
-                                    used ? "opacity-50 cursor-not-allowed " + tintGlass : tintRed
-                                  }`}
-                                  title={
-                                    used
-                                      ? "Cannot delete: brand is used by products."
-                                      : `Delete ${b.name}`
-                                  }
-                                  aria-label={`Delete brand ${b.name}`}
+                                <button
+                                  onClick={() => used ? toast.error("Cannot delete: brand is used by products.") : handleDelete(b)}
                                   disabled={used}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all duration-200 ${
+                                    used 
+                                      ? "bg-gray-100 dark:bg-slate-700/50 text-gray-400 dark:text-gray-500 cursor-not-allowed" 
+                                      : tintRed
+                                  }`}
                                 >
-                                  <span className="inline-flex items-center gap-2">
-                                    <TrashIcon className="w-5 h-5" />
-                                    Delete
-                                  </span>
-                                </GlassBtn>
+                                  <TrashIcon className="w-3.5 h-3.5" />
+                                  Delete
+                                </button>
                               </Guard>
                             </div>
                           </td>
@@ -630,36 +585,15 @@ export default function Brands() {
               </table>
             </div>
 
-            {/* Footer toolbar */}
-            <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="text-sm text-gray-700">Page {page} of {lastPage}</div>
-              <div className="flex items-center gap-2">
-                <GlassBtn className={`h-9 px-3 ${tintGlass}`} onClick={() => setPage(1)} disabled={page === 1}>
-                  ⏮ First
-                </GlassBtn>
-                <GlassBtn className={`h-9 px-3 ${tintGlass}`} onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
-                  ◀ Prev
-                </GlassBtn>
-                <GlassBtn className={`h-9 px-3 ${tintGlass}`} onClick={() => setPage((p) => Math.min(lastPage, p + 1))} disabled={page === lastPage}>
-                  Next ▶
-                </GlassBtn>
-                <GlassBtn className={`h-9 px-3 ${tintGlass}`} onClick={() => setPage(lastPage)} disabled={page === lastPage}>
-                  Last ⏭
-                </GlassBtn>
-
-                <div className="ml-2 flex items-center gap-2">
-                  <label className="text-sm text-gray-600">Rows per page</label>
-                  <select
-                    value={pageSize}
-                    onChange={(e) => setPageSize(Number(e.target.value))}
-                    className="h-9 px-2 rounded-xl bg-white/70 backdrop-blur-sm border border-gray-200/70 ring-1 ring-transparent focus:ring-blue-400/40 shadow-sm focus:outline-none text-sm"
-                  >
-                    <option value={10}>10</option>
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </select>
-                </div>
+            {/* Pagination */}
+            <div className="mt-3 flex items-center justify-between text-xs">
+              <span className="text-gray-500 dark:text-gray-400">Page {page} of {lastPage}</span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPage(1)} disabled={page === 1} className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}>⏮</button>
+                <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}>◀</button>
+                <span className="mx-1 px-2 py-0.5 rounded bg-gray-100 dark:bg-slate-700 font-medium">{page}</span>
+                <button onClick={() => setPage((p) => Math.min(lastPage, p + 1))} disabled={page === lastPage} className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}>▶</button>
+                <button onClick={() => setPage(lastPage)} disabled={page === lastPage} className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}>⏭</button>
               </div>
             </div>
           </div>
@@ -680,3 +614,4 @@ export default function Brands() {
     </div>
   );
 }
+

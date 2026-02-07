@@ -13,16 +13,15 @@ import {
   ArrowPathIcon,
   PlusIcon,
   Squares2X2Icon,
+  CubeIcon,
 } from "@heroicons/react/24/solid";
 import CategoryImportModal from "../components/CategoryImportModel.jsx";
-import { usePermissions, Guard } from "@/api/usePermissions.js"; // 🔒
+import { usePermissions, Guard } from "@/api/usePermissions.js";
 import {
   GlassCard,
-  GlassSectionHeader,
-  GlassToolbar,
   GlassInput,
   GlassBtn,
-} from "@/components/glass.jsx"; // ⬅️ as requested
+} from "@/components/glass.jsx";
 
 export default function Categories() {
   const [categories, setCategories] = useState([]);
@@ -192,200 +191,231 @@ export default function Categories() {
   const paged = filtered.slice(start, start + pageSize);
 
   if (permsLoading) return <div className="p-6">Loading…</div>;
-  if (!can.view) return <div className="p-6 text-sm text-gray-700">You don’t have permission to view categories.</div>;
+  if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view categories.</div>;
 
   const hasActions = can.update || can.delete;
   const colSpan = 1 + (hasActions ? 1 : 0);
 
-  // 🧊 iOS-style “tinted glass” helpers (color + subtle ring + blur already in GlassBtn base)
-  const tintBlue   = "bg-blue-500/85 text-white shadow-[0_6px_20px_-6px_rgba(37,99,235,0.45)] ring-1 ring-white/20 hover:bg-blue-500/95";
-  const tintIndigo = "bg-indigo-500/85 text-white shadow-[0_6px_20px_-6px_rgba(99,102,241,0.45)] ring-1 ring-white/20 hover:bg-indigo-500/95";
-  const tintSlate  = "bg-slate-900/80 text-white shadow-[0_6px_20px_-6px_rgba(15,23,42,0.45)] ring-1 ring-white/15 hover:bg-slate-900/90";
-  const tintAmber  = "bg-amber-500/85 text-white shadow-[0_6px_20px_-6px_rgba(245,158,11,0.45)] ring-1 ring-white/20 hover:bg-amber-500/95";
-  const tintRed    = "bg-rose-500/85 text-white shadow-[0_6px_20px_-6px_rgba(244,63,94,0.45)] ring-1 ring-white/20 hover:bg-rose-500/95";
-  const tintGlass  = "bg-white/60 text-slate-700 ring-1 ring-white/30 hover:bg-white/75"; // neutral glass
+  // 🎨 Modern button palette (matching sidebar and index design language)
+  const tintBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
+  const tintIndigo = "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all duration-200";
+  const tintSlate  = "bg-gradient-to-br from-slate-700 to-slate-800 text-white shadow-lg shadow-slate-500/25 ring-1 ring-white/10 hover:shadow-xl hover:shadow-slate-500/30 hover:scale-[1.02] hover:from-slate-800 hover:to-slate-900 active:scale-[0.98] transition-all duration-200";
+  const tintAmber  = "bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] hover:from-amber-600 hover:to-amber-700 active:scale-[0.98] transition-all duration-200";
+  const tintRed    = "bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700 active:scale-[0.98] transition-all duration-200";
+  const tintViolet = "bg-gradient-to-br from-violet-500 to-violet-600 text-white shadow-lg shadow-violet-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-violet-500/30 hover:scale-[1.02] hover:from-violet-600 hover:to-violet-700 active:scale-[0.98] transition-all duration-200";
+  const tintGlass  = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
+
+  // ===== Section config =====
+  const SECTION_CONFIG = {
+    core: {
+      gradient: "from-blue-500 to-cyan-600",
+      bgLight: "bg-blue-50",
+      bgDark: "dark:bg-blue-900/20",
+      iconColor: "text-blue-600 dark:text-blue-400",
+    },
+    management: {
+      gradient: "from-violet-500 to-purple-600",
+      bgLight: "bg-violet-50",
+      bgDark: "dark:bg-violet-900/20",
+      iconColor: "text-violet-600 dark:text-violet-400",
+    },
+  };
 
   return (
-    <div className="p-4 md:p-6 space-y-4">
-      {/* Header card */}
+    <div className="p-3 md:p-4 space-y-3">
+      {/* Header Card */}
       <GlassCard>
-        <GlassSectionHeader
-          title={
-            <span className="inline-flex items-center gap-2">
-              <Squares2X2Icon className="w-5 h-5 text-blue-600" />
-              <span>Categories</span>
-            </span>
-          }
-          right={
-            <div className="flex items-center gap-2">
-              <GlassBtn
-                className={`h-10 min-w-[128px] ${tintSlate}`}
-                onClick={fetchCategories}
-                title="Refresh"
-                aria-label="Refresh list"
-              >
-                <span className="inline-flex items-center gap-2">
-                  <ArrowPathIcon className="w-5 h-5" />
-                  Refresh
-                </span>
-              </GlassBtn>
+        {/* Modern Card Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.management.gradient} shadow-sm`}>
+              <Squares2X2Icon className="w-5 h-5 text-white" />
             </div>
-          }
-        />
-        <GlassToolbar className="gap-3">
-          <div className="relative w-full md:w-96">
-            <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <GlassInput
-              value={qName}
-              onChange={(e) => setQName(e.target.value)}
-              placeholder="Search category by name…"
-              className="pl-10 w-full"
-              aria-label="Search categories"
-            />
+            <div>
+              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Categories</h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{categories.length} items</p>
+            </div>
           </div>
-
-          <div className="ml-auto flex items-center gap-2">
-            <Guard when={can.import}>
-              <GlassBtn
-                className={`h-10 min-w-[150px] ${tintIndigo}`}
-                onClick={() => setImportOpen(true)}
-                title="Import Categories (CSV)"
-                aria-label="Import categories from CSV"
-              >
-                <span className="inline-flex items-center gap-2">
-                  <ArrowUpTrayIcon className="w-5 h-5" />
-                  Import CSV
-                </span>
-              </GlassBtn>
-            </Guard>
-
-            <Guard when={can.export}>
-              <GlassBtn
-                className={`h-10 min-w-[150px] ${tintGlass}`}
-                onClick={handleExport}
-                disabled={exporting}
-                title="Export all categories to CSV"
-                aria-label="Export all categories to CSV"
-              >
-                <span className="inline-flex items-center gap-2">
-                  <ArrowDownTrayIcon className="w-5 h-5" />
-                  {exporting ? "Exporting…" : "Export CSV"}
-                </span>
-              </GlassBtn>
-            </Guard>
+          <div className="flex items-center gap-2">
+            <GlassBtn
+              className={`h-9 px-3 ${tintSlate}`}
+              onClick={fetchCategories}
+              title="Refresh"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <ArrowPathIcon className="w-4 h-4" />
+                <span className="hidden sm:inline">Refresh</span>
+              </span>
+            </GlassBtn>
           </div>
-        </GlassToolbar>
+        </div>
+
+        {/* Search and Actions */}
+        <div className="px-4 py-3 bg-gray-50/50 dark:bg-slate-800/50">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1 max-w-md">
+              <MagnifyingGlassIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <GlassInput
+                value={qName}
+                onChange={(e) => setQName(e.target.value)}
+                placeholder="Search categories..."
+                className="pl-9 w-full h-9"
+              />
+            </div>
+            <div className="flex items-center gap-2 sm:ml-auto">
+              <Guard when={can.import}>
+                <GlassBtn
+                  className={`h-9 px-3 ${tintIndigo}`}
+                  onClick={() => setImportOpen(true)}
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <ArrowUpTrayIcon className="w-4 h-4" />
+                    <span className="hidden sm:inline">Import</span>
+                  </span>
+                </GlassBtn>
+              </Guard>
+              <Guard when={can.export}>
+                <GlassBtn
+                  className={`h-9 px-3 ${tintGlass}`}
+                  onClick={handleExport}
+                  disabled={exporting}
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <ArrowDownTrayIcon className={`w-4 h-4 ${exporting ? "animate-spin" : ""}`} />
+                    <span className="hidden sm:inline">{exporting ? "..." : "Export"}</span>
+                  </span>
+                </GlassBtn>
+              </Guard>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer with stats */}
+        <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 dark:border-slate-700 text-xs">
+          <span className="text-gray-500 dark:text-gray-400">
+            {loading ? (
+              <span className="inline-flex items-center gap-1">
+                <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
+                Loading...
+              </span>
+            ) : (
+              `${filtered.length === 0 ? 0 : start + 1}-${Math.min(filtered.length, start + pageSize)} of ${categories.length}`
+            )}
+          </span>
+          <div className="flex items-center gap-2">
+            <label className="text-gray-500 dark:text-gray-400">Show</label>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+            </select>
+          </div>
+        </div>
       </GlassCard>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Left: Form card */}
-        <Guard when={can.create || (can.update && (editingId !== null))}>
-          <GlassCard className="lg:col-span-1">
-            <GlassSectionHeader
-              title={
-                <span className="inline-flex items-center gap-2">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        {/* Left: Form Card */}
+        {(can.create || (can.update && editingId !== null)) && (
+          <GlassCard>
+            {/* Form Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg bg-gradient-to-br ${editingId ? "from-amber-500 to-orange-600" : "from-blue-500 to-blue-600"} shadow-sm`}>
                   {editingId ? (
-                    <>
-                      <PencilSquareIcon className="w-5 h-5 text-amber-600" />
-                      <span>Edit Category</span>
-                    </>
+                    <PencilSquareIcon className="w-5 h-5 text-white" />
                   ) : (
-                    <>
-                      <PlusIcon className="w-5 h-5 text-blue-600" />
-                      <span>Add Category</span>
-                    </>
+                    <PlusIcon className="w-5 h-5 text-white" />
                   )}
-                </span>
-              }
-              right={
-                editingId ? (
-                  <GlassBtn
-                    className={`h-9 px-3 ${tintGlass}`}
-                    onClick={resetForm}
-                    title="Cancel editing"
-                  >
-                    <span className="inline-flex items-center gap-2">
-                      <XMarkIcon className="w-5 h-5" />
-                      Cancel
-                    </span>
-                  </GlassBtn>
-                ) : null
-              }
-            />
-            <div className="px-4 pb-4 pt-2">
-              <form onSubmit={(e) => e.preventDefault()} className="space-y-3">
+                </div>
                 <div>
-                  <label className="block text-xs text-gray-700 mb-1">Name</label>
-                  <GlassInput
-                    type="text"
-                    placeholder="Category name"
-                    className="w-full"
-                    value={form.name}
-                    onChange={(e) => setForm({ name: e.target.value })}
-                    onKeyDown={onEnterFocusNext}
-                    ref={nameRef}
-                    required
-                    disabled={!can.create && !editingId}
-                  />
+                  <h2 className="text-base font-semibold text-gray-900 dark:text-white">
+                    {editingId ? "Edit Category" : "Add Category"}
+                  </h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {editingId ? "Update category information" : "Enter category details"}
+                  </p>
                 </div>
-
-                <div className="flex items-center justify-end gap-2">
-                  <GlassBtn
-                    onClick={handleSave}
-                    ref={saveBtnRef}
-                    title={(editingId ? "Update" : "Save") + " (Alt+S)"}
-                    aria-keyshortcuts="Alt+S"
-                    className={`h-10 min-w-[168px] ${editingId ? tintAmber : tintBlue} disabled:opacity-60`}
-                    disabled={saving || (!can.create && !can.update)}
-                  >
-                    <span className="inline-flex items-center gap-2">
-                      <CheckCircleIcon className="w-5 h-5" />
-                      {editingId ? (saving ? "Updating…" : "Update") : (saving ? "Saving…" : "Save")}
-                    </span>
-                  </GlassBtn>
-                </div>
-
-                <div className="text-[11px] text-gray-500 text-right">Shortcut: Alt+S</div>
-              </form>
+              </div>
+              {editingId && (
+                <GlassBtn
+                  className={`h-8 px-3 ${tintGlass}`}
+                  onClick={resetForm}
+                >
+                  <XMarkIcon className="w-4 h-4" />
+                </GlassBtn>
+              )}
             </div>
+
+            <form onSubmit={(e) => e.preventDefault()} className="p-3 space-y-3">
+              <div>
+                <label className="block text-xs font-medium mb-1">Name</label>
+                <GlassInput
+                  type="text"
+                  placeholder="Category name"
+                  className="w-full h-9"
+                  value={form.name}
+                  onChange={(e) => setForm({ name: e.target.value })}
+                  onKeyDown={onEnterFocusNext}
+                  ref={nameRef}
+                  disabled={!can.create && !editingId}
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <GlassBtn
+                  onClick={handleSave}
+                  ref={saveBtnRef}
+                  className={`flex-1 h-9 ${editingId ? tintAmber : tintBlue}`}
+                  disabled={saving || (!can.create && !can.update)}
+                >
+                  <span className="inline-flex items-center justify-center gap-1.5">
+                    <CheckCircleIcon className="w-4 h-4" />
+                    {editingId ? (saving ? "Updating..." : "Update") : (saving ? "Saving..." : "Save")}
+                  </span>
+                </GlassBtn>
+              </div>
+
+              <div className="text-[10px] text-gray-500 text-center">Alt+S to save</div>
+            </form>
           </GlassCard>
-        </Guard>
+        )}
 
         {/* Right: List Card */}
-        <GlassCard className={`lg:col-span-${(can.create || can.update) ? "2" : "3"}`}>
-          <GlassSectionHeader
-            title={
-              <span className="inline-flex items-center gap-2">
-                <Squares2X2Icon className="w-5 h-5 text-blue-600" />
-                <span>Category List</span>
-              </span>
-            }
-            right={
-              <div className="text-sm text-gray-700">
-                {loading ? "Loading…" : (
-                  <>
-                    Showing <strong>{filtered.length===0?0:start+1}-{Math.min(filtered.length, start+pageSize)}</strong> of <strong>{categories.length}</strong>
-                    {filtered.length!==categories.length && <> (filtered: <strong>{filtered.length}</strong>)</>}
-                  </>
-                )}
+        <GlassCard className={can.create || can.update ? "lg:col-span-2" : "lg:col-span-3"}>
+          {/* List Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
+            <div className="flex items-center gap-2">
+              <div className={`p-1.5 rounded ${SECTION_CONFIG.management.bgDark}`}>
+                <Squares2X2Icon className="w-4 h-4 text-violet-600 dark:text-violet-400" />
               </div>
-            }
-          />
+              <span className="font-medium text-sm">Category List</span>
+            </div>
+            <span className="text-xs text-gray-400">{paged.length} items</span>
+          </div>
 
-          <div className="px-3 pb-3">
-            <div className="w-full overflow-x-auto rounded-2xl ring-1 ring-gray-200/60 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm">
-              <table className="w-full text-sm text-gray-900 dark:text-gray-100">
-                <thead className="bg-white/80 dark:bg-slate-700/80 sticky top-0 z-10">
-                  <tr className="border-b border-gray-200/70 dark:border-slate-600/70">
-                    <th className="text-left font-medium px-4 py-3 text-gray-900 dark:text-gray-100">Name</th>
-                    {hasActions && <th className="text-center font-medium px-4 py-3 text-gray-900 dark:text-gray-100">Actions</th>}
+          <div className="p-3">
+            <div className="rounded-xl overflow-hidden ring-1 ring-gray-200/70 bg-white/60 dark:bg-slate-800/60">
+              <table className="w-full text-sm">
+                <thead className="bg-white/80 dark:bg-slate-700/80 sticky top-0">
+                  <tr className="border-b border-gray-200/70 dark:border-slate-600/70 text-left">
+                    <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase">Name</th>
+                    {hasActions && (
+                      <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase text-center w-32">Actions</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
                   {paged.length === 0 && !loading && (
                     <tr>
-                      <td className="px-4 py-10 text-center text-gray-500 dark:text-gray-400" colSpan={colSpan}>
-                        No categories found.
+                      <td className="px-3 py-10 text-center text-gray-500 dark:text-gray-400" colSpan={colSpan}>
+                        <div className="flex flex-col items-center gap-2">
+                          <Squares2X2Icon className="w-8 h-8 text-gray-400" />
+                          <p className="text-sm">No categories found</p>
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -393,42 +423,35 @@ export default function Categories() {
                   {paged.map((c) => {
                     const used = Number(c.products_count || 0) > 0;
                     return (
-                      <tr key={c.id} className="odd:bg-white/60 even:bg-white/40 hover:bg-blue-50/70 dark:odd:bg-slate-700/60 dark:even:bg-slate-800/60 dark:hover:bg-slate-600/70 transition-colors">
-                        <td className="px-4 py-3 text-gray-900 dark:text-gray-100">{c.name}</td>
+                      <tr key={c.id} className="odd:bg-white/90 even:bg-white/70 dark:odd:bg-slate-700/60 dark:even:bg-slate-800/60 hover:bg-blue-50/70 dark:hover:bg-slate-600/50 transition-colors">
+                        <td className="px-3 py-2.5">
+                          <span className="font-medium text-gray-900 dark:text-gray-100">{c.name}</span>
+                        </td>
                         {hasActions && (
-                          <td className="px-4 py-3">
-                            <div className="flex flex-wrap gap-2 justify-center">
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center justify-center gap-1.5">
                               <Guard when={can.update}>
-                                <GlassBtn
-                                  className={`h-9 min-w-[128px] ${tintAmber}`}
+                                <button
                                   onClick={() => handleEdit(c)}
-                                  title={`Edit ${c.name}`}
-                                  aria-label={`Edit category ${c.name}`}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${tintAmber}`}
                                 >
-                                  <span className="inline-flex items-center gap-2">
-                                    <PencilSquareIcon className="w-5 h-5" />
-                                    Edit
-                                  </span>
-                                </GlassBtn>
+                                  <PencilSquareIcon className="w-3.5 h-3.5" />
+                                  Edit
+                                </button>
                               </Guard>
-
                               <Guard when={can.delete}>
-                                <GlassBtn
-                                  className={`h-9 min-w-[128px] ${used ? "opacity-50 cursor-not-allowed " + tintGlass : tintRed}`}
-                                  onClick={() =>
-                                    used
-                                      ? toast.error("Cannot delete: category is used by products.")
-                                      : handleDelete(c)
-                                  }
-                                  title={used ? "Cannot delete: category is used by products." : `Delete ${c.name}`}
-                                  aria-label={`Delete category ${c.name}`}
+                                <button
+                                  onClick={() => used ? toast.error("Cannot delete: category is used by products.") : handleDelete(c)}
                                   disabled={used}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all duration-200 ${
+                                    used 
+                                      ? "bg-gray-100 dark:bg-slate-700/50 text-gray-400 dark:text-gray-500 cursor-not-allowed" 
+                                      : `${tintRed}`
+                                  }`}
                                 >
-                                  <span className="inline-flex items-center gap-2">
-                                    <TrashIcon className="w-5 h-5" />
-                                    Delete
-                                  </span>
-                                </GlassBtn>
+                                  <TrashIcon className="w-3.5 h-3.5" />
+                                  Delete
+                                </button>
                               </Guard>
                             </div>
                           </td>
@@ -440,29 +463,43 @@ export default function Categories() {
               </table>
             </div>
 
-            {/* Footer toolbar */}
-            <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-700">Page {page} of {pageCount}</span>
-                <div className="flex items-center gap-2">
-                  <GlassBtn className={`h-9 px-3 ${tintGlass}`} onClick={() => setPage(1)} disabled={page === 1}>⏮ First</GlassBtn>
-                  <GlassBtn className={`h-9 px-3 ${tintGlass}`} onClick={() => setPage((p)=>Math.max(1,p-1))} disabled={page===1}>◀ Prev</GlassBtn>
-                  <GlassBtn className={`h-9 px-3 ${tintGlass}`} onClick={() => setPage((p)=>Math.min(pageCount,p+1))} disabled={page===pageCount}>Next ▶</GlassBtn>
-                  <GlassBtn className={`h-9 px-3 ${tintGlass}`} onClick={() => setPage(pageCount)} disabled={page===pageCount}>Last ⏭</GlassBtn>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600">Rows per page</label>
-                <select
-                  value={pageSize}
-                  onChange={(e)=>setPageSize(Number(e.target.value))}
-                  className="h-9 px-2 rounded-xl bg-white/70 backdrop-blur-sm border border-gray-200/70 ring-1 ring-transparent focus:ring-blue-400/40 shadow-sm focus:outline-none"
+            {/* Pagination */}
+            <div className="mt-3 flex items-center justify-between text-xs">
+              <span className="text-gray-500 dark:text-gray-400">
+                Page {page} of {pageCount}
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage(1)}
+                  disabled={page === 1}
+                  className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
                 >
-                  <option value={10}>10</option>
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                </select>
+                  ⏮
+                </button>
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
+                >
+                  ◀
+                </button>
+                <span className="mx-1 px-2 py-0.5 rounded bg-gray-100 dark:bg-slate-700 font-medium">
+                  {page}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                  disabled={page === pageCount}
+                  className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === pageCount ? 'opacity-40' : ''}`}
+                >
+                  ▶
+                </button>
+                <button
+                  onClick={() => setPage(pageCount)}
+                  disabled={page === pageCount}
+                  className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === pageCount ? 'opacity-40' : ''}`}
+                >
+                  ⏭
+                </button>
               </div>
             </div>
           </div>
@@ -478,3 +515,4 @@ export default function Categories() {
     </div>
   );
 }
+
