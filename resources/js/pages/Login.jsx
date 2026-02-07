@@ -78,7 +78,28 @@ export default function Login() {
       login(data.user, data.token, { license_revoked: data.license_revoked });
 
       if (!data.license_revoked) {
-        navigate("/dashboard");
+        // Validate license before redirecting to dashboard
+        validateLicenseAndRedirect();
+      }
+
+      async function validateLicenseAndRedirect() {
+        try {
+          const licenseResponse = await axios.get("/api/license/status", {
+            headers: { Authorization: `Bearer ${data.token}` }
+          });
+          
+          if (licenseResponse.data.valid) {
+            navigate("/dashboard");
+          } else {
+            // License is invalid, redirect to activation
+            navigate("/activate");
+          }
+        } catch (licenseError) {
+          // If we can't check license status, redirect to dashboard anyway
+          // The server-side middleware will handle invalid licenses
+          console.warn("Could not validate license status:", licenseError);
+          navigate("/dashboard");
+        }
       }
     } catch (err) {
       const msg =

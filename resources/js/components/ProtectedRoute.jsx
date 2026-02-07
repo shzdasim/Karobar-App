@@ -1,26 +1,57 @@
-import React from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Navigate } from "react-router-dom";
 import { useLicense } from "../context/LicenseContext.jsx";
+import axios from "axios";
 
 export default function ProtectedRoute({ children }) {
   const token = localStorage.getItem("token");
+  const { loading: licenseLoading, valid: licenseValid } = useLicense();
+  
+  // Local state to track license status independently
+  const [isLicenseValid, setIsLicenseValid] = useState(null);
+  const [checkingLicense, setCheckingLicense] = useState(true);
+
+  // Check license status explicitly
+  const checkLicense = useCallback(async () => {
+    if (!token) {
+      setCheckingLicense(false);
+      return;
+    }
+
+    try {
+      const response = await axios.get("/api/license/status", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setIsLicenseValid(response.data.valid === true);
+    } catch (error) {
+      // On API error, be permissive - let the user in
+      // Server-side middleware will handle enforcement
+      console.warn("License check failed:", error);
+      setIsLicenseValid(true); // Allow access, server will enforce
+    } finally {
+      setCheckingLicense(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    // Only check license if LicenseContext is done loading
+    if (!licenseLoading) {
+      checkLicense();
+    }
+  }, [licenseLoading, checkLicense]);
 
   // Check authentication first
   if (!token) {
     return <Navigate to="/" replace />;
   }
 
-  // Check license validity
-  const { loading, valid } = useLicense();
-
-  // While checking license status, show children (they might be in loading state too)
-  // Only redirect to /activate if we've confirmed the license is invalid
-  if (loading) {
+  // While checking license status, show children
+  if (checkingLicense || licenseLoading) {
     return children;
   }
 
-  // Redirect to activation page if license is invalid or missing
-  if (!valid) {
+  // If we have an explicit license check result and it's invalid, redirect
+  if (isLicenseValid === false && !licenseValid) {
     return <Navigate to="/activate" replace />;
   }
 

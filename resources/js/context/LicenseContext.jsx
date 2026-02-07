@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
 import axios from "axios";
 
 const LicenseCtx = createContext(null);
@@ -13,7 +13,10 @@ export function LicenseProvider({ children }) {
     reason: null,
   });
 
-  const refresh = async () => {
+  // Track if we've seen a valid license at least once
+  const [hasEverBeenValid, setHasEverBeenValid] = useState(false);
+
+  const refresh = useCallback(async (retryOnFail = true) => {
     try {
       const { data } = await axios.get("/api/license/status");
       // server returns expires_at as seconds (from payload['exp'])
@@ -22,20 +25,31 @@ export function LicenseProvider({ children }) {
         typeof expSec === "number" ? expSec * 1000 :
         typeof expSec === "string" ? Date.parse(expSec) : null;
 
+      const isValid = !!data?.valid;
+      
       setStatus({
         loading: false,
-        valid: !!data?.valid,
+        valid: isValid,
         expiresAt: expMs,
         payload: data?.payload ?? null,
         machineId: data?.machine_id ?? null,
         reason: data?.reason ?? null,
       });
-    } catch {
+
+      if (isValid) {
+        setHasEverBeenValid(true);
+      }
+    } catch (error) {
+      // On network errors, retry once after a delay unless we've already seen a valid license
+      if (retryOnFail && !hasEverBeenValid) {
+        setTimeout(() => refresh(false), 2000);
+        return;
+      }
       setStatus((s) => ({ ...s, loading: false, valid: false }));
     }
-  };
+  }, [hasEverBeenValid]);
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => { refresh(); }, [refresh]);
 
   // tick once per second to update remaining time
   const [now, setNow] = useState(() => Date.now());
@@ -49,10 +63,14 @@ export function LicenseProvider({ children }) {
     return Math.max(0, status.expiresAt - now);
   }, [status.expiresAt, now]);
 
-  // When it hits zero, soft-redirect to /activate (server will also 402)
+  // When license expires (remainingMs hits zero), show warning but DON'T auto-redirect
+  // The server-side EnsureLicensed middleware will handle the actual enforcement
+  // Auto-redirect causes issues when user has a valid license but there's a timing issue
   useEffect(() => {
     if (status.valid && status.expiresAt && remainingMs === 0) {
-      window.location.assign("/activate");
+      // License has expired - show a warning notification
+      // Don't auto-redirect as it causes issues with valid licenses
+      console.warn('License has expired');
     }
   }, [status.valid, status.expiresAt, remainingMs]);
 
