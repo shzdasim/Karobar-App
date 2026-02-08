@@ -4,7 +4,7 @@ import axios from "axios";
 import AsyncSelect from "react-select/async";
 import { createFilter } from "react-select";
 import toast from "react-hot-toast";
-import { usePermissions } from "@/api/usePermissions";
+import { usePermissions, Guard } from "@/api/usePermissions";
 
 // 🧊 glass primitives
 import {
@@ -16,13 +16,38 @@ import {
 } from "@/components/glass.jsx";
 import { useTheme } from "@/context/ThemeContext";
 
-import { ArrowDownOnSquareIcon, PencilSquareIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/solid";
+import { 
+  ArrowDownOnSquareIcon, 
+  PencilSquareIcon, 
+  CheckCircleIcon, 
+  XCircleIcon,
+  DocumentTextIcon,
+  Squares2X2Icon,
+} from "@heroicons/react/24/solid";
+
+// Section configuration with color schemes - matching sidebar design
+const SECTION_CONFIG = {
+  core: {
+    gradient: "from-blue-500 to-cyan-600",
+    bgLight: "bg-blue-50",
+    bgDark: "dark:bg-blue-900/20",
+    borderColor: "border-blue-200 dark:border-blue-700",
+    iconColor: "text-blue-600 dark:text-blue-400",
+    ringColor: "ring-blue-300 dark:ring-blue-700",
+  },
+  management: {
+    gradient: "from-violet-500 to-purple-600",
+    bgLight: "bg-violet-50",
+    bgDark: "dark:bg-violet-900/20",
+    borderColor: "border-violet-200 dark:border-violet-700",
+    iconColor: "text-violet-600 dark:text-violet-400",
+    ringColor: "ring-violet-300 dark:ring-violet-700",
+  },
+};
 
 /* ======================
    Helpers
    ====================== */
-
-
 const todayStr = () => new Date().toISOString().split("T")[0];
 const yesterdayStr = () => {
   const d = new Date();
@@ -32,34 +57,6 @@ const yesterdayStr = () => {
 const n = (v) => (isFinite(Number(v)) ? Number(v) : 0);
 const fmtCurrency = (v) =>
   n(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-/* react-select → glassy control */
-const selectStyles = {
-  control: (base) => ({
-    ...base,
-    minHeight: 36,
-    height: 36,
-    borderColor: "rgba(229,231,235,0.8)",
-    backgroundColor: "rgba(255,255,255,0.7)",
-    backdropFilter: "blur(6px)",
-    boxShadow: "0 1px 2px rgba(15,23,42,0.06)",
-    borderRadius: 12,
-    transition: "all .2s ease",
-    "&:hover": { borderColor: "rgba(148,163,184,0.9)", backgroundColor: "rgba(255,255,255,0.85)" },
-  }),
-  valueContainer: (base) => ({ ...base, height: 36, padding: "0 10px" }),
-  indicatorsContainer: (base) => ({ ...base, height: 36 }),
-  input: (base) => ({ ...base, margin: 0, padding: 0 }),
-  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-  menu: (base) => ({
-    ...base,
-    borderRadius: 12,
-    overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.9)",
-    backdropFilter: "blur(10px)",
-    boxShadow: "0 10px 30px -10px rgba(30,64,175,0.18)",
-  }),
-};
 
 // Helper to merge dark mode styles - returns function-based styles for react-select
 const getSelectStyles = (isDarkMode = false) => ({
@@ -73,10 +70,6 @@ const getSelectStyles = (isDarkMode = false) => ({
     boxShadow: isDarkMode ? "0 1px 2px rgba(0,0,0,0.2)" : "0 1px 2px rgba(15,23,42,0.06)",
     borderRadius: 12,
     transition: "all .2s ease",
-    "&:hover": {
-      borderColor: isDarkMode ? "rgba(100,116,139,0.9)" : "rgba(148,163,184,0.9)",
-      backgroundColor: isDarkMode ? "rgba(51,65,85,0.85)" : "rgba(255,255,255,0.85)",
-    },
   }),
   valueContainer: (base) => ({ ...base, height: 36, padding: "0 10px" }),
   indicatorsContainer: (base) => ({ ...base, height: 36 }),
@@ -127,14 +120,13 @@ async function tryEndpoints(paths, params) {
       return res;
     } catch (e) {
       lastErr = e;
-      // keep trying next path
     }
   }
   throw lastErr;
 }
 
 export default function SaleDetailReport() {
-  // ✅ Default date range: Yesterday → Today
+  // Default date range: Yesterday → Today
   const [fromDate, setFromDate] = useState(yesterdayStr());
   const [toDate, setToDate] = useState(todayStr());
 
@@ -149,14 +141,26 @@ export default function SaleDetailReport() {
   const [loading, setLoading] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
 
-const perms = usePermissions();
-const canView = perms?.has?.("report.sale-detail.view");
-const canExport = perms?.has?.("report.sale-detail.export");
-const canEdit = perms?.has?.("report.sale-detail.edit"); // ✅ ADD THIS
+  // permissions
+  const { loading: permsLoading, canFor } = usePermissions();
+  const can = useMemo(
+    () =>
+      (typeof canFor === "function" ? canFor("sale-detail-report") : {
+        view: false,
+        export: false,
+        edit: false,
+      }),
+    [canFor]
+  );
 
-// Get dark mode state
-const { isDark } = useTheme();
+  // Get dark mode state
+  const { isDark } = useTheme();
 
+  // 🎨 Modern button palette (matching SupplierLedger design)
+  const tintBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
+  const tintIndigo = "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all duration-200";
+  const tintGlass  = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
+  const tintOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
 
   /* ============ Async loaders ============ */
   const loadCustomers = useMemo(
@@ -213,7 +217,7 @@ const { isDark } = useTheme();
 
   /* ============ Fetch report ============ */
   const fetchReport = async () => {
-    if (!canView) return toast.error("You don't have permission to view this report.");
+    if (!can.view) return toast.error("You don't have permission to view this report.");
     if (fromDate > toDate) return toast.error("'From' date cannot be after 'To' date.");
 
     setLoading(true);
@@ -242,52 +246,46 @@ const { isDark } = useTheme();
     }
   };
 
-  // Auto-load once permissions confirmed
-  useEffect(() => {
-  }, [canView]);
+  const [editingInvoiceId, setEditingInvoiceId] = useState(null);
+  const [editDoctor, setEditDoctor] = useState("");
+  const [editPatient, setEditPatient] = useState("");
+  const [saving, setSaving] = useState(false);
 
+  const saveInvoiceMeta = (inv) => async () => {
+    setSaving(true);
+    try {
+      const res = await axios.put(
+        `/api/sale-invoices/${inv.id}/meta`,
+        {
+          doctor_name: editDoctor,
+          patient_name: editPatient,
+        }
+      );
 
-const [editingInvoiceId, setEditingInvoiceId] = useState(null);
-const [editDoctor, setEditDoctor] = useState("");
-const [editPatient, setEditPatient] = useState("");
-const [saving, setSaving] = useState(false);
+      setData((prev) =>
+        prev.map((x) =>
+          x.id === inv.id
+            ? {
+                ...x,
+                doctor_name: res.data.doctor_name,
+                patient_name: res.data.patient_name,
+              }
+            : x
+        )
+      );
 
-const saveInvoiceMeta = (inv) => async () => {
-  setSaving(true);
-  try {
-    const res = await axios.put(
-      `/api/sale-invoices/${inv.id}/meta`,
-      {
-        doctor_name: editDoctor,
-        patient_name: editPatient,
-      }
-    );
-
-    setData((prev) =>
-      prev.map((x) =>
-        x.id === inv.id
-          ? {
-              ...x,
-              doctor_name: res.data.doctor_name,
-              patient_name: res.data.patient_name,
-            }
-          : x
-      )
-    );
-
-    toast.success("Updated");
-    setEditingInvoiceId(null);
-  } catch {
-    toast.error("Update failed");
-  } finally {
-    setSaving(false);
-  }
-};
-
+      toast.success("Updated");
+      setEditingInvoiceId(null);
+    } catch {
+      toast.error("Update failed");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   /* ============ Export PDF ============ */
   const exportPdf = async () => {
-    if (!canExport) return toast.error("You don't have permission to export PDF.");
+    if (!can.export) return toast.error("You don't have permission to export PDF.");
     setPdfLoading(true);
     try {
       const res = await axios.get("/api/reports/sale-detail/pdf", {
@@ -310,348 +308,379 @@ const saveInvoiceMeta = (inv) => async () => {
       setPdfLoading(false);
     }
   };
-  // tints (match other glass pages)
-  const tintSlate =
-    "bg-slate-900/80 text-white ring-1 ring-white/15 shadow-[0_6px_20px_-6px_rgba(15,23,42,0.45)] hover:bg-slate-900/90";
-  const tintGlass = "bg-white/60 text-slate-700 ring-1 ring-white/30 hover:bg-white/80";
+
+  const resetFilters = () => {
+    setFromDate(yesterdayStr());
+    setToDate(todayStr());
+    setData([]);
+  };
+
+  // Permission gating
+  if (permsLoading) {
+    return (
+      <div className="p-6">
+        <GlassCard>
+          <div className={`px-4 py-3 text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>Checking permissions…</div>
+        </GlassCard>
+      </div>
+    );
+  }
+
+  if (!can.view) {
+    return (
+      <div className="p-6">
+        <GlassCard>
+          <div className={`px-4 py-3 text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>
+            You don't have permission to view this report.
+          </div>
+        </GlassCard>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-4 md:p-6 space-y-4">
-      {/* ===== Header + Filters ===== */}
+    <div className="p-4 space-y-3">
+      {/* ===== Professional Header ===== */}
       <GlassCard>
-        <GlassSectionHeader
-          title={<span className="font-semibold">Sale Detail Report</span>}
-          right={
-            <div className="flex gap-2">
+        {/* Header Top */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+          {/* Title */}
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.core.gradient} shadow-sm`}>
+              <DocumentTextIcon className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Sale Detail Report</h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{data.length} entries</p>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2">
+            <GlassBtn
+              className={`h-9 ${tintOutline}`}
+              onClick={resetFilters}
+            >
+              Reset
+            </GlassBtn>
+            <Guard when={can.view}>
               <GlassBtn
-                className={`h-9 ${tintGlass}`}
-                title="Reset to Default (Yesterday → Today)"
-                onClick={() => {
-                  setFromDate(yesterdayStr());
-                  setToDate(todayStr());
-                  setData([]);
-                }}
-              >
-                Reset
-              </GlassBtn>
-            </div>
-          }
-        />
-
-        {/* Filters */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            fetchReport();
-          }}
-        >
-          <GlassToolbar className="grid grid-cols-1 md:grid-cols-12 gap-3">
-            {/* Dates */}
-            <div className="md:col-span-2">
-              <label className="text-sm text-gray-700 dark:text-gray-300 mb-1 block">From</label>
-              <GlassInput
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="text-sm text-gray-700 dark:text-gray-300 mb-1 block">To</label>
-              <GlassInput
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-              />
-            </div>
-
-            {/* Keep your existing search filters */}
-            <div className="md:col-span-4">
-              <label className="text-sm text-gray-700 dark:text-gray-300 mb-1 block">Customer</label>
-              <AsyncSelect
-                cacheOptions
-                defaultOptions={[{ value: "", label: "All Customers" }]}
-                loadOptions={loadCustomers}
-                isClearable
-                value={customerValue}
-                onChange={(opt) => {
-                  setCustomerValue(opt);
-                  setCustomerId(opt?.value || "");
-                }}
-                styles={getSelectStyles(isDark)}
-                menuPortalTarget={document.body} 
-                filterOption={createFilter({
-                  matchFrom: "start",
-                  trim: true,
-                })}
-              />
-            </div>
-
-            <div className="md:col-span-4">
-              <label className="text-sm text-gray-700 dark:text-gray-300 mb-1 block">Product</label>
-              <AsyncSelect
-                cacheOptions
-                defaultOptions={[{ value: "", label: "All Products" }]}
-                loadOptions={loadProducts}
-                isClearable
-                value={productValue}
-                onChange={(opt) => {
-                  setProductValue(opt);
-                  setProductId(opt?.value || "");
-                }}
-                styles={getSelectStyles(isDark)}
-                menuPortalTarget={document.body}  // 🟢 Added
-                filterOption={createFilter({
-                  matchFrom: "start",
-                  trim: true,
-                })}
-              />
-            </div>
-
-            {/* Buttons */}
-            <div className="md:col-span-12 flex flex-wrap gap-2">
-              <GlassBtn
-                type="submit"
-                className={`h-9 min-w-[110px] ${tintSlate}`}
+                className={`h-9 ${tintBlue}`}
+                onClick={fetchReport}
                 disabled={loading}
               >
-                Apply
+                <span className="inline-flex items-center gap-2">
+                  {loading ? "Loading…" : "Load"}
+                </span>
               </GlassBtn>
+            </Guard>
+          </div>
+        </div>
 
-              {/* ✅ Quick filters */}
-              <GlassBtn
-                className={`h-9 ${tintGlass}`}
-                onClick={() => {
-                  const end = new Date();
+        {/* Filters */}
+        <GlassToolbar className="grid grid-cols-1 md:grid-cols-12 gap-3">
+          {/* From Date */}
+          <div className="md:col-span-2">
+            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>From</label>
+            <GlassInput
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="w-full"
+            />
+          </div>
+
+          {/* To Date */}
+          <div className="md:col-span-2">
+            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>To</label>
+            <GlassInput
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="w-full"
+            />
+          </div>
+
+          {/* Customer */}
+          <div className="md:col-span-4">
+            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Customer</label>
+            <AsyncSelect
+              cacheOptions
+              defaultOptions={[{ value: "", label: "All Customers" }]}
+              loadOptions={loadCustomers}
+              isClearable
+              value={customerValue}
+              onChange={(opt) => {
+                setCustomerValue(opt);
+                setCustomerId(opt?.value || "");
+              }}
+              styles={getSelectStyles(isDark)}
+              menuPortalTarget={document.body}
+              filterOption={createFilter({
+                matchFrom: "start",
+                trim: true,
+              })}
+            />
+          </div>
+
+          {/* Product */}
+          <div className="md:col-span-4">
+            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Product</label>
+            <AsyncSelect
+              cacheOptions
+              defaultOptions={[{ value: "", label: "All Products" }]}
+              loadOptions={loadProducts}
+              isClearable
+              value={productValue}
+              onChange={(opt) => {
+                setProductValue(opt);
+                setProductId(opt?.value || "");
+              }}
+              styles={getSelectStyles(isDark)}
+              menuPortalTarget={document.body}
+              filterOption={createFilter({
+                matchFrom: "start",
+                trim: true,
+              })}
+            />
+          </div>
+
+          {/* Quick Filters & Export */}
+          <div className="md:col-span-12 flex flex-wrap items-end gap-2">
+            <GlassBtn
+              className={`h-9 ${tintGlass}`}
+              onClick={() => {
+                const end = new Date();
                 const start = new Date();
                 start.setDate(end.getDate() - 1);
                 setFromDate(start.toISOString().slice(0, 10));
                 setToDate(end.toISOString().slice(0, 10));
-                  fetchReport();
-                }}
-              >
-                Today
-              </GlassBtn>
+                fetchReport();
+              }}
+            >
+              Today
+            </GlassBtn>
 
-              <GlassBtn
-                className={`h-9 ${tintGlass}`}
-                onClick={() => {
-                  const end = new Date();
-                  const start = new Date();
-                  start.setDate(end.getDate() - 3);
-                  setFromDate(start.toISOString().slice(0, 10));
-                  setToDate(end.toISOString().slice(0, 10));
-                  fetchReport();
-                }}
-              >
-                3 Days
-              </GlassBtn>
+            <GlassBtn
+              className={`h-9 ${tintGlass}`}
+              onClick={() => {
+                const end = new Date();
+                const start = new Date();
+                start.setDate(end.getDate() - 3);
+                setFromDate(start.toISOString().slice(0, 10));
+                setToDate(end.toISOString().slice(0, 10));
+                fetchReport();
+              }}
+            >
+              3 Days
+            </GlassBtn>
 
-              <GlassBtn
-                className={`h-9 ${tintGlass}`}
-                onClick={() => {
-                  const end = new Date();
-                  const start = new Date();
-                  start.setDate(end.getDate() - 7);
-                  setFromDate(start.toISOString().slice(0, 10));
-                  setToDate(end.toISOString().slice(0, 10));
-                  fetchReport();
-                }}
-              >
-                7 Days
-              </GlassBtn>
+            <GlassBtn
+              className={`h-9 ${tintGlass}`}
+              onClick={() => {
+                const end = new Date();
+                const start = new Date();
+                start.setDate(end.getDate() - 7);
+                setFromDate(start.toISOString().slice(0, 10));
+                setToDate(end.toISOString().slice(0, 10));
+                fetchReport();
+              }}
+            >
+              7 Days
+            </GlassBtn>
 
+            <Guard when={can.export}>
               <GlassBtn
-                className={`h-9 flex items-center gap-2 ${canExport ? tintGlass : "opacity-60"}`}
+                className={`h-9 ${tintIndigo}`}
                 onClick={exportPdf}
-                disabled={pdfLoading || !canExport}
+                disabled={pdfLoading || data.length === 0}
               >
-                <ArrowDownOnSquareIcon className="w-5 h-5" />
-                {pdfLoading ? "Generating…" : "Export PDF"}
+                <span className="inline-flex items-center gap-2">
+                  <ArrowDownOnSquareIcon className="w-5 h-5" />
+                  {pdfLoading ? "Generating…" : "Export PDF"}
+                </span>
               </GlassBtn>
-            </div>
-          </GlassToolbar>
-        </form>
+            </Guard>
+          </div>
+        </GlassToolbar>
       </GlassCard>
 
-      {/* ===== Permission states ===== */}
-      {canView === null && (
-        <GlassCard>
-          <div className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">Checking permissions…</div>
-        </GlassCard>
-      )}
-      {canView === false && (
-        <GlassCard>
-          <div className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">You don't have permission to view this report.</div>
-        </GlassCard>
-      )}
-
       {/* ===== Results ===== */}
-      {canView === true && (
-        <>
-          {data.length === 0 && !loading && (
-            <GlassCard>
-              <div className="px-4 py-4 text-sm text-gray-600 dark:text-gray-400">No data found for the selected filters.</div>
-            </GlassCard>
-          )}
-
-          <div className="flex flex-col gap-4">
-            {data.map((inv, idxInv) => (
-              <GlassCard
-                key={idxInv + "-" + (inv.posted_number ?? "") + "-" + (inv.invoice_date ?? "")}
-                className="overflow-hidden transition-all duration-200 hover:bg-white/70 hover:backdrop-blur-md hover:shadow-[0_12px_30px_-12px_rgba(37,99,235,0.25)] dark:hover:bg-slate-800/70 dark:hover:backdrop-blur-md"
-              >
-                {/* Invoice Header */}
-                <GlassSectionHeader
-                  className="rounded-t-2xl"
-                  title={
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-x-3 gap-y-1 text-sm">
-                      <KV label="Posted #:" value={inv.posted_number || "-"} />
-                      <KV label="Date:" value={inv.invoice_date || "-"} />
-                      <KV label="Customer:" value={inv.customer_name || "-"} />
-                      <KV label="User:" value={inv.user_name || "-"} />
-                      {editingInvoiceId === inv.id ? (
-                        <>
-                          <GlassInput
-                            className="h-7"
-                            placeholder="Doctor"
-                            value={editDoctor}
-                            onChange={(e) => setEditDoctor(e.target.value)}
-                          />
-                          <GlassInput
-                            className="h-7"
-                            placeholder="Patient"
-                            value={editPatient}
-                            onChange={(e) => setEditPatient(e.target.value)}
-                          />
-                        </>
-                      ) : (
-                        <>
-                          <KV label="Doctor:" value={inv.doctor_name || "-"} />
-                          <KV label="Patient:" value={inv.patient_name || "-"} />
-                        </>
-                      )}
-                    </div>
-                  }
-                  right={
-                    canEdit && (
-                      editingInvoiceId === inv.id ? (
-                        <div className="flex gap-1">
-                          {/* SAVE */}
-                          <GlassBtn
-                            className="h-8 px-2 bg-emerald-600/90 text-white hover:bg-emerald-600"
-                            disabled={saving}
-                            title="Save"
-                            onClick={saveInvoiceMeta(inv)}
-                          >
-                            <CheckCircleIcon className="w-5 h-5" />
-                          </GlassBtn>
-
-                          {/* CANCEL */}
-                          <GlassBtn
-                            className="h-8 px-2 bg-rose-500/90 text-white hover:bg-rose-500"
-                            title="Cancel"
-                            onClick={() => setEditingInvoiceId(null)}
-                          >
-                            <XCircleIcon className="w-5 h-5" />
-                          </GlassBtn>
-                        </div>
-                      ) : (
-                        <GlassBtn
-                          className="h-8 px-2 bg-sky-500/90 text-white hover:bg-sky-500"
-                          title="Edit Doctor / Patient"
-                          onClick={() => {
-                            setEditingInvoiceId(inv.id);
-                            setEditDoctor(inv.doctor_name || "");
-                            setEditPatient(inv.patient_name || "");
-                          }}
-                        >
-                          <PencilSquareIcon className="w-5 h-5" />
-                        </GlassBtn>
-                      )
-                    )
-                  }
-                />
-
-                {/* Items Table */}
-                <div className="relative max-w-full overflow-x-auto">
-                  <table className="w-full min-w-[900px] text-sm text-gray-900 dark:text-gray-100">
-                    <thead className="sticky top-0 bg-white/85 backdrop-blur-sm border-b border-gray-200/70 dark:bg-slate-800/90 dark:border-slate-700/60">
-                      <tr className="text-left">
-                        <Th>Product Name</Th>
-                        <Th align="right">Pack Size</Th>
-                        <Th>Batch #</Th>
-                        <Th>Expiry</Th>
-                        <Th align="right">Current Qty</Th>
-                        <Th align="right">Qty</Th>
-                        <Th align="right">Price</Th>
-                        <Th align="right">Item Disc %</Th>
-                        <Th align="right">Sub Total</Th>
-                      </tr>
-                    </thead>
-
-                    <tbody className="tabular-nums">
-                      {(inv.items || []).map((it, idx) => (
-                        <tr
-                          key={(it.id ?? idx) + "-" + (it.product_id ?? "p") + "-" + idx}
-                          className="transition-all duration-150 odd:bg-white/90 even:bg-white/70 hover:bg-white/80 hover:backdrop-blur-[2px] dark:odd:bg-slate-800/60 dark:even:bg-slate-700/40 dark:hover:bg-slate-700/70 dark:backdrop-blur-sm"
-                        >
-                          <Td>{it.product_name || "-"}</Td>
-                          <Td align="right">{it.pack_size ?? 0}</Td>
-                          <Td>{it.batch_number || "-"}</Td>
-                          <Td>{it.expiry || "-"}</Td>
-                          <Td align="right">{it.current_quantity ?? 0}</Td>
-                          <Td align="right">{it.quantity ?? 0}</Td>
-                          <Td align="right">{fmtCurrency(it.price)}</Td>
-                          <Td align="right">{(it.item_discount_percentage ?? 0).toFixed(2)}</Td>
-                          <Td align="right">{fmtCurrency(it.sub_total)}</Td>
-                        </tr>
-                      ))}
-
-                      {(!inv.items || !inv.items.length) && (
-                        <tr>
-                          <td colSpan={9} className="px-3 py-6 text-center text-gray-500 dark:text-slate-400">
-                            No items match this filter in this invoice.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-
-                    <tfoot className="bg-white/70 backdrop-blur-[2px] dark:bg-slate-700/50 dark:backdrop-blur-sm">
-                      <tr>
-                        <Td colSpan={6} align="right" strong>Discount %</Td>
-                        <Td colSpan={1} align="right">{(inv.discount_percentage ?? 0).toFixed(2)}</Td>
-                        <Td colSpan={1} align="right" strong>Discount Amt</Td>
-                        <Td colSpan={1} align="right">{fmtCurrency(inv.discount_amount)}</Td>
-                      </tr>
-                      <tr>
-                        <Td colSpan={6} align="right" strong>Tax %</Td>
-                        <Td colSpan={1} align="right">{(inv.tax_percentage ?? 0).toFixed(2)}</Td>
-                        <Td colSpan={1} align="right" strong>Tax Amt</Td>
-                        <Td colSpan={1} align="right">{fmtCurrency(inv.tax_amount)}</Td>
-                      </tr>
-                      <tr>
-                        <Td colSpan={8} align="right" strong>Item Discount</Td>
-                        <Td colSpan={1} align="right">{fmtCurrency(inv.item_discount)}</Td>
-                      </tr>
-                      <tr>
-                        <Td colSpan={8} align="right" strong>Gross Amount</Td>
-                        <Td colSpan={1} align="right">{fmtCurrency(inv.gross_amount)}</Td>
-                      </tr>
-                      <tr>
-                        <Td colSpan={8} align="right" strong className="!font-semibold">Total</Td>
-                        <Td colSpan={1} align="right" className="!font-semibold">{fmtCurrency(inv.total)}</Td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </GlassCard>
-            ))}
+      {data.length === 0 && !loading && (
+        <GlassCard>
+          <div className={`px-4 py-4 text-sm ${isDark ? "text-slate-400" : "text-gray-600"}`}>
+            No data found for the selected filters.
           </div>
-        </>
+        </GlassCard>
       )}
 
-      {/* Print & table niceties */}
+      {/* ===== Invoice Cards ===== */}
+      <div className="flex flex-col gap-4">
+        {data.map((inv, idxInv) => (
+          <div
+            key={idxInv + "-" + (inv.posted_number ?? "") + "-" + (inv.invoice_date ?? "")}
+            className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden"
+          >
+            {/* Invoice Header (matching Products page table header style) */}
+            <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
+              <div className="flex items-center gap-2">
+                <div className={`p-1 rounded ${SECTION_CONFIG.core.bgDark}`}>
+                  <Squares2X2Icon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                </div>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                  {inv.customer_name || "—"}
+                </span>
+              </div>
+              <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
+                <span>Posted #: {inv.posted_number || "-"}</span>
+                <span>{inv.invoice_date || "-"}</span>
+              </div>
+            </div>
+
+            {/* Metadata Bar */}
+            <div className={`px-4 py-2 border-b ${isDark ? "border-slate-700 bg-slate-800/50" : "border-gray-100 bg-gray-50/50"}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-6 text-xs">
+                  <KV isDark={isDark} label="User:" value={inv.user_name || "-"} />
+                  <KV isDark={isDark} label="Doctor:" value={inv.doctor_name || "-"} />
+                  <KV isDark={isDark} label="Patient:" value={inv.patient_name || "-"} />
+                </div>
+                <Guard when={can.edit}>
+                  {editingInvoiceId === inv.id ? (
+                    <div className="flex gap-1">
+                      <GlassBtn
+                        className="h-7 px-2 bg-emerald-600 text-white"
+                        disabled={saving}
+                        onClick={saveInvoiceMeta(inv)}
+                      >
+                        <CheckCircleIcon className="w-4 h-4" />
+                      </GlassBtn>
+                      <GlassBtn
+                        className="h-7 px-2 bg-rose-500 text-white"
+                        onClick={() => setEditingInvoiceId(null)}
+                      >
+                        <XCircleIcon className="w-4 h-4" />
+                      </GlassBtn>
+                    </div>
+                  ) : (
+                    <GlassBtn
+                      className="h-7 px-2 bg-sky-500 text-white"
+                      onClick={() => {
+                        setEditingInvoiceId(inv.id);
+                        setEditDoctor(inv.doctor_name || "");
+                        setEditPatient(inv.patient_name || "");
+                      }}
+                    >
+                      <PencilSquareIcon className="w-4 h-4" />
+                    </GlassBtn>
+                  )}
+                </Guard>
+              </div>
+              
+              {/* Edit inputs */}
+              {editingInvoiceId === inv.id && (
+                <div className="flex gap-2 mt-2">
+                  <GlassInput
+                    className="h-7 text-xs"
+                    placeholder="Doctor"
+                    value={editDoctor}
+                    onChange={(e) => setEditDoctor(e.target.value)}
+                  />
+                  <GlassInput
+                    className="h-7 text-xs"
+                    placeholder="Patient"
+                    value={editPatient}
+                    onChange={(e) => setEditPatient(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Items Table */}
+            <div className="relative max-w-full overflow-auto">
+              <table className="w-full min-w-[900px] text-sm">
+                <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
+                  <tr className="text-left">
+                    <Th isDark={isDark}>Product Name</Th>
+                    <Th isDark={isDark} align="right">Pack Size</Th>
+                    <Th isDark={isDark}>Batch #</Th>
+                    <Th isDark={isDark}>Expiry</Th>
+                    <Th isDark={isDark} align="right">Current Qty</Th>
+                    <Th isDark={isDark} align="right">Qty</Th>
+                    <Th isDark={isDark} align="right">Price</Th>
+                    <Th isDark={isDark} align="right">Disc %</Th>
+                    <Th isDark={isDark} align="right">Sub Total</Th>
+                  </tr>
+                </thead>
+
+                <tbody className="tabular-nums">
+                  {(inv.items || []).map((it, idx) => (
+                    <tr
+                      key={(it.id ?? idx) + "-" + (it.product_id ?? "p") + "-" + idx}
+                      className={`
+                        transition-colors
+                        border-b border-gray-100 dark:border-slate-600/30
+                        odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/40 dark:even:bg-slate-800/40
+                        hover:bg-blue-50 dark:hover:bg-slate-600/50
+                      `}
+                    >
+                      <Td isDark={isDark}>{it.product_name || "-"}</Td>
+                      <Td isDark={isDark} align="right">{it.pack_size ?? 0}</Td>
+                      <Td isDark={isDark}>{it.batch_number || "-"}</Td>
+                      <Td isDark={isDark}>{it.expiry || "-"}</Td>
+                      <Td isDark={isDark} align="right">{it.current_quantity ?? 0}</Td>
+                      <Td isDark={isDark} align="right">{it.quantity ?? 0}</Td>
+                      <Td isDark={isDark} align="right">{fmtCurrency(it.price)}</Td>
+                      <Td isDark={isDark} align="right">{(it.item_discount_percentage ?? 0).toFixed(2)}</Td>
+                      <Td isDark={isDark} align="right">{fmtCurrency(it.sub_total)}</Td>
+                    </tr>
+                  ))}
+
+                  {(!inv.items || !inv.items.length) && (
+                    <tr>
+                      <td colSpan={9} className={`px-3 py-6 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+                        No items match this filter in this invoice.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+
+                <tfoot className={`
+                  border-t-2 backdrop-blur-sm font-semibold
+                  ${isDark ? "border-slate-600 bg-slate-800/80" : "border-gray-300 bg-gray-50"}
+                `}>
+                  <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>
+                    <Td isDark={isDark} colSpan={6} align="right" strong>Discount %</Td>
+                    <Td isDark={isDark} colSpan={1} align="right">{(inv.discount_percentage ?? 0).toFixed(2)}</Td>
+                    <Td isDark={isDark} colSpan={1} align="right" strong>Discount Amt</Td>
+                    <Td isDark={isDark} colSpan={1} align="right">{fmtCurrency(inv.discount_amount)}</Td>
+                  </tr>
+                  <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>
+                    <Td isDark={isDark} colSpan={6} align="right" strong>Tax %</Td>
+                    <Td isDark={isDark} colSpan={1} align="right">{(inv.tax_percentage ?? 0).toFixed(2)}</Td>
+                    <Td isDark={isDark} colSpan={1} align="right" strong>Tax Amt</Td>
+                    <Td isDark={isDark} colSpan={1} align="right">{fmtCurrency(inv.tax_amount)}</Td>
+                  </tr>
+                  <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>
+                    <Td isDark={isDark} colSpan={8} align="right" strong>Item Discount</Td>
+                    <Td isDark={isDark} colSpan={1} align="right">{fmtCurrency(inv.item_discount)}</Td>
+                  </tr>
+                  <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>
+                    <Td isDark={isDark} colSpan={8} align="right" strong>Gross Amount</Td>
+                    <Td isDark={isDark} colSpan={1} align="right">{fmtCurrency(inv.gross_amount)}</Td>
+                  </tr>
+                  <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>
+                    <Td isDark={isDark} colSpan={8} align="right" strong>TOTAL</Td>
+                    <Td isDark={isDark} colSpan={1} align="right" strong>{fmtCurrency(inv.total)}</Td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Print styles */}
       <style>{`
         .tabular-nums { font-variant-numeric: tabular-nums; }
         @media print {
@@ -664,32 +693,38 @@ const saveInvoiceMeta = (inv) => async () => {
   );
 }
 
-/* ===== Small helpers to keep JSX clean while staying glassy ===== */
-function KV({ label, value }) {
+/* ===== Table helpers ===== */
+function KV({ isDark, label, value }) {
   return (
-    <div className="text-sm">
-      <span className="text-gray-600 dark:text-slate-400">{label}</span>{" "}
-      <span className="font-semibold text-gray-900 dark:text-gray-100">{value}</span>
+    <div className="text-xs">
+      <span className={`${isDark ? "text-slate-400" : "text-gray-500"}`}>{label}</span>{" "}
+      <span className={`font-medium ${isDark ? "text-slate-200" : "text-gray-700"}`}>{value}</span>
     </div>
   );
 }
 
-function Th({ children, align = "left" }) {
+function Th({ isDark, children, align = "left" }) {
   return (
-    <th className={`px-3 py-2 font-medium ${align === "right" ? "text-right" : "text-left"} dark:text-gray-200`}>
+    <th className={`
+      px-3 py-2 font-semibold text-xs uppercase tracking-wider
+      ${align === "right" ? "text-right" : "text-left"}
+      ${isDark ? "bg-slate-700 text-slate-200" : "bg-gray-100 text-gray-600"}
+    `}>
       {children}
     </th>
   );
 }
 
-function Td({ children, align = "left", colSpan, strong = false, className = "" }) {
+function Td({ isDark, children, align = "left", colSpan, strong = false, className = "" }) {
   return (
     <td
       colSpan={colSpan}
       className={[
-        "px-3 py-2 border-t border-gray-200/70 dark:border-slate-700/60 dark:text-gray-200",
+        "px-3 py-2 border-t",
+        isDark ? "border-slate-600/30" : "border-gray-200/70",
         align === "right" ? "text-right" : "text-left",
-        strong ? "font-medium text-gray-800 dark:text-gray-100" : "",
+        strong ? `font-semibold ${isDark ? "text-slate-200" : "text-gray-800"}` : "",
+        isDark ? "text-slate-300" : "text-gray-700",
         className,
       ].join(" ")}
     >
@@ -697,3 +732,4 @@ function Td({ children, align = "left", colSpan, strong = false, className = "" 
     </td>
   );
 }
+
