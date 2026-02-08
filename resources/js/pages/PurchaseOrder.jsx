@@ -405,7 +405,25 @@ export default function PurchaseOrder() {
         <div className="px-4 py-3 bg-gray-50/50 dark:bg-slate-800/50">
           <div className="grid grid-cols-2 md:grid-cols-12 gap-3">
             <div className="col-span-2 md:col-span-2 flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Projected Days</label>
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">From</label>
+              <GlassInput 
+                type="date" 
+                value={dateFrom} 
+                onChange={(e) => setDateFrom(e.target.value)} 
+                className="w-full h-8 text-xs"
+              />
+            </div>
+            <div className="col-span-2 md:col-span-2 flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">To</label>
+              <GlassInput 
+                type="date" 
+                value={dateTo} 
+                onChange={(e) => setDateTo(e.target.value)} 
+                className="w-full h-8 text-xs"
+              />
+            </div>
+            <div className="col-span-1 md:col-span-1 flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Proj. Days</label>
               <GlassInput
                 type="number"
                 min={1}
@@ -415,8 +433,8 @@ export default function PurchaseOrder() {
               />
             </div>
 
-            <div className="col-span-2 md:col-span-2 flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Safety Stock (packs)</label>
+            <div className="col-span-1 md:col-span-1 flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Safety</label>
               <GlassInput
                 type="number"
                 min={0}
@@ -426,8 +444,8 @@ export default function PurchaseOrder() {
               />
             </div>
 
-            <div className="col-span-2 md:col-span-2 flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">MOQ (packs)</label>
+            <div className="col-span-1 md:col-span-1 flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">MOQ</label>
               <GlassInput
                 type="number"
                 min={0}
@@ -437,7 +455,7 @@ export default function PurchaseOrder() {
               />
             </div>
 
-            <div className="col-span-2 md:col-span-3 flex flex-col gap-1">
+            <div className="col-span-2 md:col-span-2 flex flex-col gap-1">
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Brand</label>
               <AsyncSelect
                 cacheOptions={false}
