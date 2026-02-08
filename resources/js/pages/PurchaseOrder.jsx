@@ -7,18 +7,43 @@ import {
   ArrowPathIcon,
   PlayCircleIcon,
   PrinterIcon,
+  CalculatorIcon,
+  CalendarIcon,
+  ShieldCheckIcon,
+  CubeIcon,
 } from "@heroicons/react/24/solid";
 import { usePermissions } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext.jsx";
 
-// 🧊 glass primitives
+// Reusable components
 import {
   GlassCard,
   GlassSectionHeader,
   GlassToolbar,
   GlassInput,
   GlassBtn,
-} from "@/components/glass.jsx";
+  TextSearch,
+} from "@/components";
+
+// Section configuration with color schemes - matching sidebar design
+const SECTION_CONFIG = {
+  core: {
+    gradient: "from-blue-500 to-cyan-600",
+    bgLight: "bg-blue-50",
+    bgDark: "dark:bg-blue-900/20",
+    borderColor: "border-blue-200 dark:border-blue-700",
+    iconColor: "text-blue-600 dark:text-blue-400",
+    ringColor: "ring-blue-300 dark:ring-blue-700",
+  },
+  management: {
+    gradient: "from-violet-500 to-purple-600",
+    bgLight: "bg-violet-50",
+    bgDark: "dark:bg-violet-900/20",
+    borderColor: "border-violet-200 dark:border-violet-700",
+    iconColor: "text-violet-600 dark:text-violet-400",
+    ringColor: "ring-violet-300 dark:ring-violet-700",
+  },
+};
 
 export default function PurchaseOrder() {
   const today = new Date().toISOString().split("T")[0];
@@ -41,26 +66,20 @@ export default function PurchaseOrder() {
   // Get dark mode state
   const { isDark } = useTheme();
 
-  const tintSlate  = "bg-slate-900/80 text-white shadow-[0_6px_20px_-6px_rgba(15,23,42,0.45)] ring-1 ring-white/15 hover:bg-slate-900/90";
-  const tintGlass  = "bg-white/60 text-slate-700 ring-1 ring-white/30 hover:bg-white/75";
-  const tintGreen  = "bg-emerald-500/85 text-white ring-1 ring-white/20 hover:bg-emerald-500/95";
-  const tintBlue   = "bg-blue-500/85 text-white ring-1 ring-white/20 hover:bg-blue-500/95";
-
-  // Dark mode button variants
-  const tintSlateDark  = "bg-slate-700/90 text-slate-200 shadow-[0_6px_20px_-6px_rgba(15,23,42,0.45)] ring-1 ring-slate-600/50 hover:bg-slate-700";
-  const tintGlassDark  = "bg-slate-800/60 text-slate-300 ring-1 ring-slate-700/50 hover:bg-slate-800";
-  const tintGreenDark  = "bg-emerald-600/85 text-white ring-1 ring-slate-600/50 hover:bg-emerald-600";
-  const tintBlueDark   = "bg-blue-600/85 text-white ring-1 ring-slate-600/50 hover:bg-blue-600";
-
-  // Dark mode glass button
-  const glassBtnDark = "bg-slate-800/80 text-slate-200 ring-1 ring-slate-700/60 hover:bg-slate-700/80 backdrop-blur-sm";
+  // 🎨 Modern button palette (matching sidebar design language)
+  const tintBlue = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
+  const tintSlate = "bg-gradient-to-br from-slate-700 to-slate-800 text-white shadow-lg shadow-slate-500/25 ring-1 ring-white/10 hover:shadow-xl hover:shadow-slate-500/30 hover:scale-[1.02] hover:from-slate-800 hover:to-slate-900 active:scale-[0.98] transition-all duration-200";
+  const tintGreen = "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] hover:from-emerald-600 hover:to-emerald-700 active:scale-[0.98] transition-all duration-200";
+  const tintGlass = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
+  const tintGreenSm = "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] hover:from-emerald-600 hover:to-emerald-700 active:scale-[0.98] transition-all duration-200";
+  const tintBlueSm = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
 
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
   const [projectedDays, setProjectedDays] = useState(7);
 
-  const [safetyPacks, setSafetyPacks] = useState(1); // knob (packs)
-  const [moqPacks, setMoqPacks] = useState(0);       // knob (packs)
+  const [safetyPacks, setSafetyPacks] = useState(1);
+  const [moqPacks, setMoqPacks] = useState(0);
 
   const [supplier, setSupplier] = useState(null);
   const [brand, setBrand] = useState(null);
@@ -71,8 +90,8 @@ export default function PurchaseOrder() {
   // === keyboard navigation state/refs ===
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const tableWrapRef = useRef(null);
-  const inputRefs = useRef({}); // {rowId: HTMLInputElement}
-  const rowRefs = useRef({});   // {rowId: HTMLTableRowElement}
+  const inputRefs = useRef({});
+  const rowRefs = useRef({});
 
   const printBtnRef = useRef(null);
 
@@ -124,7 +143,6 @@ export default function PurchaseOrder() {
       });
 
       setRows(mapped);
-      // select first row for quick keyboard flow
       setSelectedIndex(mapped.length ? 0 : -1);
       toast.success("Forecast ready.");
     } catch (err) {
@@ -135,7 +153,6 @@ export default function PurchaseOrder() {
     }
   };
 
-  // Remove products with NO pack purchase price (<= 0 or null)
   const pruneNoPackPrice = () => {
     if (!rows.length) return;
     const before = rows.length;
@@ -164,7 +181,7 @@ export default function PurchaseOrder() {
 
   const updateOrderPacks = (rowId, value) => {
     setRows((prev) =>
-      prev.map((r, idx) => {
+      prev.map((r) => {
         if (r._rowId !== rowId) return r;
         const v = Math.max(0, parseInt(value || 0, 10));
         const units = v * (r.pack_size ?? 1);
@@ -174,7 +191,7 @@ export default function PurchaseOrder() {
     );
   };
 
-  // =============== Async server-side search (prefix only) ===============
+  // Async server-side search (prefix only)
   const makeLoadOptions = (endpoint) => {
     let timeoutId = null;
     let lastReject = null;
@@ -263,8 +280,7 @@ export default function PurchaseOrder() {
     menuPortal: (base) => ({ ...base, zIndex: 9999 }),
   });
 
-  // === keyboard navigation handlers ===
-  // focus active row's input and ensure visibility
+  // Keyboard navigation handlers
   useEffect(() => {
     if (selectedIndex < 0 || selectedIndex >= rows.length) return;
     const row = rows[selectedIndex];
@@ -275,7 +291,6 @@ export default function PurchaseOrder() {
       const wrap = tableWrapRef.current;
       const trBox = trEl.getBoundingClientRect();
       const wrapBox = wrap.getBoundingClientRect();
-      // Scroll into view if row is outside viewport of wrapper
       if (trBox.top < wrapBox.top + 40 || trBox.bottom > wrapBox.bottom - 40) {
         trEl.scrollIntoView({ block: "nearest" });
       }
@@ -289,11 +304,6 @@ export default function PurchaseOrder() {
   }, [selectedIndex, rows]);
 
   const onKeyDownTable = (e) => {
-    // ignore when user is typing in a text input other than our table wrapper
-    const tag = (e.target?.tagName || "").toLowerCase();
-    const isInput = tag === "input" || tag === "textarea";
-    const isNumberField = isInput && e.target.type === "number";
-    // We still want Up/Down to navigate when inside our number inputs:
     const key = e.key;
     if (key === "ArrowDown" || key === "ArrowUp") {
       e.preventDefault();
@@ -307,177 +317,213 @@ export default function PurchaseOrder() {
     }
   };
 
-  if (permsLoading) return <div className={`p-6 ${isDark ? "text-slate-400" : ""}`}>Loading…</div>;
-  if (!canView) return <div className={`p-6 text-sm ${isDark ? "text-slate-400" : "text-gray-700"}`}>You don't have permission to view Purchase Order (Forecast).</div>;
+  if (permsLoading) return <div className="p-6">Loading…</div>;
+  if (!canView) return <div className="p-6 text-sm text-gray-700">You don't have permission to view Purchase Order (Forecast).</div>;
 
   return (
-    <div className={`p-4 md:p-6 space-y-4 print:p-0 ${isDark ? "bg-slate-900" : "bg-gray-50"}`} onKeyDown={onKeyDownTable}>
-      {/* ===== Header ===== */}
-      <GlassCard className={isDark ? "bg-slate-800/80 border-slate-700" : ""}>
-        <GlassSectionHeader
-          title={
-            <span className={`inline-flex items-center gap-2 ${isDark ? "text-slate-200" : "text-gray-800"}`}>
-              <span className="w-2 h-2 rounded-full bg-blue-600" />
-              <span>Purchase Order (Forecast)</span>
-            </span>
-          }
-          right={
-            <div className="flex items-center gap-2 flex-wrap">
-              <GlassBtn
-                className={`h-9 px-3 text-sm ${isDark ? tintSlateDark : tintSlate}`}
-                onClick={() => window.location.reload()}
-                title="Refresh"
-                aria-label="Refresh page"
-              >
-                <span className="inline-flex items-center gap-2">
-                  <ArrowPathIcon className="w-4 h-4" />
-                  Refresh
-                </span>
-              </GlassBtn>
-
-              <GlassBtn
-                ref={printBtnRef}
-                onClick={doPrint}
-                className={`h-9 px-3 text-sm ${isDark ? glassBtnDark : tintGlass}`}
-                title="Print (Alt+P)"
-              >
-                <span className="inline-flex items-center gap-2">
-                  <PrinterIcon className="w-4 h-4" />
-                  Print
-                </span>
-              </GlassBtn>
+    <div className="p-4 space-y-3 print:p-0" onKeyDown={onKeyDownTable}>
+      {/* ===== Professional Header ===== */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+        {/* Header Top */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+          {/* Title */}
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.core.gradient} shadow-sm`}>
+              <CalculatorIcon className="w-5 h-5 text-white" />
             </div>
-          }
-        />
-
-        {/* Filters */}
-        <GlassToolbar className={`grid grid-cols-1 md:grid-cols-9 gap-2 ${isDark ? "bg-slate-800/50" : ""}`}>
-          <div className="flex flex-col gap-0.5">
-            <label className={`text-xs ${isDark ? "text-slate-400" : "text-gray-700"}`}>From</label>
-            <GlassInput type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={`w-full h-8 text-xs ${isDark ? "bg-slate-700 border-slate-600 text-slate-200" : ""}`} />
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <label className={`text-xs ${isDark ? "text-slate-400" : "text-gray-700"}`}>To</label>
-            <GlassInput type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={`w-full h-8 text-xs ${isDark ? "bg-slate-700 border-slate-600 text-slate-200" : ""}`} />
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <label className={`text-xs ${isDark ? "text-slate-400" : "text-gray-700"}`}>Projected Days</label>
-            <GlassInput
-              type="number"
-              min={1}
-              value={projectedDays}
-              onChange={(e) => setProjectedDays(parseInt(e.target.value || 0, 10))}
-              className={`w-full h-8 text-xs ${isDark ? "bg-slate-700 border-slate-600 text-slate-200" : ""}`}
-            />
+            <div>
+              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Purchase Order (Forecast)</h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{rows.length} items</p>
+            </div>
           </div>
 
-          <div className="flex flex-col gap-0.5">
-            <label className={`text-xs ${isDark ? "text-slate-400" : "text-gray-700"}`}>Safety Stock (packs)</label>
-            <GlassInput
-              type="number"
-              min={0}
-              value={safetyPacks}
-              onChange={(e)=>setSafetyPacks(parseInt(e.target.value || 0, 10))}
-              className={`w-full h-8 text-xs ${isDark ? "bg-slate-700 border-slate-600 text-slate-200" : ""}`}
-            />
-          </div>
-
-          <div className="flex flex-col gap-0.5">
-            <label className={`text-xs ${isDark ? "text-slate-400" : "text-gray-700"}`}>MOQ (packs)</label>
-            <GlassInput
-              type="number"
-              min={0}
-              value={moqPacks}
-              onChange={(e)=>setMoqPacks(parseInt(e.target.value || 0, 10))}
-              className={`w-full h-8 text-xs ${isDark ? "bg-slate-700 border-slate-600 text-slate-200" : ""}`}
-            />
-          </div>
-
-          <div className="flex flex-col gap-0.5">
-            <label className={`text-xs ${isDark ? "text-slate-400" : "text-gray-700"}`}>Supplier (server)</label>
-            <AsyncSelect
-              cacheOptions={false}
-              defaultOptions={[]}
-              loadOptions={loadSupplierOptions}
-              styles={getSelectStyles(isDark)}
-              value={supplier}
-              onChange={setSupplier}
-              placeholder="Type to search…"
-              isClearable
-              filterOption={() => true}
-              menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-              menuPosition="fixed"
-              classNamePrefix="rs"
-            />
-          </div>
-
-          <div className="flex flex-col gap-0.5">
-            <label className={`text-xs ${isDark ? "text-slate-400" : "text-gray-700"}`}>Brand (server)</label>
-            <AsyncSelect
-              cacheOptions={false}
-              defaultOptions={[]}
-              loadOptions={loadBrandOptions}
-              styles={getSelectStyles(isDark)}
-              value={brand}
-              onChange={setBrand}
-              placeholder="Type to search…"
-              isClearable
-              filterOption={() => true}
-              menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-              menuPosition="fixed"
-              classNamePrefix="rs"
-            />
-          </div>
-
-          <div className="flex items-end gap-2 col-span-1 md:col-span-2">
-            <GlassBtn
+{/* Action Buttons */}
+          <div className="flex items-center gap-2">
+            {/* Generate Button */}
+            <button
               onClick={handleFetch}
               disabled={loading || !canGenerate}
-              className={`h-9 px-3 text-sm ${canGenerate ? (isDark ? tintGreenDark : tintGreen) : (isDark ? glassBtnDark : tintGlass)} ${!canGenerate ? "opacity-60 cursor-not-allowed" : ""}`}
+              className={`
+                inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold
+                transition-all duration-200
+                ${canGenerate 
+                  ? `${tintGreen} cursor-pointer` 
+                  : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                }
+              `}
               title={!canGenerate ? "Not permitted" : "Generate forecast"}
             >
-              <span className="inline-flex items-center gap-2">
-                <PlayCircleIcon className="w-4 h-4" />
-                {loading ? "Loading…" : "Generate"}
-              </span>
-            </GlassBtn>
+              <PlayCircleIcon className="w-4 h-4" />
+              {loading ? "Loading…" : "Generate"}
+            </button>
 
-            <GlassBtn
+            {/* Remove Zero Button */}
+            <button
               onClick={pruneNoPackPrice}
               disabled={!rows.length}
-              className={`h-9 px-3 text-sm ${rows.length ? (isDark ? tintBlueDark : tintBlue) : (isDark ? glassBtnDark : tintGlass)}`}
+              className={`
+                inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold
+                transition-all duration-200
+                ${rows.length 
+                  ? `${tintBlue} cursor-pointer` 
+                  : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                }
+              `}
               title="Remove products with no Pack Purchase Price"
             >
-              Remove&nbsp;Zero
-            </GlassBtn>
-          </div>
-        </GlassToolbar>
-      </GlassCard>
+              <span className="text-lg">×</span>
+              Remove Zero
+            </button>
 
-      {/* ===== Table (bordered + keyboard nav) ===== */}
-      <GlassCard className={isDark ? "bg-slate-800/80 border-slate-700" : ""}>
+            <div className="w-px h-8 bg-gray-200 dark:bg-slate-600 mx-1" />
+
+            {/* Refresh Button */}
+            <button
+              onClick={() => window.location.reload()}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintSlate}`}
+              title="Refresh"
+              aria-label="Refresh page"
+            >
+              <ArrowPathIcon className="w-4 h-4" />
+              Refresh
+            </button>
+
+            {/* Print Button */}
+            <button
+              ref={printBtnRef}
+              onClick={doPrint}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintGlass}`}
+              title="Print (Alt+P)"
+            >
+              <PrinterIcon className="w-4 h-4" />
+              Print
+            </button>
+          </div>
+        </div>
+
+{/* Filters */}
+        <div className="px-4 py-3 bg-gray-50/50 dark:bg-slate-800/50">
+          <div className="grid grid-cols-2 md:grid-cols-12 gap-3">
+            <div className="col-span-2 md:col-span-2 flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Projected Days</label>
+              <GlassInput
+                type="number"
+                min={1}
+                value={projectedDays}
+                onChange={(e) => setProjectedDays(parseInt(e.target.value || 0, 10))}
+                className="w-full h-8 text-xs"
+              />
+            </div>
+
+            <div className="col-span-2 md:col-span-2 flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Safety Stock (packs)</label>
+              <GlassInput
+                type="number"
+                min={0}
+                value={safetyPacks}
+                onChange={(e)=>setSafetyPacks(parseInt(e.target.value || 0, 10))}
+                className="w-full h-8 text-xs"
+              />
+            </div>
+
+            <div className="col-span-2 md:col-span-2 flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">MOQ (packs)</label>
+              <GlassInput
+                type="number"
+                min={0}
+                value={moqPacks}
+                onChange={(e)=>setMoqPacks(parseInt(e.target.value || 0, 10))}
+                className="w-full h-8 text-xs"
+              />
+            </div>
+
+            <div className="col-span-2 md:col-span-3 flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Brand</label>
+              <AsyncSelect
+                cacheOptions={false}
+                defaultOptions={[]}
+                loadOptions={loadBrandOptions}
+                styles={getSelectStyles(isDark)}
+                value={brand}
+                onChange={setBrand}
+                placeholder="Search brand..."
+                isClearable
+                filterOption={() => true}
+                menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                menuPosition="fixed"
+                classNamePrefix="rs"
+              />
+            </div>
+
+            <div className="col-span-2 md:col-span-3 flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Supplier</label>
+              <AsyncSelect
+                cacheOptions={false}
+                defaultOptions={[]}
+                loadOptions={loadSupplierOptions}
+                styles={getSelectStyles(isDark)}
+                value={supplier}
+                onChange={setSupplier}
+                placeholder="Search supplier..."
+                isClearable
+                filterOption={() => true}
+                menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                menuPosition="fixed"
+                classNamePrefix="rs"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Header Bottom */}
+        <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 dark:border-slate-700">
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            {loading ? (
+              <span className="inline-flex items-center gap-1">
+                <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
+                Loading...
+              </span>
+            ) : (
+              `${rows.length} items`
+            )}
+          </span>
+        </div>
+      </div>
+
+      {/* ===== Table ===== */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+        {/* Table Header */}
+        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
+          <div className="flex items-center gap-2">
+            <div className={`p-1 rounded ${SECTION_CONFIG.core.bgDark}`}>
+              <CubeIcon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            </div>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Forecast Items</span>
+          </div>
+          <span className="text-xs text-gray-400">{rows.length} items</span>
+        </div>
+
         <div
           ref={tableWrapRef}
-          className={`max-h-[75vh] overflow-auto rounded-b-2xl outline-none ${isDark ? "bg-slate-800" : "bg-white"}`}
-          tabIndex={0} // allow wrapper to receive keydown even if inputs not focused
+          className="max-h-[65vh] overflow-auto outline-none"
+          tabIndex={0}
         >
-          <table className={`min-w-[880px] w-full text-[12px] border border-collapse ${isDark ? "border-slate-700 text-slate-200" : "border-slate-200/80 text-gray-900"}`}>
-            <thead className={`sticky top-0 z-10 ${isDark ? "bg-slate-700/95 backdrop-blur-sm" : "bg-white/95 backdrop-blur-sm"}`}>
+          <table className="min-w-[880px] w-full text-sm">
+            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
               <tr className="text-left">
                 {["#", "Product", "Pack Size", "Units Sold", "Stock (U)", "Pack Price", "Suggested (P)", "Order Packs", "Order Units", "Order Amount"]
                   .map((h, i) => (
-                  <th
-                    key={h}
-                   className={[
-                      "px-2 py-1 font-medium border-b",
-                      i === 0 ? "w-8" : "",
-                      [2,3,4,5,6,7,8,9].includes(i) ? "text-right" : "",
-                      h === "Stock (U)" ? (isDark ? "bg-rose-600 text-white font-bold" : "bg-red-500 text-white font-bold") : ""
-                    ].join(" ")}
-                  >
-                    {h}
-                  </th>
-                ))}
+                    <th
+                      key={h}
+                      className={`
+                        px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider
+                        ${[2, 3, 4, 5, 6, 7, 8, 9].includes(i) ? "text-right" : ""}
+                        ${h === "Stock (U)" ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300" : ""}
+                      `}
+                    >
+                      {h}
+                    </th>
+                  ))}
               </tr>
             </thead>
 
@@ -489,25 +535,34 @@ export default function PurchaseOrder() {
                     key={r._rowId}
                     ref={(el) => (rowRefs.current[r._rowId] = el)}
                     onClick={() => setSelectedIndex(idx)}
-                    className={[
-                      "transition-colors border-t",
-                      idx % 2 
-                        ? (isDark ? "bg-slate-800/80" : "bg-white/80") 
-                        : (isDark ? "bg-slate-800/60" : "bg-white/60"),
-                      isActive ? (isDark ? "bg-blue-900/50 ring-2 ring-blue-600/60" : "bg-blue-50 ring-2 ring-blue-300/60") : (isDark ? "hover:bg-slate-700" : "hover:bg-blue-50")
-                    ].join(" ")}
+                    className={`
+                      transition-colors
+                      ${isActive 
+                        ? "bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500/30" 
+                        : "odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/40 dark:even:bg-slate-800/40 hover:bg-blue-50 dark:hover:bg-slate-600/50"
+                      }
+                      border-b border-gray-100 dark:border-slate-600/30
+                    `}
                   >
-                    <td className="px-2 py-1">{idx + 1}</td>
-                    <td className="px-2 py-1">
-                      <div className="font-medium truncate max-w-[320px]" title={r.product_name}>{r.product_name}</div>
-                      {r.product_code && <div className={`text-[10px] ${isDark ? "text-slate-500" : "text-gray-500"}`}>{r.product_code}</div>}
+                    <td className="px-3 py-3 text-gray-600 dark:text-gray-300">{idx + 1}</td>
+                    <td className="px-3 py-3">
+                      <div className="font-medium text-gray-800 dark:text-gray-200 truncate max-w-[280px]" title={r.product_name}>
+                        {r.product_name}
+                      </div>
+                      {r.product_code && (
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{r.product_code}</div>
+                      )}
                     </td>
-                    <td className={`px-2 py-1 text-right tabular-nums whitespace-nowrap border-l ${isDark ? "border-slate-700" : "border-slate-200/60"}`}>{r.pack_size}</td>
-                    <td className="px-2 py-1 text-right tabular-nums whitespace-nowrap">{r.units_sold}</td>
-                    <td className={`px-2 py-1 text-center tabular-nums whitespace-nowrap font-bold ${isDark ? "bg-rose-600 text-white" : "bg-red-500 text-white"}`}>{r.current_stock_units}</td>
-                    <td className="px-2 py-1 text-right tabular-nums whitespace-nowrap">{fmt2(r.pack_price)}</td>
-                    <td className="px-2 py-1 text-right tabular-nums whitespace-nowrap">{r.suggested_packs}</td>
-                    <td className="px-2 py-1 text-right">
+                    <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-gray-600 dark:text-gray-300">{r.pack_size}</td>
+                    <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-gray-600 dark:text-gray-300">{r.units_sold}</td>
+                    <td className="px-3 py-3 text-center tabular-nums whitespace-nowrap">
+                      <span className="inline-flex items-center justify-center min-w-[3rem] px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300">
+                        {r.current_stock_units}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-gray-600 dark:text-gray-300">{fmt2(r.pack_price)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-gray-600 dark:text-gray-300">{r.suggested_packs}</td>
+                    <td className="px-3 py-3 text-right">
                       <GlassInput
                         type="number"
                         min={0}
@@ -515,20 +570,23 @@ export default function PurchaseOrder() {
                         onFocus={() => setSelectedIndex(idx)}
                         onChange={(e) => updateOrderPacks(r._rowId, e.target.value)}
                         ref={(el) => (inputRefs.current[r._rowId] = el)}
-                        className={`w-16 h-7 font-bold text-right text-[12px] no-spinners ${isDark ? "text-rose-400 bg-slate-700 border-slate-600" : "text-red-500 bg-white border-gray-300"}`}
+                        className="w-16 h-8 font-bold text-right text-xs no-spinners"
                         inputMode="numeric"
                       />
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums whitespace-nowrap">{r.order_units}</td>
-                    <td className="px-2 py-1 text-right tabular-nums whitespace-nowrap">{fmt2(r.order_amount)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-gray-600 dark:text-gray-300">{r.order_units}</td>
+                    <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap font-semibold text-gray-800 dark:text-gray-200">{fmt2(r.order_amount)}</td>
                   </tr>
                 );
               })}
 
               {!rows.length && (
                 <tr>
-                  <td colSpan={10} className={`px-3 py-10 text-center border-t ${isDark ? "text-slate-400 border-slate-700" : "text-gray-600 border-slate-200/80"}`}>
-                    No data. Choose filters and click <b>Generate</b>.
+                  <td colSpan={10} className="px-3 py-12 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <CalculatorIcon className="w-8 h-8 text-gray-400" />
+                      <p className="text-sm text-gray-500 dark:text-gray-400">No data. Choose filters and click Generate.</p>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -536,19 +594,19 @@ export default function PurchaseOrder() {
 
             {rows.length > 0 && (
               <tfoot>
-                <tr className={`font-semibold ${isDark ? "bg-slate-700/90 backdrop-blur-sm border-t border-slate-600 text-slate-200" : "bg-white/90 backdrop-blur-sm border-t border-slate-200/80 text-gray-900"}`}>
-                  <td className="px-2 py-1" colSpan={7}>Totals</td>
-                  <td className="px-2 py-1 text-right tabular-nums">{totals.packs}</td>
-                  <td className="px-2 py-1 text-right tabular-nums">{totals.units}</td>
-                  <td className="px-2 py-1 text-right tabular-nums">{fmt2(totals.amount)}</td>
+                <tr className="font-semibold bg-gray-50 dark:bg-slate-700/50 border-t border-gray-200 dark:border-slate-600">
+                  <td className="px-3 py-3 text-gray-700 dark:text-gray-200" colSpan={7}>Totals</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-gray-700 dark:text-gray-200">{totals.packs}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-gray-700 dark:text-gray-200">{totals.units}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-gray-800 dark:text-gray-100">{fmt2(totals.amount)}</td>
                 </tr>
               </tfoot>
             )}
           </table>
         </div>
-      </GlassCard>
+      </div>
 
-      {/* Print + number-input spinner removal */}
+      {/* Print styles */}
       <style>{`
         @media print {
           .print\\:p-0 { padding: 0 !important; }
@@ -556,10 +614,8 @@ export default function PurchaseOrder() {
           table { font-size: 10px; }
           thead { position: sticky; top: 0; }
         }
-        /* Remove spinners in number inputs (Chrome, Edge, Safari) */
         .no-spinners::-webkit-outer-spin-button,
         .no-spinners::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        /* Firefox */
         .no-spinners[type=number] { -moz-appearance: textfield; }
       `}</style>
     </div>
