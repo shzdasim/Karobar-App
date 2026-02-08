@@ -23,7 +23,30 @@ import {
   ArrowDownOnSquareIcon,
   ShieldExclamationIcon,
   XMarkIcon,
+  CubeIcon,
+  Squares2X2Icon,
+  UserIcon,
 } from "@heroicons/react/24/solid";
+
+// Section configuration with color schemes - matching sidebar design
+const SECTION_CONFIG = {
+  core: {
+    gradient: "from-blue-500 to-cyan-600",
+    bgLight: "bg-blue-50",
+    bgDark: "dark:bg-blue-900/20",
+    borderColor: "border-blue-200 dark:border-blue-700",
+    iconColor: "text-blue-600 dark:text-blue-400",
+    ringColor: "ring-blue-300 dark:ring-blue-700",
+  },
+  management: {
+    gradient: "from-violet-500 to-purple-600",
+    bgLight: "bg-violet-50",
+    bgDark: "dark:bg-violet-900/20",
+    borderColor: "border-violet-200 dark:border-violet-700",
+    iconColor: "text-violet-600 dark:text-violet-400",
+    ringColor: "ring-violet-300 dark:ring-violet-700",
+  },
+};
 
 /* =========================
    Async Customer Search (tablet-friendly)
@@ -251,13 +274,16 @@ export default function CustomerLedgerPage() {
   // theme
   const { isDark } = useTheme();
 
-  // tints (same palette as Supplier Ledger)
-  const tintBlue   = "bg-blue-500/85 text-white ring-1 ring-white/20 shadow-[0_6px_20px_-6px_rgba(37,99,235,0.45)] hover:bg-blue-500/95";
-  const tintGreen  = "bg-emerald-500/85 text-white ring-1 ring-white/20 shadow-[0_6px_20px_-6px_rgba(16,185,129,0.45)] hover:bg-emerald-500/95";
-  const tintSlate  = "bg-slate-900/80 text-white ring-1 ring-white/15 shadow-[0_6px_20px_-6px_rgba(15,23,42,0.45)] hover:bg-slate-900/90";
-  const tintAmber  = "bg-amber-500/85 text-white ring-1 ring-white/20 shadow-[0_6px_20px_-6px_rgba(245,158,11,0.45)] hover:bg-amber-500/95";
-  const tintRed    = "bg-rose-500/85 text-white ring-1 ring-white/20 shadow-[0_6px_20px_-6px_rgba(244,63,94,0.45)] hover:bg-rose-500/95";
-  const tintGlass  = "bg-white/60 text-slate-700 ring-1 ring-white/30 hover:bg-white/75";
+  // 🎨 Modern button palette (matching SupplierLedger design)
+  const tintBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
+  const tintIndigo = "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all duration-200";
+  const tintSlate  = "bg-gradient-to-br from-slate-700 to-slate-800 text-white shadow-lg shadow-slate-500/25 ring-1 ring-white/10 hover:shadow-xl hover:shadow-slate-500/30 hover:scale-[1.02] hover:from-slate-800 hover:to-slate-900 active:scale-[0.98] transition-all duration-200";
+  const tintAmber  = "bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] hover:from-amber-600 hover:to-amber-700 active:scale-[0.98] transition-all duration-200";
+  const tintRed    = "bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700 active:scale-[0.98] transition-all duration-200";
+  const tintGreen  = "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] hover:from-emerald-600 hover:to-emerald-700 active:scale-[0.98] transition-all duration-200";
+  const tintGlass  = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
+  const tintOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
+  const tintIconBtn = "bg-white/60 dark:bg-slate-700/60 backdrop-blur-sm text-slate-600 dark:text-gray-300 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-md hover:scale-[1.05] active:scale-[0.95] transition-all duration-200";
 
   // ---------- utils ----------
   const fmt = (v) => {
@@ -705,29 +731,43 @@ export default function CustomerLedgerPage() {
       )}
 
       {/* ===== Table Compact ===== */}
-      <GlassCard className={`relative z-10 p-0 overflow-hidden ${isDark ? "bg-slate-800/80 border-slate-700" : ""}`}>
-        <div className={`max-h-[calc(100vh-250px)] overflow-auto ${isDark ? "bg-slate-800" : "bg-white"}`}>
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+        {/* Table Header */}
+        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
+          <div className="flex items-center gap-2">
+            <div className={`p-1 rounded ${SECTION_CONFIG.core.bgDark}`}>
+              <Squares2X2Icon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            </div>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Ledger Entries</span>
+          </div>
+          <span className="text-xs text-gray-400">{derivedRows.length} entries</span>
+        </div>
+
+        <div className={`max-h-[calc(100vh-280px)] overflow-auto ${isDark ? "bg-slate-800" : "bg-white"}`}>
           <table className="w-full text-xs">
             <thead className={`sticky top-0 z-10 border-b ${isDark ? "bg-slate-700" : "bg-gray-100"}`}>
               <tr className={`text-left ${isDark ? "text-slate-200" : "text-gray-700"}`}>
-                <th className="px-2 py-1.5 font-medium w-24">Date</th>
-                <th className="px-2 py-1.5 font-medium w-14">Type</th>
-                <th className="px-2 py-1.5 font-medium w-20">Ref</th>
-                <th className="px-2 py-1.5 font-medium text-right w-18">Bill</th>
-                <th className="px-2 py-1.5 font-medium text-right w-18">Paid Now</th>
-                <th className="px-2 py-1.5 font-medium text-right w-16">Total Paid</th>
-                <th className="px-2 py-1.5 font-medium text-right w-18">Balance</th>
-                <th className="px-2 py-1.5 font-medium text-right w-18">Running</th>
-                <th className="px-2 py-1.5 font-medium w-24">Notes</th>
-                <th className="px-2 py-1.5 font-medium w-14">Action</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-24">Date</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-14">Type</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-20">Ref</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-18">Bill</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-18">Paid Now</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-16">Total Paid</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-18">Balance</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-18">Running</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-24">Notes</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-center w-14">Action</th>
               </tr>
             </thead>
 
             <tbody>
               {!customerId && (
                 <tr>
-                  <td colSpan={10} className={`px-2 py-8 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>
-                    Select a customer to view ledger
+                  <td colSpan={11} className={`px-2 py-12 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+                    <div className="flex flex-col items-center gap-2">
+                      <UserIcon className="w-8 h-8 text-gray-400" />
+                      <p className="text-sm">Select a customer to view ledger</p>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -736,8 +776,8 @@ export default function CustomerLedgerPage() {
                 const isInvoice = r.entry_type === "invoice";
                 const isPayment = r.entry_type === "payment";
                 return (
-                  <tr key={r.id ?? `new-${r.__i}`} className={`border-b ${isDark ? "border-slate-600 hover:bg-slate-700/50" : "border-gray-200 hover:bg-blue-50"}`}>
-                    <td className="px-2 py-1">
+                  <tr key={r.id ?? `new-${r.__i}`} className={`border-b ${isDark ? "border-slate-600/30 hover:bg-slate-700/50" : "border-gray-100 hover:bg-blue-50"} odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/40 dark:even:bg-slate-800/40`}>
+                    <td className="px-2 py-2">
                       <input
                         type="date"
                         value={(r.entry_date || "").slice(0,10)}
@@ -746,11 +786,13 @@ export default function CustomerLedgerPage() {
                       />
                     </td>
 
-                    <td className="px-2 py-1">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                        isInvoice ? "bg-blue-100 text-blue-700" :
-                        isPayment ? "bg-emerald-100 text-emerald-700" :
-                        "bg-gray-100 text-gray-700"
+                    <td className="px-2 py-2">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${
+                        isInvoice 
+                          ? "bg-gradient-to-br from-blue-400 to-blue-500 text-white shadow-lg shadow-blue-500/25" 
+                          : isPayment
+                          ? "bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-lg shadow-emerald-500/25"
+                          : "bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300"
                       }`}>
                         {r.entry_type?.toUpperCase()}
                       </span>
@@ -827,12 +869,13 @@ export default function CustomerLedgerPage() {
                       />
                     </td>
 
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-2 text-center">
                       <button
                         onClick={() => openDeleteModal(r.__i)}
-                        className="px-2 py-0.5 bg-rose-500 text-white rounded text-[10px] hover:bg-rose-600"
+                        className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${tintRed}`}
                       >
-                        X
+                        <XMarkIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
+                        <span>X</span>
                       </button>
                     </td>
                   </tr>
@@ -841,15 +884,18 @@ export default function CustomerLedgerPage() {
 
               {customerId && !rows.length && (
                 <tr>
-                  <td colSpan={10} className={`px-2 py-8 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>
-                    No entries. Click <b className={isDark ? "text-slate-300" : "text-gray-700"}>Refresh</b> or add a payment.
+                  <td colSpan={11} className={`px-2 py-12 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+                    <div className="flex flex-col items-center gap-2">
+                      <UserIcon className="w-8 h-8 text-gray-400" />
+                      <p className="text-sm">No entries. Click <b className={isDark ? "text-slate-300" : "text-gray-700"}>Load</b> or add a payment.</p>
+                    </div>
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-      </GlassCard>
+      </div>
 
       {/* ===== Add Row modal ===== */}
       {addModal.open && (
@@ -859,15 +905,15 @@ export default function CustomerLedgerPage() {
             <GlassCard>
               <GlassSectionHeader
                 title={<span className="font-semibold">{addModal.type === "payment" ? "Add Payment row?" : "Add Manual row?"}</span>}
-                right={<GlassBtn className={`h-8 px-3 ${tintGlass}`} onClick={closeAddModal}><XMarkIcon className="w-5 h-5" /></GlassBtn>}
+                right={<button className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeAddModal}><XMarkIcon className="w-5 h-5" /></button>}
               />
               <div className="px-4 py-4">
                 <p className={`text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>
                   A new <b>{addModal.type}</b> row will be appended for the selected customer.
                 </p>
                 <div className="mt-4 flex justify-end gap-2">
-                  <GlassBtn className={`min-w-[100px] ${tintGlass}`} onClick={closeAddModal}>Cancel</GlassBtn>
-                  <GlassBtn className={`min-w-[120px] ${tintBlue}`} onClick={confirmAdd}>Add row</GlassBtn>
+                  <button className={`min-w-[100px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={closeAddModal}>Cancel</button>
+                  <button className={`min-w-[120px] rounded-lg px-4 py-2 text-sm font-semibold ${tintBlue}`} onClick={confirmAdd}>Add row</button>
                 </div>
               </div>
             </GlassCard>
@@ -886,7 +932,7 @@ export default function CustomerLedgerPage() {
                   <ArrowDownOnSquareIcon className="w-5 h-5 text-emerald-600" />
                   <span>Save changes?</span>
                 </span>}
-                right={<GlassBtn className={`h-8 px-3 ${tintGlass}`} onClick={closeSaveModal}><XMarkIcon className="w-5 h-5" /></GlassBtn>}
+                right={<button className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeSaveModal}><XMarkIcon className="w-5 h-5" /></button>}
               />
               <div className="px-4 py-4">
                 <p className="text-sm text-gray-700">
@@ -894,8 +940,8 @@ export default function CustomerLedgerPage() {
                   <b>{updCount}</b> existing {updCount === 1 ? "row" : "rows"} for this customer.
                 </p>
                 <div className="mt-4 flex justify-end gap-2">
-                  <GlassBtn className={`min-w-[100px] ${tintGlass}`} onClick={closeSaveModal}>Cancel</GlassBtn>
-                  <GlassBtn className={`min-w-[120px] ${tintGreen}`} onClick={confirmSave}>Yes, Save</GlassBtn>
+                  <button className={`min-w-[100px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={closeSaveModal}>Cancel</button>
+                  <button className={`min-w-[120px] rounded-lg px-4 py-2 text-sm font-semibold ${tintGreen}`} onClick={confirmSave}>Yes, Save</button>
                 </div>
               </div>
             </GlassCard>
@@ -914,7 +960,7 @@ export default function CustomerLedgerPage() {
                   <ShieldExclamationIcon className="w-5 h-5 text-rose-600" />
                   <span>Delete ledger row</span>
                 </span>}
-                right={<GlassBtn className={`h-8 px-3 ${tintGlass}`} onClick={closeDeleteModal}><XMarkIcon className="w-5 h-5" /></GlassBtn>}
+                right={<button className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeDeleteModal}><XMarkIcon className="w-5 h-5" /></button>}
               />
               <div className="px-4 py-4 space-y-4">
                 {deleteStep === 1 ? (
@@ -923,8 +969,8 @@ export default function CustomerLedgerPage() {
                       Are you sure you want to delete this row? This action cannot be undone.
                     </p>
                     <div className="flex justify-end gap-2">
-                      <GlassBtn className={`min-w-[100px] ${tintGlass}`} onClick={closeDeleteModal}>Cancel</GlassBtn>
-                      <GlassBtn className={`min-w-[140px] ${tintRed}`} onClick={proceedDeletePassword}>Yes, continue</GlassBtn>
+                      <button className={`min-w-[100px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={closeDeleteModal}>Cancel</button>
+                      <button className={`min-w-[140px] rounded-lg px-4 py-2 text-sm font-semibold ${tintRed}`} onClick={proceedDeletePassword}>Yes, continue</button>
                     </div>
                   </>
                 ) : (
@@ -945,20 +991,20 @@ export default function CustomerLedgerPage() {
                       className="w-full"
                     />
                     <div className="flex justify-between">
-                      <GlassBtn className={`min-w-[90px] ${tintGlass}`} onClick={() => setDeleteStep(1)} disabled={deleting}>
+                      <button className={`min-w-[90px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={() => setDeleteStep(1)} disabled={deleting}>
                         ← Back
-                      </GlassBtn>
+                      </button>
                       <div className="flex gap-2">
-                        <GlassBtn className={`min-w-[100px] ${tintGlass}`} onClick={closeDeleteModal} disabled={deleting}>
+                        <button className={`min-w-[100px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={closeDeleteModal} disabled={deleting}>
                           Cancel
-                        </GlassBtn>
-                        <GlassBtn
-                          className={`min-w-[170px] ${tintRed} disabled:opacity-60`}
+                        </button>
+                        <button
+                          className={`min-w-[170px] rounded-lg px-4 py-2 text-sm font-semibold ${tintRed} disabled:opacity-60`}
                           onClick={confirmAndDelete}
                           disabled={deleting || password.trim() === ""}
                         >
                           {deleting ? "Deleting…" : "Confirm & Delete"}
-                        </GlassBtn>
+                        </button>
                       </div>
                     </div>
                   </>
