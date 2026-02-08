@@ -14,6 +14,8 @@ import {
   ArrowDownOnSquareIcon,
   ShieldExclamationIcon,
   XMarkIcon,
+  CubeIcon,
+  Squares2X2Icon,
 } from "@heroicons/react/24/solid";
 
 // 🧊 glass primitives
@@ -25,8 +27,28 @@ import {
   GlassBtn,
 } from "@/components/glass.jsx";
 
+// Section configuration with color schemes - matching sidebar design
+const SECTION_CONFIG = {
+  core: {
+    gradient: "from-blue-500 to-cyan-600",
+    bgLight: "bg-blue-50",
+    bgDark: "dark:bg-blue-900/20",
+    borderColor: "border-blue-200 dark:border-blue-700",
+    iconColor: "text-blue-600 dark:text-blue-400",
+    ringColor: "ring-blue-300 dark:ring-blue-700",
+  },
+  management: {
+    gradient: "from-violet-500 to-purple-600",
+    bgLight: "bg-violet-50",
+    bgDark: "dark:bg-violet-900/20",
+    borderColor: "border-violet-200 dark:border-violet-700",
+    iconColor: "text-violet-600 dark:text-violet-400",
+    ringColor: "ring-violet-300 dark:ring-violet-700",
+  },
+};
+
 /* =========================
-   Supplier Ledger Page (Simple, Layman-Friendly)
+   Supplier Ledger Page (Modernized)
    ========================= */
 export default function SupplierLedgerPage() {
   const [suppliers, setSuppliers] = useState([]);
@@ -54,13 +76,16 @@ export default function SupplierLedgerPage() {
   // theme
   const { isDark } = useTheme();
 
-  // tints
-  const tintBlue   = "bg-blue-500/85 text-white ring-1 ring-white/20 shadow-[0_6px_20px_-6px_rgba(37,99,235,0.45)] hover:bg-blue-500/95";
-  const tintGreen  = "bg-emerald-500/85 text-white ring-1 ring-white/20 shadow-[0_6px_20px_-6px_rgba(16,185,129,0.45)] hover:bg-emerald-500/95";
-  const tintSlate  = "bg-slate-900/80 text-white ring-1 ring-white/15 shadow-[0_6px_20px_-6px_rgba(15,23,42,0.45)] hover:bg-slate-900/90";
-  const tintAmber  = "bg-amber-500/85 text-white ring-1 ring-white/20 shadow-[0_6px_20px_-6px_rgba(245,158,11,0.45)] hover:bg-amber-500/95";
-  const tintRed    = "bg-rose-500/85 text-white ring-1 ring-white/20 shadow-[0_6px_20px_-6px_rgba(244,63,94,0.45)] hover:bg-rose-500/95";
-  const tintGlass  = "bg-white/60 text-slate-700 ring-1 ring-white/30 hover:bg-white/75";
+  // 🎨 Modern button palette (matching Products page design)
+  const tintBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
+  const tintIndigo = "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all duration-200";
+  const tintSlate  = "bg-gradient-to-br from-slate-700 to-slate-800 text-white shadow-lg shadow-slate-500/25 ring-1 ring-white/10 hover:shadow-xl hover:shadow-slate-500/30 hover:scale-[1.02] hover:from-slate-800 hover:to-slate-900 active:scale-[0.98] transition-all duration-200";
+  const tintAmber  = "bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] hover:from-amber-600 hover:to-amber-700 active:scale-[0.98] transition-all duration-200";
+  const tintRed    = "bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700 active:scale-[0.98] transition-all duration-200";
+  const tintGreen  = "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] hover:from-emerald-600 hover:to-emerald-700 active:scale-[0.98] transition-all duration-200";
+  const tintGlass  = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
+  const tintOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
+  const tintIconBtn = "bg-white/60 dark:bg-slate-700/60 backdrop-blur-sm text-slate-600 dark:text-gray-300 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-md hover:scale-[1.05] active:scale-[0.95] transition-all duration-200";
 
   // utils
   const fmt = (v) => {
@@ -407,19 +432,112 @@ export default function SupplierLedgerPage() {
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view supplier ledger.</div>;
 
   return (
-    <div className={`p-2 md:p-3 space-y-3 ${isDark ? "bg-slate-900" : "bg-gray-50"}`} style={{ minHeight: '100vh' }}>
-      {/* ===== Controls Compact ===== */}
-      <GlassCard className={`relative z-30 p-2 ${isDark ? "bg-slate-800/80 border-slate-700" : ""}`}>
-        <GlassSectionHeader
-          title={<span className="inline-flex items-center gap-2 text-sm">
-            <span className="w-2 h-2 rounded-full bg-blue-600" />
-            <span>Supplier Ledger</span>
-          </span>}
-        />
+    <div className="p-4 space-y-3">
+      {/* ===== Professional Header ===== */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+        {/* Header Top */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+          {/* Title */}
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.core.gradient} shadow-sm`}>
+              <CubeIcon className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Supplier Ledger</h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {supplierId ? `Managing ledger for selected supplier` : 'Select a supplier to view ledger'}
+              </p>
+            </div>
+          </div>
 
-        {/* All buttons in single row */}
-        <div className="flex flex-wrap gap-1 mt-2">
-          <div className="flex-1 min-w-[150px]">
+          {/* Action Buttons - Modern card-style layout */}
+          <div className="flex items-center gap-2">
+            {/* Bulk Actions Dropdown-style buttons */}
+            <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-lg bg-gray-100/80 dark:bg-slate-700/60 border border-gray-200/60 dark:border-slate-600/40">
+              <Guard when={can.update}>
+                <button
+                  onClick={rebuild}
+                  disabled={!supplierId}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${supplierId ? `${tintSlate} cursor-pointer` : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+                >
+                  <ArrowPathIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Refresh</span>
+                </button>
+              </Guard>
+
+              <div className="w-px h-5 bg-gray-300/60 dark:bg-slate-600/60" />
+
+              <Guard when={can.create}>
+                <button
+                  onClick={openAddPayment}
+                  disabled={!supplierId}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${supplierId ? `${tintBlue} cursor-pointer` : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+                >
+                  <PlusCircleIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Payment</span>
+                </button>
+              </Guard>
+
+              <div className="w-px h-5 bg-gray-300/60 dark:bg-slate-600/60" />
+
+              <Guard when={can.create}>
+                <button
+                  onClick={openAddManual}
+                  disabled={!supplierId}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${supplierId ? `${tintAmber} cursor-pointer` : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+                >
+                  <WrenchScrewdriverIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Manual</span>
+                </button>
+              </Guard>
+
+              <div className="w-px h-5 bg-gray-300/60 dark:bg-slate-600/60" />
+
+              <Guard when={can.update}>
+                <button
+                  onClick={fetchData}
+                  disabled={!supplierId}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${supplierId ? `${tintGreen} cursor-pointer` : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+                >
+                  <ArrowPathIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Load</span>
+                </button>
+              </Guard>
+
+              <div className="w-px h-5 bg-gray-300/60 dark:bg-slate-600/60" />
+
+              <Guard when={can.update}>
+                <button
+                  onClick={openSaveModal}
+                  disabled={!supplierId || (newCount === 0 && updCount === 0)}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${supplierId && (newCount > 0 || updCount > 0) ? `${tintGlass} cursor-pointer` : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+                >
+                  <ArrowDownOnSquareIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Save</span>
+                  {(newCount > 0 || updCount > 0) && supplierId && (
+                    <span className="ml-0.5 px-1 py-0.5 rounded bg-white/20 text-[10px]">
+                      {newCount + updCount}
+                    </span>
+                  )}
+                </button>
+              </Guard>
+            </div>
+
+            {/* Primary Print Button */}
+            <button
+              onClick={() => handlePrint()}
+              disabled={!supplierId}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${supplierId ? `${tintIndigo}` : "bg-gray-200/50 dark:bg-slate-700/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+            >
+              <PrinterIcon className="w-4 h-4" />
+              <span className="hidden sm:inline">Print</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Search Bar */}
+        <div className="px-4 py-3 bg-gray-50/50 dark:bg-slate-800/50">
+          <div className="flex-1">
             <SupplierSearchInput
               value={supplierId}
               onChange={setSupplierId}
@@ -429,93 +547,16 @@ export default function SupplierLedgerPage() {
               menuPosition="fixed"
               styles={{
                 menuPortal: base => ({ ...base, zIndex: 9999 }),
+                control: (base) => ({
+                  ...base,
+                  minHeight: '38px',
+                  borderRadius: '0.5rem',
+                }),
               }}
             />
           </div>
-          
-          <GlassBtn
-            onClick={() => handlePrint()}
-            disabled={!supplierId}
-            className={`h-8 px-2 text-xs ${supplierId ? tintGlass : tintGlass + " opacity-60 cursor-not-allowed"}`}
-            title="Print"
-          >
-            <span className="inline-flex items-center gap-1">
-              <PrinterIcon className="w-4 h-4" />
-              Print
-            </span>
-          </GlassBtn>
-
-          <Guard when={can.update}>
-            <GlassBtn
-              className={`h-8 px-2 text-xs ${supplierId ? tintSlate : tintGlass}`}
-              onClick={rebuild}
-              disabled={!supplierId}
-              title="Refresh from invoices"
-            >
-              <span className="inline-flex items-center gap-1">
-                <ArrowPathIcon className="w-4 h-4" />
-                Refresh
-              </span>
-            </GlassBtn>
-          </Guard>
-
-          <Guard when={can.create}>
-            <GlassBtn
-              className={`h-8 px-2 text-xs ${supplierId ? tintBlue : tintGlass} w-auto`}
-              onClick={openAddPayment}
-              disabled={!supplierId}
-              title="Add payment"
-            >
-              <span className="inline-flex items-center gap-1">
-                <PlusCircleIcon className="w-4 h-4" />
-                Make Payment
-              </span>
-            </GlassBtn>
-          </Guard>
-
-          <Guard when={can.create}>
-            <GlassBtn
-              className={`h-8 px-2 text-xs ${supplierId ? tintAmber : tintGlass}`}
-              onClick={openAddManual}
-              disabled={!supplierId}
-              title="Add manual entry"
-            >
-              <span className="inline-flex items-center gap-1">
-                <WrenchScrewdriverIcon className="w-4 h-4" />
-                Manual
-              </span>
-            </GlassBtn>
-          </Guard>
-
-          <Guard when={can.update}>
-            <GlassBtn
-              className={`h-8 px-2 text-xs ${supplierId ? tintGreen : tintGlass}`}
-              onClick={fetchData}
-              disabled={!supplierId}
-              title="Load data"
-            >
-              <span className="inline-flex items-center gap-1">
-                <ArrowPathIcon className="w-4 h-4" />
-                Load
-              </span>
-            </GlassBtn>
-          </Guard>
-
-          <Guard when={can.update}>
-            <GlassBtn
-              className={`h-8 px-2 text-xs ${supplierId ? tintGlass : tintGlass}`}
-              onClick={openSaveModal}
-              disabled={!supplierId || (newCount === 0 && updCount === 0)}
-              title="Save (Alt+S)"
-            >
-              <span className="inline-flex items-center gap-1">
-                <ArrowDownOnSquareIcon className="w-4 h-4" />
-                Save
-              </span>
-            </GlassBtn>
-          </Guard>
         </div>
-      </GlassCard>
+      </div>
 
       {/* ===== Summary Compact ===== */}
       {supplierId && (
@@ -528,29 +569,43 @@ export default function SupplierLedgerPage() {
       )}
 
       {/* ===== Table Compact ===== */}
-      <GlassCard className={`relative z-10 p-0 overflow-hidden ${isDark ? "bg-slate-800/80 border-slate-700" : ""}`}>
-        <div className={`max-h-[calc(100vh-250px)] overflow-auto ${isDark ? "bg-slate-800" : "bg-white"}`}>
-          <table className="w-full text-xs">
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+        {/* Table Header */}
+        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
+          <div className="flex items-center gap-2">
+            <div className={`p-1 rounded ${SECTION_CONFIG.core.bgDark}`}>
+              <Squares2X2Icon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            </div>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Ledger Entries</span>
+          </div>
+          <span className="text-xs text-gray-400">{derivedRows.length} entries</span>
+        </div>
+
+        <div className={`max-h-[calc(100vh-280px)] overflow-auto ${isDark ? "bg-slate-800" : "bg-white"}`}>
+          <table className="w-full text-sm">
             <thead className={`sticky top-0 z-10 border-b ${isDark ? "bg-slate-700" : "bg-gray-100"}`}>
               <tr className={`text-left ${isDark ? "text-slate-200" : "text-gray-700"}`}>
-                <th className="px-2 py-1.5 font-medium w-24">Date</th>
-                <th className="px-2 py-1.5 font-medium w-14">Type</th>
-                <th className="px-2 py-1.5 font-medium w-20">Ref</th>
-                <th className="px-2 py-1.5 font-medium text-right w-18">Bill</th>
-                <th className="px-2 py-1.5 font-medium text-right w-18">Paid Now</th>
-                <th className="px-2 py-1.5 font-medium text-right w-16">Total Paid</th>
-                <th className="px-2 py-1.5 font-medium text-right w-18">Balance</th>
-                <th className="px-2 py-1.5 font-medium text-right w-18">Running</th>
-                <th className="px-2 py-1.5 font-medium w-24">Notes</th>
-                <th className="px-2 py-1.5 font-medium w-14">Action</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-24">Date</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-14">Type</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-20">Ref</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-18">Bill</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-18">Paid Now</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-16">Total Paid</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-18">Balance</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-18">Running</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-24">Notes</th>
+                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-center w-14">Action</th>
               </tr>
             </thead>
 
             <tbody>
               {!supplierId && (
                 <tr>
-                  <td colSpan={10} className={`px-2 py-8 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>
-                    Select a supplier to view ledger
+                  <td colSpan={11} className={`px-2 py-12 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+                    <div className="flex flex-col items-center gap-2">
+                      <CubeIcon className="w-8 h-8 text-gray-400" />
+                      <p className="text-sm">Select a supplier to view ledger</p>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -559,38 +614,40 @@ export default function SupplierLedgerPage() {
                 const isInvoice = r.entry_type === "invoice";
                 const isPayment = r.entry_type === "payment";
                 return (
-                  <tr key={r.id ?? `new-${r.__i}`} className={`border-b ${isDark ? "border-slate-600 hover:bg-slate-700/50" : "border-gray-200 hover:bg-blue-50"}`}>
-                    <td className="px-2 py-1">
+                  <tr key={r.id ?? `new-${r.__i}`} className={`border-b ${isDark ? "border-slate-600/30 hover:bg-slate-700/50" : "border-gray-100 hover:bg-blue-50"} odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/40 dark:even:bg-slate-800/40`}>
+                    <td className="px-2 py-2">
                       <input
                         type="date"
                         value={(r.entry_date || "").slice(0,10)}
                         onChange={(e) => handleField(r.__i, "entry_date", e.target.value)}
-                        className={`w-full text-xs border rounded px-1 py-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-300 bg-white text-gray-800"}`}
+                        className={`w-full text-xs border rounded px-2 py-1.5 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-300 bg-white text-gray-800"}`}
                       />
                     </td>
 
-                    <td className="px-2 py-1">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                        isInvoice ? "bg-blue-100 text-blue-700" :
-                        isPayment ? "bg-emerald-100 text-emerald-700" :
-                        "bg-gray-100 text-gray-700"
+                    <td className="px-2 py-2">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${
+                        isInvoice 
+                          ? "bg-gradient-to-br from-blue-400 to-blue-500 text-white shadow-lg shadow-blue-500/25" 
+                          : isPayment
+                          ? "bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-lg shadow-emerald-500/25"
+                          : "bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300"
                       }`}>
                         {r.entry_type?.toUpperCase()}
                       </span>
                     </td>
 
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-2">
                       <input
                         type="text"
                         value={r.posted_number ?? ""}
                         onChange={(e) => handleField(r.__i, "posted_number", e.target.value)}
                         disabled={isInvoice}
                         placeholder={isInvoice ? "-" : "Ref"}
-                        className={`w-full text-xs border rounded px-1 py-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200 disabled:bg-slate-800" : "border-gray-300 bg-white text-gray-800 disabled:bg-gray-100"}`}
+                        className={`w-full text-xs border rounded px-2 py-1.5 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200 disabled:bg-slate-800" : "border-gray-300 bg-white text-gray-800 disabled:bg-gray-100"}`}
                       />
                     </td>
 
-                    <td className="px-2 py-1 text-right">
+                    <td className="px-2 py-2 text-right">
                       {isInvoice || r.entry_type === "manual" ? (
                         <input
                           type="text" inputMode="decimal"
@@ -598,14 +655,14 @@ export default function SupplierLedgerPage() {
                           onChange={(e) => setInput(r.__i, "invoice_total", e.target.value)}
                           onBlur={() => commitNumber(r.__i, "invoice_total")}
                           disabled={isInvoice}
-                          className={`w-full text-xs text-right border rounded px-1 py-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200 disabled:bg-slate-800" : "border-gray-300 bg-white text-gray-800 disabled:bg-gray-100"}`}
+                          className={`w-full text-xs text-right border rounded px-2 py-1.5 font-medium ${isDark ? "border-slate-600 bg-slate-700 text-slate-200 disabled:bg-slate-800" : "border-gray-300 bg-white text-gray-800 disabled:bg-gray-100"}`}
                         />
                       ) : (
                         <span className={isDark ? "text-slate-500" : "text-gray-400"}>—</span>
                       )}
                     </td>
 
-                    <td className="px-2 py-1 text-right">
+                    <td className="px-2 py-2 text-right">
                       {isPayment ? (
                         <input
                           type="text" inputMode="decimal"
@@ -613,14 +670,14 @@ export default function SupplierLedgerPage() {
                           onChange={(e) => setInput(r.__i, "debited_amount", e.target.value)}
                           onBlur={() => commitNumber(r.__i, "debited_amount")}
                           placeholder="0.00"
-                          className={`w-full text-xs text-right border rounded px-1 py-1 font-medium ${isDark ? "border-slate-600 bg-slate-700 text-emerald-400" : "border-gray-300 bg-white text-emerald-600"}`}
+                          className={`w-full text-xs text-right border rounded px-2 py-1.5 font-medium ${isDark ? "border-slate-600 bg-slate-700 text-emerald-400" : "border-gray-300 bg-white text-emerald-600"}`}
                         />
                       ) : (
                         <span className={isDark ? "text-slate-500" : "text-gray-400"}>—</span>
                       )}
                     </td>
 
-                    <td className="px-2 py-1 text-right">
+                    <td className="px-2 py-2 text-right">
                       {isInvoice || r.entry_type === "manual" ? (
                         <span className={`font-medium ${isDark ? "text-slate-300" : "text-gray-700"}`}>{fmt(r.total_paid || 0)}</span>
                       ) : (
@@ -628,34 +685,35 @@ export default function SupplierLedgerPage() {
                       )}
                     </td>
 
-                    <td className="px-2 py-1 text-right">
+                    <td className="px-2 py-2 text-right">
                       <span className={`font-bold ${(r.credit_remaining || 0) > 0 ? 'text-red-500' : 'text-green-500'}`}>
                         {fmt(r.credit_remaining ?? 0)}
                       </span>
                     </td>
 
-                    <td className="px-2 py-1 text-right">
+                    <td className="px-2 py-2 text-right">
                       <span className={`font-bold ${(r.running_balance || 0) > 0 ? 'text-blue-500' : 'text-green-500'}`}>
                         {fmt(r.running_balance ?? 0)}
                       </span>
                     </td>
 
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-2">
                       <input
                         type="text"
                         value={r.description ?? ""}
                         onChange={(e) => handleField(r.__i, "description", e.target.value)}
                         placeholder="..."
-                        className={`w-full text-xs border rounded px-1 py-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-300 bg-white text-gray-800"}`}
+                        className={`w-full text-xs border rounded px-2 py-1.5 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-300 bg-white text-gray-800"}`}
                       />
                     </td>
 
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-2 text-center">
                       <button
                         onClick={() => openDeleteModal(r.__i)}
-                        className="px-2 py-0.5 bg-rose-500 text-white rounded text-[10px] hover:bg-rose-600"
+                        className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${tintRed}`}
                       >
-                        X
+                        <XMarkIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
+                        <span>X</span>
                       </button>
                     </td>
                   </tr>
@@ -664,33 +722,36 @@ export default function SupplierLedgerPage() {
 
               {supplierId && !rows.length && (
                 <tr>
-                  <td colSpan={10} className={`px-2 py-8 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>
-                    No entries. Click <b className={isDark ? "text-slate-300" : "text-gray-700"}>Refresh</b> or add a payment.
+                  <td colSpan={11} className={`px-2 py-12 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+                    <div className="flex flex-col items-center gap-2">
+                      <CubeIcon className="w-8 h-8 text-gray-400" />
+                      <p className="text-sm">No entries. Click <b className={isDark ? "text-slate-300" : "text-gray-700"}>Load</b> or add a payment.</p>
+                    </div>
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-      </GlassCard>
+      </div>
 
       {/* ===== Add Row modal ===== */}
       {addModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={(e)=>{ if(e.target===e.currentTarget) closeAddModal(); }}>
-          <div className="absolute inset-0 bg-black/40" />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
           <div className="relative w-full max-w-sm">
             <GlassCard>
               <GlassSectionHeader
-                title={<span className="font-semibold">{addModal.type === "payment" ? "Add Payment row?" : "Add Manual row?"}</span>}
-                right={<GlassBtn className={`h-8 px-3 ${tintGlass}`} onClick={closeAddModal}><XMarkIcon className="w-5 h-5" /></GlassBtn>}
+                title={<span className="font-semibold text-lg">{addModal.type === "payment" ? "Add Payment row?" : "Add Manual row?"}</span>}
+                right={<button className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeAddModal}><XMarkIcon className="w-5 h-5" /></button>}
               />
               <div className="px-4 py-4">
                 <p className={`text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>
                   A new <b>{addModal.type}</b> row will be appended for the selected supplier.
                 </p>
                 <div className="mt-4 flex justify-end gap-2">
-                  <GlassBtn className={`min-w-[100px] ${tintGlass}`} onClick={closeAddModal}>Cancel</GlassBtn>
-                  <GlassBtn className={`min-w-[120px] ${tintBlue}`} onClick={confirmAdd}>Add row</GlassBtn>
+                  <button className={`min-w-[100px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={closeAddModal}>Cancel</button>
+                  <button className={`min-w-[120px] rounded-lg px-4 py-2 text-sm font-semibold ${tintBlue}`} onClick={confirmAdd}>Add row</button>
                 </div>
               </div>
             </GlassCard>
@@ -701,15 +762,15 @@ export default function SupplierLedgerPage() {
       {/* ===== Save confirm modal ===== */}
       {saveModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={(e)=>{ if(e.target===e.currentTarget) closeSaveModal(); }}>
-          <div className="absolute inset-0 bg-black/40" />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
           <div className="relative w-full max-w-md">
             <GlassCard>
               <GlassSectionHeader
-                title={<span className="inline-flex items-center gap-2">
+                title={<span className="inline-flex items-center gap-2 text-lg">
                   <ArrowDownOnSquareIcon className="w-5 h-5 text-emerald-600" />
                   <span>Save changes?</span>
                 </span>}
-                right={<GlassBtn className={`h-8 px-3 ${tintGlass}`} onClick={closeSaveModal}><XMarkIcon className="w-5 h-5" /></GlassBtn>}
+                right={<button className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeSaveModal}><XMarkIcon className="w-5 h-5" /></button>}
               />
               <div className="px-4 py-4">
                 <p className={`text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>
@@ -717,8 +778,8 @@ export default function SupplierLedgerPage() {
                   <b>{updCount}</b> existing {updCount === 1 ? "row" : "rows"} for this supplier.
                 </p>
                 <div className="mt-4 flex justify-end gap-2">
-                  <GlassBtn className={`min-w-[100px] ${tintGlass}`} onClick={closeSaveModal}>Cancel</GlassBtn>
-                  <GlassBtn className={`min-w-[120px] ${tintGreen}`} onClick={confirmSave}>Yes, Save</GlassBtn>
+                  <button className={`min-w-[100px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={closeSaveModal}>Cancel</button>
+                  <button className={`min-w-[120px] rounded-lg px-4 py-2 text-sm font-semibold ${tintGreen}`} onClick={confirmSave}>Yes, Save</button>
                 </div>
               </div>
             </GlassCard>
@@ -729,15 +790,15 @@ export default function SupplierLedgerPage() {
       {/* ===== Delete (2-step) modal ===== */}
       {deleteModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={(e)=>{ if(e.target===e.currentTarget) closeDeleteModal(); }}>
-          <div className="absolute inset-0 bg-black/40" />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
           <div className="relative w-full max-w-md">
             <GlassCard>
               <GlassSectionHeader
-                title={<span className="inline-flex items-center gap-2">
+                title={<span className="inline-flex items-center gap-2 text-lg">
                   <ShieldExclamationIcon className="w-5 h-5 text-rose-600" />
                   <span>Delete ledger row</span>
                 </span>}
-                right={<GlassBtn className={`h-8 px-3 ${tintGlass}`} onClick={closeDeleteModal}><XMarkIcon className="w-5 h-5" /></GlassBtn>}
+                right={<button className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeDeleteModal}><XMarkIcon className="w-5 h-5" /></button>}
               />
               <div className="px-4 py-4 space-y-4">
                 {deleteStep === 1 ? (
@@ -746,8 +807,8 @@ export default function SupplierLedgerPage() {
                       Are you sure you want to delete this row? This action cannot be undone.
                     </p>
                     <div className="flex justify-end gap-2">
-                      <GlassBtn className={`min-w-[100px] ${tintGlass}`} onClick={closeDeleteModal}>Cancel</GlassBtn>
-                      <GlassBtn className={`min-w-[140px] ${tintRed}`} onClick={proceedDeletePassword}>Yes, continue</GlassBtn>
+                      <button className={`min-w-[100px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={closeDeleteModal}>Cancel</button>
+                      <button className={`min-w-[140px] rounded-lg px-4 py-2 text-sm font-semibold ${tintRed}`} onClick={proceedDeletePassword}>Yes, continue</button>
                     </div>
                   </>
                 ) : (
@@ -755,7 +816,7 @@ export default function SupplierLedgerPage() {
                     <p className={`text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>
                       For security, please re-enter your password to delete this row.
                     </p>
-                    <GlassInput
+                    <input
                       type="password"
                       autoFocus
                       value={password}
@@ -765,23 +826,23 @@ export default function SupplierLedgerPage() {
                         if (e.key === "Enter") confirmAndDelete();
                         if (e.key === "Escape") closeDeleteModal();
                       }}
-                      className="w-full"
+                      className={`w-full text-sm border rounded-lg px-3 py-2 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200 placeholder:text-slate-500" : "border-gray-300 bg-white text-gray-800 placeholder:text-gray-400"}`}
                     />
                     <div className="flex justify-between">
-                      <GlassBtn className={`min-w-[90px] ${tintGlass}`} onClick={() => setDeleteStep(1)} disabled={deleting}>
+                      <button className={`min-w-[90px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={() => setDeleteStep(1)} disabled={deleting}>
                         ← Back
-                      </GlassBtn>
+                      </button>
                       <div className="flex gap-2">
-                        <GlassBtn className={`min-w-[100px] ${tintGlass}`} onClick={closeDeleteModal} disabled={deleting}>
+                        <button className={`min-w-[100px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={closeDeleteModal} disabled={deleting}>
                           Cancel
-                        </GlassBtn>
-                        <GlassBtn
-                          className={`min-w-[170px] ${tintRed} disabled:opacity-60`}
+                        </button>
+                        <button
+                          className={`min-w-[170px] rounded-lg px-4 py-2 text-sm font-semibold ${tintRed} disabled:opacity-60`}
                           onClick={confirmAndDelete}
                           disabled={deleting || password.trim() === ""}
                         >
                           {deleting ? "Deleting…" : "Confirm & Delete"}
-                        </GlassBtn>
+                        </button>
                       </div>
                     </div>
                   </>
@@ -806,9 +867,9 @@ export default function SupplierLedgerPage() {
 
 function Stat({ isDark, label, value }) {
   return (
-    <div className={`${isDark ? "bg-slate-800/60 ring-slate-700" : "bg-white/60 ring-gray-200/60"} px-2 py-1.5 rounded shadow-sm`}>
-      <div className={`text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>{label}</div>
-      <div className={`text-sm font-semibold ${isDark ? "text-slate-200" : "text-gray-800"}`}>{value}</div>
+    <div className={`${isDark ? "bg-slate-800/60 ring-slate-700" : "bg-white/60 ring-gray-200/60"} px-3 py-2 rounded-lg shadow-sm`}>
+      <div className={`text-[10px] uppercase tracking-wider font-medium ${isDark ? "text-slate-400" : "text-gray-500"}`}>{label}</div>
+      <div className={`text-base font-bold ${isDark ? "text-slate-200" : "text-gray-800"}`}>{value}</div>
     </div>
   );
 }
