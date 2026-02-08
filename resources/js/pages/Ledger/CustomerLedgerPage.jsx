@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { createPortal } from "react-dom";
+import CustomerSearchInput from "../../components/CustomerSearchInput.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext.jsx";
 
@@ -49,207 +49,10 @@ const SECTION_CONFIG = {
 };
 
 /* =========================
-   Async Customer Search (tablet-friendly)
-   ========================= */
-function CustomerSearchInput({ value, onChange, autoFocus }) {
-  const { isDark } = useTheme();
-  const [term, setTerm] = useState("");
-  const [open, setOpen] = useState(false);
-  const [items, setItems] = useState([]); // [{id,name,phone,email}]
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
-  const boxRef = useRef(null);
-  const inputRef = useRef(null);
-  const debounceRef = useRef(null);
-
-  const updatePosition = () => {
-    if (!boxRef.current) return;
-    const rect = boxRef.current.getBoundingClientRect();
-    setPosition({
-      top: rect.bottom + window.scrollY,
-      left: rect.left + window.scrollX,
-      width: rect.width,
-    });
-  };
-
-  const onFocus = () => {
-    setOpen(true);
-    updatePosition();
-    if (items.length === 0) fetchPage(1, "");
-  };
-
-  const onType = (val) => {
-    setTerm(val);
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      fetchPage(1, val.trim());
-    }, 250);
-  };
-
-  // Update position on scroll/resize when dropdown is open
-  useEffect(() => {
-    if (open) {
-      updatePosition();
-      window.addEventListener("scroll", updatePosition, true);
-      window.addEventListener("resize", updatePosition);
-    }
-    return () => {
-      window.removeEventListener("scroll", updatePosition, true);
-      window.removeEventListener("resize", updatePosition);
-    };
-  }, [open]);
-
-  // Close dropdown on click outside
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (boxRef.current && !boxRef.current.contains(e.target)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    if (autoFocus) setTimeout(() => inputRef.current?.focus(), 50);
-  }, [autoFocus]);
-
-  const fetchPage = async (p = 1, q = "") => {
-    setLoading(true);
-    try {
-      const params = { q, page: p, limit: 20 };
-      let res;
-      try {
-        res = await axios.get("/api/customers/search", { params });
-      } catch {
-        res = await axios.get("/api/customers", { params });
-      }
-      const data = Array.isArray(res.data?.data) ? res.data.data : [];
-      const next = res.data?.next_page ?? null;
-      const normalized = data.map((c) => ({
-        id: c.id ?? c.value,
-        name: c.name ?? c.label,
-        phone: c.phone ?? c.mobile ?? "",
-        email: c.email ?? "",
-      }));
-      setItems(p === 1 ? normalized : (prev) => [...prev, ...normalized]);
-      setHasMore(Boolean(next));
-      setPage(p);
-    } catch {
-      toast.error("Failed to load customers");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const pick = (c) => {
-    onChange?.(c?.id || "");
-    setTerm(c?.name || "");
-    setOpen(false);
-  };
-
-  const clear = () => {
-    onChange?.("");
-    setTerm("");
-    setItems([]);
-    setHasMore(false);
-    setPage(1);
-  };
-
-  return (
-    <div className="relative" ref={boxRef}>
-      <div className="flex gap-2">
-        <GlassInput
-          ref={inputRef}
-          placeholder="Search customer by name/phone/email…"
-          value={term}
-          onFocus={onFocus}
-          onChange={(e) => onType(e.target.value)}
-          className={`w-full ${isDark ? "bg-slate-700 border-slate-600 text-slate-200 placeholder:text-slate-400" : ""}`}
-        />
-        {value ? (
-          <GlassBtn type="button" onClick={clear} className="h-9">
-            Clear
-          </GlassBtn>
-        ) : (
-          <GlassBtn
-            type="button"
-            onClick={() => (open ? setOpen(false) : onFocus())}
-            className="h-9"
-          >
-            {open ? "Close" : "Search"}
-          </GlassBtn>
-        )}
-      </div>
-
-      {open && createPortal(
-        <div
-          className={`fixed backdrop-blur-sm border rounded-xl shadow-xl max-h-80 overflow-auto ring-1 z-[9999] ${
-            isDark 
-              ? "bg-slate-800/90 border-slate-600 ring-slate-700" 
-              : "bg-white/90 border-gray-200 ring-gray-200/60"
-          }`}
-          style={{
-            top: position.top,
-            left: position.left,
-            width: position.width,
-          }}
-          onMouseDown={(e) => e.preventDefault()}
-        >
-          {loading && items.length === 0 && (
-            <div className={`px-3 py-2 text-xs ${isDark ? "text-slate-400" : "text-gray-600"}`}>Loading…</div>
-          )}
-          {!loading && items.length === 0 && (
-            <div className={`px-3 py-2 text-xs ${isDark ? "text-slate-400" : "text-gray-600"}`}>No customers found</div>
-          )}
-          {items.map((it) => (
-            <button
-              key={it.id}
-              type="button"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                pick(it);
-              }}
-              className={`w-full text-left px-3 py-2 transition-colors ${
-                isDark 
-                  ? "hover:bg-slate-700" 
-                  : "hover:bg-gray-50"
-              }`}
-            >
-              <div className={`font-medium text-xs ${isDark ? "text-slate-200" : ""}`}>{it.name}</div>
-              <div className={`text-[11px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>{it.phone || it.email || "-"}</div>
-            </button>
-          ))}
-          {hasMore && (
-            <div className="p-2">
-              <GlassBtn
-                type="button"
-                className="w-full"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                onClick={() => fetchPage(page + 1, term.trim())}
-                disabled={loading}
-              >
-                {loading ? "Loading..." : "Load more"}
-              </GlassBtn>
-            </div>
-          )}
-        </div>,
-        document.body
-      )}
-    </div>
-  );
-}
-
-/* =========================
-   Customer Ledger Page (glassy parity with Supplier Ledger)
+   Customer Ledger Page (Modernized)
    ========================= */
 export default function CustomerLedgerPage() {
+  const [customers, setCustomers] = useState([]);
   const [customerId, setCustomerId] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -266,7 +69,7 @@ export default function CustomerLedgerPage() {
   const can = useMemo(
     () =>
       (typeof canFor === "function" ? canFor("customer-ledger") : {
-        view:false, create:false, update:false, delete:false
+        view:false, create:false, update:false, delete:false, import:false, export:false
       }),
     [canFor]
   );
@@ -311,6 +114,21 @@ export default function CustomerLedgerPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [can.create, can.update, can.view]);
+
+  // Load customers
+  useEffect(() => {
+    if (permsLoading || !can.view) return;
+    (async () => {
+      try {
+        const { data } = await axios.get("/api/customers", { params: { limit: 500 } });
+        const list = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+        setCustomers(list);
+      } catch {
+        toast.error("Failed to load customers");
+        setCustomers([]);
+      }
+    })();
+  }, [permsLoading, can.view]);
 
   const fetchData = async () => {
     if (!can.view) return toast.error("You don't have permission to view customer ledger.");
@@ -620,105 +438,131 @@ export default function CustomerLedgerPage() {
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don’t have permission to view customer ledger.</div>;
 
   return (
-    <div className={`p-2 md:p-3 space-y-3 ${isDark ? "bg-slate-900" : "bg-gray-50"}`} style={{ minHeight: '100vh' }}>
-      {/* ===== Controls Compact ===== */}
-      <GlassCard className={`relative z-30 p-2 ${isDark ? "bg-slate-800/80 border-slate-700" : ""}`}>
-        <GlassSectionHeader
-          title={<span className="inline-flex items-center gap-2 text-sm">
-            <span className="w-2 h-2 rounded-full bg-blue-600" />
-            <span>Customer Ledger</span>
-          </span>}
-        />
-
-        {/* All buttons in single row */}
-        <div className="flex flex-wrap gap-1 mt-2">
-          <div className="flex-1 min-w-[150px]">
-            <CustomerSearchInput value={customerId} onChange={setCustomerId} autoFocus />
+    <div className="p-4 space-y-3">
+      {/* ===== Professional Header ===== */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+        {/* Header Top */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+          {/* Title */}
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.core.gradient} shadow-sm`}>
+              <UserIcon className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Customer Ledger</h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {customerId ? `Managing ledger for selected customer` : 'Select a customer to view ledger'}
+              </p>
+            </div>
           </div>
-          
-          <GlassBtn
-            onClick={() => handlePrint()}
-            disabled={!customerId}
-            className={`h-8 px-2 text-xs ${customerId ? tintGlass : tintGlass + " opacity-60 cursor-not-allowed"}`}
-            title="Print"
-          >
-            <span className="inline-flex items-center gap-1">
+
+          {/* Action Buttons - Modern card-style layout */}
+          <div className="flex items-center gap-2">
+            {/* Bulk Actions Dropdown-style buttons */}
+            <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-lg bg-gray-100/80 dark:bg-slate-700/60 border border-gray-200/60 dark:border-slate-600/40">
+              <Guard when={can.update}>
+                <button
+                  onClick={rebuild}
+                  disabled={!customerId}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId ? `${tintSlate} cursor-pointer` : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+                >
+                  <ArrowPathIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Refresh</span>
+                </button>
+              </Guard>
+
+              <div className="w-px h-5 bg-gray-300/60 dark:bg-slate-600/60" />
+
+              <Guard when={can.create}>
+                <button
+                  onClick={openAddPayment}
+                  disabled={!customerId}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId ? `${tintBlue} cursor-pointer` : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+                >
+                  <PlusCircleIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Payment</span>
+                </button>
+              </Guard>
+
+              <div className="w-px h-5 bg-gray-300/60 dark:bg-slate-600/60" />
+
+              <Guard when={can.create}>
+                <button
+                  onClick={openAddManual}
+                  disabled={!customerId}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId ? `${tintAmber} cursor-pointer` : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+                >
+                  <WrenchScrewdriverIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Manual</span>
+                </button>
+              </Guard>
+
+              <div className="w-px h-5 bg-gray-300/60 dark:bg-slate-600/60" />
+
+              <Guard when={can.update}>
+                <button
+                  onClick={fetchData}
+                  disabled={!customerId}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId ? `${tintGreen} cursor-pointer` : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+                >
+                  <ArrowPathIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Load</span>
+                </button>
+              </Guard>
+
+              <div className="w-px h-5 bg-gray-300/60 dark:bg-slate-600/60" />
+
+              <Guard when={can.update}>
+                <button
+                  onClick={openSaveModal}
+                  disabled={!customerId || (newCount === 0 && updCount === 0)}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId && (newCount > 0 || updCount > 0) ? `${tintGlass} cursor-pointer` : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+                >
+                  <ArrowDownOnSquareIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Save</span>
+                  {(newCount > 0 || updCount > 0) && customerId && (
+                    <span className="ml-0.5 px-1 py-0.5 rounded bg-white/20 text-[10px]">
+                      {newCount + updCount}
+                    </span>
+                  )}
+                </button>
+              </Guard>
+            </div>
+
+            {/* Primary Print Button */}
+            <button
+              onClick={() => handlePrint()}
+              disabled={!customerId}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${customerId ? `${tintIndigo}` : "bg-gray-200/50 dark:bg-slate-700/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+            >
               <PrinterIcon className="w-4 h-4" />
-              Print
-            </span>
-          </GlassBtn>
-
-          <Guard when={can.update}>
-            <GlassBtn
-              className={`h-8 px-2 text-xs ${customerId ? tintSlate : tintGlass}`}
-              onClick={rebuild}
-              disabled={!customerId}
-              title="Refresh from invoices"
-            >
-              <span className="inline-flex items-center gap-1">
-                <ArrowPathIcon className="w-4 h-4" />
-                Refresh
-              </span>
-            </GlassBtn>
-          </Guard>
-
-          <Guard when={can.create}>
-            <GlassBtn
-              className={`h-8 px-2 text-xs ${customerId ? tintBlue : tintGlass} w-auto`}
-              onClick={openAddPayment}
-              disabled={!customerId}
-              title="Add payment"
-            >
-              <span className="inline-flex items-center gap-1">
-                <PlusCircleIcon className="w-4 h-4" />
-                Receive Payment
-              </span>
-            </GlassBtn>
-          </Guard>
-
-          <Guard when={can.create}>
-            <GlassBtn
-              className={`h-8 px-2 text-xs ${customerId ? tintAmber : tintGlass}`}
-              onClick={openAddManual}
-              disabled={!customerId}
-              title="Add manual entry"
-            >
-              <span className="inline-flex items-center gap-1">
-                <WrenchScrewdriverIcon className="w-4 h-4" />
-                Manual
-              </span>
-            </GlassBtn>
-          </Guard>
-
-          <Guard when={can.update}>
-            <GlassBtn
-              className={`h-8 px-2 text-xs ${customerId ? tintGreen : tintGlass}`}
-              onClick={fetchData}
-              disabled={!customerId}
-              title="Load data"
-            >
-              <span className="inline-flex items-center gap-1">
-                <ArrowPathIcon className="w-4 h-4" />
-                Load
-              </span>
-            </GlassBtn>
-          </Guard>
-
-          <Guard when={can.update}>
-            <GlassBtn
-              className={`h-8 px-2 text-xs ${customerId ? tintGlass : tintGlass}`}
-              onClick={openSaveModal}
-              disabled={!customerId || (newCount === 0 && updCount === 0)}
-              title="Save (Alt+S)"
-            >
-              <span className="inline-flex items-center gap-1">
-                <ArrowDownOnSquareIcon className="w-4 h-4" />
-                Save
-              </span>
-            </GlassBtn>
-          </Guard>
+              <span className="hidden sm:inline">Print</span>
+            </button>
+          </div>
         </div>
-      </GlassCard>
+
+        {/* Search Bar */}
+        <div className="px-4 py-3 bg-gray-50/50 dark:bg-slate-800/50">
+          <div className="flex-1">
+            <CustomerSearchInput
+              value={customerId}
+              onChange={setCustomerId}
+              customers={customers}
+              autoFocus
+              menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+              menuPosition="fixed"
+              styles={{
+                menuPortal: base => ({ ...base, zIndex: 9999 }),
+                control: (base) => ({
+                  ...base,
+                  minHeight: '38px',
+                  borderRadius: '0.5rem',
+                }),
+              }}
+            />
+          </div>
+        </div>
+      </div>
 
       {/* ===== Summary Compact ===== */}
       {customerId && (
@@ -900,11 +744,11 @@ export default function CustomerLedgerPage() {
       {/* ===== Add Row modal ===== */}
       {addModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={(e)=>{ if(e.target===e.currentTarget) closeAddModal(); }}>
-          <div className="absolute inset-0 bg-black/40" />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
           <div className="relative w-full max-w-sm">
             <GlassCard>
               <GlassSectionHeader
-                title={<span className="font-semibold">{addModal.type === "payment" ? "Add Payment row?" : "Add Manual row?"}</span>}
+                title={<span className="font-semibold text-lg">{addModal.type === "payment" ? "Add Payment row?" : "Add Manual row?"}</span>}
                 right={<button className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeAddModal}><XMarkIcon className="w-5 h-5" /></button>}
               />
               <div className="px-4 py-4">

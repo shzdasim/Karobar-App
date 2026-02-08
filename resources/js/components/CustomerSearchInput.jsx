@@ -9,7 +9,7 @@ import React, {
 import { createPortal } from "react-dom";
 
 const CustomerSearchInput = forwardRef(
-  ({ value, onChange, customers = [], autoFocus = false }, ref) => {
+  ({ value, onChange, customers = [], autoFocus = false, menuPortalTarget, menuPosition, styles }, ref) => {
     const [query, setQuery] = useState("");
     const [showDropdown, setShowDropdown] = useState(false);
     const [highlightIndex, setHighlightIndex] = useState(0);
@@ -109,6 +109,35 @@ const CustomerSearchInput = forwardRef(
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    // Merge custom styles
+    const getStyles = () => {
+      const baseStyles = {
+        control: {
+          minHeight: '38px',
+          borderRadius: '0.5rem',
+          border: '1px solid rgb(229 231 235)',
+          backgroundColor: 'white',
+          fontSize: '14px',
+        },
+        menuPortal: {
+          zIndex: 9999,
+        },
+      };
+
+      if (styles) {
+        if (styles.control) {
+          baseStyles.control = { ...baseStyles.control, ...styles.control };
+        }
+        if (styles.menuPortal) {
+          baseStyles.menuPortal = { ...baseStyles.menuPortal, ...styles.menuPortal };
+        }
+      }
+
+      return baseStyles;
+    };
+
+    const customStyles = getStyles();
+
     return (
       <div ref={wrapperRef} className="relative w-full">
         <input
@@ -122,16 +151,18 @@ const CustomerSearchInput = forwardRef(
           }}
           onFocus={handleFocus}
           onKeyDown={handleKeyDown}
-          className="border w-full h-6 text-[11px] px-1 rounded-lg bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400/40 dark:focus:ring-indigo-400/40"
+          style={customStyles.control}
+          className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400/40 dark:focus:ring-indigo-400/40"
           placeholder="Search customer..."
         />
         {showDropdown && filtered.length > 0 && createPortal(
           <div
-            className="fixed max-h-60 overflow-auto border bg-white dark:bg-slate-800 shadow-xl z-[9999] text-[11px] rounded-lg border-gray-200 dark:border-slate-600"
+            className="fixed max-h-60 overflow-auto border bg-white dark:bg-slate-800 shadow-xl z-[9999] text-sm rounded-lg border-gray-200 dark:border-slate-600"
             style={{
               top: position.top,
               left: position.left,
               width: position.width,
+              ...customStyles.menuPortal,
             }}
             onMouseDown={(e) => e.preventDefault()}
           >
@@ -144,16 +175,16 @@ const CustomerSearchInput = forwardRef(
                     e.stopPropagation();
                     handleSelect(c);
                   }}
-                  className={`px-2 py-1 cursor-pointer ${
+                  className={`px-3 py-2 cursor-pointer ${
                     idx === highlightIndex ? "bg-blue-100 dark:bg-slate-600" : "hover:bg-gray-100 dark:hover:bg-slate-700"
                   }`}
                 >
-                  <span className="text-gray-900 dark:text-gray-100">{c.name}</span>
+                  <span className="text-gray-900 dark:text-gray-100 font-medium">{c.name}</span>
                 </li>
               ))}
             </ul>
           </div>,
-          document.body
+          menuPortalTarget || document.body
         )}
       </div>
     );
