@@ -4,8 +4,8 @@ import axios from "axios";
 import AsyncSelect from "react-select/async";
 import { createFilter } from "react-select";
 import toast from "react-hot-toast";
-import { usePermissions } from "@/api/usePermissions";
-import { useTheme } from "@/context/ThemeContext";
+import { usePermissions, Guard } from "@/api/usePermissions";
+import { useTheme } from "@/context/ThemeContext.jsx";
 
 // 🧊 glass primitives
 import {
@@ -16,7 +16,36 @@ import {
   GlassBtn,
 } from "@/components/glass.jsx";
 
-import { ArrowDownOnSquareIcon, ArrowPathIcon } from "@heroicons/react/24/solid";
+import { 
+  ArrowDownOnSquareIcon, 
+  ArrowPathIcon,
+  CubeIcon,
+  ClipboardDocumentListIcon,
+  CurrencyDollarIcon,
+  TagIcon,
+  ArrowTrendingUpIcon,
+  Squares2X2Icon,
+} from "@heroicons/react/24/solid";
+
+// Section configuration with color schemes - matching sidebar design
+const SECTION_CONFIG = {
+  core: {
+    gradient: "from-blue-500 to-cyan-600",
+    bgLight: "bg-blue-50",
+    bgDark: "dark:bg-blue-900/20",
+    borderColor: "border-blue-200 dark:border-blue-700",
+    iconColor: "text-blue-600 dark:text-blue-400",
+    ringColor: "ring-blue-300 dark:ring-blue-700",
+  },
+  management: {
+    gradient: "from-violet-500 to-purple-600",
+    bgLight: "bg-violet-50",
+    bgDark: "dark:bg-violet-900/20",
+    borderColor: "border-violet-200 dark:border-violet-700",
+    iconColor: "text-violet-600 dark:text-violet-400",
+    ringColor: "ring-violet-300 dark:ring-violet-700",
+  },
+};
 
 /* ======================
    Helpers
@@ -114,16 +143,25 @@ export default function CurrentStockReport() {
   const [loading, setLoading] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
 
-  const perms = usePermissions();
-  const canView = perms?.has?.("report.current-stock.view");
-  const canExport = perms?.has?.("report.current-stock.export");
+  // permissions
+  const { loading: permsLoading, canFor } = usePermissions();
+  const can = useMemo(
+    () =>
+      (typeof canFor === "function" ? canFor("current-stock-report") : {
+        view:false, export:false
+      }),
+    [canFor]
+  );
 
   // Get dark mode state
   const { isDark } = useTheme();
 
-  // tints
-  const tintPrimary =
-    "bg-slate-900/80 text-white ring-1 ring-white/15 shadow-[0_6px_20px_-6px_rgba(15,23,42,0.45)] hover:bg-slate-900/90";
+  // 🎨 Modern button palette (matching SupplierLedger design)
+  const tintBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
+  const tintIndigo = "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all duration-200";
+  const tintGreen  = "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] hover:from-emerald-600 hover:to-emerald-700 active:scale-[0.98] transition-all duration-200";
+  const tintGlass  = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
+  const tintOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
   const tintGhost = isDark ? "bg-slate-800/60 text-slate-200 ring-1 ring-slate-700/50 hover:bg-slate-800/80" : "bg-white/60 text-slate-700 ring-1 ring-white/30 hover:bg-white/75";
 
   /* ============ Async loaders ============ */
@@ -207,7 +245,7 @@ export default function CurrentStockReport() {
 
   /* ============ Fetch report ============ */
   const fetchReport = async () => {
-    if (!canView) return toast.error("You don't have permission to view this report.");
+    if (!can.view) return toast.error("You don't have permission to view this report.");
 
     setLoading(true);
     try {
@@ -245,7 +283,7 @@ export default function CurrentStockReport() {
 
   /* ============ Export PDF ============ */
   const exportPdf = async () => {
-    if (!canExport) return toast.error("You don't have permission to export PDF.");
+    if (!can.export) return toast.error("You don't have permission to export PDF.");
     setPdfLoading(true);
     try {
       const res = await axios.get("/api/reports/current-stock/pdf", {
@@ -286,103 +324,108 @@ export default function CurrentStockReport() {
   const potentialProfit = totalSaleValue - totalPurchaseValue;
 
   return (
-    <div className="p-4 md:p-6 space-y-4">
-      {/* ===== Header + Filters ===== */}
+    <div className="p-4 space-y-3">
+      {/* ===== Professional Header ===== */}
       <GlassCard>
-        <GlassSectionHeader
-          title={<span className={`font-semibold ${isDark ? "text-slate-200" : ""}`}>Current Stock Report</span>}
-          right={
-            <div className="flex gap-2">
-              <GlassBtn
-                className={`h-9 ${tintGhost}`}
-                title="Reset Filters"
-                onClick={resetFilters}
-              >
-                Reset
-              </GlassBtn>
+        {/* Header Top */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+          {/* Title */}
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.core.gradient} shadow-sm`}>
+              <CubeIcon className="w-5 h-5 text-white" />
             </div>
-          }
-        />
+            <div>
+              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Current Stock Report</h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{rows.length} items</p>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2">
+            <GlassBtn
+              className={`h-9 ${tintGhost}`}
+              title="Reset Filters"
+              onClick={resetFilters}
+            >
+              Reset
+            </GlassBtn>
+          </div>
+        </div>
 
         {/* Filters */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            fetchReport();
-          }}
-        >
-          <GlassToolbar className="grid grid-cols-1 md:grid-cols-12 gap-3">
-            {/* Category */}
-            <div className="md:col-span-4">
-              <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Category</label>
-              <AsyncSelect
-                cacheOptions
-                defaultOptions={[{ value: "", label: "All Categories" }]}
-                loadOptions={loadCategories}
-                isClearable
-                value={categoryValue}
-                onChange={(opt) => {
-                  setCategoryValue(opt);
-                  setCategoryId(opt?.value || "");
-                }}
-                styles={getSelectStyles(isDark)}
-                menuPortalTarget={document.body}
-                filterOption={createFilter({
-                  matchFrom: "start",
-                  trim: true,
-                })}
-              />
-            </div>
+        <GlassToolbar className="grid grid-cols-1 md:grid-cols-12 gap-3">
+          {/* Category */}
+          <div className="md:col-span-4">
+            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Category</label>
+            <AsyncSelect
+              cacheOptions
+              defaultOptions={[{ value: "", label: "All Categories" }]}
+              loadOptions={loadCategories}
+              isClearable
+              value={categoryValue}
+              onChange={(opt) => {
+                setCategoryValue(opt);
+                setCategoryId(opt?.value || "");
+              }}
+              styles={getSelectStyles(isDark)}
+              menuPortalTarget={document.body}
+              filterOption={createFilter({
+                matchFrom: "start",
+                trim: true,
+              })}
+            />
+          </div>
 
-            {/* Brand */}
-            <div className="md:col-span-4">
-              <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Brand</label>
-              <AsyncSelect
-                cacheOptions
-                defaultOptions={[{ value: "", label: "All Brands" }]}
-                loadOptions={loadBrands}
-                isClearable
-                value={brandValue}
-                onChange={(opt) => {
-                  setBrandValue(opt);
-                  setBrandId(opt?.value || "");
-                }}
-                styles={getSelectStyles(isDark)}
-                menuPortalTarget={document.body}
-                filterOption={createFilter({
-                  matchFrom: "start",
-                  trim: true,
-                })}
-              />
-            </div>
+          {/* Brand */}
+          <div className="md:col-span-4">
+            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Brand</label>
+            <AsyncSelect
+              cacheOptions
+              defaultOptions={[{ value: "", label: "All Brands" }]}
+              loadOptions={loadBrands}
+              isClearable
+              value={brandValue}
+              onChange={(opt) => {
+                setBrandValue(opt);
+                setBrandId(opt?.value || "");
+              }}
+              styles={getSelectStyles(isDark)}
+              menuPortalTarget={document.body}
+              filterOption={createFilter({
+                matchFrom: "start",
+                trim: true,
+              })}
+            />
+          </div>
 
-            {/* Supplier */}
-            <div className="md:col-span-4">
-              <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Supplier</label>
-              <AsyncSelect
-                cacheOptions
-                defaultOptions={[{ value: "", label: "All Suppliers" }]}
-                loadOptions={loadSuppliers}
-                isClearable
-                value={supplierValue}
-                onChange={(opt) => {
-                  setSupplierValue(opt);
-                  setSupplierId(opt?.value || "");
-                }}
-                styles={getSelectStyles(isDark)}
-                menuPortalTarget={document.body}
-                filterOption={createFilter({
-                  matchFrom: "start",
-                  trim: true,
-                })}
-              />
-            </div>
+          {/* Supplier */}
+          <div className="md:col-span-4">
+            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Supplier</label>
+            <AsyncSelect
+              cacheOptions
+              defaultOptions={[{ value: "", label: "All Suppliers" }]}
+              loadOptions={loadSuppliers}
+              isClearable
+              value={supplierValue}
+              onChange={(opt) => {
+                setSupplierValue(opt);
+                setSupplierId(opt?.value || "");
+              }}
+              styles={getSelectStyles(isDark)}
+              menuPortalTarget={document.body}
+              filterOption={createFilter({
+                matchFrom: "start",
+                trim: true,
+              })}
+            />
+          </div>
 
-            {/* Buttons */}
-            <div className="md:col-span-12 flex flex-wrap gap-2">
+          {/* Buttons */}
+          <div className="md:col-span-12 flex flex-wrap gap-2">
+            <Guard when={can.view}>
               <GlassBtn
-                type="submit"
-                className={`h-9 min-w-[110px] ${tintPrimary}`}
+                className={`h-9 min-w-[110px] ${tintBlue}`}
+                onClick={fetchReport}
                 disabled={loading}
               >
                 {loading ? (
@@ -394,34 +437,36 @@ export default function CurrentStockReport() {
                   "Load Report"
                 )}
               </GlassBtn>
+            </Guard>
 
+            <Guard when={can.export}>
               <GlassBtn
-                className={`h-9 flex items-center gap-2 ${canExport ? tintGhost : "opacity-60"}`}
+                className={`h-9 flex items-center gap-2 ${tintIndigo}`}
                 onClick={exportPdf}
-                disabled={pdfLoading || !canExport || rows.length === 0}
+                disabled={pdfLoading || rows.length === 0}
               >
                 <ArrowDownOnSquareIcon className="w-5 h-5" />
                 {pdfLoading ? "Generating…" : "Export PDF"}
               </GlassBtn>
-            </div>
-          </GlassToolbar>
-        </form>
+            </Guard>
+          </div>
+        </GlassToolbar>
       </GlassCard>
 
-      {/* ===== Permission states ===== */}
-      {canView === null && (
+      {/* ===== Permission / Loading states ===== */}
+      {permsLoading && (
         <GlassCard>
           <div className={`px-4 py-3 text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>Checking permissions…</div>
         </GlassCard>
       )}
-      {canView === false && (
+      {!permsLoading && !can.view && (
         <GlassCard>
           <div className={`px-4 py-3 text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>You don't have permission to view this report.</div>
         </GlassCard>
       )}
 
       {/* ===== Results ===== */}
-      {canView === true && (
+      {!permsLoading && can.view && (
         <>
           {rows.length === 0 && !loading && (
             <GlassCard>
@@ -438,117 +483,184 @@ export default function CurrentStockReport() {
                 <KpiCard
                   label="Total Items"
                   value={fmtNumber(summary.total_items)}
-                  icon="📦"
+                  icon={CubeIcon}
                   isDark={isDark}
+                  gradient="from-blue-500 to-cyan-600"
                 />
                 <KpiCard
                   label="Total Quantity"
                   value={fmtNumber(summary.total_quantity)}
-                  icon="🔢"
+                  icon={ClipboardDocumentListIcon}
                   isDark={isDark}
+                  gradient="from-indigo-500 to-indigo-600"
                 />
                 <KpiCard
                   label="Purchase Value"
                   value={fmtCurrency(summary.total_purchase_value)}
-                  icon="💰"
-                  highlight={false}
+                  icon={CurrencyDollarIcon}
                   isDark={isDark}
+                  gradient="from-emerald-500 to-emerald-600"
+                  highlight={false}
                 />
                 <KpiCard
                   label="Sale Value"
                   value={fmtCurrency(summary.total_sale_value)}
-                  icon="🏷️"
-                  highlight={false}
+                  icon={TagIcon}
                   isDark={isDark}
+                  gradient="from-violet-500 to-purple-600"
+                  highlight={false}
                 />
                 <KpiCard
                   label="Potential Profit"
                   value={fmtCurrency(potentialProfit)}
-                  icon="📈"
-                  highlight={true}
+                  icon={ArrowTrendingUpIcon}
                   isDark={isDark}
+                  gradient="from-amber-500 to-amber-600"
+                  highlight={true}
                 />
               </div>
 
-              {/* ===== Data Table ===== */}
-              <GlassCard className="relative z-10">
-                <div className="max-h-[75vh] overflow-auto rounded-b-2xl">
-                  <table className={`min-w-[1200px] w-full text-sm ${isDark ? "text-slate-200" : "text-gray-900"}`}>
-                    <thead className={`sticky top-0 backdrop-blur-sm z-10 border-b ${isDark ? "bg-slate-800/90" : "bg-white/90"} ${isDark ? "border-slate-600/70" : "border-gray-200/70"}`}>
+              {/* ===== Data Table (matching Products page style) ===== */}
+              <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                {/* Table Header */}
+                <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
+                  <div className="flex items-center gap-2">
+                    <div className={`p-1 rounded ${SECTION_CONFIG.core.bgDark}`}>
+                      <Squares2X2Icon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Stock Items</span>
+                  </div>
+                  <span className="text-xs text-gray-400">{rows.length} items</span>
+                </div>
+
+                <div className="max-h-[65vh] overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
                       <tr className="text-left">
-                        <Th isDark={isDark}>#</Th>
-                        <Th isDark={isDark}>Product Name</Th>
-                        <Th isDark={isDark}>Category</Th>
-                        <Th isDark={isDark}>Brand</Th>
-                        <Th isDark={isDark}>Supplier</Th>
-                        <Th align="right" isDark={isDark}>Pack Size</Th>
-                        <Th align="right" isDark={isDark}>Quantity</Th>
-                        <Th align="right" isDark={isDark}>Pack Purchase</Th>
-                        <Th align="right" isDark={isDark}>Pack Sale</Th>
-                        <Th align="right" isDark={isDark}>Total Purchase</Th>
-                        <Th align="right" isDark={isDark}>Total Sale</Th>
+                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-8">#</th>
+                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Product Name</th>
+                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Brand</th>
+                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Supplier</th>
+                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-20">Pack Size</th>
+                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-24">Quantity</th>
+                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-24">Pack Purchase</th>
+                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-24">Pack Sale</th>
+                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-28">Total Purchase</th>
+                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-28">Total Sale</th>
                       </tr>
                     </thead>
 
-                    <tbody className="tabular-nums">
-                      {rows.map((row, idx) => (
-                        <tr
-                          key={row.id ?? idx}
-                          className={`transition-all duration-150 hover:backdrop-blur-[2px] ${
-                            isDark
-                              ? "odd:bg-slate-800/80 even:bg-slate-800/60 hover:bg-slate-700/80"
-                              : "odd:bg-white/90 even:bg-white/70 hover:bg-white/80"
-                          }`}
-                        >
-                          <Td isDark={isDark}>{idx + 1}</Td>
-                          <Td isDark={isDark} className="font-medium">{row.name || "-"}</Td>
-                          <Td isDark={isDark}>{row.category_name || "-"}</Td>
-                          <Td isDark={isDark}>{row.brand_name || "-"}</Td>
-                          <Td isDark={isDark}>{row.supplier_name || "-"}</Td>
-                          <Td align="right" isDark={isDark}>{fmtNumber(row.pack_size)}</Td>
-                          <Td align="right" isDark={isDark} className="font-semibold text-blue-700">
-                            {fmtNumber(row.quantity)}
-                          </Td>
-                          <Td align="right" isDark={isDark}>{fmtCurrency(row.pack_purchase_price)}</Td>
-                          <Td align="right" isDark={isDark}>{fmtCurrency(row.pack_sale_price)}</Td>
-                          <Td align="right" isDark={isDark} className="text-emerald-700">
-                            {fmtCurrency(row.total_purchase_value)}
-                          </Td>
-                          <Td align="right" isDark={isDark} className="text-indigo-700">
-                            {fmtCurrency(row.total_sale_value)}
-                          </Td>
-                        </tr>
-                      ))}
-
-                      {(!rows || rows.length === 0) && (
+                    <tbody>
+                      {rows.length === 0 && !loading && (
                         <tr>
-                          <td colSpan={11} className={`px-3 py-6 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>
-                            No stock items found.
+                          <td colSpan={10} className="px-2 py-12 text-center">
+                            <div className="flex flex-col items-center gap-2">
+                              <CubeIcon className="w-8 h-8 text-gray-400" />
+                              <p className="text-sm text-gray-500 dark:text-gray-400">No stock items found</p>
+                            </div>
                           </td>
                         </tr>
                       )}
+
+                      {rows.map((row, idx) => (
+                        <tr
+                          key={row.id ?? idx}
+                          className={`
+                            transition-colors
+                            border-b border-gray-100 dark:border-slate-600/30
+                            odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/40 dark:even:bg-slate-800/40
+                            hover:bg-blue-50 dark:hover:bg-slate-600/50
+                          `}
+                        >
+                          <td className="px-2 py-2 text-gray-500 dark:text-gray-400">{idx + 1}</td>
+                          
+                          <td className="px-2 py-2">
+                            <span className="font-medium text-gray-800 dark:text-gray-200">{row.name || "-"}</span>
+                          </td>
+                          
+                          <td className="px-2 py-2">
+                            <span className="px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs">
+                              {row.brand_name || "—"}
+                            </span>
+                          </td>
+                          
+                          <td className="px-2 py-2">
+                            <span className="px-2 py-0.5 rounded bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 text-xs">
+                              {row.supplier_name || "—"}
+                            </span>
+                          </td>
+                          
+                          <td className="px-2 py-2 text-right text-gray-700 dark:text-gray-300 tabular-nums">
+                            {fmtNumber(row.pack_size)}
+                          </td>
+                          
+                          <td className="px-2 py-2 text-right">
+                            <span className={`
+                              inline-flex items-center justify-center min-w-[3rem] px-2 py-0.5 rounded-full text-xs font-bold
+                              bg-gradient-to-br from-emerald-400 to-emerald-500 text-white
+                              shadow-lg shadow-emerald-500/25 ring-1 ring-emerald-400/30
+                            `}>
+                              {fmtNumber(row.quantity)}
+                            </span>
+                          </td>
+                          
+                          <td className="px-2 py-2 text-right text-gray-700 dark:text-gray-300 tabular-nums">
+                            {fmtCurrency(row.pack_purchase_price)}
+                          </td>
+                          
+                          <td className="px-2 py-2 text-right text-gray-700 dark:text-gray-300 tabular-nums">
+                            {fmtCurrency(row.pack_sale_price)}
+                          </td>
+                          
+                          <td className="px-2 py-2 text-right tabular-nums">
+                            <span className="font-medium text-emerald-700 dark:text-emerald-400">
+                              {fmtCurrency(row.total_purchase_value)}
+                            </span>
+                          </td>
+                          
+                          <td className="px-2 py-2 text-right tabular-nums">
+                            <span className="font-medium text-indigo-700 dark:text-indigo-400">
+                              {fmtCurrency(row.total_sale_value)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
 
-                    <tfoot className={`border-t-2 backdrop-blur-sm font-semibold ${isDark ? "border-slate-600 bg-slate-800/80" : "border-gray-300 bg-white/80"}`}>
-                      <tr className={isDark ? "bg-slate-700" : "bg-gray-50"}>
-                        <Td colSpan={5} align="right" strong isDark={isDark}>TOTALS</Td>
-                        <Td align="right" isDark={isDark}>-</Td>
-                        <Td align="right" isDark={isDark} className="text-blue-800">
-                          {fmtNumber(summary.total_quantity)}
-                        </Td>
-                        <Td align="right" isDark={isDark}>-</Td>
-                        <Td align="right" isDark={isDark}>-</Td>
-                        <Td align="right" isDark={isDark} className="text-emerald-800">
-                          {fmtCurrency(summary.total_purchase_value)}
-                        </Td>
-                        <Td align="right" isDark={isDark} className="text-indigo-800">
-                          {fmtCurrency(summary.total_sale_value)}
-                        </Td>
+                    {/* Footer with Totals */}
+                    <tfoot className={`
+                      border-t-2 backdrop-blur-sm font-semibold
+                      ${isDark ? "border-slate-600 bg-slate-800/80" : "border-gray-300 bg-gray-50"}
+                    `}>
+                      <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>
+                        <td colSpan={4} className="px-2 py-2 text-right text-gray-700 dark:text-gray-300">TOTALS</td>
+                        <td className="px-2 py-2 text-right text-gray-500 dark:text-gray-400">-</td>
+                        <td className="px-2 py-2 text-right">
+                          <span className={`
+                            inline-flex items-center justify-center min-w-[3rem] px-2 py-0.5 rounded-full text-xs font-bold
+                            bg-gradient-to-br from-emerald-400 to-emerald-500 text-white
+                            shadow-lg shadow-emerald-500/25 ring-1 ring-emerald-400/30
+                          `}>
+                            {fmtNumber(summary.total_quantity)}
+                          </span>
+                        </td>
+                        <td className="px-2 py-2 text-right text-gray-500 dark:text-gray-400">-</td>
+                        <td className="px-2 py-2 text-right text-gray-500 dark:text-gray-400">-</td>
+                        <td className="px-2 py-2 text-right tabular-nums">
+                          <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                            {fmtCurrency(summary.total_purchase_value)}
+                          </span>
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums">
+                          <span className="font-bold text-indigo-700 dark:text-indigo-400">
+                            {fmtCurrency(summary.total_sale_value)}
+                          </span>
+                        </td>
                       </tr>
                     </tfoot>
                   </table>
                 </div>
-              </GlassCard>
+              </div>
             </>
           )}
         </>
@@ -567,49 +679,28 @@ export default function CurrentStockReport() {
 }
 
 /* ===== KPI Card Component ===== */
-function KpiCard({ label, value, icon, highlight = false }) {
+function KpiCard({ label, value, icon: Icon, highlight = false, gradient = "from-blue-500 to-cyan-600", isDark }) {
   return (
     <div
       className={[
-        "group rounded-xl px-4 py-3 backdrop-blur-sm bg-white/55 ring-1 ring-white/30 shadow-sm",
+        "group rounded-xl px-4 py-3 backdrop-blur-sm bg-white/55 ring-1 ring-white/30 shadow-sm relative overflow-hidden",
         "transition-all duration-200",
         "hover:bg-white/80 hover:backdrop-blur-md hover:shadow-[0_10px_30px_-10px_rgba(59,130,246,0.35)]",
         "hover:ring-white/40",
         highlight ? "outline outline-1 outline-emerald-200/50" : "",
       ].join(" ")}
     >
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-lg">{icon}</span>
-        <span className="text-xs text-gray-600 uppercase tracking-wide">{label}</span>
+      {/* Gradient accent bar */}
+      <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${gradient}`} />
+      
+      <div className="flex items-center gap-2 mb-1 relative z-10">
+        <div className={`p-1.5 rounded-lg bg-gradient-to-br ${gradient} shadow-sm`}>
+          <Icon className="w-4 h-4 text-white" />
+        </div>
+        <span className={`text-xs uppercase tracking-wide ${isDark ? "text-slate-400" : "text-gray-600"}`}>{label}</span>
       </div>
-      <div className="text-xl font-bold tabular-nums text-gray-900">{value}</div>
+      <div className="text-xl font-bold tabular-nums text-gray-900 relative z-10">{value}</div>
     </div>
-  );
-}
-
-/* ===== Table Helpers ===== */
-function Th({ children, align = "left", isDark = false }) {
-  return (
-    <th className={`px-3 py-2 font-medium ${align === "right" ? "text-right" : "text-left"} ${isDark ? "text-slate-200" : ""}`}>
-      {children}
-    </th>
-  );
-}
-
-function Td({ children, align = "left", colSpan, strong = false, className = "", isDark = false }) {
-  return (
-    <td
-      colSpan={colSpan}
-      className={[
-        "px-3 py-2 border-t",
-        isDark ? "border-slate-600/70" : "border-gray-200/70",
-        align === "right" ? "text-right" : "text-left",
-        strong ? (isDark ? "font-medium text-slate-200" : "font-medium text-gray-800") : "",
-        className,
-      ].join(" ")}
-    >
-      {children}
-    </td>
   );
 }
 
