@@ -1,28 +1,61 @@
-import { Bars3Icon, ViewColumnsIcon } from "@heroicons/react/24/solid";
+// resources/js/components/settings/NavigationSetting.jsx
+import toast from "react-hot-toast";
+import { useTheme } from "@/context/ThemeContext";
 import { GlassCard, GlassSectionHeader, GlassToolbar, GlassBtn } from "@/components/glass.jsx";
+import { Bars3Icon, ViewColumnsIcon } from "@heroicons/react/24/solid";
+
+// Section configuration with color schemes - matching sidebar design
+const SECTION_CONFIG = {
+  core: {
+    gradient: "from-blue-500 to-cyan-600",
+    bgLight: "bg-blue-50",
+    bgDark: "dark:bg-blue-900/20",
+    borderColor: "border-blue-200 dark:border-blue-700",
+    iconColor: "text-blue-600 dark:text-blue-400",
+    ringColor: "ring-blue-300 dark:ring-blue-700",
+  },
+  management: {
+    gradient: "from-violet-500 to-purple-600",
+    bgLight: "bg-violet-50",
+    bgDark: "dark:bg-violet-900/20",
+    borderColor: "border-violet-200 dark:border-violet-700",
+    iconColor: "text-violet-600 dark:text-violet-400",
+    ringColor: "ring-violet-300 dark:ring-violet-700",
+  },
+};
 
 export default function NavigationSetting({ 
   form, 
   setForm, 
   disableInputs, 
   saving, 
-  handleSave,
-  tintBlue,
-  tintGlass,
-  tintGreen
+  handleSave
 }) {
+  const { isDark } = useTheme();
+
+  // 🎨 Modern button palette
+  const btnOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-all duration-200";
+  const btnBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] transition-all duration-200";
+  const btnGreen  = "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] transition-all duration-200";
+
   return (
-    <>
+    <div className="p-4 space-y-3">
       {/* ===== Navigation Style Selection ===== */}
       <GlassCard>
-        <GlassSectionHeader
-          title={<span className="inline-flex items-center gap-2">
-            <ViewColumnsIcon className="w-5 h-5 text-blue-600" />
-            <span>Navigation Style</span>
-          </span>}
-          subtitle="Choose how you want to navigate through the application"
-        />
-        <GlassToolbar className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.core.gradient} shadow-sm`}>
+              <ViewColumnsIcon className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Navigation Style</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Choose how you want to navigate</p>
+            </div>
+          </div>
+        </div>
+
+        <GlassToolbar className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 items-stretch">
           {/* Sidebar Option */}
           <div
             className={`relative p-6 rounded-xl border-2 cursor-pointer transition-all h-full flex flex-col ${
@@ -51,32 +84,32 @@ export default function NavigationSetting({
                 <ViewColumnsIcon className={`w-8 h-8 ${form.navigation_style === "sidebar" ? "text-blue-600" : "text-gray-600 dark:text-gray-300"}`} />
               </div>
               <div className="flex-1">
-                <h4 className="font-semibold text-gray-800 dark:text-gray-100 text-lg">Sidebar Navigation</h4>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                <h4 className={`font-semibold ${isDark ? "text-slate-100" : "text-gray-800"} text-lg`}>Sidebar Navigation</h4>
+                <p className={`text-sm mt-1 ${isDark ? "text-slate-400" : "text-gray-600"}`}>
                   Traditional left sidebar navigation with collapsible menu items grouped by sections.
                 </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-gray-300">
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${isDark ? "bg-slate-700 text-slate-300" : "bg-gray-100 text-gray-600"}`}>
                     Collapsible
                   </span>
-                  <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-gray-300">
+                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${isDark ? "bg-slate-700 text-slate-300" : "bg-gray-100 text-gray-600"}`}>
                     Section Groups
                   </span>
-                  <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-gray-300">
+                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${isDark ? "bg-slate-700 text-slate-300" : "bg-gray-100 text-gray-600"}`}>
                     Keyboard Nav
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Preview Image Placeholder */}
-            <div className="mt-4 p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-600">
+            {/* Preview Placeholder */}
+            <div className={`mt-4 p-3 rounded-lg border ${isDark ? "bg-slate-800 border-slate-600" : "bg-white border-gray-200"}`}>
               <div className="flex gap-2">
-                <div className="w-16 bg-gray-100 dark:bg-slate-700 rounded h-24 flex items-center justify-center">
-                  <ViewColumnsIcon className="w-6 h-6 text-gray-400" />
+                <div className={`w-16 ${isDark ? "bg-slate-700" : "bg-gray-100"} rounded h-24 flex items-center justify-center`}>
+                  <ViewColumnsIcon className={`w-6 h-6 ${isDark ? "text-slate-500" : "text-gray-400"}`} />
                 </div>
-                <div className="flex-1 bg-gray-50 dark:bg-slate-800/50 rounded h-24 p-2">
-                  <div className="text-xs text-gray-400 dark:text-gray-500">Main content area</div>
+                <div className={`flex-1 ${isDark ? "bg-slate-800/50" : "bg-gray-50"} rounded h-24 p-2`}>
+                  <div className={`text-xs ${isDark ? "text-slate-500" : "text-gray-400"}`}>Main content area</div>
                 </div>
               </div>
             </div>
@@ -95,7 +128,7 @@ export default function NavigationSetting({
               className={`w-full mt-4 py-2.5 px-4 rounded-lg text-sm font-medium transition-all ${
                 form.navigation_style === "sidebar"
                   ? "bg-blue-500 text-white"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-700 dark:text-gray-200 dark:hover:bg-slate-600"
+                  : `${isDark ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`
               } ${disableInputs && form.navigation_style !== "sidebar" ? "opacity-50 cursor-not-allowed" : ""}`}
             >
               {form.navigation_style === "sidebar" ? "Selected" : "Select Sidebar"}
@@ -130,37 +163,37 @@ export default function NavigationSetting({
                 <Bars3Icon className={`w-8 h-8 ${form.navigation_style === "topbar" ? "text-blue-600" : "text-gray-600 dark:text-gray-300"}`} />
               </div>
               <div className="flex-1">
-                <h4 className="font-semibold text-gray-800 dark:text-gray-100 text-lg">Topbar Navigation</h4>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                <h4 className={`font-semibold ${isDark ? "text-slate-100" : "text-gray-800"} text-lg`}>Topbar Navigation</h4>
+                <p className={`text-sm mt-1 ${isDark ? "text-slate-400" : "text-gray-600"}`}>
                   Horizontal navigation bar at the top of the screen with a horizontal menu below the header.
                 </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-gray-300">
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${isDark ? "bg-slate-700 text-slate-300" : "bg-gray-100 text-gray-600"}`}>
                     Horizontal Menu
                   </span>
-                  <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-gray-300">
+                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${isDark ? "bg-slate-700 text-slate-300" : "bg-gray-100 text-gray-600"}`}>
                     More Space
                   </span>
-                  <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-gray-300">
+                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${isDark ? "bg-slate-700 text-slate-300" : "bg-gray-100 text-gray-600"}`}>
                     Scrollable
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Preview Image Placeholder */}
-            <div className="mt-4 p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-600">
+            {/* Preview Placeholder */}
+            <div className={`mt-4 p-3 rounded-lg border ${isDark ? "bg-slate-800 border-slate-600" : "bg-white border-gray-200"}`}>
               <div className="flex flex-col gap-2">
-                <div className="h-8 bg-gray-100 dark:bg-slate-700 rounded flex items-center justify-center">
-                  <Bars3Icon className="w-5 h-5 text-gray-400" />
+                <div className={`h-8 ${isDark ? "bg-slate-700" : "bg-gray-100"} rounded flex items-center justify-center`}>
+                  <Bars3Icon className={`w-5 h-5 ${isDark ? "text-slate-500" : "text-gray-400"}`} />
                 </div>
                 <div className="flex gap-1 overflow-hidden">
-                  <div className="h-6 bg-gray-50 dark:bg-slate-800/50 rounded flex-1"></div>
-                  <div className="h-6 bg-gray-50 dark:bg-slate-800/50 rounded flex-1"></div>
-                  <div className="h-6 bg-gray-50 dark:bg-slate-800/50 rounded flex-1"></div>
+                  <div className={`h-6 ${isDark ? "bg-slate-700" : "bg-gray-50"} rounded flex-1`}></div>
+                  <div className={`h-6 ${isDark ? "bg-slate-700" : "bg-gray-50"} rounded flex-1`}></div>
+                  <div className={`h-6 ${isDark ? "bg-slate-700" : "bg-gray-50"} rounded flex-1`}></div>
                 </div>
-                <div className="bg-gray-50 dark:bg-slate-800/50 rounded h-24 flex items-center justify-center">
-                  <div className="text-xs text-gray-400 dark:text-gray-500">Main content area</div>
+                <div className={`h-24 ${isDark ? "bg-slate-700/50" : "bg-gray-50"} rounded flex items-center justify-center`}>
+                  <div className={`text-xs ${isDark ? "text-slate-500" : "text-gray-400"}`}>Main content area</div>
                 </div>
               </div>
             </div>
@@ -179,7 +212,7 @@ export default function NavigationSetting({
               className={`w-full mt-4 py-2.5 px-4 rounded-lg text-sm font-medium transition-all ${
                 form.navigation_style === "topbar"
                   ? "bg-blue-500 text-white"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-700 dark:text-gray-200 dark:hover:bg-slate-600"
+                  : `${isDark ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`
               } ${disableInputs && form.navigation_style !== "topbar" ? "opacity-50 cursor-not-allowed" : ""}`}
             >
               {form.navigation_style === "topbar" ? "Selected" : "Select Topbar"}
@@ -189,26 +222,26 @@ export default function NavigationSetting({
       </GlassCard>
 
       {/* ===== Current Selection Info ===== */}
-      <div className="bg-blue-50 dark:bg-blue-900/30 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+      <div className={`rounded-xl p-4 border ${isDark ? "bg-blue-900/20 border-blue-800" : "bg-blue-50 border-blue-200"}`}>
         <div className="flex items-start gap-3">
-          <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-800">
+          <div className={`p-2 rounded-lg ${isDark ? "bg-blue-800" : "bg-blue-100"}`}>
             {form.navigation_style === "sidebar" ? (
-              <ViewColumnsIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              <ViewColumnsIcon className={`w-5 h-5 ${isDark ? "text-blue-400" : "text-blue-600"}`} />
             ) : (
-              <Bars3Icon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              <Bars3Icon className={`w-5 h-5 ${isDark ? "text-blue-400" : "text-blue-600"}`} />
             )}
           </div>
           <div>
-            <h4 className="font-medium text-blue-800 dark:text-blue-300">
+            <h4 className={`font-medium ${isDark ? "text-blue-300" : "text-blue-800"}`}>
               Current: {form.navigation_style === "sidebar" ? "Sidebar Navigation" : "Topbar Navigation"}
             </h4>
-            <p className="text-sm text-blue-700 dark:text-blue-400 mt-1">
+            <p className={`text-sm mt-1 ${isDark ? "text-blue-400" : "text-blue-700"}`}>
               {form.navigation_style === "sidebar"
                 ? "The sidebar will be displayed on the left side of the screen. Click the collapse button to minimize it."
                 : "A horizontal navigation bar will appear below the top header. The menu items will scroll horizontally if they don't fit."}
             </p>
             {form.navigation_style === "topbar" && (
-              <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+              <p className={`text-xs mt-2 ${isDark ? "text-blue-400" : "text-blue-600"}`}>
                 💡 Tip: In topbar mode, the sidebar will be hidden to give you more screen space.
               </p>
             )}
@@ -216,18 +249,18 @@ export default function NavigationSetting({
         </div>
       </div>
 
-      {/* ===== Save Button for Navigation Settings ===== */}
+      {/* ===== Save Button ===== */}
       <div className="flex justify-end">
         <GlassBtn
           onClick={handleSave}
           disabled={disableInputs || saving}
-          className={`h-10 px-6 ${(disableInputs || saving) ? tintGlass + " opacity-60 cursor-not-allowed" : tintGreen}`}
+          className={`h-10 px-6 ${(disableInputs || saving) ? btnOutline + " opacity-60 cursor-not-allowed" : btnGreen}`}
           title={!disableInputs ? "Alt+S" : "You lack update permission"}
         >
           {saving ? "Saving…" : "Save Settings"}
         </GlassBtn>
       </div>
-    </>
+    </div>
   );
 }
 

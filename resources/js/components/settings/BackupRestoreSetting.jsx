@@ -1,12 +1,13 @@
+// resources/js/components/settings/BackupRestoreSetting.jsx
 import { useState, useEffect } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { 
-  FilePond, 
-  registerPlugin 
-} from "react-filepond";
+import { FilePond, registerPlugin } from "react-filepond";
 import FilePondPluginImagePreview from "filepond-plugin-image-preview";
 import "filepond/dist/filepond.min.css";
+import { usePermissions, Guard } from "@/api/usePermissions";
+import { useTheme } from "@/context/ThemeContext";
+import { GlassCard, GlassSectionHeader, GlassToolbar, GlassBtn } from "@/components/glass.jsx";
 import { 
   CloudArrowDownIcon,
   CloudArrowUpIcon,
@@ -18,18 +19,46 @@ import {
   XCircleIcon,
   TrashIcon,
   DocumentIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  DocumentTextIcon,
 } from "@heroicons/react/24/solid";
-import { GlassCard, GlassSectionHeader, GlassToolbar, GlassBtn } from "@/components/glass.jsx";
 
 registerPlugin(FilePondPluginImagePreview);
 
+// Section configuration with color schemes - matching sidebar design
+const SECTION_CONFIG = {
+  core: {
+    gradient: "from-blue-500 to-cyan-600",
+    bgLight: "bg-blue-50",
+    bgDark: "dark:bg-blue-900/20",
+    borderColor: "border-blue-200 dark:border-blue-700",
+    iconColor: "text-blue-600 dark:text-blue-400",
+    ringColor: "ring-blue-300 dark:ring-blue-700",
+  },
+  management: {
+    gradient: "from-violet-500 to-purple-600",
+    bgLight: "bg-violet-50",
+    bgDark: "dark:bg-violet-900/20",
+    borderColor: "border-violet-200 dark:border-violet-700",
+    iconColor: "text-violet-600 dark:text-violet-400",
+    ringColor: "ring-violet-300 dark:ring-violet-700",
+  },
+};
+
 export default function BackupRestoreSetting({ 
-  canFor,
   tintBlue,
   tintGlass,
   tintGreen
 }) {
+  const { isDark } = useTheme();
+  const { loading: permsLoading, canFor } = usePermissions();
+  
+  const can = useState(() => 
+    typeof canFor === "function" ? canFor("backup") : {
+      view: false, create: false, delete: false, upload: false, restore: false
+    }
+  )[0];
+
   // Backup management state
   const [backups, setBackups] = useState([]);
   const [backupStats, setBackupStats] = useState(null);
@@ -53,6 +82,12 @@ export default function BackupRestoreSetting({
     { id: 'database', name: 'Database Only', description: 'Database tables and data only', icon: FolderIcon },
     { id: 'settings', name: 'Settings Only', description: 'Application settings and configuration', icon: CogIcon },
   ];
+
+  // 🎨 Modern button palette
+  const btnOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:shadow-md transition-all duration-200";
+  const btnBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] transition-all duration-200";
+  const btnGreen  = "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] transition-all duration-200";
+  const btnAmber  = "bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] transition-all duration-200";
 
   // Fetch backups list
   const fetchBackups = async () => {
@@ -81,7 +116,7 @@ export default function BackupRestoreSetting({
 
   // Create new backup
   const handleCreateBackup = async () => {
-    if (!canFor?.("backup")?.create) {
+    if (!can.create) {
       toast.error("You don't have permission to create backups.");
       return;
     }
@@ -104,7 +139,7 @@ export default function BackupRestoreSetting({
 
   // Download backup
   const handleDownloadBackup = async (backup) => {
-    if (!canFor?.("backup")?.view) {
+    if (!can.view) {
       toast.error("You don't have permission to view backups.");
       return;
     }
@@ -113,8 +148,6 @@ export default function BackupRestoreSetting({
       const response = await axios.get(`/api/backups/${backup.id}/download`, {
         responseType: 'blob',
       });
-
-      // Create download link
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -124,7 +157,6 @@ export default function BackupRestoreSetting({
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-
       toast.success("Backup download started");
     } catch (error) {
       toast.error("Failed to download backup");
@@ -148,7 +180,6 @@ export default function BackupRestoreSetting({
   // Restore from backup
   const handleRestoreBackup = async (e) => {
     e.preventDefault();
-
     if (!backupToRestore) return;
 
     try {
@@ -158,7 +189,6 @@ export default function BackupRestoreSetting({
       });
       toast.success("Backup restored successfully! Please refresh the page.");
       closeRestoreModal();
-      // Refresh backup list and stats
       await fetchBackups();
       await fetchBackupStats();
     } catch (error) {
@@ -171,7 +201,7 @@ export default function BackupRestoreSetting({
 
   // Delete backup
   const handleDeleteBackup = async (backup) => {
-    if (!canFor?.("backup")?.delete) {
+    if (!can.delete) {
       toast.error("You don't have permission to delete backups.");
       return;
     }
@@ -196,7 +226,7 @@ export default function BackupRestoreSetting({
 
   // Upload backup file
   const handleUploadBackup = async () => {
-    if (!canFor?.("backup")?.upload) {
+    if (!can.upload) {
       toast.error("You don't have permission to upload backups.");
       return;
     }
@@ -212,28 +242,18 @@ export default function BackupRestoreSetting({
       formData.append('file', uploadFiles[0].file);
 
       const { data } = await axios.post('/api/backups/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
 
       toast.success("Backup uploaded successfully!");
-      
-      // Refresh backup list
       await fetchBackups();
       await fetchBackupStats();
-      
-      // Clear upload files
       setUploadFiles([]);
-      
-      // Open the restore modal for the uploaded file
       setShowUploadModal(false);
       openRestoreModal(data.backup);
-      
     } catch (error) {
       const errors = error.response?.data?.errors;
       const msg = error.response?.data?.message || error.response?.data?.error || "Failed to upload backup";
-      
       if (errors && Array.isArray(errors) && errors.length > 0) {
         errors.forEach((err) => toast.error(err));
       } else {
@@ -264,67 +284,74 @@ export default function BackupRestoreSetting({
     fetchBackupStats();
   }, []);
 
+  if (permsLoading) {
+    return (
+      <div className="p-6">
+        <div className={`p-4 rounded-xl ${isDark ? "bg-slate-800" : "bg-white"}`}>Checking permissions…</div>
+      </div>
+    );
+  }
+
   return (
-    <>
+    <div className="p-4 space-y-3">
       {/* ===== Backup Statistics ===== */}
       <GlassCard>
-        <GlassSectionHeader
-          title={<span className="inline-flex items-center gap-2">
-            <CloudArrowDownIcon className="w-5 h-5 text-blue-600" />
-            <span>Backup & Recovery</span>
-          </span>}
-          right={
-            <GlassBtn
-              onClick={() => { fetchBackups(); fetchBackupStats(); }}
-              className={`h-8 px-3 ${tintGlass}`}
-              title="Refresh backups"
-            >
-              <ArrowPathIcon className="w-4 h-4" />
-            </GlassBtn>
-          }
-        />
-        <GlassToolbar className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {/* Total Backups */}
-          <div className="p-4 rounded-xl bg-white/60 dark:bg-slate-700/60 text-center">
-            <div className="text-2xl font-bold text-gray-800 dark:text-gray-100">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.core.gradient} shadow-sm`}>
+              <CloudArrowDownIcon className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Backup & Recovery</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{backups.length} backups</p>
+            </div>
+          </div>
+          <GlassBtn onClick={() => { fetchBackups(); fetchBackupStats(); }} className={`h-8 px-3 ${btnOutline}`}>
+            <ArrowPathIcon className="w-4 h-4" />
+          </GlassBtn>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-4">
+          <div className={`rounded-xl p-3 text-center ${isDark ? "bg-slate-800/60" : "bg-white/60"}`}>
+            <div className={`text-xl font-bold ${isDark ? "text-slate-200" : "text-gray-800"}`}>
               {backupStats?.total_backups || 0}
             </div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">Total Backups</div>
+            <div className={`text-[10px] uppercase tracking-wider ${isDark ? "text-slate-400" : "text-gray-500"}`}>Total</div>
           </div>
-
-          {/* Completed */}
-          <div className="p-4 rounded-xl bg-white/60 dark:bg-slate-700/60 text-center">
-            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+          <div className={`rounded-xl p-3 text-center ${isDark ? "bg-slate-800/60" : "bg-white/60"}`}>
+            <div className={`text-xl font-bold text-emerald-500`}>
               {backupStats?.completed_backups || 0}
             </div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">Completed</div>
+            <div className={`text-[10px] uppercase tracking-wider ${isDark ? "text-slate-400" : "text-gray-500"}`}>Completed</div>
           </div>
-
-          {/* Failed */}
-          <div className="p-4 rounded-xl bg-white/60 dark:bg-slate-700/60 text-center">
-            <div className="text-2xl font-bold text-red-600 dark:text-red-400">
+          <div className={`rounded-xl p-3 text-center ${isDark ? "bg-slate-800/60" : "bg-white/60"}`}>
+            <div className={`text-xl font-bold text-red-500`}>
               {backupStats?.failed_backups || 0}
             </div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">Failed</div>
+            <div className={`text-[10px] uppercase tracking-wider ${isDark ? "text-slate-400" : "text-gray-500"}`}>Failed</div>
           </div>
-
-          {/* Total Size */}
-          <div className="p-4 rounded-xl bg-white/60 dark:bg-slate-700/60 text-center">
-            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+          <div className={`rounded-xl p-3 text-center ${isDark ? "bg-slate-800/60" : "bg-white/60"}`}>
+            <div className={`text-xl font-bold text-blue-500`}>
               {backupStats?.formatted_total_size || '0 B'}
             </div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">Total Size</div>
+            <div className={`text-[10px] uppercase tracking-wider ${isDark ? "text-slate-400" : "text-gray-500"}`}>Size</div>
           </div>
-        </GlassToolbar>
+        </div>
       </GlassCard>
 
       {/* ===== Create Backup ===== */}
       <GlassCard>
-        <GlassSectionHeader
-          title="Create New Backup"
-          subtitle="Choose backup type and create a new backup"
-        />
-        <GlassToolbar className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+          <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.management.gradient} shadow-sm`}>
+            <CloudArrowUpIcon className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Create New Backup</h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Choose backup type and create</p>
+          </div>
+        </div>
+
+        <GlassToolbar className="grid grid-cols-1 md:grid-cols-3 gap-3 p-4">
           {backupTypes.map((type) => {
             const IconComponent = type.icon;
             const isSelected = selectedBackupType === type.id;
@@ -350,12 +377,12 @@ export default function BackupRestoreSetting({
                 )}
 
                 <div className="flex items-start gap-3">
-                  <div className={`p-2 rounded-lg ${isSelected ? "bg-blue-100 dark:bg-blue-800" : "bg-gray-100 dark:bg-slate-600"}`}>
+                  <div className={`p-2 rounded-lg ${isSelected ? "bg-blue-100 dark:bg-blue-800" : "bg-gray-100 dark:bg-slate-700"}`}>
                     <IconComponent className={`w-6 h-6 ${isSelected ? "text-blue-600" : "text-gray-600 dark:text-gray-300"}`} />
                   </div>
                   <div className="flex-1">
-                    <h4 className="font-medium text-gray-800 dark:text-gray-100">{type.name}</h4>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{type.description}</p>
+                    <h4 className={`font-medium ${isDark ? "text-slate-200" : "text-gray-800"}`}>{type.name}</h4>
+                    <p className={`text-xs ${isDark ? "text-slate-400" : "text-gray-500"} mt-1`}>{type.description}</p>
                   </div>
                 </div>
               </div>
@@ -363,11 +390,11 @@ export default function BackupRestoreSetting({
           })}
         </GlassToolbar>
 
-        <div className="flex justify-end mt-4">
+        <div className="flex justify-end px-4 pb-4">
           <GlassBtn
             onClick={handleCreateBackup}
-            disabled={creatingBackup || !canFor?.("backup")?.create}
-            className={`h-10 px-6 ${!canFor?.("backup")?.create ? tintGlass + " opacity-60 cursor-not-allowed" : tintGreen}`}
+            disabled={creatingBackup || !can.create}
+            className={`h-10 px-6 ${!can.create ? btnOutline + " opacity-60 cursor-not-allowed" : btnGreen}`}
           >
             <span className="inline-flex items-center gap-2">
               {creatingBackup ? (
@@ -383,30 +410,34 @@ export default function BackupRestoreSetting({
 
       {/* ===== Upload Backup ===== */}
       <GlassCard>
-        <GlassSectionHeader
-          title="Upload Backup"
-          subtitle="Upload a previously downloaded backup file to restore"
-        />
-        <GlassToolbar className="space-y-4">
-          {/* Upload Info */}
-          <div className="flex items-start gap-3 p-4 rounded-xl bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800">
-            <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-800">
-              <CloudArrowDownIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+          <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.core.gradient} shadow-sm`}>
+            <DocumentTextIcon className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Upload Backup</h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Restore from a backup file</p>
+          </div>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <div className={`flex items-start gap-3 p-3 rounded-xl border ${isDark ? "bg-blue-900/20 border-blue-800" : "bg-blue-50 border-blue-200"}`}>
+            <div className={`p-2 rounded-lg ${isDark ? "bg-blue-800" : "bg-blue-100"}`}>
+              <CloudArrowDownIcon className={`w-5 h-5 ${isDark ? "text-blue-400" : "text-blue-600"}`} />
             </div>
             <div>
-              <h4 className="font-medium text-blue-800 dark:text-blue-300">Restore from Backup File</h4>
-              <p className="text-sm text-blue-700 dark:text-blue-400 mt-1">
-                Upload a backup file (.zip, .sql.gz) that was previously downloaded from this system.
+              <h4 className={`font-medium ${isDark ? "text-blue-300" : "text-blue-800"}`}>Restore from Backup File</h4>
+              <p className={`text-xs ${isDark ? "text-blue-400" : "text-blue-700"}`}>
+                Upload a backup file (.zip, .sql.gz) that was previously downloaded.
               </p>
             </div>
           </div>
 
-          {/* FilePond Upload Area */}
-          <div className="rounded-2xl bg-white/60 backdrop-blur-sm ring-1 ring-gray-200/60 p-4 shadow-sm dark:bg-slate-700/60 dark:ring-slate-600/60">
+          <div className={`rounded-xl bg-white/60 backdrop-blur-sm ring-1 p-4 ${isDark ? "ring-slate-600/60" : "ring-gray-200/60"}`}>
             <FilePond
               files={uploadFiles}
               onupdatefiles={(fl) => {
-                if (!canFor?.("backup")?.upload) { 
+                if (!can.upload) { 
                   toast.error("No permission to upload backups."); 
                   setUploadFiles([]);
                   return; 
@@ -415,107 +446,101 @@ export default function BackupRestoreSetting({
               }}
               allowMultiple={false}
               acceptedFileTypes={['application/zip', 'application/x-zip-compressed', 'application/gzip', 'application/x-gzip', 'application/octet-stream']}
-              allowFileTypeValidation={false}
-              disabled={!canFor?.("backup")?.upload || uploading}
+              disabled={!can.upload || uploading}
               labelIdle='Drag & Drop backup file or <span class="filepond--label-action">Browse</span>'
               labelFileTypeNotAllowed='Only .zip, .sql.gz, .gz files are allowed'
               credits={false}
               maxFileSize="500MB"
             />
-            <p className="text-xs text-gray-500 mt-2 dark:text-gray-400">
-              Supported formats: .zip (full backup), .sql.gz, .gz (database backup). Max size: 500MB
+            <p className={`text-xs mt-2 ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+              Supported formats: .zip, .sql.gz, .gz. Max size: 500MB
             </p>
           </div>
 
-          {/* Upload Actions */}
           {uploadFiles.length > 0 && uploadFiles[0] && (
-            <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600">
+            <div className={`flex items-center justify-between p-3 rounded-xl border ${isDark ? "bg-slate-800/50 border-slate-600" : "bg-gray-50 border-gray-200"}`}>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
-                  <DocumentIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isDark ? "bg-blue-900/50" : "bg-blue-100"}`}>
+                  <DocumentIcon className={`w-5 h-5 ${isDark ? "text-blue-400" : "text-blue-600"}`} />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate max-w-xs">
+                  <p className={`text-sm font-medium ${isDark ? "text-slate-200" : "text-gray-700"} truncate max-w-xs`}>
                     {uploadFiles[0].file?.name || uploadFiles[0].filename}
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <p className={`text-xs ${isDark ? "text-slate-400" : "text-gray-500"}`}>
                     {(uploadFiles[0].file?.size / 1024 / 1024).toFixed(2)} MB
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setUploadFiles([])}
-                  disabled={uploading}
-                  className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
-                  title="Remove file"
-                >
-                  <XCircleIcon className="w-5 h-5 text-gray-500" />
-                </button>
-              </div>
+              <button
+                onClick={() => setUploadFiles([])}
+                disabled={uploading}
+                className={`p-2 rounded-lg transition-colors ${isDark ? "hover:bg-slate-700" : "hover:bg-gray-200"}`}
+              >
+                <XCircleIcon className="w-5 h-5 text-gray-500" />
+              </button>
             </div>
           )}
 
-          {/* Upload Button */}
           <div className="flex justify-end">
             <GlassBtn
-              onClick={() => setShowUploadModal(true)}
-              disabled={uploadFiles.length === 0 || uploading || !canFor?.("backup")?.upload}
-              className={`h-10 px-6 ${
-                !canFor?.("backup")?.upload || uploadFiles.length === 0 || uploading
-                  ? tintGlass + " opacity-60 cursor-not-allowed"
-                  : tintBlue
-              }`}
+              onClick={handleUploadBackup}
+              disabled={uploadFiles.length === 0 || uploading || !can.upload}
+              className={`h-10 px-6 ${!can.upload || uploadFiles.length === 0 || uploading ? btnOutline + " opacity-60 cursor-not-allowed" : btnBlue}`}
             >
               <span className="inline-flex items-center gap-2">
-                {uploading ? (
-                  <ArrowPathIcon className="w-5 h-5 animate-spin" />
-                ) : (
-                  <CloudArrowUpIcon className="w-5 h-5" />
-                )}
+                {uploading ? <ArrowPathIcon className="w-5 h-5 animate-spin" /> : <CloudArrowUpIcon className="w-5 h-5" />}
                 {uploading ? "Uploading..." : "Upload & Preview"}
               </span>
             </GlassBtn>
           </div>
-        </GlassToolbar>
+        </div>
       </GlassCard>
 
       {/* ===== Backup List ===== */}
       <GlassCard>
-        <GlassSectionHeader
-          title="Backup History"
-          subtitle="Download, restore, or delete existing backups"
-        />
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.management.gradient} shadow-sm`}>
+              <ServerIcon className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Backup History</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{backups.length} entries</p>
+            </div>
+          </div>
+        </div>
+
         {backupsLoading ? (
           <div className="p-8 text-center">
-            <ArrowPathIcon className="w-8 h-8 text-gray-400 animate-spin mx-auto" />
-            <p className="text-gray-500 mt-2">Loading backups...</p>
+            <ArrowPathIcon className={`w-8 h-8 mx-auto animate-spin ${isDark ? "text-slate-400" : "text-gray-400"}`} />
+            <p className={`mt-2 ${isDark ? "text-slate-400" : "text-gray-500"}`}>Loading backups...</p>
           </div>
         ) : backups.length === 0 ? (
           <div className="p-8 text-center">
-            <CloudArrowDownIcon className="w-12 h-12 text-gray-300 mx-auto" />
-            <p className="text-gray-500 mt-2">No backups found</p>
-            <p className="text-xs text-gray-400">Create your first backup above</p>
+            <CloudArrowDownIcon className={`w-12 h-12 mx-auto ${isDark ? "text-slate-600" : "text-gray-300"}`} />
+            <p className={`mt-2 ${isDark ? "text-slate-400" : "text-gray-500"}`}>No backups found</p>
+            <p className={`text-xs ${isDark ? "text-slate-500" : "text-gray-400"}`}>Create your first backup above</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-200 dark:border-slate-600">
-                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Size</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+            <table className="w-full text-sm">
+              <thead className={`sticky top-0 ${isDark ? "bg-slate-800" : "bg-gray-50"} z-10`}>
+                <tr className={`text-left ${isDark ? "text-slate-300" : "text-gray-600"}`}>
+                  <th className="px-4 py-2 font-semibold text-xs uppercase tracking-wider">Status</th>
+                  <th className="px-4 py-2 font-semibold text-xs uppercase tracking-wider">Type</th>
+                  <th className="px-4 py-2 font-semibold text-xs uppercase tracking-wider">Created</th>
+                  <th className="px-4 py-2 font-semibold text-xs uppercase tracking-wider">Size</th>
+                  <th className="px-4 py-2 font-semibold text-xs uppercase tracking-wider text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+              <tbody className={`divide-y ${isDark ? "divide-slate-700" : "divide-gray-100"}`}>
                 {backups.map((backup) => (
-                  <tr key={backup.id} className="hover:bg-gray-50 dark:hover:bg-slate-700/30">
-                    <td className="py-3 px-4">
+                  <tr key={backup.id} className={`${isDark ? "hover:bg-slate-700/30" : "hover:bg-gray-50"}`}>
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         {getBackupStatusIcon(backup.status)}
-                        <span className="text-sm capitalize text-gray-700 dark:text-gray-300">
+                        <span className={`text-sm capitalize ${isDark ? "text-slate-300" : "text-gray-700"}`}>
                           {backup.status}
                         </span>
                       </div>
@@ -523,45 +548,40 @@ export default function BackupRestoreSetting({
                         <p className="text-xs text-red-500 mt-1 truncate max-w-xs">{backup.error_message}</p>
                       )}
                     </td>
-                    <td className="py-3 px-4">
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${isDark ? "bg-blue-900/50 text-blue-300" : "bg-blue-100 text-blue-700"}`}>
                         {backup.type_label}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">
+                    <td className={`px-4 py-3 text-sm ${isDark ? "text-slate-400" : "text-gray-600"}`}>
                       {backup.created_at_formatted}
                     </td>
-                    <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">
+                    <td className={`px-4 py-3 text-sm ${isDark ? "text-slate-400" : "text-gray-600"}`}>
                       {backup.formatted_size}
                     </td>
-                    <td className="py-3 px-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {/* Download */}
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => handleDownloadBackup(backup)}
-                          disabled={backup.status !== 'completed' || !canFor?.("backup")?.view}
-                          className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="Download backup"
+                          disabled={backup.status !== 'completed' || !can.view}
+                          className={`p-2 rounded-lg transition-colors ${isDark ? "hover:bg-slate-600" : "hover:bg-gray-100"} disabled:opacity-50`}
+                          title="Download"
                         >
-                          <CloudArrowDownIcon className="w-4 h-4 text-gray-600 dark:text-gray-300" />
+                          <CloudArrowDownIcon className={`w-4 h-4 ${isDark ? "text-slate-300" : "text-gray-600"}`} />
                         </button>
-
-                        {/* Restore */}
                         <button
                           onClick={() => openRestoreModal(backup)}
-                          disabled={backup.status !== 'completed' || !canFor?.("backup")?.restore}
-                          className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="Restore backup"
+                          disabled={backup.status !== 'completed' || !can.restore}
+                          className={`p-2 rounded-lg transition-colors ${isDark ? "hover:bg-slate-600" : "hover:bg-gray-100"} disabled:opacity-50`}
+                          title="Restore"
                         >
-                          <ArrowPathIcon className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                          <ArrowPathIcon className={`w-4 h-4 text-amber-500`} />
                         </button>
-
-                        {/* Delete */}
                         <button
                           onClick={() => handleDeleteBackup(backup)}
-                          disabled={deletingBackupId === backup.id || !canFor?.("backup")?.delete}
-                          className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="Delete backup"
+                          disabled={deletingBackupId === backup.id || !can.delete}
+                          className={`p-2 rounded-lg transition-colors ${isDark ? "hover:bg-red-900/20" : "hover:bg-red-50"} disabled:opacity-50`}
+                          title="Delete"
                         >
                           {deletingBackupId === backup.id ? (
                             <ArrowPathIcon className="w-4 h-4 text-red-500 animate-spin" />
@@ -580,12 +600,12 @@ export default function BackupRestoreSetting({
       </GlassCard>
 
       {/* ===== Important Notice ===== */}
-      <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 border border-amber-200 dark:border-amber-800">
+      <div className={`rounded-xl p-4 border ${isDark ? "bg-amber-900/20 border-amber-800" : "bg-amber-50 border-amber-200"}`}>
         <div className="flex items-start gap-3">
-          <ExclamationTriangleIcon className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+          <ExclamationTriangleIcon className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isDark ? "text-amber-400" : "text-amber-600"}`} />
           <div>
-            <h4 className="font-medium text-amber-800 dark:text-amber-300">Important: Backup & Recovery</h4>
-            <ul className="mt-2 text-sm text-amber-700 dark:text-amber-400 space-y-1">
+            <h4 className={`font-medium ${isDark ? "text-amber-300" : "text-amber-800"}`}>Important: Backup & Recovery</h4>
+            <ul className={`mt-2 text-sm space-y-1 ${isDark ? "text-amber-400" : "text-amber-700"}`}>
               <li>• Restoring a backup will overwrite current data. Create a backup first if needed.</li>
               <li>• Password confirmation is required for restore operations.</li>
               <li>• Database backups are compressed with gzip to save space.</li>
@@ -598,27 +618,25 @@ export default function BackupRestoreSetting({
       {/* ===== Restore Confirmation Modal ===== */}
       {showRestoreModal && backupToRestore && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 border border-gray-200 dark:border-slate-600">
-            {/* Header */}
-            <div className="p-6 border-b border-gray-200 dark:border-slate-600">
+          <div className={`w-full max-w-md rounded-2xl shadow-2xl border ${isDark ? "bg-slate-800 border-slate-600" : "bg-white border-gray-200"}`}>
+            <div className={`p-6 border-b ${isDark ? "border-slate-600" : "border-gray-200"}`}>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
-                  <ArrowPathIcon className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isDark ? "bg-amber-900/50" : "bg-amber-100"}`}>
+                  <ArrowPathIcon className={`w-5 h-5 ${isDark ? "text-amber-400" : "text-amber-600"}`} />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-gray-800 dark:text-gray-100">Restore Backup</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">This action cannot be undone</p>
+                  <h3 className={`font-semibold ${isDark ? "text-slate-100" : "text-gray-800"}`}>Restore Backup</h3>
+                  <p className={`text-sm ${isDark ? "text-slate-400" : "text-gray-500"}`}>This action cannot be undone</p>
                 </div>
               </div>
             </div>
 
-            {/* Content */}
             <div className="p-6">
-              <div className="bg-amber-50 dark:bg-amber-900/30 rounded-xl p-4 mb-4 border border-amber-200 dark:border-amber-800">
-                <p className="text-sm text-amber-800 dark:text-amber-300">
+              <div className={`rounded-xl p-4 mb-4 border ${isDark ? "bg-amber-900/20 border-amber-800" : "bg-amber-50 border-amber-200"}`}>
+                <p className={`text-sm ${isDark ? "text-amber-300" : "text-amber-800"}`}>
                   You are about to restore from backup:
                 </p>
-                <div className="mt-2 space-y-1 text-xs text-amber-700 dark:text-amber-400">
+                <div className={`mt-2 space-y-1 text-xs ${isDark ? "text-amber-400" : "text-amber-700"}`}>
                   <p><strong>File:</strong> {backupToRestore.filename}</p>
                   <p><strong>Type:</strong> {backupToRestore.type_label}</p>
                   <p><strong>Created:</strong> {backupToRestore.created_at_formatted}</p>
@@ -626,7 +644,7 @@ export default function BackupRestoreSetting({
               </div>
 
               <form onSubmit={handleRestoreBackup}>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className={`block text-sm font-medium mb-2 ${isDark ? "text-slate-300" : "text-gray-700"}`}>
                   Enter your password to confirm
                 </label>
                 <input
@@ -634,11 +652,15 @@ export default function BackupRestoreSetting({
                   value={restorePassword}
                   onChange={(e) => setRestorePassword(e.target.value)}
                   placeholder="Enter your password"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all dark:bg-slate-700 dark:text-gray-100 dark:placeholder-gray-400"
+                  className={`w-full px-4 py-3 rounded-xl border focus:ring-2 focus:ring-blue-400 outline-none ${
+                    isDark 
+                      ? "bg-slate-700 border-slate-600 text-slate-100" 
+                      : "bg-white border-gray-200 text-gray-900"
+                  }`}
                   autoFocus
                   required
                 />
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                <p className={`text-xs mt-2 ${isDark ? "text-slate-400" : "text-gray-500"}`}>
                   This ensures only authorized users can restore backups.
                 </p>
 
@@ -646,15 +668,15 @@ export default function BackupRestoreSetting({
                   <button
                     type="button"
                     onClick={closeRestoreModal}
-                    className="px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors dark:text-gray-300 dark:hover:bg-slate-600"
                     disabled={restoring}
+                    className={`px-4 py-2 rounded-lg transition-colors ${isDark ? "hover:bg-slate-600 text-slate-300" : "hover:bg-gray-100 text-gray-600"}`}
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={restoring || !restorePassword}
-                    className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+                    className={`px-4 py-2 rounded-lg flex items-center gap-2 ${isDark ? "bg-amber-600 hover:bg-amber-700 text-white" : "bg-amber-600 hover:bg-amber-700 text-white"} disabled:opacity-60`}
                   >
                     {restoring && <ArrowPathIcon className="w-4 h-4 animate-spin" />}
                     {restoring ? "Restoring..." : "Restore Backup"}
@@ -665,93 +687,7 @@ export default function BackupRestoreSetting({
           </div>
         </div>
       )}
-
-      {/* ===== Upload Confirmation Modal ===== */}
-      {showUploadModal && uploadFiles.length > 0 && uploadFiles[0] && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 border border-gray-200 dark:border-slate-600">
-            {/* Header */}
-            <div className="p-6 border-b border-gray-200 dark:border-slate-600">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
-                  <CloudArrowUpIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-800 dark:text-gray-100">Upload Backup</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Review and confirm upload</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="p-6">
-              {/* File Info */}
-              <div className="bg-gray-50 dark:bg-slate-700/50 rounded-xl p-4 mb-4 border border-gray-200 dark:border-slate-600">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
-                    <DocumentIcon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">
-                      {uploadFiles[0].file?.name || uploadFiles[0].filename}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {(uploadFiles[0].file?.size / 1024 / 1024).toFixed(2)} MB
-                    </p>
-                  </div>
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  <p className="font-medium text-gray-700 dark:text-gray-300 mb-1">File Type:</p>
-                  <p className="capitalize">
-                    {uploadFiles[0].file?.type?.includes('zip') 
-                      ? 'Full Backup (ZIP)' 
-                      : uploadFiles[0].file?.name?.endsWith('.sql.gz')
-                        ? 'Database Backup (SQL.GZ)'
-                        : 'Database Backup (GZ)'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Warning */}
-              <div className="bg-amber-50 dark:bg-amber-900/30 rounded-xl p-4 mb-4 border border-amber-200 dark:border-amber-800">
-                <div className="flex items-start gap-3">
-                  <ExclamationTriangleIcon className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Important</p>
-                    <ul className="mt-1 text-xs text-amber-700 dark:text-amber-400 space-y-1">
-                      <li>• Uploaded backup will be stored on the server</li>
-                      <li>• You can preview before restoring</li>
-                      <li>• Password will be required for restore</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 mt-6">
-                <button
-                  onClick={() => {
-                    setShowUploadModal(false);
-                    setUploadFiles([]);
-                  }}
-                  className="px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors dark:text-gray-300 dark:hover:bg-slate-600"
-                  disabled={uploading}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleUploadBackup}
-                  disabled={uploading}
-                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  {uploading && <ArrowPathIcon className="w-4 h-4 animate-spin" />}
-                  {uploading ? "Uploading..." : "Upload Backup"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    </div>
   );
 }
 

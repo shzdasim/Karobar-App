@@ -351,7 +351,7 @@ export default function Setting() {
       </GlassCard>
 
       {/* ===== Tab Content ===== */}
-      {activeTab === "general" && (
+{activeTab === "general" && (
         <GeneralSetting
           form={form}
           handleChange={handleChange}
@@ -362,6 +362,9 @@ export default function Setting() {
           phoneRef={phoneRef}
           addressRef={addressRef}
           licenseRef={licenseRef}
+          tintBlue={tintBlue}
+          tintGlass={tintGlass}
+          tintGreen={tintGreen}
         />
       )}
 
@@ -398,6 +401,7 @@ export default function Setting() {
           fetchLicenseStatus={fetchLicenseStatus}
           tintBlue={tintBlue}
           tintGlass={tintGlass}
+          tintGreen={tintGreen}
         />
       )}
 
