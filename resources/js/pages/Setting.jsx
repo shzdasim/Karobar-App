@@ -33,7 +33,7 @@ import {
 
 // Setting Components
 import GeneralSetting from "@/components/settings/GeneralSetting.jsx";
-import NavigationSetting from "@/components/settings/NavigationSetting.jsx";
+import ThemeSetting from "@/components/settings/ThemeSetting.jsx";
 import PrinterSetting from "@/components/settings/PrinterSetting.jsx";
 import LicenseSetting from "@/components/settings/LicenseSetting.jsx";
 import BackupRestoreSetting from "@/components/settings/BackupRestoreSetting.jsx";
@@ -296,7 +296,7 @@ export default function Setting() {
             <span>General</span>
           </button>
           
-          {/* Navigation Settings Tab */}
+          {/* Theme Settings Tab */}
           <button
             onClick={() => setActiveTab("navigation")}
             className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
@@ -306,7 +306,7 @@ export default function Setting() {
             }`}
           >
             <Bars3Icon className="w-5 h-5" />
-            <span>Navigation</span>
+            <span>Theme Setting</span>
           </button>
 
           {/* Printer Settings Tab */}
@@ -369,7 +369,7 @@ export default function Setting() {
       )}
 
       {activeTab === "navigation" && (
-        <NavigationSetting
+        <ThemeSetting
           form={form}
           setForm={setForm}
           disableInputs={disableInputs}

@@ -1,4 +1,4 @@
-// resources/js/components/settings/NavigationSetting.jsx
+// resources/js/components/settings/ThemeSetting.jsx
 import toast from "react-hot-toast";
 import { useTheme } from "@/context/ThemeContext";
 import { GlassCard, GlassSectionHeader, GlassToolbar } from "@/components/glass.jsx";
@@ -24,7 +24,7 @@ const SECTION_CONFIG = {
   },
 };
 
-export default function NavigationSetting({ 
+export default function ThemeSetting({ 
   form, 
   setForm, 
   disableInputs
@@ -153,7 +153,7 @@ export default function NavigationSetting({
 
             <div className="flex items-start gap-4">
               <div className={`p-3 rounded-lg ${form.navigation_style === "topbar" ? "bg-blue-100 dark:bg-blue-800" : "bg-gray-100 dark:bg-slate-700"}`}>
-                <Bars3Icon className={`w-8 h-8 ${form.navigation_style === "topbar" ? "text-blue-600" : "text-gray-600 dark:text-gray-300"}`} />
+                <Bars3Icon className={`w-8 h-8 ${form.navigation_style === "topbar" ? "text-blue-600" : "text:text-gray-300-gray-600 dark"}`} />
               </div>
               <div className="flex-1">
                 <h4 className={`font-semibold ${isDark ? "text-slate-100" : "text-gray-800"} text-lg`}>Topbar Navigation</h4>
