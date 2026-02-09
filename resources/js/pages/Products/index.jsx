@@ -57,24 +57,61 @@ const debouncePromise = (fn, wait = 300) => {
     });
 };
 
-// Section configuration with color schemes - matching sidebar design
+// Section configuration with color schemes - will use dynamic theme colors
 const SECTION_CONFIG = {
   core: {
-    gradient: "from-blue-500 to-cyan-600",
-    bgLight: "bg-blue-50",
-    bgDark: "dark:bg-blue-900/20",
-    borderColor: "border-blue-200 dark:border-blue-700",
-    iconColor: "text-blue-600 dark:text-blue-400",
-    ringColor: "ring-blue-300 dark:ring-blue-700",
+    key: 'primary',
   },
   management: {
-    gradient: "from-violet-500 to-purple-600",
-    bgLight: "bg-violet-50",
-    bgDark: "dark:bg-violet-900/20",
-    borderColor: "border-violet-200 dark:border-violet-700",
-    iconColor: "text-violet-600 dark:text-violet-400",
-    ringColor: "ring-violet-300 dark:ring-violet-700",
+    key: 'secondary',
   },
+};
+
+// Helper to get color value from theme
+const getThemeColor = (theme, colorKey, variant = 'color') => {
+  if (!theme) return '#3b82f6';
+  const key = `${colorKey}_${variant}`;
+  return theme[key] || '#3b82f6';
+};
+
+// Helper to determine text color based on background brightness
+// Returns 'white' for dark backgrounds, 'black' (or dark gray) for light backgrounds
+const getContrastText = (hexColor) => {
+  // Remove hash if present
+  hexColor = hexColor.replace('#', '');
+  
+  // Parse RGB values
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  
+  // Calculate relative luminance (per WCAG formula)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  
+  // Return dark text for light backgrounds, light text for dark backgrounds
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
+// Helper to get button text color with fallback
+const getButtonTextColor = (primaryColor, primaryHoverColor) => {
+  // Use hover color for text color calculation as it's slightly darker
+  return getContrastText(primaryHoverColor || primaryColor);
+};
+
+// Helper to generate section styles from theme
+const getSectionStyles = (theme, colorKey) => {
+  const baseColor = getThemeColor(theme, colorKey, 'color');
+  const hoverColor = getThemeColor(theme, colorKey, 'hover');
+  const lightColor = getThemeColor(theme, colorKey, 'light');
+  
+  return {
+    gradient: `from-[${baseColor}] to-[${hoverColor}]`,
+    bgLight: `bg-[${lightColor}]`,
+    bgDark: `dark:bg-[${lightColor}]`,
+    borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
+    iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
+    ringColor: `ring-[${baseColor}]/30`,
+  };
 };
 
 export default function ProductsIndex() {
@@ -122,24 +159,76 @@ export default function ProductsIndex() {
     [canFor]
   );
 
-  // 🎨 Modern button palette (matching sidebar design language)
-  // Uses smooth gradients, glass effects, and subtle shadows with section-based coloring
-  const tintBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
-  const tintIndigo = "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all duration-200";
-  const tintSlate  = "bg-gradient-to-br from-slate-700 to-slate-800 text-white shadow-lg shadow-slate-500/25 ring-1 ring-white/10 hover:shadow-xl hover:shadow-slate-500/30 hover:scale-[1.02] hover:from-slate-800 hover:to-slate-900 active:scale-[0.98] transition-all duration-200";
-  const tintAmber  = "bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] hover:from-amber-600 hover:to-amber-700 active:scale-[0.98] transition-all duration-200";
-  const tintRed    = "bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700 active:scale-[0.98] transition-all duration-200";
-  const tintViolet = "bg-gradient-to-br from-violet-500 to-violet-600 text-white shadow-lg shadow-violet-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-violet-500/30 hover:scale-[1.02] hover:from-violet-600 hover:to-violet-700 active:scale-[0.98] transition-all duration-200";
-  const tintGlass  = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
-  
-  // Secondary action buttons with outline style
-  const tintOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
-  
-  // Icon-only button for compact actions
-  const tintIconBtn = "bg-white/60 dark:bg-slate-700/60 backdrop-blur-sm text-slate-600 dark:text-gray-300 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-md hover:scale-[1.05] active:scale-[0.95] transition-all duration-200";
+  // 🎨 Dynamic button palette using theme colors
+  // Primary action buttons (Add Product, Import)
+  const tintPrimary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
 
-  // Get dark mode state
-  const { isDark } = useTheme();
+  // Secondary action buttons (Edit)
+  const tintSecondary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Danger action buttons (Delete)
+  const tintDanger = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Glass style buttons (Export)
+  const tintGlass = useMemo(() => `
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Disabled state
+  const tintDisabled = useMemo(() => `
+    bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Get dark mode state and theme colors
+  const { isDark, theme } = useTheme();
+  
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+    };
+  }, [theme]);
+
+  // Calculate text colors based on background brightness (after themeColors is defined)
+  const primaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
+  
+  const secondaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
+    [themeColors.secondary, themeColors.secondaryHover]
+  );
+  
+  const dangerTextColor = useMemo(() => 
+    getButtonTextColor('#ef4444', '#dc2626'), 
+    []
+  );
 
   // === Alt+N => /products/create (only when can.create) ===
   useEffect(() => {
@@ -341,7 +430,10 @@ useEffect(() => {
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           {/* Title */}
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.management.gradient} shadow-sm`}>
+            <div 
+              className="p-2 rounded-lg bg-gradient-to-br shadow-sm"
+              style={{ background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}
+            >
               <CubeIcon className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -362,10 +454,15 @@ useEffect(() => {
                     inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium
                     transition-all duration-200
                     ${selectedIds.size > 0 
-                      ? `${tintAmber} cursor-pointer` 
-                      : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                      ? `${tintPrimary} cursor-pointer` 
+                      : tintDisabled
                     }
                   `}
+                  style={selectedIds.size > 0 ? {
+                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                    color: primaryTextColor,
+                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                  } : {}}
                 >
                   <PencilSquareIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Edit</span>
@@ -387,10 +484,15 @@ useEffect(() => {
                     inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium
                     transition-all duration-200
                     ${selectedIds.size > 0 
-                      ? `${tintRed} cursor-pointer` 
-                      : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                      ? `${tintDanger} cursor-pointer` 
+                      : tintDisabled
                     }
                   `}
+                  style={selectedIds.size > 0 ? {
+                    background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
+                    color: dangerTextColor,
+                    boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)'
+                  } : {}}
                 >
                   <TrashIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Delete</span>
@@ -407,7 +509,12 @@ useEffect(() => {
             <Guard when={can.create}>
               <Link
                 to="/products/create"
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintBlue}`}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintPrimary}`}
+                style={{ 
+                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                  color: primaryTextColor,
+                  boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                }}
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 <span className="hidden sm:inline">Add Product</span>
@@ -455,7 +562,13 @@ useEffect(() => {
               )}
             </span>
             {selectedIds.size > 0 && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 font-medium">
+              <span 
+                className="text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{ 
+                  backgroundColor: themeColors.primaryLight,
+                  color: themeColors.primary 
+                }}
+              >
                 {selectedIds.size} selected
               </span>
             )}
@@ -468,7 +581,12 @@ useEffect(() => {
               <Guard when={can.import}>
                 <button
                   onClick={() => setImportOpen(true)}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${tintIndigo}`}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${tintPrimary}`}
+                  style={{ 
+                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                    color: primaryTextColor,
+                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                  }}
                 >
                   <ArrowUpTrayIcon className="w-3.5 h-3.5" />
                   Import
@@ -495,7 +613,11 @@ useEffect(() => {
               <select
                 value={pageSize}
                 onChange={(e) => setPageSize(Number(e.target.value))}
-                className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-violet-500 focus:border-transparent cursor-pointer"
+                className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:border-transparent cursor-pointer"
+                style={{ 
+                  '--tw-ring-color': themeColors.primary,
+                  outlineColor: themeColors.primary
+                }}
               >
                 <option value={10}>10</option>
                 <option value={25}>25</option>
@@ -512,8 +634,14 @@ useEffect(() => {
         {/* Table Header */}
         <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2">
-            <div className={`p-1 rounded ${SECTION_CONFIG.management.bgDark}`}>
-              <Squares2X2Icon className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+            <div 
+              className="p-1 rounded"
+              style={{ backgroundColor: themeColors.secondaryLight + '40' }}
+            >
+              <Squares2X2Icon 
+                className="w-4 h-4" 
+                style={{ color: themeColors.secondary }} 
+              />
             </div>
             <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Product List</span>
           </div>
@@ -533,7 +661,10 @@ useEffect(() => {
                       if (el) el.indeterminate = pageIndeterminate;
                     }}
                     onChange={(e) => togglePageAll(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    className="w-3.5 h-3.5 rounded border-gray-300 cursor-pointer"
+                    style={{ 
+                      accentColor: themeColors.primary 
+                    }}
                   />
                 </th>
                 <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Name</th>
@@ -575,19 +706,25 @@ useEffect(() => {
                     className={`
                       transition-colors
                       ${isSelected 
-                        ? "bg-violet-50/60 dark:bg-violet-900/20" 
+                        ? "" 
                         : "odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/40 dark:even:bg-slate-800/40 hover:bg-blue-50 dark:hover:bg-slate-600/50"
                       }
                       border-b border-gray-100 dark:border-slate-600/30
                     `}
+                    style={isSelected ? {
+                      backgroundColor: themeColors.primaryLight + '60'
+                    } : {}}
                   >
                     <td className="px-2 py-2">
-                      <input
+                    <input
                         type="checkbox"
                         checked={isSelected}
                         onChange={(e) => toggleOne(p.id, e.target.checked)}
                         aria-label={`Select ${p.name}`}
-                        className="w-3.5 h-3.5 rounded border-gray-300 text-violet-600 focus:ring-violet-500 cursor-pointer"
+                        className="w-3.5 h-3.5 rounded border-gray-300 cursor-pointer"
+                        style={{ 
+                          accentColor: themeColors.primary 
+                        }}
                       />
                     </td>
 
@@ -595,11 +732,11 @@ useEffect(() => {
                     <td
                       className={`
                         px-2 py-2 cursor-pointer select-none
-                        ${isSelected 
-                          ? "text-violet-700 dark:text-violet-300" 
-                          : "text-gray-800 dark:text-gray-200"
-                        }
+                        ${isSelected ? "" : "text-gray-800 dark:text-gray-200"}
                       `}
+                      style={isSelected ? {
+                        color: themeColors.primary
+                      } : {}}
                       role="button"
                       tabIndex={0}
                       onClick={() => toggleById(p.id)}
@@ -612,29 +749,54 @@ useEffect(() => {
                     >
                       <div className="flex items-center gap-2">
                         <span>{p.name}</span>
-                        <span className={`
-                          inline-flex items-center justify-center min-w-[2.5rem] px-2 py-0.5 rounded-full text-xs font-bold
-                          ${qty > 0 
-                            ? "bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-emerald-400/30" 
-                            : "bg-gradient-to-br from-orange-400 to-amber-500 text-white shadow-lg shadow-orange-500/25 ring-1 ring-orange-400/30"}
-                        `}>
+                        <span 
+                          className={`
+                            inline-flex items-center justify-center min-w-[2.5rem] px-2 py-0.5 rounded-full text-xs font-bold
+                          `}
+                          style={{
+                            background: qty > 0 
+                              ? `linear-gradient(to bottom right, #10b981, #059669)`
+                              : `linear-gradient(to bottom right, #f97316, #ea580c)`,
+                            boxShadow: qty > 0 
+                              ? '0 4px 12px 0 rgba(16, 185, 129, 0.4)'
+                              : '0 4px 12px 0 rgba(249, 115, 22, 0.4)'
+                          }}
+                        >
                           {qty}
                         </span>
                       </div>
                     </td>
 
                     <td className="px-2 py-2">
-                      <span className="px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-xs">
+                      <span 
+                        className="px-2 py-0.5 rounded text-xs"
+                        style={{ 
+                          backgroundColor: '#dcfce7',
+                          color: '#16a34a'
+                        }}
+                      >
                         {p.category?.name || "—"}
                       </span>
                     </td>
                     <td className="px-2 py-2">
-                      <span className="px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs">
+                      <span 
+                        className="px-2 py-0.5 rounded text-xs"
+                        style={{ 
+                          backgroundColor: '#fef3c7',
+                          color: '#d97706'
+                        }}
+                      >
                         {p.brand?.name || "—"}
                       </span>
                     </td>
                     <td className="px-2 py-2">
-                      <span className="px-2 py-0.5 rounded bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 text-xs">
+                      <span 
+                        className="px-2 py-0.5 rounded text-xs"
+                        style={{ 
+                          backgroundColor: '#ffe4e6',
+                          color: '#e11d48'
+                        }}
+                      >
                         {p.supplier?.name || "—"}
                       </span>
                     </td>
@@ -648,11 +810,13 @@ useEffect(() => {
                               to={`/products/${p.id}/edit`}
                               className={`
                                 group inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold
-                                bg-gradient-to-br from-amber-400 to-amber-500 text-white
-                                shadow-lg shadow-amber-500/20 ring-1 ring-amber-400/30
-                                hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] hover:from-amber-500 hover:to-amber-600
-                                active:scale-[0.98] transition-all duration-200
+                                transition-all duration-200
                               `}
+                              style={{
+                                background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                                color: primaryTextColor,
+                                boxShadow: `0 4px 12px 0 ${themeColors.primary}40`
+                              }}
                               title="Edit"
                             >
                               <PencilSquareIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
@@ -669,16 +833,13 @@ useEffect(() => {
                               className={`
                                 group inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold
                                 transition-all duration-200
-                                ${deleteDisabled 
-                                  ? "bg-gray-100 dark:bg-slate-700/50 text-gray-400 dark:text-gray-500 cursor-not-allowed ring-1 ring-gray-200/60 dark:ring-slate-600/40"
-                                  : `
-                                    bg-gradient-to-br from-rose-500 to-rose-600 text-white
-                                    shadow-lg shadow-rose-500/20 ring-1 ring-rose-400/30
-                                    hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700
-                                    active:scale-[0.98]
-                                  `
-                                }
+                                ${deleteDisabled ? tintDisabled : tintDanger}
                               `}
+                              style={!deleteDisabled ? {
+                                background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
+                                color: dangerTextColor,
+                                boxShadow: '0 4px 12px 0 rgba(239, 68, 68, 0.4)'
+                              } : {}}
                             >
                               <TrashIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
                               <span>Delete</span>
@@ -736,10 +897,14 @@ useEffect(() => {
                     className={`
                       w-7 h-7 rounded text-xs font-medium transition-colors
                       ${page === pageNum
-                        ? `bg-gradient-to-br ${SECTION_CONFIG.management.gradient} text-white`
+                        ? ''
                         : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700"
                       }
                     `}
+                    style={page === pageNum ? {
+                      background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                      color: primaryTextColor
+                    } : {}}
                   >
                     {pageNum}
                   </button>
@@ -780,7 +945,14 @@ useEffect(() => {
             setShowBulkModal(false);
             setSelectedIds(new Set());
           }}
-          tintClasses={{ blue: tintBlue, glass: tintGlass }}
+          tintClasses={{ 
+            blue: tintPrimary, 
+            blueStyle: { 
+              background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+              boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+            },
+            glass: tintGlass 
+          }}
         />
       )}
 
@@ -796,7 +968,14 @@ useEffect(() => {
         title="Delete product"
         isDeleting={deleting}
         setIsDeleting={setDeleting}
-        tintClasses={{ red: tintRed, glass: tintGlass }}
+        tintClasses={{ 
+          red: tintDanger,
+          redStyle: {
+            background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
+            boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)'
+          },
+          glass: tintGlass 
+        }}
       />
 
       {/* Bulk Delete Modal */}
@@ -822,7 +1001,14 @@ useEffect(() => {
             setShowBulkDelete(false);
           }}
           itemType="product(s)"
-          tintClasses={{ red: tintRed, glass: tintGlass }}
+          tintClasses={{ 
+            red: tintDanger,
+            redStyle: {
+              background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
+              boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)'
+            },
+            glass: tintGlass 
+          }}
         />
       )}
     </div>

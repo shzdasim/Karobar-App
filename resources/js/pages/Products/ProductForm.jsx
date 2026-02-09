@@ -1,5 +1,5 @@
 // src/pages/products/ProductForm.jsx
-import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
+import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle, useMemo } from "react";
 import axios from "axios";
 import Select from "react-select";
 import AsyncSelect from "react-select/async";
@@ -32,8 +32,34 @@ registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);
 // 👉 Normalize Laravel paginate payloads (or plain arrays) to a simple array
 const asList = (payload) => (Array.isArray(payload) ? payload : (payload?.data ?? payload?.items ?? []));
 
+// Helper to determine text color based on background brightness
+const getContrastText = (hexColor) => {
+  hexColor = hexColor.replace('#', '');
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
 // ===== Form Fields Component =====
-const ProductFormFields = forwardRef(({ form, files, batches, categories, suppliers, brandOption, isEdit, handleChange, loadBrandOptions, getSmallSelectStyles, isDark, onFilesChange, setFiles }, ref) => {
+const ProductFormFields = forwardRef(({ 
+  form, 
+  files, 
+  batches, 
+  categories, 
+  suppliers, 
+  brandOption, 
+  isEdit, 
+  handleChange, 
+  loadBrandOptions, 
+  getSmallSelectStyles, 
+  isDark, 
+  onFilesChange, 
+  setFiles,
+  themeColors,
+  primaryTextColor
+}, ref) => {
   // Create refs locally
   const nameRef = useRef(null);
   const formulationRef = useRef(null);
@@ -52,14 +78,14 @@ const ProductFormFields = forwardRef(({ form, files, batches, categories, suppli
       {/* Image - moved to top, compact */}
       <div className="flex gap-3 items-start">
         <div className="w-32 shrink-0">
-          <label className="block text-xs font-medium mb-1">Image</label>
-          <div className="rounded-xl bg-white/60 backdrop-blur-sm ring-1 ring-gray-200/60 p-1.5">
+          <label className="block text-xs font-medium mb-1 dark:text-slate-300">Image</label>
+          <div className="rounded-xl bg-white/60 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-slate-600/60 p-1.5">
             <FilePond
               files={files}
               onupdatefiles={onFilesChange}
               allowMultiple={false}
               acceptedFileTypes={["image/*"]}
-              labelIdle='<span class="text-xs">Drop or Browse</span>'
+              labelIdle='<span class="text-xs dark:text-slate-300">Drop or Browse</span>'
               credits={false}
               stylePanelLayout="compact"
               styleLoadPlaceholder="Loading..."
@@ -70,25 +96,26 @@ const ProductFormFields = forwardRef(({ form, files, batches, categories, suppli
         {/* Code / Barcode inline */}
         <div className="flex-1 grid grid-cols-2 gap-2">
           <div>
-            <label className="block text-xs font-medium mb-1">Product Code</label>
-            <GlassInput type="text" name="product_code" value={form.product_code || ""} disabled className="w-full bg-white/70 text-sm h-8" />
+            <label className="block text-xs font-medium mb-1 dark:text-slate-300">Product Code</label>
+            <GlassInput type="text" name="product_code" value={form.product_code || ""} disabled className="w-full bg-white/70 dark:bg-slate-700/70 text-sm h-8 dark:text-slate-200" />
           </div>
           <div>
-            <label className="block text-xs font-medium mb-1">Barcode</label>
-            <GlassInput type="text" name="barcode" value={form.barcode || ""} disabled className="w-full bg-white/70 text-sm h-8" />
+            <label className="block text-xs font-medium mb-1 dark:text-slate-300">Barcode</label>
+            <GlassInput type="text" name="barcode" value={form.barcode || ""} disabled className="w-full bg-white/70 dark:bg-slate-700/70 text-sm h-8 dark:text-slate-200" />
           </div>
           <div>
-            <label className="block text-xs font-medium mb-1">Rack</label>
-            <GlassInput type="text" name="rack" value={form.rack || ""} onChange={handleChange} className="w-full text-sm h-8" />
+            <label className="block text-xs font-medium mb-1 dark:text-slate-300">Rack</label>
+            <GlassInput type="text" name="rack" value={form.rack || ""} onChange={handleChange} className="w-full text-sm h-8 dark:bg-slate-700/70 dark:text-slate-200" />
           </div>
           <div className="flex items-end">
-            <label className="inline-flex items-center gap-1.5 text-xs">
+            <label className="inline-flex items-center gap-1.5 text-xs dark:text-slate-300">
               <input
                 type="checkbox"
                 name="narcotic"
                 checked={form.narcotic === "yes"}
                 onChange={(e) => handleChange({ target: { name: "narcotic", value: e.target.checked ? "yes" : "no" } })}
-                className="h-4 w-4 rounded border-gray-300"
+                className="h-4 w-4 rounded border-gray-300 dark:border-slate-500 dark:bg-slate-600"
+                style={{ accentColor: themeColors?.primary }}
               />
               <span>Narcotic</span>
             </label>
@@ -99,7 +126,7 @@ const ProductFormFields = forwardRef(({ form, files, batches, categories, suppli
       {/* Name / Formulation / Pack Size */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
-          <label className="block text-xs font-medium mb-1">Name *</label>
+          <label className="block text-xs font-medium mb-1 dark:text-slate-300">Name *</label>
           <GlassInput
             ref={nameRef}
             type="text"
@@ -112,12 +139,12 @@ const ProductFormFields = forwardRef(({ form, files, batches, categories, suppli
                 formulationRef.current?.focus();
               }
             }}
-            className="w-full text-sm h-8"
+            className="w-full text-sm h-8 dark:bg-slate-700/70 dark:text-slate-200"
             placeholder="Product name"
           />
         </div>
         <div>
-          <label className="block text-xs font-medium mb-1">Formulation</label>
+          <label className="block text-xs font-medium mb-1 dark:text-slate-300">Formulation</label>
           <GlassInput
             ref={formulationRef}
             type="text"
@@ -130,11 +157,11 @@ const ProductFormFields = forwardRef(({ form, files, batches, categories, suppli
                 packSizeRef.current?.focus();
               }
             }}
-            className="w-full text-sm h-8"
+            className="w-full text-sm h-8 dark:bg-slate-700/70 dark:text-slate-200"
           />
         </div>
         <div>
-          <label className="block text-xs font-medium mb-1">Pack Size</label>
+          <label className="block text-xs font-medium mb-1 dark:text-slate-300">Pack Size</label>
           <GlassInput
             ref={packSizeRef}
             type="text"
@@ -147,7 +174,7 @@ const ProductFormFields = forwardRef(({ form, files, batches, categories, suppli
                 categorySelectRef.current?.focus();
               }
             }}
-            className="w-full text-sm h-8"
+            className="w-full text-sm h-8 dark:bg-slate-700/70 dark:text-slate-200"
           />
         </div>
       </div>
@@ -155,7 +182,7 @@ const ProductFormFields = forwardRef(({ form, files, batches, categories, suppli
       {/* Category / Brand / Supplier */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
-          <label className="block text-xs font-medium mb-1">Category</label>
+          <label className="block text-xs font-medium mb-1 dark:text-slate-300">Category</label>
           <Select
             ref={categorySelectRef}
             options={asList(categories).map((c) => ({ value: c.id, label: c.name }))}
@@ -171,7 +198,7 @@ const ProductFormFields = forwardRef(({ form, files, batches, categories, suppli
           />
         </div>
         <div>
-          <label className="block text-xs font-medium mb-1">Brand</label>
+          <label className="block text-xs font-medium mb-1 dark:text-slate-300">Brand</label>
           <AsyncSelect
             ref={brandSelectRef}
             cacheOptions
@@ -191,7 +218,7 @@ const ProductFormFields = forwardRef(({ form, files, batches, categories, suppli
           />
         </div>
         <div>
-          <label className="block text-xs font-medium mb-1">Supplier</label>
+          <label className="block text-xs font-medium mb-1 dark:text-slate-300">Supplier</label>
           <Select
             ref={supplierSelectRef}
             options={asList(suppliers).map((s) => ({ value: s.id, label: s.name }))}
@@ -210,34 +237,34 @@ const ProductFormFields = forwardRef(({ form, files, batches, categories, suppli
 
       {/* Description - compact */}
       <div>
-        <label className="block text-xs font-medium mb-1">Description</label>
+        <label className="block text-xs font-medium mb-1 dark:text-slate-300">Description</label>
         <textarea
           name="description"
           value={form.description || ""}
           onChange={handleChange}
-          className="w-full h-16 px-3 py-2 rounded-xl bg-white/70 backdrop-blur-sm border border-gray-200/70 ring-1 ring-transparent focus:ring-blue-400/40 shadow-sm focus:outline-none text-sm resize-none"
+          className="w-full h-16 px-3 py-2 rounded-xl bg-white/70 dark:bg-slate-700/70 backdrop-blur-sm border border-gray-200/70 dark:border-slate-600/70 ring-1 ring-transparent focus:ring-blue-400/40 shadow-sm focus:outline-none text-sm resize-none dark:text-slate-200"
           placeholder="Optional notes..."
         />
       </div>
 
       {/* Compact pricing table */}
       <div>
-        <div className="rounded-xl overflow-hidden ring-1 ring-gray-200/70 bg-white/70 backdrop-blur-sm">
-          <table className="w-full text-[11px] text-gray-900">
-            <thead className="bg-white/80 backdrop-blur-sm border-b border-gray-200/70">
+        <div className="rounded-xl overflow-hidden ring-1 ring-gray-200/70 dark:ring-slate-600/70 bg-white/70 dark:bg-slate-700/70 backdrop-blur-sm">
+          <table className="w-full text-[11px] text-gray-900 dark:text-slate-200">
+            <thead className="bg-white/80 dark:bg-slate-600/80 backdrop-blur-sm border-b border-gray-200/70 dark:border-slate-500/70">
               <tr className="text-left">
-                <th className="px-2 py-1.5">Qty</th>
-                <th className="px-2 py-1.5">Pack P.</th>
-                <th className="px-2 py-1.5">Pack S.</th>
-                <th className="px-2 py-1.5">Unit P.</th>
-                <th className="px-2 py-1.5">Unit S.</th>
-                <th className="px-2 py-1.5">Avg</th>
-                <th className="px-2 py-1.5">Mrg%</th>
-                <th className="px-2 py-1.5 w-16">Max.Disc</th>
+                <th className="px-2 py-1.5 dark:text-slate-200">Qty</th>
+                <th className="px-2 py-1.5 dark:text-slate-200">Pack P.</th>
+                <th className="px-2 py-1.5 dark:text-slate-200">Pack S.</th>
+                <th className="px-2 py-1.5 dark:text-slate-200">Unit P.</th>
+                <th className="px-2 py-1.5 dark:text-slate-200">Unit S.</th>
+                <th className="px-2 py-1.5 dark:text-slate-200">Avg</th>
+                <th className="px-2 py-1.5 dark:text-slate-200">Mrg%</th>
+                <th className="px-2 py-1.5 w-16 dark:text-slate-200">Max.Disc</th>
               </tr>
             </thead>
             <tbody>
-              <tr className="odd:bg-white/90 even:bg-white/70">
+              <tr className="odd:bg-white/90 even:bg-white/70 dark:odd:bg-slate-700/90 dark:even:bg-slate-700/70">
                 {[
                   { name: "quantity", disabled: true, value: form.quantity || "" },
                   { name: "pack_purchase_price", disabled: true, value: form.pack_purchase_price || "" },
@@ -253,7 +280,7 @@ const ProductFormFields = forwardRef(({ form, files, batches, categories, suppli
                       name={cfg.name}
                       value={cfg.value}
                       disabled={cfg.disabled}
-                      className="h-7 w-full bg-white/70 text-center appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      className="h-7 w-full bg-white/70 dark:bg-slate-600/70 text-center appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none dark:text-slate-200"
                     />
                   </td>
                 ))}
@@ -263,7 +290,7 @@ const ProductFormFields = forwardRef(({ form, files, batches, categories, suppli
                     name="max_discount"
                     value={form.max_discount || ""}
                     onChange={handleChange}
-                    className="h-7 w-full text-center appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    className="h-7 w-full text-center appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none dark:bg-slate-600/70 dark:text-slate-200"
                   />
                 </td>
               </tr>
@@ -293,7 +320,35 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
   const [brandOption, setBrandOption] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  const { isDark } = useTheme();
+  const { isDark, theme } = useTheme();
+
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+    };
+  }, [theme]);
+
+  // Calculate text color based on background brightness
+  const primaryTextColor = useMemo(() => 
+    getContrastText(themeColors.primaryHover || themeColors.primary), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
 
   // ===== Load dropdown data =====
   const fetchDropdowns = async () => {
@@ -496,9 +551,15 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     }),
   });
 
-  // ===== Button styles =====
-  const tintBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
-  const tintGlass  = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
+  // ===== Dynamic Button styles using theme colors =====
+  const tintPrimary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintGlass = useMemo(() => `
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
 
   // ===== Loading State =====
   if (!isLoaded) {
@@ -506,7 +567,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
       <div className="p-3 md:p-4">
         <GlassCard>
           <div className="flex items-center justify-center py-12">
-            <span className="text-gray-500">Loading...</span>
+            <span className="text-gray-500 dark:text-slate-400">Loading...</span>
           </div>
         </GlassCard>
       </div>
@@ -521,7 +582,10 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
           {/* Modern Card Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 shadow-sm`}>
+              <div 
+                className={`p-2 rounded-lg bg-gradient-to-br shadow-sm`}
+                style={{ background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}
+              >
                 <CubeIcon className="w-5 h-5 text-white" />
               </div>
               <div>
@@ -530,7 +594,11 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Link to="/products" className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg ${tintGlass}`} title="Back (Alt+C)">
+              <Link 
+                to="/products" 
+                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg ${tintGlass}`} 
+                title="Back (Alt+C)"
+              >
                 <ArrowLeftIcon className="w-4 h-4" />
                 <span className="text-sm">Back</span>
               </Link>
@@ -538,8 +606,12 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                 id="save-product-btn-top"
                 type="submit"
                 form="product-form"
-                className={`inline-flex items-center gap-1.5 h-8 px-4 rounded-lg ${tintBlue}`}
+                className={`inline-flex items-center gap-1.5 h-8 px-4 rounded-lg ${tintPrimary}`}
                 title="Save (Alt+S)"
+                style={{ 
+                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                  color: primaryTextColor
+                }}
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 <span className="text-sm font-medium">Save Product</span>
@@ -563,6 +635,8 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
               isDark={isDark}
               onFilesChange={setFiles}
               setFiles={setFiles}
+              themeColors={themeColors}
+              primaryTextColor={primaryTextColor}
             />
           </form>
         </GlassCard>
@@ -579,7 +653,10 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
           {/* Modern Card Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 shadow-sm`}>
+              <div 
+                className={`p-2 rounded-lg bg-gradient-to-br shadow-sm`}
+                style={{ background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}
+              >
                 <CubeIcon className="w-5 h-5 text-white" />
               </div>
               <div>
@@ -588,7 +665,11 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Link to="/products" className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg ${tintGlass}`} title="Back (Alt+C)">
+              <Link 
+                to="/products" 
+                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg ${tintGlass}`} 
+                title="Back (Alt+C)"
+              >
                 <ArrowLeftIcon className="w-4 h-4" />
                 <span className="text-sm">Back</span>
               </Link>
@@ -596,8 +677,12 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                 id="save-product-btn-top"
                 type="submit"
                 form="product-form"
-                className={`inline-flex items-center gap-1.5 h-8 px-4 rounded-lg ${tintBlue}`}
+                className={`inline-flex items-center gap-1.5 h-8 px-4 rounded-lg ${tintPrimary}`}
                 title="Save (Alt+S)"
+                style={{ 
+                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                  color: primaryTextColor
+                }}
               >
                 <PencilSquareIcon className="w-4 h-4" />
                 <span className="text-sm font-medium">Save Changes</span>
@@ -621,6 +706,8 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
               isDark={isDark}
               onFilesChange={setFiles}
               setFiles={setFiles}
+              themeColors={themeColors}
+              primaryTextColor={primaryTextColor}
             />
           </form>
         </GlassCard>
@@ -629,26 +716,26 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
         <GlassCard className="lg:col-span-1">
           <div className="px-3 py-2 border-b border-gray-200/60 dark:border-gray-700/60">
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-sm">Batches</span>
-              <span className="text-xs text-gray-500">{batches.length} items</span>
+              <span className="font-semibold text-sm dark:text-slate-200">Batches</span>
+              <span className="text-xs text-gray-500 dark:text-slate-400">{batches.length} items</span>
             </div>
           </div>
           <div className="p-3">
             {batches.length > 0 ? (
-              <div className="rounded-xl overflow-hidden ring-1 ring-gray-200/70 bg-white/60">
+              <div className="rounded-xl overflow-hidden ring-1 ring-gray-200/70 dark:ring-slate-600/70 bg-white/60 dark:bg-slate-700/60">
                 <table className="w-full text-xs">
-                  <thead className="bg-white/80 backdrop-blur-sm border-b border-gray-200/70 text-left">
+                  <thead className="bg-white/80 dark:bg-slate-600/80 backdrop-blur-sm border-b border-gray-200/70 dark:border-slate-500/70 text-left">
                     <tr>
-                      <th className="p-2">Batch #</th>
-                      <th className="p-2">Expiry</th>
-                      <th className="p-2 text-right">Qty</th>
+                      <th className="p-2 dark:text-slate-200">Batch #</th>
+                      <th className="p-2 dark:text-slate-200">Expiry</th>
+                      <th className="p-2 text-right dark:text-slate-200">Qty</th>
                     </tr>
                   </thead>
                   <tbody>
                     {batches.map((batch, i) => (
-                      <tr key={batch.id} className={`text-gray-900 ${i % 2 ? "bg-white/70" : "bg-white/90"}`}>
+                      <tr key={batch.id} className={`text-gray-900 dark:text-slate-200 ${i % 2 ? "bg-white/70 dark:bg-slate-700/70" : "bg-white/90 dark:bg-slate-600/90"}`}>
                         <td className="p-2 font-medium">{batch.batch_number}</td>
-                        <td className="p-2 text-gray-600">{batch.expiry_date}</td>
+                        <td className="p-2 text-gray-600 dark:text-slate-400">{batch.expiry_date}</td>
                         <td className="p-2 text-right">{batch.quantity}</td>
                       </tr>
                     ))}
@@ -656,7 +743,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                 </table>
               </div>
             ) : (
-              <p className="text-gray-600 text-sm text-center py-4">No batches available</p>
+              <p className="text-gray-600 dark:text-slate-400 text-sm text-center py-4">No batches available</p>
             )}
           </div>
         </GlassCard>
