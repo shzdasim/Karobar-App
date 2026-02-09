@@ -106,7 +106,7 @@ export default function Sidebar() {
 
   const rawMenu = useMemo(
     () => [
-      { type: "section", name: "Dashboard", key: "dashboard", icon: <HomeIcon className="w-5 h-5" />, standalone: true },
+      { name: "Dashboard", path: "/dashboard", icon: <HomeIcon className="w-5 h-5" />, standalone: true },
       
       { type: "section", name: "Management", key: "core", icon: <CubeIcon className="w-5 h-5" /> },
       { name: "Products", path: "/products", icon: <CubeIcon className="w-5 h-5" />, perm: "product.view", parent: "core" },
