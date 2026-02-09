@@ -29,6 +29,7 @@ use App\Http\Controllers\StockAdjustmentController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\SupplierImportController;
 use App\Http\Controllers\SupplierLedgerController;
+use App\Http\Controllers\ThemeSettingController;
 use App\Http\Controllers\UserController;
 
 /*
@@ -165,6 +166,16 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     // Settings
     Route::get('/settings',                       [SettingController::class, 'show']);
     Route::post('/settings',                      [SettingController::class, 'update']);
+
+    // Theme Settings
+    Route::get('/theme-settings',                 [ThemeSettingController::class, 'index']);
+    Route::get('/theme-settings/active',          [ThemeSettingController::class, 'getActive']);
+    Route::get('/theme-settings/{id}',            [ThemeSettingController::class, 'show']);
+    Route::post('/theme-settings',                [ThemeSettingController::class, 'store']);
+    Route::put('/theme-settings/active',          [ThemeSettingController::class, 'updateActive']);
+    Route::put('/theme-settings/{id}',            [ThemeSettingController::class, 'update']);
+    Route::put('/theme-settings/{id}/activate',  [ThemeSettingController::class, 'activate']);
+    Route::delete('/theme-settings/{id}',        [ThemeSettingController::class, 'destroy']);
 
     // Backups
     Route::get('/backups/stats',                  [BackupController::class, 'stats']);

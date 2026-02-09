@@ -32,65 +32,57 @@ import {
   ClipboardDocumentListIcon as ReportIcon,
 } from "@heroicons/react/24/outline";
 import { usePermissions } from "@/api/usePermissions";
+import { useTheme } from "@/context/ThemeContext";
 
-// Section configuration with color schemes
+// Section configuration - will use theme colors dynamically
 const SECTION_CONFIG = {
   dashboard: {
-    gradient: "from-violet-500 to-purple-600",
-    bgLight: "bg-violet-50",
-    bgDark: "dark:bg-violet-900/20",
-    borderColor: "border-violet-200 dark:border-violet-700",
-    iconColor: "text-violet-600 dark:text-violet-400",
+    key: 'primary',
   },
   core: {
-    gradient: "from-blue-500 to-cyan-600",
-    bgLight: "bg-blue-50",
-    bgDark: "dark:bg-blue-900/20",
-    borderColor: "border-blue-200 dark:border-blue-700",
-    iconColor: "text-blue-600 dark:text-blue-400",
+    key: 'secondary',
   },
   invoices: {
-    gradient: "from-emerald-500 to-teal-600",
-    bgLight: "bg-emerald-50",
-    bgDark: "dark:bg-emerald-900/20",
-    borderColor: "border-emerald-200 dark:border-emerald-700",
-    iconColor: "text-emerald-600 dark:text-emerald-400",
+    key: 'tertiary',
   },
   returns: {
-    gradient: "from-orange-500 to-amber-600",
-    bgLight: "bg-orange-50",
-    bgDark: "dark:bg-orange-900/20",
-    borderColor: "border-orange-200 dark:border-orange-700",
-    iconColor: "text-orange-600 dark:text-orange-400",
+    key: 'primary',
   },
   transactions: {
-    gradient: "from-indigo-500 to-blue-600",
-    bgLight: "bg-indigo-50",
-    bgDark: "dark:bg-indigo-900/20",
-    borderColor: "border-indigo-200 dark:border-indigo-700",
-    iconColor: "text-indigo-600 dark:text-indigo-400",
+    key: 'secondary',
   },
   finance: {
-    gradient: "from-green-500 to-emerald-600",
-    bgLight: "bg-green-50",
-    bgDark: "dark:bg-green-900/20",
-    borderColor: "border-green-200 dark:border-green-700",
-    iconColor: "text-green-600 dark:text-green-400",
+    key: 'tertiary',
   },
   reports: {
-    gradient: "from-amber-500 to-orange-600",
-    bgLight: "bg-amber-50",
-    bgDark: "dark:bg-amber-900/20",
-    borderColor: "border-amber-200 dark:border-amber-700",
-    iconColor: "text-amber-600 dark:text-amber-400",
+    key: 'primary',
   },
   system: {
-    gradient: "from-slate-500 to-gray-600",
-    bgLight: "bg-slate-50",
-    bgDark: "dark:bg-slate-700/30",
-    borderColor: "border-slate-200 dark:border-slate-600",
-    iconColor: "text-slate-600 dark:text-slate-400",
+    key: 'secondary',
   },
+};
+
+// Helper to get color value from theme
+const getThemeColor = (theme, colorKey, variant = 'color') => {
+  if (!theme) return '#3b82f6';
+  const key = `${colorKey}_${variant}`;
+  return theme[key] || '#3b82f6';
+};
+
+// Helper to generate CSS styles from theme colors
+const getSectionStyles = (theme, colorKey) => {
+  const baseColor = getThemeColor(theme, colorKey, 'color');
+  const hoverColor = getThemeColor(theme, colorKey, 'hover');
+  const lightColor = getThemeColor(theme, colorKey, 'light');
+  
+  return {
+    gradient: `from-[${baseColor}] to-[${hoverColor}]`,
+    bgLight: `bg-[${lightColor}]`,
+    bgDark: `dark:bg-[${lightColor}]`,
+    borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
+    iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
+    hoverBg: `hover:bg-[${lightColor}]`,
+  };
 };
 
 export default function Sidebar() {
@@ -98,6 +90,7 @@ export default function Sidebar() {
   const [hoveredSection, setHoveredSection] = useState(null);
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const { theme } = useTheme();
 
   const { loading: permsLoading, has } = usePermissions();
 
@@ -231,11 +224,35 @@ export default function Sidebar() {
     "before:pointer-events-none before:content-[''] before:absolute before:left-0 before:right-0 before:top-[72px] before:h-5 before:bg-gradient-to-b before:from-white/80 before:to-transparent dark:before:from-slate-800/80 dark:before:to-transparent " +
     "after:pointer-events-none after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-[60px] after:h-5 after:bg-gradient-to-t after:from-white/80 after:to-transparent dark:after:from-slate-800/80 dark:after:to-transparent";
 
-  // Get section config for a menu item
+  // Get section config for a menu item - using theme colors dynamically
   const getSectionConfig = (item) => {
-    if (item.standalone) return SECTION_CONFIG.dashboard;
-    const key = item.parent || item.key;
-    return SECTION_CONFIG[key] || SECTION_CONFIG.core;
+    if (item.standalone) {
+      const baseColor = getThemeColor(theme, 'primary', 'color');
+      const hoverColor = getThemeColor(theme, 'primary', 'hover');
+      const lightColor = getThemeColor(theme, 'primary', 'light');
+      return {
+        key: 'primary',
+        gradient: `from-[${baseColor}] to-[${hoverColor}]`,
+        bgLight: `bg-[${lightColor}]`,
+        bgDark: `dark:bg-[${lightColor}]`,
+        borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
+        iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
+      };
+    }
+    const sectionKey = item.parent || item.key;
+    const config = SECTION_CONFIG[sectionKey] || SECTION_CONFIG.core;
+    const colorKey = config.key || 'primary';
+    const baseColor = getThemeColor(theme, colorKey, 'color');
+    const hoverColor = getThemeColor(theme, colorKey, 'hover');
+    const lightColor = getThemeColor(theme, colorKey, 'light');
+    return {
+      key: colorKey,
+      gradient: `from-[${baseColor}] to-[${hoverColor}]`,
+      bgLight: `bg-[${lightColor}]`,
+      bgDark: `dark:bg-[${lightColor}]`,
+      borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
+      iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
+    };
   };
 
   // Get color for active item based on section
@@ -275,29 +292,62 @@ export default function Sidebar() {
     "bg-gradient-to-r from-gray-50/80 to-gray-100/60 dark:from-slate-700/60 dark:to-slate-800/40 " +
     "ring-1 ring-gray-200/60 dark:ring-white/10 shadow-sm";
 
-  // Render section header
+  // Render section header with dynamic theme colors
   const renderSectionHeader = (section, index) => {
-    const config = SECTION_CONFIG[section.key] || SECTION_CONFIG.core;
+    const config = getSectionConfig(section);
     const isHovered = hoveredSection === section.key;
+    
+    // Extract colors for inline styles
+    const baseColor = getThemeColor(theme, config.key || 'primary', 'color');
+    const hoverColor = getThemeColor(theme, config.key || 'primary', 'hover');
+    const lightColor = getThemeColor(theme, config.key || 'primary', 'light');
+    
+    // Rest state: subtle background
+    const restBgStyle = {
+      backgroundColor: lightColor + '30',
+    };
+    
+    // Hover state: more visible background
+    const hoverBgStyle = {
+      backgroundColor: lightColor + '60',
+    };
 
     if (collapsed) {
       return (
         <div
           key={`sec-${section.name}-${index}`}
           className={sectionHeaderCollapsed}
+          style={isHovered ? hoverBgStyle : restBgStyle}
           onMouseEnter={() => setHoveredSection(section.key)}
           onMouseLeave={() => setHoveredSection(null)}
         >
-          <div className={`p-1.5 rounded-lg ${config.bgLight} ${config.bgDark} transition-all duration-300 ${isHovered ? 'scale-110' : ''}`}>
-            <span className={`${config.iconColor} ${isHovered ? 'scale-110' : ''} transition-transform`}>
+          <div 
+            className={`p-1.5 rounded-lg transition-all duration-300 ${isHovered ? 'scale-110' : ''}`}
+            style={{ 
+              backgroundColor: isHovered ? lightColor + '50' : 'transparent',
+            }}
+          >
+            <span 
+              className={`${isHovered ? 'scale-110' : ''} transition-transform`}
+              style={{ color: isHovered ? hoverColor : baseColor }}
+            >
               {React.cloneElement(section.icon, { className: "w-5 h-5" })}
             </span>
           </div>
           {/* Tooltip on hover */}
           {isHovered && (
-            <div className="absolute left-full ml-2 px-3 py-1.5 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-xs font-medium rounded-lg shadow-xl whitespace-nowrap z-50">
+            <div 
+              className="absolute left-full ml-2 px-3 py-1.5 text-xs font-medium rounded-lg shadow-xl whitespace-nowrap z-50"
+              style={{ 
+                backgroundColor: baseColor,
+                color: '#ffffff',
+              }}
+            >
               {section.name}
-              <div className="absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 w-2 h-2 bg-gray-900 dark:bg-gray-100 rotate-45" />
+              <div 
+                className="absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 w-2 h-2 rotate-45"
+                style={{ backgroundColor: baseColor }}
+              />
             </div>
           )}
         </div>
@@ -308,21 +358,38 @@ export default function Sidebar() {
       <div
         key={`sec-${section.name}-${index}`}
         className={sectionHeaderExpanded}
+        style={isHovered ? hoverBgStyle : restBgStyle}
         onMouseEnter={() => setHoveredSection(section.key)}
         onMouseLeave={() => setHoveredSection(null)}
       >
-        <div className={`p-1.5 rounded-lg ${config.bgLight} ${config.bgDark} transition-all duration-300 ${isHovered ? 'scale-105' : ''}`}>
-          <span className={`${config.iconColor} ${isHovered ? 'scale-110' : ''} transition-transform`}>
+        <div 
+          className={`p-1.5 rounded-lg transition-all duration-300 ${isHovered ? 'scale-105' : ''}`}
+          style={{ 
+            backgroundColor: isHovered ? lightColor + '50' : 'transparent',
+          }}
+        >
+          <span 
+            className={`${isHovered ? 'scale-110' : ''} transition-transform`}
+            style={{ color: isHovered ? hoverColor : baseColor }}
+          >
             {React.cloneElement(section.icon, { className: "w-4 h-4" })}
           </span>
         </div>
         <div className="flex-1 min-w-0">
-          <div className={`text-xs font-bold uppercase tracking-wider ${config.iconColor} truncate`}>
+          <div 
+            className="text-xs font-bold uppercase tracking-wider truncate"
+            style={{ color: isHovered ? hoverColor : baseColor }}
+          >
             {section.name}
           </div>
         </div>
-        {/* Decorative gradient bar */}
-        <div className={`h-1 w-8 rounded-full bg-gradient-to-r ${config.gradient} opacity-60`} />
+        {/* Decorative gradient bar using theme colors */}
+        <div 
+          className="h-1 w-8 rounded-full opacity-60"
+          style={{ 
+            background: `linear-gradient(to right, ${baseColor}, ${hoverColor})`,
+          }} 
+        />
       </div>
     );
   };
@@ -367,7 +434,7 @@ export default function Sidebar() {
           </div>
         </div>
 
-        {/* Scrollable NAV */}
+{/* Scrollable NAV */}
         <nav
           className={scrollAreaCls}
           role="navigation"
@@ -384,17 +451,35 @@ export default function Sidebar() {
             const active = isActive(item.path);
             const sectionConfig = getSectionConfig(item);
             const isHovered = hoveredSection === item.path;
+            
+            // Extract the actual color values for inline styles
+            const baseColor = getThemeColor(theme, sectionConfig.key || 'primary', 'color');
+            const hoverColor = getThemeColor(theme, sectionConfig.key || 'primary', 'hover');
+            const lightColor = getThemeColor(theme, sectionConfig.key || 'primary', 'light');
+
+            // Rest state: light background
+            const restBgStyle = {
+              backgroundColor: lightColor + '40',
+            };
+            
+            // Hover state: slightly darker background
+            const hoverBgStyle = {
+              backgroundColor: lightColor + '70',
+            };
+            
+            // Active/Selected state: darker background with glow
+            const activeBgStyle = {
+              backgroundColor: lightColor + '90',
+              boxShadow: `0 4px 12px ${baseColor}30`,
+            };
 
             return (
               <Link
                 key={item.path}
                 to={item.path}
                 ref={(el) => (itemRefs.current[focusIdx] = el)}
-                className={[
-                  itemBase,
-                  active ? itemActive : `${sectionConfig.bgLight} ${sectionConfig.bgDark}`,
-                  `hover:ring-1 hover:ring-${sectionConfig.iconColor.split('-')[1]}-300/50 dark:hover:ring-${sectionConfig.iconColor.split('-')[2]}-600/50`,
-                ].join(" ")}
+                className={itemBase}
+                style={active ? activeBgStyle : (isHovered ? hoverBgStyle : restBgStyle)}
                 tabIndex={focusedIndex === focusIdx ? 0 : -1}
                 onFocus={() => setFocusedIndex(focusIdx)}
                 aria-current={active ? "page" : undefined}
@@ -402,47 +487,51 @@ export default function Sidebar() {
                 onMouseEnter={() => setHoveredSection(item.path)}
                 onMouseLeave={() => setHoveredSection(null)}
               >
-                {/* Active left rail with gradient and glow */}
+                {/* Left rail indicator using theme colors */}
                 <span
-                  className={`${leftRail} ${
-                    active
-                      ? `bg-gradient-to-b ${sectionConfig.gradient} w-1.5 opacity-100 shadow-lg shadow-${sectionConfig.iconColor.split('-')[1]}-400/30`
-                      : "bg-transparent w-0 opacity-0"
-                  }`}
+                  className={`${leftRail} ${active ? 'opacity-100' : 'bg-transparent w-0 opacity-0'}`}
+                  style={active ? {
+                    background: `linear-gradient(to bottom, ${baseColor}, ${hoverColor})`,
+                    boxShadow: `0 0 8px ${baseColor}50`,
+                  } : isHovered ? {
+                    background: baseColor,
+                    opacity: 0.5,
+                    width: '4px',
+                  } : {}}
                 />
 
-                {/* Icon with enhanced styling */}
+                {/* Icon with enhanced styling using theme colors */}
                 <span
-                  className={[
-                    "shrink-0 transition-all duration-200",
-                    active
-                      ? sectionConfig.iconColor
-                      : "text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-200",
-                    isHovered && !active ? "scale-110" : "",
-                  ].join(" ")}
+                  className={["shrink-0 transition-all duration-200", isHovered || active ? "scale-110" : ""].join(" ")}
+                  style={{ 
+                    color: active ? baseColor : (isHovered ? hoverColor : '#64748b'),
+                    transition: 'color 0.2s ease',
+                  }}
                 >
                   {React.cloneElement(item.icon, { className: "w-5 h-5" })}
                 </span>
 
                 {/* Label with smart reveal */}
                 <span
-                  className={[
-                    "whitespace-nowrap transition-all duration-200",
-                    collapsed
-                      ? "pointer-events-none select-none translate-x-2 opacity-0 group-hover:opacity-100 group-hover:translate-x-0"
-                      : "",
-                    active
-                      ? `font-semibold ${sectionConfig.iconColor}`
-                      : "text-gray-700 dark:text-gray-200",
-                  ].join(" ")}
+                  className="whitespace-nowrap transition-all duration-200"
+                  style={{
+                    opacity: collapsed ? 0 : 1,
+                    transform: collapsed ? 'translateX(-8px)' : 'translateX(0)',
+                    color: active ? baseColor : (isHovered ? hoverColor : '#374151'),
+                    fontWeight: active ? 600 : 400,
+                    transition: 'all 0.2s ease',
+                  }}
                 >
                   {!collapsed && item.name}
                   {collapsed && <span className="sr-only">{item.name}</span>}
                 </span>
 
-                {/* Active indicator dot for collapsed mode */}
+                {/* Active indicator dot for collapsed mode using theme colors */}
                 {collapsed && active && (
-                  <div className={`absolute right-2 w-1.5 h-1.5 rounded-full bg-gradient-to-r ${sectionConfig.gradient}`} />
+                  <div
+                    className="absolute right-2 w-1.5 h-1.5 rounded-full"
+                    style={{ background: `linear-gradient(to right, ${baseColor}, ${hoverColor})` }}
+                  />
                 )}
               </Link>
             );
