@@ -279,7 +279,7 @@ export default function Sidebar() {
     "flex-1 overflow-y-auto min-h-0 mt-1 pb-4 " +
     "[&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full " +
     "[&::-webkit-scrollbar-thumb]:bg-gray-300/70 hover:[&::-webkit-scrollbar-thumb]:bg-gray-400/70 " +
-    "[&::-webkit-scrollbar-track]:bg-transparent";
+    "[&::-webkit-scrollbar-track]:bg-transparent dark:[&::-webkit-scrollbar-thumb]:bg-slate-600/70 dark:hover:[&::-webkit-scrollbar-thumb]:bg-slate-500/70";
 
   // Section header styles
   const sectionHeaderCollapsed =
@@ -513,11 +513,13 @@ export default function Sidebar() {
 
                 {/* Label with smart reveal */}
                 <span
-                  className="whitespace-nowrap transition-all duration-200"
+                  className={`whitespace-nowrap transition-all duration-200 ${
+                    active ? '' : (isHovered ? '' : 'text-gray-900 dark:text-white')
+                  }`}
                   style={{
                     opacity: collapsed ? 0 : 1,
                     transform: collapsed ? 'translateX(-8px)' : 'translateX(0)',
-                    color: active ? baseColor : (isHovered ? hoverColor : '#374151'),
+                    color: active ? baseColor : (isHovered ? hoverColor : undefined),
                     fontWeight: active ? 600 : 400,
                     transition: 'all 0.2s ease',
                   }}

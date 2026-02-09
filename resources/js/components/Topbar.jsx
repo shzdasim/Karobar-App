@@ -1,9 +1,10 @@
 // src/components/Topbar.jsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { ClipboardDocumentListIcon, ShoppingCartIcon, ClockIcon } from "@heroicons/react/24/solid";
 import { useLicense } from "@/context/LicenseContext.jsx";
+import { useTheme } from "@/context/ThemeContext.jsx";
 import ProductSearch from "@/components/ProductSearch.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
 
@@ -27,10 +28,28 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
 
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { theme } = useTheme();
 
   // License status
   const { loading: licLoading, valid: licValid, remainingMs } = useLicense();
   const leftTxt = formatRemaining(remainingMs);
+
+  // Get theme colors with defaults
+  const themeColors = useMemo(() => ({
+    primary: theme?.primary_color || '#3b82f6',
+    primaryHover: theme?.primary_hover || '#2563eb',
+    primaryLight: theme?.primary_light || '#dbeafe',
+    secondary: theme?.secondary_color || '#8b5cf6',
+    secondaryHover: theme?.secondary_hover || '#7c3aed',
+    secondaryLight: theme?.secondary_light || '#ede9fe',
+    tertiary: theme?.tertiary_color || '#06b6d4',
+    tertiaryHover: theme?.tertiary_hover || '#0891b2',
+    tertiaryLight: theme?.tertiary_light || '#cffafe',
+  }), [theme]);
+
+  // Dynamic button class generator
+  const getButtonClass = (baseColor, hoverColor, shadowColor) => 
+    `inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-white text-xs font-semibold shadow-lg transition-all hover:shadow-xl hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-${baseColor}/50 relative z-50`;
 
   const openInNewTab = (path) => window.open(path, "_blank", "noopener,noreferrer");
 
@@ -101,12 +120,11 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
             {/* License badge */}
             <button
               onClick={() => navigate("/settings#license")}
-              className={[
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-white text-xs font-semibold",
-                "bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/30",
-                "transition-all hover:shadow-emerald-500/40 hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-emerald-400/50",
-                "relative z-50",
-              ].join(" ")}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-white text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-none relative z-50"
+              style={{ 
+                background: `linear-gradient(to right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                boxShadow: `0 4px 15px -3px ${themeColors.secondary}40`,
+              }}
               title={licValid ? "License is active" : "License required – click to activate"}
             >
               <ClockIcon className="w-3.5 h-3.5" />
@@ -117,12 +135,11 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
               onClick={() => openInNewTab("/purchase-invoices/create")}
               aria-keyshortcuts="Alt+1"
               title="Open Purchase Invoice (Alt+1) in a new tab"
-              className={[
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-white text-xs font-semibold",
-                "bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/30",
-                "transition-all hover:shadow-emerald-500/40 hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-emerald-400/50",
-                "relative z-50",
-              ].join(" ")}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-white text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-none relative z-50"
+              style={{ 
+                background: `linear-gradient(to right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                boxShadow: `0 4px 15px -3px ${themeColors.secondary}40`,
+              }}
             >
               <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Purchase</span>
@@ -132,12 +149,11 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
               onClick={() => openInNewTab("/sale-invoices/create")}
               aria-keyshortcuts="Alt+2"
               title="Open Sale Invoice (Alt+2) in a new tab"
-              className={[
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-white text-xs font-semibold",
-                "bg-gradient-to-r from-indigo-500 to-indigo-600 shadow-lg shadow-indigo-500/30",
-                "transition-all hover:shadow-indigo-500/40 hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-indigo-400/50",
-                "relative z-50",
-              ].join(" ")}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-white text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-none relative z-50"
+              style={{ 
+                background: `linear-gradient(to right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                boxShadow: `0 4px 15px -3px ${themeColors.primary}40`,
+              }}
             >
               <ShoppingCartIcon className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Sale</span>
@@ -150,16 +166,19 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
               <button
                 ref={btnRef}
                 onClick={() => setOpen((v) => !v)}
-                className={[
-                  "flex items-center gap-1.5 rounded-full px-3 py-1",
-                  "bg-gradient-to-r from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/30",
-                  "transition-all hover:shadow-blue-500/40 hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-400/50",
-                ].join(" ")}
+                className="flex items-center gap-1.5 rounded-full px-3 py-1 transition-all hover:scale-105 active:scale-95 focus:outline-none"
+                style={{ 
+                  background: `linear-gradient(to right, ${themeColors.primary}, ${themeColors.secondaryHover})`,
+                  boxShadow: `0 4px 15px -3px ${themeColors.primary}40`,
+                }}
                 aria-haspopup="menu"
                 aria-expanded={open}
                 aria-controls="topbar-user-menu"
               >
-                <span className="inline-grid h-5 w-5 place-items-center rounded-full bg-white/90 text-blue-600 text-xs font-bold shadow">
+                <span 
+                  className="inline-grid h-5 w-5 place-items-center rounded-full bg-white/90 text-xs font-bold shadow"
+                  style={{ color: themeColors.primary }}
+                >
                   {(user?.name || "U").slice(0, 1).toUpperCase()}
                 </span>
                 <span className="hidden sm:inline text-xs font-semibold text-white">

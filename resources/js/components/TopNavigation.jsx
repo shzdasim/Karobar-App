@@ -261,6 +261,7 @@ export default function TopNavigation() {
             {/* Dashboard Link - Uses primary theme color */}
             {getFilteredItems(flatMenu).map((item) => {
               const active = isActive(item.path);
+              const colors = getSectionConfig('core');
               return (
                 <Link
                   key={item.path}
@@ -271,15 +272,26 @@ export default function TopNavigation() {
                     transition-all duration-200
                     whitespace-nowrap
                     ${active
-                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
+                      ? ""
                       : "text-gray-600 hover:text-gray-900 hover:bg-gray-100/80 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/60"
                     }
                   `}
+                  style={{
+                    backgroundColor: active ? colors.light : undefined,
+                  }}
                 >
-                  <span className={active ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}>
+                  <span 
+                    className="w-4 h-4 transition-colors duration-200"
+                    style={{ color: active ? colors.base : undefined }}
+                  >
                     <HomeIcon className="w-4 h-4" />
                   </span>
-                  <span>{item.name}</span>
+                  <span 
+                    className="transition-colors duration-200"
+                    style={{ color: active ? colors.base : undefined }}
+                  >
+                    {item.name}
+                  </span>
                 </Link>
               );
             })}
@@ -311,10 +323,6 @@ export default function TopNavigation() {
                       rounded-lg text-sm font-medium
                       transition-all duration-200
                       whitespace-nowrap
-                      ${isActiveSection || hoveredDropdown === section.key
-                        ? "bg-blue-50 dark:bg-blue-900/20"
-                        : "text-gray-600 hover:text-gray-900 hover:bg-gray-100/80 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/60"
-                      }
                     `}
                     style={{
                       backgroundColor: (isActiveSection || hoveredDropdown === section.key) ? colors.light : undefined,

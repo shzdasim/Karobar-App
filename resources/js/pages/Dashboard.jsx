@@ -39,48 +39,40 @@ import {
 } from "@heroicons/react/24/outline";
 import { GlassCard, GlassSectionHeader, GlassToolbar, GlassInput, GlassBtn } from "@/components/Glass";
 
-// Section configuration with color schemes - matching sidebar and products page design
-const SECTION_CONFIG = {
-  dashboard: {
-    gradient: "from-violet-500 to-purple-600",
-    bgLight: "bg-violet-50",
-    bgDark: "dark:bg-violet-900/20",
-    borderColor: "border-violet-200 dark:border-violet-700",
-    iconColor: "text-violet-600 dark:text-violet-400",
-    ringColor: "ring-violet-300 dark:ring-violet-700",
-  },
-  sales: {
-    gradient: "from-emerald-500 to-teal-600",
-    bgLight: "bg-emerald-50",
-    bgDark: "dark:bg-emerald-900/20",
-    borderColor: "border-emerald-200 dark:border-emerald-700",
-    iconColor: "text-emerald-600 dark:text-emerald-400",
-    ringColor: "ring-emerald-300 dark:ring-emerald-700",
-  },
-  purchases: {
-    gradient: "from-blue-500 to-cyan-600",
-    bgLight: "bg-blue-50",
-    bgDark: "dark:bg-blue-900/20",
-    borderColor: "border-blue-200 dark:border-blue-700",
-    iconColor: "text-blue-600 dark:text-blue-400",
-    ringColor: "ring-blue-300 dark:ring-blue-700",
-  },
-  returns: {
-    gradient: "from-orange-500 to-amber-600",
-    bgLight: "bg-orange-50",
-    bgDark: "dark:bg-orange-900/20",
-    borderColor: "border-orange-200 dark:border-orange-700",
-    iconColor: "text-orange-600 dark:text-orange-400",
-    ringColor: "ring-orange-300 dark:ring-orange-700",
-  },
-  kpi: {
-    gradient: "from-indigo-500 to-blue-600",
-    bgLight: "bg-indigo-50",
-    bgDark: "dark:bg-indigo-900/20",
-    borderColor: "border-indigo-200 dark:border-indigo-700",
-    iconColor: "text-indigo-600 dark:text-indigo-400",
-    ringColor: "ring-indigo-300 dark:ring-indigo-700",
-  },
+// Get theme colors for sections - dynamically from context
+const getSectionConfig = (key, theme) => {
+  const themeColors = {
+    primary: theme?.primary_color || '#3b82f6',
+    primaryHover: theme?.primary_hover || '#2563eb',
+    primaryLight: theme?.primary_light || '#dbeafe',
+    secondary: theme?.secondary_color || '#8b5cf6',
+    secondaryHover: theme?.secondary_hover || '#7c3aed',
+    secondaryLight: theme?.secondary_light || '#ede9fe',
+    tertiary: theme?.tertiary_color || '#06b6d4',
+    tertiaryHover: theme?.tertiary_hover || '#0891b2',
+    tertiaryLight: theme?.tertiary_light || '#cffafe',
+  };
+  
+  const colorMap = {
+    dashboard: { base: themeColors.secondary, light: themeColors.secondaryLight, hover: themeColors.secondaryHover },
+    sales: { base: themeColors.primary, light: themeColors.primaryLight, hover: themeColors.primaryHover },
+    purchases: { base: themeColors.primary, light: themeColors.primaryLight, hover: themeColors.primaryHover },
+    returns: { base: themeColors.tertiary, light: themeColors.tertiaryLight, hover: themeColors.tertiaryHover },
+    kpi: { base: themeColors.primary, light: themeColors.primaryLight, hover: themeColors.primaryHover },
+  };
+  
+  const colors = colorMap[key] || colorMap.sales;
+  
+  return {
+    gradient: `from-[${colors.base}] to-[${colors.hover}]`,
+    bgLight: "",
+    bgDark: "",
+    iconColor: `text-[${colors.base}] dark:text-[${colors.base}]`,
+    ringColor: `ring-[${colors.base}]`,
+    baseColor: colors.base,
+    hoverColor: colors.hover,
+    lightColor: colors.light,
+  };
 };
 
 // Modern button palette (matching products page design)
@@ -228,7 +220,7 @@ function buildNetSeries(series) {
 
 /* ===================== Component ===================== */
 export default function Dashboard() {
-  const { isDark } = useTheme();
+  const { isDark, theme } = useTheme();
   const [from, setFrom] = useState(todayStr());
   const [to, setTo] = useState(todayStr());
   const [expiryMonths, setExpiryMonths] = useState(3);
@@ -262,6 +254,45 @@ export default function Dashboard() {
     categories: 0,
     near_expiry: 0,
   });
+
+  // Get theme colors with defaults
+  const themeColors = useMemo(() => ({
+    primary: theme?.primary_color || '#3b82f6',
+    primaryHover: theme?.primary_hover || '#2563eb',
+    primaryLight: theme?.primary_light || '#dbeafe',
+    secondary: theme?.secondary_color || '#8b5cf6',
+    secondaryHover: theme?.secondary_hover || '#7c3aed',
+    secondaryLight: theme?.secondary_light || '#ede9fe',
+    tertiary: theme?.tertiary_color || '#06b6d4',
+    tertiaryHover: theme?.tertiary_hover || '#0891b2',
+    tertiaryLight: theme?.tertiary_light || '#cffafe',
+  }), [theme]);
+
+  // Get section config for styling - uses dynamic theme colors
+  const getSectionConfig = (key) => {
+    const colorMap = {
+      dashboard: { base: themeColors.secondary, light: themeColors.secondaryLight, hover: themeColors.secondaryHover },
+      sales: { base: themeColors.primary, light: themeColors.primaryLight, hover: themeColors.primaryHover },
+      purchases: { base: themeColors.primary, light: themeColors.primaryLight, hover: themeColors.primaryHover },
+      returns: { base: themeColors.tertiary, light: themeColors.tertiaryLight, hover: themeColors.tertiaryHover },
+      kpi: { base: themeColors.primary, light: themeColors.primaryLight, hover: themeColors.primaryHover },
+    };
+    const colors = colorMap[key] || colorMap.sales;
+    return colors;
+  };
+
+  // Dynamic tint buttons based on theme
+  const tintPrimary = useMemo(() => 
+    `bg-gradient-to-br from-[${themeColors.primary}] to-[${themeColors.primaryHover}] text-white shadow-lg shadow-[${themeColors.primary}]/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-[${themeColors.primary}]/30 hover:scale-[1.02] hover:from-[${themeColors.primaryHover}] hover:to-[${themeColors.primary}] active:scale-[0.98] transition-all duration-200`
+  , [themeColors]);
+
+  const tintSecondary = useMemo(() => 
+    `bg-gradient-to-br from-[${themeColors.secondary}] to-[${themeColors.secondaryHover}] text-white shadow-lg shadow-[${themeColors.secondary}]/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-[${themeColors.secondary}]/30 hover:scale-[1.02] hover:from-[${themeColors.secondaryHover}] hover:to-[${themeColors.secondary}] active:scale-[0.98] transition-all duration-200`
+  , [themeColors]);
+
+  const tintTertiary = useMemo(() => 
+    `bg-gradient-to-br from-[${themeColors.tertiary}] to-[${themeColors.tertiaryHover}] text-white shadow-lg shadow-[${themeColors.tertiary}]/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-[${themeColors.tertiary}]/30 hover:scale-[1.02] hover:from-[${themeColors.tertiaryHover}] hover:to-[${themeColors.tertiary}] active:scale-[0.98] transition-all duration-200`
+  , [themeColors]);
 
   const netSales = useMemo(() => (cards.sales || 0) - (cards.saleReturns || 0), [cards]);
 
@@ -394,7 +425,10 @@ export default function Dashboard() {
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           {/* Title */}
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.dashboard.gradient} shadow-sm`}>
+            <div 
+              className="p-2 rounded-lg shadow-sm"
+              style={{ background: `linear-gradient(135deg, ${themeColors.secondary} 0%, ${themeColors.secondaryHover} 100%)` }}
+            >
               <ChartPieIcon className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -408,7 +442,7 @@ export default function Dashboard() {
             <button
               onClick={fetchAll}
               disabled={loading}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintViolet}`}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintSecondary}`}
             >
               <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
               {loading ? "Loading…" : "Refresh"}
@@ -459,73 +493,101 @@ export default function Dashboard() {
 
       {/* Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Sales Card */}
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden group hover:shadow-lg hover:scale-[1.02] transition-all duration-300">
-          <div className={`h-1.5 bg-gradient-to-r ${SECTION_CONFIG.sales.gradient}`} />
+          <div 
+            className="h-1.5"
+            style={{ background: `linear-gradient(to right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+          />
           <div className="p-4">
             <div className="flex items-center justify-between mb-2">
-              <div className={`p-1.5 rounded-lg ${SECTION_CONFIG.sales.bgLight} ${SECTION_CONFIG.sales.bgDark}`}>
-                <CurrencyDollarIcon className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              <div 
+                className="p-1.5 rounded-lg"
+                style={{ backgroundColor: themeColors.primaryLight }}
+              >
+                <CurrencyDollarIcon className="w-5 h-5" style={{ color: themeColors.primary }} />
               </div>
-              <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Sales</span>
+              <span className="text-xs font-medium" style={{ color: themeColors.primary }}>Sales</span>
             </div>
             <div className="text-2xl font-bold text-gray-900 dark:text-white">Rs {fmtCurrency(cards.sales)}</div>
             <div className="h-6 mt-2">
               <svg viewBox="0 0 100 20" className="w-full h-full" preserveAspectRatio="none">
-                <path d="M0 15 Q 25 12, 50 10 T 100 5" fill="none" stroke="#10b981" strokeWidth="2" className="opacity-60" />
+                <path d="M0 15 Q 25 12, 50 10 T 100 5" fill="none" stroke={themeColors.primary} strokeWidth="2" className="opacity-60" />
               </svg>
             </div>
           </div>
         </div>
 
+        {/* Purchases Card */}
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden group hover:shadow-lg hover:scale-[1.02] transition-all duration-300">
-          <div className={`h-1.5 bg-gradient-to-r ${SECTION_CONFIG.purchases.gradient}`} />
+          <div 
+            className="h-1.5"
+            style={{ background: `linear-gradient(to right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}
+          />
           <div className="p-4">
             <div className="flex items-center justify-between mb-2">
-              <div className={`p-1.5 rounded-lg ${SECTION_CONFIG.purchases.bgLight} ${SECTION_CONFIG.purchases.bgDark}`}>
-                <ShoppingCartIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              <div 
+                className="p-1.5 rounded-lg"
+                style={{ backgroundColor: themeColors.secondaryLight }}
+              >
+                <ShoppingCartIcon className="w-5 h-5" style={{ color: themeColors.secondary }} />
               </div>
-              <span className="text-xs font-medium text-blue-600 dark:text-blue-400">Purchases</span>
+              <span className="text-xs font-medium" style={{ color: themeColors.secondary }}>Purchases</span>
             </div>
             <div className="text-2xl font-bold text-gray-900 dark:text-white">Rs {fmtCurrency(cards.purchases)}</div>
             <div className="h-6 mt-2">
               <svg viewBox="0 0 100 20" className="w-full h-full" preserveAspectRatio="none">
-                <path d="M0 15 Q 25 10, 50 8 T 100 3" fill="none" stroke="#3b82f6" strokeWidth="2" className="opacity-60" />
+                <path d="M0 15 Q 25 10, 50 8 T 100 3" fill="none" stroke={themeColors.secondary} strokeWidth="2" className="opacity-60" />
               </svg>
             </div>
           </div>
         </div>
 
+        {/* Sale Returns Card */}
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden group hover:shadow-lg hover:scale-[1.02] transition-all duration-300">
-          <div className="h-1.5 bg-gradient-to-r from-red-500 to-rose-600" />
+          <div 
+            className="h-1.5"
+            style={{ background: `linear-gradient(to right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})` }}
+          />
           <div className="p-4">
             <div className="flex items-center justify-between mb-2">
-              <div className="p-1.5 rounded-lg bg-red-50 dark:bg-red-900/20">
-                <ArrowUturnLeftIcon className="w-5 h-5 text-red-600 dark:text-red-400" />
+              <div 
+                className="p-1.5 rounded-lg"
+                style={{ backgroundColor: themeColors.tertiaryLight }}
+              >
+                <ArrowUturnLeftIcon className="w-5 h-5" style={{ color: themeColors.tertiary }} />
               </div>
-              <span className="text-xs font-medium text-red-600 dark:text-red-400">Sale Returns</span>
+              <span className="text-xs font-medium" style={{ color: themeColors.tertiary }}>Sale Returns</span>
             </div>
             <div className="text-2xl font-bold text-gray-900 dark:text-white">Rs {fmtCurrency(cards.saleReturns)}</div>
             <div className="h-6 mt-2">
               <svg viewBox="0 0 100 20" className="w-full h-full" preserveAspectRatio="none">
-                <path d="M0 5 Q 25 8, 50 12 T 100 15" fill="none" stroke="#ef4444" strokeWidth="2" className="opacity-60" />
+                <path d="M0 5 Q 25 8, 50 12 T 100 15" fill="none" stroke={themeColors.tertiary} strokeWidth="2" className="opacity-60" />
               </svg>
             </div>
           </div>
         </div>
 
+        {/* Purchase Returns Card */}
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden group hover:shadow-lg hover:scale-[1.02] transition-all duration-300">
-          <div className="h-1.5 bg-gradient-to-r from-orange-500 to-amber-600" />
+          <div 
+            className="h-1.5"
+            style={{ background: `linear-gradient(to right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+          />
           <div className="p-4">
             <div className="flex items-center justify-between mb-2">
-              <div className="p-1.5 rounded-lg bg-orange-50 dark:bg-orange-900/20">
-                <ArrowUturnDownIcon className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+              <div 
+                className="p-1.5 rounded-lg"
+                style={{ backgroundColor: themeColors.primaryLight }}
+              >
+                <ArrowUturnDownIcon className="w-5 h-5" style={{ color: themeColors.primary }} />
               </div>
-              <span className="text-xs font-medium text-orange-600 dark:text-orange-400">Purchase Returns</span>
+              <span className="text-xs font-medium" style={{ color: themeColors.primary }}>Purchase Returns</span>
             </div>
             <div className="text-2xl font-bold text-gray-900 dark:text-white">Rs {fmtCurrency(cards.purchaseReturns)}</div>
             <div className="h-6 mt-2">
               <svg viewBox="0 0 100 20" className="w-full h-full" preserveAspectRatio="none">
-                <path d="M0 12 Q 25 10, 50 8 T 100 5" fill="none" stroke="#f59e0b" strokeWidth="2" className="opacity-60" />
+                <path d="M0 12 Q 25 10, 50 8 T 100 5" fill="none" stroke={themeColors.primary} strokeWidth="2" className="opacity-60" />
               </svg>
             </div>
           </div>
@@ -534,7 +596,11 @@ export default function Dashboard() {
 
       {/* KPI Metrics Row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300">
+        {/* Net Sales */}
+        <div 
+          className="rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300"
+          style={{ background: `linear-gradient(135deg, ${themeColors.primary} 0%, ${themeColors.primaryHover} 100%)` }}
+        >
           <div className="flex items-center gap-2 mb-2">
             <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
               <BanknotesIcon className="w-4 h-4" />
@@ -544,7 +610,11 @@ export default function Dashboard() {
           <div className="text-xl font-bold">Rs {fmtCurrency(netSales)}</div>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300">
+        {/* Invoices */}
+        <div 
+          className="rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300"
+          style={{ background: `linear-gradient(135deg, ${themeColors.secondary} 0%, ${themeColors.secondaryHover} 100%)` }}
+        >
           <div className="flex items-center gap-2 mb-2">
             <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
               <ClipboardDocumentListIcon className="w-4 h-4" />
@@ -557,7 +627,11 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-emerald-500 to-cyan-600 rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300">
+        {/* Products */}
+        <div 
+          className="rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300"
+          style={{ background: `linear-gradient(135deg, ${themeColors.primary} 0%, ${themeColors.primaryHover} 100%)` }}
+        >
           <div className="flex items-center gap-2 mb-2">
             <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
               <CubeIcon className="w-4 h-4" />
@@ -567,7 +641,11 @@ export default function Dashboard() {
           <div className="text-xl font-bold">{kpiMetrics.active_products || 0}</div>
         </div>
 
-        <div className="bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300">
+        {/* Suppliers */}
+        <div 
+          className="rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300"
+          style={{ background: `linear-gradient(135deg, ${themeColors.tertiary} 0%, ${themeColors.tertiaryHover} 100%)` }}
+        >
           <div className="flex items-center gap-2 mb-2">
             <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
               <ScaleIcon className="w-4 h-4" />
@@ -577,7 +655,11 @@ export default function Dashboard() {
           <div className="text-xl font-bold">{kpiMetrics.suppliers || 0}</div>
         </div>
 
-        <div className={`${(kpiMetrics.near_expiry || nearExpiryRows.length) > 0 ? "bg-gradient-to-br from-red-500 to-rose-600" : "bg-gradient-to-br from-gray-400 to-gray-500"} rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300`}>
+        {/* Near Expiry */}
+        <div 
+          className={`rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300 ${(kpiMetrics.near_expiry || nearExpiryRows.length) > 0 ? '' : 'opacity-70'}`}
+          style={{ background: `linear-gradient(135deg, ${(kpiMetrics.near_expiry || nearExpiryRows.length) > 0 ? themeColors.secondary : '#64748b'} 0%, ${(kpiMetrics.near_expiry || nearExpiryRows.length) > 0 ? themeColors.secondaryHover : '#475569'} 100%)` }}
+        >
           <div className="flex items-center gap-2 mb-2">
             <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
               <ClockIcon className="w-4 h-4" />
@@ -587,7 +669,11 @@ export default function Dashboard() {
           <div className="text-xl font-bold">{kpiMetrics.near_expiry || nearExpiryRows.length}</div>
         </div>
 
-        <div className="bg-gradient-to-br from-violet-500 to-fuchsia-600 rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300">
+        {/* Brands */}
+        <div 
+          className="rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300"
+          style={{ background: `linear-gradient(135deg, ${themeColors.secondary} 0%, ${themeColors.secondaryHover} 100%)` }}
+        >
           <div className="flex items-center gap-2 mb-2">
             <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
               <CheckCircleIcon className="w-4 h-4" />
@@ -603,8 +689,11 @@ export default function Dashboard() {
         {/* Pie Chart - Sales Distribution */}
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
           <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-            <div className={`p-1.5 rounded-lg ${SECTION_CONFIG.dashboard.bgLight} ${SECTION_CONFIG.dashboard.bgDark}`}>
-              <ChartPieIcon className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+            <div 
+              className="p-1.5 rounded-lg"
+              style={{ backgroundColor: themeColors.secondaryLight }}
+            >
+              <ChartPieIcon className="w-4 h-4" style={{ color: themeColors.secondary }} />
             </div>
             <div>
               <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Sales Distribution</h3>
@@ -627,8 +716,8 @@ export default function Dashboard() {
                     paddingAngle={5}
                     dataKey="value"
                   >
-                    <Cell fill={PIE_COLORS[0]} />
-                    <Cell fill={PIE_COLORS[1]} />
+                    <Cell fill={themeColors.primary} />
+                    <Cell fill={themeColors.secondary} />
                   </Pie>
                   <Tooltip
                     contentStyle={{
@@ -651,8 +740,11 @@ export default function Dashboard() {
         {/* Bar Chart - Sales vs Purchases */}
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
           <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-            <div className={`p-1.5 rounded-lg ${SECTION_CONFIG.purchases.bgLight} ${SECTION_CONFIG.purchases.bgDark}`}>
-              <ShoppingCartIcon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <div 
+              className="p-1.5 rounded-lg"
+              style={{ backgroundColor: themeColors.primaryLight }}
+            >
+              <ShoppingCartIcon className="w-4 h-4" style={{ color: themeColors.primary }} />
             </div>
             <div>
               <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Sales vs Purchases</h3>
@@ -666,7 +758,7 @@ export default function Dashboard() {
                   { name: 'Sales', value: cards.sales },
                   { name: 'Purchases', value: cards.purchases },
                 ]} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.15} stroke="#3b82f6" />
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.15} stroke={themeColors.primary} />
                   <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={{ stroke: '#475569' }} tickLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(val) => `Rs ${(val / 1000).toFixed(0)}k`} />
                   <Tooltip
@@ -681,8 +773,8 @@ export default function Dashboard() {
                     formatter={(val) => [`Rs ${fmtCurrency(val)}`, '']}
                   />
                   <Bar dataKey="value" radius={[8, 8, 0, 0]}>
-                    <Cell fill={PIE_COLORS[0]} />
-                    <Cell fill={PIE_COLORS[1]} />
+                    <Cell fill={themeColors.primary} />
+                    <Cell fill={themeColors.secondary} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -693,8 +785,11 @@ export default function Dashboard() {
         {/* Area Chart - Returns Trend */}
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
           <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-            <div className={`p-1.5 rounded-lg ${SECTION_CONFIG.returns.bgLight} ${SECTION_CONFIG.returns.bgDark}`}>
-              <ArrowUturnLeftIcon className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+            <div 
+              className="p-1.5 rounded-lg"
+              style={{ backgroundColor: themeColors.tertiaryLight }}
+            >
+              <ArrowUturnLeftIcon className="w-4 h-4" style={{ color: themeColors.tertiary }} />
             </div>
             <div>
               <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Returns Trend</h3>
@@ -707,11 +802,11 @@ export default function Dashboard() {
                 <AreaChart data={mergeTwo(series.saleReturns, series.purchaseReturns)} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="areaGrad2" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#ef4444" stopOpacity={0.8} />
-                      <stop offset="100%" stopColor="#ef4444" stopOpacity={0.1} />
+                      <stop offset="0%" stopColor={themeColors.tertiary} stopOpacity={0.8} />
+                      <stop offset="100%" stopColor={themeColors.tertiary} stopOpacity={0.1} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.15} stroke="#ef4444" />
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.15} stroke={themeColors.tertiary} />
                   <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={{ stroke: '#475569' }} tickLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(val) => `Rs ${(val / 1000).toFixed(0)}k`} />
                   <Tooltip
@@ -727,8 +822,8 @@ export default function Dashboard() {
                     labelFormatter={(label) => `Date: ${label}`}
                   />
                   <Legend iconType="circle" wrapperStyle={{ paddingTop: '10px' }} formatter={(value) => <span className="text-xs text-gray-600 dark:text-gray-300">{value}</span>} />
-                  <Area type="monotone" dataKey="a" name="Sale Returns" stroke="#ef4444" strokeWidth={2} fill="url(#areaGrad2)" />
-                  <Area type="monotone" dataKey="b" name="Purchase Returns" stroke="#f59e0b" strokeWidth={2} fill="transparent" />
+                  <Area type="monotone" dataKey="a" name="Sale Returns" stroke={themeColors.tertiary} strokeWidth={2} fill="url(#areaGrad2)" />
+                  <Area type="monotone" dataKey="b" name="Purchase Returns" stroke={themeColors.secondary} strokeWidth={2} fill="transparent" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -740,8 +835,11 @@ export default function Dashboard() {
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-3">
-            <div className={`p-1.5 rounded-lg ${SECTION_CONFIG.returns.bgLight} ${SECTION_CONFIG.returns.bgDark}`}>
-              <ClockIcon className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+            <div 
+              className="p-1.5 rounded-lg"
+              style={{ backgroundColor: themeColors.tertiaryLight }}
+            >
+              <ClockIcon className="w-4 h-4" style={{ color: themeColors.tertiary }} />
             </div>
             <div>
               <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Near Expiry</h3>
@@ -762,7 +860,7 @@ export default function Dashboard() {
                   onClick={() => setExpiryMonths(opt.m)}
                   className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all duration-200 ${
                     expiryMonths === opt.m
-                      ? tintBlue
+                      ? tintPrimary
                       : "bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600"
                   }`}
                 >
@@ -822,7 +920,7 @@ export default function Dashboard() {
             <button
               onClick={fetchNearExpiry}
               disabled={loadingExpiry}
-              className={`inline-flex items-center gap-1 rounded-md px-3 py-1 text-xs font-semibold ${loadingExpiry ? "bg-gray-300 dark:bg-slate-600 cursor-not-allowed" : tintViolet}`}
+              className={`inline-flex items-center gap-1 rounded-md px-3 py-1 text-xs font-semibold ${loadingExpiry ? "bg-gray-300 dark:bg-slate-600 cursor-not-allowed" : tintSecondary}`}
             >
               <ArrowPathIcon className={`w-3.5 h-3.5 ${loadingExpiry ? "animate-spin" : ""}`} />
               {loadingExpiry ? "Loading…" : "Refresh"}

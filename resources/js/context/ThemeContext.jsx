@@ -3,7 +3,29 @@ import axios from 'axios';
 
 const ThemeContext = createContext(null);
 
-const DEFAULT_THEME = {
+// Dark mode theme presets
+const DARK_THEME = {
+  primary_color: '#3b82f6',
+  primary_hover: '#2563eb',
+  primary_light: '#1e3a5f',
+  secondary_color: '#8b5cf6',
+  secondary_hover: '#7c3aed',
+  secondary_light: '#312e81',
+  tertiary_color: '#06b6d4',
+  tertiary_hover: '#0891b2',
+  tertiary_light: '#164e63',
+  background_color: '#0f172a',
+  surface_color: '#1e293b',
+  text_primary: '#f1f5f9',
+  text_secondary: '#94a3b8',
+  success_color: '#10b981',
+  warning_color: '#f59e0b',
+  danger_color: '#ef4444',
+  border_color: '#334155',
+  shadow_color: '#000000',
+};
+
+const LIGHT_THEME = {
   primary_color: '#3b82f6',
   primary_hover: '#2563eb',
   primary_light: '#dbeafe',
@@ -24,10 +46,81 @@ const DEFAULT_THEME = {
   shadow_color: '#1e293b',
 };
 
+const DEFAULT_THEME = LIGHT_THEME;
+
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(DEFAULT_THEME);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isDark, setIsDark] = useState(false);
+
+  // Check if current theme is dark
+  const checkIsDark = useCallback((currentTheme) => {
+    const bg = currentTheme.background_color || '';
+    // Check for dark background colors (starts with #1, #0, or dark slates)
+    return bg.startsWith('#1') || bg.startsWith('#0') || 
+           bg.includes('slate-800') || bg.includes('slate-900') ||
+           bg.includes('gray-800') || bg.includes('gray-900');
+  }, []);
+
+  // Toggle between light and dark mode
+  const toggleTheme = useCallback(() => {
+    const newIsDark = !isDark;
+    const newTheme = newIsDark ? DARK_THEME : LIGHT_THEME;
+    setIsDark(newIsDark);
+    setTheme(newTheme);
+    
+    // Apply CSS variables immediately
+    const root = document.documentElement;
+    Object.entries(newTheme).forEach(([key, value]) => {
+      const cssVar = `--color-${key.replace(/_/g, '-')}`;
+      root.style.setProperty(cssVar, value);
+    });
+    
+    // Save preference to localStorage
+    localStorage.setItem('theme_mode', newIsDark ? 'dark' : 'light');
+    
+    // Dispatch event for other components
+    window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: newTheme, isDark: newIsDark } }));
+    
+    return newTheme;
+  }, [isDark]);
+
+  // Set dark mode directly
+  const setDarkMode = useCallback((dark) => {
+    if (checkIsDark(theme) !== dark) {
+      toggleTheme();
+    }
+  }, [theme, checkIsDark, toggleTheme]);
+
+  // Load saved theme mode from localStorage on mount
+  useEffect(() => {
+    const savedMode = localStorage.getItem('theme_mode');
+    if (savedMode === 'dark') {
+      setIsDark(true);
+      setTheme(DARK_THEME);
+      // Apply dark theme CSS variables
+      const root = document.documentElement;
+      Object.entries(DARK_THEME).forEach(([key, value]) => {
+        const cssVar = `--color-${key.replace(/_/g, '-')}`;
+        root.style.setProperty(cssVar, value);
+      });
+      // Add dark class for Tailwind dark mode
+      document.documentElement.classList.add('dark');
+    } else {
+      // Add light class for Tailwind light mode
+      document.documentElement.classList.remove('dark');
+    }
+  }, []);
+
+  // Sync dark class with Tailwind when isDark changes
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDark]);
 
   // Fetch active theme from server
   const fetchTheme = useCallback(async () => {
@@ -247,7 +340,9 @@ export function ThemeProvider({ children }) {
     updateTheme,
     saveTheme,
     activateTheme,
-    isDark: (theme.background_color || '').startsWith('#1') || (theme.background_color || '').startsWith('#0'),
+    toggleTheme,
+    setDarkMode,
+    isDark,
   };
 
   return (
