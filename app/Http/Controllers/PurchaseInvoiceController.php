@@ -34,8 +34,8 @@ class PurchaseInvoiceController extends Controller
     public function index(Request $request)
     {
         $this->authorize('viewAny', PurchaseInvoice::class);
-        $qPosted   = trim((string) $request->query('posted'));
-        $qSupplier = trim((string) $request->query('supplier'));
+        $qPosted     = trim((string) $request->query('posted'));
+        $qSupplierId = $request->query('supplier_id');
 
         $query = PurchaseInvoice::with(['supplier']);
 
@@ -43,10 +43,9 @@ class PurchaseInvoiceController extends Controller
             $query->where('posted_number', 'like', '%' . $qPosted . '%');
         }
 
-        if ($qSupplier !== '') {
-            $query->whereHas('supplier', function ($q) use ($qSupplier) {
-                $q->where('name', 'like', '%' . $qSupplier . '%');
-            });
+        // Filter by supplier_id when provided (for Purchase Return form)
+        if ($qSupplierId) {
+            $query->where('supplier_id', $qSupplierId);
         }
 
         return $query->orderByDesc('id')->get();
