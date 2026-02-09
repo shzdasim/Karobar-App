@@ -72,7 +72,7 @@ export default function EditPurchaseReturn() {
 
       <Guard when={can.update}>
         <PurchaseReturnForm
-          purchaseReturnId={id}
+          returnId={id}
           initialData={initial}
           onSubmit={onSubmit}
           onSuccess={() => navigate("/purchase-returns")}

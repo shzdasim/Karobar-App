@@ -74,6 +74,9 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
   // Track react-select menu state to mimic SaleReturn behavior
   const [invoiceMenuOpen, setInvoiceMenuOpen] = useState(false);
 
+  // Track when edit mode data is fully loaded
+  const [isEditModeLoaded, setIsEditModeLoaded] = useState(false);
+
   // ===== refs =====
   const supplierSelectRef = useRef(null);
   const purchaseInvoiceRef = useRef(null);
@@ -335,16 +338,25 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
   useEffect(() => {
     (async () => {
       try {
-        const [supRes, prodRes, codeRes] = await Promise.all([
+        // Only fetch new code when NOT in edit mode
+        const requests = [
           axios.get("/api/suppliers"),
           axios.get("/api/products/search", { params: { q: "", limit: 30 } }),
-          axios.get("/api/purchase-returns/new-code"),
-        ]);
-        setSuppliers(supRes.data || []);
-        const catalog = Array.isArray(prodRes?.data?.data) ? prodRes.data.data : Array.isArray(prodRes?.data) ? prodRes.data : [];
+        ];
+        
+        if (!returnId) {
+          requests.push(axios.get("/api/purchase-returns/new-code"));
+        }
+        
+        const results = await Promise.all(requests);
+        setSuppliers(results[0].data || []);
+        const catalog = Array.isArray(results[1]?.data?.data) ? results[1].data.data : Array.isArray(results[1]?.data) ? results[1].data : [];
         setCatalogProducts(catalog);
         setProducts(catalog); // until an invoice is chosen
-        setForm((prev) => ({ ...prev, posted_number: codeRes.data?.posted_number || codeRes.data?.code || "" }));
+        
+        if (!returnId && results[2]) {
+          setForm((prev) => ({ ...prev, posted_number: results[2].data?.posted_number || results[2].data?.code || "" }));
+        }
       } catch (err) { console.error(err); }
     })();
   }, []);
@@ -364,7 +376,10 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
   };
 
   useEffect(() => {
-    if (!returnId) return;
+    if (!returnId) {
+      setIsEditModeLoaded(true);
+      return;
+    }
     (async () => {
       try {
         const res = await axios.get(`/api/purchase-returns/${returnId}`);
@@ -400,19 +415,23 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
           // 2) Hydrate Avail.Q (Units) = live stock + original Unit.Q from this return
           const hydratedItems = await hydrateOpenEditAvail(normalized.items);
           setForm((prev) => recalcFooter({ ...prev, ...normalized, items: hydratedItems }, "open_edit_inline_hydrate_footer"));
-          return; // we've already set the form including hydration
         }
-      } catch (err) { console.error(err); }
+        // Mark edit mode as loaded
+        setIsEditModeLoaded(true);
+      } catch (err) {
+        console.error(err);
+        setIsEditModeLoaded(true);
+      }
     })();
   }, [returnId]);
 
-  // Focus Supplier first when creating a new return
+  // Focus Supplier first when creating a new return (NOT in edit mode)
   useEffect(() => {
-    if (!returnId) {
-      // we also pass autoFocus below, but this guarantees focus even if timing changes
+    // Only focus supplier in create mode after data is loaded
+    if (!returnId && isEditModeLoaded) {
       supplierSelectRef.current?.focus?.();
     }
-  }, [returnId]);
+  }, [returnId, isEditModeLoaded]);
 
   // Alt+S to save
   useEffect(() => {
