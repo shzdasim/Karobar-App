@@ -295,6 +295,36 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
         const res = await axios.get(`/api/sale-returns/${returnId}`);
         const data = res.data || {};
         const items = Array.isArray(data.items) ? data.items : [];
+
+        // Fetch products for any product_ids that might not be in the catalog
+        const productIds = [...new Set(items.map((it) => it.product_id).filter(Boolean))];
+        if (productIds.length > 0) {
+          try {
+            const prodRes = await axios.get("/api/products/search", {
+              params: { ids: productIds.join(",") },
+            });
+            const fetchedProducts = Array.isArray(prodRes?.data?.data)
+              ? prodRes.data.data
+              : Array.isArray(prodRes?.data)
+                ? prodRes.data
+                : [];
+            if (fetchedProducts.length > 0) {
+              setProducts((prev) => {
+                const seen = new Set(prev.map((p) => String(p.id)));
+                const newProds = fetchedProducts.filter((p) => !seen.has(String(p.id)));
+                return [...newProds, ...prev];
+              });
+              setCatalogProducts((prev) => {
+                const seen = new Set(prev.map((p) => String(p.id)));
+                const newProds = fetchedProducts.filter((p) => !seen.has(String(p.id)));
+                return [...newProds, ...prev];
+              });
+            }
+          } catch (e) {
+            console.error("Failed to fetch products for edit:", e);
+          }
+        }
+
         const normalized = {
           posted_number: data.posted_number || "",
           date: data.date || new Date().toISOString().slice(0, 10),
