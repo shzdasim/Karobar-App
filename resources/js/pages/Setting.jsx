@@ -373,11 +373,6 @@ export default function Setting() {
           form={form}
           setForm={setForm}
           disableInputs={disableInputs}
-          saving={saving}
-          handleSave={handleSave}
-          tintBlue={tintBlue}
-          tintGlass={tintGlass}
-          tintGreen={tintGreen}
         />
       )}
 

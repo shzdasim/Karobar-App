@@ -1,7 +1,7 @@
 // resources/js/components/settings/NavigationSetting.jsx
 import toast from "react-hot-toast";
 import { useTheme } from "@/context/ThemeContext";
-import { GlassCard, GlassSectionHeader, GlassToolbar, GlassBtn } from "@/components/glass.jsx";
+import { GlassCard, GlassSectionHeader, GlassToolbar } from "@/components/glass.jsx";
 import { Bars3Icon, ViewColumnsIcon } from "@heroicons/react/24/solid";
 
 // Section configuration with color schemes - matching sidebar design
@@ -27,16 +27,9 @@ const SECTION_CONFIG = {
 export default function NavigationSetting({ 
   form, 
   setForm, 
-  disableInputs, 
-  saving, 
-  handleSave
+  disableInputs
 }) {
   const { isDark } = useTheme();
-
-  // 🎨 Modern button palette
-  const btnOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-all duration-200";
-  const btnBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] transition-all duration-200";
-  const btnGreen  = "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] transition-all duration-200";
 
   return (
     <div className="p-4 space-y-3">
@@ -249,17 +242,6 @@ export default function NavigationSetting({
         </div>
       </div>
 
-      {/* ===== Save Button ===== */}
-      <div className="flex justify-end">
-        <GlassBtn
-          onClick={handleSave}
-          disabled={disableInputs || saving}
-          className={`h-10 px-6 ${(disableInputs || saving) ? btnOutline + " opacity-60 cursor-not-allowed" : btnGreen}`}
-          title={!disableInputs ? "Alt+S" : "You lack update permission"}
-        >
-          {saving ? "Saving…" : "Save Settings"}
-        </GlassBtn>
-      </div>
     </div>
   );
 }
