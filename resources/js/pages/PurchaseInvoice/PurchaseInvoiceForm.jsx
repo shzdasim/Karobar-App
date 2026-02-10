@@ -1,11 +1,35 @@
 // /src/pages/purchases/PurchaseInvoiceForm.jsx
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import Select from "react-select";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import { recalcItem, recalcFooter } from "../../Formula/PurchaseInvoice.js";
 import { useTheme } from "@/context/ThemeContext";
+
+// Helper to determine text color based on background brightness
+// Returns dark text for light backgrounds, light text for dark backgrounds
+const getContrastText = (hexColor) => {
+  // Remove hash if present
+  hexColor = hexColor.replace('#', '');
+  
+  // Parse RGB values
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  
+  // Calculate relative luminance (per WCAG formula)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  
+  // Return dark text for light backgrounds, light text for dark backgrounds
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
+// Helper to get button text color with fallback
+const getButtonTextColor = (primaryColor, primaryHoverColor) => {
+  // Use hover color for text color calculation as it's slightly darker
+  return getContrastText(primaryHoverColor || primaryColor);
+};
 
 // Centralized Axios error → toast mapper
 function showAxiosError(err) {
@@ -684,8 +708,58 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
     spellCheck: false,
   };
 
-  // Get dark mode state
-  const { isDark } = useTheme();
+  // Get dark mode state and theme colors
+  const { isDark, theme } = useTheme();
+
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+        tertiary: '#06b6d4',
+        tertiaryHover: '#0891b2',
+        tertiaryLight: '#cffafe',
+        danger: '#ef4444',
+        dangerHover: '#dc2626',
+        dangerLight: '#fee2e2',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+      tertiary: theme.tertiary_color || '#06b6d4',
+      tertiaryHover: theme.tertiary_hover || '#0891b2',
+      tertiaryLight: theme.tertiary_light || '#cffafe',
+      danger: theme.danger_color || '#ef4444',
+      dangerHover: '#dc2626',
+      dangerLight: '#fee2e2',
+    };
+  }, [theme]);
+
+  // Calculate text colors based on background brightness
+  const primaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
+  
+  const secondaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
+    [themeColors.secondary, themeColors.secondaryHover]
+  );
+  
+  const dangerTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.danger, themeColors.dangerHover), 
+    [themeColors.danger, themeColors.dangerHover]
+  );
 
   // Helper to merge dark mode styles - returns function-based styles for react-select
   const getSelectStyles = (isDarkMode = false) => ({
@@ -948,7 +1022,12 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                   <button
                     type="button"
                     onClick={() => removeItem(i)}
-                    className="bg-red-500 dark:bg-red-600 text-white px-1 rounded text-[10px]"
+                    className="px-1 rounded text-[10px] transition-all duration-200"
+                    style={{
+                      background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+                      color: dangerTextColor,
+                      boxShadow: `0 2px 8px 0 ${themeColors.danger}40`
+                    }}
                   >
                     X
                   </button>
@@ -1263,7 +1342,12 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                   <button
                     type="button"
                     onClick={addItem}
-                    className="bg-blue-500 dark:bg-blue-600 text-white px-1 rounded text-[10px]"
+                    className="px-1 rounded text-[10px] transition-all duration-200"
+                    style={{
+                      background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                      color: secondaryTextColor,
+                      boxShadow: `0 2px 8px 0 ${themeColors.secondary}40`
+                    }}
                   >
                     +
                   </button>
@@ -1380,7 +1464,13 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                       setPaidTouched(false);
                       setForm((prev) => ({ ...prev, total_paid: prev.total_amount ?? "" }));
                     }}
-                    className="px-2 py-1 text-[11px] bg-gray-200 dark:bg-slate-600 rounded"
+                    className="px-2 py-1 text-[11px] rounded transition-all duration-200"
+                    style={{
+                      background: isDark ? 'rgba(71, 85, 105, 0.6)' : 'rgba(255, 255, 255, 0.8)',
+                      backdropFilter: 'blur(4px)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      color: isDark ? '#94a3b8' : '#64748b'
+                    }}
                   >
                     🔗
                   </button>
@@ -1402,7 +1492,12 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                   ref={saveButtonRef}
                   type="button"
                   onClick={handleSubmit}
-                  className="bg-green-600 dark:bg-green-700 text-white px-9 py-2 rounded text-sm hover:bg-green-700 dark:hover:bg-green-800 transition duration-200"
+                  className="px-9 py-2 rounded text-sm font-semibold transition-all duration-200"
+                  style={{
+                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                    color: primaryTextColor,
+                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                  }}
                 >
                   {invoiceId ? "Update " : "Save"}
                 </button>
