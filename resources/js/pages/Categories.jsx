@@ -17,6 +17,7 @@ import {
 } from "@heroicons/react/24/solid";
 import CategoryImportModal from "../components/CategoryImportModel.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
+import { useTheme } from "@/context/ThemeContext";
 import {
   GlassCard,
   GlassInput,
@@ -39,6 +40,52 @@ export default function Categories() {
 
   const nameRef = useRef(null);
   const saveBtnRef = useRef(null);
+
+  // 🎨 Get theme colors
+  const { theme } = useTheme();
+
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+    };
+  }, [theme]);
+
+  // Helper to determine text color based on background brightness
+  const getContrastText = (hexColor) => {
+    hexColor = hexColor.replace('#', '');
+    const r = parseInt(hexColor.substring(0, 2), 16);
+    const g = parseInt(hexColor.substring(2, 4), 16);
+    const b = parseInt(hexColor.substring(4, 6), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.5 ? '#1f2937' : '#ffffff';
+  };
+
+  // Calculate text colors for buttons
+  const primaryTextColor = useMemo(() => 
+    getContrastText(themeColors.primaryHover || themeColors.primary), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
+  
+  const secondaryTextColor = useMemo(() => 
+    getContrastText(themeColors.secondaryHover || themeColors.secondary), 
+    [themeColors.secondary, themeColors.secondaryHover]
+  );
 
   // 🔒 permissions
   const { loading: permsLoading, canFor } = usePermissions();
@@ -190,36 +237,57 @@ export default function Categories() {
   const start = (page - 1) * pageSize;
   const paged = filtered.slice(start, start + pageSize);
 
+  // 🎨 Modern button palette (organized by action type using theme colors)
+  // Primary: Add, Save, Update actions
+  const tintPrimary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Secondary: Refresh, Import, Edit table actions
+  const tintSecondary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Danger: Delete actions
+  const tintDanger = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Glass: Export and utility actions
+  const tintGlass = useMemo(() => `
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Disabled state
+  const tintDisabled = useMemo(() => `
+    bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // ===== Section config =====
+  const SECTION_CONFIG = {
+    core: {
+      gradient: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+      bgLight: themeColors.primaryLight,
+      bgDark: themeColors.primaryLight,
+      iconColor: themeColors.primary,
+    },
+    management: {
+      gradient: themeColors.secondary,
+      bgLight: themeColors.secondaryLight,
+      bgDark: themeColors.secondaryLight,
+      iconColor: themeColors.secondary,
+    },
+  };
+
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view categories.</div>;
 
   const hasActions = can.update || can.delete;
   const colSpan = 1 + (hasActions ? 1 : 0);
-
-  // 🎨 Modern button palette (matching sidebar and index design language)
-  const tintBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
-  const tintIndigo = "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all duration-200";
-  const tintSlate  = "bg-gradient-to-br from-slate-700 to-slate-800 text-white shadow-lg shadow-slate-500/25 ring-1 ring-white/10 hover:shadow-xl hover:shadow-slate-500/30 hover:scale-[1.02] hover:from-slate-800 hover:to-slate-900 active:scale-[0.98] transition-all duration-200";
-  const tintAmber  = "bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] hover:from-amber-600 hover:to-amber-700 active:scale-[0.98] transition-all duration-200";
-  const tintRed    = "bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700 active:scale-[0.98] transition-all duration-200";
-  const tintViolet = "bg-gradient-to-br from-violet-500 to-violet-600 text-white shadow-lg shadow-violet-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-violet-500/30 hover:scale-[1.02] hover:from-violet-600 hover:to-violet-700 active:scale-[0.98] transition-all duration-200";
-  const tintGlass  = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
-
-  // ===== Section config =====
-  const SECTION_CONFIG = {
-    core: {
-      gradient: "from-blue-500 to-cyan-600",
-      bgLight: "bg-blue-50",
-      bgDark: "dark:bg-blue-900/20",
-      iconColor: "text-blue-600 dark:text-blue-400",
-    },
-    management: {
-      gradient: "from-violet-500 to-purple-600",
-      bgLight: "bg-violet-50",
-      bgDark: "dark:bg-violet-900/20",
-      iconColor: "text-violet-600 dark:text-violet-400",
-    },
-  };
 
   return (
     <div className="p-3 md:p-4 space-y-3">
@@ -227,9 +295,15 @@ export default function Categories() {
       <GlassCard>
         {/* Modern Card Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.management.gradient} shadow-sm`}>
-              <Squares2X2Icon className="w-5 h-5 text-white" />
+            <div className="flex items-center gap-3">
+            <div 
+              className="p-2 rounded-lg shadow-sm"
+              style={{ background: SECTION_CONFIG.management.gradient }}
+            >
+              <Squares2X2Icon 
+                className="w-5 h-5" 
+                style={{ color: 'white' }} 
+              />
             </div>
             <div>
               <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Categories</h1>
@@ -238,9 +312,14 @@ export default function Categories() {
           </div>
           <div className="flex items-center gap-2">
             <GlassBtn
-              className={`h-9 px-3 ${tintSlate}`}
+              className={`h-9 px-3 ${tintSecondary}`}
               onClick={fetchCategories}
               title="Refresh"
+              style={{
+                background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                color: secondaryTextColor,
+                boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
+              }}
             >
               <span className="inline-flex items-center gap-1.5">
                 <ArrowPathIcon className="w-4 h-4" />
@@ -265,8 +344,13 @@ export default function Categories() {
             <div className="flex items-center gap-2 sm:ml-auto">
               <Guard when={can.import}>
                 <GlassBtn
-                  className={`h-9 px-3 ${tintIndigo}`}
+                  className={`h-9 px-3 ${tintPrimary}`}
                   onClick={() => setImportOpen(true)}
+                  style={{ 
+                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                    color: primaryTextColor,
+                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                  }}
                 >
                   <span className="inline-flex items-center gap-1.5">
                     <ArrowUpTrayIcon className="w-4 h-4" />
@@ -324,7 +408,10 @@ export default function Categories() {
             {/* Form Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
               <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg bg-gradient-to-br ${editingId ? "from-amber-500 to-orange-600" : "from-blue-500 to-blue-600"} shadow-sm`}>
+                <div 
+                  className="p-2 rounded-lg shadow-sm"
+                  style={{ background: `linear-gradient(to bottom right, ${editingId ? '#f59e0b' : themeColors.primary}, ${editingId ? '#d97706' : themeColors.primaryHover})` }}
+                >
                   {editingId ? (
                     <PencilSquareIcon className="w-5 h-5 text-white" />
                   ) : (
@@ -369,8 +456,13 @@ export default function Categories() {
                 <GlassBtn
                   onClick={handleSave}
                   ref={saveBtnRef}
-                  className={`flex-1 h-9 ${editingId ? tintAmber : tintBlue}`}
+                  className={`flex-1 h-9 ${tintPrimary}`}
                   disabled={saving || (!can.create && !can.update)}
+                  style={{ 
+                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                    color: primaryTextColor,
+                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                  }}
                 >
                   <span className="inline-flex items-center justify-center gap-1.5">
                     <CheckCircleIcon className="w-4 h-4" />
@@ -389,8 +481,14 @@ export default function Categories() {
           {/* List Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
             <div className="flex items-center gap-2">
-              <div className={`p-1.5 rounded ${SECTION_CONFIG.management.bgDark}`}>
-                <Squares2X2Icon className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+              <div 
+                className="p-1.5 rounded"
+                style={{ backgroundColor: SECTION_CONFIG.management.bgDark }}
+              >
+                <Squares2X2Icon 
+                  className="w-4 h-4" 
+                  style={{ color: SECTION_CONFIG.management.iconColor }} 
+                />
               </div>
               <span className="font-medium text-sm">Category List</span>
             </div>
@@ -433,7 +531,12 @@ export default function Categories() {
                               <Guard when={can.update}>
                                 <button
                                   onClick={() => handleEdit(c)}
-                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${tintAmber}`}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${tintSecondary}`}
+                                  style={{
+                                    background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                                    color: secondaryTextColor,
+                                    boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
+                                  }}
                                 >
                                   <PencilSquareIcon className="w-3.5 h-3.5" />
                                   Edit
@@ -445,9 +548,14 @@ export default function Categories() {
                                   disabled={used}
                                   className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all duration-200 ${
                                     used 
-                                      ? "bg-gray-100 dark:bg-slate-700/50 text-gray-400 dark:text-gray-500 cursor-not-allowed" 
-                                      : `${tintRed}`
+                                      ? tintDisabled
+                                      : tintDanger
                                   }`}
+                                  style={!used ? {
+                                    background: 'linear-gradient(to bottom right, #ef4444, #dc2626)',
+                                    color: '#ffffff',
+                                    boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)'
+                                  } : {}}
                                 >
                                   <TrashIcon className="w-3.5 h-3.5" />
                                   Delete

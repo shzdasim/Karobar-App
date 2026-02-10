@@ -14,6 +14,7 @@ import {
   ClipboardDocumentListIcon,
 } from "@heroicons/react/24/solid";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
+import { useTheme } from "@/context/ThemeContext";
 
 import {
   GlassCard,
@@ -74,13 +75,86 @@ export default function PurchaseInvoicesIndex() {
     [canFor]
   );
 
-  // 🎨 Modern button palette
-  const tintBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
-  const tintIndigo = "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all duration-200";
-  const tintSlate  = "bg-gradient-to-br from-slate-700 to-slate-800 text-white shadow-lg shadow-slate-500/25 ring-1 ring-white/10 hover:shadow-xl hover:shadow-slate-500/30 hover:scale-[1.02] hover:from-slate-800 hover:to-slate-900 active:scale-[0.98] transition-all duration-200";
-  const tintAmber  = "bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] hover:from-amber-600 hover:to-amber-700 active:scale-[0.98] transition-all duration-200";
-  const tintRed    = "bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700 active:scale-[0.98] transition-all duration-200";
-  const tintGlass  = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
+  // 🎨 Get theme colors
+  const { theme } = useTheme();
+
+  // Helper to determine text color based on background brightness
+  const getContrastText = (hexColor) => {
+    hexColor = hexColor.replace('#', '');
+    const r = parseInt(hexColor.substring(0, 2), 16);
+    const g = parseInt(hexColor.substring(2, 4), 16);
+    const b = parseInt(hexColor.substring(4, 6), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.5 ? '#1f2937' : '#ffffff';
+  };
+
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+    };
+  }, [theme]);
+
+  // Calculate text colors for buttons
+  const primaryTextColor = useMemo(() => 
+    getContrastText(themeColors.primaryHover || themeColors.primary), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
+  
+  const secondaryTextColor = useMemo(() => 
+    getContrastText(themeColors.secondaryHover || themeColors.secondary), 
+    [themeColors.secondary, themeColors.secondaryHover]
+  );
+  
+  const dangerTextColor = useMemo(() => 
+    getContrastText('#dc2626'), 
+    []
+  );
+
+  // 🎨 Modern button palette (organized by action type using theme colors)
+  // Primary: Add, Save, Update actions
+  const tintPrimary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Secondary: Refresh, Edit actions
+  const tintSecondary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Danger: Delete actions
+  const tintDanger = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Glass: Utility actions
+  const tintGlass = useMemo(() => `
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Disabled state
+  const tintDisabled = useMemo(() => `
+    bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed
+  `.trim().replace(/\s+/g, ' '), []);
 
   useEffect(() => {
     document.title = "Purchase Invoices - Pharmacy ERP";
@@ -235,7 +309,10 @@ export default function PurchaseInvoicesIndex() {
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           {/* Title */}
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.invoices.gradient} shadow-sm`}>
+            <div 
+              className="p-2 rounded-lg shadow-sm"
+              style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+            >
               <ClipboardDocumentListIcon className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -248,12 +325,17 @@ export default function PurchaseInvoicesIndex() {
           <div className="flex items-center gap-2">
             {/* Refresh Button */}
             <GlassBtn
-              className={`h-9 px-3 ${tintSlate}`}
+              className={`h-9 px-3 ${tintSecondary}`}
               onClick={() => {
                 if (controllerRef.current) controllerRef.current.abort();
                 const ctrl = new AbortController();
                 controllerRef.current = ctrl;
                 fetchInvoices(ctrl.signal);
+              }}
+              style={{
+                background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                color: secondaryTextColor,
+                boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
               }}
             >
               <span className="inline-flex items-center gap-1.5">
@@ -266,7 +348,12 @@ export default function PurchaseInvoicesIndex() {
             <Guard when={can.create}>
               <Link
                 to="/purchase-invoices/create"
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintBlue}`}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintPrimary}`}
+                style={{ 
+                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                  color: primaryTextColor,
+                  boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                }}
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 <span className="hidden sm:inline">Add Invoice</span>
@@ -339,8 +426,14 @@ export default function PurchaseInvoicesIndex() {
         {/* Table Header */}
         <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2">
-            <div className={`p-1 rounded ${SECTION_CONFIG.invoices.bgDark}`}>
-              <ClipboardDocumentListIcon className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <div 
+              className="p-1.5 rounded"
+              style={{ backgroundColor: themeColors.primaryLight }}
+            >
+              <ClipboardDocumentListIcon 
+                className="w-4 h-4" 
+                style={{ color: themeColors.primary }} 
+              />
             </div>
             <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Invoice List</span>
           </div>
@@ -400,7 +493,12 @@ export default function PurchaseInvoicesIndex() {
                         <Guard when={can.update}>
                           <Link
                             to={`/purchase-invoices/${inv.id}/edit`}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold ${tintAmber}`}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium ${tintSecondary}`}
+                            style={{
+                              background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                              color: secondaryTextColor,
+                              boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
+                            }}
                             title={`Edit ${inv.posted_number || inv.invoice_number}`}
                           >
                             <PencilSquareIcon className="w-3.5 h-3.5" />
@@ -412,7 +510,12 @@ export default function PurchaseInvoicesIndex() {
                         <Guard when={can.delete}>
                           <button
                             onClick={() => openDeleteModal(inv)}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold ${tintRed}`}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium ${tintDanger}`}
+                            style={{
+                              background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
+                              color: dangerTextColor,
+                              boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)'
+                            }}
                             title="Delete invoice"
                           >
                             <TrashIcon className="w-3.5 h-3.5" />
@@ -470,10 +573,14 @@ export default function PurchaseInvoicesIndex() {
                     className={`
                       w-7 h-7 rounded text-xs font-medium transition-colors
                       ${page === pageNum
-                        ? `bg-gradient-to-br ${SECTION_CONFIG.invoices.gradient} text-white`
+                        ? ""
                         : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700"
                       }
                     `}
+                    style={page === pageNum ? {
+                      background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                      color: primaryTextColor
+                    } : {}}
                   >
                     {pageNum}
                   </button>
@@ -512,8 +619,14 @@ export default function PurchaseInvoicesIndex() {
             <GlassCard>
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
                 <div className="flex items-center gap-2">
-                  <div className="p-1.5 rounded-lg bg-rose-100 dark:bg-rose-900/30">
-                    <ShieldExclamationIcon className="w-5 h-5 text-rose-600 dark:text-rose-400" />
+                  <div 
+                    className="p-1.5 rounded-lg"
+                    style={{ backgroundColor: `${themeColors.primaryLight}40` }}
+                  >
+                    <ShieldExclamationIcon 
+                      className="w-5 h-5" 
+                      style={{ color: themeColors.primary }} 
+                    />
                   </div>
                   <span className="font-semibold">Delete invoice</span>
                 </div>
@@ -534,7 +647,15 @@ export default function PurchaseInvoicesIndex() {
                       <GlassBtn className={`h-9 px-3 ${tintGlass}`} onClick={closeDeleteModal}>
                         Cancel
                       </GlassBtn>
-                      <GlassBtn className={`h-9 px-4 ${tintRed}`} onClick={proceedToPassword}>
+                      <GlassBtn 
+                        className={`h-9 px-4 ${tintDanger}`} 
+                        onClick={proceedToPassword}
+                        style={{
+                          background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
+                          color: dangerTextColor,
+                          boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)'
+                        }}
+                      >
                         Yes, continue
                       </GlassBtn>
                     </div>
@@ -567,9 +688,14 @@ export default function PurchaseInvoicesIndex() {
                           Cancel
                         </GlassBtn>
                         <GlassBtn
-                          className={`h-9 px-4 ${tintRed} disabled:opacity-60`}
+                          className={`h-9 px-4 ${tintDanger} disabled:opacity-60`}
                           onClick={confirmAndDelete}
                           disabled={deleting || password.trim() === ""}
+                          style={!deleting && password.trim() !== "" ? {
+                            background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
+                            color: dangerTextColor,
+                            boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)'
+                          } : {}}
                         >
                           {deleting ? "Deleting…" : "Confirm & Delete"}
                         </GlassBtn>
