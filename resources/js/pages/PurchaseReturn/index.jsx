@@ -28,6 +28,20 @@ import {
 } from "@/components";
 import { useTheme } from "@/context/ThemeContext";
 
+// Helper to determine text color based on background brightness
+const getContrastText = (hexColor) => {
+  hexColor = hexColor.replace('#', '');
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
+const getButtonTextColor = (primaryColor, primaryHoverColor) => {
+  return getContrastText(primaryHoverColor || primaryColor);
+};
+
 // Section configuration with color schemes - matching sidebar design
 const SECTION_CONFIG = {
   core: {
@@ -81,13 +95,58 @@ export default function PurchaseReturnsIndex() {
 
   useEffect(() => { document.title = "Purchase Returns - Pharmacy ERP"; }, []);
 
-  // 🎨 Modern button palette (matching sidebar design language)
-  const tintBlue = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
-  const tintIndigo = "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all duration-200";
-  const tintSlate = "bg-gradient-to-br from-slate-700 to-slate-800 text-white shadow-lg shadow-slate-500/25 ring-1 ring-white/10 hover:shadow-xl hover:shadow-slate-500/30 hover:scale-[1.02] hover:from-slate-800 hover:to-slate-900 active:scale-[0.98] transition-all duration-200";
-  const tintAmber = "bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] hover:from-amber-600 hover:to-amber-700 active:scale-[0.98] transition-all duration-200";
-  const tintRed = "bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700 active:scale-[0.98] transition-all duration-200";
-  const tintGlass = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
+  // Get theme colors
+  const { theme } = useTheme();
+
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+        danger: '#ef4444',
+        dangerHover: '#dc2626',
+        dangerLight: '#fee2e2',
+        tertiary: '#06b6d4',
+        tertiaryHover: '#0891b2',
+        tertiaryLight: '#cffafe',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+      tertiary: theme.tertiary_color || '#06b6d4',
+      tertiaryHover: theme.tertiary_hover || '#0891b2',
+      tertiaryLight: theme.tertiary_light || '#cffafe',
+      danger: theme.danger_color || '#ef4444',
+      dangerHover: '#dc2626',
+      dangerLight: '#fee2e2',
+    };
+  }, [theme]);
+
+  // Calculate text colors based on background brightness
+  const primaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
+  
+  const secondaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
+    [themeColors.secondary, themeColors.secondaryHover]
+  );
+  
+  const dangerTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.danger, themeColors.dangerHover), 
+    [themeColors.danger, themeColors.dangerHover]
+  );
 
   // Get dark mode state
   const { isDark } = useTheme();
@@ -225,7 +284,12 @@ export default function PurchaseReturnsIndex() {
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           {/* Title */}
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.management.gradient} shadow-sm`}>
+            <div 
+              className="p-2 rounded-lg shadow-sm"
+              style={{ 
+                background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` 
+              }}
+            >
               <DocumentTextIcon className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -244,7 +308,12 @@ export default function PurchaseReturnsIndex() {
                 controllerRef.current = ctrl;
                 fetchReturns(ctrl.signal);
               }}
-              className={`h-10 min-w-[120px] ${tintSlate}`}
+              className="h-10 min-w-[120px] transition-all duration-200"
+              style={{
+                background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
+                color: getButtonTextColor(themeColors.tertiary, themeColors.tertiaryHover),
+                boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`,
+              }}
               title="Refresh"
               aria-label="Refresh purchase returns"
             >
@@ -259,7 +328,12 @@ export default function PurchaseReturnsIndex() {
                 to="/purchase-returns/create"
                 title="Add Return (Alt+N)"
                 aria-keyshortcuts="Alt+N"
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintBlue}`}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-all duration-200`}
+                style={{
+                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                  color: primaryTextColor,
+                  boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+                }}
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 Add Return
@@ -327,8 +401,14 @@ export default function PurchaseReturnsIndex() {
         {/* Table Header */}
         <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2">
-            <div className={`p-1 rounded ${SECTION_CONFIG.management.bgDark}`}>
-              <DocumentTextIcon className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+            <div 
+              className="p-1 rounded"
+              style={{ backgroundColor: themeColors.secondaryLight + '40' }}
+            >
+              <DocumentTextIcon 
+                className="w-4 h-4" 
+                style={{ color: themeColors.secondary }} 
+              />
             </div>
             <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Return List</span>
           </div>
@@ -389,26 +469,41 @@ export default function PurchaseReturnsIndex() {
                       {start + idx + 1}
                     </td>
                     <td className="px-3 py-3">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-xs font-medium">
+                      <span 
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium"
+                        style={{ 
+                          backgroundColor: themeColors.secondaryLight,
+                          color: themeColors.secondary
+                        }}
+                      >
                         <DocumentTextIcon className="w-3.5 h-3.5" />
                         {ret.posted_number || "-"}
                       </span>
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
-                        <BuildingStorefrontIcon className="w-4 h-4 text-gray-400" />
+                        <BuildingStorefrontIcon 
+                          className="w-4 h-4" 
+                          style={{ color: themeColors.tertiary }}
+                        />
                         <span className="text-gray-800 dark:text-gray-200">{ret.supplier?.name ?? "N/A"}</span>
                       </div>
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
-                        <CalendarIcon className="w-4 h-4 text-gray-400" />
+                        <CalendarIcon 
+                          className="w-4 h-4" 
+                          style={{ color: themeColors.tertiary }}
+                        />
                         <span className="text-gray-800 dark:text-gray-200">{formatDate(ret.date)}</span>
                       </div>
                     </td>
                     <td className="px-3 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <CurrencyDollarIcon className="w-4 h-4 text-emerald-500" />
+                        <CurrencyDollarIcon 
+                          className="w-4 h-4" 
+                          style={{ color: themeColors.primary }}
+                        />
                         <span className="font-semibold text-gray-800 dark:text-gray-200">
                           {retTotal.toLocaleString()}
                         </span>
@@ -421,13 +516,12 @@ export default function PurchaseReturnsIndex() {
                           <Guard when={can.update}>
                             <Link
                               to={`/purchase-returns/${ret.id}/edit`}
-                              className={`
-                                group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold
-                                bg-gradient-to-br from-amber-400 to-amber-500 text-white
-                                shadow-lg shadow-amber-500/20 ring-1 ring-amber-400/30
-                                hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] hover:from-amber-500 hover:to-amber-600
-                                active:scale-[0.98] transition-all duration-200
-                              `}
+                              className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200`}
+                              style={{
+                                background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                                color: primaryTextColor,
+                                boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+                              }}
                               title="Edit"
                             >
                               <PencilSquareIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
@@ -439,13 +533,12 @@ export default function PurchaseReturnsIndex() {
                           <Guard when={can.delete}>
                             <button
                               onClick={() => openDeleteModal(ret)}
-                              className={`
-                                group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold
-                                bg-gradient-to-br from-rose-500 to-rose-600 text-white
-                                shadow-lg shadow-rose-500/20 ring-1 ring-rose-400/30
-                                hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700
-                                active:scale-[0.98] transition-all duration-200
-                              `}
+                              className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200`}
+                              style={{
+                                background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+                                color: dangerTextColor,
+                                boxShadow: `0 4px 14px 0 ${themeColors.danger}40`,
+                              }}
                               title="Delete"
                             >
                               <TrashIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
@@ -502,12 +595,17 @@ export default function PurchaseReturnsIndex() {
                     key={pageNum}
                     onClick={() => setPage(pageNum)}
                     className={`
-                      w-7 h-7 rounded text-xs font-medium transition-colors
+                      w-7 h-7 rounded text-xs font-medium transition-all duration-200
                       ${page === pageNum
-                        ? `bg-gradient-to-br ${SECTION_CONFIG.management.gradient} text-white`
+                        ? ""
                         : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700"
                       }
                     `}
+                    style={page === pageNum ? {
+                      background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                      color: secondaryTextColor,
+                      boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
+                    } : {}}
                   >
                     {pageNum}
                   </button>
@@ -542,7 +640,14 @@ export default function PurchaseReturnsIndex() {
         title="Delete purchase return"
         isDeleting={deleting}
         setIsDeleting={setDeleting}
-        tintClasses={{ red: tintRed, glass: tintGlass }}
+        tintClasses={{ 
+          red: "transition-all duration-200",
+          redStyle: {
+            background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+            boxShadow: `0 4px 14px 0 ${themeColors.danger}40`
+          },
+          glass: "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200" 
+        }}
       />
     </div>
   );
