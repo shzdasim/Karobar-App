@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
@@ -7,6 +7,20 @@ import Select from "react-select";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
 import { useTheme } from "@/context/ThemeContext";
+
+// Helper to determine text color based on background brightness
+const getContrastText = (hexColor) => {
+  hexColor = hexColor.replace('#', '');
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
+const getButtonTextColor = (primaryColor, primaryHoverColor) => {
+  return getContrastText(primaryHoverColor || primaryColor);
+};
 
 // ===== helpers =====
 const toNum = (v) => (v === undefined || v === null || v === "" ? 0 : Number(v));
@@ -177,7 +191,51 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
   const productBatchCache = useRef(new Map()); // productId -> [{batch_number, expiry}]
 
   // Get dark mode state
-  const { isDark } = useTheme();
+  const { theme, isDark } = useTheme();
+
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+        danger: '#ef4444',
+        dangerHover: '#dc2626',
+        dangerLight: '#fee2e2',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+      danger: theme.danger_color || '#ef4444',
+      dangerHover: '#dc2626',
+      dangerLight: '#fee2e2',
+    };
+  }, [theme]);
+
+  // Calculate text colors based on background brightness
+  const primaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
+  
+  const secondaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
+    [themeColors.secondary, themeColors.secondaryHover]
+  );
+  
+  const dangerTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.danger, themeColors.dangerHover), 
+    [themeColors.danger, themeColors.dangerHover]
+  );
 
   // Helper to get react-select styles based on dark mode
   const getSelectStyles = (isDarkMode = false) => ({
@@ -1054,7 +1112,12 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
                       <button
                         type="button"
                         onClick={() => removeItem(i)}
-                        className="bg-red-500 text-white px-1 rounded text-[10px]"
+                        className="px-1 rounded text-[10px] transition-all duration-200"
+                        style={{
+                          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+                          color: dangerTextColor,
+                          boxShadow: `0 2px 8px 0 ${themeColors.danger}40`
+                        }}
                       >
                         X
                       </button>
@@ -1166,7 +1229,12 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
                       <button
                         type="button"
                         onClick={addItem}
-                        className="bg-blue-500 text-white px-1 rounded text-[10px]"
+                        className="px-1 rounded text-[10px] transition-all duration-200"
+                        style={{
+                          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                          color: secondaryTextColor,
+                          boxShadow: `0 2px 8px 0 ${themeColors.secondary}40`
+                        }}
                       >
                         +
                       </button>
@@ -1268,18 +1336,25 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
                     <button
                       type="button"
                       onClick={handleCancel}
-                      className={`px-6 py-3 rounded text-sm transition ${
-                        isDark 
-                          ? "bg-slate-700 text-slate-200 hover:bg-slate-600" 
-                          : "bg-gray-200 text-gray-800 hover:bg-gray-300"
-                      }`}
+                      className="px-6 py-3 rounded text-sm font-medium transition-all duration-200"
+                      style={{
+                        background: isDark ? "rgba(71,85,105,0.6)" : "rgba(255,255,255,0.8)",
+                        backdropFilter: "blur(8px)",
+                        border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.1)",
+                        color: isDark ? "#f1f5f9" : "#1f2937",
+                      }}
                     >
                       Cancel
                     </button>
                     <button
                       type="button"
                       onClick={handleSubmit}
-                      className="px-8 py-3 rounded text-sm transition bg-green-600 text-white hover:bg-green-700"
+                      className="px-8 py-3 rounded text-sm font-semibold transition-all duration-200"
+                      style={{
+                        background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                        color: primaryTextColor,
+                        boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                      }}
                     >
                       {returnId ? "Update Return" : "Create Return"}
                     </button>
