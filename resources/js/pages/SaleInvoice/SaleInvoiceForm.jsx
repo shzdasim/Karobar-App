@@ -1,5 +1,5 @@
 // /src/pages/sales/SaleInvoiceForm.jsx
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
@@ -8,6 +8,20 @@ import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
 import { recalcItem, recalcFooter } from "../../Formula/SaleInvoice.js";
 import { useTheme } from "@/context/ThemeContext";
+
+// Helper to determine text color based on background brightness
+const getContrastText = (hexColor) => {
+  hexColor = hexColor.replace('#', '');
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
+const getButtonTextColor = (primaryColor, primaryHoverColor) => {
+  return getContrastText(primaryHoverColor || primaryColor);
+};
 
 /* -------- utils (unchanged) -------- */
 const normalizeFormLoaded = (f) => {
@@ -41,10 +55,6 @@ const normalizeFormLoaded = (f) => {
     : [];
   return safe;
 };
-
-// glassy button presets
-const btnBlueGlass = "bg-blue-500/85 text-white ring-1 ring-white/20 backdrop-blur-sm shadow-[0_6px_20px_-6px_rgba(37,99,235,0.45)] hover:bg-blue-500/95";
-const btnRoseGlass = "bg-rose-500/85 text-white ring-1 ring-white/20 backdrop-blur-sm shadow-[0_6px_20px_-6px_rgba(244,63,94,0.45)] hover:bg-rose-500/95";
 
 export default function SaleInvoiceForm({ saleId, onSuccess }) {
   /* -------- state -------- */
@@ -155,8 +165,58 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
   const eqId = (a, b) => String(a ?? "") === String(b ?? "");
   const zeroToEmpty = (v) => (v === 0 || v === "0" ? "" : (v ?? ""));
 
-  // Get dark mode state
-  const { isDark } = useTheme();
+  // Get dark mode state and theme colors
+  const { isDark, theme } = useTheme();
+
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+        danger: '#ef4444',
+        dangerHover: '#dc2626',
+        dangerLight: '#fee2e2',
+        tertiary: '#06b6d4',
+        tertiaryHover: '#0891b2',
+        tertiaryLight: '#cffafe',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+      tertiary: theme.tertiary_color || '#06b6d4',
+      tertiaryHover: theme.tertiary_hover || '#0891b2',
+      tertiaryLight: theme.tertiary_light || '#cffafe',
+      danger: theme.danger_color || '#ef4444',
+      dangerHover: '#dc2626',
+      dangerLight: '#fee2e2',
+    };
+  }, [theme]);
+
+  // Calculate text colors based on background brightness
+  const primaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
+  
+  const secondaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
+    [themeColors.secondary, themeColors.secondaryHover]
+  );
+  
+  const dangerTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.danger, themeColors.dangerHover), 
+    [themeColors.danger, themeColors.dangerHover]
+  );
 
   // Helper to get react-select styles based on dark mode
   const getSelectStyles = (isDarkMode = false) => ({
@@ -934,7 +994,12 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
             <button
               type="button"
               onClick={handleSubmit}
-              className={`px-3 py-1.5 rounded text-[11px] ${btnBlueGlass}`}
+              className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200`}
+              style={{
+                background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                color: primaryTextColor,
+                boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+              }}
             >
               {saleId ? "Update (Alt+S)" : "Create (Alt+S)"}
             </button>
@@ -1082,7 +1147,12 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
                       <button
                         type="button"
                         onClick={() => removeRow(i)}
-                        className={`px-2 rounded text-white text-[10px] ${btnRoseGlass}`}
+                        className={`px-2 rounded text-white text-[10px] font-semibold transition-all duration-200`}
+                        style={{
+                          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+                          color: dangerTextColor,
+                          boxShadow: `0 4px 14px 0 ${themeColors.danger}40`
+                        }}
                       >
                         X
                       </button>
@@ -1249,7 +1319,12 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
                       <button
                         type="button"
                         onClick={addRow}
-                        className={`px-2 rounded text-white text-[10px] ${btnBlueGlass}`}
+                        className={`px-2 rounded text-white text-[10px] font-semibold transition-all duration-200`}
+                        style={{
+                          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                          color: secondaryTextColor,
+                          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
+                        }}
                       >
                         +
                       </button>
@@ -1419,7 +1494,12 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  className={`w-full h-9 rounded text-white text-[12px] ${btnBlueGlass}`}
+                  className={`w-full h-9 rounded text-white text-[12px] font-semibold transition-all duration-200`}
+                  style={{
+                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                    color: primaryTextColor,
+                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                  }}
                 >
                   {saleId ? "Update Sale" : "Create Sale"}
                 </button>

@@ -30,25 +30,39 @@ import {
 } from "@/components";
 import { useTheme } from "@/context/ThemeContext";
 
-// Section configuration with color schemes - matching sidebar design
-const SECTION_CONFIG = {
+// Helper to determine text color based on background brightness
+const getContrastText = (hexColor) => {
+  hexColor = hexColor.replace('#', '');
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
+const getButtonTextColor = (primaryColor, primaryHoverColor) => {
+  return getContrastText(primaryHoverColor || primaryColor);
+};
+
+// Section configuration with color schemes - will use dynamic theme colors
+const getSectionConfig = (theme) => ({
   core: {
-    gradient: "from-blue-500 to-cyan-600",
-    bgLight: "bg-blue-50",
-    bgDark: "dark:bg-blue-900/20",
-    borderColor: "border-blue-200 dark:border-blue-700",
-    iconColor: "text-blue-600 dark:text-blue-400",
-    ringColor: "ring-blue-300 dark:ring-blue-700",
+    gradient: `from-[${theme.primary_color || '#3b82f6'}] to-[${theme.primary_hover || '#2563eb'}]`,
+    bgLight: `bg-[${theme.primary_light || '#dbeafe'}]`,
+    bgDark: `dark:bg-[${theme.primary_light || '#1e3a5f'}]/20`,
+    borderColor: `border-[${theme.primary_color || '#3b82f6'}]/30 dark:border-[${theme.primary_color || '#3b82f6'}]/30`,
+    iconColor: `text-[${theme.primary_color || '#3b82f6'}] dark:text-[${theme.primary_color || '#3b82f6'}]`,
+    ringColor: `ring-[${theme.primary_color || '#3b82f6'}]/30`,
   },
   management: {
-    gradient: "from-violet-500 to-purple-600",
-    bgLight: "bg-violet-50",
-    bgDark: "dark:bg-violet-900/20",
-    borderColor: "border-violet-200 dark:border-violet-700",
-    iconColor: "text-violet-600 dark:text-violet-400",
-    ringColor: "ring-violet-300 dark:ring-violet-700",
+    gradient: `from-[${theme.secondary_color || '#8b5cf6'}] to-[${theme.secondary_hover || '#7c3aed'}]`,
+    bgLight: `bg-[${theme.secondary_light || '#ede9fe'}]`,
+    bgDark: `dark:bg-[${theme.secondary_light || '#312e81'}]/20`,
+    borderColor: `border-[${theme.secondary_color || '#8b5cf6'}]/30 dark:border-[${theme.secondary_color || '#8b5cf6'}]/30`,
+    iconColor: `text-[${theme.secondary_color || '#8b5cf6'}] dark:text-[${theme.secondary_color || '#8b5cf6'}]`,
+    ringColor: `ring-[${theme.secondary_color || '#8b5cf6'}]/30`,
   },
-};
+});
 
 export default function SaleInvoicesIndex() {
   const [invoices, setInvoices] = useState([]);
@@ -82,13 +96,96 @@ export default function SaleInvoicesIndex() {
   );
 
   // 🎨 Modern button palette (matching sidebar design language)
-  const tintBlue = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
-  const tintIndigo = "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all duration-200";
-  const tintSlate = "bg-gradient-to-br from-slate-700 to-slate-800 text-white shadow-lg shadow-slate-500/25 ring-1 ring-white/10 hover:shadow-xl hover:shadow-slate-500/30 hover:scale-[1.02] hover:from-slate-800 hover:to-slate-900 active:scale-[0.98] transition-all duration-200";
-  const tintAmber = "bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] hover:from-amber-600 hover:to-amber-700 active:scale-[0.98] transition-all duration-200";
-  const tintRed = "bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700 active:scale-[0.98] transition-all duration-200";
-  const tintGreen = "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] hover:from-emerald-600 hover:to-emerald-700 active:scale-[0.98] transition-all duration-200";
-  const tintGlass = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
+  // Get theme colors
+  const { theme } = useTheme();
+
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+        danger: '#ef4444',
+        dangerHover: '#dc2626',
+        dangerLight: '#fee2e2',
+        tertiary: '#06b6d4',
+        tertiaryHover: '#0891b2',
+        tertiaryLight: '#cffafe',
+        success: '#10b981',
+        successHover: '#059669',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+      tertiary: theme.tertiary_color || '#06b6d4',
+      tertiaryHover: theme.tertiary_hover || '#0891b2',
+      tertiaryLight: theme.tertiary_light || '#cffafe',
+      danger: theme.danger_color || '#ef4444',
+      dangerHover: '#dc2626',
+      dangerLight: '#fee2e2',
+      success: theme.success_color || '#10b981',
+      successHover: '#059669',
+    };
+  }, [theme]);
+
+  // Calculate text colors based on background brightness
+  const primaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
+  
+  const secondaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
+    [themeColors.secondary, themeColors.secondaryHover]
+  );
+  
+  const dangerTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.danger, themeColors.dangerHover), 
+    [themeColors.danger, themeColors.dangerHover]
+  );
+
+  // Dynamic section config
+  const SECTION_CONFIG = useMemo(() => getSectionConfig(themeColors), [themeColors]);
+
+  // Dynamic button styles
+  const tintPrimary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintSecondary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintTertiary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintDanger = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintGlass = useMemo(() => `
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintBack = useMemo(() => `
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
 
   // Get dark mode state
   const { isDark } = useTheme();
@@ -299,7 +396,7 @@ export default function SaleInvoicesIndex() {
                 controllerRef.current = ctrl;
                 fetchInvoices(ctrl.signal);
               }}
-              className={`h-10 min-w-[120px] ${tintSlate}`}
+              className={`h-10 min-w-[120px] ${tintBack}`}
               title="Refresh"
               aria-label="Refresh sale invoices"
             >
@@ -314,7 +411,12 @@ export default function SaleInvoicesIndex() {
                 to="/sale-invoices/create"
                 title="Add Sale Invoice (Alt+N)"
                 aria-keyshortcuts="Alt+N"
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintBlue}`}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintPrimary}`}
+                style={{ 
+                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                  color: primaryTextColor,
+                  boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                }}
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 Add Invoice
@@ -481,13 +583,12 @@ export default function SaleInvoicesIndex() {
                         {/* View Action */}
                         <Link
                           to={`/sale-invoices/${invoice.id}`}
-                          className={`
-                            group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold
-                            bg-gradient-to-br from-violet-500 to-violet-600 text-white
-                            shadow-lg shadow-violet-500/20 ring-1 ring-violet-400/30
-                            hover:shadow-xl hover:shadow-violet-500/30 hover:scale-[1.02] hover:from-violet-600 hover:to-violet-700
-                            active:scale-[0.98] transition-all duration-200
-                          `}
+                          className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200`}
+                          style={{
+                            background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                            color: primaryTextColor,
+                            boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                          }}
                           title="View"
                         >
                           <EyeIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
@@ -498,13 +599,12 @@ export default function SaleInvoicesIndex() {
                         <Guard when={can.update}>
                           <Link
                             to={`/sale-invoices/${invoice.id}/edit`}
-                            className={`
-                              group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold
-                              bg-gradient-to-br from-amber-400 to-amber-500 text-white
-                              shadow-lg shadow-amber-500/20 ring-1 ring-amber-400/30
-                              hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] hover:from-amber-500 hover:to-amber-600
-                              active:scale-[0.98] transition-all duration-200
-                            `}
+                            className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200`}
+                            style={{
+                              background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                              color: secondaryTextColor,
+                              boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
+                            }}
                             title="Edit"
                           >
                             <PencilSquareIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
@@ -515,13 +615,12 @@ export default function SaleInvoicesIndex() {
                         {/* Print Action */}
                         <button
                           onClick={() => handlePrint(invoice.id)}
-                          className={`
-                            group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold
-                            bg-gradient-to-br from-emerald-500 to-emerald-600 text-white
-                            shadow-lg shadow-emerald-500/20 ring-1 ring-emerald-400/30
-                            hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] hover:from-emerald-600 hover:to-emerald-700
-                            active:scale-[0.98] transition-all duration-200
-                          `}
+                          className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200`}
+                          style={{
+                            background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
+                            color: getButtonTextColor(themeColors.tertiary, themeColors.tertiaryHover),
+                            boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`
+                          }}
                           title="Print"
                         >
                           <PrinterIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
@@ -532,13 +631,12 @@ export default function SaleInvoicesIndex() {
                         <Guard when={can.delete}>
                           <button
                             onClick={() => openDeleteModal(invoice)}
-                            className={`
-                              group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold
-                              bg-gradient-to-br from-rose-500 to-rose-600 text-white
-                              shadow-lg shadow-rose-500/20 ring-1 ring-rose-400/30
-                              hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700
-                              active:scale-[0.98] transition-all duration-200
-                            `}
+                            className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200`}
+                            style={{
+                              background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+                              color: dangerTextColor,
+                              boxShadow: `0 4px 14px 0 ${themeColors.danger}40`
+                            }}
                             title="Delete"
                           >
                             <TrashIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
@@ -634,7 +732,15 @@ export default function SaleInvoicesIndex() {
         title="Delete sale invoice"
         isDeleting={deleting}
         setIsDeleting={setDeleting}
-        tintClasses={{ red: tintRed, glass: tintGlass }}
+        tintClasses={{ 
+          red: tintDanger, 
+          redStyle: {
+            background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+            color: dangerTextColor,
+            boxShadow: `0 4px 14px 0 ${themeColors.danger}40`
+          },
+          glass: tintGlass 
+        }}
       />
     </div>
   );
