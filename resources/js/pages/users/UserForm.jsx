@@ -1,8 +1,48 @@
 // src/pages/users/UserForm.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
+import { useTheme } from "@/context/ThemeContext";
+
+// Helper to determine text color based on background brightness
+const getContrastText = (hexColor) => {
+  hexColor = hexColor.replace('#', '');
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
 
 export default function UserForm({ onSubmit, initial, submitting }) {
+  const { theme } = useTheme();
+
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+    };
+  }, [theme]);
+
+  // Calculate text color for primary button
+  const primaryTextColor = useMemo(() => 
+    getContrastText(themeColors.primaryHover || themeColors.primary), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -221,7 +261,8 @@ export default function UserForm({ onSubmit, initial, submitting }) {
               value={form.name}
               onChange={(e) => set("name", e.target.value)}
               required
-              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
+              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
+              style={{ '--tw-ring-color': themeColors.primary }}
               placeholder="Full name"
             />
           </div>
@@ -234,7 +275,8 @@ export default function UserForm({ onSubmit, initial, submitting }) {
               value={form.email}
               onChange={(e) => set("email", e.target.value)}
               required
-              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
+              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
+              style={{ '--tw-ring-color': themeColors.primary }}
               placeholder="user@example.com"
             />
           </div>
@@ -252,7 +294,8 @@ export default function UserForm({ onSubmit, initial, submitting }) {
               value={form.password}
               onChange={(e) => set("password", e.target.value)}
               placeholder={initial ? "••••••" : "Set a password"}
-              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
+              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
+              style={{ '--tw-ring-color': themeColors.primary }}
             />
           </div>
         </div>
@@ -375,9 +418,14 @@ export default function UserForm({ onSubmit, initial, submitting }) {
             type="submit"
             aria-keyshortcuts="Alt+S"
             title="Save (Alt+S)"
-            className={`px-4 py-2 rounded text-white ${
-              submitting ? "bg-blue-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
-            }`}
+            className="px-6 py-2 rounded font-semibold transition-all duration-200"
+            style={{
+              background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+              color: primaryTextColor,
+              boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+              opacity: submitting ? 0.6 : 1,
+              cursor: submitting ? 'not-allowed' : 'pointer'
+            }}
             disabled={submitting}
           >
             {submitting ? "Saving…" : "Save"}
