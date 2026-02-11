@@ -1,5 +1,5 @@
 // resources/js/components/settings/LicenseSetting.jsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { usePermissions } from "@/api/usePermissions";
@@ -19,34 +19,71 @@ import {
   CpuChipIcon
 } from "@heroicons/react/24/solid";
 
-// Section configuration with color schemes - matching sidebar design
+// Helper to determine text color based on background brightness
+const getContrastText = (hexColor) => {
+  hexColor = hexColor.replace('#', '');
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
+// Section configuration with color schemes - will use dynamic theme colors
 const SECTION_CONFIG = {
   core: {
-    gradient: "from-blue-500 to-cyan-600",
-    bgLight: "bg-blue-50",
-    bgDark: "dark:bg-blue-900/20",
-    borderColor: "border-blue-200 dark:border-blue-700",
-    iconColor: "text-blue-600 dark:text-blue-400",
-    ringColor: "ring-blue-300 dark:ring-blue-700",
+    key: 'primary',
   },
   management: {
-    gradient: "from-violet-500 to-purple-600",
-    bgLight: "bg-violet-50",
-    bgDark: "dark:bg-violet-900/20",
-    borderColor: "border-violet-200 dark:border-violet-700",
-    iconColor: "text-violet-600 dark:text-violet-400",
-    ringColor: "ring-violet-300 dark:ring-violet-700",
+    key: 'secondary',
   },
+};
+
+// Helper to get color value from theme
+const getThemeColor = (theme, colorKey, variant = 'color') => {
+  if (!theme) return '#3b82f6';
+  const key = `${colorKey}_${variant}`;
+  return theme[key] || '#3b82f6';
+};
+
+// Helper to generate section styles from theme
+const getSectionStyles = (theme, colorKey) => {
+  const baseColor = getThemeColor(theme, colorKey, 'color');
+  const hoverColor = getThemeColor(theme, colorKey, 'hover');
+  const lightColor = getThemeColor(theme, colorKey, 'light');
+  
+  return {
+    gradient: `from-[${baseColor}] to-[${hoverColor}]`,
+    bgLight: `bg-[${lightColor}]`,
+    bgDark: `dark:bg-[${lightColor}]`,
+    borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
+    iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
+    ringColor: `ring-[${baseColor}]/30`,
+  };
 };
 
 export default function LicenseSetting({ 
   licenseStatus, 
   licenseLoading, 
   fetchLicenseStatus,
-  tintBlue,
-  tintGlass
+  themeColors,
+  primaryTextColor
 }) {
   const { isDark } = useTheme();
+  
+  // Use passed themeColors if available, otherwise use default
+  const colors = themeColors || {
+    primary: '#3b82f6',
+    primaryHover: '#2563eb',
+    primaryLight: '#dbeafe',
+    secondary: '#8b5cf6',
+    secondaryHover: '#7c3aed',
+    secondaryLight: '#ede9fe',
+  };
+  
+  // Use passed primaryTextColor if available, otherwise calculate
+  const textColor = primaryTextColor || getContrastText(colors.primaryHover || colors.primary);
+  
   const { loading: permsLoading, canFor } = usePermissions();
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordAction, setPasswordAction] = useState(null);
@@ -144,12 +181,15 @@ export default function LicenseSetting({
 
   return (
     <div className="p-4 space-y-3">
-      {/* ===== License Management ===== */}
+{/* ===== License Management ===== */}
       <GlassCard>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.core.gradient} shadow-sm`}>
+            <div 
+              className="p-2 rounded-lg shadow-sm"
+              style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
+            >
               <KeyIcon className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -161,7 +201,12 @@ export default function LicenseSetting({
           </div>
           <GlassBtn
             onClick={() => openPasswordModal("view-details")}
-            className={`h-8 px-3 ${btnOutline}`}
+            className="h-8 px-3"
+            style={{
+              background: `linear-gradient(to bottom right, ${colors.secondary}, ${colors.secondaryHover})`,
+              color: textColor,
+              boxShadow: `0 2px 8px 0 ${colors.secondary}40`
+            }}
           >
             <span className="inline-flex items-center gap-1 text-xs">
               <ShieldCheckIcon className="w-4 h-4" />

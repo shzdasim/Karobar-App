@@ -1,5 +1,5 @@
 // resources/js/components/settings/ThemeSetting.jsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import toast from "react-hot-toast";
 import axios from "axios";
 import { useTheme } from "@/context/ThemeContext";
@@ -11,6 +11,49 @@ import {
   CheckIcon,
   Cog6ToothIcon
 } from "@heroicons/react/24/solid";
+
+// Helper to determine text color based on background brightness
+const getContrastText = (hexColor) => {
+  hexColor = hexColor.replace('#', '');
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
+// Section configuration with color schemes - will use dynamic theme colors
+const SECTION_CONFIG = {
+  core: {
+    key: 'primary',
+  },
+  management: {
+    key: 'secondary',
+  },
+};
+
+// Helper to get color value from theme
+const getThemeColor = (theme, colorKey, variant = 'color') => {
+  if (!theme) return '#3b82f6';
+  const key = `${colorKey}_${variant}`;
+  return theme[key] || '#3b82f6';
+};
+
+// Helper to generate section styles from theme
+const getSectionStyles = (theme, colorKey) => {
+  const baseColor = getThemeColor(theme, colorKey, 'color');
+  const hoverColor = getThemeColor(theme, colorKey, 'hover');
+  const lightColor = getThemeColor(theme, colorKey, 'light');
+  
+  return {
+    gradient: `from-[${baseColor}] to-[${hoverColor}]`,
+    bgLight: `bg-[${lightColor}]`,
+    bgDark: `dark:bg-[${lightColor}]`,
+    borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
+    iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
+    ringColor: `ring-[${baseColor}]/30`,
+  };
+};
 
 // Color picker component
 function ColorInput({ label, color, onChange, disabled }) {
@@ -71,6 +114,50 @@ function generateVariants(baseColor) {
 
 export default function ThemeSetting({ form: parentForm, setForm, disableInputs }) {
   const { theme, saveTheme, activateTheme, loading: themeLoading } = useTheme();
+  
+  // Get section styles from theme
+  const coreStyles = useMemo(() => getSectionStyles(theme, 'primary'), [theme]);
+  const managementStyles = useMemo(() => getSectionStyles(theme, 'secondary'), [theme]);
+  
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+        tertiary: '#06b6d4',
+        tertiaryHover: '#0891b2',
+        tertiaryLight: '#cffafe',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+      tertiary: theme.tertiary_color || '#06b6d4',
+      tertiaryHover: theme.tertiary_hover || '#0891b2',
+      tertiaryLight: theme.tertiary_light || '#cffafe',
+    };
+  }, [theme]);
+
+  // Calculate text colors based on background brightness
+  const primaryTextColor = useMemo(() => 
+    getContrastText(themeColors.primaryHover || themeColors.primary), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
+  
+  const secondaryTextColor = useMemo(() => 
+    getContrastText(themeColors.secondaryHover || themeColors.secondary), 
+    [themeColors.secondary, themeColors.secondaryHover]
+  );
+  
   const [themeSettings, setThemeSettings] = useState({
     name: 'Custom Theme',
     primary_color: '#3b82f6',
@@ -284,7 +371,14 @@ export default function ThemeSetting({ form: parentForm, setForm, disableInputs 
             <button
               onClick={handleSaveTheme}
               disabled={disableInputs || saving}
-              className="ml-auto px-2 py-1 text-xs font-medium bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+              className="ml-auto px-2 py-1 text-xs font-medium rounded transition-all duration-200"
+              style={{
+                background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                color: primaryTextColor,
+                boxShadow: `0 2px 8px 0 ${themeColors.primary}40`,
+                opacity: (disableInputs || saving) ? 0.6 : 1,
+                cursor: (disableInputs || saving) ? 'not-allowed' : 'pointer'
+              }}
             >
               {saving ? '...' : 'Save'}
             </button>

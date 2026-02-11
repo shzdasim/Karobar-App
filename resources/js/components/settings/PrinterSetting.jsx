@@ -1,5 +1,5 @@
 // resources/js/components/settings/PrinterSetting.jsx
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import toast from "react-hot-toast";
 import { useTheme } from "@/context/ThemeContext";
 import { GlassCard, GlassSectionHeader, GlassToolbar, GlassInput, GlassBtn } from "@/components/glass.jsx";
@@ -14,24 +14,47 @@ import {
   QrCodeIcon
 } from "@heroicons/react/24/solid";
 
-// Section configuration with color schemes - matching sidebar design
+// Helper to determine text color based on background brightness
+const getContrastText = (hexColor) => {
+  hexColor = hexColor.replace('#', '');
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
+// Section configuration with color schemes - will use dynamic theme colors
 const SECTION_CONFIG = {
   core: {
-    gradient: "from-blue-500 to-cyan-600",
-    bgLight: "bg-blue-50",
-    bgDark: "dark:bg-blue-900/20",
-    borderColor: "border-blue-200 dark:border-blue-700",
-    iconColor: "text-blue-600 dark:text-blue-400",
-    ringColor: "ring-blue-300 dark:ring-blue-700",
+    key: 'primary',
   },
   management: {
-    gradient: "from-violet-500 to-purple-600",
-    bgLight: "bg-violet-50",
-    bgDark: "dark:bg-violet-900/20",
-    borderColor: "border-violet-200 dark:border-violet-700",
-    iconColor: "text-violet-600 dark:text-violet-400",
-    ringColor: "ring-violet-300 dark:ring-violet-700",
+    key: 'secondary',
   },
+};
+
+// Helper to get color value from theme
+const getThemeColor = (theme, colorKey, variant = 'color') => {
+  if (!theme) return '#3b82f6';
+  const key = `${colorKey}_${variant}`;
+  return theme[key] || '#3b82f6';
+};
+
+// Helper to generate section styles from theme
+const getSectionStyles = (theme, colorKey) => {
+  const baseColor = getThemeColor(theme, colorKey, 'color');
+  const hoverColor = getThemeColor(theme, colorKey, 'hover');
+  const lightColor = getThemeColor(theme, colorKey, 'light');
+  
+  return {
+    gradient: `from-[${baseColor}] to-[${hoverColor}]`,
+    bgLight: `bg-[${lightColor}]`,
+    bgDark: `dark:bg-[${lightColor}]`,
+    borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
+    iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
+    ringColor: `ring-[${baseColor}]/30`,
+  };
 };
 
 export default function PrinterSetting({ 
@@ -39,9 +62,28 @@ export default function PrinterSetting({
   handleChange, 
   disableInputs, 
   saving,
-  handleSave
+  handleSave,
+  themeColors,
+  emeraldTextColor
 }) {
   const { isDark } = useTheme();
+  
+  // Use passed themeColors if available, otherwise use default
+  const colors = themeColors || {
+    primary: '#3b82f6',
+    primaryHover: '#2563eb',
+    primaryLight: '#dbeafe',
+    secondary: '#8b5cf6',
+    secondaryHover: '#7c3aed',
+    secondaryLight: '#ede9fe',
+    emerald: '#10b981',
+    emeraldHover: '#059669',
+    emeraldLight: '#d1fae5',
+  };
+  
+  // Use passed emeraldTextColor if available, otherwise calculate
+  const textColor = emeraldTextColor || getContrastText(colors.emeraldHover || colors.emerald);
+  
   const [selectedThermalTemplate, setSelectedThermalTemplate] = useState(form.thermal_template || "standard");
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewingTemplate, setPreviewingTemplate] = useState(null);
@@ -118,11 +160,14 @@ export default function PrinterSetting({
 
   return (
     <div className="p-4 space-y-3">
-      {/* ===== Invoice Footer Note ===== */}
+{/* ===== Invoice Footer Note ===== */}
       <GlassCard>
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.core.gradient} shadow-sm`}>
+            <div 
+              className="p-2 rounded-lg shadow-sm"
+              style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
+            >
               <DocumentTextIcon className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -157,11 +202,14 @@ export default function PrinterSetting({
         </div>
       </GlassCard>
 
-      {/* ===== Printer Type Selection ===== */}
+{/* ===== Printer Type Selection ===== */}
       <GlassCard>
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.management.gradient} shadow-sm`}>
+            <div 
+              className="p-2 rounded-lg shadow-sm"
+              style={{ background: `linear-gradient(to bottom right, ${colors.secondary}, ${colors.secondaryHover})` }}
+            >
               <PrinterIcon className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -225,7 +273,10 @@ export default function PrinterSetting({
         <GlassCard>
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.core.gradient} shadow-sm`}>
+              <div 
+                className="p-2 rounded-lg shadow-sm"
+                style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
+              >
                 <DocumentTextIcon className="w-5 h-5 text-white" />
               </div>
               <div>
@@ -346,13 +397,18 @@ export default function PrinterSetting({
         </GlassCard>
       )}
 
-      {/* ===== Save Button ===== */}
+{/* ===== Save Button ===== */}
       <div className="flex justify-end">
         <GlassBtn
           onClick={handleSave}
           disabled={disableInputs || saving}
-          className={`h-10 px-6 ${(disableInputs || saving) ? btnOutline + " opacity-60 cursor-not-allowed" : btnGreen}`}
+          className="h-10 px-6"
           title={!disableInputs ? "Alt+S" : "You lack update permission"}
+          style={{
+            background: `linear-gradient(to bottom right, ${colors.emerald}, ${colors.emeraldHover})`,
+            color: textColor,
+            boxShadow: `0 4px 14px 0 ${colors.emerald}40`
+          }}
         >
           {saving ? "Saving…" : "Save Settings"}
         </GlassBtn>

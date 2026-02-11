@@ -11,6 +11,7 @@ import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
 
 import { usePermissions } from "@/api/usePermissions.js"; // 🔒
 import { useLicense } from "@/context/LicenseContext.jsx"; // 🔒 license context
+import { useTheme } from "@/context/ThemeContext.jsx"; // 🎨 theme context
 
 // 🧊 glass primitives
 import {
@@ -40,10 +41,21 @@ import BackupRestoreSetting from "@/components/settings/BackupRestoreSetting.jsx
 
 registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);
 
+// Helper to determine text color based on background brightness
+const getContrastText = (hexColor) => {
+  hexColor = hexColor.replace('#', '');
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
 export default function Setting() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const license = useLicense();
+  const { theme } = useTheme();
 
   const [form, setForm] = useState({
     store_name: "",
@@ -91,11 +103,60 @@ export default function Setting() {
     [canFor]
   );
 
-  // tints (same palette as ledgers)
-  const tintBlue   = "bg-blue-500/85 text-white ring-1 ring-white/20 shadow-[0_6px_20px_-6px_rgba(37,99,235,0.45)] hover:bg-blue-500/95";
-  const tintGreen  = "bg-emerald-500/85 text-white ring-1 ring-white/20 shadow-[0_6px_20px_-6px_rgba(16,185,129,0.45)] hover:bg-emerald-500/95";
-  const tintSlate  = "bg-slate-900/80 text-white ring-1 ring-white/15 shadow-[0_6px_20px_-6px_rgba(15,23,42,0.45)] hover:bg-slate-900/90";
-  const tintGlass  = "bg-white/60 text-slate-700 ring-1 ring-white/30 hover:bg-white/75";
+  // 🎨 Dynamic button styles using theme colors
+  const tintPrimary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintSecondary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintGlass = useMemo(() => `
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+        emerald: '#10b981',
+        emeraldHover: '#059669',
+        emeraldLight: '#d1fae5',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+      emerald: theme.success_color || '#10b981',
+      emeraldHover: '#059669',
+      emeraldLight: '#d1fae5',
+    };
+  }, [theme]);
+
+  // Calculate text colors based on background brightness
+  const primaryTextColor = useMemo(() => 
+    getContrastText(themeColors.primaryHover || themeColors.primary), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
+  
+  const emeraldTextColor = useMemo(() => 
+    getContrastText(themeColors.emeraldHover || themeColors.emerald), 
+    [themeColors.emerald, themeColors.emeraldHover]
+  );
 
   useEffect(() => {
     if (permsLoading) return;
@@ -250,7 +311,10 @@ export default function Setting() {
       <GlassCard className="relative z-30">
         <GlassSectionHeader
           title={<span className="inline-flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-blue-600" />
+            <div 
+              className="w-2 h-2 rounded-full"
+              style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+            />
             <span>Application Settings</span>
           </span>}
           right={
@@ -258,7 +322,14 @@ export default function Setting() {
               ref={saveBtnRef}
               onClick={handleSave}
               disabled={!can.update || saving}
-              className={`h-9 px-4 ${(!can.update || saving) ? tintGlass + " opacity-60 cursor-not-allowed" : tintGreen}`}
+              className="h-9 px-4"
+              style={{
+                background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
+                color: emeraldTextColor,
+                boxShadow: `0 6px 20px -6px ${themeColors.emerald}45`,
+                opacity: (!can.update || saving) ? 0.6 : 1,
+                cursor: (!can.update || saving) ? 'not-allowed' : 'pointer'
+              }}
               title={can.update ? "Alt+S" : "You lack update permission"}
             >
               <span className="inline-flex items-center gap-2">
@@ -288,9 +359,14 @@ export default function Setting() {
             onClick={() => setActiveTab("general")}
             className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
               activeTab === "general"
-                ? "border-blue-600 text-blue-700 bg-white/70 dark:bg-slate-800/70 dark:text-blue-400 dark:border-blue-400"
+                ? ""
                 : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
             }`}
+            style={activeTab === "general" ? {
+              borderColor: themeColors.primary,
+              color: themeColors.primary,
+              backgroundColor: `${themeColors.primaryLight}70`,
+            } : {}}
           >
             <CogIcon className="w-5 h-5" />
             <span>General</span>
@@ -301,9 +377,14 @@ export default function Setting() {
             onClick={() => setActiveTab("navigation")}
             className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
               activeTab === "navigation"
-                ? "border-blue-600 text-blue-700 bg-white/70 dark:bg-slate-800/70 dark:text-blue-400 dark:border-blue-400"
+                ? ""
                 : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
             }`}
+            style={activeTab === "navigation" ? {
+              borderColor: themeColors.primary,
+              color: themeColors.primary,
+              backgroundColor: `${themeColors.primaryLight}70`,
+            } : {}}
           >
             <Bars3Icon className="w-5 h-5" />
             <span>Theme Setting</span>
@@ -314,9 +395,14 @@ export default function Setting() {
             onClick={() => setActiveTab("printer")}
             className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
               activeTab === "printer"
-                ? "border-blue-600 text-blue-700 bg-white/70 dark:bg-slate-800/70 dark:text-blue-400 dark:border-blue-400"
+                ? ""
                 : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
             }`}
+            style={activeTab === "printer" ? {
+              borderColor: themeColors.primary,
+              color: themeColors.primary,
+              backgroundColor: `${themeColors.primaryLight}70`,
+            } : {}}
           >
             <PrinterIcon className="w-5 h-5" />
             <span>Printer Setting</span>
@@ -327,9 +413,14 @@ export default function Setting() {
             onClick={() => setActiveTab("backup")}
             className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
               activeTab === "backup"
-                ? "border-blue-600 text-blue-700 bg-white/70 dark:bg-slate-800/70 dark:text-blue-400 dark:border-blue-400"
+                ? ""
                 : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
             }`}
+            style={activeTab === "backup" ? {
+              borderColor: themeColors.primary,
+              color: themeColors.primary,
+              backgroundColor: `${themeColors.primaryLight}70`,
+            } : {}}
           >
             <ServerIcon className="w-5 h-5" />
             <span>Backup and restore</span>
@@ -340,9 +431,14 @@ export default function Setting() {
             onClick={() => setActiveTab("license")}
             className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
               activeTab === "license"
-                ? "border-blue-600 text-blue-700 bg-white/70 dark:bg-slate-800/70 dark:text-blue-400 dark:border-blue-400"
+                ? ""
                 : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
             }`}
+            style={activeTab === "license" ? {
+              borderColor: themeColors.primary,
+              color: themeColors.primary,
+              backgroundColor: `${themeColors.primaryLight}70`,
+            } : {}}
           >
             <DocumentTextIcon className="w-5 h-5" />
             <span>License</span>
@@ -362,9 +458,8 @@ export default function Setting() {
           phoneRef={phoneRef}
           addressRef={addressRef}
           licenseRef={licenseRef}
-          tintBlue={tintBlue}
-          tintGlass={tintGlass}
-          tintGreen={tintGreen}
+          themeColors={themeColors}
+          primaryTextColor={primaryTextColor}
         />
       )}
 
@@ -383,9 +478,8 @@ export default function Setting() {
           disableInputs={disableInputs}
           saving={saving}
           handleSave={handleSave}
-          tintBlue={tintBlue}
-          tintGlass={tintGlass}
-          tintGreen={tintGreen}
+          themeColors={themeColors}
+          emeraldTextColor={emeraldTextColor}
         />
       )}
 
@@ -394,18 +488,16 @@ export default function Setting() {
           licenseStatus={licenseStatus}
           licenseLoading={licenseLoading}
           fetchLicenseStatus={fetchLicenseStatus}
-          tintBlue={tintBlue}
-          tintGlass={tintGlass}
-          tintGreen={tintGreen}
+          themeColors={themeColors}
+          primaryTextColor={primaryTextColor}
         />
       )}
 
       {activeTab === "backup" && (
         <BackupRestoreSetting
-          canFor={canFor}
-          tintBlue={tintBlue}
-          tintGlass={tintGlass}
-          tintGreen={tintGreen}
+          themeColors={themeColors}
+          primaryTextColor={primaryTextColor}
+          emeraldTextColor={emeraldTextColor}
         />
       )}
 
@@ -415,7 +507,14 @@ export default function Setting() {
           ref={saveBtnRef}
           onClick={handleSave}
           disabled={!can.update || saving}
-          className={`h-10 px-5 ${(!can.update || saving) ? tintGlass + " opacity-60 cursor-not-allowed" : tintGreen}`}
+          className="h-10 px-5"
+          style={{
+            background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
+            color: emeraldTextColor,
+            boxShadow: `0 6px 20px -6px ${themeColors.emerald}45`,
+            opacity: (!can.update || saving) ? 0.6 : 1,
+            cursor: (!can.update || saving) ? 'not-allowed' : 'pointer'
+          }}
           title={can.update ? "Alt+S" : "You lack update permission"}
         >
           {saving ? "Saving…" : "Save (Alt+S)"}
