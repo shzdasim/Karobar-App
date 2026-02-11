@@ -1,12 +1,76 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
 
+// Helper to determine text color based on background brightness
+const getContrastText = (hexColor) => {
+  hexColor = hexColor.replace('#', '');
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
+const getButtonTextColor = (primaryColor, primaryHoverColor) => {
+  return getContrastText(primaryHoverColor || primaryColor);
+};
+
 export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
-  const { isDark } = useTheme();
+  const { isDark, theme } = useTheme();
+  
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+        tertiary: '#06b6d4',
+        tertiaryHover: '#0891b2',
+        tertiaryLight: '#cffafe',
+        danger: '#ef4444',
+        dangerHover: '#dc2626',
+        dangerLight: '#fee2e2',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+      tertiary: theme.tertiary_color || '#06b6d4',
+      tertiaryHover: theme.tertiary_hover || '#0891b2',
+      tertiaryLight: theme.tertiary_light || '#cffafe',
+      danger: theme.danger_color || '#ef4444',
+      dangerHover: '#dc2626',
+      dangerLight: '#fee2e2',
+    };
+  }, [theme]);
+
+  // Calculate text colors based on background brightness
+  const primaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
+  
+  const secondaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
+    [themeColors.secondary, themeColors.secondaryHover]
+  );
+  
+  const dangerTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.danger, themeColors.dangerHover), 
+    [themeColors.danger, themeColors.dangerHover]
+  );
   
   const [products, setProducts] = useState([]);
   const [batchesByProduct, setBatchesByProduct] = useState({}); // { [productId]: [{batch_number, expiry, available_units}, ...] }
@@ -597,7 +661,16 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
               return (
               <tr key={i} className={`text-center ${isDark ? "hover:bg-slate-700/50" : "hover:bg-gray-50"}`}>
                 <td className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
-                  <button type="button" onClick={()=>removeRow(i)} className="bg-red-500 text-white px-1 rounded text-[10px]">X</button>
+                  <button 
+                    type="button" 
+                    onClick={()=>removeRow(i)} 
+                    className="px-1 rounded text-[10px] transition-all duration-200"
+                    style={{
+                      background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+                      color: dangerTextColor,
+                      boxShadow: `0 2px 8px 0 ${themeColors.danger}40`
+                    }}
+                  >X</button>
                 </td>
 
                 {/* PRODUCT */}
@@ -712,7 +785,16 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                   />
                 </td>
                 <td className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
-                  <button type="button" onClick={()=>{ addRow(); setTimeout(()=>focusProduct(i+1),0); }} className="bg-blue-500 text-white px-1 rounded text-[10px]">+</button>
+                  <button 
+                    type="button" 
+                    onClick={()=>{ addRow(); setTimeout(()=>focusProduct(i+1),0); }} 
+                    className="px-1 rounded text-[10px] transition-all duration-200"
+                    style={{
+                      background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                      color: secondaryTextColor,
+                      boxShadow: `0 2px 8px 0 ${themeColors.secondary}40`
+                    }}
+                  >+</button>
                 </td>
               </tr>
             )})}
@@ -741,7 +823,12 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  className="bg-green-600 text-white px-8 py-3 rounded text-sm hover:bg-green-700 transition inline-flex items-center justify-center"
+                  className="px-8 py-3 rounded text-sm font-semibold transition inline-flex items-center justify-center"
+                  style={{
+                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                    color: primaryTextColor,
+                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                  }}
                   title="Save (Alt+S)"
                 >
                   {adjustmentId ? 'Update Adjustment' : 'Create Adjustment'}

@@ -28,24 +28,51 @@ import {
 } from "@/components";
 import { useTheme } from "@/context/ThemeContext";
 
-// Section configuration with color schemes - matching sidebar design
+// Helper to determine text color based on background brightness
+const getContrastText = (hexColor) => {
+  hexColor = hexColor.replace('#', '');
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
+const getButtonTextColor = (primaryColor, primaryHoverColor) => {
+  return getContrastText(primaryHoverColor || primaryColor);
+};
+
+// Section configuration with color schemes - will use dynamic theme colors
 const SECTION_CONFIG = {
   core: {
-    gradient: "from-blue-500 to-cyan-600",
-    bgLight: "bg-blue-50",
-    bgDark: "dark:bg-blue-900/20",
-    borderColor: "border-blue-200 dark:border-blue-700",
-    iconColor: "text-blue-600 dark:text-blue-400",
-    ringColor: "ring-blue-300 dark:ring-blue-700",
+    key: 'primary',
   },
   management: {
-    gradient: "from-slate-600 to-slate-800",
-    bgLight: "bg-slate-100",
-    bgDark: "dark:bg-slate-800/20",
-    borderColor: "border-slate-200 dark:border-slate-700",
-    iconColor: "text-slate-600 dark:text-slate-400",
-    ringColor: "ring-slate-300 dark:ring-slate-700",
+    key: 'secondary',
   },
+};
+
+// Helper to get color value from theme
+const getThemeColor = (theme, colorKey, variant = 'color') => {
+  if (!theme) return '#3b82f6';
+  const key = `${colorKey}_${variant}`;
+  return theme[key] || '#3b82f6';
+};
+
+// Helper to generate section styles from theme
+const getSectionStyles = (theme, colorKey) => {
+  const baseColor = getThemeColor(theme, colorKey, 'color');
+  const hoverColor = getThemeColor(theme, colorKey, 'hover');
+  const lightColor = getThemeColor(theme, colorKey, 'light');
+  
+  return {
+    gradient: `from-[${baseColor}] to-[${hoverColor}]`,
+    bgLight: `bg-[${lightColor}]`,
+    bgDark: `dark:bg-[${lightColor}]`,
+    borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
+    iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
+    ringColor: `ring-[${baseColor}]/30`,
+  };
 };
 
 export default function StockAdjustmentsIndex() {
@@ -78,16 +105,86 @@ export default function StockAdjustmentsIndex() {
     [canFor]
   );
 
-  // 🎨 Modern button palette (matching sidebar design language)
-  const tintBlue = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
-  const tintSlate = "bg-gradient-to-br from-slate-600 to-slate-700 text-white shadow-lg shadow-slate-500/25 ring-1 ring-white/10 hover:shadow-xl hover:shadow-slate-500/30 hover:scale-[1.02] hover:from-slate-700 hover:to-slate-800 active:scale-[0.98] transition-all duration-200";
-  const tintAmber = "bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] hover:from-amber-600 hover:to-amber-700 active:scale-[0.98] transition-all duration-200";
-  const tintRed = "bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700 active:scale-[0.98] transition-all duration-200";
-  const tintGlass = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
-  const tintIndigo = "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all duration-200";
+  // 🎨 Modern button palette (will use dynamic theme colors)
+  const tintPrimary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
 
-  // Get dark mode state
-  const { isDark } = useTheme();
+  const tintSecondary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintTertiary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintGlass = useMemo(() => `
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintDisabled = useMemo(() => `
+    bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Get dark mode state and theme colors
+  const { theme, isDark } = useTheme();
+
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+        tertiary: '#06b6d4',
+        tertiaryHover: '#0891b2',
+        tertiaryLight: '#cffafe',
+        danger: '#ef4444',
+        dangerHover: '#dc2626',
+        dangerLight: '#fee2e2',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+      tertiary: theme.tertiary_color || '#06b6d4',
+      tertiaryHover: theme.tertiary_hover || '#0891b2',
+      tertiaryLight: theme.tertiary_light || '#cffafe',
+      danger: theme.danger_color || '#ef4444',
+      dangerHover: '#dc2626',
+      dangerLight: '#fee2e2',
+    };
+  }, [theme]);
+
+  // Calculate text colors based on background brightness
+  const primaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
+  
+  const secondaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
+    [themeColors.secondary, themeColors.secondaryHover]
+  );
+  
+  const dangerTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.danger, themeColors.dangerHover), 
+    [themeColors.danger, themeColors.dangerHover]
+  );
+
+  // Get section styles for management (secondary)
+  const managementStyles = useMemo(() => getSectionStyles(themeColors, 'secondary'), [themeColors]);
 
   // Fetch stock adjustments
   const fetchAdjustments = useCallback(async (signal) => {
@@ -216,7 +313,10 @@ export default function StockAdjustmentsIndex() {
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           {/* Title */}
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.management.gradient} shadow-sm`}>
+            <div 
+              className="p-2 rounded-lg shadow-sm"
+              style={{ background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}
+            >
               <ClipboardDocumentListIcon className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -235,7 +335,12 @@ export default function StockAdjustmentsIndex() {
                 controllerRef.current = ctrl;
                 fetchAdjustments(ctrl.signal);
               }}
-              className={`h-10 min-w-[120px] ${tintSlate}`}
+              className={`h-10 min-w-[120px] ${tintSecondary}`}
+              style={{
+                background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
+                color: secondaryTextColor,
+                boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`
+              }}
               title="Refresh"
               aria-label="Refresh"
             >
@@ -250,7 +355,12 @@ export default function StockAdjustmentsIndex() {
                 to="/stock-adjustments/create"
                 title="Add (Alt+N)"
                 aria-keyshortcuts="Alt+N"
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintBlue}`}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintPrimary}`}
+                style={{
+                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                  color: primaryTextColor,
+                  boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                }}
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 Add Adjustment
@@ -412,13 +522,12 @@ export default function StockAdjustmentsIndex() {
                           <Guard when={can.update}>
                             <Link
                               to={`/stock-adjustments/${r.id}/edit`}
-                              className={`
-                                group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold
-                                bg-gradient-to-br from-amber-400 to-amber-500 text-white
-                                shadow-lg shadow-amber-500/20 ring-1 ring-amber-400/30
-                                hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] hover:from-amber-500 hover:to-amber-600
-                                active:scale-[0.98] transition-all duration-200
-                              `}
+                              className="group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200"
+                              style={{
+                                background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                                color: primaryTextColor,
+                                boxShadow: `0 4px 12px 0 ${themeColors.primary}40`
+                              }}
                               title="Edit"
                             >
                               <PencilSquareIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
@@ -430,13 +539,12 @@ export default function StockAdjustmentsIndex() {
                           <Guard when={can.delete}>
                             <button
                               onClick={() => openDeleteModal(r)}
-                              className={`
-                                group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold
-                                bg-gradient-to-br from-rose-500 to-rose-600 text-white
-                                shadow-lg shadow-rose-500/20 ring-1 ring-rose-400/30
-                                hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700
-                                active:scale-[0.98] transition-all duration-200
-                              `}
+                              className="group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200"
+                              style={{
+                                background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+                                color: dangerTextColor,
+                                boxShadow: `0 4px 12px 0 ${themeColors.danger}40`
+                              }}
                               title="Delete"
                             >
                               <TrashIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
@@ -495,10 +603,15 @@ export default function StockAdjustmentsIndex() {
                     className={`
                       w-7 h-7 rounded text-xs font-medium transition-colors
                       ${page === pageNum
-                        ? `bg-gradient-to-br ${SECTION_CONFIG.management.gradient} text-white`
+                        ? ""
                         : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700"
                       }
                     `}
+                    style={page === pageNum ? {
+                      background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                      color: secondaryTextColor,
+                      boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
+                    } : {}}
                   >
                     {pageNum}
                   </button>
@@ -533,7 +646,15 @@ export default function StockAdjustmentsIndex() {
         title="Delete stock adjustment"
         isDeleting={deleting}
         setIsDeleting={setDeleting}
-        tintClasses={{ red: tintRed, glass: tintGlass }}
+        tintClasses={{ 
+          red: tintSecondary,
+          redStyle: {
+            background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+            color: dangerTextColor,
+            boxShadow: `0 4px 14px 0 ${themeColors.danger}40`
+          },
+          glass: tintGlass 
+        }}
       />
     </div>
   );

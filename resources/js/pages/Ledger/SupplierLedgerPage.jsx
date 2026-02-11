@@ -27,24 +27,51 @@ import {
   GlassBtn,
 } from "@/components/glass.jsx";
 
-// Section configuration with color schemes - matching sidebar design
+// Helper to determine text color based on background brightness
+const getContrastText = (hexColor) => {
+  hexColor = hexColor.replace('#', '');
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
+const getButtonTextColor = (primaryColor, primaryHoverColor) => {
+  return getContrastText(primaryHoverColor || primaryColor);
+};
+
+// Section configuration with color schemes - will use dynamic theme colors
 const SECTION_CONFIG = {
   core: {
-    gradient: "from-blue-500 to-cyan-600",
-    bgLight: "bg-blue-50",
-    bgDark: "dark:bg-blue-900/20",
-    borderColor: "border-blue-200 dark:border-blue-700",
-    iconColor: "text-blue-600 dark:text-blue-400",
-    ringColor: "ring-blue-300 dark:ring-blue-700",
+    key: 'primary',
   },
   management: {
-    gradient: "from-violet-500 to-purple-600",
-    bgLight: "bg-violet-50",
-    bgDark: "dark:bg-violet-900/20",
-    borderColor: "border-violet-200 dark:border-violet-700",
-    iconColor: "text-violet-600 dark:text-violet-400",
-    ringColor: "ring-violet-300 dark:ring-violet-700",
+    key: 'secondary',
   },
+};
+
+// Helper to get color value from theme
+const getThemeColor = (theme, colorKey, variant = 'color') => {
+  if (!theme) return '#3b82f6';
+  const key = `${colorKey}_${variant}`;
+  return theme[key] || '#3b82f6';
+};
+
+// Helper to generate section styles from theme
+const getSectionStyles = (theme, colorKey) => {
+  const baseColor = getThemeColor(theme, colorKey, 'color');
+  const hoverColor = getThemeColor(theme, colorKey, 'hover');
+  const lightColor = getThemeColor(theme, colorKey, 'light');
+  
+  return {
+    gradient: `from-[${baseColor}] to-[${hoverColor}]`,
+    bgLight: `bg-[${lightColor}]`,
+    bgDark: `dark:bg-[${lightColor}]`,
+    borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
+    iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
+    ringColor: `ring-[${baseColor}]/30`,
+  };
 };
 
 /* =========================
@@ -74,18 +101,111 @@ export default function SupplierLedgerPage() {
   );
 
   // theme
-  const { isDark } = useTheme();
+  const { isDark, theme } = useTheme();
 
-  // 🎨 Modern button palette (matching Products page design)
-  const tintBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
-  const tintIndigo = "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all duration-200";
-  const tintSlate  = "bg-gradient-to-br from-slate-700 to-slate-800 text-white shadow-lg shadow-slate-500/25 ring-1 ring-white/10 hover:shadow-xl hover:shadow-slate-500/30 hover:scale-[1.02] hover:from-slate-800 hover:to-slate-900 active:scale-[0.98] transition-all duration-200";
-  const tintAmber  = "bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] hover:from-amber-600 hover:to-amber-700 active:scale-[0.98] transition-all duration-200";
-  const tintRed    = "bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700 active:scale-[0.98] transition-all duration-200";
-  const tintGreen  = "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] hover:from-emerald-600 hover:to-emerald-700 active:scale-[0.98] transition-all duration-200";
-  const tintGlass  = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
-  const tintOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
-  const tintIconBtn = "bg-white/60 dark:bg-slate-700/60 backdrop-blur-sm text-slate-600 dark:text-gray-300 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-md hover:scale-[1.05] active:scale-[0.95] transition-all duration-200";
+  // 🎨 Modern button palette (will use dynamic theme colors)
+  const tintPrimary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintSecondary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintTertiary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintGlass = useMemo(() => `
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintOutline = useMemo(() => `
+    bg-transparent ring-1 ring-gray-300 dark:ring-slate-600
+    hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintIconBtn = useMemo(() => `
+    bg-white/60 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-md hover:scale-[1.05] active:scale-[0.95] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintDisabled = useMemo(() => `
+    bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+        tertiary: '#06b6d4',
+        tertiaryHover: '#0891b2',
+        tertiaryLight: '#cffafe',
+        danger: '#ef4444',
+        dangerHover: '#dc2626',
+        dangerLight: '#fee2e2',
+        emerald: '#10b981',
+        emeraldHover: '#059669',
+        emeraldLight: '#d1fae5',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+      tertiary: theme.tertiary_color || '#06b6d4',
+      tertiaryHover: theme.tertiary_hover || '#0891b2',
+      tertiaryLight: theme.tertiary_light || '#cffafe',
+      danger: theme.danger_color || '#ef4444',
+      dangerHover: '#dc2626',
+      dangerLight: '#fee2e2',
+      emerald: theme.success_color || '#10b981',
+      emeraldHover: '#059669',
+      emeraldLight: '#d1fae5',
+    };
+  }, [theme]);
+
+  // Calculate text colors based on background brightness
+  const primaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
+  
+  const secondaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
+    [themeColors.secondary, themeColors.secondaryHover]
+  );
+  
+  const tertiaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.tertiary, themeColors.tertiaryHover), 
+    [themeColors.tertiary, themeColors.tertiaryHover]
+  );
+  
+  const dangerTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.danger, themeColors.dangerHover), 
+    [themeColors.danger, themeColors.dangerHover]
+  );
+
+  const emeraldTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.emerald, themeColors.emeraldHover), 
+    [themeColors.emerald, themeColors.emeraldHover]
+  );
+
+  // Get section styles
+  const coreStyles = useMemo(() => getSectionStyles(themeColors, 'primary'), [themeColors]);
 
   // utils
   const fmt = (v) => {
@@ -439,7 +559,10 @@ export default function SupplierLedgerPage() {
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           {/* Title */}
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.core.gradient} shadow-sm`}>
+            <div 
+              className="p-2 rounded-lg shadow-sm"
+              style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+            >
               <CubeIcon className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -458,7 +581,12 @@ export default function SupplierLedgerPage() {
                 <button
                   onClick={rebuild}
                   disabled={!supplierId}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${supplierId ? `${tintSlate} cursor-pointer` : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${supplierId ? `${tintTertiary} cursor-pointer` : tintDisabled}`}
+                  style={supplierId ? {
+                    background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
+                    color: tertiaryTextColor,
+                    boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`
+                  } : {}}
                 >
                   <ArrowPathIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Refresh</span>
@@ -471,7 +599,12 @@ export default function SupplierLedgerPage() {
                 <button
                   onClick={openAddPayment}
                   disabled={!supplierId}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${supplierId ? `${tintBlue} cursor-pointer` : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${supplierId ? `${tintPrimary} cursor-pointer` : tintDisabled}`}
+                  style={supplierId ? {
+                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                    color: primaryTextColor,
+                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                  } : {}}
                 >
                   <PlusCircleIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Payment</span>
@@ -484,7 +617,12 @@ export default function SupplierLedgerPage() {
                 <button
                   onClick={openAddManual}
                   disabled={!supplierId}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${supplierId ? `${tintAmber} cursor-pointer` : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${supplierId ? `${tintSecondary} cursor-pointer` : tintDisabled}`}
+                  style={supplierId ? {
+                    background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                    color: secondaryTextColor,
+                    boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
+                  } : {}}
                 >
                   <WrenchScrewdriverIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Manual</span>
@@ -497,7 +635,12 @@ export default function SupplierLedgerPage() {
                 <button
                   onClick={fetchData}
                   disabled={!supplierId}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${supplierId ? `${tintGreen} cursor-pointer` : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${supplierId ? `${tintTertiary} cursor-pointer` : tintDisabled}`}
+                  style={supplierId ? {
+                    background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
+                    color: emeraldTextColor,
+                    boxShadow: `0 4px 14px 0 ${themeColors.emerald}40`
+                  } : {}}
                 >
                   <ArrowPathIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Load</span>
@@ -510,7 +653,12 @@ export default function SupplierLedgerPage() {
                 <button
                   onClick={openSaveModal}
                   disabled={!supplierId || (newCount === 0 && updCount === 0)}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${supplierId && (newCount > 0 || updCount > 0) ? `${tintGlass} cursor-pointer` : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${supplierId && (newCount > 0 || updCount > 0) ? `${tintGlass} cursor-pointer` : tintDisabled}`}
+                  style={supplierId && (newCount > 0 || updCount > 0) ? {
+                    background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
+                    color: tertiaryTextColor,
+                    boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`
+                  } : {}}
                 >
                   <ArrowDownOnSquareIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Save</span>
@@ -527,7 +675,12 @@ export default function SupplierLedgerPage() {
             <button
               onClick={() => handlePrint()}
               disabled={!supplierId}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${supplierId ? `${tintIndigo}` : "bg-gray-200/50 dark:bg-slate-700/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"}`}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${supplierId ? tintPrimary : tintDisabled}`}
+              style={supplierId ? {
+                background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                color: secondaryTextColor,
+                boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
+              } : {}}
             >
               <PrinterIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Print</span>
@@ -625,13 +778,14 @@ export default function SupplierLedgerPage() {
                     </td>
 
                     <td className="px-2 py-2">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${
-                        isInvoice 
-                          ? "bg-gradient-to-br from-blue-400 to-blue-500 text-white shadow-lg shadow-blue-500/25" 
-                          : isPayment
-                          ? "bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-lg shadow-emerald-500/25"
-                          : "bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300"
-                      }`}>
+                      <span 
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold transition-all duration-200`}
+                        style={{
+                          background: `linear-gradient(to bottom right, ${r.entry_type === 'invoice' ? themeColors.primary : r.entry_type === 'payment' ? themeColors.emerald : themeColors.tertiary}, ${r.entry_type === 'invoice' ? themeColors.primaryHover : r.entry_type === 'payment' ? themeColors.emeraldHover : themeColors.tertiaryHover})`,
+                          color: 'white',
+                          boxShadow: `0 4px 12px 0 ${r.entry_type === 'invoice' ? themeColors.primary : r.entry_type === 'payment' ? themeColors.emerald : themeColors.tertiary}40`
+                        }}
+                      >
                         {r.entry_type?.toUpperCase()}
                       </span>
                     </td>
@@ -710,7 +864,12 @@ export default function SupplierLedgerPage() {
                     <td className="px-2 py-2 text-center">
                       <button
                         onClick={() => openDeleteModal(r.__i)}
-                        className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${tintRed}`}
+                        className="group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200"
+                        style={{
+                          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+                          color: dangerTextColor,
+                          boxShadow: `0 4px 12px 0 ${themeColors.danger}40`
+                        }}
                       >
                         <XMarkIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
                         <span>X</span>
@@ -751,7 +910,17 @@ export default function SupplierLedgerPage() {
                 </p>
                 <div className="mt-4 flex justify-end gap-2">
                   <button className={`min-w-[100px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={closeAddModal}>Cancel</button>
-                  <button className={`min-w-[120px] rounded-lg px-4 py-2 text-sm font-semibold ${tintBlue}`} onClick={confirmAdd}>Add row</button>
+                  <button 
+                    className={`min-w-[120px] rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-200`}
+                    style={{
+                      background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                      color: primaryTextColor,
+                      boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                    }}
+                    onClick={confirmAdd}
+                  >
+                    Add row
+                  </button>
                 </div>
               </div>
             </GlassCard>
@@ -767,7 +936,10 @@ export default function SupplierLedgerPage() {
             <GlassCard>
               <GlassSectionHeader
                 title={<span className="inline-flex items-center gap-2 text-lg">
-                  <ArrowDownOnSquareIcon className="w-5 h-5 text-emerald-600" />
+                  <ArrowDownOnSquareIcon 
+                    className="w-5 h-5" 
+                    style={{ color: themeColors.emerald }}
+                  />
                   <span>Save changes?</span>
                 </span>}
                 right={<button className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeSaveModal}><XMarkIcon className="w-5 h-5" /></button>}
@@ -779,7 +951,17 @@ export default function SupplierLedgerPage() {
                 </p>
                 <div className="mt-4 flex justify-end gap-2">
                   <button className={`min-w-[100px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={closeSaveModal}>Cancel</button>
-                  <button className={`min-w-[120px] rounded-lg px-4 py-2 text-sm font-semibold ${tintGreen}`} onClick={confirmSave}>Yes, Save</button>
+                  <button 
+                    className={`min-w-[120px] rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-200`}
+                    style={{
+                      background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
+                      color: emeraldTextColor,
+                      boxShadow: `0 4px 14px 0 ${themeColors.emerald}40`
+                    }}
+                    onClick={confirmSave}
+                  >
+                    Yes, Save
+                  </button>
                 </div>
               </div>
             </GlassCard>
@@ -795,7 +977,10 @@ export default function SupplierLedgerPage() {
             <GlassCard>
               <GlassSectionHeader
                 title={<span className="inline-flex items-center gap-2 text-lg">
-                  <ShieldExclamationIcon className="w-5 h-5 text-rose-600" />
+                  <ShieldExclamationIcon 
+                    className="w-5 h-5" 
+                    style={{ color: themeColors.danger }}
+                  />
                   <span>Delete ledger row</span>
                 </span>}
                 right={<button className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeDeleteModal}><XMarkIcon className="w-5 h-5" /></button>}
@@ -808,7 +993,17 @@ export default function SupplierLedgerPage() {
                     </p>
                     <div className="flex justify-end gap-2">
                       <button className={`min-w-[100px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={closeDeleteModal}>Cancel</button>
-                      <button className={`min-w-[140px] rounded-lg px-4 py-2 text-sm font-semibold ${tintRed}`} onClick={proceedDeletePassword}>Yes, continue</button>
+                      <button 
+                        className={`min-w-[140px] rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-200`}
+                        style={{
+                          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+                          color: dangerTextColor,
+                          boxShadow: `0 4px 14px 0 ${themeColors.danger}40`
+                        }}
+                        onClick={proceedDeletePassword}
+                      >
+                        Yes, continue
+                      </button>
                     </div>
                   </>
                 ) : (
@@ -837,7 +1032,12 @@ export default function SupplierLedgerPage() {
                           Cancel
                         </button>
                         <button
-                          className={`min-w-[170px] rounded-lg px-4 py-2 text-sm font-semibold ${tintRed} disabled:opacity-60`}
+                          className={`min-w-[170px] rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-200 disabled:opacity-60`}
+                          style={{
+                            background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+                            color: dangerTextColor,
+                            boxShadow: `0 4px 14px 0 ${themeColors.danger}40`
+                          }}
                           onClick={confirmAndDelete}
                           disabled={deleting || password.trim() === ""}
                         >

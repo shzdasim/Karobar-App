@@ -25,24 +25,51 @@ import {
   TextSearch,
 } from "@/components";
 
-// Section configuration with color schemes - matching sidebar design
+// Helper to determine text color based on background brightness
+const getContrastText = (hexColor) => {
+  hexColor = hexColor.replace('#', '');
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
+const getButtonTextColor = (primaryColor, primaryHoverColor) => {
+  return getContrastText(primaryHoverColor || primaryColor);
+};
+
+// Section configuration with color schemes - will use dynamic theme colors
 const SECTION_CONFIG = {
   core: {
-    gradient: "from-blue-500 to-cyan-600",
-    bgLight: "bg-blue-50",
-    bgDark: "dark:bg-blue-900/20",
-    borderColor: "border-blue-200 dark:border-blue-700",
-    iconColor: "text-blue-600 dark:text-blue-400",
-    ringColor: "ring-blue-300 dark:ring-blue-700",
+    key: 'primary',
   },
   management: {
-    gradient: "from-violet-500 to-purple-600",
-    bgLight: "bg-violet-50",
-    bgDark: "dark:bg-violet-900/20",
-    borderColor: "border-violet-200 dark:border-violet-700",
-    iconColor: "text-violet-600 dark:text-violet-400",
-    ringColor: "ring-violet-300 dark:ring-violet-700",
+    key: 'secondary',
   },
+};
+
+// Helper to get color value from theme
+const getThemeColor = (theme, colorKey, variant = 'color') => {
+  if (!theme) return '#3b82f6';
+  const key = `${colorKey}_${variant}`;
+  return theme[key] || '#3b82f6';
+};
+
+// Helper to generate section styles from theme
+const getSectionStyles = (theme, colorKey) => {
+  const baseColor = getThemeColor(theme, colorKey, 'color');
+  const hoverColor = getThemeColor(theme, colorKey, 'hover');
+  const lightColor = getThemeColor(theme, colorKey, 'light');
+  
+  return {
+    gradient: `from-[${baseColor}] to-[${hoverColor}]`,
+    bgLight: `bg-[${lightColor}]`,
+    bgDark: `dark:bg-[${lightColor}]`,
+    borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
+    iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
+    ringColor: `ring-[${baseColor}]/30`,
+  };
 };
 
 export default function PurchaseOrder() {
@@ -63,16 +90,83 @@ export default function PurchaseOrder() {
       ? !!canFor("purchase-order")?.create
       : true;
 
-  // Get dark mode state
-  const { isDark } = useTheme();
+  // Get dark mode state and theme colors
+  const { theme, isDark } = useTheme();
 
-  // 🎨 Modern button palette (matching sidebar design language)
-  const tintBlue = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
-  const tintSlate = "bg-gradient-to-br from-slate-700 to-slate-800 text-white shadow-lg shadow-slate-500/25 ring-1 ring-white/10 hover:shadow-xl hover:shadow-slate-500/30 hover:scale-[1.02] hover:from-slate-800 hover:to-slate-900 active:scale-[0.98] transition-all duration-200";
-  const tintGreen = "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] hover:from-emerald-600 hover:to-emerald-700 active:scale-[0.98] transition-all duration-200";
-  const tintGlass = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
-  const tintGreenSm = "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] hover:from-emerald-600 hover:to-emerald-700 active:scale-[0.98] transition-all duration-200";
-  const tintBlueSm = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+        tertiary: '#06b6d4',
+        tertiaryHover: '#0891b2',
+        tertiaryLight: '#cffafe',
+        emerald: '#10b981',
+        emeraldHover: '#059669',
+        emeraldLight: '#d1fae5',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+      tertiary: theme.tertiary_color || '#06b6d4',
+      tertiaryHover: theme.tertiary_hover || '#0891b2',
+      tertiaryLight: theme.tertiary_light || '#cffafe',
+      emerald: theme.success_color || '#10b981',
+      emeraldHover: '#059669',
+      emeraldLight: '#d1fae5',
+    };
+  }, [theme]);
+
+  // Calculate text colors based on background brightness
+  const primaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
+  
+  const secondaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
+    [themeColors.secondary, themeColors.secondaryHover]
+  );
+  
+  const emeraldTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.emerald, themeColors.emeraldHover), 
+    [themeColors.emerald, themeColors.emeraldHover]
+  );
+
+  // Get section styles for core and management
+  const coreStyles = useMemo(() => getSectionStyles(themeColors, 'primary'), [themeColors]);
+  const managementStyles = useMemo(() => getSectionStyles(themeColors, 'secondary'), [themeColors]);
+
+  // 🎨 Dynamic button styles using theme colors
+  const tintPrimary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintSecondary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintTertiary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintGlass = useMemo(() => `
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
 
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
@@ -328,7 +422,10 @@ export default function PurchaseOrder() {
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           {/* Title */}
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.core.gradient} shadow-sm`}>
+            <div 
+              className="p-2 rounded-lg shadow-sm"
+              style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+            >
               <CalculatorIcon className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -347,10 +444,15 @@ export default function PurchaseOrder() {
                 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold
                 transition-all duration-200
                 ${canGenerate 
-                  ? `${tintGreen} cursor-pointer` 
+                  ? `${tintPrimary} cursor-pointer` 
                   : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"
                 }
               `}
+              style={canGenerate ? {
+                background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                color: primaryTextColor,
+                boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+              } : {}}
               title={!canGenerate ? "Not permitted" : "Generate forecast"}
             >
               <PlayCircleIcon className="w-4 h-4" />
@@ -365,10 +467,15 @@ export default function PurchaseOrder() {
                 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold
                 transition-all duration-200
                 ${rows.length 
-                  ? `${tintBlue} cursor-pointer` 
+                  ? `${tintPrimary} cursor-pointer` 
                   : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"
                 }
               `}
+              style={rows.length ? {
+                background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                color: primaryTextColor,
+                boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+              } : {}}
               title="Remove products with no Pack Purchase Price"
             >
               <span className="text-lg">×</span>
@@ -380,7 +487,12 @@ export default function PurchaseOrder() {
             {/* Refresh Button */}
             <button
               onClick={() => window.location.reload()}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintSlate}`}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintGlass}`}
+              style={{
+                background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                color: secondaryTextColor,
+                boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
+              }}
               title="Refresh"
               aria-label="Refresh page"
             >
@@ -393,6 +505,11 @@ export default function PurchaseOrder() {
               ref={printBtnRef}
               onClick={doPrint}
               className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintGlass}`}
+              style={{
+                background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
+                color: secondaryTextColor,
+                boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`
+              }}
               title="Print (Alt+P)"
             >
               <PrinterIcon className="w-4 h-4" />

@@ -1,5 +1,5 @@
 // resources/js/pages/Reports/CurrentStockReport.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import axios from "axios";
 import AsyncSelect from "react-select/async";
 import { createFilter } from "react-select";
@@ -27,24 +27,51 @@ import {
   Squares2X2Icon,
 } from "@heroicons/react/24/solid";
 
-// Section configuration with color schemes - matching sidebar design
+// Helper to determine text color based on background brightness
+const getContrastText = (hexColor) => {
+  hexColor = hexColor.replace('#', '');
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
+const getButtonTextColor = (primaryColor, primaryHoverColor) => {
+  return getContrastText(primaryHoverColor || primaryColor);
+};
+
+// Section configuration with color schemes - will use dynamic theme colors
 const SECTION_CONFIG = {
   core: {
-    gradient: "from-blue-500 to-cyan-600",
-    bgLight: "bg-blue-50",
-    bgDark: "dark:bg-blue-900/20",
-    borderColor: "border-blue-200 dark:border-blue-700",
-    iconColor: "text-blue-600 dark:text-blue-400",
-    ringColor: "ring-blue-300 dark:ring-blue-700",
+    key: 'primary',
   },
   management: {
-    gradient: "from-violet-500 to-purple-600",
-    bgLight: "bg-violet-50",
-    bgDark: "dark:bg-violet-900/20",
-    borderColor: "border-violet-200 dark:border-violet-700",
-    iconColor: "text-violet-600 dark:text-violet-400",
-    ringColor: "ring-violet-300 dark:ring-violet-700",
+    key: 'secondary',
   },
+};
+
+// Helper to get color value from theme
+const getThemeColor = (theme, colorKey, variant = 'color') => {
+  if (!theme) return '#3b82f6';
+  const key = `${colorKey}_${variant}`;
+  return theme[key] || '#3b82f6';
+};
+
+// Helper to generate section styles from theme
+const getSectionStyles = (theme, colorKey) => {
+  const baseColor = getThemeColor(theme, colorKey, 'color');
+  const hoverColor = getThemeColor(theme, colorKey, 'hover');
+  const lightColor = getThemeColor(theme, colorKey, 'light');
+  
+  return {
+    gradient: `from-[${baseColor}] to-[${hoverColor}]`,
+    bgLight: `bg-[${lightColor}]`,
+    bgDark: `dark:bg-[${lightColor}]`,
+    borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
+    iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
+    ringColor: `ring-[${baseColor}]/30`,
+  };
 };
 
 /* ======================
@@ -153,16 +180,94 @@ export default function CurrentStockReport() {
     [canFor]
   );
 
-  // Get dark mode state
-  const { isDark } = useTheme();
+  // Get dark mode state and theme colors
+  const { isDark, theme } = useTheme();
 
-  // 🎨 Modern button palette (matching SupplierLedger design)
-  const tintBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
-  const tintIndigo = "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all duration-200";
-  const tintGreen  = "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] hover:from-emerald-600 hover:to-emerald-700 active:scale-[0.98] transition-all duration-200";
-  const tintGlass  = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
-  const tintOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
-  const tintGhost = isDark ? "bg-slate-800/60 text-slate-200 ring-1 ring-slate-700/50 hover:bg-slate-800/80" : "bg-white/60 text-slate-700 ring-1 ring-white/30 hover:bg-white/75";
+  // 🎨 Modern button palette (will use dynamic theme colors)
+  const tintPrimary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintSecondary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintTertiary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintGlass = useMemo(() => `
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintOutline = useMemo(() => `
+    bg-transparent ring-1 ring-gray-300 dark:ring-slate-600
+    hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintGhost = useMemo(() => `
+    bg-white/60 dark:bg-slate-800/60 ring-1 ring-gray-200/60 dark:ring-white/10
+    hover:bg-white dark:hover:bg-slate-700/80 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+        tertiary: '#06b6d4',
+        tertiaryHover: '#0891b2',
+        tertiaryLight: '#cffafe',
+        emerald: '#10b981',
+        emeraldHover: '#059669',
+        emeraldLight: '#d1fae5',
+        amber: '#f59e0b',
+        amberHover: '#d97706',
+        amberLight: '#fef3c7',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+      tertiary: theme.tertiary_color || '#06b6d4',
+      tertiaryHover: theme.tertiary_hover || '#0891b2',
+      tertiaryLight: theme.tertiary_light || '#cffafe',
+      emerald: theme.success_color || '#10b981',
+      emeraldHover: '#059669',
+      emeraldLight: '#d1fae5',
+      amber: theme.warning_color || '#f59e0b',
+      amberHover: '#d97706',
+      amberLight: '#fef3c7',
+    };
+  }, [theme]);
+
+  // Calculate text colors based on background brightness
+  const primaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
+  
+  const secondaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
+    [themeColors.secondary, themeColors.secondaryHover]
+  );
+
+  // Get section styles
+  const coreStyles = useMemo(() => getSectionStyles(themeColors, 'primary'), [themeColors]);
+  const managementStyles = useMemo(() => getSectionStyles(themeColors, 'secondary'), [themeColors]);
 
   /* ============ Async loaders ============ */
   const loadCategories = useMemo(
@@ -331,7 +436,10 @@ export default function CurrentStockReport() {
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           {/* Title */}
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.core.gradient} shadow-sm`}>
+            <div 
+              className="p-2 rounded-lg shadow-sm"
+              style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+            >
               <CubeIcon className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -346,6 +454,9 @@ export default function CurrentStockReport() {
               className={`h-9 ${tintGhost}`}
               title="Reset Filters"
               onClick={resetFilters}
+              style={{
+                color: isDark ? themeColors.primary : themeColors.primary,
+              }}
             >
               Reset
             </GlassBtn>
@@ -424,9 +535,14 @@ export default function CurrentStockReport() {
           <div className="md:col-span-12 flex flex-wrap gap-2">
             <Guard when={can.view}>
               <GlassBtn
-                className={`h-9 min-w-[110px] ${tintBlue}`}
+                className={`h-9 min-w-[110px]`}
                 onClick={fetchReport}
                 disabled={loading}
+                style={{
+                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                  color: primaryTextColor,
+                  boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                }}
               >
                 {loading ? (
                   <span className="inline-flex items-center gap-2">
@@ -441,9 +557,14 @@ export default function CurrentStockReport() {
 
             <Guard when={can.export}>
               <GlassBtn
-                className={`h-9 flex items-center gap-2 ${tintIndigo}`}
+                className="h-9 flex items-center gap-2"
                 onClick={exportPdf}
                 disabled={pdfLoading || rows.length === 0}
+                style={{
+                  background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                  color: secondaryTextColor,
+                  boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
+                }}
               >
                 <ArrowDownOnSquareIcon className="w-5 h-5" />
                 {pdfLoading ? "Generating…" : "Export PDF"}
@@ -485,21 +606,21 @@ export default function CurrentStockReport() {
                   value={fmtNumber(summary.total_items)}
                   icon={CubeIcon}
                   isDark={isDark}
-                  gradient="from-blue-500 to-cyan-600"
+                  themeColors={themeColors}
                 />
                 <KpiCard
                   label="Total Quantity"
                   value={fmtNumber(summary.total_quantity)}
                   icon={ClipboardDocumentListIcon}
                   isDark={isDark}
-                  gradient="from-indigo-500 to-indigo-600"
+                  themeColors={themeColors}
                 />
                 <KpiCard
                   label="Purchase Value"
                   value={fmtCurrency(summary.total_purchase_value)}
                   icon={CurrencyDollarIcon}
                   isDark={isDark}
-                  gradient="from-emerald-500 to-emerald-600"
+                  themeColors={themeColors}
                   highlight={false}
                 />
                 <KpiCard
@@ -507,7 +628,7 @@ export default function CurrentStockReport() {
                   value={fmtCurrency(summary.total_sale_value)}
                   icon={TagIcon}
                   isDark={isDark}
-                  gradient="from-violet-500 to-purple-600"
+                  themeColors={themeColors}
                   highlight={false}
                 />
                 <KpiCard
@@ -515,7 +636,7 @@ export default function CurrentStockReport() {
                   value={fmtCurrency(potentialProfit)}
                   icon={ArrowTrendingUpIcon}
                   isDark={isDark}
-                  gradient="from-amber-500 to-amber-600"
+                  themeColors={themeColors}
                   highlight={true}
                 />
               </div>
@@ -525,8 +646,14 @@ export default function CurrentStockReport() {
                 {/* Table Header */}
                 <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
                   <div className="flex items-center gap-2">
-                    <div className={`p-1 rounded ${SECTION_CONFIG.core.bgDark}`}>
-                      <Squares2X2Icon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <div 
+                      className="p-1 rounded"
+                      style={{ backgroundColor: themeColors.primaryLight + '40' }}
+                    >
+                      <Squares2X2Icon 
+                        className="w-4 h-4" 
+                        style={{ color: themeColors.primary }} 
+                      />
                     </div>
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Stock Items</span>
                   </div>
@@ -679,7 +806,24 @@ export default function CurrentStockReport() {
 }
 
 /* ===== KPI Card Component ===== */
-function KpiCard({ label, value, icon: Icon, highlight = false, gradient = "from-blue-500 to-cyan-600", isDark }) {
+function KpiCard({ label, value, icon: Icon, highlight = false, gradient = "from-blue-500 to-cyan-600", isDark, themeColors }) {
+  // Determine gradient based on label
+  const getGradient = () => {
+    if (label === "Total Items") return `from-[${themeColors.primary}] to-[${themeColors.primaryHover}]`;
+    if (label === "Total Quantity") return `from-[${themeColors.secondary}] to-[${themeColors.secondaryHover}]`;
+    if (label === "Purchase Value") return `from-[${themeColors.emerald}] to-[${themeColors.emeraldHover}]`;
+    if (label === "Sale Value") return `from-[${themeColors.secondary}] to-[${themeColors.secondaryHover}]`;
+    if (label === "Potential Profit") return `from-[${themeColors.amber}] to-[${themeColors.amberHover}]`;
+    return `from-[${themeColors.primary}] to-[${themeColors.primaryHover}]`;
+  };
+
+  const cardGradient = getGradient();
+  const cardColor = label === "Total Items" ? themeColors.primary 
+    : label === "Total Quantity" ? themeColors.secondary 
+    : label === "Purchase Value" ? themeColors.emerald
+    : label === "Sale Value" ? themeColors.secondary
+    : themeColors.amber;
+
   return (
     <div
       className={[
@@ -691,10 +835,13 @@ function KpiCard({ label, value, icon: Icon, highlight = false, gradient = "from
       ].join(" ")}
     >
       {/* Gradient accent bar */}
-      <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${gradient}`} />
+      <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${cardGradient}`} />
       
       <div className="flex items-center gap-2 mb-1 relative z-10">
-        <div className={`p-1.5 rounded-lg bg-gradient-to-br ${gradient} shadow-sm`}>
+        <div 
+          className="p-1.5 rounded-lg shadow-sm"
+          style={{ background: `linear-gradient(to bottom right, ${cardColor}, ${themeColors.primaryHover})` }}
+        >
           <Icon className="w-4 h-4 text-white" />
         </div>
         <span className={`text-xs uppercase tracking-wide ${isDark ? "text-slate-400" : "text-gray-600"}`}>{label}</span>

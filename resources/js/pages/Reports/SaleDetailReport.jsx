@@ -25,24 +25,51 @@ import {
   Squares2X2Icon,
 } from "@heroicons/react/24/solid";
 
-// Section configuration with color schemes - matching sidebar design
+// Helper to determine text color based on background brightness
+const getContrastText = (hexColor) => {
+  hexColor = hexColor.replace('#', '');
+  const r = parseInt(hexColor.substring(0, 2), 16);
+  const g = parseInt(hexColor.substring(2, 4), 16);
+  const b = parseInt(hexColor.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+};
+
+const getButtonTextColor = (primaryColor, primaryHoverColor) => {
+  return getContrastText(primaryHoverColor || primaryColor);
+};
+
+// Section configuration with color schemes - will use dynamic theme colors
 const SECTION_CONFIG = {
   core: {
-    gradient: "from-blue-500 to-cyan-600",
-    bgLight: "bg-blue-50",
-    bgDark: "dark:bg-blue-900/20",
-    borderColor: "border-blue-200 dark:border-blue-700",
-    iconColor: "text-blue-600 dark:text-blue-400",
-    ringColor: "ring-blue-300 dark:ring-blue-700",
+    key: 'primary',
   },
   management: {
-    gradient: "from-violet-500 to-purple-600",
-    bgLight: "bg-violet-50",
-    bgDark: "dark:bg-violet-900/20",
-    borderColor: "border-violet-200 dark:border-violet-700",
-    iconColor: "text-violet-600 dark:text-violet-400",
-    ringColor: "ring-violet-300 dark:ring-violet-700",
+    key: 'secondary',
   },
+};
+
+// Helper to get color value from theme
+const getThemeColor = (theme, colorKey, variant = 'color') => {
+  if (!theme) return '#3b82f6';
+  const key = `${colorKey}_${variant}`;
+  return theme[key] || '#3b82f6';
+};
+
+// Helper to generate section styles from theme
+const getSectionStyles = (theme, colorKey) => {
+  const baseColor = getThemeColor(theme, colorKey, 'color');
+  const hoverColor = getThemeColor(theme, colorKey, 'hover');
+  const lightColor = getThemeColor(theme, colorKey, 'light');
+  
+  return {
+    gradient: `from-[${baseColor}] to-[${hoverColor}]`,
+    bgLight: `bg-[${lightColor}]`,
+    bgDark: `dark:bg-[${lightColor}]`,
+    borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
+    iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
+    ringColor: `ring-[${baseColor}]/30`,
+  };
 };
 
 /* ======================
@@ -153,14 +180,86 @@ export default function SaleDetailReport() {
     [canFor]
   );
 
-  // Get dark mode state
-  const { isDark } = useTheme();
+  // Get dark mode state and theme colors
+  const { isDark, theme } = useTheme();
 
-  // 🎨 Modern button palette (matching SupplierLedger design)
-  const tintBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] transition-all duration-200";
-  const tintIndigo = "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98] transition-all duration-200";
-  const tintGlass  = "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
-  const tintOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200";
+  // 🎨 Modern button palette (will use dynamic theme colors)
+  const tintPrimary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintSecondary = useMemo(() => `
+    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintGlass = useMemo(() => `
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  const tintOutline = useMemo(() => `
+    bg-transparent ring-1 ring-gray-300 dark:ring-slate-600
+    hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
+  `.trim().replace(/\s+/g, ' '), []);
+
+  // Memoize theme colors for performance
+  const themeColors = useMemo(() => {
+    if (!theme) {
+      return {
+        primary: '#3b82f6',
+        primaryHover: '#2563eb',
+        primaryLight: '#dbeafe',
+        secondary: '#8b5cf6',
+        secondaryHover: '#7c3aed',
+        secondaryLight: '#ede9fe',
+        tertiary: '#06b6d4',
+        tertiaryHover: '#0891b2',
+        tertiaryLight: '#cffafe',
+        emerald: '#10b981',
+        emeraldHover: '#059669',
+        emeraldLight: '#d1fae5',
+        sky: '#0ea5e9',
+        skyHover: '#0284c7',
+        rose: '#f43f5e',
+        roseHover: '#e11d48',
+      };
+    }
+    return {
+      primary: theme.primary_color || '#3b82f6',
+      primaryHover: theme.primary_hover || '#2563eb',
+      primaryLight: theme.primary_light || '#dbeafe',
+      secondary: theme.secondary_color || '#8b5cf6',
+      secondaryHover: theme.secondary_hover || '#7c3aed',
+      secondaryLight: theme.secondary_light || '#ede9fe',
+      tertiary: theme.tertiary_color || '#06b6d4',
+      tertiaryHover: theme.tertiary_hover || '#0891b2',
+      tertiaryLight: theme.tertiary_light || '#cffafe',
+      emerald: theme.success_color || '#10b981',
+      emeraldHover: '#059669',
+      emeraldLight: '#d1fae5',
+      sky: '#0ea5e9',
+      skyHover: '#0284c7',
+      rose: theme.danger_color || '#f43f5e',
+      roseHover: '#e11d48',
+    };
+  }, [theme]);
+
+  // Calculate text colors based on background brightness
+  const primaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
+    [themeColors.primary, themeColors.primaryHover]
+  );
+  
+  const secondaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
+    [themeColors.secondary, themeColors.secondaryHover]
+  );
+
+  // Get section styles
+  const coreStyles = useMemo(() => getSectionStyles(themeColors, 'primary'), [themeColors]);
+  const managementStyles = useMemo(() => getSectionStyles(themeColors, 'secondary'), [themeColors]);
 
   /* ============ Async loaders ============ */
   const loadCustomers = useMemo(
@@ -346,7 +445,10 @@ export default function SaleDetailReport() {
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           {/* Title */}
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.core.gradient} shadow-sm`}>
+            <div 
+              className="p-2 rounded-lg shadow-sm"
+              style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+            >
               <DocumentTextIcon className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -358,16 +460,24 @@ export default function SaleDetailReport() {
           {/* Action Buttons */}
           <div className="flex items-center gap-2">
             <GlassBtn
-              className={`h-9 ${tintOutline}`}
+              className="h-9"
               onClick={resetFilters}
+              style={{
+                color: isDark ? themeColors.primary : themeColors.primary,
+              }}
             >
               Reset
             </GlassBtn>
             <Guard when={can.view}>
               <GlassBtn
-                className={`h-9 ${tintBlue}`}
+                className="h-9"
                 onClick={fetchReport}
                 disabled={loading}
+                style={{
+                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+                  color: primaryTextColor,
+                  boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
+                }}
               >
                 <span className="inline-flex items-center gap-2">
                   {loading ? "Loading…" : "Load"}
@@ -448,7 +558,7 @@ export default function SaleDetailReport() {
           {/* Quick Filters & Export */}
           <div className="md:col-span-12 flex flex-wrap items-end gap-2">
             <GlassBtn
-              className={`h-9 ${tintGlass}`}
+              className="h-9"
               onClick={() => {
                 const end = new Date();
                 const start = new Date();
@@ -457,12 +567,15 @@ export default function SaleDetailReport() {
                 setToDate(end.toISOString().slice(0, 10));
                 fetchReport();
               }}
+              style={{
+                color: isDark ? themeColors.primary : themeColors.primary,
+              }}
             >
               Today
             </GlassBtn>
 
             <GlassBtn
-              className={`h-9 ${tintGlass}`}
+              className="h-9"
               onClick={() => {
                 const end = new Date();
                 const start = new Date();
@@ -471,12 +584,15 @@ export default function SaleDetailReport() {
                 setToDate(end.toISOString().slice(0, 10));
                 fetchReport();
               }}
+              style={{
+                color: isDark ? themeColors.secondary : themeColors.secondary,
+              }}
             >
               3 Days
             </GlassBtn>
 
             <GlassBtn
-              className={`h-9 ${tintGlass}`}
+              className="h-9"
               onClick={() => {
                 const end = new Date();
                 const start = new Date();
@@ -485,15 +601,23 @@ export default function SaleDetailReport() {
                 setToDate(end.toISOString().slice(0, 10));
                 fetchReport();
               }}
+              style={{
+                color: isDark ? themeColors.emerald : themeColors.emerald,
+              }}
             >
               7 Days
             </GlassBtn>
 
             <Guard when={can.export}>
               <GlassBtn
-                className={`h-9 ${tintIndigo}`}
+                className="h-9"
                 onClick={exportPdf}
                 disabled={pdfLoading || data.length === 0}
+                style={{
+                  background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+                  color: secondaryTextColor,
+                  boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
+                }}
               >
                 <span className="inline-flex items-center gap-2">
                   <ArrowDownOnSquareIcon className="w-5 h-5" />
@@ -524,8 +648,14 @@ export default function SaleDetailReport() {
             {/* Invoice Header (matching Products page table header style) */}
             <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
               <div className="flex items-center gap-2">
-                <div className={`p-1 rounded ${SECTION_CONFIG.core.bgDark}`}>
-                  <Squares2X2Icon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <div 
+                  className="p-1 rounded"
+                  style={{ backgroundColor: themeColors.primaryLight + '40' }}
+                >
+                  <Squares2X2Icon 
+                    className="w-4 h-4" 
+                    style={{ color: themeColors.primary }} 
+                  />
                 </div>
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
                   {inv.customer_name || "—"}
@@ -549,26 +679,38 @@ export default function SaleDetailReport() {
                   {editingInvoiceId === inv.id ? (
                     <div className="flex gap-1">
                       <GlassBtn
-                        className="h-7 px-2 bg-emerald-600 text-white"
+                        className="h-7 px-2"
                         disabled={saving}
                         onClick={saveInvoiceMeta(inv)}
+                        style={{
+                          background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
+                          color: '#ffffff',
+                        }}
                       >
                         <CheckCircleIcon className="w-4 h-4" />
                       </GlassBtn>
                       <GlassBtn
-                        className="h-7 px-2 bg-rose-500 text-white"
+                        className="h-7 px-2"
                         onClick={() => setEditingInvoiceId(null)}
+                        style={{
+                          background: `linear-gradient(to bottom right, ${themeColors.rose}, ${themeColors.roseHover})`,
+                          color: '#ffffff',
+                        }}
                       >
                         <XCircleIcon className="w-4 h-4" />
                       </GlassBtn>
                     </div>
                   ) : (
                     <GlassBtn
-                      className="h-7 px-2 bg-sky-500 text-white"
+                      className="h-7 px-2"
                       onClick={() => {
                         setEditingInvoiceId(inv.id);
                         setEditDoctor(inv.doctor_name || "");
                         setEditPatient(inv.patient_name || "");
+                      }}
+                      style={{
+                        background: `linear-gradient(to bottom right, ${themeColors.sky}, ${themeColors.skyHover})`,
+                        color: '#ffffff',
                       }}
                     >
                       <PencilSquareIcon className="w-4 h-4" />
