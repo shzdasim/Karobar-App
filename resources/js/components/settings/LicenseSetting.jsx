@@ -69,7 +69,7 @@ export default function LicenseSetting({
   themeColors,
   primaryTextColor
 }) {
-  const { isDark } = useTheme();
+  const { isDark, theme } = useTheme();
   
   // Use passed themeColors if available, otherwise use default
   const colors = themeColors || {
@@ -83,6 +83,63 @@ export default function LicenseSetting({
   
   // Use passed primaryTextColor if available, otherwise calculate
   const textColor = primaryTextColor || getContrastText(colors.primaryHover || colors.primary);
+
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: colors.secondary,
+            color: colors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: colors.primary,
+            color: colors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${colors.secondary}, ${colors.secondaryHover})`,
+          color: textColor,
+          boxShadow: `0 2px 8px 0 ${colors.secondary}40`,
+        }
+      },
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})`,
+          color: textColor,
+          boxShadow: `0 2px 8px 0 ${colors.primary}40`,
+        }
+      },
+    };
+  }, [buttonStyle, colors, textColor]);
+
+  const btnSecondary = getButtonClasses.secondary;
+  const btnPrimary = getButtonClasses.primary;
   
   const { loading: permsLoading, canFor } = usePermissions();
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -201,12 +258,8 @@ export default function LicenseSetting({
           </div>
           <GlassBtn
             onClick={() => openPasswordModal("view-details")}
-            className="h-8 px-3"
-            style={{
-              background: `linear-gradient(to bottom right, ${colors.secondary}, ${colors.secondaryHover})`,
-              color: textColor,
-              boxShadow: `0 2px 8px 0 ${colors.secondary}40`
-            }}
+            className={`h-8 px-3 ${btnSecondary.className}`}
+            style={btnSecondary.style}
           >
             <span className="inline-flex items-center gap-1 text-xs">
               <ShieldCheckIcon className="w-4 h-4" />
@@ -379,7 +432,8 @@ export default function LicenseSetting({
                 <button
                   type="submit"
                   disabled={verifying || !password}
-                  className={`px-4 py-2 rounded-lg flex items-center gap-2 ${isDark ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-blue-600 hover:bg-blue-700 text-white"} disabled:opacity-60`}
+                  className={`px-4 py-2 rounded-lg flex items-center gap-2 ${btnPrimary.className}`}
+                  style={btnPrimary.style}
                 >
                   {verifying ? "Verifying…" : "Verify"}
                 </button>

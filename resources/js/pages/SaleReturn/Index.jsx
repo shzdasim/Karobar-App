@@ -126,6 +126,97 @@ export default function SaleReturnsIndex() {
     [themeColors.danger, themeColors.dangerHover]
   );
 
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        danger: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.danger,
+            color: themeColors.danger,
+            backgroundColor: 'transparent',
+          }
+        },
+        glass: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: '#64748b',
+            color: '#64748b',
+            backgroundColor: 'transparent',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: primaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: secondaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+      danger: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+          color: dangerTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.danger}40`,
+        }
+      },
+      glass: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, #64748b, #475569)`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 #64748b40`,
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor, dangerTextColor]);
+
+  const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
+  const btnDanger = getButtonClasses.danger;
+  const btnGlass = getButtonClasses.glass;
+
   // Get dark mode state
   const { isDark } = useTheme();
 
@@ -286,7 +377,8 @@ export default function SaleReturnsIndex() {
                 controllerRef.current = ctrl;
                 fetchReturns(ctrl.signal);
               }}
-              className="h-10 min-w-[120px] bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 text-slate-700 dark:text-gray-100"
+              className={`h-10 min-w-[120px] transition-all duration-200 ${btnGlass.className}`}
+              style={btnGlass.style}
               title="Refresh"
               aria-label="Refresh sale returns"
             >
@@ -301,12 +393,8 @@ export default function SaleReturnsIndex() {
                 to="/sale-returns/create"
                 title="Add Sale Return (Alt+N)"
                 aria-keyshortcuts="Alt+N"
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-all duration-200`}
-                style={{
-                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                  color: primaryTextColor,
-                  boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                }}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold transition-all duration-200 ${btnPrimary.className}`}
+                style={btnPrimary.style}
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 Add Return
@@ -490,12 +578,8 @@ export default function SaleReturnsIndex() {
                           <Guard when={can.update}>
                             <Link
                               to={`/sale-returns/${ret.id}/edit`}
-                              className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200`}
-                              style={{
-                                background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                                color: primaryTextColor,
-                                boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                              }}
+                              className={`group inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnPrimary.className}`}
+                              style={btnPrimary.style}
                               title="Edit"
                             >
                               <PencilSquareIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
@@ -507,12 +591,8 @@ export default function SaleReturnsIndex() {
                           <Guard when={can.delete}>
                             <button
                               onClick={() => openDeleteModal(ret)}
-                              className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200`}
-                              style={{
-                                background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-                                color: dangerTextColor,
-                                boxShadow: `0 4px 14px 0 ${themeColors.danger}40`
-                              }}
+                              className={`group inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnDanger.className}`}
+                              style={btnDanger.style}
                               title="Delete"
                             >
                               <TrashIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
@@ -575,11 +655,7 @@ export default function SaleReturnsIndex() {
                         : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700"
                       }
                     `}
-                    style={page === pageNum ? {
-                      background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                      color: secondaryTextColor,
-                      boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
-                    } : {}}
+                    style={page === pageNum ? btnSecondary.style : {}}
                   >
                     {pageNum}
                   </button>

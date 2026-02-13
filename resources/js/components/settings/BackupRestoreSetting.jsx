@@ -73,7 +73,7 @@ export default function BackupRestoreSetting({
   primaryTextColor,
   emeraldTextColor
 }) {
-  const { isDark } = useTheme();
+  const { isDark, theme } = useTheme();
   
   // Use passed themeColors if available, otherwise use default
   const colors = themeColors || {
@@ -94,6 +94,63 @@ export default function BackupRestoreSetting({
   // Use passed text colors if available, otherwise calculate
   const textColor = primaryTextColor || getContrastText(colors.primaryHover || colors.primary);
   const emeraldColor = emeraldTextColor || getContrastText(colors.emeraldHover || colors.emerald);
+
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: colors.primary,
+            color: colors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        emerald: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: colors.emerald,
+            color: colors.emerald,
+            backgroundColor: 'transparent',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})`,
+          color: textColor,
+          boxShadow: `0 4px 14px 0 ${colors.primary}40`,
+        }
+      },
+      emerald: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${colors.emerald}, ${colors.emeraldHover})`,
+          color: emeraldColor,
+          boxShadow: `0 4px 14px 0 ${colors.emerald}40`,
+        }
+      },
+    };
+  }, [buttonStyle, colors, textColor, emeraldColor]);
+
+  const btnPrimary = getButtonClasses.primary;
+  const btnEmerald = getButtonClasses.emerald;
   
   const { loading: permsLoading, canFor } = usePermissions();
   
@@ -444,12 +501,8 @@ export default function BackupRestoreSetting({
           <GlassBtn
             onClick={handleCreateBackup}
             disabled={creatingBackup || !can.create}
-            className="h-10 px-6"
-            style={{
-              background: `linear-gradient(to bottom right, ${colors.emerald}, ${colors.emeraldHover})`,
-              color: emeraldColor,
-              boxShadow: `0 4px 14px 0 ${colors.emerald}40`
-            }}
+            className={`h-10 px-6 ${btnEmerald.className}`}
+            style={btnEmerald.style}
           >
             <span className="inline-flex items-center gap-2">
               {creatingBackup ? (
@@ -544,12 +597,8 @@ export default function BackupRestoreSetting({
             <GlassBtn
               onClick={handleUploadBackup}
               disabled={uploadFiles.length === 0 || uploading || !can.upload}
-              className="h-10 px-6"
-              style={{
-                background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})`,
-                color: textColor,
-                boxShadow: `0 4px 14px 0 ${colors.primary}40`
-              }}
+              className={`h-10 px-6 ${btnPrimary.className}`}
+              style={btnPrimary.style}
             >
               <span className="inline-flex items-center gap-2">
                 {uploading ? <ArrowPathIcon className="w-5 h-5 animate-spin" /> : <CloudArrowUpIcon className="w-5 h-5" />}

@@ -44,6 +44,46 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
     [themeColors.primary, themeColors.primaryHover]
   );
 
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: primaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, primaryTextColor]);
+
+  const btnPrimary = getButtonClasses.primary;
+
   const [name, setName] = useState("");
   const [allPerms, setAllPerms] = useState([]);          // ["user.view", ...]
   const [selected, setSelected] = useState(new Set());   // Set<string>
@@ -381,11 +421,9 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
             type="submit"
             aria-keyshortcuts="Alt+S"
             title="Save (Alt+S)"
-            className="px-6 py-2 rounded font-semibold transition-all duration-200"
+            className={`px-6 py-2 rounded font-semibold transition-all duration-200 ${btnPrimary.className}`}
             style={{
-              background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-              color: primaryTextColor,
-              boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+              ...btnPrimary.style,
               opacity: submitting ? 0.6 : 1,
               cursor: submitting ? 'not-allowed' : 'pointer'
             }}

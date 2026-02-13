@@ -761,6 +761,96 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
     [themeColors.danger, themeColors.dangerHover]
   );
 
+  // 🎨 Dynamic Button styles using theme colors
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        danger: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.danger,
+            color: themeColors.danger,
+            backgroundColor: 'transparent',
+          }
+        },
+        glass: {
+          className: `${radiusClass} transition-all duration-200`,
+          style: {
+            backgroundColor: 'transparent',
+            color: isDark ? '#f1f5f9' : '#111827',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+      danger: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+          color: 'white',
+          boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)',
+        }
+      },
+      glass: {
+        className: radiusClass,
+        style: {
+          backgroundColor: isDark ? 'rgba(51, 65, 85, 0.6)' : 'rgba(255, 255, 255, 0.8)',
+          color: isDark ? '#f1f5f9' : '#111827',
+          backdropFilter: 'blur(6px)',
+          border: isDark ? '1px solid rgba(71, 85, 105, 0.5)' : '1px solid rgba(229, 231, 235, 0.6)',
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, isDark]);
+
+  const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
+  const btnDanger = getButtonClasses.danger;
+  const btnGlass = getButtonClasses.glass;
+
   // Helper to merge dark mode styles - returns function-based styles for react-select
   const getSelectStyles = (isDarkMode = false) => ({
     control: (base) => ({
@@ -1022,12 +1112,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                   <button
                     type="button"
                     onClick={() => removeItem(i)}
-                    className="px-1 rounded text-[10px] transition-all duration-200"
-                    style={{
-                      background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-                      color: dangerTextColor,
-                      boxShadow: `0 2px 8px 0 ${themeColors.danger}40`
-                    }}
+                    className={`px-1 rounded text-[10px] transition-all duration-200 ${btnDanger.className}`}
+                    style={btnDanger.style}
                   >
                     X
                   </button>
@@ -1342,12 +1428,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                   <button
                     type="button"
                     onClick={addItem}
-                    className="px-1 rounded text-[10px] transition-all duration-200"
-                    style={{
-                      background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                      color: secondaryTextColor,
-                      boxShadow: `0 2px 8px 0 ${themeColors.secondary}40`
-                    }}
+                    className={`px-1 rounded text-[10px] transition-all duration-200 ${btnSecondary.className}`}
+                    style={btnSecondary.style}
                   >
                     +
                   </button>
@@ -1492,12 +1574,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                   ref={saveButtonRef}
                   type="button"
                   onClick={handleSubmit}
-                  className="px-9 py-2 rounded text-sm font-semibold transition-all duration-200"
-                  style={{
-                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                    color: primaryTextColor,
-                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                  }}
+                  className={`px-9 py-2 rounded text-sm font-semibold transition-all duration-200 ${btnPrimary.className}`}
+                  style={btnPrimary.style}
                 >
                   {invoiceId ? "Update " : "Save"}
                 </button>

@@ -9,7 +9,8 @@ import {
   Bars3Icon,
   ViewColumnsIcon,
   CheckIcon,
-  Cog6ToothIcon
+  Cog6ToothIcon,
+  Square2StackIcon
 } from "@heroicons/react/24/solid";
 
 // Helper to determine text color based on background brightness
@@ -31,6 +32,34 @@ const SECTION_CONFIG = {
     key: 'secondary',
   },
 };
+
+// Button style options
+const BUTTON_STYLES = [
+  { 
+    id: 'rounded', 
+    name: 'Rounded', 
+    icon: '◼',
+    description: 'Modern rounded corners',
+    className: 'rounded-lg',
+    variant: 'filled'
+  },
+  { 
+    id: 'outlined', 
+    name: 'Outlined', 
+    icon: '▢',
+    description: 'Border with transparent bg',
+    className: 'rounded-lg',
+    variant: 'outlined'
+  },
+  { 
+    id: 'soft', 
+    name: 'Soft', 
+    icon: '▣',
+    description: 'Medium rounded corners',
+    className: 'rounded-xl',
+    variant: 'filled'
+  },
+];
 
 // Helper to get color value from theme
 const getThemeColor = (theme, colorKey, variant = 'color') => {
@@ -169,6 +198,7 @@ export default function ThemeSetting({ form: parentForm, setForm, disableInputs 
     tertiary_color: '#06b6d4',
     tertiary_hover: '#0891b2',
     tertiary_light: 'rgba(6, 182, 212, 0.1)',
+    button_style: 'rounded',
   });
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
@@ -192,6 +222,7 @@ export default function ThemeSetting({ form: parentForm, setForm, disableInputs 
         tertiary_color: theme.tertiary_color,
         tertiary_hover: theme.tertiary_hover,
         tertiary_light: theme.tertiary_light,
+        button_style: theme.button_style || 'rounded',
       });
       
       // Check if loaded theme matches a preset
@@ -217,7 +248,8 @@ export default function ThemeSetting({ form: parentForm, setForm, disableInputs 
       const isChanged = 
         theme.primary_color !== themeSettings.primary_color ||
         theme.secondary_color !== themeSettings.secondary_color ||
-        theme.tertiary_color !== themeSettings.tertiary_color;
+        theme.tertiary_color !== themeSettings.tertiary_color ||
+        theme.button_style !== themeSettings.button_style;
       setHasChanges(isChanged);
     }
   }, [themeSettings, theme]);
@@ -237,6 +269,31 @@ export default function ThemeSetting({ form: parentForm, setForm, disableInputs 
     setActivePreset(null);
   };
 
+  const handleButtonStyleChange = async (style) => {
+    if (disableInputs) {
+      toast.error("You don't have permission to update settings.");
+      return;
+    }
+    
+    // Create updated settings first
+    const updatedSettings = { ...themeSettings, button_style: style };
+    
+    // Update local state immediately for instant preview
+    setThemeSettings(updatedSettings);
+    
+    // Save immediately for instant effect
+    try {
+      setSaving(true);
+      await saveTheme(updatedSettings);
+      toast.success(`Button style: ${BUTTON_STYLES.find(s => s.id === style)?.name || style}`);
+      setHasChanges(false);
+    } catch (err) {
+      toast.error("Failed to update button style");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const applyPreset = async (preset) => {
     const v = generateVariants(preset.primary);
     const sv = generateVariants(preset.secondary);
@@ -252,6 +309,7 @@ export default function ThemeSetting({ form: parentForm, setForm, disableInputs 
       tertiary_color: preset.tertiary,
       tertiary_hover: tv.hover,
       tertiary_light: tv.light,
+      button_style: themeSettings.button_style || 'rounded',
     };
     
     // Update local state immediately for instant preview
@@ -290,6 +348,7 @@ export default function ThemeSetting({ form: parentForm, setForm, disableInputs 
         tertiary_color: savedTheme.tertiary_color,
         tertiary_hover: savedTheme.tertiary_hover,
         tertiary_light: savedTheme.tertiary_light,
+        button_style: savedTheme.button_style || 'rounded',
       });
       setHasChanges(false);
     } catch (err) {
@@ -312,6 +371,12 @@ export default function ThemeSetting({ form: parentForm, setForm, disableInputs 
   if (themeLoading) {
     return <div className="p-4 animate-pulse"><div className="h-20 bg-gray-200 dark:bg-slate-700 rounded-lg"></div></div>;
   }
+
+  // Get button style class
+  const getButtonStyleClass = (styleId) => {
+    const style = BUTTON_STYLES.find(s => s.id === styleId);
+    return style?.className || 'rounded-lg';
+  };
 
   return (
     <div className="p-4 space-y-3">
@@ -359,6 +424,71 @@ export default function ThemeSetting({ form: parentForm, setForm, disableInputs 
               {navigation_style === "topbar" && <CheckIcon className="w-4 h-4 text-blue-500 ml-auto" />}
             </div>
           </div>
+        </GlassToolbar>
+      </GlassCard>
+
+      {/* ===== Button Style (New Section) ===== */}
+      <GlassCard>
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-slate-700">
+          <Square2StackIcon className="w-4 h-4 text-emerald-500" />
+          <h2 className="text-sm font-medium text-gray-900 dark:text-white">Button Style</h2>
+        </div>
+        <GlassToolbar className="p-2 gap-2">
+          {BUTTON_STYLES.map((style) => {
+            const isActive = themeSettings.button_style === style.id;
+            return (
+              <button
+                key={style.id}
+                onClick={() => handleButtonStyleChange(style.id)}
+                disabled={disableInputs}
+                className={`flex-1 p-3 rounded-lg border-2 transition-all ${
+                  isActive
+                    ? "border-blue-500 bg-blue-50/50 dark:bg-blue-900/20 ring-2 ring-blue-200 dark:ring-blue-800"
+                    : "border-gray-200 dark:border-slate-600 hover:border-blue-400"
+                }`}
+              >
+                {/* Visual Preview */}
+                <div className="flex justify-center gap-2 mb-2">
+                  <div 
+                    className={`w-8 h-8 flex items-center justify-center text-xs font-medium shadow-sm ${style.className} ${
+                      style.variant === 'outlined' 
+                        ? 'border-2 bg-transparent' 
+                        : 'text-white'
+                    }`}
+                    style={{ 
+                      backgroundColor: style.variant === 'outlined' ? 'transparent' : themeSettings.primary_color,
+                      borderColor: themeSettings.primary_color,
+                      color: style.variant === 'outlined' ? themeSettings.primary_color : 'white',
+                    }}
+                  >
+                    {style.icon}
+                  </div>
+                  <div 
+                    className={`w-8 h-8 flex items-center justify-center text-xs font-medium shadow-sm ${style.className} ${
+                      style.variant === 'outlined' 
+                        ? 'border-2 bg-transparent' 
+                        : 'text-white'
+                    }`}
+                    style={{ 
+                      backgroundColor: style.variant === 'outlined' ? 'transparent' : themeSettings.secondary_color,
+                      borderColor: themeSettings.secondary_color,
+                      color: style.variant === 'outlined' ? themeSettings.secondary_color : 'white',
+                    }}
+                  >
+                    {style.icon}
+                  </div>
+                </div>
+                <span className={`block text-[10px] font-medium text-center ${isActive ? "text-blue-600 dark:text-blue-400" : "text-gray-700 dark:text-gray-300"}`}>
+                  {style.name}
+                </span>
+                {isActive && (
+                  <div className="flex justify-center mt-1">
+                    <CheckIcon className="w-3 h-3 text-blue-500" />
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </GlassToolbar>
       </GlassCard>
 
@@ -498,29 +628,29 @@ export default function ThemeSetting({ form: parentForm, setForm, disableInputs 
           <Cog6ToothIcon className="w-4 h-4 text-gray-500" />
           <h2 className="text-sm font-medium text-gray-900 dark:text-white">Preview</h2>
         </div>
-        <div className="p-3 flex items-center gap-3">
+        <div className="p-3 flex items-center gap-3 flex-wrap">
           <button
             disabled
-            className="px-3 py-1.5 text-xs font-medium text-white rounded"
+            className={`px-3 py-1.5 text-xs font-medium text-white shadow-sm ${getButtonStyleClass(themeSettings.button_style)}`}
             style={{ backgroundColor: themeSettings.primary_color }}
           >
             Primary
           </button>
           <button
             disabled
-            className="px-3 py-1.5 text-xs font-medium text-white rounded"
+            className={`px-3 py-1.5 text-xs font-medium text-white shadow-sm ${getButtonStyleClass(themeSettings.button_style)}`}
             style={{ backgroundColor: themeSettings.secondary_color }}
           >
             Secondary
           </button>
           <span
-            className="px-2 py-1 text-xs font-medium rounded"
+            className={`px-2 py-1 text-xs font-medium shadow-sm ${getButtonStyleClass(themeSettings.buttonStyle)}`}
             style={{ backgroundColor: themeSettings.tertiary_color, color: 'white' }}
           >
             Tertiary
           </span>
           <span
-            className="px-2 py-1 text-xs font-medium rounded"
+            className={`px-2 py-1 text-xs font-medium shadow-sm ${getButtonStyleClass(themeSettings.button_style)}`}
             style={{ backgroundColor: themeSettings.primary_light || generateVariants(themeSettings.primary_color).light, color: themeSettings.primary_color }}
           >
             Light

@@ -62,7 +62,7 @@ export default function Customers() {
   );
 
   // 🎨 Get theme colors
-  const { theme } = useTheme();
+  const { isDark, theme } = useTheme();
 
   // Memoize theme colors for performance
   const themeColors = useMemo(() => {
@@ -85,32 +85,6 @@ export default function Customers() {
       secondaryLight: theme.secondary_light || '#ede9fe',
     };
   }, [theme]);
-
-  // Helper to determine text color based on background brightness
-  const getContrastText = (hexColor) => {
-    hexColor = hexColor.replace('#', '');
-    const r = parseInt(hexColor.substring(0, 2), 16);
-    const g = parseInt(hexColor.substring(2, 4), 16);
-    const b = parseInt(hexColor.substring(4, 6), 16);
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    return luminance > 0.5 ? '#1f2937' : '#ffffff';
-  };
-
-  // Calculate text colors for buttons
-  const primaryTextColor = useMemo(() => 
-    getContrastText(themeColors.primaryHover || themeColors.primary), 
-    [themeColors.primary, themeColors.primaryHover]
-  );
-  
-  const secondaryTextColor = useMemo(() => 
-    getContrastText(themeColors.secondaryHover || themeColors.secondary), 
-    [themeColors.secondary, themeColors.secondaryHover]
-  );
-  
-  const dangerTextColor = useMemo(() => 
-    getContrastText('#dc2626'), 
-    []
-  );
 
   useEffect(() => {
     document.title = "Customers - Pharmacy ERP";
@@ -277,35 +251,95 @@ export default function Customers() {
   const start = (page - 1) * pageSize;
   const paged = filtered.slice(start, start + pageSize);
 
-  // 🎨 Modern button palette (organized by action type using theme colors)
-  // Primary: Add, Save, Update actions
-  const tintPrimary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
+  // 🎨 Dynamic Button styles using theme colors
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        danger: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: '#ef4444',
+            color: '#ef4444',
+            backgroundColor: 'transparent',
+          }
+        },
+        glass: {
+          className: `${radiusClass} transition-all duration-200`,
+          style: {
+            backgroundColor: 'transparent',
+            color: isDark ? '#f1f5f9' : '#111827',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+      danger: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
+          color: 'white',
+          boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)',
+        }
+      },
+      glass: {
+        className: radiusClass,
+        style: {
+          backgroundColor: isDark ? 'rgba(51, 65, 85, 0.6)' : 'rgba(255, 255, 255, 0.8)',
+          color: isDark ? '#f1f5f9' : '#111827',
+          backdropFilter: 'blur(6px)',
+          border: isDark ? '1px solid rgba(71, 85, 105, 0.5)' : '1px solid rgba(229, 231, 235, 0.6)',
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, isDark]);
 
-  // Secondary: Refresh, Import, Edit table actions
-  const tintSecondary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  // Danger: Delete actions
-  const tintDanger = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  // Glass: Export and utility actions
-  const tintGlass = useMemo(() => `
-    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
-    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  // Disabled state
-  const tintDisabled = useMemo(() => `
-    bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed
-  `.trim().replace(/\s+/g, ' '), []);
+  const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
+  const btnDanger = getButtonClasses.danger;
+  const btnGlass = getButtonClasses.glass;
 
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view customers.</div>;
@@ -345,13 +379,9 @@ export default function Customers() {
           </div>
           <div className="flex items-center gap-2">
             <GlassBtn 
-              className={`h-9 px-3 ${tintSecondary}`} 
+              className={`h-9 px-3 ${btnSecondary.className}`} 
               onClick={fetchCustomers}
-              style={{
-                background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                color: secondaryTextColor,
-                boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
-              }}
+              style={btnSecondary.style}
             >
               <span className="inline-flex items-center gap-1.5">
                 <ArrowPathIcon className="w-4 h-4" />
@@ -376,13 +406,9 @@ export default function Customers() {
             <div className="flex items-center gap-2 sm:ml-auto">
               <Guard when={can.import}>
                 <GlassBtn 
-                  className={`h-9 px-3 ${tintPrimary}`} 
+                  className={`h-9 px-3 ${btnPrimary.className}`} 
                   onClick={() => setImportOpen(true)}
-                  style={{ 
-                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                    color: primaryTextColor,
-                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                  }}
+                  style={btnPrimary.style}
                 >
                   <span className="inline-flex items-center gap-1.5">
                     <ArrowUpTrayIcon className="w-4 h-4" />
@@ -391,7 +417,12 @@ export default function Customers() {
                 </GlassBtn>
               </Guard>
               <Guard when={can.export}>
-                <GlassBtn className={`h-9 px-3 ${tintGlass}`} onClick={handleExport} disabled={exporting}>
+                <GlassBtn 
+                  className={`h-9 px-3 ${btnGlass.className}`} 
+                  onClick={handleExport} 
+                  disabled={exporting}
+                  style={btnGlass.style}
+                >
                   <span className="inline-flex items-center gap-1.5">
                     <ArrowDownTrayIcon className={`w-4 h-4 ${exporting ? "animate-spin" : ""}`} />
                     <span className="hidden sm:inline">{exporting ? "..." : "Export"}</span>
@@ -456,7 +487,11 @@ export default function Customers() {
                 </div>
               </div>
               {editingId && (
-                <GlassBtn className={`h-8 px-3 ${tintGlass}`} onClick={resetForm}>
+                <GlassBtn 
+                  className={`h-8 px-3 ${btnGlass.className}`} 
+                  onClick={resetForm}
+                  style={btnGlass.style}
+                >
                   <XMarkIcon className="w-4 h-4" />
                 </GlassBtn>
               )}
@@ -520,8 +555,9 @@ export default function Customers() {
                 <GlassBtn
                   type="button"
                   onClick={resetForm}
-                  className={`h-9 px-3 ${tintGlass}`}
+                  className={`h-9 px-3 ${btnGlass.className}`}
                   disabled={saving}
+                  style={btnGlass.style}
                 >
                   Clear
                 </GlassBtn>
@@ -529,13 +565,9 @@ export default function Customers() {
                   type="button"
                   onClick={handleSave}
                   ref={saveBtnRef}
-                  className={`flex-1 h-9 ${tintPrimary}`}
+                  className={`flex-1 h-9 ${btnPrimary.className}`}
                   disabled={saving || (!can.create && !can.update)}
-                  style={{ 
-                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                    color: primaryTextColor,
-                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                  }}
+                  style={btnPrimary.style}
                 >
                   <span className="inline-flex items-center justify-center gap-1.5">
                     <CheckCircleIcon className="w-4 h-4" />
@@ -608,12 +640,8 @@ export default function Customers() {
                               <Guard when={can.update}>
                                 <button 
                                   onClick={() => handleEdit(c)} 
-                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${tintSecondary}`}
-                                  style={{
-                                    background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                                    color: secondaryTextColor,
-                                    boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
-                                  }}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${btnSecondary.className}`}
+                                  style={btnSecondary.style}
                                 >
                                   <PencilSquareIcon className="w-3.5 h-3.5" />
                                   Edit
@@ -623,16 +651,8 @@ export default function Customers() {
                                 <button
                                   onClick={() => inUse ? toast.error("Cannot delete: customer has transactions.") : handleDelete(c)}
                                   disabled={inUse}
-                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all duration-200 ${
-                                    inUse 
-                                      ? "bg-gray-100 dark:bg-slate-700/50 text-gray-400 dark:text-gray-500 cursor-not-allowed" 
-                                      : tintDanger
-                                  }`}
-                                  style={!inUse ? {
-                                    background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
-                                    color: dangerTextColor,
-                                    boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)'
-                                  } : {}}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all duration-200 ${inUse ? btnGlass.className : btnDanger.className}`}
+                                  style={inUse ? btnGlass.style : btnDanger.style}
                                 >
                                   <TrashIcon className="w-3.5 h-3.5" />
                                   Delete
@@ -672,4 +692,3 @@ export default function Customers() {
     </div>
   );
 }
-

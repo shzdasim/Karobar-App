@@ -218,6 +218,79 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
     [themeColors.danger, themeColors.dangerHover]
   );
 
+  // 🎨 Dynamic Button styles using theme colors
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        danger: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.danger,
+            color: themeColors.danger,
+            backgroundColor: 'transparent',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+      danger: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+          color: 'white',
+          boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)',
+        }
+      },
+    };
+  }, [buttonStyle, themeColors]);
+
+  const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
+  const btnDanger = getButtonClasses.danger;
+
   // Helper to get react-select styles based on dark mode
   const getSelectStyles = (isDarkMode = false) => ({
     control: (base) => ({
@@ -994,12 +1067,8 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
             <button
               type="button"
               onClick={handleSubmit}
-              className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200`}
-              style={{
-                background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                color: primaryTextColor,
-                boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-              }}
+              className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200 ${btnPrimary.className}`}
+              style={btnPrimary.style}
             >
               {saleId ? "Update (Alt+S)" : "Create (Alt+S)"}
             </button>
@@ -1147,12 +1216,8 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
                       <button
                         type="button"
                         onClick={() => removeRow(i)}
-                        className={`px-2 rounded text-white text-[10px] font-semibold transition-all duration-200`}
-                        style={{
-                          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-                          color: dangerTextColor,
-                          boxShadow: `0 4px 14px 0 ${themeColors.danger}40`
-                        }}
+                        className={`px-2 rounded text-white text-[10px] font-semibold transition-all duration-200 ${btnDanger.className}`}
+                        style={btnDanger.style}
                       >
                         X
                       </button>
@@ -1319,12 +1384,8 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
                       <button
                         type="button"
                         onClick={addRow}
-                        className={`px-2 rounded text-white text-[10px] font-semibold transition-all duration-200`}
-                        style={{
-                          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                          color: secondaryTextColor,
-                          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
-                        }}
+                        className={`px-2 rounded text-white text-[10px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
+                        style={btnSecondary.style}
                       >
                         +
                       </button>
@@ -1494,12 +1555,8 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  className={`w-full h-9 rounded text-white text-[12px] font-semibold transition-all duration-200`}
-                  style={{
-                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                    color: primaryTextColor,
-                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                  }}
+                  className={`w-full h-9 rounded text-white text-[12px] font-semibold transition-all duration-200 ${btnPrimary.className}`}
+                  style={btnPrimary.style}
                 >
                   {saleId ? "Update Sale" : "Create Sale"}
                 </button>

@@ -257,6 +257,131 @@ export default function SaleDetailReport() {
     [themeColors.secondary, themeColors.secondaryHover]
   );
 
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        tertiary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.tertiary,
+            color: themeColors.tertiary,
+            backgroundColor: 'transparent',
+          }
+        },
+        emerald: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.emerald,
+            color: themeColors.emerald,
+            backgroundColor: 'transparent',
+          }
+        },
+        sky: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.sky,
+            color: themeColors.sky,
+            backgroundColor: 'transparent',
+          }
+        },
+        rose: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.rose,
+            color: themeColors.rose,
+            backgroundColor: 'transparent',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: primaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: secondaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+      tertiary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
+          color: '#ffffff',
+          boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`,
+        }
+      },
+      emerald: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
+          color: '#ffffff',
+          boxShadow: `0 4px 14px 0 ${themeColors.emerald}40`,
+        }
+      },
+      sky: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.sky}, ${themeColors.skyHover})`,
+          color: '#ffffff',
+          boxShadow: `0 4px 14px 0 ${themeColors.sky}40`,
+        }
+      },
+      rose: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.rose}, ${themeColors.roseHover})`,
+          color: '#ffffff',
+          boxShadow: `0 4px 14px 0 ${themeColors.rose}40`,
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor]);
+
+  const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
+  const btnTertiary = getButtonClasses.tertiary;
+  const btnEmerald = getButtonClasses.emerald;
+  const btnSky = getButtonClasses.sky;
+  const btnRose = getButtonClasses.rose;
+
   // Get section styles
   const coreStyles = useMemo(() => getSectionStyles(themeColors, 'primary'), [themeColors]);
   const managementStyles = useMemo(() => getSectionStyles(themeColors, 'secondary'), [themeColors]);
@@ -460,24 +585,18 @@ export default function SaleDetailReport() {
           {/* Action Buttons */}
           <div className="flex items-center gap-2">
             <GlassBtn
-              className="h-9"
+              className={`h-9 ${btnPrimary.className}`}
               onClick={resetFilters}
-              style={{
-                color: isDark ? themeColors.primary : themeColors.primary,
-              }}
+              style={btnPrimary.style}
             >
               Reset
             </GlassBtn>
             <Guard when={can.view}>
               <GlassBtn
-                className="h-9"
+                className={`h-9 ${btnPrimary.className}`}
                 onClick={fetchReport}
                 disabled={loading}
-                style={{
-                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                  color: primaryTextColor,
-                  boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                }}
+                style={btnPrimary.style}
               >
                 <span className="inline-flex items-center gap-2">
                   {loading ? "Loading…" : "Load"}
@@ -558,7 +677,7 @@ export default function SaleDetailReport() {
           {/* Quick Filters & Export */}
           <div className="md:col-span-12 flex flex-wrap items-end gap-2">
             <GlassBtn
-              className="h-9"
+              className={`h-9 ${btnTertiary.className}`}
               onClick={() => {
                 const end = new Date();
                 const start = new Date();
@@ -567,15 +686,13 @@ export default function SaleDetailReport() {
                 setToDate(end.toISOString().slice(0, 10));
                 fetchReport();
               }}
-              style={{
-                color: isDark ? themeColors.primary : themeColors.primary,
-              }}
+              style={btnTertiary.style}
             >
               Today
             </GlassBtn>
 
             <GlassBtn
-              className="h-9"
+              className={`h-9 ${btnSecondary.className}`}
               onClick={() => {
                 const end = new Date();
                 const start = new Date();
@@ -584,15 +701,13 @@ export default function SaleDetailReport() {
                 setToDate(end.toISOString().slice(0, 10));
                 fetchReport();
               }}
-              style={{
-                color: isDark ? themeColors.secondary : themeColors.secondary,
-              }}
+              style={btnSecondary.style}
             >
               3 Days
             </GlassBtn>
 
             <GlassBtn
-              className="h-9"
+              className={`h-9 ${btnEmerald.className}`}
               onClick={() => {
                 const end = new Date();
                 const start = new Date();
@@ -601,23 +716,17 @@ export default function SaleDetailReport() {
                 setToDate(end.toISOString().slice(0, 10));
                 fetchReport();
               }}
-              style={{
-                color: isDark ? themeColors.emerald : themeColors.emerald,
-              }}
+              style={btnEmerald.style}
             >
               7 Days
             </GlassBtn>
 
             <Guard when={can.export}>
               <GlassBtn
-                className="h-9"
+                className={`h-9 ${btnSecondary.className}`}
                 onClick={exportPdf}
                 disabled={pdfLoading || data.length === 0}
-                style={{
-                  background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                  color: secondaryTextColor,
-                  boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
-                }}
+                style={btnSecondary.style}
               >
                 <span className="inline-flex items-center gap-2">
                   <ArrowDownOnSquareIcon className="w-5 h-5" />
@@ -679,39 +788,30 @@ export default function SaleDetailReport() {
                   {editingInvoiceId === inv.id ? (
                     <div className="flex gap-1">
                       <GlassBtn
-                        className="h-7 px-2"
+                        className={`h-7 px-2 ${btnEmerald.className}`}
                         disabled={saving}
                         onClick={saveInvoiceMeta(inv)}
-                        style={{
-                          background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
-                          color: '#ffffff',
-                        }}
+                        style={btnEmerald.style}
                       >
                         <CheckCircleIcon className="w-4 h-4" />
                       </GlassBtn>
                       <GlassBtn
-                        className="h-7 px-2"
+                        className={`h-7 px-2 ${btnRose.className}`}
                         onClick={() => setEditingInvoiceId(null)}
-                        style={{
-                          background: `linear-gradient(to bottom right, ${themeColors.rose}, ${themeColors.roseHover})`,
-                          color: '#ffffff',
-                        }}
+                        style={btnRose.style}
                       >
                         <XCircleIcon className="w-4 h-4" />
                       </GlassBtn>
                     </div>
                   ) : (
                     <GlassBtn
-                      className="h-7 px-2"
+                      className={`h-7 px-2 ${btnSky.className}`}
                       onClick={() => {
                         setEditingInvoiceId(inv.id);
                         setEditDoctor(inv.doctor_name || "");
                         setEditPatient(inv.patient_name || "");
                       }}
-                      style={{
-                        background: `linear-gradient(to bottom right, ${themeColors.sky}, ${themeColors.skyHover})`,
-                        color: '#ffffff',
-                      }}
+                      style={btnSky.style}
                     >
                       <PencilSquareIcon className="w-4 h-4" />
                     </GlassBtn>

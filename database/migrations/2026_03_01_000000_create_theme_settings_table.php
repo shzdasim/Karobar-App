@@ -45,6 +45,9 @@ return new class extends Migration
             $table->string('border_color')->default('#e2e8f0'); // slate-200
             $table->string('shadow_color')->default('#1e293b'); // for box-shadows
             
+            // Button style
+            $table->string('button_style')->default('rounded'); // rounded, pill, square, soft
+            
             $table->boolean('is_active')->default(true);
             $table->timestamps();
         });

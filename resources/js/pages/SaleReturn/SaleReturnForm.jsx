@@ -237,6 +237,99 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
     [themeColors.danger, themeColors.dangerHover]
   );
 
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        danger: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.danger,
+            color: themeColors.danger,
+            backgroundColor: 'transparent',
+          }
+        },
+        glass: {
+          className: radiusClass,
+          style: {
+            background: isDark ? "rgba(71,85,105,0.6)" : "rgba(255,255,255,0.8)",
+            backdropFilter: "blur(8px)",
+            border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.1)",
+            color: isDark ? "#f1f5f9" : "#1f2937",
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: primaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: secondaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+      danger: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+          color: dangerTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.danger}40`,
+        }
+      },
+      glass: {
+        className: radiusClass,
+        style: {
+          background: isDark ? "rgba(71,85,105,0.6)" : "rgba(255,255,255,0.8)",
+          backdropFilter: "blur(8px)",
+          border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.1)",
+          color: isDark ? "#f1f5f9" : "#1f2937",
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor, dangerTextColor, isDark]);
+
+  const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
+  const btnDanger = getButtonClasses.danger;
+  const btnGlass = getButtonClasses.glass;
+
   // Helper to get react-select styles based on dark mode
   const getSelectStyles = (isDarkMode = false) => ({
     control: (base) => ({
@@ -1112,12 +1205,8 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
                       <button
                         type="button"
                         onClick={() => removeItem(i)}
-                        className="px-1 rounded text-[10px] transition-all duration-200"
-                        style={{
-                          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-                          color: dangerTextColor,
-                          boxShadow: `0 2px 8px 0 ${themeColors.danger}40`
-                        }}
+                        className={`px-1 rounded text-[10px] transition-all duration-200 ${btnDanger.className}`}
+                        style={btnDanger.style}
                       >
                         X
                       </button>
@@ -1229,12 +1318,8 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
                       <button
                         type="button"
                         onClick={addItem}
-                        className="px-1 rounded text-[10px] transition-all duration-200"
-                        style={{
-                          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                          color: secondaryTextColor,
-                          boxShadow: `0 2px 8px 0 ${themeColors.secondary}40`
-                        }}
+                        className={`px-1 rounded text-[10px] transition-all duration-200 ${btnSecondary.className}`}
+                        style={btnSecondary.style}
                       >
                         +
                       </button>
@@ -1336,25 +1421,16 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
                     <button
                       type="button"
                       onClick={handleCancel}
-                      className="px-6 py-3 rounded text-sm font-medium transition-all duration-200"
-                      style={{
-                        background: isDark ? "rgba(71,85,105,0.6)" : "rgba(255,255,255,0.8)",
-                        backdropFilter: "blur(8px)",
-                        border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.1)",
-                        color: isDark ? "#f1f5f9" : "#1f2937",
-                      }}
+                      className={`px-6 py-3 text-sm font-medium transition-all duration-200 ${btnGlass.className}`}
+                      style={btnGlass.style}
                     >
                       Cancel
                     </button>
                     <button
                       type="button"
                       onClick={handleSubmit}
-                      className="px-8 py-3 rounded text-sm font-semibold transition-all duration-200"
-                      style={{
-                        background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                        color: primaryTextColor,
-                        boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                      }}
+                      className={`px-8 py-3 text-sm font-semibold transition-all duration-200 ${btnPrimary.className}`}
+                      style={btnPrimary.style}
                     >
                       {returnId ? "Update Return" : "Create Return"}
                     </button>

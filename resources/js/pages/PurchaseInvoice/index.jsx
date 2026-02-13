@@ -76,17 +76,7 @@ export default function PurchaseInvoicesIndex() {
   );
 
   // 🎨 Get theme colors
-  const { theme } = useTheme();
-
-  // Helper to determine text color based on background brightness
-  const getContrastText = (hexColor) => {
-    hexColor = hexColor.replace('#', '');
-    const r = parseInt(hexColor.substring(0, 2), 16);
-    const g = parseInt(hexColor.substring(2, 4), 16);
-    const b = parseInt(hexColor.substring(4, 6), 16);
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    return luminance > 0.5 ? '#1f2937' : '#ffffff';
-  };
+  const { isDark, theme } = useTheme();
 
   // Memoize theme colors for performance
   const themeColors = useMemo(() => {
@@ -110,51 +100,95 @@ export default function PurchaseInvoicesIndex() {
     };
   }, [theme]);
 
-  // Calculate text colors for buttons
-  const primaryTextColor = useMemo(() => 
-    getContrastText(themeColors.primaryHover || themeColors.primary), 
-    [themeColors.primary, themeColors.primaryHover]
-  );
+  // 🎨 Dynamic Button styles using theme colors
+  const buttonStyle = theme?.button_style || 'rounded';
   
-  const secondaryTextColor = useMemo(() => 
-    getContrastText(themeColors.secondaryHover || themeColors.secondary), 
-    [themeColors.secondary, themeColors.secondaryHover]
-  );
-  
-  const dangerTextColor = useMemo(() => 
-    getContrastText('#dc2626'), 
-    []
-  );
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        danger: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: '#ef4444',
+            color: '#ef4444',
+            backgroundColor: 'transparent',
+          }
+        },
+        glass: {
+          className: `${radiusClass} transition-all duration-200`,
+          style: {
+            backgroundColor: 'transparent',
+            color: isDark ? '#f1f5f9' : '#111827',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+      danger: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
+          color: 'white',
+          boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)',
+        }
+      },
+      glass: {
+        className: radiusClass,
+        style: {
+          backgroundColor: isDark ? 'rgba(51, 65, 85, 0.6)' : 'rgba(255, 255, 255, 0.8)',
+          color: isDark ? '#f1f5f9' : '#111827',
+          backdropFilter: 'blur(6px)',
+          border: isDark ? '1px solid rgba(71, 85, 105, 0.5)' : '1px solid rgba(229, 231, 235, 0.6)',
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, isDark]);
 
-  // 🎨 Modern button palette (organized by action type using theme colors)
-  // Primary: Add, Save, Update actions
-  const tintPrimary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  // Secondary: Refresh, Edit actions
-  const tintSecondary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  // Danger: Delete actions
-  const tintDanger = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  // Glass: Utility actions
-  const tintGlass = useMemo(() => `
-    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
-    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  // Disabled state
-  const tintDisabled = useMemo(() => `
-    bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed
-  `.trim().replace(/\s+/g, ' '), []);
+  const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
+  const btnDanger = getButtonClasses.danger;
+  const btnGlass = getButtonClasses.glass;
 
   useEffect(() => {
     document.title = "Purchase Invoices - Pharmacy ERP";
@@ -325,18 +359,14 @@ export default function PurchaseInvoicesIndex() {
           <div className="flex items-center gap-2">
             {/* Refresh Button */}
             <GlassBtn
-              className={`h-9 px-3 ${tintSecondary}`}
+              className={`h-9 px-3 ${btnSecondary.className}`}
               onClick={() => {
                 if (controllerRef.current) controllerRef.current.abort();
                 const ctrl = new AbortController();
                 controllerRef.current = ctrl;
                 fetchInvoices(ctrl.signal);
               }}
-              style={{
-                background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                color: secondaryTextColor,
-                boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
-              }}
+              style={btnSecondary.style}
             >
               <span className="inline-flex items-center gap-1.5">
                 <ArrowPathIcon className="w-4 h-4" />
@@ -348,12 +378,8 @@ export default function PurchaseInvoicesIndex() {
             <Guard when={can.create}>
               <Link
                 to="/purchase-invoices/create"
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintPrimary}`}
-                style={{ 
-                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                  color: primaryTextColor,
-                  boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                }}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${btnPrimary.className}`}
+                style={btnPrimary.style}
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 <span className="hidden sm:inline">Add Invoice</span>
@@ -493,12 +519,8 @@ export default function PurchaseInvoicesIndex() {
                         <Guard when={can.update}>
                           <Link
                             to={`/purchase-invoices/${inv.id}/edit`}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium ${tintSecondary}`}
-                            style={{
-                              background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                              color: secondaryTextColor,
-                              boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
-                            }}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium ${btnSecondary.className}`}
+                            style={btnSecondary.style}
                             title={`Edit ${inv.posted_number || inv.invoice_number}`}
                           >
                             <PencilSquareIcon className="w-3.5 h-3.5" />
@@ -510,12 +532,8 @@ export default function PurchaseInvoicesIndex() {
                         <Guard when={can.delete}>
                           <button
                             onClick={() => openDeleteModal(inv)}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium ${tintDanger}`}
-                            style={{
-                              background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
-                              color: dangerTextColor,
-                              boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)'
-                            }}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium ${btnDanger.className}`}
+                            style={btnDanger.style}
                             title="Delete invoice"
                           >
                             <TrashIcon className="w-3.5 h-3.5" />
@@ -577,10 +595,7 @@ export default function PurchaseInvoicesIndex() {
                         : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700"
                       }
                     `}
-                    style={page === pageNum ? {
-                      background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                      color: primaryTextColor
-                    } : {}}
+                    style={page === pageNum ? btnPrimary.style : {}}
                   >
                     {pageNum}
                   </button>
@@ -630,7 +645,11 @@ export default function PurchaseInvoicesIndex() {
                   </div>
                   <span className="font-semibold">Delete invoice</span>
                 </div>
-                <GlassBtn className={`h-8 px-2 ${tintGlass}`} onClick={closeDeleteModal}>
+                <GlassBtn 
+                  className={`h-8 px-2 ${btnGlass.className}`} 
+                  onClick={closeDeleteModal}
+                  style={btnGlass.style}
+                >
                   <XMarkIcon className="w-4 h-4" />
                 </GlassBtn>
               </div>
@@ -644,17 +663,17 @@ export default function PurchaseInvoicesIndex() {
                       This action cannot be undone.
                     </p>
                     <div className="flex justify-end gap-2">
-                      <GlassBtn className={`h-9 px-3 ${tintGlass}`} onClick={closeDeleteModal}>
+                      <GlassBtn 
+                        className={`h-9 px-3 ${btnGlass.className}`} 
+                        onClick={closeDeleteModal}
+                        style={btnGlass.style}
+                      >
                         Cancel
                       </GlassBtn>
                       <GlassBtn 
-                        className={`h-9 px-4 ${tintDanger}`} 
+                        className={`h-9 px-4 ${btnDanger.className}`} 
                         onClick={proceedToPassword}
-                        style={{
-                          background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
-                          color: dangerTextColor,
-                          boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)'
-                        }}
+                        style={btnDanger.style}
                       >
                         Yes, continue
                       </GlassBtn>
@@ -680,22 +699,28 @@ export default function PurchaseInvoicesIndex() {
                       className="w-full h-9"
                     />
                     <div className="flex justify-between">
-                      <GlassBtn className={`h-9 px-3 ${tintGlass}`} onClick={() => setDeleteStep(1)} disabled={deleting}>
+                      <GlassBtn 
+                        className={`h-9 px-3 ${btnGlass.className}`} 
+                        onClick={() => setDeleteStep(1)} 
+                        disabled={deleting}
+                        style={btnGlass.style}
+                      >
                         ← Back
                       </GlassBtn>
                       <div className="flex gap-2">
-                        <GlassBtn className={`h-9 px-3 ${tintGlass}`} onClick={closeDeleteModal} disabled={deleting}>
+                        <GlassBtn 
+                          className={`h-9 px-3 ${btnGlass.className}`} 
+                          onClick={closeDeleteModal} 
+                          disabled={deleting}
+                          style={btnGlass.style}
+                        >
                           Cancel
                         </GlassBtn>
                         <GlassBtn
-                          className={`h-9 px-4 ${tintDanger} disabled:opacity-60`}
+                          className={`h-9 px-4 ${btnDanger.className}`}
                           onClick={confirmAndDelete}
                           disabled={deleting || password.trim() === ""}
-                          style={!deleting && password.trim() !== "" ? {
-                            background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
-                            color: dangerTextColor,
-                            boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)'
-                          } : {}}
+                          style={(!deleting && password.trim() !== "") ? btnDanger.style : {}}
                         >
                           {deleting ? "Deleting…" : "Confirm & Delete"}
                         </GlassBtn>

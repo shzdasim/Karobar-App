@@ -265,6 +265,105 @@ export default function CurrentStockReport() {
     [themeColors.secondary, themeColors.secondaryHover]
   );
 
+  const tertiaryTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.tertiary, themeColors.tertiaryHover), 
+    [themeColors.tertiary, themeColors.tertiaryHover]
+  );
+
+  const emeraldTextColor = useMemo(() => 
+    getButtonTextColor(themeColors.emerald, themeColors.emeraldHover), 
+    [themeColors.emerald, themeColors.emeraldHover]
+  );
+
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        tertiary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.tertiary,
+            color: themeColors.tertiary,
+            backgroundColor: 'transparent',
+          }
+        },
+        emerald: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.emerald,
+            color: themeColors.emerald,
+            backgroundColor: 'transparent',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: primaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: secondaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+      tertiary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
+          color: tertiaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`,
+        }
+      },
+      emerald: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
+          color: emeraldTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.emerald}40`,
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor, tertiaryTextColor, emeraldTextColor]);
+
+  const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
+
   // Get section styles
   const coreStyles = useMemo(() => getSectionStyles(themeColors, 'primary'), [themeColors]);
   const managementStyles = useMemo(() => getSectionStyles(themeColors, 'secondary'), [themeColors]);
@@ -451,12 +550,10 @@ export default function CurrentStockReport() {
           {/* Action Buttons */}
           <div className="flex items-center gap-2">
             <GlassBtn
-              className={`h-9 ${tintGhost}`}
+              className={`h-9 ${btnPrimary.className}`}
               title="Reset Filters"
               onClick={resetFilters}
-              style={{
-                color: isDark ? themeColors.primary : themeColors.primary,
-              }}
+              style={btnPrimary.style}
             >
               Reset
             </GlassBtn>
@@ -535,14 +632,10 @@ export default function CurrentStockReport() {
           <div className="md:col-span-12 flex flex-wrap gap-2">
             <Guard when={can.view}>
               <GlassBtn
-                className={`h-9 min-w-[110px]`}
+                className={`h-9 min-w-[110px] ${btnPrimary.className}`}
                 onClick={fetchReport}
                 disabled={loading}
-                style={{
-                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                  color: primaryTextColor,
-                  boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                }}
+                style={btnPrimary.style}
               >
                 {loading ? (
                   <span className="inline-flex items-center gap-2">
@@ -557,14 +650,10 @@ export default function CurrentStockReport() {
 
             <Guard when={can.export}>
               <GlassBtn
-                className="h-9 flex items-center gap-2"
+                className={`h-9 flex items-center gap-2 ${btnSecondary.className}`}
                 onClick={exportPdf}
                 disabled={pdfLoading || rows.length === 0}
-                style={{
-                  background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                  color: secondaryTextColor,
-                  boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
-                }}
+                style={btnSecondary.style}
               >
                 <ArrowDownOnSquareIcon className="w-5 h-5" />
                 {pdfLoading ? "Generating…" : "Export PDF"}

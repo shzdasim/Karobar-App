@@ -71,6 +71,80 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
     getButtonTextColor(themeColors.danger, themeColors.dangerHover), 
     [themeColors.danger, themeColors.dangerHover]
   );
+
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        danger: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.danger,
+            color: themeColors.danger,
+            backgroundColor: 'transparent',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: primaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: secondaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+      danger: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+          color: dangerTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.danger}40`,
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor, dangerTextColor]);
+
+  const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
+  const btnDanger = getButtonClasses.danger;
   
   const [products, setProducts] = useState([]);
   const [batchesByProduct, setBatchesByProduct] = useState({}); // { [productId]: [{batch_number, expiry, available_units}, ...] }
@@ -664,12 +738,8 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                   <button 
                     type="button" 
                     onClick={()=>removeRow(i)} 
-                    className="px-1 rounded text-[10px] transition-all duration-200"
-                    style={{
-                      background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-                      color: dangerTextColor,
-                      boxShadow: `0 2px 8px 0 ${themeColors.danger}40`
-                    }}
+                    className={`px-1 text-[10px] transition-all duration-200 ${btnDanger.className}`}
+                    style={btnDanger.style}
                   >X</button>
                 </td>
 
@@ -788,12 +858,8 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                   <button 
                     type="button" 
                     onClick={()=>{ addRow(); setTimeout(()=>focusProduct(i+1),0); }} 
-                    className="px-1 rounded text-[10px] transition-all duration-200"
-                    style={{
-                      background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                      color: secondaryTextColor,
-                      boxShadow: `0 2px 8px 0 ${themeColors.secondary}40`
-                    }}
+                    className={`px-1 text-[10px] transition-all duration-200 ${btnSecondary.className}`}
+                    style={btnSecondary.style}
                   >+</button>
                 </td>
               </tr>
@@ -823,12 +889,8 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  className="px-8 py-3 rounded text-sm font-semibold transition inline-flex items-center justify-center"
-                  style={{
-                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                    color: primaryTextColor,
-                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                  }}
+                  className={`px-8 py-3 text-sm font-semibold transition inline-flex items-center justify-center ${btnPrimary.className}`}
+                  style={btnPrimary.style}
                   title="Save (Alt+S)"
                 >
                   {adjustmentId ? 'Update Adjustment' : 'Create Adjustment'}

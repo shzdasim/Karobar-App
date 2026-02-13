@@ -552,14 +552,63 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
   });
 
   // ===== Dynamic Button styles using theme colors =====
-  const tintPrimary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        glass: {
+          className: `${radiusClass} transition-all duration-200`,
+          style: {
+            backgroundColor: 'transparent',
+            color: isDark ? '#f1f5f9' : '#111827',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      glass: {
+        className: radiusClass,
+        style: {
+          backgroundColor: isDark ? 'rgba(51, 65, 85, 0.6)' : 'rgba(255, 255, 255, 0.8)',
+          color: isDark ? '#f1f5f9' : '#111827',
+          backdropFilter: 'blur(6px)',
+          border: isDark ? '1px solid rgba(71, 85, 105, 0.5)' : '1px solid rgba(229, 231, 235, 0.6)',
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, isDark]);
 
-  const tintGlass = useMemo(() => `
-    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
+  // Destructure button classes for easier use
+  const btnPrimary = getButtonClasses.primary;
+  const btnGlass = getButtonClasses.glass;
 
   // ===== Loading State =====
   if (!isLoaded) {
@@ -596,7 +645,8 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
             <div className="flex items-center gap-2">
               <Link 
                 to="/products" 
-                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg ${tintGlass}`} 
+                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg ${btnGlass.className}`}
+                style={btnGlass.style}
                 title="Back (Alt+C)"
               >
                 <ArrowLeftIcon className="w-4 h-4" />
@@ -606,12 +656,9 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                 id="save-product-btn-top"
                 type="submit"
                 form="product-form"
-                className={`inline-flex items-center gap-1.5 h-8 px-4 rounded-lg ${tintPrimary}`}
+                className={`inline-flex items-center gap-1.5 h-8 px-4 rounded-lg ${btnPrimary.className}`}
+                style={{ ...btnPrimary.style, boxShadow: `0 4px 14px 0 ${themeColors.primary}40` }}
                 title="Save (Alt+S)"
-                style={{ 
-                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                  color: primaryTextColor
-                }}
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 <span className="text-sm font-medium">Save Product</span>
@@ -667,7 +714,8 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
             <div className="flex items-center gap-2">
               <Link 
                 to="/products" 
-                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg ${tintGlass}`} 
+                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg ${btnGlass.className}`}
+                style={btnGlass.style}
                 title="Back (Alt+C)"
               >
                 <ArrowLeftIcon className="w-4 h-4" />
@@ -677,12 +725,9 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                 id="save-product-btn-top"
                 type="submit"
                 form="product-form"
-                className={`inline-flex items-center gap-1.5 h-8 px-4 rounded-lg ${tintPrimary}`}
+                className={`inline-flex items-center gap-1.5 h-8 px-4 rounded-lg ${btnPrimary.className}`}
+                style={{ ...btnPrimary.style, boxShadow: `0 4px 14px 0 ${themeColors.primary}40` }}
                 title="Save (Alt+S)"
-                style={{ 
-                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                  color: primaryTextColor
-                }}
               >
                 <PencilSquareIcon className="w-4 h-4" />
                 <span className="text-sm font-medium">Save Changes</span>

@@ -107,6 +107,7 @@ class ThemeSettingController extends Controller
             'danger_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'border_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'shadow_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+            'button_style' => ['nullable', 'string', 'in:rounded,outlined,pill,soft'],
         ]);
 
         $activeTheme->update($validated);

@@ -160,30 +160,6 @@ export default function ProductsIndex() {
   );
 
   // 🎨 Dynamic button palette using theme colors
-  // Primary action buttons (Add Product, Import)
-  const tintPrimary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  // Secondary action buttons (Edit)
-  const tintSecondary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  // Danger action buttons (Delete)
-  const tintDanger = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  // Glass style buttons (Export)
-  const tintGlass = useMemo(() => `
-    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
-    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
   // Disabled state
   const tintDisabled = useMemo(() => `
     bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed
@@ -214,7 +190,10 @@ export default function ProductsIndex() {
     };
   }, [theme]);
 
-  // Calculate text colors based on background brightness (after themeColors is defined)
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Calculate text colors based on background brightness
   const primaryTextColor = useMemo(() => 
     getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
     [themeColors.primary, themeColors.primaryHover]
@@ -229,6 +208,111 @@ export default function ProductsIndex() {
     getButtonTextColor('#ef4444', '#dc2626'), 
     []
   );
+
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        tertiary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.tertiary,
+            color: themeColors.tertiary,
+            backgroundColor: 'transparent',
+          }
+        },
+        danger: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: '#ef4444',
+            color: '#ef4444',
+            backgroundColor: 'transparent',
+          }
+        },
+        glass: {
+          className: `${radiusClass} transition-all duration-200`,
+          style: {
+            backgroundColor: 'transparent',
+            color: isDark ? '#f1f5f9' : '#111827',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+      tertiary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`,
+        }
+      },
+      danger: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
+          color: 'white',
+          boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)',
+        }
+      },
+      glass: {
+        className: radiusClass,
+        style: {
+          backgroundColor: isDark ? 'rgba(51, 65, 85, 0.6)' : 'rgba(255, 255, 255, 0.8)',
+          color: isDark ? '#f1f5f9' : '#111827',
+          backdropFilter: 'blur(6px)',
+          border: isDark ? '1px solid rgba(71, 85, 105, 0.5)' : '1px solid rgba(229, 231, 235, 0.6)',
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, isDark]);
+
+  // Destructure button classes for easier use
+  const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
+  const btnDanger = getButtonClasses.danger;
+  const btnGlass = getButtonClasses.glass;
 
   // === Alt+N => /products/create (only when can.create) ===
   useEffect(() => {
@@ -454,15 +538,11 @@ useEffect(() => {
                     inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium
                     transition-all duration-200
                     ${selectedIds.size > 0 
-                      ? `${tintPrimary} cursor-pointer` 
+                      ? btnSecondary.className
                       : tintDisabled
                     }
                   `}
-                  style={selectedIds.size > 0 ? {
-                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                    color: primaryTextColor,
-                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                  } : {}}
+                  style={selectedIds.size > 0 ? btnSecondary.style : {}}
                 >
                   <PencilSquareIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Edit</span>
@@ -484,15 +564,11 @@ useEffect(() => {
                     inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium
                     transition-all duration-200
                     ${selectedIds.size > 0 
-                      ? `${tintDanger} cursor-pointer` 
+                      ? btnDanger.className
                       : tintDisabled
                     }
                   `}
-                  style={selectedIds.size > 0 ? {
-                    background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
-                    color: dangerTextColor,
-                    boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)'
-                  } : {}}
+                  style={selectedIds.size > 0 ? btnDanger.style : {}}
                 >
                   <TrashIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Delete</span>
@@ -509,10 +585,9 @@ useEffect(() => {
             <Guard when={can.create}>
               <Link
                 to="/products/create"
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintPrimary}`}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${btnPrimary.className}`}
                 style={{ 
-                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                  color: primaryTextColor,
+                  ...btnPrimary.style,
                   boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
                 }}
               >
@@ -581,10 +656,9 @@ useEffect(() => {
               <Guard when={can.import}>
                 <button
                   onClick={() => setImportOpen(true)}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${tintPrimary}`}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${btnPrimary.className}`}
                   style={{ 
-                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                    color: primaryTextColor,
+                    ...btnPrimary.style,
                     boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
                   }}
                 >
@@ -599,7 +673,8 @@ useEffect(() => {
                 <button
                   onClick={handleExport}
                   disabled={exporting}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${tintGlass}`}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${btnGlass.className}`}
+                  style={btnGlass.style}
                 >
                   <ArrowPathIcon className={`w-3.5 h-3.5 ${exporting ? "animate-spin" : ""}`} />
                   {exporting ? "..." : "Export"}
@@ -810,11 +885,10 @@ useEffect(() => {
                               to={`/products/${p.id}/edit`}
                               className={`
                                 group inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold
-                                transition-all duration-200
+                                transition-all duration-200 ${btnPrimary.className}
                               `}
                               style={{
-                                background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                                color: primaryTextColor,
+                                ...btnPrimary.style,
                                 boxShadow: `0 4px 12px 0 ${themeColors.primary}40`
                               }}
                               title="Edit"
@@ -833,13 +907,9 @@ useEffect(() => {
                               className={`
                                 group inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold
                                 transition-all duration-200
-                                ${deleteDisabled ? tintDisabled : tintDanger}
+                                ${deleteDisabled ? tintDisabled : btnDanger.className}
                               `}
-                              style={!deleteDisabled ? {
-                                background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
-                                color: dangerTextColor,
-                                boxShadow: '0 4px 12px 0 rgba(239, 68, 68, 0.4)'
-                              } : {}}
+                              style={!deleteDisabled ? btnDanger.style : {}}
                             >
                               <TrashIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
                               <span>Delete</span>
@@ -901,10 +971,7 @@ useEffect(() => {
                         : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700"
                       }
                     `}
-                    style={page === pageNum ? {
-                      background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                      color: primaryTextColor
-                    } : {}}
+                    style={page === pageNum ? btnPrimary.style : {}}
                   >
                     {pageNum}
                   </button>
@@ -946,12 +1013,8 @@ useEffect(() => {
             setSelectedIds(new Set());
           }}
           tintClasses={{ 
-            blue: tintPrimary, 
-            blueStyle: { 
-              background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-              boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-            },
-            glass: tintGlass 
+            primary: btnPrimary, 
+            glass: btnGlass 
           }}
         />
       )}
@@ -969,12 +1032,9 @@ useEffect(() => {
         isDeleting={deleting}
         setIsDeleting={setDeleting}
         tintClasses={{ 
-          red: tintDanger,
-          redStyle: {
-            background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
-            boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)'
-          },
-          glass: tintGlass 
+          primary: btnPrimary,
+          danger: btnDanger,
+          glass: btnGlass 
         }}
       />
 
@@ -1002,12 +1062,9 @@ useEffect(() => {
           }}
           itemType="product(s)"
           tintClasses={{ 
-            red: tintDanger,
-            redStyle: {
-              background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
-              boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)'
-            },
-            glass: tintGlass 
+            primary: btnPrimary,
+            danger: btnDanger,
+            glass: btnGlass 
           }}
         />
       )}

@@ -185,6 +185,80 @@ export default function RolesIndex() {
     [themeColors.danger, themeColors.dangerHover]
   );
 
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        danger: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.danger,
+            color: themeColors.danger,
+            backgroundColor: 'transparent',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: primaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: secondaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+      danger: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+          color: dangerTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.danger}40`,
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor, dangerTextColor]);
+
+  const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
+  const btnDanger = getButtonClasses.danger;
+
   // Get section styles
   const managementStyles = useMemo(() => getSectionStyles(themeColors, 'secondary'), [themeColors]);
   const coreStyles = useMemo(() => getSectionStyles(themeColors, 'primary'), [themeColors]);
@@ -324,14 +398,10 @@ export default function RolesIndex() {
                 controllerRef.current = ctrl;
                 fetchRoles(ctrl.signal);
               }}
-              className={`h-10 min-w-[120px] ${tintPrimary}`}
+              className={`h-10 min-w-[120px] ${btnPrimary.className}`}
               title="Refresh"
               aria-label="Refresh roles"
-              style={{
-                background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                color: primaryTextColor,
-                boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-              }}
+              style={btnPrimary.style}
             >
               <span className="inline-flex items-center gap-2">
                 <ArrowPathIcon className="w-5 h-5" />
@@ -344,12 +414,8 @@ export default function RolesIndex() {
                 to="/roles/create"
                 title="Add Role (Alt+N)"
                 aria-keyshortcuts="Alt+N"
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintPrimary}`}
-                style={{
-                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                  color: primaryTextColor,
-                  boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                }}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold ${btnPrimary.className}`}
+                style={btnPrimary.style}
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 Add Role
@@ -489,12 +555,8 @@ export default function RolesIndex() {
                           <Guard when={can.update}>
                             <Link
                               to={`/roles/${r.id}/edit`}
-                              className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200`}
-                              style={{
-                                background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                                color: secondaryTextColor,
-                                boxShadow: `0 4px 12px 0 ${themeColors.secondary}40`
-                              }}
+                              className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnSecondary.className}`}
+                              style={btnSecondary.style}
                               title="Edit"
                             >
                               <PencilSquareIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
@@ -506,12 +568,8 @@ export default function RolesIndex() {
                           <Guard when={can.delete}>
                             <button
                               onClick={() => openDeleteModal(r)}
-                              className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200`}
-                              style={{
-                                background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-                                color: dangerTextColor,
-                                boxShadow: `0 4px 12px 0 ${themeColors.danger}40`
-                              }}
+                              className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnDanger.className}`}
+                              style={btnDanger.style}
                               title="Delete"
                             >
                               <TrashIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />

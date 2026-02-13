@@ -205,6 +205,131 @@ export default function CustomerLedgerPage() {
     [themeColors.emerald, themeColors.emeraldHover]
   );
 
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        tertiary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.tertiary,
+            color: themeColors.tertiary,
+            backgroundColor: 'transparent',
+          }
+        },
+        emerald: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.emerald,
+            color: themeColors.emerald,
+            backgroundColor: 'transparent',
+          }
+        },
+        danger: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.danger,
+            color: themeColors.danger,
+            backgroundColor: 'transparent',
+          }
+        },
+        outlined: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: primaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: secondaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+      tertiary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
+          color: tertiaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`,
+        }
+      },
+      emerald: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
+          color: emeraldTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.emerald}40`,
+        }
+      },
+      danger: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+          color: dangerTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.danger}40`,
+        }
+      },
+      outlined: {
+        className: `${radiusClass} border-2 transition-all duration-200`,
+        style: {
+          borderColor: themeColors.primary,
+          color: themeColors.primary,
+          backgroundColor: 'transparent',
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor, tertiaryTextColor, dangerTextColor, emeraldTextColor]);
+
+  const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
+  const btnTertiary = getButtonClasses.tertiary;
+  const btnEmerald = getButtonClasses.emerald;
+  const btnDanger = getButtonClasses.danger;
+  const btnOutlined = getButtonClasses.outlined;
+
   // Get section styles
   const coreStyles = useMemo(() => getSectionStyles(themeColors, 'primary'), [themeColors]);
 
@@ -587,12 +712,8 @@ export default function CustomerLedgerPage() {
                 <button
                   onClick={rebuild}
                   disabled={!customerId}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId ? `${tintTertiary} cursor-pointer` : tintDisabled}`}
-                  style={customerId ? {
-                    background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
-                    color: tertiaryTextColor,
-                    boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`
-                  } : {}}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId ? btnTertiary.className : ''}`}
+                  style={customerId ? btnTertiary.style : {}}
                 >
                   <ArrowPathIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Refresh</span>
@@ -605,12 +726,8 @@ export default function CustomerLedgerPage() {
                 <button
                   onClick={openAddPayment}
                   disabled={!customerId}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId ? `${tintPrimary} cursor-pointer` : tintDisabled}`}
-                  style={customerId ? {
-                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                    color: primaryTextColor,
-                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                  } : {}}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId ? btnPrimary.className : ''}`}
+                  style={customerId ? btnPrimary.style : {}}
                 >
                   <PlusCircleIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Payment</span>
@@ -623,12 +740,8 @@ export default function CustomerLedgerPage() {
                 <button
                   onClick={openAddManual}
                   disabled={!customerId}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId ? `${tintSecondary} cursor-pointer` : tintDisabled}`}
-                  style={customerId ? {
-                    background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                    color: secondaryTextColor,
-                    boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
-                  } : {}}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId ? btnSecondary.className : ''}`}
+                  style={customerId ? btnSecondary.style : {}}
                 >
                   <WrenchScrewdriverIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Manual</span>
@@ -641,12 +754,8 @@ export default function CustomerLedgerPage() {
                 <button
                   onClick={fetchData}
                   disabled={!customerId}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId ? `${tintTertiary} cursor-pointer` : tintDisabled}`}
-                  style={customerId ? {
-                    background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
-                    color: emeraldTextColor,
-                    boxShadow: `0 4px 14px 0 ${themeColors.emerald}40`
-                  } : {}}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId ? btnEmerald.className : ''}`}
+                  style={customerId ? btnEmerald.style : {}}
                 >
                   <ArrowPathIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Load</span>
@@ -659,12 +768,8 @@ export default function CustomerLedgerPage() {
                 <button
                   onClick={openSaveModal}
                   disabled={!customerId || (newCount === 0 && updCount === 0)}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId && (newCount > 0 || updCount > 0) ? `${tintGlass} cursor-pointer` : tintDisabled}`}
-                  style={customerId && (newCount > 0 || updCount > 0) ? {
-                    background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
-                    color: tertiaryTextColor,
-                    boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`
-                  } : {}}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId && (newCount > 0 || updCount > 0) ? btnTertiary.className : ''}`}
+                  style={customerId && (newCount > 0 || updCount > 0) ? btnTertiary.style : {}}
                 >
                   <ArrowDownOnSquareIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Save</span>
@@ -681,12 +786,8 @@ export default function CustomerLedgerPage() {
             <button
               onClick={() => handlePrint()}
               disabled={!customerId}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${customerId ? tintPrimary : tintDisabled}`}
-              style={customerId ? {
-                background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                color: secondaryTextColor,
-                boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
-              } : {}}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold ${customerId ? btnSecondary.className : ''}`}
+              style={customerId ? btnSecondary.style : {}}
             >
               <PrinterIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Print</span>
@@ -915,14 +1016,10 @@ export default function CustomerLedgerPage() {
                   A new <b>{addModal.type}</b> row will be appended for the selected customer.
                 </p>
                 <div className="mt-4 flex justify-end gap-2">
-                  <button className={`min-w-[100px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={closeAddModal}>Cancel</button>
+                  <button className={`min-w-[100px] px-4 py-2 text-sm font-medium ${btnOutlined.className}`} style={btnOutlined.style} onClick={closeAddModal}>Cancel</button>
                   <button 
-                    className={`min-w-[120px] rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-200`}
-                    style={{
-                      background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                      color: primaryTextColor,
-                      boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                    }}
+                    className={`min-w-[120px] px-4 py-2 text-sm font-semibold transition-all duration-200 ${btnPrimary.className}`}
+                    style={btnPrimary.style}
                     onClick={confirmAdd}
                   >
                     Add row
@@ -956,14 +1053,10 @@ export default function CustomerLedgerPage() {
                   <b>{updCount}</b> existing {updCount === 1 ? "row" : "rows"} for this customer.
                 </p>
                 <div className="mt-4 flex justify-end gap-2">
-                  <button className={`min-w-[100px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={closeSaveModal}>Cancel</button>
+                  <button className={`min-w-[100px] px-4 py-2 text-sm font-medium ${btnOutlined.className}`} style={btnOutlined.style} onClick={closeSaveModal}>Cancel</button>
                   <button 
-                    className={`min-w-[120px] rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-200`}
-                    style={{
-                      background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
-                      color: emeraldTextColor,
-                      boxShadow: `0 4px 14px 0 ${themeColors.emerald}40`
-                    }}
+                    className={`min-w-[120px] px-4 py-2 text-sm font-semibold transition-all duration-200 ${btnEmerald.className}`}
+                    style={btnEmerald.style}
                     onClick={confirmSave}
                   >
                     Yes, Save
@@ -991,21 +1084,17 @@ export default function CustomerLedgerPage() {
                 </span>}
                 right={<button className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeDeleteModal}><XMarkIcon className="w-5 h-5" /></button>}
               />
-              <div className="px-4 py-4 space-y-4">
+                <div className="px-4 py-4 space-y-4">
                 {deleteStep === 1 ? (
                   <>
                     <p className={`text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>
                       Are you sure you want to delete this row? This action cannot be undone.
                     </p>
                     <div className="flex justify-end gap-2">
-                      <button className={`min-w-[100px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={closeDeleteModal}>Cancel</button>
+                      <button className={`min-w-[100px] px-4 py-2 text-sm font-medium ${btnOutlined.className}`} style={btnOutlined.style} onClick={closeDeleteModal}>Cancel</button>
                       <button 
-                        className={`min-w-[140px] rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-200`}
-                        style={{
-                          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-                          color: dangerTextColor,
-                          boxShadow: `0 4px 14px 0 ${themeColors.danger}40`
-                        }}
+                        className={`min-w-[140px] px-4 py-2 text-sm font-semibold transition-all duration-200 ${btnDanger.className}`}
+                        style={btnDanger.style}
                         onClick={proceedDeletePassword}
                       >
                         Yes, continue
@@ -1030,20 +1119,16 @@ export default function CustomerLedgerPage() {
                       className="w-full"
                     />
                     <div className="flex justify-between">
-                      <button className={`min-w-[90px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={() => setDeleteStep(1)} disabled={deleting}>
+                      <button className={`min-w-[90px] px-4 py-2 text-sm font-medium ${btnOutlined.className}`} style={btnOutlined.style} onClick={() => setDeleteStep(1)} disabled={deleting}>
                         ← Back
                       </button>
                       <div className="flex gap-2">
-                        <button className={`min-w-[100px] rounded-lg px-4 py-2 text-sm font-medium ${tintOutline}`} onClick={closeDeleteModal} disabled={deleting}>
+                        <button className={`min-w-[100px] px-4 py-2 text-sm font-medium ${btnOutlined.className}`} style={btnOutlined.style} onClick={closeDeleteModal} disabled={deleting}>
                           Cancel
                         </button>
                         <button
-                          className={`min-w-[170px] rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-200 disabled:opacity-60`}
-                          style={{
-                            background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-                            color: dangerTextColor,
-                            boxShadow: `0 4px 14px 0 ${themeColors.danger}40`
-                          }}
+                          className={`min-w-[170px] px-4 py-2 text-sm font-semibold transition-all duration-200 disabled:opacity-60 ${btnDanger.className}`}
+                          style={btnDanger.style}
                           onClick={confirmAndDelete}
                           disabled={deleting || password.trim() === ""}
                         >

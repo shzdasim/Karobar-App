@@ -147,26 +147,98 @@ export default function PurchaseOrder() {
   const coreStyles = useMemo(() => getSectionStyles(themeColors, 'primary'), [themeColors]);
   const managementStyles = useMemo(() => getSectionStyles(themeColors, 'secondary'), [themeColors]);
 
-  // 🎨 Dynamic button styles using theme colors
-  const tintPrimary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        tertiary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.tertiary,
+            color: themeColors.tertiary,
+            backgroundColor: 'transparent',
+          }
+        },
+        glass: {
+          className: radiusClass,
+          style: {
+            background: isDark ? "rgba(71,85,105,0.6)" : "rgba(255,255,255,0.8)",
+            backdropFilter: "blur(8px)",
+            border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.1)",
+            color: isDark ? "#f1f5f9" : "#1f2937",
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: primaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: secondaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+      tertiary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
+          color: secondaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`,
+        }
+      },
+      glass: {
+        className: radiusClass,
+        style: {
+          background: isDark ? "rgba(71,85,105,0.6)" : "rgba(255,255,255,0.8)",
+          backdropFilter: "blur(8px)",
+          border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.1)",
+          color: isDark ? "#f1f5f9" : "#1f2937",
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor, isDark]);
 
-  const tintSecondary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  const tintTertiary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  const tintGlass = useMemo(() => `
-    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
-    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
+  const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
+  const btnTertiary = getButtonClasses.tertiary;
+  const btnGlass = getButtonClasses.glass;
 
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
@@ -441,18 +513,14 @@ export default function PurchaseOrder() {
               onClick={handleFetch}
               disabled={loading || !canGenerate}
               className={`
-                inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold
+                inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold
                 transition-all duration-200
                 ${canGenerate 
-                  ? `${tintPrimary} cursor-pointer` 
+                  ? `${btnPrimary.className} cursor-pointer` 
                   : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"
                 }
               `}
-              style={canGenerate ? {
-                background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                color: primaryTextColor,
-                boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-              } : {}}
+              style={canGenerate ? btnPrimary.style : {}}
               title={!canGenerate ? "Not permitted" : "Generate forecast"}
             >
               <PlayCircleIcon className="w-4 h-4" />
@@ -464,18 +532,14 @@ export default function PurchaseOrder() {
               onClick={pruneNoPackPrice}
               disabled={!rows.length}
               className={`
-                inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold
+                inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold
                 transition-all duration-200
                 ${rows.length 
-                  ? `${tintPrimary} cursor-pointer` 
+                  ? `${btnPrimary.className} cursor-pointer` 
                   : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"
                 }
               `}
-              style={rows.length ? {
-                background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                color: primaryTextColor,
-                boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-              } : {}}
+              style={rows.length ? btnPrimary.style : {}}
               title="Remove products with no Pack Purchase Price"
             >
               <span className="text-lg">×</span>
@@ -487,12 +551,8 @@ export default function PurchaseOrder() {
             {/* Refresh Button */}
             <button
               onClick={() => window.location.reload()}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintGlass}`}
-              style={{
-                background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                color: secondaryTextColor,
-                boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
-              }}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold ${btnSecondary.className}`}
+              style={btnSecondary.style}
               title="Refresh"
               aria-label="Refresh page"
             >
@@ -504,12 +564,8 @@ export default function PurchaseOrder() {
             <button
               ref={printBtnRef}
               onClick={doPrint}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintGlass}`}
-              style={{
-                background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
-                color: secondaryTextColor,
-                boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`
-              }}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold ${btnTertiary.className}`}
+              style={btnTertiary.style}
               title="Print (Alt+P)"
             >
               <PrinterIcon className="w-4 h-4" />

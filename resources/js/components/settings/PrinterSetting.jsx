@@ -66,7 +66,7 @@ export default function PrinterSetting({
   themeColors,
   emeraldTextColor
 }) {
-  const { isDark } = useTheme();
+  const { isDark, theme } = useTheme();
   
   // Use passed themeColors if available, otherwise use default
   const colors = themeColors || {
@@ -87,6 +87,79 @@ export default function PrinterSetting({
   const [selectedThermalTemplate, setSelectedThermalTemplate] = useState(form.thermal_template || "standard");
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewingTemplate, setPreviewingTemplate] = useState(null);
+
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: colors.primary,
+            color: colors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: colors.secondary,
+            color: colors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        emerald: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: colors.emerald,
+            color: colors.emerald,
+            backgroundColor: 'transparent',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})`,
+          color: '#ffffff',
+          boxShadow: `0 4px 14px 0 ${colors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${colors.secondary}, ${colors.secondaryHover})`,
+          color: '#ffffff',
+          boxShadow: `0 4px 14px 0 ${colors.secondary}40`,
+        }
+      },
+      emerald: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${colors.emerald}, ${colors.emeraldHover})`,
+          color: textColor,
+          boxShadow: `0 4px 14px 0 ${colors.emerald}40`,
+        }
+      },
+    };
+  }, [buttonStyle, colors, textColor]);
+
+  const btnEmerald = getButtonClasses.emerald;
+  const btnPrimary = getButtonClasses.primary;
 
   // 🎨 Modern button palette
   const btnOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-all duration-200";
@@ -402,13 +475,9 @@ export default function PrinterSetting({
         <GlassBtn
           onClick={handleSave}
           disabled={disableInputs || saving}
-          className="h-10 px-6"
+          className={`h-10 px-6 ${btnEmerald.className}`}
           title={!disableInputs ? "Alt+S" : "You lack update permission"}
-          style={{
-            background: `linear-gradient(to bottom right, ${colors.emerald}, ${colors.emeraldHover})`,
-            color: textColor,
-            boxShadow: `0 4px 14px 0 ${colors.emerald}40`
-          }}
+          style={btnEmerald.style}
         >
           {saving ? "Saving…" : "Save Settings"}
         </GlassBtn>
@@ -470,13 +539,14 @@ export default function PrinterSetting({
                 </svg>
                 Open in New Tab
               </a>
-              <div className="flex gap-2">
+            <div className="flex gap-2">
                 <GlassBtn
                   onClick={() => {
                     setShowPreviewModal(false);
                     setPreviewingTemplate(null);
                   }}
-                  className={`h-9 px-4 ${btnOutline}`}
+                  className={`h-9 px-4 ${btnPrimary.className}`}
+                  style={btnPrimary.style}
                 >
                   Close
                 </GlassBtn>
@@ -492,7 +562,8 @@ export default function PrinterSetting({
                     }
                   }}
                   disabled={disableInputs}
-                  className={`h-9 px-4 ${btnBlue}`}
+                  className={`h-9 px-4 ${btnPrimary.className}`}
+                  style={btnPrimary.style}
                 >
                   {form.thermal_template === previewingTemplate.id 
                     ? "Already Selected" 

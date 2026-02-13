@@ -173,7 +173,7 @@ export default function StockAdjustmentReport() {
     };
   }, [theme]);
 
-  // Calculate text colors based on background brightness
+// Calculate text colors based on background brightness
   const primaryTextColor = useMemo(() => 
     getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
     [themeColors.primary, themeColors.primaryHover]
@@ -183,6 +183,63 @@ export default function StockAdjustmentReport() {
     getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
     [themeColors.secondary, themeColors.secondaryHover]
   );
+
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: primaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: secondaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor]);
+
+  const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
 
   // Get section styles
   const coreStyles = useMemo(() => getSectionStyles(themeColors, 'primary'), [themeColors]);
@@ -312,24 +369,18 @@ export default function StockAdjustmentReport() {
           {/* Action Buttons */}
           <div className="flex items-center gap-2">
             <GlassBtn
-              className="h-9"
+              className={`h-9 ${btnPrimary.className}`}
               onClick={resetFilters}
-              style={{
-                color: isDark ? themeColors.primary : themeColors.primary,
-              }}
+              style={btnPrimary.style}
             >
               Reset
             </GlassBtn>
             <Guard when={can.view}>
               <GlassBtn
-                className="h-9"
+                className={`h-9 ${btnPrimary.className}`}
                 onClick={fetchReport}
                 disabled={loading}
-                style={{
-                  background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                  color: primaryTextColor,
-                  boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                }}
+                style={btnPrimary.style}
               >
                 <span className="inline-flex items-center gap-2">
                   <ArrowPathIcon className={`w-5 h-5 ${loading ? "animate-spin" : ""}`} />
@@ -368,14 +419,10 @@ export default function StockAdjustmentReport() {
           <div className="md:col-span-6 flex flex-wrap gap-2 items-end">
             <Guard when={can.export}>
               <GlassBtn
-                className="h-9"
+                className={`h-9 ${btnSecondary.className}`}
                 onClick={exportPdf}
                 disabled={pdfLoading || rows.length === 0}
-                style={{
-                  background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                  color: secondaryTextColor,
-                  boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
-                }}
+                style={btnSecondary.style}
               >
                 <span className="inline-flex items-center gap-2">
                   <ArrowDownOnSquareIcon className="w-5 h-5" />

@@ -268,31 +268,79 @@ export default function Dashboard() {
     tertiaryLight: theme?.tertiary_light || '#cffafe',
   }), [theme]);
 
-  // Get section config for styling - uses dynamic theme colors
-  const getSectionConfig = (key) => {
-    const colorMap = {
-      dashboard: { base: themeColors.secondary, light: themeColors.secondaryLight, hover: themeColors.secondaryHover },
-      sales: { base: themeColors.primary, light: themeColors.primaryLight, hover: themeColors.primaryHover },
-      purchases: { base: themeColors.primary, light: themeColors.primaryLight, hover: themeColors.primaryHover },
-      returns: { base: themeColors.tertiary, light: themeColors.tertiaryLight, hover: themeColors.tertiaryHover },
-      kpi: { base: themeColors.primary, light: themeColors.primaryLight, hover: themeColors.primaryHover },
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
     };
-    const colors = colorMap[key] || colorMap.sales;
-    return colors;
-  };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        tertiary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.tertiary,
+            color: themeColors.tertiary,
+            backgroundColor: 'transparent',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+      tertiary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`,
+        }
+      },
+    };
+  }, [buttonStyle, themeColors]);
 
-  // Dynamic tint buttons based on theme
-  const tintPrimary = useMemo(() => 
-    `bg-gradient-to-br from-[${themeColors.primary}] to-[${themeColors.primaryHover}] text-white shadow-lg shadow-[${themeColors.primary}]/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-[${themeColors.primary}]/30 hover:scale-[1.02] hover:from-[${themeColors.primaryHover}] hover:to-[${themeColors.primary}] active:scale-[0.98] transition-all duration-200`
-  , [themeColors]);
-
-  const tintSecondary = useMemo(() => 
-    `bg-gradient-to-br from-[${themeColors.secondary}] to-[${themeColors.secondaryHover}] text-white shadow-lg shadow-[${themeColors.secondary}]/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-[${themeColors.secondary}]/30 hover:scale-[1.02] hover:from-[${themeColors.secondaryHover}] hover:to-[${themeColors.secondary}] active:scale-[0.98] transition-all duration-200`
-  , [themeColors]);
-
-  const tintTertiary = useMemo(() => 
-    `bg-gradient-to-br from-[${themeColors.tertiary}] to-[${themeColors.tertiaryHover}] text-white shadow-lg shadow-[${themeColors.tertiary}]/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-[${themeColors.tertiary}]/30 hover:scale-[1.02] hover:from-[${themeColors.tertiaryHover}] hover:to-[${themeColors.tertiary}] active:scale-[0.98] transition-all duration-200`
-  , [themeColors]);
+  const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
+  const btnTertiary = getButtonClasses.tertiary;
 
   const netSales = useMemo(() => (cards.sales || 0) - (cards.saleReturns || 0), [cards]);
 
@@ -442,7 +490,8 @@ export default function Dashboard() {
             <button
               onClick={fetchAll}
               disabled={loading}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${tintSecondary}`}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold ${btnSecondary.className}`}
+              style={btnSecondary.style}
             >
               <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
               {loading ? "Loading…" : "Refresh"}
@@ -858,11 +907,12 @@ export default function Dashboard() {
                 <button
                   key={opt.m}
                   onClick={() => setExpiryMonths(opt.m)}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all duration-200 ${
+                  className={`px-2.5 py-1 text-xs font-medium transition-all duration-200 ${btnPrimary.className} ${
                     expiryMonths === opt.m
-                      ? tintPrimary
-                      : "bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600"
+                      ? ""
+                      : "hover:opacity-80"
                   }`}
+                  style={expiryMonths === opt.m ? btnPrimary.style : { ...btnPrimary.style, opacity: 0.6 }}
                 >
                   {opt.label}
                 </button>
@@ -913,14 +963,17 @@ export default function Dashboard() {
                 setSupplierId("");
                 setBrandId("");
               }}
-              className="px-3 py-1 text-xs font-medium rounded-md bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition-all duration-200"
+              className="px-3 py-1 text-xs font-medium bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition-all duration-200"
             >
               Clear
             </button>
             <button
               onClick={fetchNearExpiry}
               disabled={loadingExpiry}
-              className={`inline-flex items-center gap-1 rounded-md px-3 py-1 text-xs font-semibold ${loadingExpiry ? "bg-gray-300 dark:bg-slate-600 cursor-not-allowed" : tintSecondary}`}
+              className={`inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold ${btnSecondary.className} ${
+                loadingExpiry ? "cursor-not-allowed opacity-50" : ""
+              }`}
+              style={loadingExpiry ? { borderColor: themeColors.secondary, color: themeColors.secondary, backgroundColor: 'transparent' } : btnSecondary.style}
             >
               <ArrowPathIcon className={`w-3.5 h-3.5 ${loadingExpiry ? "animate-spin" : ""}`} />
               {loadingExpiry ? "Loading…" : "Refresh"}

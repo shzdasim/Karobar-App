@@ -23,6 +23,7 @@ const DARK_THEME = {
   danger_color: '#ef4444',
   border_color: '#334155',
   shadow_color: '#000000',
+  button_style: 'rounded',
 };
 
 const LIGHT_THEME = {
@@ -44,6 +45,7 @@ const LIGHT_THEME = {
   danger_color: '#ef4444',
   border_color: '#e2e8f0',
   shadow_color: '#1e293b',
+  button_style: 'rounded',
 };
 
 const DEFAULT_THEME = LIGHT_THEME;
@@ -148,6 +150,7 @@ export function ThemeProvider({ children }) {
           danger_color: data.danger_color || DEFAULT_THEME.danger_color,
           border_color: data.border_color || DEFAULT_THEME.border_color,
           shadow_color: data.shadow_color || DEFAULT_THEME.shadow_color,
+          button_style: data.button_style || DEFAULT_THEME.button_style,
         });
       }
     } catch (err) {
@@ -208,6 +211,14 @@ export function ThemeProvider({ children }) {
     // UI elements
     root.style.setProperty('--color-border', theme.border_color);
     root.style.setProperty('--color-shadow', theme.shadow_color);
+    
+    // Button style radius
+    const radiusMap = {
+      'rounded': '0.5rem',  // 8px
+      'outlined': '0.5rem', // 8px
+      'soft': '0.75rem',   // 12px - medium rounded
+    };
+    root.style.setProperty('--btn-radius', radiusMap[theme.button_style] || '0.5rem');
     
     // Also set Tailwind-compatible CSS variables for dynamic styling
     root.style.setProperty('--tw-color-primary-500', theme.primary_color);
@@ -282,6 +293,7 @@ export function ThemeProvider({ children }) {
         danger_color: data.danger_color,
         border_color: data.border_color,
         shadow_color: data.shadow_color,
+        button_style: data.button_style,
       };
       Object.entries(cssVars).forEach(([key, value]) => {
         if (value) {
@@ -289,6 +301,14 @@ export function ThemeProvider({ children }) {
           root.style.setProperty(cssVar, value);
         }
       });
+      
+      // Apply button style radius
+      const radiusMap = {
+        'rounded': '0.5rem',  // 8px
+        'outlined': '0.5rem', // 8px
+        'soft': '0.75rem',   // 12px - medium rounded
+      };
+      root.style.setProperty('--btn-radius', radiusMap[data.button_style] || '0.5rem');
       
       // Dispatch event for other components
       window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: data } }));

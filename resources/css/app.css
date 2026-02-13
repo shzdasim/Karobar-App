@@ -173,6 +173,25 @@ html {
     @apply px-2 bg-white/70 backdrop-blur-sm border border-gray-200/70 hover:bg-white shadow-sm rounded-xl text-sm text-gray-900; 
     @apply dark:bg-slate-700/70 dark:border-slate-600/70 dark:hover:bg-slate-600/70 dark:text-gray-100;
   }
+  
+  /* Button Style Variants */
+  .btn-rounded {
+    @apply rounded-lg;
+  }
+  
+  .btn-outlined {
+    @apply rounded-lg border-2;
+  }
+  
+  .btn-soft {
+    @apply rounded-xl;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+  
+  /* Dynamic button radius based on theme */
+  .btn-style {
+    border-radius: var(--btn-radius, 0.5rem);
+  }
 }
 
 /* Add this animation in your global CSS (Tailwind supports it) */

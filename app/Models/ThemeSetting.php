@@ -29,6 +29,7 @@ class ThemeSetting extends Model
         'danger_color',
         'border_color',
         'shadow_color',
+        'button_style',
         'is_active',
     ];
 
@@ -41,6 +42,14 @@ class ThemeSetting extends Model
      */
     public function getCssVariables(): array
     {
+        // Map button style to border radius
+        $radiusMap = [
+            'rounded' => '0.5rem',
+            'outlined' => '0.5rem',
+            'pill' => '9999px',
+            'soft' => '0.75rem',
+        ];
+        
         return [
             '--color-primary' => $this->primary_color,
             '--color-primary-hover' => $this->primary_hover,
@@ -60,6 +69,7 @@ class ThemeSetting extends Model
             '--color-danger' => $this->danger_color,
             '--color-border' => $this->border_color,
             '--color-shadow' => $this->shadow_color,
+            '--btn-radius' => $radiusMap[$this->button_style] ?? '0.5rem',
         ];
     }
 

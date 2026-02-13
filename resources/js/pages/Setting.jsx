@@ -158,6 +158,78 @@ export default function Setting() {
     [themeColors.emerald, themeColors.emeraldHover]
   );
 
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        emerald: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.emerald,
+            color: themeColors.emerald,
+            backgroundColor: 'transparent',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: primaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: '#ffffff',
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+      emerald: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
+          color: emeraldTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.emerald}40`,
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, primaryTextColor, emeraldTextColor]);
+
+  const btnEmerald = getButtonClasses.emerald;
+
   useEffect(() => {
     if (permsLoading) return;
     if (!can.view) { setLoading(false); return; }
@@ -322,11 +394,9 @@ export default function Setting() {
               ref={saveBtnRef}
               onClick={handleSave}
               disabled={!can.update || saving}
-              className="h-9 px-4"
+              className={`h-9 px-4 ${btnEmerald.className}`}
               style={{
-                background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
-                color: emeraldTextColor,
-                boxShadow: `0 6px 20px -6px ${themeColors.emerald}45`,
+                ...btnEmerald.style,
                 opacity: (!can.update || saving) ? 0.6 : 1,
                 cursor: (!can.update || saving) ? 'not-allowed' : 'pointer'
               }}
@@ -507,11 +577,9 @@ export default function Setting() {
           ref={saveBtnRef}
           onClick={handleSave}
           disabled={!can.update || saving}
-          className="h-10 px-5"
+          className={`h-10 px-5 ${btnEmerald.className}`}
           style={{
-            background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
-            color: emeraldTextColor,
-            boxShadow: `0 6px 20px -6px ${themeColors.emerald}45`,
+            ...btnEmerald.style,
             opacity: (!can.update || saving) ? 0.6 : 1,
             cursor: (!can.update || saving) ? 'not-allowed' : 'pointer'
           }}

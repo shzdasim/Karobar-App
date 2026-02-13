@@ -93,6 +93,114 @@ export default function SaleInvoiceShow() {
     [themeColors.success, themeColors.successHover]
   );
 
+  // Get button style from theme
+  const buttonStyle = theme?.button_style || 'rounded';
+  
+  // Get button style classes and styles based on theme button_style
+  const getButtonClasses = useMemo(() => {
+    const radiusMap = {
+      'rounded': 'rounded-lg',
+      'outlined': 'rounded-lg',
+      'soft': 'rounded-xl',
+    };
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    
+    if (buttonStyle === 'outlined') {
+      return {
+        primary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.primary,
+            color: themeColors.primary,
+            backgroundColor: 'transparent',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.secondary,
+            color: themeColors.secondary,
+            backgroundColor: 'transparent',
+          }
+        },
+        danger: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.danger,
+            color: themeColors.danger,
+            backgroundColor: 'transparent',
+          }
+        },
+        success: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: themeColors.success,
+            color: themeColors.success,
+            backgroundColor: 'transparent',
+          }
+        },
+        glass: {
+          className: `${radiusClass} border-2 transition-all duration-200`,
+          style: {
+            borderColor: '#64748b',
+            color: '#64748b',
+            backgroundColor: 'transparent',
+          }
+        },
+      };
+    }
+    
+    // Filled styles for rounded and soft
+    return {
+      primary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          color: primaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
+        }
+      },
+      secondary: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+          color: secondaryTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
+        }
+      },
+      danger: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
+          color: dangerTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.danger}40`,
+        }
+      },
+      success: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, ${themeColors.success}, ${themeColors.successHover})`,
+          color: successTextColor,
+          boxShadow: `0 4px 14px 0 ${themeColors.success}40`,
+        }
+      },
+      glass: {
+        className: radiusClass,
+        style: {
+          background: `linear-gradient(to bottom right, #64748b, #475569)`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 #64748b40`,
+        }
+      },
+    };
+  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor, dangerTextColor, successTextColor]);
+
+  const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
+  const btnDanger = getButtonClasses.danger;
+  const btnSuccess = getButtonClasses.success;
+  const btnGlass = getButtonClasses.glass;
+
   const chip =
     "px-1 py-0.5 border rounded bg-gray-50 dark:bg-slate-700 text-[10px] leading-none text-gray-700 dark:text-gray-300";
 
@@ -355,12 +463,8 @@ export default function SaleInvoiceShow() {
               <button
                 type="button"
                 onClick={handlePrint}
-                className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200`}
-                style={{
-                  background: `linear-gradient(to bottom right, ${themeColors.success}, ${themeColors.successHover})`,
-                  color: successTextColor,
-                  boxShadow: `0 4px 14px 0 ${themeColors.success}40`
-                }}
+                className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200 ${btnSuccess.className}`}
+                style={btnSuccess.style}
                 title="Alt+P"
               >
                 🖨️ Print
@@ -369,12 +473,8 @@ export default function SaleInvoiceShow() {
                 <button
                   type="button"
                   onClick={() => navigate(`/sale-invoices/${id}/edit`)}
-                  className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200`}
-                  style={{
-                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                    color: primaryTextColor,
-                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                  }}
+                  className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200 ${btnPrimary.className}`}
+                  style={btnPrimary.style}
                   title="Alt+E"
                 >
                   ✏️ Edit
@@ -384,12 +484,8 @@ export default function SaleInvoiceShow() {
                 <button
                   type="button"
                   onClick={openDeleteModal}
-                  className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200`}
-                  style={{
-                    background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-                    color: dangerTextColor,
-                    boxShadow: `0 4px 14px 0 ${themeColors.danger}40`
-                  }}
+                  className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200 ${btnDanger.className}`}
+                  style={btnDanger.style}
                   title="Alt+D"
                 >
                   🗑 Delete
@@ -399,12 +495,8 @@ export default function SaleInvoiceShow() {
               <button
                 type="button"
                 onClick={() => navigate("/sale-invoices/create")}
-                className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200`}
-                style={{
-                  background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                  color: secondaryTextColor,
-                  boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
-                }}
+                className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
+                style={btnSecondary.style}
                 title="Alt+N"
               >
                 ➕ New
@@ -413,7 +505,8 @@ export default function SaleInvoiceShow() {
               <button
                 type="button"
                 onClick={() => navigate(-1)}
-                className="px-3 py-1.5 rounded text-[11px] bg-slate-600/85 dark:bg-slate-700/85 text-white ring-1 ring-white/20 backdrop-blur-sm shadow-[0_4px_14px_-6px_rgba(15,23,42,0.45)] hover:bg-slate-600/95 dark:hover:bg-slate-700/95 transition-all duration-200"
+                className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200 ${btnGlass.className}`}
+                style={btnGlass.style}
                 title="Alt+B"
               >
                 ← Back
@@ -614,12 +707,8 @@ export default function SaleInvoiceShow() {
                 <button
                   type="button"
                   onClick={handlePrint}
-                  className={`h-9 rounded text-[12px] font-semibold transition-all duration-200`}
-                  style={{
-                    background: `linear-gradient(to bottom right, ${themeColors.success}, ${themeColors.successHover})`,
-                    color: successTextColor,
-                    boxShadow: `0 4px 14px 0 ${themeColors.success}40`
-                  }}
+                  className={`h-9 rounded text-[12px] font-semibold transition-all duration-200 ${btnSuccess.className}`}
+                  style={btnSuccess.style}
                   title="Alt+P"
                 >
                   🖨️ Print
@@ -629,12 +718,8 @@ export default function SaleInvoiceShow() {
                   <button
                     type="button"
                     onClick={() => navigate(`/sale-invoices/${id}/edit`)}
-                    className={`h-9 rounded text-[12px] font-semibold transition-all duration-200`}
-                    style={{
-                      background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                      color: primaryTextColor,
-                      boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                    }}
+                    className={`h-9 rounded text-[12px] font-semibold transition-all duration-200 ${btnPrimary.className}`}
+                    style={btnPrimary.style}
                     title="Alt+E"
                   >
                     ✏️ Edit
@@ -644,12 +729,8 @@ export default function SaleInvoiceShow() {
                   <button
                     type="button"
                     onClick={() => navigate("/sale-invoices/create")}
-                    className={`col-span-2 h-9 rounded text-[12px] font-semibold transition-all duration-200`}
-                    style={{
-                      background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-                      color: secondaryTextColor,
-                      boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`
-                    }}
+                    className={`col-span-2 h-9 rounded text-[12px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
+                    style={btnSecondary.style}
                     title="Alt+N"
                   >
                     ➕ New
@@ -659,12 +740,8 @@ export default function SaleInvoiceShow() {
                   <button
                     type="button"
                     onClick={openDeleteModal}
-                    className={`col-span-2 h-9 rounded text-[12px] font-semibold transition-all duration-200`}
-                    style={{
-                      background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-                      color: dangerTextColor,
-                      boxShadow: `0 4px 14px 0 ${themeColors.danger}40`
-                    }}
+                    className={`col-span-2 h-9 rounded text-[12px] font-semibold transition-all duration-200 ${btnDanger.className}`}
+                    style={btnDanger.style}
                     title="Alt+D"
                   >
                     🗑 Delete
@@ -673,7 +750,8 @@ export default function SaleInvoiceShow() {
                 <button
                   type="button"
                   onClick={() => navigate(-1)}
-                  className="col-span-2 h-9 rounded text-[12px] bg-slate-600/85 dark:bg-slate-700/85 text-white ring-1 ring-white/20 backdrop-blur-sm shadow-[0_4px_14px_-6px_rgba(15,23,42,0.45)] hover:bg-slate-600/95 dark:hover:bg-slate-700/95 transition-all duration-200"
+                  className={`col-span-2 h-9 rounded text-[12px] font-semibold transition-all duration-200 ${btnGlass.className}`}
+                  style={btnGlass.style}
                   title="Alt+B"
                 >
                   ← Back
@@ -707,11 +785,8 @@ export default function SaleInvoiceShow() {
                     Cancel
                   </button>
                   <button
-                    className="px-3 py-1 rounded text-white font-semibold transition-all duration-200"
-                    style={{
-                      background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-                      color: dangerTextColor,
-                    }}
+                    className={`px-3 py-1 rounded text-white font-semibold transition-all duration-200 ${btnDanger.className}`}
+                    style={btnDanger.style}
                     onClick={proceedAfterConfirm}
                   >
                     Yes, continue
@@ -758,11 +833,8 @@ export default function SaleInvoiceShow() {
                     ← Back
                   </button>
                   <button
-                    className="px-3 py-1 rounded text-white font-semibold transition-all duration-200"
-                    style={{
-                      background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                      color: primaryTextColor,
-                    }}
+                    className={`px-3 py-1 rounded text-white font-semibold transition-all duration-200 ${btnPrimary.className}`}
+                    style={btnPrimary.style}
                     onClick={proceedToPassword}
                   >
                     Continue
@@ -803,11 +875,8 @@ export default function SaleInvoiceShow() {
                       Cancel
                     </button>
                     <button
-                      className="px-3 py-1 rounded text-white font-semibold transition-all duration-200 disabled:opacity-60"
-                      style={{
-                        background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-                        color: dangerTextColor,
-                      }}
+                      className={`px-3 py-1 rounded text-white font-semibold transition-all duration-200 disabled:opacity-60 ${btnDanger.className}`}
+                      style={btnDanger.style}
                       onClick={confirmAndDelete}
                       disabled={deleting || password.trim() === ""}
                     >
