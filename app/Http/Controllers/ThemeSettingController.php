@@ -108,6 +108,7 @@ class ThemeSettingController extends Controller
             'border_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'shadow_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'button_style' => ['nullable', 'string', 'in:rounded,outlined,pill,soft'],
+            'sidebar_template' => ['nullable', 'string', 'in:classic,mini,modern,floating,glass,gradient,minimal,cyber,aurora,nebula,elegant,vibrant'],
         ]);
 
         $activeTheme->update($validated);
@@ -171,4 +172,3 @@ class ThemeSettingController extends Controller
         return response()->json(null, 204);
     }
 }
-

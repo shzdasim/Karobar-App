@@ -6,6 +6,7 @@ import Sidebar from "../components/Sidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
 import TopNavigation from "../components/TopNavigation.jsx";
 import { Toaster } from "react-hot-toast";
+import { useTheme } from "@/context/ThemeContext";
 
 export default function DashboardLayout({ children }) {
   const location = useLocation();
@@ -18,6 +19,10 @@ export default function DashboardLayout({ children }) {
   const [navigationStyle, setNavigationStyle] = useState(() => {
     return localStorage.getItem('navigation_style') || 'sidebar';
   });
+
+  // Get sidebar template from theme for forcing re-render
+  const { theme } = useTheme();
+  const sidebarTemplate = theme?.sidebar_template || 'classic';
 
   // Fetch settings from API and sync with localStorage
   useEffect(() => {
@@ -106,6 +111,7 @@ export default function DashboardLayout({ children }) {
         {navigationStyle === "sidebar" && (
           <div className="sticky top-0 h-screen min-h-0">
             <Sidebar 
+              key={sidebarTemplate}
               appName={appName} 
               logoUrl={logoUrl} 
             />

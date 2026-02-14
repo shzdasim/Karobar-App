@@ -24,6 +24,7 @@ const DARK_THEME = {
   border_color: '#334155',
   shadow_color: '#000000',
   button_style: 'rounded',
+  sidebar_template: 'classic',
 };
 
 const LIGHT_THEME = {
@@ -46,6 +47,7 @@ const LIGHT_THEME = {
   border_color: '#e2e8f0',
   shadow_color: '#1e293b',
   button_style: 'rounded',
+  sidebar_template: 'classic',
 };
 
 const DEFAULT_THEME = LIGHT_THEME;
@@ -151,6 +153,7 @@ export function ThemeProvider({ children }) {
           border_color: data.border_color || DEFAULT_THEME.border_color,
           shadow_color: data.shadow_color || DEFAULT_THEME.shadow_color,
           button_style: data.button_style || DEFAULT_THEME.button_style,
+          sidebar_template: data.sidebar_template || DEFAULT_THEME.sidebar_template,
         });
       }
     } catch (err) {
@@ -219,6 +222,9 @@ export function ThemeProvider({ children }) {
       'soft': '0.75rem',   // 12px - medium rounded
     };
     root.style.setProperty('--btn-radius', radiusMap[theme.button_style] || '0.5rem');
+    
+    // Sidebar template
+    root.style.setProperty('--sidebar-template', theme.sidebar_template || 'classic');
     
     // Also set Tailwind-compatible CSS variables for dynamic styling
     root.style.setProperty('--tw-color-primary-500', theme.primary_color);
@@ -294,6 +300,7 @@ export function ThemeProvider({ children }) {
         border_color: data.border_color,
         shadow_color: data.shadow_color,
         button_style: data.button_style,
+        sidebar_template: data.sidebar_template,
       };
       Object.entries(cssVars).forEach(([key, value]) => {
         if (value) {
@@ -309,6 +316,9 @@ export function ThemeProvider({ children }) {
         'soft': '0.75rem',   // 12px - medium rounded
       };
       root.style.setProperty('--btn-radius', radiusMap[data.button_style] || '0.5rem');
+      
+      // Apply sidebar template
+      root.style.setProperty('--sidebar-template', data.sidebar_template || 'classic');
       
       // Dispatch event for other components
       window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: data } }));
@@ -341,6 +351,7 @@ export function ThemeProvider({ children }) {
       root.style.setProperty('--color-tertiary', data.tertiary_color);
       root.style.setProperty('--color-tertiary-hover', data.tertiary_hover);
       root.style.setProperty('--color-tertiary-light', data.tertiary_light);
+      root.style.setProperty('--sidebar-template', data.sidebar_template || 'classic');
       
       // Dispatch event for other components
       window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: data } }));

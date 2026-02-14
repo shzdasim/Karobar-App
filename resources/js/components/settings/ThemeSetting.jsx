@@ -12,6 +12,7 @@ import {
   Cog6ToothIcon,
   Square2StackIcon
 } from "@heroicons/react/24/solid";
+import SidebarTemplateSetting from "./SidebarTemplateSetting";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -427,6 +428,13 @@ export default function ThemeSetting({ form: parentForm, setForm, disableInputs 
         </GlassToolbar>
       </GlassCard>
 
+      {/* ===== Sidebar Template Selection ===== */}
+      <SidebarTemplateSetting 
+        form={parentForm} 
+        setForm={setForm} 
+        disableInputs={disableInputs} 
+      />
+
       {/* ===== Button Style (New Section) ===== */}
       <GlassCard>
         <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-slate-700">
@@ -660,4 +668,3 @@ export default function ThemeSetting({ form: parentForm, setForm, disableInputs 
     </div>
   );
 }
-

@@ -30,6 +30,7 @@ class ThemeSetting extends Model
         'border_color',
         'shadow_color',
         'button_style',
+        'sidebar_template',
         'is_active',
     ];
 
@@ -70,6 +71,7 @@ class ThemeSetting extends Model
             '--color-border' => $this->border_color,
             '--color-shadow' => $this->shadow_color,
             '--btn-radius' => $radiusMap[$this->button_style] ?? '0.5rem',
+            '--sidebar-template' => $this->sidebar_template ?? 'classic',
         ];
     }
 
