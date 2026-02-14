@@ -1409,7 +1409,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                     type="number"
                     value={item.avg_price ?? ""}
                     readOnly
-                    className="border w-full h-6 text-[11px] px-1 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100"
+                    className="border w-full h-6 text-[11px] px-1 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     {...antiFill}
                   />
                 </td>
@@ -1420,7 +1420,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                     type="number"
                     value={item.sub_total ?? ""}
                     readOnly
-                    className="border w-full h-6 text-[11px] px-1 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100"
+                    className="border w-full h-6 text-[11px] px-1 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     {...antiFill}
                   />
                 </td>
@@ -1524,7 +1524,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                   name="total_amount"
                   readOnly
                   value={form.total_amount}
-                  className="border rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100"
+                  className="border rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   {...antiFill}
                 />
               </td>
@@ -1579,7 +1579,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                   name="remaining_amount"
                   readOnly
                   value={to2((form.total_amount || 0) - (form.total_paid || 0)).toFixed(2)}
-                  className="border rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100"
+                  className="border rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   {...antiFill}
                 />
               </td>
