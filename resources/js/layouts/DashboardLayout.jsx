@@ -4,7 +4,7 @@ import axios from "axios";
 import { useLocation } from "react-router-dom";
 import Sidebar from "../components/Sidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
-import TopNavigation from "../components/TopNavigation.jsx";
+import TopbarNavigation from "../components/TopbarNavigation.jsx";
 import { Toaster } from "react-hot-toast";
 import { useTheme } from "@/context/ThemeContext";
 
@@ -20,9 +20,10 @@ export default function DashboardLayout({ children }) {
     return localStorage.getItem('navigation_style') || 'sidebar';
   });
 
-  // Get sidebar template from theme for forcing re-render
+  // Get templates from theme for forcing re-render
   const { theme } = useTheme();
   const sidebarTemplate = theme?.sidebar_template || 'classic';
+  const topbarTemplate = theme?.topbar_template || 'classic';
 
   // Fetch settings from API and sync with localStorage
   useEffect(() => {
@@ -121,12 +122,15 @@ export default function DashboardLayout({ children }) {
 
       {/* Topbar: top-right cell */}
       <div className="row-start-1 col-start-2 relative z-40">
-        {/* TopNavigation on top - only in topbar mode */}
-        {navigationStyle === "topbar" && <TopNavigation />}
-        <Topbar 
-          pageTitle={pageTitle} 
-          navigationStyle={navigationStyle}
-        />
+        {/* TopbarNavigation - only in topbar mode */}
+        {navigationStyle === "topbar" ? (
+          <TopbarNavigation key={topbarTemplate} />
+        ) : (
+          <Topbar 
+            pageTitle={pageTitle} 
+            navigationStyle={navigationStyle}
+          />
+        )}
       </div>
 
       {/* Main content: bottom-right cell */}

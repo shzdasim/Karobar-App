@@ -31,6 +31,7 @@ class ThemeSetting extends Model
         'shadow_color',
         'button_style',
         'sidebar_template',
+        'topbar_template',
         'is_active',
     ];
 
@@ -72,6 +73,7 @@ class ThemeSetting extends Model
             '--color-shadow' => $this->shadow_color,
             '--btn-radius' => $radiusMap[$this->button_style] ?? '0.5rem',
             '--sidebar-template' => $this->sidebar_template ?? 'classic',
+            '--topbar-template' => $this->topbar_template ?? 'classic',
         ];
     }
 
@@ -101,4 +103,3 @@ class ThemeSetting extends Model
         $this->update(['is_active' => true]);
     }
 }
-

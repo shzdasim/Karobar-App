@@ -13,6 +13,7 @@ import {
   Square2StackIcon
 } from "@heroicons/react/24/solid";
 import SidebarTemplateSetting from "./SidebarTemplateSetting";
+import TopbarTemplateSetting from "./TopbarTemplateSetting";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -429,11 +430,22 @@ export default function ThemeSetting({ form: parentForm, setForm, disableInputs 
       </GlassCard>
 
       {/* ===== Sidebar Template Selection ===== */}
-      <SidebarTemplateSetting 
-        form={parentForm} 
-        setForm={setForm} 
-        disableInputs={disableInputs} 
-      />
+      {navigation_style === 'sidebar' && (
+        <SidebarTemplateSetting 
+          form={parentForm} 
+          setForm={setForm} 
+          disableInputs={disableInputs} 
+        />
+      )}
+
+      {/* ===== Topbar Template Selection ===== */}
+      {navigation_style === 'topbar' && (
+        <TopbarTemplateSetting 
+          form={parentForm} 
+          setForm={setForm} 
+          disableInputs={disableInputs} 
+        />
+      )}
 
       {/* ===== Button Style (New Section) ===== */}
       <GlassCard>
