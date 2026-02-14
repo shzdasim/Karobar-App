@@ -6,6 +6,7 @@ import Select from "react-select";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import { recalcItem, recalcFooter } from "../../Formula/PurchaseInvoice.js";
 import { useTheme } from "@/context/ThemeContext";
+import ProductFormModal from "../../components/ProductFormModal.jsx";
 
 // Helper to determine text color based on background brightness
 // Returns dark text for light backgrounds, light text for dark backgrounds
@@ -97,6 +98,9 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
 
   // Track if user has manually edited total_paid
   const [paidTouched, setPaidTouched] = useState(false);
+
+  // Product modal state
+  const [showProductModal, setShowProductModal] = useState(false);
 
   // only allow numbers (and optionally decimals)
   // allow decimals for price/percentage fields + Pack.Q and PBonus
@@ -946,6 +950,16 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
               <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Credit</span>
             </label>
           </div>
+          
+          {/* Add Product Button */}
+          <button
+            type="button"
+            onClick={() => setShowProductModal(true)}
+            className={`px-3 py-1.5 text-xs font-medium rounded transition-all duration-200 ${btnSecondary.className}`}
+            style={btnSecondary.style}
+          >
+            + Add Product
+          </button>
         </div>
         
         <table className="w-full border-collapse text-xs">
@@ -1584,6 +1598,18 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
           </tbody>
         </table>
       </div>
+
+      {/* Product Form Modal */}
+      <ProductFormModal
+        open={showProductModal}
+        onClose={() => setShowProductModal(false)}
+        onProductCreated={(newProduct) => {
+          // Refresh products list
+          fetchProducts();
+          // Update local products state
+          setProducts(prev => [...(prev || []), newProduct]);
+        }}
+      />
     </form>
   );
 }

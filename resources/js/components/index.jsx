@@ -4,6 +4,7 @@ export { default as BulkDeleteModal, BulkDeleteModalWithIds } from "./BulkDelete
 export { default as BulkEditModal } from "./BulkEditModal.jsx";
 export { default as TextSearch } from "./TextSearch.jsx";
 export { default as ProductImportModal } from "./ProductImportModal.jsx";
+export { default as ProductFormModal } from "./ProductFormModal.jsx";
 export { default as CustomerImportModal } from "./CustomerImportModal.jsx";
 export { default as BrandImportModal } from "./BrandImportModal.jsx";
 export { default as CategoryImportModel } from "./CategoryImportModel.jsx";
