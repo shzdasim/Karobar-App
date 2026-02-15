@@ -485,7 +485,8 @@ export default function PurchaseInvoiceShow() {
               <th colSpan={2} className="border dark:border-slate-600 dark:text-gray-200">Purchase Price (P / U)</th>
               <th colSpan={3} className="border dark:border-slate-600 dark:text-gray-200">Disc % / Bonus (P / U)</th>
               <th colSpan={2} className="border dark:border-slate-600 dark:text-gray-200">Sale Price (P / U)</th>
-              <th colSpan={3} className="border dark:border-slate-600 dark:text-gray-200">Margin % / Avg / Sub Total</th>
+              <th colSpan={3} className="border dark:border-slate-600 dark:text-gray-200">Wholesale Price (P / U)</th>
+              <th colSpan={3} className="border dark:border-slate-600 dark:text-gray-200">Margin % / W.S.Mrg% / Avg / Sub Total</th>
             </tr>
 
             <tr>
@@ -501,7 +502,10 @@ export default function PurchaseInvoiceShow() {
               <th className="border w-14 dark:border-slate-600 dark:text-gray-200">UBonus</th>
               <th className="border w-14 dark:border-slate-600 dark:text-gray-200">Pack.S</th>
               <th className="border w-14 dark:border-slate-600 dark:text-gray-200">Unit.S</th>
+              <th className="border w-14 dark:border-slate-600 dark:text-gray-200">W.S.Pack</th>
+              <th className="border w-14 dark:border-slate-600 dark:text-gray-200">W.S.Unit</th>
               <th className="border w-14 dark:border-slate-600 dark:text-gray-200">Margin%</th>
+              <th className="border w-14 dark:border-slate-600 dark:text-gray-200">W.S.Mrg%</th>
               <th className="border w-16 dark:border-slate-600 dark:text-gray-200">Avg</th>
               <th className="border w-20 dark:border-slate-600 dark:text-gray-200">Sub Total</th>
             </tr>
@@ -648,12 +652,45 @@ export default function PurchaseInvoiceShow() {
                   />
                 </td>
 
+                {/* Wholesale Pack Price */}
+                <td className="border dark:border-slate-600">
+                  <input
+                    type="text"
+                    readOnly
+                    value={fmt(item.whole_sale_pack_price)}
+                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
+                    {...antiFill}
+                  />
+                </td>
+
+                {/* Wholesale Unit Price */}
+                <td className="border dark:border-slate-600">
+                  <input
+                    type="text"
+                    readOnly
+                    value={fmt(item.whole_sale_unit_price)}
+                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
+                    {...antiFill}
+                  />
+                </td>
+
                 {/* Margin % */}
                 <td className="border dark:border-slate-600">
                   <input
                     type="number"
                     readOnly
                     value={fmt(item.margin)}
+                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
+                    {...antiFill}
+                  />
+                </td>
+
+                {/* W.S. Margin % */}
+                <td className="border dark:border-slate-600">
+                  <input
+                    type="number"
+                    readOnly
+                    value={fmt(item.whole_sale_margin)}
                     className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
                     {...antiFill}
                   />

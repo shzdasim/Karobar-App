@@ -258,6 +258,9 @@ const ProductFormFields = forwardRef(({
                 <th className="px-2 py-1.5 dark:text-slate-200">Pack S.</th>
                 <th className="px-2 py-1.5 dark:text-slate-200">Unit P.</th>
                 <th className="px-2 py-1.5 dark:text-slate-200">Unit S.</th>
+                <th className="px-2 py-1.5 dark:text-slate-200">W.S.Pack</th>
+                <th className="px-2 py-1.5 dark:text-slate-200">W.S.Unit</th>
+                <th className="px-2 py-1.5 dark:text-slate-200">W.S.Mrg%</th>
                 <th className="px-2 py-1.5 dark:text-slate-200">Avg</th>
                 <th className="px-2 py-1.5 dark:text-slate-200">Mrg%</th>
                 <th className="px-2 py-1.5 w-16 dark:text-slate-200">Max.Disc</th>
@@ -271,6 +274,9 @@ const ProductFormFields = forwardRef(({
                   { name: "pack_sale_price", disabled: true, value: form.pack_sale_price || "" },
                   { name: "unit_purchase_price", disabled: true, value: form.unit_purchase_price || "" },
                   { name: "unit_sale_price", disabled: true, value: form.unit_sale_price || "" },
+                  { name: "whole_sale_pack_price", disabled: true, value: form.whole_sale_pack_price || "" },
+                  { name: "whole_sale_unit_price", disabled: true, value: form.whole_sale_unit_price || "" },
+                  { name: "whole_sale_margin", disabled: true, value: form.whole_sale_margin || "" },
                   { name: "avg_price", disabled: true, value: form.avg_price || "" },
                   { name: "margin", disabled: true, value: form.margin || "" },
                 ].map((cfg) => (

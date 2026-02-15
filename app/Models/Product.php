@@ -21,6 +21,9 @@ class Product extends Model
         'pack_sale_price',
         'unit_purchase_price',
         'unit_sale_price',
+        'whole_sale_pack_price',
+        'whole_sale_unit_price',
+        'whole_sale_margin',
         'avg_price',
         'margin',
         'narcotic',
@@ -88,6 +91,14 @@ class Product extends Model
         if (array_key_exists('unit_sale_price', $item)) {
             $this->unit_sale_price = $item['unit_sale_price'];
         }
+        
+        // Update wholesale prices if provided
+        if (array_key_exists('whole_sale_pack_price', $item)) {
+            $this->whole_sale_pack_price = $item['whole_sale_pack_price'];
+        }
+        if (array_key_exists('whole_sale_unit_price', $item)) {
+            $this->whole_sale_unit_price = $item['whole_sale_unit_price'];
+        }
 
         $this->avg_price = round($weightedAvg, 2);
 
@@ -95,6 +106,12 @@ class Product extends Model
         $this->margin = ($this->unit_sale_price > 0)
             ? round((($this->unit_sale_price - $this->avg_price) / $this->unit_sale_price) * 100, 2)
             : 0.0;
+        
+        // Wholesale margin (if wholesale unit price is set)
+        if ($this->whole_sale_unit_price > 0) {
+            // Calculate and store wholesale margin in a separate field
+            $this->whole_sale_margin = round((($this->whole_sale_unit_price - $this->avg_price) / $this->whole_sale_unit_price) * 100, 2);
+        }
 
         $this->save();
     }

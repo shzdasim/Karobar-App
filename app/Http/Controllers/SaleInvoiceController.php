@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Batch;
 use App\Models\CustomerLedger;
+use App\Models\CustomerWholeSalePrice;
 use App\Models\Product;
 use App\Models\SaleInvoice;
 use App\Models\SaleInvoiceItem;
@@ -78,6 +79,8 @@ class SaleInvoiceController extends Controller
                 'price'                    => $this->f($raw['price'] ?? 0),
                 'item_discount_percentage' => $this->f($raw['item_discount_percentage'] ?? 0),
                 'sub_total'                => $this->f($raw['sub_total'] ?? 0),
+                'sale_type'                => $raw['sale_type'] ?? 'retail',
+                'is_custom_price'          => $raw['is_custom_price'] ?? false,
             ];
 
             $item = $invoice->items()->create($payload);
@@ -154,6 +157,7 @@ class SaleInvoiceController extends Controller
         $data = $request->validate([
             'customer_id'         => 'required|exists:customers,id',
             'invoice_type'        => 'nullable|string|in:credit,debit,default:debit',
+            'sale_type'           => 'nullable|string|in:retail,wholesale,default:retail',
             'date'                => 'required|date',
             'remarks'             => 'nullable|string',
             'doctor_name'         => 'nullable|string',
@@ -179,6 +183,8 @@ class SaleInvoiceController extends Controller
             'items.*.price'                    => 'required|numeric|min:0',
             'items.*.item_discount_percentage' => 'nullable|numeric',
             'items.*.sub_total'                => 'required|numeric|min:0',
+            'items.*.sale_type'                => 'nullable|string|in:retail,wholesale',
+            'items.*.is_custom_price'          => 'nullable|boolean',
         ]);
 
         return DB::transaction(function () use ($data, $request) {
@@ -191,6 +197,7 @@ class SaleInvoiceController extends Controller
                 'user_id'            => $request->user()->id,
                 'customer_id'        => $data['customer_id'],
                 'invoice_type'       => $data['invoice_type'] ?? 'debit',
+                'sale_type'          => $data['sale_type'] ?? 'retail',
                 'posted_number'      => $posted, // assigned on save
                 'date'               => $data['date'],
                 'remarks'            => $data['remarks'] ?? null,
@@ -207,6 +214,24 @@ class SaleInvoiceController extends Controller
             ]);
 
             $this->createItemsAndReduce($invoice, $data['items']);
+
+            // Save customer-specific wholesale prices if any custom prices were used
+            $saleType = $data['sale_type'] ?? 'retail';
+            if ($saleType === 'wholesale' && isset($data['items'])) {
+                foreach ($data['items'] as $raw) {
+                    if (isset($raw['is_custom_price']) && $raw['is_custom_price'] === true) {
+                        CustomerWholeSalePrice::updateOrCreate(
+                            [
+                                'customer_id' => $data['customer_id'],
+                                'product_id' => $raw['product_id'],
+                            ],
+                            [
+                                'pack_price' => $raw['price'],
+                            ]
+                        );
+                    }
+                }
+            }
 
             // Create customer ledger entry ONLY for credit sales
             $invoiceType = $data['invoice_type'] ?? 'debit';
@@ -241,6 +266,7 @@ class SaleInvoiceController extends Controller
         $data = $request->validate([
             'customer_id'         => 'required|exists:customers,id',
             'invoice_type'        => 'nullable|string|in:credit,debit',
+            'sale_type'           => 'nullable|string|in:retail,wholesale',
             'posted_number'       => 'required|string|unique:sale_invoices,posted_number,' . $invoice->id,
             'date'                => 'required|date',
             'remarks'             => 'nullable|string',
@@ -268,19 +294,24 @@ class SaleInvoiceController extends Controller
             'items.*.price'                    => 'required|numeric|min:0',
             'items.*.item_discount_percentage' => 'nullable|numeric',
             'items.*.sub_total'                => 'required|numeric|min:0',
+            'items.*.sale_type'                => 'nullable|string|in:retail,wholesale',
+            'items.*.is_custom_price'          => 'nullable|boolean',
         ]);
 
         return DB::transaction(function () use ($invoice, $data) {
             $this->revertItems($invoice);
             $invoice->items()->delete();
 
-            // Store old invoice type before update
+            // Store old invoice type and sale type before update
             $oldInvoiceType = $invoice->invoice_type ?? 'debit';
+            $oldSaleType = $invoice->sale_type ?? 'retail';
             $newInvoiceType = $data['invoice_type'] ?? $oldInvoiceType;
+            $newSaleType = $data['sale_type'] ?? $oldSaleType;
 
             $invoice->update([
                 'customer_id'        => $data['customer_id'],
                 'invoice_type'       => $newInvoiceType,
+                'sale_type'          => $newSaleType,
                 'posted_number'      => $data['posted_number'], // keep whatever is on the record
                 'date'               => $data['date'],
                 'remarks'            => $data['remarks'] ?? null,
@@ -297,6 +328,23 @@ class SaleInvoiceController extends Controller
             ]);
 
             $this->createItemsAndReduce($invoice, $data['items']);
+
+            // Save customer-specific wholesale prices if any custom prices were used
+            if ($newSaleType === 'wholesale' && isset($data['items'])) {
+                foreach ($data['items'] as $raw) {
+                    if (isset($raw['is_custom_price']) && $raw['is_custom_price'] === true) {
+                        CustomerWholeSalePrice::updateOrCreate(
+                            [
+                                'customer_id' => $data['customer_id'],
+                                'product_id' => $raw['product_id'],
+                            ],
+                            [
+                                'pack_price' => $raw['price'],
+                            ]
+                        );
+                    }
+                }
+            }
 
             // Handle customer ledger entries
             // If invoice was previously credit but is now debit, delete the ledger entry

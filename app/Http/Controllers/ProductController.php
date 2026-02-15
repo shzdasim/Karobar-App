@@ -27,6 +27,7 @@ class ProductController extends Controller
                 'id','name','product_code','pack_size',
                 'unit_purchase_price','unit_sale_price',
                 'pack_purchase_price','pack_sale_price',
+                'whole_sale_pack_price','whole_sale_unit_price',
                 'quantity','margin','avg_price',
                 'brand_id','supplier_id'
             ])
@@ -159,6 +160,8 @@ class ProductController extends Controller
             'pack_sale_price' => 'nullable|numeric',
             'unit_purchase_price' => 'nullable|numeric',
             'unit_sale_price' => 'nullable|numeric',
+            'whole_sale_pack_price' => 'nullable|numeric',
+            'whole_sale_unit_price' => 'nullable|numeric',
             'avg_price' => 'nullable|numeric',
             'narcotic' => ['required', Rule::in(['yes', 'no'])],
             'max_discount' => 'nullable|integer',
@@ -202,6 +205,8 @@ class ProductController extends Controller
             'pack_sale_price' => 'nullable|numeric',
             'unit_purchase_price' => 'nullable|numeric',
             'unit_sale_price' => 'nullable|numeric',
+            'whole_sale_pack_price' => 'nullable|numeric',
+            'whole_sale_unit_price' => 'nullable|numeric',
             'avg_price' => 'nullable|numeric',
             'narcotic' => ['required', Rule::in(['yes', 'no'])],
             'max_discount' => 'nullable|integer',
@@ -438,14 +443,15 @@ class ProductController extends Controller
 
             fputcsv($out, [
                 'product_code','name','pack_size','unit_purchase_price','unit_sale_price',
-                'pack_purchase_price','pack_sale_price','avg_price','margin','quantity',
+                'pack_purchase_price','pack_sale_price','whole_sale_pack_price','whole_sale_unit_price',
+                'avg_price','margin','quantity',
                 'category','brand','supplier','barcode','narcotic','max_discount','formulation','description','rack'
             ]);
 
             Product::with(['category:id,name','brand:id,name','supplier:id,name'])
                 ->orderBy('id')
                 ->chunk(1000, function ($chunk) use ($out) {
-                    foreach ($chunk as $p) {
+                foreach ($chunk as $p) {
                         fputcsv($out, [
                             (string)($p->product_code ?? ''),
                             (string)($p->name ?? ''),
@@ -454,6 +460,8 @@ class ProductController extends Controller
                             (string)($p->unit_sale_price ?? ''),
                             (string)($p->pack_purchase_price ?? ''),
                             (string)($p->pack_sale_price ?? ''),
+                            (string)($p->whole_sale_pack_price ?? ''),
+                            (string)($p->whole_sale_unit_price ?? ''),
                             (string)($p->avg_price ?? ''),
                             (string)($p->margin ?? ''),
                             (int)($p->quantity ?? 0),

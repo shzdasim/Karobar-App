@@ -35,6 +35,9 @@ const ProductFormModal = forwardRef(({ open, onClose, onProductCreated }, ref) =
     pack_sale_price: "",
     unit_purchase_price: "",
     unit_sale_price: "",
+    whole_sale_pack_price: "",
+    whole_sale_unit_price: "",
+    whole_sale_margin: "",
     avg_price: "",
     margin: "",
     max_discount: "",
@@ -192,6 +195,9 @@ const ProductFormModal = forwardRef(({ open, onClose, onProductCreated }, ref) =
         pack_sale_price: "",
         unit_purchase_price: "",
         unit_sale_price: "",
+        whole_sale_pack_price: "",
+        whole_sale_unit_price: "",
+        whole_sale_margin: "",
         avg_price: "",
         margin: "",
         max_discount: "",
@@ -479,6 +485,9 @@ const ProductFormModal = forwardRef(({ open, onClose, onProductCreated }, ref) =
                       <th className="px-2 py-1.5">Pack S.</th>
                       <th className="px-2 py-1.5">Unit P.</th>
                       <th className="px-2 py-1.5">Unit S.</th>
+                      <th className="px-2 py-1.5">W.S.Pack</th>
+                      <th className="px-2 py-1.5">W.S.Unit</th>
+                      <th className="px-2 py-1.5">W.S.Mrg%</th>
                       <th className="px-2 py-1.5">Avg</th>
                       <th className="px-2 py-1.5">Mrg%</th>
                       <th className="px-2 py-1.5">Max.Disc</th>
@@ -521,6 +530,36 @@ const ProductFormModal = forwardRef(({ open, onClose, onProductCreated }, ref) =
                           type="number"
                           name="unit_sale_price"
                           value={form.unit_sale_price || ""}
+                          onChange={handleChange}
+                          className="h-6 w-full px-1 text-center border rounded dark:bg-slate-600"
+                          placeholder="0"
+                        />
+                      </td>
+                      <td className="px-1 py-1">
+                        <input
+                          type="number"
+                          name="whole_sale_pack_price"
+                          value={form.whole_sale_pack_price || ""}
+                          onChange={handleChange}
+                          className="h-6 w-full px-1 text-center border rounded dark:bg-slate-600"
+                          placeholder="0"
+                        />
+                      </td>
+                      <td className="px-1 py-1">
+                        <input
+                          type="number"
+                          name="whole_sale_unit_price"
+                          value={form.whole_sale_unit_price || ""}
+                          onChange={handleChange}
+                          className="h-6 w-full px-1 text-center border rounded dark:bg-slate-600"
+                          placeholder="0"
+                        />
+                      </td>
+                      <td className="px-1 py-1">
+                        <input
+                          type="number"
+                          name="whole_sale_margin"
+                          value={form.whole_sale_margin || ""}
                           onChange={handleChange}
                           className="h-6 w-full px-1 text-center border rounded dark:bg-slate-600"
                           placeholder="0"

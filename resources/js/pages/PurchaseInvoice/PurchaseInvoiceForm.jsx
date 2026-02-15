@@ -85,6 +85,9 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
         unit_purchase_price: "",
         pack_sale_price: "",
         unit_sale_price: "",
+        whole_sale_pack_price: "",
+        whole_sale_unit_price: "",
+        whole_sale_margin: "",
         pack_bonus: "",
         unit_bonus: "",
         item_discount_percentage: "",
@@ -141,6 +144,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
   const itemDiscountRefs = useRef([]);
   const packBonusRefs = useRef([]);
   const packSalePriceRefs = useRef([]);
+  const wholeSalePackPriceRefs = useRef([]);
+  const wholeSaleUnitPriceRefs = useRef([]);
 
   useEffect(() => {
     fetchSuppliers();
@@ -269,6 +274,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
       "unit_purchase_price",
       "pack_sale_price",
       "unit_sale_price",
+      "whole_sale_pack_price",
+      "whole_sale_unit_price",
       "item_discount_percentage",
       "pack_quantity",
       "pack_bonus",
@@ -315,6 +322,9 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
           unit_purchase_price: "",
           pack_sale_price: "",
           unit_sale_price: "",
+          whole_sale_pack_price: "",
+          whole_sale_unit_price: "",
+          whole_sale_margin: "",
           pack_bonus: "",
           unit_bonus: "",
           item_discount_percentage: "",
@@ -467,6 +477,20 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
             setCurrentRowIndex(rowIndex);
           }
           break;
+        case "whole_sale_pack_price":
+          if (wholeSalePackPriceRefs.current[rowIndex]) {
+            focusAndSelect(wholeSalePackPriceRefs.current[rowIndex]);
+            setCurrentField("whole_sale_pack_price");
+            setCurrentRowIndex(rowIndex);
+          }
+          break;
+        case "whole_sale_unit_price":
+          if (wholeSaleUnitPriceRefs.current[rowIndex]) {
+            focusAndSelect(wholeSaleUnitPriceRefs.current[rowIndex]);
+            setCurrentField("whole_sale_unit_price");
+            setCurrentRowIndex(rowIndex);
+          }
+          break;
         default:
           focusProductSearch(rowIndex);
           break;
@@ -533,6 +557,18 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
           }
           break;
         case "pack_sale_price":
+          if (wholeSalePackPriceRefs.current[rowIndex]) {
+            wholeSalePackPriceRefs.current[rowIndex].focus();
+            setCurrentField("whole_sale_pack_price");
+          }
+          break;
+        case "whole_sale_pack_price":
+          if (wholeSaleUnitPriceRefs.current[rowIndex]) {
+            wholeSaleUnitPriceRefs.current[rowIndex].focus();
+            setCurrentField("whole_sale_unit_price");
+          }
+          break;
+        case "whole_sale_unit_price":
           if (rowIndex < form.items.length - 1) {
             focusProductSearch(rowIndex + 1);
           } else {
@@ -1095,7 +1131,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
               <th colSpan={2} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Purchase Price (P / U)</th>
               <th colSpan={3} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Disc % / Bonus (P / U)</th>
               <th colSpan={2} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Sale Price (P / U)</th>
-              <th colSpan={3} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Margin % / Avg / Sub Total</th>
+              <th colSpan={2} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Wholesale Price (P / U)</th>
+              <th colSpan={3} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Margin % / W.S.Mrg% / Avg / Sub Total</th>
               <th rowSpan={2} className="border w-6 bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">+</th>
             </tr>
 
@@ -1112,7 +1149,10 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
               <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">UBonus</th>
               <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Pack.S</th>
               <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Unit.S</th>
+              <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">W.S.Pack</th>
+              <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">W.S.Unit</th>
               <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Margin%</th>
+              <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">W.S.Mrg%</th>
               <th className="border w-16 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Avg</th>
               <th className="border w-20 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Sub Total</th>
             </tr>
@@ -1161,6 +1201,9 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                         const unitPurchase = toNum(get(selectedProduct, ["unit_purchase_price","unitPurchasePrice"])) ?? ((packPurchase != null && packSize) ? (packPurchase / packSize) : null);
                         const packSale = toNum(get(selectedProduct, ["pack_sale_price","packSalePrice"]));
                         const unitSale = toNum(get(selectedProduct, ["unit_sale_price","unitSalePrice"])) ?? ((packSale != null && packSize) ? (packSale / packSize) : null);
+                        // Get wholesale prices from product
+                        const wholeSalePack = toNum(get(selectedProduct, ["whole_sale_pack_price","wholeSalePackPrice"]));
+                        const wholeSaleUnit = toNum(get(selectedProduct, ["whole_sale_unit_price","wholeSaleUnitPrice"])) ?? ((wholeSalePack != null && packSize) ? (wholeSalePack / packSize) : null);
                         const margin = get(selectedProduct, ["margin","margin_percentage","marginPercent"], "");
                         const avg = get(selectedProduct, ["avg_price","average_price","avgPrice"], "");
 
@@ -1178,6 +1221,9 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                           unit_purchase_price: unitPurchase ?? "",
                           pack_sale_price: zeroToEmpty(packSale),
                           unit_sale_price: unitSale ?? "",
+                          whole_sale_pack_price: zeroToEmpty(wholeSalePack),
+                          whole_sale_unit_price: wholeSaleUnit ?? "",
+                          whole_sale_margin: "",
                           batch: batch,
                           expiry: expiry,
                           pack_quantity: "",
@@ -1392,12 +1438,51 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                   />
                 </td>
 
+                {/* Wholesale Pack Sale */}
+                <td className="border">
+                  <input
+                    ref={(el) => (wholeSalePackPriceRefs.current[i] = el)}
+                    type="text"
+                    value={item.whole_sale_pack_price === 0 ? "" : item.whole_sale_pack_price}
+                    onChange={(e) => handleItemChange(i, "whole_sale_pack_price", e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, "whole_sale_pack_price", i)}
+                    onFocus={(e) => e.target.select()}
+                    className="border w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    {...antiFill}
+                  />
+                </td>
+
+                {/* Wholesale Unit Sale */}
+                <td className="border">
+                  <input
+                    ref={(el) => (wholeSaleUnitPriceRefs.current[i] = el)}
+                    type="text"
+                    value={item.whole_sale_unit_price ?? ""}
+                    onChange={(e) => handleItemChange(i, "whole_sale_unit_price", e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, "whole_sale_unit_price", i)}
+                    onFocus={(e) => e.target.select()}
+                    className="border w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    {...antiFill}
+                  />
+                </td>
+
                 {/* Margin % */}
                 <td className="border">
                   <input
                     type="number"
                     readOnly
                     value={item.margin ?? ""}
+                    className="border bg-gray-100 dark:bg-slate-600 w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-gray-900 dark:text-gray-100"
+                    {...antiFill}
+                  />
+                </td>
+
+                {/* W.S. Margin % */}
+                <td className="border">
+                  <input
+                    type="number"
+                    readOnly
+                    value={item.whole_sale_margin ?? ""}
                     className="border bg-gray-100 dark:bg-slate-600 w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-gray-900 dark:text-gray-100"
                     {...antiFill}
                   />

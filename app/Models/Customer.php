@@ -16,4 +16,9 @@ class Customer extends Model
     {
         return $this->hasMany(\App\Models\SaleReturn::class);
     }
+
+    public function wholeSalePrices()
+    {
+        return $this->hasMany(\App\Models\CustomerWholeSalePrice::class);
+    }
 }

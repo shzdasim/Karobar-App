@@ -208,6 +208,12 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::post('/customers/import/validate',     [CustomerImportController::class, 'validateUpload'])->middleware('permission:customer.import');
     Route::post('/customers/import/commit',       [CustomerImportController::class, 'commit'])->middleware('permission:customer.import');
 
+    // Customer wholesale prices
+    Route::get('/customers/{customerId}/whole-sale-prices', function ($customerId) {
+        $prices = \App\Models\CustomerWholeSalePrice::where('customer_id', $customerId)->get();
+        return response()->json($prices);
+    });
+
     // Product import
     Route::get('/products/import/template',       [ProductImportController::class, 'template'])->middleware('permission:product.import');
     Route::post('/products/import/validate',      [ProductImportController::class, 'validateUpload'])->middleware('permission:product.import');

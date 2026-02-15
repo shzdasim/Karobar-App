@@ -27,6 +27,8 @@ const getButtonTextColor = (primaryColor, primaryHoverColor) => {
 const normalizeFormLoaded = (f) => {
   const safe = { ...f };
   safe.invoice_type = safe.invoice_type ?? "debit";
+  safe.sale_type = safe.sale_type ?? "retail";
+  safe.wholesale_type = safe.wholesale_type ?? "unit";
   safe.remarks = safe.remarks ?? "";
   safe.doctor_name = safe.doctor_name ?? "";
   safe.patient_name = safe.patient_name ?? "";
@@ -51,6 +53,7 @@ const normalizeFormLoaded = (f) => {
         item_discount_percentage: it?.item_discount_percentage ?? "",
         sub_total: it?.sub_total ?? "",
         is_narcotic: it?.is_narcotic ?? it?.narcotic === "yes" ?? false,
+        is_custom_price: it?.is_custom_price ?? false,
       }))
     : [];
   return safe;
@@ -60,6 +63,8 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
   /* -------- state -------- */
   const [form, setForm] = useState({
     invoice_type: "debit",
+    sale_type: "retail", // retail or wholesale
+    wholesale_type: "unit", // unit or pack (only used when sale_type is wholesale)
     customer_id: "",
     posted_number: "", // ⚠️ now left empty; server assigns at save
     date: new Date().toISOString().split("T")[0],
@@ -86,13 +91,61 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
         item_discount_percentage: "",
         sub_total: "",
         is_narcotic: false,
+        is_custom_price: false,
       },
     ],
   });
 
+  // State for customer wholesale prices (fetched when customer is selected in wholesale mode)
+  const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
+  // State to store product data for validation (pack_purchase_price)
+  const [productDataCache, setProductDataCache] = useState({});
+  // State to track which rows have invalid prices (below purchase price)
+  const [invalidPriceRows, setInvalidPriceRows] = useState({});
   const [receiveTouched, setReceiveTouched] = useState(false);
   const [marginPct, setMarginPct] = useState("");
   const navigate = useNavigate();
+  
+  // Calculate margin based on sale type
+  // Retail: Use product's default margin
+  // Wholesale: Calculate dynamically based on current price
+  useEffect(() => {
+    if (form.items.length > 0 && form.items[0].product_id) {
+      const firstItem = form.items[0];
+      
+      if (form.sale_type === "wholesale" && firstItem.price) {
+        // For wholesale, calculate margin based on current price vs purchase price
+        const productData = productDataCache[firstItem.product_id];
+        const packPurchasePrice = productData?.pack_purchase_price || 0;
+        const packSize = Number(firstItem.pack_size || 1);
+        
+        let purchasePrice;
+        if (form.wholesale_type === "pack") {
+          purchasePrice = packPurchasePrice;
+        } else {
+          purchasePrice = packSize > 0 ? packPurchasePrice / packSize : 0;
+        }
+        
+        const salePrice = Number(firstItem.price) || 0;
+        
+        if (purchasePrice > 0 && salePrice > 0) {
+          const margin = ((salePrice - purchasePrice) / salePrice) * 100;
+          setMarginPct(sanitizeNumberInput(String(margin.toFixed(2)), true));
+          return;
+        }
+      } else if (form.sale_type === "retail") {
+        // For retail, use the cached product margin
+        const productData = productDataCache[firstItem.product_id];
+        if (productData?.margin) {
+          setMarginPct(sanitizeNumberInput(String(productData.margin), true));
+          return;
+        }
+      }
+    }
+    // Reset if no valid calculation
+    setMarginPct("");
+  }, [form.items, form.sale_type, form.wholesale_type, productDataCache]);
+
   useEffect(() => {
     setMarginPct("");
     setReceiveTouched(false);
@@ -404,6 +457,12 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
     const shouldSync = loaded?.total_receive === "" || tr === tt;
     setForm(loaded);
     setReceiveTouched(!shouldSync);
+    
+    // If editing a wholesale invoice, fetch customer wholesale prices
+    if (loaded.sale_type === "wholesale" && loaded.customer_id) {
+      fetchCustomerWholesalePrices(loaded.customer_id);
+    }
+    
     await ensureProductsForItems(loaded?.items || []);
     await ensureBatchesForItems(loaded?.items || []);
   };
@@ -428,6 +487,87 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
         if (!receiveTouched) {
           next.total_receive = next.total ?? "";
         }
+      }
+      return next;
+    });
+  };
+
+  // Handle Retail/Wholesale sale type change
+  const handleSaleTypeChange = (type) => {
+    // For wholesale, require customer selection first - clear customer and focus on customer field
+    if (type === "wholesale") {
+      // Clear customer and set form to allow customer selection
+      setForm((prev) => {
+        const next = { 
+          ...prev, 
+          sale_type: "wholesale",
+          wholesale_type: "unit", // Default to unit sale
+          customer_id: "" // Clear customer to force selection
+        };
+        return next;
+      });
+      
+      // Show message and focus on customer select
+      toast.error("Please select a customer for wholesale sale");
+      
+      // Focus on customer select after render
+      setTimeout(() => {
+        const customerSelect = document.getElementById('customer_select');
+        if (customerSelect) {
+          customerSelect.focus();
+        }
+      }, 100);
+      return;
+    }
+    
+    setForm((prev) => {
+      const next = { ...prev, sale_type: type };
+      // When switching to retail, clear customer wholesale prices
+      setCustomerWholesalePrices({});
+      return next;
+    });
+  };
+
+  // Handle Wholesale Type change (Unit vs Pack)
+  const handleWholesaleTypeChange = (type) => {
+    setForm((prev) => {
+      const next = { ...prev, wholesale_type: type };
+      return next;
+    });
+  };
+
+  // Fetch customer-specific wholesale prices
+  const fetchCustomerWholesalePrices = async (customerId) => {
+    if (!customerId) return;
+    try {
+      const res = await axios.get(`/api/customers/${customerId}/whole-sale-prices`);
+      const prices = {};
+      if (Array.isArray(res.data)) {
+        res.data.forEach(item => {
+          prices[item.product_id] = item.pack_price;
+        });
+      }
+      setCustomerWholesalePrices(prices);
+    } catch (error) {
+      console.error("Failed to fetch customer wholesale prices:", error);
+      setCustomerWholesalePrices({});
+    }
+  };
+
+  // Handle customer selection change
+  const handleCustomerChange = (customerId) => {
+    setForm((prev) => {
+      const next = { ...prev, customer_id: customerId };
+      // Fetch customer wholesale prices if in wholesale mode
+      if (prev.sale_type === "wholesale" && customerId) {
+        fetchCustomerWholesalePrices(customerId);
+        
+        // Focus on first product field for wholesale
+        setTimeout(() => {
+          productRefs.current[0]?.querySelector?.("input")?.focus?.();
+        }, 100);
+      } else if (!customerId || prev.sale_type === "retail") {
+        setCustomerWholesalePrices({});
       }
       return next;
     });
@@ -485,8 +625,37 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
           toast.error(`Row ${index + 1}: quantity exceeds available (${available})`);
         }
       }
+      
+      // Handle price change - track custom price for wholesale
+      if (field === "price" && prev.sale_type === "wholesale") {
+        const productId = items[index].product_id;
+        const productData = productDataCache[productId];
+        const minPrice = productData?.pack_purchase_price || 0;
+        const newPrice = Number(value);
+        
+        // Mark as custom price if user manually changes it
+        items[index] = { 
+          ...items[index], 
+          is_custom_price: true 
+        };
+        
+        // Track invalid price state (below purchase price) - but allow editing
+        if (newPrice < minPrice && minPrice > 0) {
+          setInvalidPriceRows(prev => ({ ...prev, [index]: true }));
+        } else {
+          setInvalidPriceRows(prev => {
+            const newState = { ...prev };
+            delete newState[index];
+            return newState;
+          });
+        }
+      }
+      
       let row = recalcItem({ ...items[index], [field]: value }, field);
       if (field === "item_discount_percentage") row.item_discount_percentage = value;
+      if (field === "price" && prev.sale_type === "wholesale") {
+        row.is_custom_price = true;
+      }
       items[index] = row;
       let updated = recalcFooter({ ...prev, items }, "items");
       // For credit sales, total_receive stays at 0; for debit, auto-fill if not touched
@@ -513,6 +682,7 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
             item_discount_percentage: "",
             sub_total: "",
             is_narcotic: false,
+            is_custom_price: false,
           },
         ],
       };
@@ -562,6 +732,7 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
           sub_total: "",
           item_discount_percentage: "",
           is_narcotic: false,
+          is_custom_price: false,
         },
         "revert_duplicate_product"
       );
@@ -606,14 +777,73 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
       try {
         const { data } = await axios.get(`/api/products/${productId}`);
         isNarcotic = data?.narcotic === "yes";
+        
+        // Cache the product data for validation
+        setProductDataCache(prev => ({
+          ...prev,
+          [productId]: {
+            pack_purchase_price: data?.pack_purchase_price || 0,
+            whole_sale_unit_price: data?.whole_sale_unit_price || 0,
+            unit_sale_price: data?.unit_sale_price || 0,
+            margin: data?.margin || data?.margin_percentage || data?.default_margin || "",
+          }
+        }));
       } catch {}
+    } else if (productId && selected) {
+      // Cache from already loaded product
+      setProductDataCache(prev => ({
+        ...prev,
+        [productId]: {
+          pack_purchase_price: selected?.pack_purchase_price || 0,
+          whole_sale_unit_price: selected?.whole_sale_unit_price || 0,
+          unit_sale_price: selected?.unit_sale_price || 0,
+          margin: selected?.margin || selected?.margin_percentage || selected?.default_margin || "",
+        }
+      }));
     }
 
     const rawMargin = selected?.margin ?? selected?.margin_percentage ?? selected?.default_margin ?? "";
     setMarginPct(sanitizeNumberInput(String(rawMargin), true));
     const packSize = selected?.pack_size ?? "";
     const baseAvailable = selected?.quantity ?? selected?.available_units ?? 0;
-    const price = selected?.unit_sale_price ?? selected?.unit_purchase_price ?? "";
+    
+    // Determine price and display based on sale type and wholesale_type
+    let price = selected?.unit_sale_price ?? selected?.unit_purchase_price ?? "";
+    let isCustomPrice = false;
+    let displayAvailable = baseAvailable;
+    
+    if (form.sale_type === "wholesale") {
+      if (form.wholesale_type === "pack") {
+        // Pack mode: show pack quantity, use pack price
+        if (packSize && Number(packSize) > 0) {
+          displayAvailable = Math.floor(Number(baseAvailable) / Number(packSize));
+        }
+        
+        // For wholesale pack, first check for customer-specific custom price (per pack)
+        if (form.customer_id && customerWholesalePrices[productId]) {
+          price = customerWholesalePrices[productId];
+          isCustomPrice = true;
+        } else if (selected?.whole_sale_pack_price) {
+          price = selected.whole_sale_pack_price;
+        } else if (selected?.pack_sale_price) {
+          price = selected.pack_sale_price;
+        }
+      } else {
+        // Unit mode: show unit quantity, use unit price
+        // For wholesale unit, first check for customer-specific custom price (per unit)
+        // Customer prices are stored as pack_price, so divide by pack_size for unit price
+        if (form.customer_id && customerWholesalePrices[productId]) {
+          const packPrice = customerWholesalePrices[productId];
+          const packSz = Number(packSize) || 1;
+          price = packSz > 0 ? packPrice / packSz : packPrice;
+          isCustomPrice = true;
+        } else if (selected?.whole_sale_unit_price) {
+          price = selected.whole_sale_unit_price;
+        } else if (selected?.unit_sale_price) {
+          price = selected.unit_sale_price;
+        }
+      }
+    }
 
     const batchList = await fetchBatches(productId);
     const hasBatches = Array.isArray(batchList) && batchList.length > 0;
@@ -666,11 +896,12 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
           price,
           batch_number: shouldPreserveBatch ? existingBatchNumber : "",
           expiry: shouldPreserveBatch ? existingExpiry : "",
-          current_quantity: available.toString(), // Always use recalculated available
+          current_quantity: displayAvailable.toString(), // Use displayAvailable (pack or unit based on wholesale_type)
           quantity: presetQty,
           item_discount_percentage: items[rowIndex]?.item_discount_percentage ?? "",
           sub_total: items[rowIndex]?.sub_total ?? "",
           is_narcotic: isNarcotic,
+          is_custom_price: isCustomPrice,
         },
         "product_select"
       );
@@ -822,6 +1053,11 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
       return toast.error("Please select a customer for credit sale");
     }
 
+    // For wholesale, require customer selection first
+    if (form.sale_type === "wholesale" && !form.customer_id) {
+      return toast.error("Please select a customer for wholesale sale");
+    }
+
     // Check if any item has a narcotic product
     const hasNarcoticProduct = form.items.some(item => item.is_narcotic === true);
 
@@ -846,6 +1082,27 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
       const available = Number(it.current_quantity || 0);
       if (Number(it.quantity || 0) > available) {
         return toast.error(`Row ${i + 1}: quantity exceeds available (${available})`);
+      }
+      
+      // Validate minimum price for wholesale (unit or pack based on wholesale_type)
+      if (form.sale_type === "wholesale") {
+        const productData = productDataCache[it.product_id];
+        const packPurchasePrice = productData?.pack_purchase_price || 0;
+        const packSize = Number(it.pack_size || 1);
+        
+        let minPrice;
+        if (form.wholesale_type === "pack") {
+          // Pack mode: compare directly with pack purchase price
+          minPrice = packPurchasePrice;
+        } else {
+          // Unit mode: convert pack purchase price to unit price
+          minPrice = packSize > 0 ? packPurchasePrice / packSize : 0;
+        }
+        
+        if (Number(it.price || 0) < minPrice && minPrice > 0) {
+          const priceLabel = form.wholesale_type === "pack" ? "pack purchase price" : "unit purchase price";
+          return toast.error(`Row ${i + 1}: Price cannot be less than ${priceLabel} (${minPrice.toFixed(2)})`);
+        }
       }
     }
 
@@ -872,6 +1129,7 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
     }
 
     // Let backend assign posted_number; we send whatever is present.
+    // For wholesale pack mode, convert pack quantity to unit quantity
     const payload = {
       ...form,
       invoice_type: form.invoice_type ?? "debit",
@@ -879,13 +1137,21 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
         form.discount_percentage === "-" || form.discount_percentage === "-."
           ? "-0"
           : form.discount_percentage,
-      items: form.items.map((it) => ({
-        ...it,
-        item_discount_percentage:
-          it.item_discount_percentage === "-" || it.item_discount_percentage === "-."
-            ? "-0"
-            : it.item_discount_percentage,
-      })),
+      items: form.items.map((it) => {
+        let quantity = it.quantity;
+        // For wholesale pack mode, convert pack quantity to unit quantity
+        if (form.sale_type === "wholesale" && form.wholesale_type === "pack" && it.pack_size && Number(it.pack_size) > 0) {
+          quantity = Number(it.quantity) * Number(it.pack_size);
+        }
+        return {
+          ...it,
+          quantity: quantity,
+          item_discount_percentage:
+            it.item_discount_percentage === "-" || it.item_discount_percentage === "-."
+              ? "-0"
+              : it.item_discount_percentage,
+        };
+      }),
     };
 
     try {
@@ -929,8 +1195,13 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
     }
   };
 
-  // --- keyboard nav (unchanged) ---
-  const COLS = ["product", "batch", "quantity", "disc"];
+  // --- keyboard nav ---
+  // For retail: product -> batch -> quantity -> disc
+  // For wholesale (both unit and pack): product -> batch -> quantity -> price -> disc
+  const isWholeSaleWithPrice = form.sale_type === "wholesale";
+  const COLS = isWholeSaleWithPrice 
+    ? ["product", "batch", "quantity", "price", "disc"]
+    : ["product", "batch", "quantity", "disc"];
   const focusCell = (row, col) => {
     const map = { product: productRefs, batch: batchRefs, quantity: qtyRefs, price: priceRefs, disc: discRefs };
     const ref = map[col]?.current?.[row];
@@ -1051,6 +1322,60 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
               </label>
             </div>
 
+            {/* Sale Type Radio Buttons - Retail/Wholesale */}
+            <div className={`flex items-center gap-2 mr-2 px-2 py-1 rounded border ${isDark ? "bg-slate-700 border-slate-600" : "bg-gray-50 border-gray-200"}`}>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="radio"
+                  name="sale_type"
+                  value="retail"
+                  checked={form.sale_type === "retail"}
+                  onChange={() => handleSaleTypeChange("retail")}
+                  className="cursor-pointer"
+                />
+                <span className={`text-[10px] font-medium ${isDark ? "text-slate-300" : "text-gray-700"}`}>Retail</span>
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="radio"
+                  name="sale_type"
+                  value="wholesale"
+                  checked={form.sale_type === "wholesale"}
+                  onChange={() => handleSaleTypeChange("wholesale")}
+                  className="cursor-pointer"
+                />
+                <span className={`text-[10px] font-medium ${isDark ? "text-slate-300" : "text-gray-700"}`}>Wholesale</span>
+              </label>
+            </div>
+
+            {/* Wholesale Type - Unit/Pack (only visible when wholesale is selected) */}
+            {form.sale_type === "wholesale" && (
+              <div className={`flex items-center gap-2 mr-2 px-2 py-1 rounded border ${isDark ? "bg-slate-700 border-slate-600" : "bg-gray-50 border-gray-200"}`}>
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="wholesale_type"
+                    value="unit"
+                    checked={form.wholesale_type === "unit"}
+                    onChange={() => handleWholesaleTypeChange("unit")}
+                    className="cursor-pointer"
+                  />
+                  <span className={`text-[10px] font-medium ${isDark ? "text-slate-300" : "text-gray-700"}`}>Unit</span>
+                </label>
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="wholesale_type"
+                    value="pack"
+                    checked={form.wholesale_type === "pack"}
+                    onChange={() => handleWholesaleTypeChange("pack")}
+                    className="cursor-pointer"
+                  />
+                  <span className={`text-[10px] font-medium ${isDark ? "text-slate-300" : "text-gray-700"}`}>Pack</span>
+                </label>
+              </div>
+            )}
+
             <div className={`hidden sm:flex items-center gap-2 text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>
               <span className="inline-flex items-center gap-1">
                 <span className={`px-1 py-0.5 border rounded ${isDark ? "bg-slate-700 border-slate-600 text-slate-300" : "bg-gray-50 border-gray-200"}`}>Alt</span>
@@ -1116,7 +1441,7 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
                   .map((c) => ({ value: c.id, label: c.name }))
                   .find((s) => s.value === form.customer_id) || null
               }
-              onChange={(val) => setForm((prev) => ({ ...prev, customer_id: val?.value || "" }))}
+              onChange={(val) => handleCustomerChange(val?.value || "")}
               className="text-[11px]"
               name="customer_select" inputId="customer_select" aria-autocomplete="list"
               styles={getSelectStyles(isDark)}
@@ -1328,14 +1653,20 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
                         ref={(el) => (priceRefs.current[i] = el)}
                         type="text"
                         value={to2(it.price ?? "")}
-                        readOnly
+                        readOnly={form.sale_type !== "wholesale"}
                         autoComplete="off"
+                        onChange={(e) => handleItemChange(i, "price", e.target.value)}
                         className={`w-full h-6 border rounded px-1 text-center ${
                           isDark 
                             ? "border-slate-600 bg-slate-700 text-slate-300" 
                             : "border-gray-200 bg-gray-100 text-gray-700"
-                        }`}
+                        } ${form.sale_type === "wholesale" ? "cursor-text" : "cursor-not-allowed"} ${invalidPriceRows[i] ? "border-red-500 ring-1 ring-red-400" : ""}`}
                         onKeyDown={(e) => onKeyNav(e, i, "price")}
+                        onFocus={(e) => {
+                          if (form.sale_type === "wholesale") {
+                            e.target.select();
+                          }
+                        }}
                       />
                     </td>
 

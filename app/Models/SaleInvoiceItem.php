@@ -17,6 +17,8 @@ class SaleInvoiceItem extends Model
         'price',
         'item_discount_percentage',
         'sub_total',
+        'sale_type',
+        'is_custom_price',
     ];
     public function saleInvoice()
     {

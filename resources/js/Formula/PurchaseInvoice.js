@@ -32,6 +32,18 @@ export function recalcItem(item, changedField = null) {
   let packSale = n(item.pack_sale_price);
   let unitSale = n(item.unit_sale_price);
 
+  // Wholesale prices - default to sale prices if not provided
+  let wholeSalePack = n(item.whole_sale_pack_price);
+  let wholeSaleUnit = n(item.whole_sale_unit_price);
+  
+  // If wholesale price is not provided, default to sale price
+  if (wholeSalePack === 0 && packSale > 0) {
+    wholeSalePack = packSale;
+  }
+  if (wholeSaleUnit === 0 && unitSale > 0) {
+    wholeSaleUnit = unitSale;
+  }
+
   let packBonus = n(item.pack_bonus);
   let unitBonus = n(item.unit_bonus);
 
@@ -65,6 +77,14 @@ export function recalcItem(item, changedField = null) {
       else if (unitSale > 0 && packSale === 0) packSale = unitSale * packSize;
     }
 
+    // Wholesale price
+    if (changedField === "whole_sale_pack_price") wholeSaleUnit = wholeSalePack / packSize;
+    else if (changedField === "whole_sale_unit_price") wholeSalePack = wholeSaleUnit * packSize;
+    else if (changedField === "pack_size") {
+      if (wholeSalePack > 0 && wholeSaleUnit === 0) wholeSaleUnit = wholeSalePack / packSize;
+      else if (wholeSaleUnit > 0 && wholeSalePack === 0) wholeSalePack = wholeSaleUnit * packSize;
+    }
+
     // Bonus
     if (changedField === "pack_bonus") unitBonus = packBonus * packSize;
     else if (changedField === "unit_bonus") packBonus = unitBonus / packSize;
@@ -88,7 +108,12 @@ export function recalcItem(item, changedField = null) {
   const avgPrice = totalUnits > 0 ? netTotal / totalUnits : 0;
 
   const costForMargin = avgPrice > 0 ? avgPrice : unitPurchase;
+  
+  // Retail Margin - calculated from unit sale price
   const margin = unitSale > 0 ? ((unitSale - costForMargin) / unitSale) * 100 : "";
+  
+  // Wholesale Margin - calculated from wholesale unit price
+  const wholeSaleMargin = wholeSaleUnit > 0 ? ((wholeSaleUnit - costForMargin) / wholeSaleUnit) * 100 : "";
 
   // Helper to preserve the raw text for the field currently being edited.
   const preserve = (fieldName, computedValue) =>
@@ -107,6 +132,9 @@ export function recalcItem(item, changedField = null) {
     pack_sale_price: preserve("pack_sale_price", packSale),
     unit_sale_price: preserve("unit_sale_price", unitSale),
 
+    whole_sale_pack_price: preserve("whole_sale_pack_price", wholeSalePack),
+    whole_sale_unit_price: preserve("whole_sale_unit_price", wholeSaleUnit),
+
     pack_bonus: preserve("pack_bonus", packBonus),
     unit_bonus: preserve("unit_bonus", unitBonus),
 
@@ -115,6 +143,7 @@ export function recalcItem(item, changedField = null) {
     sub_total: r2(netTotal),
     avg_price: r2(avgPrice),
     margin: margin === "" ? "" : Number.isFinite(margin) ? r2(margin) : "",
+    whole_sale_margin: wholeSaleMargin === "" ? "" : Number.isFinite(wholeSaleMargin) ? r2(wholeSaleMargin) : "",
   };
 }
 
