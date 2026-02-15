@@ -1214,7 +1214,7 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
                     <td className={`border text-left w-[260px] ${isDark ? "border-slate-600" : "border-gray-200"}`}>
                       <div ref={(el) => (productRefs.current[i] = el)}>
                         <ProductSearchInput
-                          value={item.product_id}
+                          value={products.find((p) => eqId(p.id, item.product_id)) || item.product_id}
                           onChange={(val) => handleProductSelect(i, val)}
                           onRefreshProducts={refreshProducts}
                           products={products}
