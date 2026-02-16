@@ -158,6 +158,7 @@ class SaleInvoiceController extends Controller
             'customer_id'         => 'required|exists:customers,id',
             'invoice_type'        => 'nullable|string|in:credit,debit,default:debit',
             'sale_type'           => 'nullable|string|in:retail,wholesale,default:retail',
+            'wholesale_type'      => 'nullable|string|in:unit,pack,default:unit',
             'date'                => 'required|date',
             'remarks'             => 'nullable|string',
             'doctor_name'         => 'nullable|string',
@@ -198,6 +199,7 @@ class SaleInvoiceController extends Controller
                 'customer_id'        => $data['customer_id'],
                 'invoice_type'       => $data['invoice_type'] ?? 'debit',
                 'sale_type'          => $data['sale_type'] ?? 'retail',
+                'wholesale_type'     => $data['wholesale_type'] ?? 'unit',
                 'posted_number'      => $posted, // assigned on save
                 'date'               => $data['date'],
                 'remarks'            => $data['remarks'] ?? null,
@@ -267,6 +269,7 @@ class SaleInvoiceController extends Controller
             'customer_id'         => 'required|exists:customers,id',
             'invoice_type'        => 'nullable|string|in:credit,debit',
             'sale_type'           => 'nullable|string|in:retail,wholesale',
+            'wholesale_type'      => 'nullable|string|in:unit,pack',
             'posted_number'       => 'required|string|unique:sale_invoices,posted_number,' . $invoice->id,
             'date'                => 'required|date',
             'remarks'             => 'nullable|string',
@@ -312,6 +315,7 @@ class SaleInvoiceController extends Controller
                 'customer_id'        => $data['customer_id'],
                 'invoice_type'       => $newInvoiceType,
                 'sale_type'          => $newSaleType,
+                'wholesale_type'     => $data['wholesale_type'] ?? $invoice->wholesale_type ?? 'unit',
                 'posted_number'      => $data['posted_number'], // keep whatever is on the record
                 'date'               => $data['date'],
                 'remarks'            => $data['remarks'] ?? null,

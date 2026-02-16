@@ -11,6 +11,7 @@ class SaleInvoice extends Model
         'customer_id',
         'invoice_type',
         'sale_type',
+        'wholesale_type',
         'posted_number',
         'date',
         'remarks',

@@ -42,22 +42,42 @@ const normalizeFormLoaded = (f) => {
   safe.total = safe.total ?? "";
   safe.total_receive = safe.total_receive ?? "";
   safe.items = Array.isArray(safe.items)
-    ? safe.items.map((it) => ({
-        product_id: it?.product_id ?? "",
-        pack_size: it?.pack_size ?? "",
-        batch_number: it?.batch_number ?? "",
-        expiry: it?.expiry ?? "",
-        current_quantity: it?.current_quantity ?? "",
-        quantity: it?.quantity ?? "",
-        price: it?.price ?? "",
-        item_discount_percentage: it?.item_discount_percentage ?? "",
-        sub_total: it?.sub_total ?? "",
-        is_narcotic: it?.is_narcotic ?? it?.narcotic === "yes" ?? false,
-        is_custom_price: it?.is_custom_price ?? false,
-      }))
+    ? safe.items.map((it) => {
+        // For wholesale pack mode, convert quantity from units back to packs for display
+        let displayQuantity = it?.quantity ?? "";
+        let displayAvailable = it?.current_quantity ?? "";
+        
+        if (safe.sale_type === "wholesale" && safe.wholesale_type === "pack" && it?.pack_size && Number(it.pack_size) > 0) {
+          const packSize = Number(it.pack_size);
+          // Convert quantity from units to packs for display
+          displayQuantity = Math.floor(Number(it.quantity) / packSize);
+          // Convert current_quantity from units to packs (API returns units)
+          // Add back the invoice quantity to show true available stock
+          // current_quantity from API is remaining stock after the invoice was created
+          // We need to add the invoice quantity to show what was available at the time
+          const currentAvailableInPacks = Math.floor(Number(it.current_quantity || 0) / packSize);
+          const invoiceQtyInPacks = Math.floor(Number(it.quantity || 0) / packSize);
+          displayAvailable = currentAvailableInPacks + invoiceQtyInPacks;
+        }
+        
+        return {
+          product_id: it?.product_id ?? "",
+          pack_size: it?.pack_size ?? "",
+          batch_number: it?.batch_number ?? "",
+          expiry: it?.expiry ?? "",
+          current_quantity: String(displayAvailable),
+          quantity: String(displayQuantity),
+          price: it?.price ?? "",
+          item_discount_percentage: it?.item_discount_percentage ?? "",
+          sub_total: it?.sub_total ?? "",
+          is_narcotic: it?.is_narcotic ?? it?.narcotic === "yes" ?? false,
+          is_custom_price: it?.is_custom_price ?? false,
+        };
+      })
     : [];
   return safe;
 };
+
 
 export default function SaleInvoiceForm({ saleId, onSuccess }) {
   /* -------- state -------- */
@@ -104,6 +124,8 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
   const [invalidPriceRows, setInvalidPriceRows] = useState({});
   const [receiveTouched, setReceiveTouched] = useState(false);
   const [marginPct, setMarginPct] = useState("");
+  // Store original invoice quantities for edit mode (to handle re-selecting products)
+  const [originalInvoiceQuantities, setOriginalInvoiceQuantities] = useState({});
   const navigate = useNavigate();
   
   // Calculate margin based on sale type
@@ -449,14 +471,47 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
     }
   };
 
+  const recalcAvailableQuantitiesForEdit = async (items, saleType, wholesaleType) => {
+    // For wholesale pack mode, recalculate available quantities from fresh product data
+    const updatedItems = await Promise.all(
+      items.map(async (it) => {
+        if (!it.product_id) return it;
+        
+        // Only process for wholesale pack mode
+        if (saleType !== "wholesale" || wholesaleType !== "pack") return it;
+        if (!it.pack_size || Number(it.pack_size) <= 0) return it;
+        
+        try {
+          // Fetch fresh product data to get current stock
+          const { data } = await axios.get(`/api/products/${it.product_id}`);
+          const currentStock = Number(data?.quantity || 0);
+          const packSize = Number(it.pack_size);
+          
+          // Convert to packs and add back invoice quantity
+          const currentAvailableInPacks = Math.floor(currentStock / packSize);
+          const invoiceQtyInPacks = Math.floor(Number(it.quantity || 0));
+          const displayAvailable = currentAvailableInPacks + invoiceQtyInPacks;
+          
+          return {
+            ...it,
+            current_quantity: String(displayAvailable),
+          };
+        } catch {
+          // If API fails, keep original value
+          return it;
+        }
+      })
+    );
+    
+    return updatedItems;
+  };
+
   const fetchSale = async () => {
     const res = await axios.get(`/api/sale-invoices/${saleId}`);
     const loaded = normalizeFormLoaded(res.data);
     const tr = Math.round(Number(loaded?.total_receive ?? 0));
     const tt = Math.round(Number(loaded?.total ?? 0));
     const shouldSync = loaded?.total_receive === "" || tr === tt;
-    setForm(loaded);
-    setReceiveTouched(!shouldSync);
     
     // If editing a wholesale invoice, fetch customer wholesale prices
     if (loaded.sale_type === "wholesale" && loaded.customer_id) {
@@ -465,6 +520,30 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
     
     await ensureProductsForItems(loaded?.items || []);
     await ensureBatchesForItems(loaded?.items || []);
+    
+    // For wholesale pack mode, recalculate available quantities with fresh product data
+    if (loaded.sale_type === "wholesale" && loaded.wholesale_type === "pack") {
+      const updatedItems = await recalcAvailableQuantitiesForEdit(loaded.items, loaded.sale_type, loaded.wholesale_type);
+      loaded.items = updatedItems;
+    }
+    
+    // Store original invoice quantities for edit mode (used when re-selecting products)
+    if (saleId) {
+      const originalQtys = {};
+      loaded.items.forEach((item, idx) => {
+        if (item.product_id) {
+          originalQtys[idx] = {
+            product_id: item.product_id,
+            quantity: item.quantity,
+            pack_size: item.pack_size
+          };
+        }
+      });
+      setOriginalInvoiceQuantities(originalQtys);
+    }
+    
+    setForm(loaded);
+    setReceiveTouched(!shouldSync);
   };
 
   /* -------- handlers -------- */
@@ -531,7 +610,52 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
   // Handle Wholesale Type change (Unit vs Pack)
   const handleWholesaleTypeChange = (type) => {
     setForm((prev) => {
-      const next = { ...prev, wholesale_type: type };
+      let next = { ...prev, wholesale_type: type };
+      
+      // Recalculate prices when switching between unit and pack modes
+      if (prev.sale_type === "wholesale" && prev.items.length > 0) {
+        const updatedItems = prev.items.map((item) => {
+          if (!item.product_id || !item.pack_size || Number(item.pack_size) <= 0) {
+            return item;
+          }
+          
+          const packSize = Number(item.pack_size);
+          let newPrice = item.price;
+          
+          // Check if there's a customer-specific wholesale price
+          const customerPackPrice = prev.customer_id ? customerWholesalePrices[item.product_id] : null;
+          
+          if (type === "pack") {
+            // Switching to pack mode: convert unit price to pack price
+            if (customerPackPrice) {
+              // Use customer-specific pack price
+              newPrice = customerPackPrice;
+            } else if (item.price) {
+              // Convert current unit price to pack price
+              newPrice = Number(item.price) * packSize;
+            }
+          } else {
+            // Switching to unit mode: convert pack price to unit price
+            if (customerPackPrice) {
+              // Customer price is per pack, convert to unit
+              newPrice = customerPackPrice / packSize;
+            } else if (item.price) {
+              // Convert current pack price to unit price
+              newPrice = Number(item.price) / packSize;
+            }
+          }
+          
+          return {
+            ...item,
+            price: newPrice ? String(newPrice.toFixed(2)) : item.price,
+          };
+        });
+        
+        next.items = updatedItems;
+        // Recalculate footer totals
+        next = recalcFooter(next, "items");
+      }
+      
       return next;
     });
   };
@@ -773,10 +897,13 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
 
     // Ensure we have the narcotic field - fetch from API if not present
     let isNarcotic = selected?.narcotic === "yes";
-    if (!selected?.hasOwnProperty("narcotic") && productId) {
+    let freshProductData = null;
+    
+    if (productId) {
       try {
         const { data } = await axios.get(`/api/products/${productId}`);
         isNarcotic = data?.narcotic === "yes";
+        freshProductData = data;
         
         // Cache the product data for validation
         setProductDataCache(prev => ({
@@ -788,29 +915,50 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
             margin: data?.margin || data?.margin_percentage || data?.default_margin || "",
           }
         }));
-      } catch {}
-    } else if (productId && selected) {
-      // Cache from already loaded product
-      setProductDataCache(prev => ({
-        ...prev,
-        [productId]: {
-          pack_purchase_price: selected?.pack_purchase_price || 0,
-          whole_sale_unit_price: selected?.whole_sale_unit_price || 0,
-          unit_sale_price: selected?.unit_sale_price || 0,
-          margin: selected?.margin || selected?.margin_percentage || selected?.default_margin || "",
+      } catch {
+        // If API fails, use cached data
+        if (selected) {
+          setProductDataCache(prev => ({
+            ...prev,
+            [productId]: {
+              pack_purchase_price: selected?.pack_purchase_price || 0,
+              whole_sale_unit_price: selected?.whole_sale_unit_price || 0,
+              unit_sale_price: selected?.unit_sale_price || 0,
+              margin: selected?.margin || selected?.margin_percentage || selected?.default_margin || "",
+            }
+          }));
         }
-      }));
+      }
     }
 
-    const rawMargin = selected?.margin ?? selected?.margin_percentage ?? selected?.default_margin ?? "";
+    const rawMargin = freshProductData?.margin ?? selected?.margin ?? selected?.margin_percentage ?? selected?.default_margin ?? "";
     setMarginPct(sanitizeNumberInput(String(rawMargin), true));
-    const packSize = selected?.pack_size ?? "";
-    const baseAvailable = selected?.quantity ?? selected?.available_units ?? 0;
+    const packSize = freshProductData?.pack_size ?? selected?.pack_size ?? "";
+    
+    // Use fresh product data if available, otherwise fall back to cached data
+    const baseAvailable = freshProductData?.quantity ?? freshProductData?.available_units ?? selected?.quantity ?? selected?.available_units ?? 0;
     
     // Determine price and display based on sale type and wholesale_type
-    let price = selected?.unit_sale_price ?? selected?.unit_purchase_price ?? "";
+    let price = freshProductData?.unit_sale_price ?? selected?.unit_sale_price ?? selected?.unit_purchase_price ?? "";
     let isCustomPrice = false;
     let displayAvailable = baseAvailable;
+    
+    // Calculate existing quantity in this row for edit mode
+    // When editing (saleId exists), use the original invoice quantity
+    // because form.items[rowIndex]?.quantity may have been cleared when clicking the field
+    let currentRowExistingQty = 0;
+    if (saleId && originalInvoiceQuantities[rowIndex]) {
+      const originalQty = originalInvoiceQuantities[rowIndex].quantity;
+      const originalPackSize = originalInvoiceQuantities[rowIndex].pack_size;
+      
+      if (form.sale_type === "wholesale" && form.wholesale_type === "pack" && originalPackSize && Number(originalPackSize) > 0) {
+        // For pack mode, the original quantity is already in packs
+        currentRowExistingQty = Number(originalQty || 0);
+      } else {
+        // For retail and wholesale unit mode, quantity is in units
+        currentRowExistingQty = Number(originalQty || 0);
+      }
+    }
     
     if (form.sale_type === "wholesale") {
       if (form.wholesale_type === "pack") {
@@ -818,18 +966,26 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
         if (packSize && Number(packSize) > 0) {
           displayAvailable = Math.floor(Number(baseAvailable) / Number(packSize));
         }
+        // Add back the invoice quantity to show true available in edit mode
+        displayAvailable = displayAvailable + currentRowExistingQty;
         
         // For wholesale pack, first check for customer-specific custom price (per pack)
         if (form.customer_id && customerWholesalePrices[productId]) {
           price = customerWholesalePrices[productId];
           isCustomPrice = true;
-        } else if (selected?.whole_sale_pack_price) {
-          price = selected.whole_sale_pack_price;
-        } else if (selected?.pack_sale_price) {
-          price = selected.pack_sale_price;
+        } else if (freshProductData?.whole_sale_pack_price ?? selected?.whole_sale_pack_price) {
+          price = freshProductData?.whole_sale_pack_price ?? selected?.whole_sale_pack_price;
+        } else if (freshProductData?.pack_sale_price ?? selected?.pack_sale_price) {
+          price = freshProductData?.pack_sale_price ?? selected?.pack_sale_price;
+        } else if (price && packSize && Number(packSize) > 0) {
+          // Calculate pack price from unit price if no explicit pack price is set
+          price = Number(price) * Number(packSize);
         }
       } else {
         // Unit mode: show unit quantity, use unit price
+        // Add back the invoice quantity to show true available in edit mode
+        displayAvailable = displayAvailable + currentRowExistingQty;
+        
         // For wholesale unit, first check for customer-specific custom price (per unit)
         // Customer prices are stored as pack_price, so divide by pack_size for unit price
         if (form.customer_id && customerWholesalePrices[productId]) {
@@ -837,12 +993,15 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
           const packSz = Number(packSize) || 1;
           price = packSz > 0 ? packPrice / packSz : packPrice;
           isCustomPrice = true;
-        } else if (selected?.whole_sale_unit_price) {
-          price = selected.whole_sale_unit_price;
-        } else if (selected?.unit_sale_price) {
-          price = selected.unit_sale_price;
+        } else if (freshProductData?.whole_sale_unit_price ?? selected?.whole_sale_unit_price) {
+          price = freshProductData?.whole_sale_unit_price ?? selected?.whole_sale_unit_price;
+        } else if (freshProductData?.unit_sale_price ?? selected?.unit_sale_price) {
+          price = freshProductData?.unit_sale_price ?? selected?.unit_sale_price;
         }
       }
+    } else {
+      // Retail mode: add back invoice quantity to show true available
+      displayAvailable = Number(baseAvailable) + currentRowExistingQty;
     }
 
     const batchList = await fetchBatches(productId);
@@ -860,10 +1019,6 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
     // The actual available quantity to show:
     // When editing: base available + existing quantity (since it's not consumed yet)
     // When new row: base available (no existing quantities to add back)
-    // Also add back current row's existing quantity so user can increase it
-    const currentRowExistingQty = eqId(currentRowProductId, productId) 
-      ? Number(form.items[rowIndex]?.quantity || 0) 
-      : 0;
     const available = Number(baseAvailable) + existingQtyInOtherRows + currentRowExistingQty;
 
     // Preserve existing values if re-selecting the same product
@@ -1653,20 +1808,13 @@ export default function SaleInvoiceForm({ saleId, onSuccess }) {
                         ref={(el) => (priceRefs.current[i] = el)}
                         type="text"
                         value={to2(it.price ?? "")}
-                        readOnly={form.sale_type !== "wholesale"}
+                        readOnly
                         autoComplete="off"
-                        onChange={(e) => handleItemChange(i, "price", e.target.value)}
                         className={`w-full h-6 border rounded px-1 text-center ${
                           isDark 
                             ? "border-slate-600 bg-slate-700 text-slate-300" 
                             : "border-gray-200 bg-gray-100 text-gray-700"
-                        } ${form.sale_type === "wholesale" ? "cursor-text" : "cursor-not-allowed"} ${invalidPriceRows[i] ? "border-red-500 ring-1 ring-red-400" : ""}`}
-                        onKeyDown={(e) => onKeyNav(e, i, "price")}
-                        onFocus={(e) => {
-                          if (form.sale_type === "wholesale") {
-                            e.target.select();
-                          }
-                        }}
+                        } cursor-not-allowed ${invalidPriceRows[i] ? "border-red-500 ring-1 ring-red-400" : ""}`}
                       />
                     </td>
 
