@@ -38,7 +38,7 @@ class DashboardController extends Controller
         )->sum('total_amount');
 
         $saleReturnsTotal = (float) SaleReturn::whereBetween('date', [$from, $to])->sum('total');
-        $purchaseReturnsTotal = (float) PurchaseReturn::whereBetween('date', [$from, $to])->sum('total');
+        $purchaseReturnsTotal = (float) PurchaseReturn::whereDate('date', '>=', $from)->whereDate('date', '<=', $to)->sum('total');
 
         $totals = [
             'sales'            => $salesTotal,
@@ -68,14 +68,15 @@ class DashboardController extends Controller
             ->groupBy(DB::raw('DATE(date)'))
             ->orderBy('date')
             ->get()
-            ->map(fn ($r) => ['date' => $r->date, 'value' => (float) $r->value]);
+            ->map(fn ($r) => ['date' => (string) $r->date, 'value' => (float) $r->value]);
 
         $purchaseReturnSeries = PurchaseReturn::selectRaw('DATE(date) as date, SUM(total) as value')
-            ->whereBetween('date', [$from, $to])
+            ->whereDate('date', '>=', $from)
+            ->whereDate('date', '<=', $to)
             ->groupBy(DB::raw('DATE(date)'))
             ->orderBy('date')
             ->get()
-            ->map(fn ($r) => ['date' => $r->date, 'value' => (float) $r->value]);
+            ->map(fn ($r) => ['date' => substr($r->date, 0, 10), 'value' => (float) $r->value]);
 
         return response()->json([
             'totals' => $totals,
