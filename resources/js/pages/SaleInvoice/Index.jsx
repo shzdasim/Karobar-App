@@ -74,6 +74,7 @@ export default function SaleInvoicesIndex() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
+  const [lastPage, setLastPage] = useState(1);
 
   // Delete modal state
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -84,6 +85,7 @@ export default function SaleInvoicesIndex() {
 
   // AbortController for fetches
   const controllerRef = useRef(null);
+  const debounceRef = useRef(null);
 
   // 🔒 permissions
   const { loading: permsLoading, canFor } = usePermissions();
@@ -272,18 +274,39 @@ export default function SaleInvoicesIndex() {
   `.trim().replace(/\s+/g, ' '), []);
 
   // Fetch invoices
-  const fetchInvoices = useCallback(async (signal) => {
+  const fetchInvoices = useCallback(async (signal, options = {}) => {
     if (permsLoading || !can.view) {
       setInvoices([]);
       setLoading(false);
       return;
     }
+
+    const {
+      pageArg = page,
+      pageSizeArg = pageSize,
+      qPostedArg = qPosted,
+      qCustomerArg = qCustomer,
+    } = options;
+
     try {
       setLoading(true);
-      const res = await axios.get("/api/sale-invoices", { signal });
-      const data = res.data || [];
-      setInvoices(data);
-      setTotal(data.length);
+      const res = await axios.get("/api/sale-invoices", {
+        params: {
+          page: pageArg,
+          per_page: pageSizeArg,
+          posted: qPostedArg.trim(),
+          customer: qCustomerArg.trim(),
+        },
+        signal,
+      });
+
+      const data = res.data;
+      const items = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+      setInvoices(items);
+      setTotal(Number(data?.total ?? items.length ?? 0));
+      const lp = Number(data?.last_page ?? 1);
+      setLastPage(lp);
+      if (pageArg > lp) setPage(lp || 1);
     } catch (e) {
       if (axios.isCancel?.(e)) return;
       const status = e?.response?.status;
@@ -292,16 +315,21 @@ export default function SaleInvoicesIndex() {
     } finally {
       setLoading(false);
     }
-  }, [permsLoading, can.view]);
+  }, [permsLoading, can.view, page, pageSize, qPosted, qCustomer]);
 
-  // Initial fetch
+  // Initial fetch and refetch on page/pageSize change
   useEffect(() => {
     if (permsLoading || !can.view) return;
     const ctrl = new AbortController();
     controllerRef.current = ctrl;
-    fetchInvoices(ctrl.signal);
+    fetchInvoices(ctrl.signal, {
+      pageArg: page,
+      pageSizeArg: pageSize,
+      qPostedArg: qPosted,
+      qCustomerArg: qCustomer,
+    });
     return () => ctrl.abort();
-  }, [fetchInvoices, permsLoading, can.view]);
+  }, [page, pageSize, permsLoading, can.view]);
 
   // Alt+N -> create retail, Alt+W -> create wholesale
   useEffect(() => {
@@ -327,24 +355,28 @@ export default function SaleInvoicesIndex() {
   }, [navigate, can.create]);
 
   // ===== search + pagination =====
-  const norm = (v) => (v ?? "").toString().toLowerCase().trim();
-  const filtered = useMemo(() => {
-    const nPosted = norm(qPosted);
-    const nCust = norm(qCustomer);
-    return invoices.filter((inv) => {
-      const posted = norm(inv.posted_number);
-      const customer = norm(inv.customer?.name);
-      return posted.includes(nPosted) && customer.includes(nCust);
-    });
-  }, [invoices, qPosted, qCustomer]);
+  // Debounce on filter change only
+  useEffect(() => {
+    if (permsLoading || !can.view) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const ctrl = new AbortController();
+    debounceRef.current = setTimeout(() => {
+      setPage(1);
+      controllerRef.current = ctrl;
+      fetchInvoices(ctrl.signal, {
+        pageArg: 1,
+        qPostedArg: qPosted,
+        qCustomerArg: qCustomer,
+      });
+    }, 300);
+    return () => {
+      clearTimeout(debounceRef.current);
+      ctrl.abort();
+    };
+  }, [qPosted, qCustomer, permsLoading, can.view]);
 
-  useEffect(() => { setPage(1); }, [qPosted, qCustomer]);
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  useEffect(() => { if (page > pageCount) setPage(pageCount); }, [page, pageCount]);
-
-  const start = (page - 1) * pageSize;
-  const paged = filtered.slice(start, start + pageSize);
+  const start = invoices.length ? (page - 1) * pageSize + 1 : 0;
+  const end = invoices.length ? start + invoices.length - 1 : 0;
 
   // ===== delete modal handlers =====
   const openDeleteModal = (invoice) => {
@@ -366,13 +398,17 @@ export default function SaleInvoicesIndex() {
       await axios.post("/api/auth/confirm-password", { password });
       await axios.delete(`/api/sale-invoices/${deletingInvoice.id}`);
       toast.success("Sale invoice deleted");
-      setInvoices((prev) => prev.filter((i) => i.id !== deletingInvoice.id));
       closeDeleteModal();
 
       if (controllerRef.current) controllerRef.current.abort();
       const ctrl = new AbortController();
       controllerRef.current = ctrl;
-      fetchInvoices(ctrl.signal);
+      fetchInvoices(ctrl.signal, {
+        pageArg: page,
+        pageSizeArg: pageSize,
+        qPostedArg: qPosted,
+        qCustomerArg: qCustomer,
+      });
     } catch (err) {
       const status = err?.response?.status;
       const apiMsg =
@@ -481,7 +517,12 @@ export default function SaleInvoicesIndex() {
                 if (controllerRef.current) controllerRef.current.abort();
                 const ctrl = new AbortController();
                 controllerRef.current = ctrl;
-                fetchInvoices(ctrl.signal);
+                fetchInvoices(ctrl.signal, {
+                  pageArg: page,
+                  pageSizeArg: pageSize,
+                  qPostedArg: qPosted,
+                  qCustomerArg: qCustomer,
+                });
               }}
               className={`h-10 min-w-[120px] ${btnGlass.className}`}
               title="Refresh"
@@ -549,7 +590,7 @@ export default function SaleInvoicesIndex() {
                   Loading...
                 </span>
               ) : (
-                `${filtered.length === 0 ? 0 : start + 1}-${Math.min(filtered.length, start + pageSize)} of ${total}`
+                `${invoices.length === 0 ? 0 : start}-${end} of ${total}`
               )}
             </span>
           </div>
@@ -584,7 +625,7 @@ export default function SaleInvoicesIndex() {
             </div>
             <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Invoice List</span>
           </div>
-          <span className="text-xs text-gray-400">{paged.length} items</span>
+          <span className="text-xs text-gray-400">{invoices.length} items</span>
         </div>
 
         <div className="max-h-[65vh] overflow-auto">
@@ -601,7 +642,7 @@ export default function SaleInvoicesIndex() {
             </thead>
 
             <tbody>
-              {paged.length === 0 && !loading && (
+              {invoices.length === 0 && !loading && (
                 <tr>
                   <td className="px-3 py-12 text-center" colSpan={6}>
                     <div className="flex flex-col items-center gap-2">
@@ -623,7 +664,7 @@ export default function SaleInvoicesIndex() {
                 </tr>
               )}
 
-              {paged.map((invoice, idx) => {
+              {invoices.map((invoice, idx) => {
                 const invTotal = Number(invoice.total ?? 0);
                 const invReceived = Number(invoice.total_receive ?? invoice.total_recieve ?? 0);
                 const invRemaining = Math.max(invTotal - invReceived, 0);
@@ -734,7 +775,7 @@ export default function SaleInvoicesIndex() {
         {/* Compact Pagination */}
         <div className="px-3 py-2 flex items-center justify-between border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50 text-xs">
           <span className="text-gray-500 dark:text-gray-400">
-            Page {page} of {pageCount} ({filtered.length} total)
+            Page {page} of {lastPage} ({total} total)
           </span>
 
           <div className="flex items-center gap-1">
@@ -755,14 +796,14 @@ export default function SaleInvoicesIndex() {
 
             {/* Page numbers */}
             <div className="flex items-center gap-0.5 mx-1">
-              {Array.from({ length: Math.min(5, pageCount) }, (_, i) => {
+              {Array.from({ length: Math.min(5, lastPage) }, (_, i) => {
                 let pageNum;
-                if (pageCount <= 5) {
+                if (lastPage <= 5) {
                   pageNum = i + 1;
                 } else if (page <= 3) {
                   pageNum = i + 1;
-                } else if (page >= pageCount - 2) {
-                  pageNum = pageCount - 4 + i;
+                } else if (page >= lastPage - 2) {
+                  pageNum = lastPage - 4 + i;
                 } else {
                   pageNum = page - 2 + i;
                 }
@@ -786,16 +827,16 @@ export default function SaleInvoicesIndex() {
             </div>
 
             <button
-              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-              disabled={page === pageCount}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === pageCount ? 'opacity-40' : ''}`}
+              onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
+              disabled={page === lastPage}
+              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
             >
               ▶
             </button>
             <button
-              onClick={() => setPage(pageCount)}
-              disabled={page === pageCount}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === pageCount ? 'opacity-40' : ''}`}
+              onClick={() => setPage(lastPage)}
+              disabled={page === lastPage}
+              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
             >
               ⏭
             </button>

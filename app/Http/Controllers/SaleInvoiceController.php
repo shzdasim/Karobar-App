@@ -122,8 +122,13 @@ class SaleInvoiceController extends Controller
     public function index(Request $request)
     {
         $this->authorize('viewAny', SaleInvoice::class);
+        
         $qPosted   = trim((string) $request->query('posted'));
         $qCustomer = trim((string) $request->query('customer'));
+
+        // Pagination parameters
+        $page     = (int) $request->query('page', 1);
+        $perPage  = (int) $request->query('per_page', 10);
 
         $query = SaleInvoice::with(['customer'])->orderByDesc('id');
 
@@ -136,7 +141,7 @@ class SaleInvoiceController extends Controller
             });
         }
 
-        return $query->get();
+        return $query->paginate($perPage, ['*'], 'page', $page);
     }
 
     public function show($id)

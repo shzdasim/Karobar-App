@@ -34,8 +34,13 @@ class PurchaseInvoiceController extends Controller
     public function index(Request $request)
     {
         $this->authorize('viewAny', PurchaseInvoice::class);
+        
         $qPosted     = trim((string) $request->query('posted'));
         $qSupplierId = $request->query('supplier_id');
+        
+        // Pagination parameters
+        $page     = (int) $request->query('page', 1);
+        $perPage  = (int) $request->query('per_page', 10);
 
         $query = PurchaseInvoice::with(['supplier']);
 
@@ -48,7 +53,15 @@ class PurchaseInvoiceController extends Controller
             $query->where('supplier_id', $qSupplierId);
         }
 
-        return $query->orderByDesc('id')->get();
+        // Also filter by supplier name if provided
+        $qSupplier = trim((string) $request->query('supplier'));
+        if ($qSupplier !== '') {
+            $query->whereHas('supplier', function ($q) use ($qSupplier) {
+                $q->where('name', 'like', '%' . $qSupplier . '%');
+            });
+        }
+
+        return $query->orderByDesc('id')->paginate($perPage, ['*'], 'page', $page);
     }
 
     // Show single invoice
