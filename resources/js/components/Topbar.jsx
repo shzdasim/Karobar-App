@@ -80,7 +80,10 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
         openInNewTab("/purchase-invoices/create");
       } else if (e.code === "Digit2" || e.code === "Numpad2") {
         e.preventDefault();
-        openInNewTab("/sale-invoices/create");
+        openInNewTab("/sale-invoices/create/retail");
+      } else if (e.key.toLowerCase() === "w") {
+        e.preventDefault();
+        openInNewTab("/sale-invoices/create/wholesale");
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -164,7 +167,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
             </button>
 
             <button
-              onClick={() => openInNewTab("/sale-invoices/create")}
+              onClick={() => openInNewTab("/sale-invoices/create/retail")}
               aria-keyshortcuts="Alt+2"
               title="Open Sale Invoice (Alt+2) in a new tab"
               className={`inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-${themeColors.primary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}

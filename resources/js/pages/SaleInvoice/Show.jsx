@@ -418,7 +418,13 @@ export default function SaleInvoiceShow() {
       if (k === "n") {
         if (!can.create) return;
         e.preventDefault();
-        navigate("/sale-invoices/create");
+        // Navigate based on the current invoice's sale_type
+        const saleType = inv?.sale_type || "retail";
+        if (saleType === "wholesale") {
+          navigate("/sale-invoices/create/wholesale");
+        } else {
+          navigate("/sale-invoices/create/retail");
+        }
       }
     };
     document.addEventListener("keydown", onKey);
@@ -494,7 +500,15 @@ export default function SaleInvoiceShow() {
               <Guard when={can.create}>
               <button
                 type="button"
-                onClick={() => navigate("/sale-invoices/create")}
+                onClick={() => {
+                  // Navigate based on the current invoice's sale_type
+                  const saleType = inv?.sale_type || "retail";
+                  if (saleType === "wholesale") {
+                    navigate("/sale-invoices/create/wholesale");
+                  } else {
+                    navigate("/sale-invoices/create/retail");
+                  }
+                }}
                 className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
                 style={btnSecondary.style}
                 title="Alt+N"
@@ -728,7 +742,15 @@ export default function SaleInvoiceShow() {
                 <Guard when={can.create}>
                   <button
                     type="button"
-                    onClick={() => navigate("/sale-invoices/create")}
+                    onClick={() => {
+                      // Navigate based on the current invoice's sale_type
+                      const saleType = inv?.sale_type || "retail";
+                      if (saleType === "wholesale") {
+                        navigate("/sale-invoices/create/wholesale");
+                      } else {
+                        navigate("/sale-invoices/create/retail");
+                      }
+                    }}
                     className={`col-span-2 h-9 rounded text-[12px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
                     style={btnSecondary.style}
                     title="Alt+N"

@@ -23,7 +23,8 @@ import PurchaseReturnsIndex from "../pages/PurchaseReturn/index.jsx";
 import CreatePurchaseReturn from "../pages/PurchaseReturn/Create.jsx";
 import EditPurchaseReturn from "../pages/PurchaseReturn/Edit.jsx";
 import IndexSaleInvoice from "../pages/SaleInvoice/Index.jsx";
-import CreateSaleInvoice from "../pages/SaleInvoice/Create.jsx";
+import CreateSaleInvoiceRetail from "../pages/SaleInvoice/CreateRetail.jsx";
+import CreateSaleInvoiceWholesale from "../pages/SaleInvoice/CreateWholesale.jsx";
 import EditSaleInvoice from "../pages/SaleInvoice/Edit.jsx";
 import ShowSaleInvoice from "../pages/SaleInvoice/Show.jsx";
 import IndexSaleReturn from "../pages/SaleReturn/Index.jsx";
@@ -261,11 +262,21 @@ export default function AppRoutes() {
       }
       />
       <Route 
-      path="sale-invoices/create"
+      path="sale-invoices/create/retail"
       element={
         <ProtectedRoute>
           <DashboardLayout>
-            <CreateSaleInvoice />
+            <CreateSaleInvoiceRetail />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      <Route 
+      path="sale-invoices/create/wholesale"
+      element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <CreateSaleInvoiceWholesale />
           </DashboardLayout>
         </ProtectedRoute>
       }

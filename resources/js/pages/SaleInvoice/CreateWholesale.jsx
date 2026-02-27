@@ -2,10 +2,10 @@ import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import axios from "axios";
-import SaleInvoiceForm from "./SaleInvoiceForm.jsx";
+import SaleInvoiceWholesaleForm from "./SaleInvoiceWholesaleForm.jsx";
 import { usePermissions } from "@/api/usePermissions.js";
 
-export default function CreateSaleInvoice() {
+export default function CreateSaleInvoiceWholesale() {
   const navigate = useNavigate();
 
   // 🔒 permissions
@@ -24,7 +24,7 @@ export default function CreateSaleInvoice() {
     }
     try {
       const { data } = await axios.post("/api/sale-invoices", payload);
-      toast.success("Sale invoice created");
+      toast.success("Wholesale sale invoice created");
       navigate("/sale-invoices");
       return data;
     } catch (e) {
@@ -34,12 +34,13 @@ export default function CreateSaleInvoice() {
   };
 
   if (permsLoading) return <div className="p-6">Loading…</div>;
-  if (!can.create) return <div className="p-6 text-sm text-gray-700">You don’t have permission to create sale invoices.</div>;
+  if (!can.create) return <div className="p-6 text-sm text-gray-700">You don't have permission to create sale invoices.</div>;
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Create Sale Invoice</h1>
-      <SaleInvoiceForm onSubmit={onSubmit} onSuccess={() => navigate("/sale-invoices")} />
+      <h1 className="text-2xl font-bold mb-4">Create Wholesale Sale Invoice</h1>
+      <SaleInvoiceWholesaleForm onSubmit={onSubmit} onSuccess={() => navigate("/sale-invoices")} />
     </div>
   );
 }
+

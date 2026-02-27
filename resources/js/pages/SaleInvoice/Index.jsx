@@ -303,18 +303,24 @@ export default function SaleInvoicesIndex() {
     return () => ctrl.abort();
   }, [fetchInvoices, permsLoading, can.view]);
 
-  // Alt+N -> create
+  // Alt+N -> create retail, Alt+W -> create wholesale
   useEffect(() => {
     const onKeyDown = (e) => {
       if (!e.altKey) return;
       const key = (e.key || "").toLowerCase();
-      if (key !== "n") return;
       const tag = (e.target?.tagName || "").toLowerCase();
       const isTyping = ["input", "textarea", "select"].includes(tag) || e.target?.isContentEditable;
       if (isTyping) return;
       if (!can.create) return;
       e.preventDefault();
-      navigate("/sale-invoices/create");
+
+      if (key === "n") {
+        // Alt+N -> retail sale
+        navigate("/sale-invoices/create/retail");
+      } else if (key === "w") {
+        // Alt+W -> wholesale sale
+        navigate("/sale-invoices/create/wholesale");
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -489,15 +495,26 @@ export default function SaleInvoicesIndex() {
             </GlassBtn>
 
             <Guard when={can.create}>
+              {/* Retail Sale Button */}
               <Link
-                to="/sale-invoices/create"
-                title="Add Sale Invoice (Alt+N)"
-                aria-keyshortcuts="Alt+N"
+                to="/sale-invoices/create/retail"
+                title="Add Retail Sale Invoice"
                 className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${btnPrimary.className}`}
                 style={btnPrimary.style}
               >
                 <PlusCircleIcon className="w-4 h-4" />
-                Add Invoice
+                Retail Sale
+              </Link>
+              
+              {/* Wholesale Sale Button */}
+              <Link
+                to="/sale-invoices/create/wholesale"
+                title="Add Wholesale Sale Invoice"
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${btnSecondary.className}`}
+                style={btnSecondary.style}
+              >
+                <PlusCircleIcon className="w-4 h-4" />
+                Wholesale Sale
               </Link>
             </Guard>
           </div>

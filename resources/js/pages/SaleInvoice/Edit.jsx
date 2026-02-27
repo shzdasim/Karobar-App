@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
-import SaleInvoiceForm from "./SaleInvoiceForm.jsx";
+import SaleInvoiceRetailForm from "./SaleInvoiceRetailForm.jsx";
+import SaleInvoiceWholesaleForm from "./SaleInvoiceWholesaleForm.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 
 export default function EditSaleInvoice() {
@@ -21,6 +22,7 @@ export default function EditSaleInvoice() {
   const [initial, setInitial] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fetchErr, setFetchErr] = useState(null);
+  const [saleType, setSaleType] = useState(null);
 
   useEffect(() => { document.title = "Edit Sale Invoice - Pharmacy ERP"; }, []);
 
@@ -31,6 +33,8 @@ export default function EditSaleInvoice() {
         setLoading(true);
         const { data } = await axios.get(`/api/sale-invoices/${id}`);
         setInitial(data);
+        // Determine sale type from the fetched data
+        setSaleType(data.sale_type || "retail");
         setFetchErr(null);
       } catch (e) {
         const status = e?.response?.status;
@@ -60,30 +64,43 @@ export default function EditSaleInvoice() {
   };
 
   if (permsLoading) return <div className="p-6">Loading…</div>;
-  if (!can.view) return <div className="p-6 text-sm text-gray-700">You don’t have permission to view sale invoices.</div>;
+  if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view sale invoices.</div>;
   if (loading) return <div className="p-6">Loading invoice…</div>;
   if (fetchErr) return <div className="p-6 text-red-600">{fetchErr}</div>;
+
+  // Render the appropriate form based on sale type
+  const isWholesale = saleType === "wholesale";
 
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Edit Sale Invoice</h1>
+        <h1 className="text-2xl font-bold">
+          Edit {isWholesale ? "Wholesale" : "Retail"} Sale Invoice
+        </h1>
         <Link to="/sale-invoices" className="text-blue-600 hover:underline">← Back</Link>
       </div>
 
       <Guard when={can.update}>
-        <SaleInvoiceForm
-          saleId={id}
-          initialData={initial}
-          onSubmit={onSubmit}
-          onSuccess={() => navigate("/sale-invoices")}
-        />
+        {isWholesale ? (
+          <SaleInvoiceWholesaleForm
+            saleId={id}
+            onSubmit={onSubmit}
+            onSuccess={() => navigate("/sale-invoices")}
+          />
+        ) : (
+          <SaleInvoiceRetailForm
+            saleId={id}
+            onSubmit={onSubmit}
+            onSuccess={() => navigate("/sale-invoices")}
+          />
+        )}
       </Guard>
       {!can.update && (
         <div className="text-sm text-gray-700">
-          You don’t have permission to update sale invoices.
+          You don't have permission to update sale invoices.
         </div>
       )}
     </div>
   );
 }
+
