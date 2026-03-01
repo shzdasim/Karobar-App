@@ -633,6 +633,7 @@ export default function SaleInvoicesIndex() {
             <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
               <tr className="text-left">
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">#</th>
+                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Type</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Posted No</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Customer</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Date</th>
@@ -644,7 +645,7 @@ export default function SaleInvoicesIndex() {
             <tbody>
               {invoices.length === 0 && !loading && (
                 <tr>
-                  <td className="px-3 py-12 text-center" colSpan={6}>
+                  <td className="px-3 py-12 text-center" colSpan={7}>
                     <div className="flex flex-col items-center gap-2">
                       <DocumentTextIcon className="w-8 h-8 text-gray-400" />
                       <p className="text-sm text-gray-500 dark:text-gray-400">No sale invoices found</p>
@@ -655,7 +656,7 @@ export default function SaleInvoicesIndex() {
 
               {loading && (
                 <tr>
-                  <td className="px-3 py-12 text-center" colSpan={6}>
+                  <td className="px-3 py-12 text-center" colSpan={7}>
                     <div className="flex flex-col items-center gap-2">
                       <ArrowPathIcon className="w-6 h-6 text-gray-400 animate-spin" />
                       <p className="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
@@ -681,6 +682,17 @@ export default function SaleInvoicesIndex() {
                   >
                     <td className="px-3 py-3 text-gray-600 dark:text-gray-300">
                       {start + idx + 1}
+                    </td>
+                    <td className="px-3 py-3">
+                      {invoice.invoice_type === 'credit' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400">
+                          Credit
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400">
+                          Debit
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-3">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium">

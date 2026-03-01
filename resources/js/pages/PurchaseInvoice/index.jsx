@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import {
   PlusCircleIcon,
   PencilSquareIcon,
+  EyeIcon,
   TrashIcon,
   MagnifyingGlassIcon,
   XMarkIcon,
@@ -333,7 +334,7 @@ export default function PurchaseInvoicesIndex() {
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view purchase invoices.</div>;
 
-  const hasActions = can.update || can.delete;
+  const hasActions = can.view || can.update || can.delete;
 
   return (
     <div className="p-4 space-y-3">
@@ -471,6 +472,7 @@ export default function PurchaseInvoicesIndex() {
             <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
               <tr className="text-left">
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-12">#</th>
+                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-24">Type</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Posted No</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Invoice No</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Supplier</th>
@@ -485,7 +487,7 @@ export default function PurchaseInvoicesIndex() {
             <tbody>
               {rows.length === 0 && !loading && (
                 <tr>
-                  <td className="px-3 py-12 text-center" colSpan={hasActions ? 7 : 6}>
+                  <td className="px-3 py-12 text-center" colSpan={hasActions ? 8 : 7}>
                     <div className="flex flex-col items-center gap-2">
                       <ClipboardDocumentListIcon className="w-8 h-8 text-gray-400" />
                       <p className="text-sm text-gray-500 dark:text-gray-400">No invoices found</p>
@@ -500,6 +502,17 @@ export default function PurchaseInvoicesIndex() {
                   className="odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/40 dark:even:bg-slate-800/40 hover:bg-blue-50 dark:hover:bg-slate-600/50 transition-colors border-b border-gray-100 dark:border-slate-600/30"
                 >
                   <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">{(page - 1) * pageSize + idx + 1}</td>
+                  <td className="px-3 py-2.5">
+                    {inv.invoice_type === 'credit' ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400">
+                        Credit
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400">
+                        Debit
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5 font-medium text-gray-900 dark:text-gray-100">{inv.posted_number || "-"}</td>
                   <td className="px-3 py-2.5 text-gray-900 dark:text-gray-100">{inv.invoice_number}</td>
                   <td className="px-3 py-2.5">
@@ -515,6 +528,19 @@ export default function PurchaseInvoicesIndex() {
                   {hasActions && (
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-center gap-1.5">
+                        {/* View Action */}
+                        <Guard when={can.view}>
+                          <Link
+                            to={`/purchase-invoices/${inv.id}`}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium ${btnPrimary.className}`}
+                            style={btnPrimary.style}
+                            title={`View ${inv.posted_number || inv.invoice_number}`}
+                          >
+                            <EyeIcon className="w-3.5 h-3.5" />
+                            View
+                          </Link>
+                        </Guard>
+
                         {/* Edit Action */}
                         <Guard when={can.update}>
                           <Link
