@@ -501,16 +501,19 @@ if ($invoiceType === 'credit') {
         $this->authorize('viewAny', PurchaseInvoice::class);
 
         $q = trim((string) $request->query('q', ''));
+        
+        // Pagination parameters
+        $page = (int) $request->query('page', 1);
+        $perPage = (int) $request->query('per_page', 20);
 
         // If no search query, return recent invoices
         if (strlen($q) < 1) {
             $results = PurchaseInvoice::with(['supplier'])
                 ->orderByDesc('id')
-                ->limit(20)
-                ->get(['id', 'posted_number', 'posted_date', 'supplier_id', 'invoice_number', 'invoice_amount', 'total_amount', 'total_paid', 'invoice_type', 'remarks']);
+                ->paginate($perPage, ['*'], 'page', $page);
 
             // Add computed fields
-            $results->transform(function ($invoice) {
+            $results->getCollection()->transform(function ($invoice) {
                 $invTotal = (float) ($invoice->total_amount ?? $invoice->invoice_amount ?? 0);
                 $paid = (float) ($invoice->total_paid ?? 0);
                 $invoice->remaining = max($invTotal - $paid, 0);
@@ -533,11 +536,10 @@ if ($invoiceType === 'credit') {
                 });
         });
 
-        // Limit results to 20 items
-        $results = $query->limit(20)->get(['id', 'posted_number', 'posted_date', 'supplier_id', 'invoice_number', 'invoice_amount', 'total_amount', 'total_paid', 'invoice_type', 'remarks']);
+        $results = $query->paginate($perPage, ['*'], 'page', $page);
 
         // Add computed fields
-        $results->transform(function ($invoice) {
+        $results->getCollection()->transform(function ($invoice) {
             $invTotal = (float) ($invoice->total_amount ?? $invoice->invoice_amount ?? 0);
             $paid = (float) ($invoice->total_paid ?? 0);
             $invoice->remaining = max($invTotal - $paid, 0);

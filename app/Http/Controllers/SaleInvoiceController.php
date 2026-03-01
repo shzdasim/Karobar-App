@@ -566,16 +566,19 @@ class SaleInvoiceController extends Controller
         $this->authorize('viewAny', SaleInvoice::class);
 
         $q = trim((string) $request->query('q', ''));
+        
+        // Pagination parameters
+        $page = (int) $request->query('page', 1);
+        $perPage = (int) $request->query('per_page', 20);
 
         // If no search query, return recent invoices
         if (strlen($q) < 1) {
             $results = SaleInvoice::with(['customer'])
                 ->orderByDesc('id')
-                ->limit(20)
-                ->get(['id', 'posted_number', 'date', 'customer_id', 'doctor_name', 'patient_name', 'remarks', 'total', 'total_receive', 'invoice_type', 'sale_type']);
+                ->paginate($perPage, ['*'], 'page', $page);
 
             // Add computed fields
-            $results->transform(function ($invoice) {
+            $results->getCollection()->transform(function ($invoice) {
                 $invTotal = (float) ($invoice->total ?? 0);
                 $received = (float) ($invoice->total_receive ?? 0);
                 $invoice->remaining = max($invTotal - $received, 0);
@@ -597,11 +600,10 @@ class SaleInvoiceController extends Controller
                 });
         });
 
-        // Limit results to 20 items
-        $results = $query->limit(20)->get(['id', 'posted_number', 'date', 'customer_id', 'doctor_name', 'patient_name', 'remarks', 'total', 'total_receive', 'invoice_type', 'sale_type']);
+        $results = $query->paginate($perPage, ['*'], 'page', $page);
 
         // Add computed fields
-        $results->transform(function ($invoice) {
+        $results->getCollection()->transform(function ($invoice) {
             $invTotal = (float) ($invoice->total ?? 0);
             $received = (float) ($invoice->total_receive ?? 0);
             $invoice->remaining = max($invTotal - $received, 0);

@@ -1,5 +1,5 @@
 // src/components/PurchaseInvoiceSearch.jsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import axios from "axios";
 import {
   MagnifyingGlassIcon,
@@ -28,7 +28,7 @@ function formatDate(dateStr) {
 }
 
 /* ─────────────── List Row ─────────────── */
-function ResultRow({ invoice, active, onHover, onOpen }) {
+function ResultRow({ invoice, active, onHover, onOpen, rowRef }) {
   const invTotal = Number(invoice.total_amount ?? invoice.invoice_amount ?? 0);
   const paid = Number(invoice.total_paid ?? 0);
   const remaining = invoice.remaining ?? Math.max(invTotal - paid, 0);
@@ -36,6 +36,7 @@ function ResultRow({ invoice, active, onHover, onOpen }) {
 
   return (
     <li
+      ref={rowRef}
       onMouseEnter={onHover}
       onClick={onOpen}
       className={[
@@ -109,13 +110,24 @@ function ResultRow({ invoice, active, onHover, onOpen }) {
 export default function PurchaseInvoiceSearch({ isOpen, onClose, onSelect }) {
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [results, setResults] = useState([]);
   const [activeIdx, setActiveIdx] = useState(-1);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [lastSearchTerm, setLastSearchTerm] = useState("");
 
   const inputRef = useRef(null);
   const boxRef = useRef(null);
+  const listRef = useRef(null);
+  const rowRefs = useRef([]);
   const abortRef = useRef(null);
   const debounceRef = useRef(null);
+
+  // Clear refs when results change
+  useEffect(() => {
+    rowRefs.current = [];
+  }, [results]);
 
   // Focus input when modal opens
   useEffect(() => {
@@ -124,32 +136,76 @@ export default function PurchaseInvoiceSearch({ isOpen, onClose, onSelect }) {
     }
   }, [isOpen]);
 
+  // Reset state when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    // Reset state
+    setPage(1);
+    setHasMore(true);
+    setResults([]);
+    setActiveIdx(-1);
+    setQ("");
+    setLastSearchTerm("");
+  }, [isOpen]);
+
+  // Fetch invoices (initial load or search)
+  const fetchInvoices = useCallback(async (searchTerm, pageNum = 1, isLoadMore = false) => {
+    if (abortRef.current) abortRef.current.abort();
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
+
+    if (isLoadMore) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
+
+    try {
+      const res = await axios.get("/api/purchase-invoices/search", {
+        params: { 
+          q: searchTerm, 
+          page: pageNum,
+          per_page: 20 
+        },
+        signal,
+      });
+      
+      const paginationData = res.data;
+      const newResults = Array.isArray(paginationData.data) ? paginationData.data : 
+                        Array.isArray(paginationData) ? paginationData : [];
+      
+      // Check if there are more pages
+      const totalPages = paginationData.last_page || 1;
+      const hasMoreData = pageNum < totalPages;
+
+      if (isLoadMore) {
+        setResults(prev => [...prev, ...newResults]);
+      } else {
+        setResults(newResults);
+        setActiveIdx(newResults.length ? 0 : -1);
+      }
+      
+      setHasMore(hasMoreData);
+      setPage(pageNum);
+    } catch (err) {
+      if (!axios.isCancel(err)) console.error(err);
+    } finally {
+      if (isLoadMore) {
+        setLoadingMore(false);
+      } else {
+        setLoading(false);
+      }
+    }
+  }, []);
+
   // Fetch recent invoices when modal opens
   useEffect(() => {
     if (!isOpen) return;
     
-    const fetchRecentInvoices = async () => {
-      if (abortRef.current) abortRef.current.abort();
-      abortRef.current = new AbortController();
-      const signal = abortRef.current.signal;
-
-      setLoading(true);
-      try {
-        const res = await axios.get("/api/purchase-invoices/search", {
-          params: { q: '' },
-          signal,
-        });
-        const arr = Array.isArray(res.data) ? res.data : [];
-        setResults(arr);
-        setActiveIdx(arr.length ? 0 : -1);
-      } catch (err) {
-        if (!axios.isCancel(err)) console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchRecentInvoices();
+    const searchTerm = q.trim();
+    setLastSearchTerm(searchTerm);
+    fetchInvoices(searchTerm, 1, false);
   }, [isOpen]);
 
   // Close on Escape
@@ -171,30 +227,61 @@ export default function PurchaseInvoiceSearch({ isOpen, onClose, onSelect }) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(async () => {
-      if (abortRef.current) abortRef.current.abort();
-      abortRef.current = new AbortController();
-      const signal = abortRef.current.signal;
-
       const term = q.trim();
       
-      setLoading(true);
-      try {
-        const res = await axios.get("/api/purchase-invoices/search", {
-          params: { q: term },
-          signal,
-        });
-        const arr = Array.isArray(res.data) ? res.data : [];
-        setResults(arr);
-        setActiveIdx(arr.length ? 0 : -1);
-      } catch (err) {
-        if (!axios.isCancel(err)) console.error(err);
-      } finally {
-        setLoading(false);
+      // Only search if term changed
+      if (term !== lastSearchTerm) {
+        setLastSearchTerm(term);
+        setPage(1);
+        setHasMore(true);
+        fetchInvoices(term, 1, false);
       }
     }, 250);
 
     return () => clearTimeout(debounceRef.current);
-  }, [q, isOpen]);
+  }, [q, isOpen, fetchInvoices, lastSearchTerm]);
+
+  // Auto-scroll to active item
+  const scrollToActiveItem = useCallback(() => {
+    if (activeIdx < 0 || !listRef.current) return;
+    
+    const activeRow = rowRefs.current[activeIdx];
+    if (!activeRow) return;
+
+    const listContainer = listRef.current;
+    const activeRect = activeRow.getBoundingClientRect();
+    const listRect = listContainer.getBoundingClientRect();
+
+    // Check if active item is out of view
+    if (activeRect.top < listRect.top) {
+      // Scroll up to make it visible
+      activeRow.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (activeRect.bottom > listRect.bottom) {
+      // Scroll down to make it visible
+      activeRow.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [activeIdx]);
+
+  // Scroll to active item when it changes
+  useEffect(() => {
+    if (results.length > 0 && activeIdx >= 0) {
+      // Small delay to ensure DOM is updated
+      setTimeout(scrollToActiveItem, 10);
+    }
+  }, [activeIdx, results.length, scrollToActiveItem]);
+
+  // Load more when scrolling
+  const handleScroll = useCallback(() => {
+    if (!listRef.current || loadingMore || loading || !hasMore) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = listRef.current;
+    
+    // Load more when user is near the bottom (within 100px)
+    if (scrollHeight - scrollTop - clientHeight < 100) {
+      const nextPage = page + 1;
+      fetchInvoices(lastSearchTerm, nextPage, true);
+    }
+  }, [loadingMore, loading, hasMore, page, lastSearchTerm, fetchInvoices]);
 
   // Keyboard navigation
   const handleKeyDown = (e) => {
@@ -205,7 +292,14 @@ export default function PurchaseInvoiceSearch({ isOpen, onClose, onSelect }) {
     }
 
     if (e.key === "ArrowDown") {
-      setActiveIdx((i) => Math.min((results.length || 1) - 1, i + 1));
+      const newIdx = Math.min((results.length || 1) - 1, activeIdx + 1);
+      setActiveIdx(newIdx);
+      
+      // If navigating beyond current results and there's more, load more
+      if (newIdx >= results.length - 2 && hasMore && !loadingMore) {
+        const nextPage = page + 1;
+        fetchInvoices(lastSearchTerm, nextPage, true);
+      }
     } else if (e.key === "ArrowUp") {
       setActiveIdx((i) => Math.max(0, i - 1));
     } else if (e.key === "Enter") {
@@ -228,6 +322,9 @@ export default function PurchaseInvoiceSearch({ isOpen, onClose, onSelect }) {
     setQ("");
     setResults([]);
     setActiveIdx(-1);
+    setPage(1);
+    setHasMore(true);
+    setLastSearchTerm("");
     if (onClose) onClose();
   };
 
@@ -266,6 +363,8 @@ export default function PurchaseInvoiceSearch({ isOpen, onClose, onSelect }) {
                   setQ("");
                   setResults([]);
                   setActiveIdx(-1);
+                  setPage(1);
+                  setHasMore(true);
                 }}
                 className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex-shrink-0"
                 title="Clear search"
@@ -281,7 +380,11 @@ export default function PurchaseInvoiceSearch({ isOpen, onClose, onSelect }) {
           </div>
 
           {/* Results */}
-          <div className="max-h-[60vh] overflow-y-auto">
+          <div 
+            ref={listRef}
+            className="max-h-[60vh] overflow-y-auto"
+            onScroll={handleScroll}
+          >
             {loading && (
               <div className="flex items-center justify-center py-8">
                 <div className="flex flex-col items-center gap-2">
@@ -314,9 +417,18 @@ export default function PurchaseInvoiceSearch({ isOpen, onClose, onSelect }) {
                     active={idx === activeIdx}
                     onHover={() => setActiveIdx(idx)}
                     onOpen={() => handleSelect(invoice)}
+                    rowRef={el => rowRefs.current[idx] = el}
                   />
                 ))}
               </ul>
+            )}
+
+            {/* Loading more indicator */}
+            {loadingMore && (
+              <div className="flex items-center justify-center py-4">
+                <ArrowPathIcon className="w-5 h-5 animate-spin text-blue-500" />
+                <span className="text-xs text-slate-500 ml-2">Loading more...</span>
+              </div>
             )}
           </div>
 
@@ -326,6 +438,7 @@ export default function PurchaseInvoiceSearch({ isOpen, onClose, onSelect }) {
               {q ? (
                 <>
                   <span className="font-bold">{results.length}</span> results for <span className="font-medium">"{q}"</span>
+                  {!hasMore && results.length > 0 && <span className="ml-1">(all loaded)</span>}
                 </>
               ) : (
                 <>Recent invoices</>
