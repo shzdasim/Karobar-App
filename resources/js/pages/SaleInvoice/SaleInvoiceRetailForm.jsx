@@ -42,8 +42,9 @@ const normalizeFormLoaded = (f) => {
   safe.total = safe.total ?? "";
   safe.total_receive = safe.total_receive ?? "";
   safe.items = Array.isArray(safe.items)
-    ? safe.items.map((it) => {
+    ? safe.items.map((it, idx) => {
         return {
+          id: it?.id ?? `row_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 9)}`,
           product_id: it?.product_id ?? "",
           pack_size: it?.pack_size ?? "",
           batch_number: it?.batch_number ?? "",

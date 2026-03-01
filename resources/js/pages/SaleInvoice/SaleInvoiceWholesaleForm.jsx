@@ -42,7 +42,7 @@ const normalizeFormLoaded = (f) => {
   safe.total = safe.total ?? "";
   safe.total_receive = safe.total_receive ?? "";
   safe.items = Array.isArray(safe.items)
-    ? safe.items.map((it) => {
+    ? safe.items.map((it, idx) => {
         // For wholesale pack mode, convert quantity from units back to packs for display
         let displayQuantity = it?.quantity ?? "";
         let displayAvailable = it?.current_quantity ?? "";
@@ -56,6 +56,7 @@ const normalizeFormLoaded = (f) => {
         }
         
         return {
+          id: it?.id ?? `row_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 9)}`,
           product_id: it?.product_id ?? "",
           pack_size: it?.pack_size ?? "",
           batch_number: it?.batch_number ?? "",
@@ -75,6 +76,9 @@ const normalizeFormLoaded = (f) => {
 
 
 export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
+  // Helper to generate unique ID for rows
+  const generateRowId = () => `row_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
   /* -------- state -------- */
   const [form, setForm] = useState({
     invoice_type: "debit",
@@ -96,6 +100,7 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
     total_receive: "",
     items: [
       {
+        id: generateRowId(),
         product_id: "",
         pack_size: "",
         batch_number: "",
@@ -681,6 +686,7 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
         items: [
           ...prev.items,
           {
+            id: generateRowId(),
             product_id: "",
             pack_size: "",
             batch_number: "",
@@ -1478,7 +1484,7 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
               </thead>
               <tbody className="[&>tr>td]:py-1 [&>tr>td]:px-0.2">
                 {form.items.map((it, i) => (
-                  <tr key={i} className={`border-b ${isDark ? "border-slate-700 hover:bg-slate-700/50" : "border-gray-100 hover:bg-gray-50"}`}>
+                  <tr key={it.id} className={`border-b ${isDark ? "border-slate-700 hover:bg-slate-700/50" : "border-gray-100 hover:bg-gray-50"}`}>
                     <td className="text-center">
                       <button
                         type="button"
