@@ -103,15 +103,17 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   const [productDataCache, setProductDataCache] = useState({});
   const [receiveTouched, setReceiveTouched] = useState(false);
   const [marginPct, setMarginPct] = useState("");
+  const [focusedRowIndex, setFocusedRowIndex] = useState(0);
   const navigate = useNavigate();
 
-  // Calculate margin based on sale type (retail)
+  // Calculate margin based on sale type (retail) - use focused row
   useEffect(() => {
-    if (form.items.length > 0 && form.items[0].product_id) {
-      const firstItem = form.items[0];
-      if (firstItem.price) {
+    const rowIndex = focusedRowIndex >= 0 && focusedRowIndex < form.items.length ? focusedRowIndex : 0;
+    if (form.items.length > 0 && form.items[rowIndex].product_id) {
+      const focusedItem = form.items[rowIndex];
+      if (focusedItem.price) {
         // For retail, use the cached product margin
-        const productData = productDataCache[firstItem.product_id];
+        const productData = productDataCache[focusedItem.product_id];
         if (productData?.margin) {
           setMarginPct(sanitizeNumberInput(String(productData.margin), true));
           return;
@@ -119,7 +121,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       }
     }
     setMarginPct("");
-  }, [form.items, productDataCache]);
+  }, [form.items, productDataCache, focusedRowIndex]);
 
   useEffect(() => {
     setMarginPct("");
@@ -1275,7 +1277,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                     <td className={`text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>{i + 1}</td>
 
                     <td>
-                      <div ref={(el) => (productRefs.current[i] = el)}>
+                      <div ref={(el) => (productRefs.current[i] = el)} onFocus={() => setFocusedRowIndex(i)}>
                         <ProductSearchInput
                           value={products.find((p) => eqId(p.id, it.product_id)) || it.product_id}
                           onChange={(val) => handleProductSelect(i, val)}
@@ -1302,7 +1304,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                     </td>
 
                     <td>
-                      <div ref={(el) => (batchRefs.current[i] = el)}>
+                      <div ref={(el) => (batchRefs.current[i] = el)} onFocus={() => setFocusedRowIndex(i)}>
                         <BatchSearchInput
                           value={it.batch_number}
                           onChange={(val) => handleBatchSelect(i, val)}
@@ -1369,7 +1371,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                             : "")
                         }
                         onKeyDown={(e) => onKeyNav(e, i, "quantity")}
-                        onFocus={(e) => e.target.select()}
+                        onFocus={(e) => {
+                          setFocusedRowIndex(i);
+                          e.target.select();
+                        }}
                       />
                     </td>
 
@@ -1411,7 +1416,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                             : "bg-white border-gray-300 text-gray-800"
                         }`}
                         onKeyDown={(e) => onKeyNav(e, i, "disc")}
-                        onFocus={(e) => e.target.select()}
+                        onFocus={(e) => {
+                          setFocusedRowIndex(i);
+                          e.target.select();
+                        }}
                       />
                     </td>
 
