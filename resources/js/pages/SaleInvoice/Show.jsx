@@ -6,6 +6,8 @@ import toast from "react-hot-toast";
 // 🔒 permissions
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext";
+// Search modal
+import SaleInvoiceSearch from "@/components/SaleInvoiceSearch.jsx";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -30,6 +32,9 @@ export default function SaleInvoiceShow() {
   const [deleting, setDeleting] = useState(false);
   const [printerType, setPrinterType] = useState("a4");
   const popupRef = useRef(null);
+
+  // Search modal state
+  const [searchOpen, setSearchOpen] = useState(false);
 
   // Get theme colors
   const { theme } = useTheme();
@@ -426,6 +431,10 @@ export default function SaleInvoiceShow() {
           navigate("/sale-invoices/create/retail");
         }
       }
+      if (k === "f") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -453,6 +462,10 @@ export default function SaleInvoiceShow() {
           {/* Inline shortcuts (same zone as Alt+S in form) */}
           <div className="ml-auto flex items-center gap-2 text-[10px] text-gray-600 dark:text-gray-400 no-print">
             <span className="hidden sm:inline-flex items-center gap-1">
+              <span className={chip}>Alt</span><span>+</span><span className={chip}>F</span><span>Search</span>
+            </span>
+            <span className="hidden sm:inline">•</span>
+            <span className="hidden sm:inline-flex items-center gap-1">
               <span className={chip}>Alt</span><span>+</span><span className={chip}>E</span><span>Edit</span>
             </span>
             <span className="hidden sm:inline">•</span>
@@ -466,6 +479,15 @@ export default function SaleInvoiceShow() {
 
             {/* Actions (right) */}
             <div className="ml-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSearchOpen(true)}
+                className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
+                style={btnSecondary.style}
+                title="Alt+F"
+              >
+                🔍 Search
+              </button>
               <button
                 type="button"
                 onClick={handlePrint}
@@ -911,6 +933,17 @@ export default function SaleInvoiceShow() {
           </div>
         </div>
       )}
+
+      {/* ===== Search Invoice Modal ===== */}
+      <SaleInvoiceSearch 
+        isOpen={searchOpen} 
+        onClose={() => setSearchOpen(false)} 
+        onSelect={(invoice) => {
+          if (invoice?.id) {
+            navigate(`/sale-invoices/${invoice.id}`);
+          }
+        }}
+      />
     </div>
   );
 }

@@ -130,6 +130,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
 
     // Sales
     Route::get('sale-invoices/new-code',          [SaleInvoiceController::class, 'generateNewCode']);
+    Route::get('sale-invoices/search',            [SaleInvoiceController::class, 'search']);
     Route::apiResource('sale-invoices',           SaleInvoiceController::class);
 
     // Sale returns

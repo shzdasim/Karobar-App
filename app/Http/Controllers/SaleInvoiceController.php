@@ -560,4 +560,55 @@ class SaleInvoiceController extends Controller
         'patient_name' => $saleInvoice->patient_name,
     ]);
 }
+
+    public function search(Request $request)
+    {
+        $this->authorize('viewAny', SaleInvoice::class);
+
+        $q = trim((string) $request->query('q', ''));
+
+        // If no search query, return recent invoices
+        if (strlen($q) < 1) {
+            $results = SaleInvoice::with(['customer'])
+                ->orderByDesc('id')
+                ->limit(20)
+                ->get(['id', 'posted_number', 'date', 'customer_id', 'doctor_name', 'patient_name', 'remarks', 'total', 'total_receive', 'invoice_type', 'sale_type']);
+
+            // Add computed fields
+            $results->transform(function ($invoice) {
+                $invTotal = (float) ($invoice->total ?? 0);
+                $received = (float) ($invoice->total_receive ?? 0);
+                $invoice->remaining = max($invTotal - $received, 0);
+                $invoice->customer_name = $invoice->customer?->name ?? ($invoice->customer_id ?? 'N/A');
+                return $invoice;
+            });
+
+            return response()->json($results);
+        }
+
+        $query = SaleInvoice::with(['customer'])
+            ->orderByDesc('id');
+
+        // Search by posted_number or customer name
+        $query->where(function ($sub) use ($q) {
+            $sub->where('posted_number', 'like', '%' . $q . '%')
+                ->orWhereHas('customer', function ($customerQuery) use ($q) {
+                    $customerQuery->where('name', 'like', '%' . $q . '%');
+                });
+        });
+
+        // Limit results to 20 items
+        $results = $query->limit(20)->get(['id', 'posted_number', 'date', 'customer_id', 'doctor_name', 'patient_name', 'remarks', 'total', 'total_receive', 'invoice_type', 'sale_type']);
+
+        // Add computed fields
+        $results->transform(function ($invoice) {
+            $invTotal = (float) ($invoice->total ?? 0);
+            $received = (float) ($invoice->total_receive ?? 0);
+            $invoice->remaining = max($invTotal - $received, 0);
+            $invoice->customer_name = $invoice->customer?->name ?? ($invoice->customer_id ?? 'N/A');
+            return $invoice;
+        });
+
+        return response()->json($results);
+    }
 }
