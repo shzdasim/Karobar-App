@@ -63,6 +63,9 @@ const normalizeFormLoaded = (f) => {
 
 
 export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
+  // Helper to generate unique ID for rows
+  const generateRowId = () => `row_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
   /* -------- state -------- */
   const [form, setForm] = useState({
     invoice_type: "debit",
@@ -84,6 +87,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     total_receive: "",
     items: [
       {
+        id: generateRowId(),
         product_id: "",
         pack_size: "",
         batch_number: "",
@@ -104,6 +108,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   const [receiveTouched, setReceiveTouched] = useState(false);
   const [marginPct, setMarginPct] = useState("");
   const [focusedRowIndex, setFocusedRowIndex] = useState(0);
+  const [originalItems, setOriginalItems] = useState({}); // Store original items for edit mode to calculate available quantity correctly
   const navigate = useNavigate();
 
   // Calculate margin based on sale type (retail) - use focused row
@@ -126,6 +131,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   useEffect(() => {
     setMarginPct("");
     setReceiveTouched(false);
+    setOriginalItems({}); // Clear original items when creating a new invoice
   }, [saleId]);
 
   const [customers, setCustomers] = useState([]);
@@ -436,6 +442,21 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     await ensureProductsForItems(loaded?.items || []);
     await ensureBatchesForItems(loaded?.items || []);
     
+    // Store original items for edit mode to calculate available quantity correctly
+    // When editing, current available quantity should include the quantity sold in this invoice
+    const originalItemsMap = {};
+    if (loaded?.items && Array.isArray(loaded.items)) {
+      loaded.items.forEach((item) => {
+        if (item.product_id) {
+          originalItemsMap[item.product_id] = {
+            quantity: Number(item.quantity || 0),
+            batch_number: item.batch_number,
+          };
+        }
+      });
+    }
+    setOriginalItems(originalItemsMap);
+    
     setForm(loaded);
     setReceiveTouched(!shouldSync);
   };
@@ -544,6 +565,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         items: [
           ...prev.items,
           {
+            id: generateRowId(),
             product_id: "",
             pack_size: "",
             batch_number: "",
@@ -683,10 +705,15 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     // Use fresh product data if available, otherwise fall back to cached data
     const baseAvailable = freshProductData?.quantity ?? freshProductData?.available_units ?? selected?.quantity ?? selected?.available_units ?? 0;
     
+    // In edit mode, add back the original quantity sold for this product
+    // This ensures available quantity = current stock + quantity sold in this invoice
+    const originalItem = originalItems[productId];
+    const originalQty = originalItem ? originalItem.quantity : 0;
+    const displayAvailable = Number(baseAvailable) + originalQty;
+    
     // Retail mode: use unit_sale_price
     let price = freshProductData?.unit_sale_price ?? selected?.unit_sale_price ?? "";
     let isCustomPrice = false;
-    let displayAvailable = Number(baseAvailable);
 
     const batchList = await fetchBatches(productId);
     const hasBatches = Array.isArray(batchList) && batchList.length > 0;
@@ -1263,7 +1290,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
               </thead>
               <tbody className="[&>tr>td]:py-1 [&>tr>td]:px-0.2">
                 {form.items.map((it, i) => (
-                  <tr key={i} className={`border-b ${isDark ? "border-slate-700 hover:bg-slate-700/50" : "border-gray-100 hover:bg-gray-50"}`}>
+                  <tr key={it.id} className={`border-b ${isDark ? "border-slate-700 hover:bg-slate-700/50" : "border-gray-100 hover:bg-gray-50"}`}>
                     <td className="text-center">
                       <button
                         type="button"
