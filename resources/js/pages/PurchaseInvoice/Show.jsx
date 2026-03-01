@@ -5,6 +5,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext";
+import PurchaseInvoiceSearch from "@/components/PurchaseInvoiceSearch.jsx";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -40,6 +41,7 @@ export default function PurchaseInvoiceShow() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteStep, setDeleteStep] = useState(1);
   const [password, setPassword] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
 
   // Get theme colors
   const { isDark, theme } = useTheme();
@@ -274,6 +276,10 @@ export default function PurchaseInvoiceShow() {
       if (!e.altKey) return;
       const k = (e.key || "").toLowerCase();
       if (k === "b") { e.preventDefault(); navigate(-1); }
+      if (k === "f") { 
+        e.preventDefault(); 
+        setSearchOpen(true); 
+      }
       if (k === "e") {
         if (!can.update) return;
         e.preventDefault();
@@ -426,6 +432,15 @@ export default function PurchaseInvoiceShow() {
 
         {/* Action Buttons */}
         <div className="mt-2 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            className={`px-4 py-1.5 rounded text-xs font-semibold transition-all duration-200 ${btnSecondary.className}`}
+            style={btnSecondary.style}
+            title="Alt+F"
+          >
+            🔍 Search (Alt+F)
+          </button>
           <Guard when={can.update}>
             <button
               type="button"
@@ -914,6 +929,15 @@ export default function PurchaseInvoiceShow() {
           </div>
         </div>
       )}
+
+      {/* ===== Search Modal ===== */}
+      <PurchaseInvoiceSearch
+        isOpen={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSelect={(invoice) => {
+          navigate(`/purchase-invoices/${invoice.id}`);
+        }}
+      />
     </div>
   );
 }

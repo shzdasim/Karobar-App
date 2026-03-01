@@ -494,4 +494,57 @@ if ($invoiceType === 'credit') {
             'unique' => !$exists,
         ]);
     }
+
+    // Search purchase invoices
+    public function search(Request $request)
+    {
+        $this->authorize('viewAny', PurchaseInvoice::class);
+
+        $q = trim((string) $request->query('q', ''));
+
+        // If no search query, return recent invoices
+        if (strlen($q) < 1) {
+            $results = PurchaseInvoice::with(['supplier'])
+                ->orderByDesc('id')
+                ->limit(20)
+                ->get(['id', 'posted_number', 'posted_date', 'supplier_id', 'invoice_number', 'invoice_amount', 'total_amount', 'total_paid', 'invoice_type', 'remarks']);
+
+            // Add computed fields
+            $results->transform(function ($invoice) {
+                $invTotal = (float) ($invoice->total_amount ?? $invoice->invoice_amount ?? 0);
+                $paid = (float) ($invoice->total_paid ?? 0);
+                $invoice->remaining = max($invTotal - $paid, 0);
+                $invoice->supplier_name = $invoice->supplier?->name ?? ($invoice->supplier_id ?? 'N/A');
+                return $invoice;
+            });
+
+            return response()->json($results);
+        }
+
+        $query = PurchaseInvoice::with(['supplier'])
+            ->orderByDesc('id');
+
+        // Search by posted_number, invoice_number, or supplier name
+        $query->where(function ($sub) use ($q) {
+            $sub->where('posted_number', 'like', '%' . $q . '%')
+                ->orWhere('invoice_number', 'like', '%' . $q . '%')
+                ->orWhereHas('supplier', function ($supplierQuery) use ($q) {
+                    $supplierQuery->where('name', 'like', '%' . $q . '%');
+                });
+        });
+
+        // Limit results to 20 items
+        $results = $query->limit(20)->get(['id', 'posted_number', 'posted_date', 'supplier_id', 'invoice_number', 'invoice_amount', 'total_amount', 'total_paid', 'invoice_type', 'remarks']);
+
+        // Add computed fields
+        $results->transform(function ($invoice) {
+            $invTotal = (float) ($invoice->total_amount ?? $invoice->invoice_amount ?? 0);
+            $paid = (float) ($invoice->total_paid ?? 0);
+            $invoice->remaining = max($invTotal - $paid, 0);
+            $invoice->supplier_name = $invoice->supplier?->name ?? ($invoice->supplier_id ?? 'N/A');
+            return $invoice;
+        });
+
+        return response()->json($results);
+    }
 }

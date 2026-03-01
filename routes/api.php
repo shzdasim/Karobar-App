@@ -122,6 +122,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     // Purchases
     Route::get('purchase-invoices/new-code',      [PurchaseInvoiceController::class, 'generateNewCode']);
     Route::get('purchase-invoices/check-unique',  [PurchaseInvoiceController::class, 'checkUnique']);
+    Route::get('purchase-invoices/search',       [PurchaseInvoiceController::class, 'search']);
     Route::apiResource('purchase-invoices',       PurchaseInvoiceController::class);
 
     // Purchase returns
