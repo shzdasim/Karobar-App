@@ -62,6 +62,10 @@ Route::middleware(['auth:sanctum', 'token.expiry'])->group(function () {
 
     // Keep /me here so dashboard shell can mount pre-activation
     Route::get('/me', MeController::class);
+
+    // Theme Settings - available before license activation (for shell rendering)
+    Route::get('/theme-settings/active',          [ThemeSettingController::class, 'getActive']);
+    Route::put('/theme-settings/active',          [ThemeSettingController::class, 'updateActive']);
 });
 
 /*
@@ -169,12 +173,10 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/settings',                       [SettingController::class, 'show']);
     Route::post('/settings',                      [SettingController::class, 'update']);
 
-    // Theme Settings
+    // Theme Settings (CRUD operations require license)
     Route::get('/theme-settings',                 [ThemeSettingController::class, 'index']);
-    Route::get('/theme-settings/active',          [ThemeSettingController::class, 'getActive']);
     Route::get('/theme-settings/{id}',            [ThemeSettingController::class, 'show']);
     Route::post('/theme-settings',                [ThemeSettingController::class, 'store']);
-    Route::put('/theme-settings/active',          [ThemeSettingController::class, 'updateActive']);
     Route::put('/theme-settings/{id}',            [ThemeSettingController::class, 'update']);
     Route::put('/theme-settings/{id}/activate',  [ThemeSettingController::class, 'activate']);
     Route::delete('/theme-settings/{id}',        [ThemeSettingController::class, 'destroy']);

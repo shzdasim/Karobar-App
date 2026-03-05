@@ -464,7 +464,8 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
     if (!supplierId) { setPurchaseInvoices([]); return; }
     try {
       const res = await axios.get(`/api/purchase-invoices?supplier_id=${supplierId}`);
-      setPurchaseInvoices(res.data || []);
+      // API returns paginated response with 'data' property containing the array
+      setPurchaseInvoices(Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : []);
     } catch (err) { console.error(err); }
   };
 

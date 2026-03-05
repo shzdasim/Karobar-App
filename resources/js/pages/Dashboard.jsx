@@ -750,8 +750,8 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="p-4">
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-48" style={{ minHeight: '192px' }}>
+              <ResponsiveContainer width="100%" height="100%" debounce={100}>
                 <PieChart>
                   <Pie
                     data={[
@@ -801,8 +801,8 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="p-4">
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-48" style={{ minHeight: '192px' }}>
+              <ResponsiveContainer width="100%" height="100%" debounce={100}>
                 <BarChart data={[
                   { name: 'Sales', value: cards.sales },
                   { name: 'Purchases', value: cards.purchases },

@@ -531,8 +531,12 @@ export default function AppRoutes() {
         </ProtectedRoute>
       }
       />
-      {/* License Activation - no DashboardLayout */}
-      <Route path="/activate" element={<ActivateLicense />} />
+      {/* License Activation - requires auth but not license */}
+      <Route path="/activate" element={
+        <AuthGuard requireAuth={true}>
+          <ActivateLicense />
+        </AuthGuard>
+      } />
 
 </Routes>
   );
