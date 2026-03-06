@@ -31,6 +31,7 @@ use App\Http\Controllers\SupplierImportController;
 use App\Http\Controllers\SupplierLedgerController;
 use App\Http\Controllers\ThemeSettingController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\UserPreferenceController;
 
 /*
 |--------------------------------------------------------------------------
@@ -75,6 +76,12 @@ Route::middleware(['auth:sanctum', 'token.expiry'])->group(function () {
 */
 Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function () {
     Route::post('/auth/confirm-password', [AuthController::class, 'confirmPassword']);
+
+// User preferences (window positions, sizes, etc.)
+    Route::get('/preferences', [UserPreferenceController::class, 'index']);
+    Route::put('/preferences', [UserPreferenceController::class, 'update']);
+    Route::get('/preferences/{key}', [UserPreferenceController::class, 'show']);
+    Route::post('/preferences/{key}', [UserPreferenceController::class, 'store']);
 
     // Users
     Route::resource('users', UserController::class);

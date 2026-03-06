@@ -20,12 +20,45 @@ class User extends Authenticatable implements CanResetPassword
         'password',
         'status',
         'remember_token_expires_at',
+        'preferences',
     ];
 
     protected $hidden = [
         'password',
         'remember_token',
     ];
+
+    protected $casts = [
+        'preferences' => 'array',
+        'remember_token_expires_at' => 'datetime',
+    ];
+
+    /**
+     * Get a specific preference value
+     */
+    public function getPreference(string $key, $default = null)
+    {
+        return $this->preferences[$key] ?? $default;
+    }
+
+    /**
+     * Set a specific preference value
+     */
+    public function setPreference(string $key, $value): void
+    {
+        $preferences = $this->preferences ?? [];
+        $preferences[$key] = $value;
+        $this->preferences = $preferences;
+    }
+
+    /**
+     * Save preferences (batch update)
+     */
+    public function savePreferences(array $preferences): void
+    {
+        $current = $this->preferences ?? [];
+        $this->preferences = array_merge($current, $preferences);
+    }
 
     /**
      * Send the password reset notification.

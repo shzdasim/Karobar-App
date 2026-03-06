@@ -15,12 +15,9 @@ const ProductSearchInput = forwardRef(
     const [search, setSearch] = useState("");
     const [highlightIndex, setHighlightIndex] = useState(0);
     const [isInvalidInput, setIsInvalidInput] = useState(false);
+    const [preferencesLoaded, setPreferencesLoaded] = useState(false);
 
     const [windowPos, setWindowPos] = useState(() => {
-      const saved = localStorage.getItem("productModalPos");
-      if (saved) return JSON.parse(saved);
-
-      // Default center
       const width = 1000;
       const height = 600;
       const x = (window.innerWidth - width) / 2;
@@ -28,13 +25,76 @@ const ProductSearchInput = forwardRef(
       return { x, y };
     });
 
-
     const [windowSize, setWindowSize] = useState(() => {
       const saved = localStorage.getItem("productModalSize");
-      return saved
-        ? JSON.parse(saved)
-        : { width: 900, height: 600 }; // default size
+      return saved ? JSON.parse(saved) : { width: 900, height: 600 };
     });
+
+    // Use refs to track current position/size for event handlers
+    const windowPosRef = useRef(windowPos);
+    const windowSizeRef = useRef(windowSize);
+
+    // Keep refs in sync with state
+    useEffect(() => {
+      windowPosRef.current = windowPos;
+    }, [windowPos]);
+
+    useEffect(() => {
+      windowSizeRef.current = windowSize;
+    }, [windowSize]);
+
+    // Fetch preferences from API on mount
+    useEffect(() => {
+      const fetchPreferences = async () => {
+        const token = localStorage.getItem('token') || localStorage.getItem('api_token');
+        try {
+          const response = await fetch('/api/preferences', {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          if (response.ok) {
+            const data = await response.json();
+            const prefs = data.preferences || {};
+            
+            if (prefs.productModalPos) {
+              setWindowPos(prefs.productModalPos);
+            }
+            if (prefs.productModalSize) {
+              setWindowSize(prefs.productModalSize);
+            }
+          }
+        } catch (error) {
+          // Fallback to localStorage if API fails
+          const savedPos = localStorage.getItem("productModalPos");
+          if (savedPos) setWindowPos(JSON.parse(savedPos));
+          const savedSize = localStorage.getItem("productModalSize");
+          if (savedSize) setWindowSize(JSON.parse(savedSize));
+        } finally {
+          setPreferencesLoaded(true);
+        }
+      };
+      fetchPreferences();
+    }, []);
+
+    // Save preference to API
+    const savePreference = async (key, value) => {
+      const token = localStorage.getItem('token') || localStorage.getItem('api_token');
+      try {
+        await fetch(`/api/preferences/${key}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ value }),
+        });
+      } catch (error) {
+        // Fallback to localStorage if API fails
+        localStorage.setItem(key, JSON.stringify(value));
+      }
+    };
 
     const triggerRef = useRef(null);
     const searchRef = useRef(null);
@@ -218,7 +278,9 @@ const ProductSearchInput = forwardRef(
 
     const stopDrag = () => {
       dragRef.current.isDragging = false;
-      localStorage.setItem("productModalPos", JSON.stringify(windowPos));
+      const currentPos = windowPosRef.current;
+      savePreference('productModalPos', currentPos);
+      localStorage.setItem("productModalPos", JSON.stringify(currentPos)); // Keep as backup
       document.removeEventListener("mousemove", handleDrag);
       document.removeEventListener("mouseup", stopDrag);
     };
@@ -245,7 +307,9 @@ const ProductSearchInput = forwardRef(
 
     const stopResize = () => {
       resizeRef.current.isResizing = false;
-      localStorage.setItem("productModalSize", JSON.stringify(windowSize));
+      const currentSize = windowSizeRef.current;
+      savePreference('productModalSize', currentSize);
+      localStorage.setItem("productModalSize", JSON.stringify(currentSize)); // Keep as backup
       document.removeEventListener("mousemove", handleResize);
       document.removeEventListener("mouseup", stopResize);
     };
