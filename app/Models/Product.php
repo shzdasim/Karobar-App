@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Support\Facades\DB;
 
 class Product extends Model
 {
@@ -122,16 +123,66 @@ class Product extends Model
      *
      * $item may be array or PurchaseInvoiceItem model:
      * - quantity (units), avg_price
+     * 
+     * @param mixed $item The item to revert (array or model)
+     * @param int|null $excludeItemId Optional item ID to exclude from remaining purchases calculation
      */
-    public function revertPurchaseFromItem($item): void
-{
-    $qty = (int) (is_array($item) ? ($item['quantity'] ?? 0) : $item->quantity);
+    public function revertPurchaseFromItem($item, ?int $excludeItemId = null): void
+    {
+        $qty = (int) (is_array($item) ? ($item['quantity'] ?? 0) : $item->quantity);
 
-    // Only adjust quantity — allow negative inventory
-    $this->quantity = ((int) $this->quantity) - $qty;
+        // Adjust quantity — allow negative inventory
+        $this->quantity = ((int) $this->quantity) - $qty;
 
-    // Do NOT modify avg_price here — controller recalculates it AFTER deleting invoice items
-    $this->save();
-}
+        // If stock becomes zero or negative, reset average price to 0
+        // This ensures moving average resets when all stock is removed
+        if ($this->quantity <= 0) {
+            $this->avg_price = 0;
+            $this->margin = 0;
+            $this->whole_sale_margin = 0;
+        }
+        // If there's remaining stock, recalculate average from remaining purchase invoices
+        // This handles the case where we're deleting a purchase but other purchases still exist
+        elseif ($this->quantity > 0) {
+            // Get remaining purchase invoice items for this product, excluding the current item
+            $query = DB::table('purchase_invoice_items')
+                ->where('product_id', $this->id)
+                ->select('quantity', 'avg_price');
+            
+            // Exclude the current item from the calculation if ID is provided
+            if ($excludeItemId !== null) {
+                $query->where('id', '!=', $excludeItemId);
+            }
+            
+            $remainingItems = $query->get();
+            
+            $totalQty = 0;
+            $totalCost = 0.0;
+            
+            foreach ($remainingItems as $ri) {
+                $q = (int) $ri->quantity;
+                $totalQty += $q;
+                $totalCost += $q * (float) $ri->avg_price;
+            }
+            
+            // Recalculate average based on remaining purchase invoices
+            if ($totalQty > 0) {
+                $this->avg_price = round($totalCost / $totalQty, 2);
+            }
+            
+            // Recalculate margins
+            $this->margin = ($this->unit_sale_price > 0 && $this->avg_price > 0)
+                ? round((($this->unit_sale_price - $this->avg_price) / $this->unit_sale_price) * 100, 2)
+                : 0.0;
+                
+            if ($this->whole_sale_unit_price > 0) {
+                $this->whole_sale_margin = ($this->avg_price > 0)
+                    ? round((($this->whole_sale_unit_price - $this->avg_price) / $this->whole_sale_unit_price) * 100, 2)
+                    : 0.0;
+            }
+        }
+
+        $this->save();
+    }
 
 }

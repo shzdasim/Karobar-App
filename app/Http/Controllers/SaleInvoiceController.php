@@ -62,6 +62,15 @@ class SaleInvoiceController extends Controller
             $pAfter  = $pBefore + $actualApplied;
             if ($pAfter < 0) $pAfter = 0;
             $product->quantity = $pAfter;
+            
+            // If stock becomes zero, reset average price and margins
+            // This ensures moving average resets when all stock is sold
+            if ($pAfter <= 0) {
+                $product->avg_price = 0;
+                $product->margin = 0;
+                $product->whole_sale_margin = 0;
+            }
+            
             $product->save();
         }
     }

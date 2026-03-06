@@ -25,6 +25,15 @@ class StockAdjustmentController extends Controller
         if ($p->offsetExists('available_units')) $p->available_units = $qty;
         elseif ($p->offsetExists('quantity_on_hand')) $p->quantity_on_hand = $qty;
         else $p->quantity = $qty;
+        
+        // If stock becomes zero, reset average price and margins
+        // This ensures moving average resets when all stock is removed
+        if ($qty <= 0) {
+            $p->avg_price = 0;
+            $p->margin = 0;
+            $p->whole_sale_margin = 0;
+        }
+        
         $p->save();
     }
 

@@ -407,7 +407,9 @@ if ($invoiceType === 'credit') {
     {
         $product = Product::find($item->product_id);
         if ($product) {
-            $product->revertPurchaseFromItem($item); // uses avg_price
+            // Pass the item ID to exclude it from the remaining purchase invoices calculation
+            $itemId = isset($item->id) ? $item->id : null;
+            $product->revertPurchaseFromItem($item, $itemId); // uses avg_price
         }
 
         if (!empty($item->batch) && !empty($item->expiry)) {
@@ -429,28 +431,30 @@ if ($invoiceType === 'credit') {
 
     private function recalcProductAverages(Product $product): void
     {
-        $items = DB::table('purchase_invoice_items')
-            ->where('product_id', $product->id)
-            ->select('quantity', 'avg_price', 'id')
-            ->orderBy('id')
-            ->get();
+        // Correct moving average logic: use current stock value, NOT full purchase history.
+        // This ensures average resets when stock becomes 0.
+        
+        $currentQty = (int) ($product->quantity ?? 0);
+        $currentAvg = (float) ($product->avg_price ?? 0.0);
+        
+        // If stock is zero or negative, the average is already reset 
+        // (handled by applyPurchaseFromItem when stock was sold to zero)
+        // We don't need to recalculate from history - just ensure the margins are correct
+        
+        // Ensure avg_price is rounded properly
+        $product->avg_price = round($currentAvg, 2);
 
-        $totalQty  = 0;
-        $totalCost = 0.0;
-
-        foreach ($items as $item) {
-            $q = (int) $item->quantity;
-            $totalQty  += $q;
-            $totalCost += $q * (float) $item->avg_price;
-        }
-
-        $avgPrice = $totalQty > 0 ? ($totalCost / $totalQty) : 0.0;
-
-        $product->avg_price = round($avgPrice, 2);
-
-        $product->margin = ($product->unit_sale_price > 0 && $avgPrice > 0)
-            ? round((($product->unit_sale_price - $avgPrice) / $product->unit_sale_price) * 100, 2)
+        // Retail Margin calculation
+        $product->margin = ($product->unit_sale_price > 0 && $product->avg_price > 0)
+            ? round((($product->unit_sale_price - $product->avg_price) / $product->unit_sale_price) * 100, 2)
             : 0.0;
+
+        // Wholesale Margin calculation
+        if ($product->whole_sale_unit_price > 0) {
+            $product->whole_sale_margin = ($product->avg_price > 0)
+                ? round((($product->whole_sale_unit_price - $product->avg_price) / $product->whole_sale_unit_price) * 100, 2)
+                : 0.0;
+        }
 
         $product->save();
     }
