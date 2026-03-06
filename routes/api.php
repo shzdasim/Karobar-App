@@ -117,6 +117,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('products/{product}/batches',      [BatchController::class, 'index']);
     Route::get('products/available-quantity',     [ProductController::class, 'availableQuantity']);
     Route::get('/products/search',                [ProductController::class, 'search']);
+    Route::get('/products/by-ids',               [ProductController::class, 'search']);
         // Optional extra endpoints (if you rely on them)
     Route::get('/products/export',                 [ProductController::class, 'export'])->middleware('can:product.export');
     Route::patch('/products/bulk-update-meta',     [ProductController::class, 'bulkUpdateMeta'])->middleware('can:product.update');

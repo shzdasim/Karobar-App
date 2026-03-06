@@ -1128,8 +1128,13 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
         if (form.wholesale_type === "pack" && it.pack_size && Number(it.pack_size) > 0) {
           quantity = Number(it.quantity) * Number(it.pack_size);
         }
+        // For new items (string IDs starting with 'row_'), exclude the id field
+        // For existing items (numeric IDs), convert id to integer
+        const isNewItem = String(it.id).startsWith('row_') || !it.id;
+        const { id, ...itemWithoutId } = it;
         return {
-          ...it,
+          ...itemWithoutId,
+          ...(isNewItem ? {} : { id: parseInt(it.id, 10) }),
           quantity: quantity,
           item_discount_percentage:
             it.item_discount_percentage === "-" || it.item_discount_percentage === "-."
@@ -1152,8 +1157,11 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
         if (id) navigate(`/sale-invoices/${id}`);
         else toast.error("Missing invoice ID from server response.");
       }
-    } catch {
-      toast.error("Failed to save sale invoice");
+    } catch (err) {
+      console.error("Save invoice error:", err?.response?.data);
+      const errorMsg = err?.response?.data?.message 
+        || (err?.response?.data?.errors ? JSON.stringify(err.response.data.errors) : "Failed to save sale invoice");
+      toast.error(errorMsg);
     }
   };
 
