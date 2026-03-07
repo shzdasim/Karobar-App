@@ -1132,8 +1132,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
               <th colSpan={3} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Disc % / Bonus (P / U)</th>
               <th colSpan={2} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Sale Price (P / U)</th>
               <th colSpan={2} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Wholesale Price (P / U)</th>
-              <th colSpan={3} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Margin % / W.S.Mrg% / Avg / Sub Total</th>
-              <th rowSpan={2} className="border w-6 bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">+</th>
+              <th colSpan={4} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Margin % / W.S.Mrg% / Avg / Sub Total</th>
+              <th rowSpan={2} className="border w-5 bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">+</th>
             </tr>
 
             <tr>
@@ -1154,7 +1154,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
               <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Margin%</th>
               <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">W.S.Mrg%</th>
               <th className="border w-16 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Avg</th>
-              <th className="border w-20 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Sub Total</th>
+              <th className="border w-24 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Sub Total</th>
             </tr>
           </thead>
 
@@ -1500,7 +1500,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                 </td>
 
                 {/* Sub Total (readonly) */}
-                <td className="border">
+                <td className="border w-24">
                   <input
                     type="number"
                     value={item.sub_total ?? ""}
@@ -1523,7 +1523,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                 </td>
 
                 {/* Add */}
-                <td className="border">
+                <td className="border w-5">
                   <button
                     type="button"
                     onClick={addItem}
