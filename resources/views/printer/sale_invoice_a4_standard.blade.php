@@ -125,15 +125,14 @@
   <table>
     <thead>
       <tr>
-        <th style="width:22%">Product</th>
-        <th style="width:8%">Pack</th>
+        <th style="width:25%">Product</th>
+        <th style="width:10%">Pack</th>
         <th style="width:12%">Batch</th>
         <th style="width:10%">Expiry</th>
-        <th class="right" style="width:10%">Current Qty</th>
-        <th class="right" style="width:8%">Qty</th>
+        <th class="right" style="width:10%">Qty</th>
         <th class="right" style="width:10%">Price</th>
-        <th class="right" style="width:10%">Disc %</th>
-        <th class="right" style="width:10%">Sub Total</th>
+        <th class="right" style="width:8%">Disc %</th>
+        <th class="right" style="width:15%">Sub Total</th>
       </tr>
     </thead>
     <tbody>
@@ -143,7 +142,6 @@
           <td>{{ $it->pack_size }}</td>
           <td>{{ $it->batch_number }}</td>
           <td>{{ $it->expiry }}</td>
-          <td class="right">{{ number_format((float)$it->current_quantity, 2) }}</td>
           <td class="right">{{ number_format((float)$it->quantity, 2) }}</td>
           <td class="right">{{ number_format((float)$it->price, 2) }}</td>
           <td class="right">{{ number_format((float)$it->item_discount_percentage, 2) }}</td>

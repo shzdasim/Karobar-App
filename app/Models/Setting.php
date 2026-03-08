@@ -15,6 +15,7 @@ class Setting extends Model
         'note',
         'printer_type',
         'thermal_template',
+        'a4_template',
         'logo_path',
     ];
     protected $appends = ['logo_url'];

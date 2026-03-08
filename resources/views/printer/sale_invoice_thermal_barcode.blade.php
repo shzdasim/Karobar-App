@@ -17,6 +17,13 @@
     $total  = isset($printTotal) ? (float)$printTotal : (float)($invoice->total ?? ($gross - $disc + $tax));
     $totalReceive = isset($printReceive) ? (float)$printReceive : (float)($invoice->total_receive ?? 0);
     $remainThis = isset($printRemainThis) ? (float)$printRemainThis : max($total - $totalReceive, 0);
+    
+    // Get customer's total due from ledger
+    $customerTotalDue = isset($printCustomerTotalDue) ? (float)$printCustomerTotalDue : null;
+    
+    // Show Total Due if customer has balance
+    $showTotalDue = $customerTotalDue !== null && $customerTotalDue > 0;
+    
     $footerNote = trim(($invoice->footer_note ?? '') !== '' ? $invoice->footer_note : ($setting->note ?? ''));
     
     // Generate QR code data
@@ -138,6 +145,12 @@
   @else
     <div class="payment-info center" style="font-weight:bold; color:green;">
       PAID IN FULL
+    </div>
+  @endif
+  
+  @if($showTotalDue)
+    <div class="payment-info" style="background:#ffe0b2; border-color:#ff9800;">
+      <div class="pair total"><span>TOTAL DUE:</span><span>{{ number_format($customerTotalDue, 2) }}</span></div>
     </div>
   @endif
   

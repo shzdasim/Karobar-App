@@ -85,8 +85,10 @@ export default function PrinterSetting({
   const textColor = emeraldTextColor || getContrastText(colors.emeraldHover || colors.emerald);
   
   const [selectedThermalTemplate, setSelectedThermalTemplate] = useState(form.thermal_template || "standard");
+  const [selectedA4Template, setSelectedA4Template] = useState(form.a4_template || "standard");
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewingTemplate, setPreviewingTemplate] = useState(null);
+  const [previewingType, setPreviewingType] = useState('thermal'); // 'thermal' or 'a4'
 
   // Get button style from theme
   const buttonStyle = theme?.button_style || 'rounded';
@@ -212,10 +214,63 @@ export default function PrinterSetting({
     },
   ];
 
+  // A4 templates data - same as thermal templates
+  const a4Templates = [
+    { 
+      id: 'standard', 
+      name: 'Standard', 
+      description: 'Classic layout with logo support',
+      icon: 'DocumentTextIcon',
+      preview: 'Standard A4 layout with store branding'
+    },
+    { 
+      id: 'minimal', 
+      name: 'Minimal', 
+      description: 'Clean and simple design',
+      icon: 'DocumentIcon',
+      preview: 'Minimal A4 receipt'
+    },
+    { 
+      id: 'detailed', 
+      name: 'Detailed', 
+      description: 'Extended customer & payment info',
+      icon: 'ClipboardDocumentListIcon',
+      preview: 'Complete with customer balance details'
+    },
+    { 
+      id: 'compact', 
+      name: 'Compact', 
+      description: 'Space-efficient layout',
+      icon: 'ScaleIcon',
+      preview: 'Compact A4 format'
+    },
+    { 
+      id: 'bold', 
+      name: 'Bold', 
+      description: 'Large fonts, high emphasis',
+      icon: 'BoltIcon',
+      preview: 'Bold fonts with high contrast'
+    },
+    { 
+      id: 'barcode', 
+      name: 'Barcode', 
+      description: 'With barcodes & QR code',
+      icon: 'QrCodeIcon',
+      preview: 'Includes barcodes and verification QR'
+    },
+  ];
+
   const handleTemplateSelect = (templateId) => {
     if (!disableInputs) {
       setSelectedThermalTemplate(templateId);
       handleChange({ target: { name: 'thermal_template', value: templateId } });
+    }
+  };
+
+  const handleA4TemplateSelect = (templateId) => {
+    if (!disableInputs) {
+      setSelectedA4Template(templateId);
+      handleChange({ target: { name: 'a4_template', value: templateId } });
     }
   };
 
@@ -336,7 +391,7 @@ export default function PrinterSetting({
           <p className={`text-xs ${isDark ? "text-slate-400" : "text-gray-500"}`}>
             {form.printer_type === "thermal" 
               ? "Select a thermal receipt template below. Thermal printers use 58mm-80mm width paper."
-              : "A4 printer settings will be available in a future update."}
+              : "Select an A4 invoice template below. A4 printers use standard letter-size paper."}
           </p>
         </div>
       </GlassCard>
@@ -470,6 +525,136 @@ export default function PrinterSetting({
         </GlassCard>
       )}
 
+{/* ===== A4 Template Selection ===== */}
+      {form.printer_type === "a4" && (
+        <GlassCard>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+            <div className="flex items-center gap-3">
+              <div 
+                className="p-2 rounded-lg shadow-sm"
+                style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
+              >
+                <DocumentTextIcon className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-gray-900 dark:text-white">A4 Invoice Template</h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Choose your invoice layout</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 p-4">
+            {a4Templates.map((template) => {
+              const IconComponent = getIconComponent(template.icon);
+              const isSelected = selectedA4Template === template.id;
+              
+              return (
+                <div
+                  key={template.id}
+                  className={`relative rounded-xl border-2 cursor-pointer overflow-hidden transition-all ${
+                    isSelected
+                      ? "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800"
+                      : "border-gray-200 hover:border-gray-300 hover:shadow-md dark:border-slate-600 dark:hover:border-slate-500"
+                  }`}
+                  onClick={() => handleA4TemplateSelect(template.id)}
+                >
+                  {/* Selection Indicator */}
+                  {isSelected && (
+                    <div className="absolute top-2 right-2 z-10">
+                      <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center">
+                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Preview Button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewingTemplate(template);
+                      setPreviewingType('a4');
+                      setShowPreviewModal(true);
+                    }}
+                    className="absolute top-2 left-2 z-10 p-1.5 rounded-lg bg-white/90 hover:bg-white shadow-sm transition-opacity dark:bg-slate-700/90 dark:hover:bg-slate-600"
+                    title="Preview template"
+                  >
+                    <EyeIcon className={`w-4 h-4 ${isDark ? "text-slate-300" : "text-gray-600"}`} />
+                  </button>
+                  
+                  {/* Template Content */}
+                  <div className="p-4">
+                    {/* Small Thumbnail Preview */}
+                    <div className={`mb-3 rounded-lg border overflow-hidden ${isDark ? "bg-slate-800 border-slate-600" : "bg-white border-gray-200"}`}>
+                      <iframe
+                        src={`/print/a4-preview/${template.id}`}
+                        className="w-full h-24 border-0"
+                        style={{ transform: 'scale(0.5)', transformOrigin: 'top left', width: '200%', height: '200%' }}
+                        title={`${template.name} Thumbnail`}
+                      />
+                    </div>
+                    
+                    {/* Icon and Name */}
+                    <div className="flex items-start gap-3 mb-3">
+                      <div className={`p-2 rounded-lg ${isSelected ? "bg-blue-100 dark:bg-blue-900/50" : "bg-gray-100 dark:bg-slate-700"}`}>
+                        <IconComponent className={`w-6 h-6 ${isSelected ? "text-blue-600" : isDark ? "text-slate-300" : "text-gray-600"}`} />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className={`font-semibold ${isDark ? "text-slate-100" : "text-gray-800"}`}>{template.name}</h4>
+                        <p className={`text-xs mt-1 ${isDark ? "text-slate-400" : "text-gray-500"}`}>{template.description}</p>
+                      </div>
+                    </div>
+                    
+                    {/* Preview Info */}
+                    <div className={`rounded-lg p-2 mb-3 ${isDark ? "bg-slate-700/50" : "bg-gray-50"}`}>
+                      <p className={`text-xs ${isDark ? "text-slate-300" : "text-gray-600"}`}>{template.preview}</p>
+                    </div>
+                    
+                    {/* Select Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!disableInputs) {
+                          handleA4TemplateSelect(template.id);
+                        } else {
+                          toast.error("You don't have permission to update settings.");
+                        }
+                      }}
+                      disabled={disableInputs}
+                      className={`w-full py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+                        isSelected
+                          ? "bg-blue-500 text-white"
+                          : `${isDark ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`
+                      } ${disableInputs && !isSelected ? "opacity-50 cursor-not-allowed" : ""}`}
+                    >
+                      {isSelected ? "Selected" : "Select Template"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          {/* Selected Template Info */}
+          <div className="px-4 pb-4">
+            <div className={`rounded-xl p-4 border ${isDark ? "bg-blue-900/20 border-blue-800" : "bg-blue-50 border-blue-200"}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                <span className={`font-medium ${isDark ? "text-blue-300" : "text-blue-800"}`}>
+                  Selected: {a4Templates.find(t => t.id === form.a4_template)?.name} Template
+                </span>
+              </div>
+              <p className={`text-sm ${isDark ? "text-blue-400" : "text-blue-700"}`}>
+                This template will be used for all A4 printer sales invoices.
+              </p>
+            </div>
+          </div>
+        </GlassCard>
+      )}
+
 {/* ===== Save Button ===== */}
       <div className="flex justify-end">
         <GlassBtn
@@ -518,7 +703,7 @@ export default function PrinterSetting({
                 minHeight: '400px'
               }}>
                 <iframe
-                  src={`/print/thermal-preview/${previewingTemplate.id}`}
+                  src={`/print/${previewingType}-preview/${previewingTemplate.id}`}
                   className="w-full h-full border-0"
                   style={{ minHeight: '400px', width: previewingTemplate.id === 'minimal' || previewingTemplate.id === 'compact' ? '280px' : '380px' }}
                   title={`${previewingTemplate.name} Template Preview`}
@@ -529,7 +714,7 @@ export default function PrinterSetting({
             {/* Footer */}
             <div className={`flex items-center justify-between p-4 border-t ${isDark ? "border-slate-600 bg-slate-800" : "border-gray-200 bg-gray-50"}`}>
               <a
-                href={`/print/thermal-preview/${previewingTemplate.id}`}
+                href={`/print/${previewingType}-preview/${previewingTemplate.id}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${isDark ? "hover:bg-slate-700 text-slate-300" : "hover:bg-gray-200 text-gray-600"}`}

@@ -16,6 +16,7 @@ class SettingController extends Controller
         $setting = Setting::firstOrCreate(['id' => 1], [
             'printer_type' => 'thermal',
             'thermal_template' => 'standard',
+            'a4_template' => 'standard',
             'navigation_style' => 'sidebar',
             'sale_system' => 'retail_wholesale',
         ]);
@@ -37,6 +38,7 @@ class SettingController extends Controller
             'note'           => ['nullable','string','max:2000'],
             'printer_type'   => ['required', Rule::in(['thermal','a4'])],
             'thermal_template' => ['nullable', Rule::in(['standard','minimal','detailed','compact','bold','barcode'])],
+            'a4_template' => ['nullable', Rule::in(['standard','minimal','detailed','compact','bold','barcode'])],
             'navigation_style' => ['nullable', Rule::in(['sidebar','topbar'])],
             'sale_system'    => ['nullable', Rule::in(['retail', 'retail_wholesale'])],
             'logo'           => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],

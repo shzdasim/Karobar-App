@@ -14,6 +14,13 @@
     $total  = isset($printTotal) ? (float)$printTotal : (float)($invoice->total ?? ($gross - $disc + $tax));
     $totalReceive = isset($printReceive) ? (float)$printReceive : (float)($invoice->total_receive ?? 0);
     $remainThis = isset($printRemainThis) ? (float)$printRemainThis : max($total - $totalReceive, 0);
+    
+    // Get customer's total due from ledger
+    $customerTotalDue = isset($printCustomerTotalDue) ? (float)$printCustomerTotalDue : null;
+    
+    // Show Total Due if customer has balance
+    $showTotalDue = $customerTotalDue !== null && $customerTotalDue > 0;
+    
     $footerNote = trim(($invoice->footer_note ?? '') !== '' ? $invoice->footer_note : ($setting->note ?? ''));
 @endphp
 <!DOCTYPE html>
@@ -84,6 +91,9 @@
     @if($remainThis > 0)
       <div class="pair"><span>Paid</span><span>{{ number_format($totalReceive, 2) }}</span></div>
       <div class="pair total"><span>Due</span><span>{{ number_format($remainThis, 2) }}</span></div>
+    @endif
+    @if($showTotalDue)
+      <div class="pair total" style="font-size:11px;"><span>Total Due</span><span>{{ number_format($customerTotalDue, 2) }}</span></div>
     @endif
   </div>
   @if($footerNote !== '')

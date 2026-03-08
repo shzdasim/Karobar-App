@@ -67,6 +67,7 @@ export default function Setting() {
     note: "",
     printer_type: "thermal",
     thermal_template: "standard",
+    a4_template: "standard",
     navigation_style: "sidebar",
     sale_system: "retail_wholesale",
   });
@@ -274,6 +275,7 @@ export default function Setting() {
         note: data.note || "",
         printer_type: data.printer_type || "thermal",
         thermal_template: data.thermal_template || "standard",
+        a4_template: data.a4_template || "standard",
         navigation_style: data.navigation_style || "sidebar",
         sale_system: data.sale_system || "retail_wholesale",
       });
@@ -318,6 +320,7 @@ export default function Setting() {
       fd.append("note", form.note || "");
       fd.append("printer_type", form.printer_type || "a4");
       fd.append("thermal_template", form.thermal_template || "standard");
+      fd.append("a4_template", form.a4_template || "standard");
       fd.append("navigation_style", form.navigation_style || "sidebar");
       fd.append("sale_system", form.sale_system || "retail_wholesale");
 
