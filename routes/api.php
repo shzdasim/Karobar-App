@@ -164,6 +164,8 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
 
     // Reports
     Route::get('/reports/cost-of-sale',           [ReportsController::class, 'costOfSale']);
+    Route::get('/reports/cost-of-sale-detail',    [ReportsController::class, 'costOfSaleDetail']);
+    Route::get('/reports/cost-of-sale-detail/pdf', [ReportsController::class, 'costOfSaleDetailPdf']);
     Route::get('/reports/purchase-detail',        [ReportsController::class, 'purchaseDetail']);
     Route::get('/reports/purchase-detail/pdf',    [ReportsController::class, 'purchaseDetailPdf']);
     Route::get('/reports/sale-detail',            [ReportsController::class, 'saleDetail']);

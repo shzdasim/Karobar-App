@@ -96,10 +96,11 @@ class ReportsController extends Controller
             }
 
             // ===== COGS on sales (per day) =====
-            // Approximate cost using products.avg_price * sale_invoice_items.quantity
+            // Calculate cost using products.avg_price * sale_invoice_items.quantity
+            // Fallback to unit_purchase_price if avg_price is 0 or NULL
             $cogsSales = $cogsQuery
                 ->selectRaw('DATE(si.date) as sale_date')
-                ->selectRaw('SUM(COALESCE(sii.quantity, 0) * COALESCE(p.avg_price, 0)) as cogs_sales')
+                ->selectRaw('SUM(COALESCE(sii.quantity, 0) * CASE WHEN p.avg_price IS NULL OR p.avg_price = 0 THEN COALESCE(p.unit_purchase_price, 0) ELSE p.avg_price END) as cogs_sales')
                 ->groupBy('sale_date')
                 ->get()
                 ->keyBy('sale_date');
@@ -111,7 +112,7 @@ class ReportsController extends Controller
                 ->join('products as p', 'p.id', '=', 'sri.product_id')
                 ->whereBetween('sr.date', [$fromDate, $toDate])
                 ->selectRaw('DATE(sr.date) as sale_date')
-                ->selectRaw('SUM(COALESCE(sri.unit_return_quantity, 0) * COALESCE(p.avg_price, 0)) as cogs_returns')
+                ->selectRaw('SUM(COALESCE(sri.unit_return_quantity, 0) * CASE WHEN p.avg_price IS NULL OR p.avg_price = 0 THEN COALESCE(p.unit_purchase_price, 0) ELSE p.avg_price END) as cogs_returns')
                 ->groupBy('sale_date')
                 ->get()
                 ->keyBy('sale_date');
@@ -151,6 +152,248 @@ class ReportsController extends Controller
                 'message' => 'Failed to build Cost of Sale report',
                 'error'   => $e->getMessage(),
                 'trace'   => config('app.debug') ? $e->getTrace() : null,
+            ], 500);
+        }
+    }
+
+    /**
+     * GET /api/reports/cost-of-sale-detail
+     * Returns detailed cost of sale report for single invoice or multiple invoices by customer
+     * 
+     * Query params:
+     * - invoice_id: specific invoice ID (optional)
+     * - customer_id: filter by customer (optional)
+     * - from: start date (optional)
+     * - to: end date (optional)
+     */
+    public function costOfSaleDetail(Request $req)
+    {
+        $this->authorize('view', CostOfSaleReport::class);
+        
+        try {
+            $invoiceId = $req->query('invoice_id');
+            $customerId = $req->query('customer_id');
+            $from = $req->query('from');
+            $to = $req->query('to');
+
+            // Build base query for sale invoices
+            $query = SaleInvoice::with(['customer', 'user', 'items.product']);
+
+            // Filter by specific invoice
+            if ($invoiceId) {
+                $query->where('id', $invoiceId);
+            }
+
+            // Filter by customer
+            if ($customerId) {
+                $query->where('customer_id', $customerId);
+            }
+
+            // Filter by date range
+            if ($from) {
+                $query->where('date', '>=', Carbon::parse($from)->toDateString());
+            }
+            if ($to) {
+                $query->where('date', '<=', Carbon::parse($to)->toDateString());
+            }
+
+            $invoices = $query->orderBy('date', 'desc')->orderBy('id', 'desc')->get();
+
+            // Process each invoice to add cost and profit details
+            $rows = $invoices->map(function ($invoice) {
+                $items = $invoice->items->map(function ($item) {
+                    // Get cost price - use avg_price or fallback to unit_purchase_price
+                    $costPrice = $item->product->avg_price ?? 0;
+                    if ($costPrice == 0) {
+                        $costPrice = $item->product->unit_purchase_price ?? 0;
+                    }
+                    
+                    $quantity = $item->quantity ?? 0;
+                    $salePrice = $item->price ?? 0;
+                    
+                    $totalCost = $quantity * $costPrice;
+                    $totalSale = $quantity * $salePrice;
+                    $profit = $totalSale - $totalCost;
+
+                    return [
+                        'id' => $item->id,
+                        'product_id' => $item->product_id,
+                        'product_code' => $item->product->product_code ?? null,
+                        'product_name' => $item->product->name ?? null,
+                        'pack_size' => $item->pack_size ?? 0,
+                        'quantity' => $quantity,
+                        'cost_price' => round($costPrice, 2),
+                        'sale_price' => round($salePrice, 2),
+                        'total_cost' => round($totalCost, 2),
+                        'total_sale' => round($totalSale, 2),
+                        'profit' => round($profit, 2),
+                        'batch_number' => $item->batch_number,
+                        'expiry' => $item->expiry,
+                    ];
+                });
+
+                // Calculate invoice totals
+                $totalCost = $items->sum('total_cost');
+                $totalSale = $items->sum('total_sale');
+                $profit = $totalSale - $totalCost;
+                $profitMargin = $totalSale > 0 ? round(($profit / $totalSale) * 100, 2) : 0;
+
+                return [
+                    'invoice_id' => $invoice->id,
+                    'posted_number' => $invoice->posted_number,
+                    'date' => $invoice->date instanceof \Carbon\Carbon ? $invoice->date->format('Y-m-d') : $invoice->date,
+                    'customer_name' => $invoice->customer->name ?? 'N/A',
+                    'invoice_type' => $invoice->invoice_type ?? 'debit',
+                    'sale_type' => $invoice->sale_type ?? 'retail',
+                    'gross_amount' => round($invoice->gross_amount ?? 0, 2),
+                    'discount_amount' => round($invoice->discount_amount ?? 0, 2),
+                    'tax_amount' => round($invoice->tax_amount ?? 0, 2),
+                    'total' => round($invoice->total ?? 0, 2),
+                    'total_cost' => round($totalCost, 2),
+                    'total_sale' => round($totalSale, 2),
+                    'profit' => round($profit, 2),
+                    'profit_margin' => $profitMargin,
+                    'items' => $items,
+                ];
+            });
+
+            // Calculate summary for all invoices
+            $summary = [
+                'total_invoices' => $rows->count(),
+                'total_sales' => round($rows->sum('total_sale'), 2),
+                'total_cost' => round($rows->sum('total_cost'), 2),
+                'total_profit' => round($rows->sum('profit'), 2),
+                'total_items' => $rows->sum(fn($r) => count($r['items'])),
+            ];
+            $summary['profit_margin'] = $summary['total_sales'] > 0 
+                ? round(($summary['total_profit'] / $summary['total_sales']) * 100, 2) 
+                : 0;
+
+            return response()->json([
+                'invoices' => $rows,
+                'summary' => $summary,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Failed to build Cost of Sale Detail report',
+                'error'   => $e->getMessage(),
+                'trace'   => config('app.debug') ? $e->getTrace() : null,
+            ], 500);
+        }
+    }
+
+    /**
+     * GET /api/reports/cost-of-sale-detail/pdf
+     * Returns PDF of cost of sale detail report
+     */
+    public function costOfSaleDetailPdf(Request $req)
+    {
+        $this->authorize('export', CostOfSaleReport::class);
+        
+        $invoiceId = $req->query('invoice_id');
+        $from = $req->query('from');
+        $to = $req->query('to');
+
+        // Build query
+        $query = SaleInvoice::with(['customer', 'items.product']);
+
+        if ($invoiceId) {
+            $query->where('id', $invoiceId);
+        }
+        if ($from) {
+            $query->where('date', '>=', Carbon::parse($from)->toDateString());
+        }
+        if ($to) {
+            $query->where('date', '<=', Carbon::parse($to)->toDateString());
+        }
+
+        $invoices = $query->orderBy('date', 'desc')->orderBy('id', 'desc')->get();
+
+        // Process invoices - ensure all values are properly formatted for PDF
+        $rows = [];
+        foreach ($invoices as $invoice) {
+            $items = [];
+            foreach ($invoice->items as $item) {
+                $costPrice = (float) ($item->product->avg_price ?? 0);
+                if ($costPrice == 0) {
+                    $costPrice = (float) ($item->product->unit_purchase_price ?? 0);
+                }
+                
+                $quantity = (int) ($item->quantity ?? 0);
+                $salePrice = (float) ($item->price ?? 0);
+                
+                $totalCost = $quantity * $costPrice;
+                $totalSale = $quantity * $salePrice;
+                $profit = $totalSale - $totalCost;
+
+                $items[] = [
+                    'product_code' => (string) ($item->product->product_code ?? ''),
+                    'product_name' => (string) ($item->product->name ?? ''),
+                    'pack_size' => (int) ($item->pack_size ?? 0),
+                    'quantity' => (int) $quantity,
+                    'cost_price' => round($costPrice, 2),
+                    'sale_price' => round($salePrice, 2),
+                    'total_cost' => round($totalCost, 2),
+                    'total_sale' => round($totalSale, 2),
+                    'profit' => round($profit, 2),
+                ];
+            }
+
+            $totalCost = array_sum(array_column($items, 'total_cost'));
+            $totalSale = array_sum(array_column($items, 'total_sale'));
+            $profit = $totalSale - $totalCost;
+            $profitMargin = $totalSale > 0 ? round(($profit / $totalSale) * 100, 2) : 0;
+
+            $rows[] = [
+                'invoice_id' => (int) $invoice->id,
+                'posted_number' => (string) ($invoice->posted_number ?? ''),
+                'date' => $invoice->date instanceof \Carbon\Carbon ? $invoice->date->format('Y-m-d') : date('Y-m-d', strtotime($invoice->date ?? 'now')),
+                'customer_name' => (string) ($invoice->customer->name ?? 'WALK-IN-CUSTOMER'),
+                'invoice_type' => (string) ($invoice->invoice_type ?? 'debit'),
+                'sale_type' => (string) ($invoice->sale_type ?? 'retail'),
+                'gross_amount' => round((float) ($invoice->gross_amount ?? 0), 2),
+                'discount_amount' => round((float) ($invoice->discount_amount ?? 0), 2),
+                'tax_amount' => round((float) ($invoice->tax_amount ?? 0), 2),
+                'total' => round((float) ($invoice->total ?? 0), 2),
+                'total_cost' => round($totalCost, 2),
+                'total_sale' => round($totalSale, 2),
+                'profit' => round($profit, 2),
+                'profit_margin' => $profitMargin,
+                'items' => $items,
+            ];
+        }
+
+        $summary = [
+            'total_invoices' => count($rows),
+            'total_sales' => round(array_sum(array_column($rows, 'total_sale')), 2),
+            'total_cost' => round(array_sum(array_column($rows, 'total_cost')), 2),
+            'total_profit' => round(array_sum(array_column($rows, 'profit')), 2),
+        ];
+        $summary['profit_margin'] = $summary['total_sales'] > 0 
+            ? round(($summary['total_profit'] / $summary['total_sales']) * 100, 2) 
+            : 0;
+
+        $meta = [
+            'from' => $from,
+            'to' => $to,
+            'invoice_id' => $invoiceId,
+            'generatedAt' => now()->format('Y-m-d H:i'),
+        ];
+
+        try {
+            $pdf = Pdf::loadView('reports.cost_of_sale_detail_pdf', [
+                'rows' => $rows,
+                'summary' => $summary,
+                'meta' => $meta,
+            ])->setPaper('a4', 'landscape');
+
+            $filename = 'cost-of-sale-detail-' . ($invoiceId ? 'invoice-' . $invoiceId : 'report') . '.pdf';
+            return $pdf->stream($filename);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Failed to generate PDF',
+                'error' => $e->getMessage(),
+                'trace' => config('app.debug') ? $e->getTrace() : null,
             ], 500);
         }
     }

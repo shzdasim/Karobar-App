@@ -33,6 +33,7 @@ import EditSaleReturn from "../pages/SaleReturn/Edit.jsx";
 import PurchaseOrder from "../pages/PurchaseOrder.jsx";
 import Dashboard from "../pages/Dashboard.jsx";
 import CostOfSaleReport from "../pages/Reports/CostOfSaleReport.jsx";
+import CostOfSaleDetailReport from "../pages/Reports/CostOfSaleDetailReport.jsx";
 import PurchaseDetailReport from "../pages/Reports/PurchaseDetailReport.jsx";
 import SaleDetailReport from "../pages/Reports/SaleDetailReport.jsx";
 import CurrentStockReport from "../pages/Reports/CurrentStockReport.jsx";
@@ -351,6 +352,16 @@ export default function AppRoutes() {
         <ProtectedRoute>
           <DashboardLayout>
             <CostOfSaleReport />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      <Route
+      path="reports/cost-of-sale-detail"
+      element= {
+        <ProtectedRoute>
+          <DashboardLayout>
+            <CostOfSaleDetailReport />
           </DashboardLayout>
         </ProtectedRoute>
       }
