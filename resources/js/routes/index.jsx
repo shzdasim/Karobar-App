@@ -52,6 +52,7 @@ import RolesIndex from "../pages/roles/index.jsx";
 import CreateRole from "../pages/roles/Create.jsx";
 import EditRole from "../pages/roles/Edit.jsx";
 import ActivateLicense from "../pages/ActivateLicense.jsx";
+import SaleSystemGuard from "../components/SaleSystemGuard.jsx";
 
 
 export default function AppRoutes() {
@@ -276,9 +277,11 @@ export default function AppRoutes() {
       path="sale-invoices/create/wholesale"
       element={
         <ProtectedRoute>
-          <DashboardLayout>
-            <CreateSaleInvoiceWholesale />
-          </DashboardLayout>
+          <SaleSystemGuard requiredSaleSystem="wholesale">
+            <DashboardLayout>
+              <CreateSaleInvoiceWholesale />
+            </DashboardLayout>
+          </SaleSystemGuard>
         </ProtectedRoute>
       }
       />

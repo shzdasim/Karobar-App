@@ -6,6 +6,7 @@ import Select from "react-select";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import { recalcItem, recalcFooter } from "../../Formula/PurchaseInvoice.js";
 import { useTheme } from "@/context/ThemeContext";
+import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 import ProductFormModal from "../../components/ProductFormModal.jsx";
 
 // Helper to determine text color based on background brightness
@@ -750,6 +751,9 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
 
   // Get dark mode state and theme colors
   const { isDark, theme } = useTheme();
+  
+  // Get sale system setting to conditionally show wholesale fields
+  const { hasWholesale, loading: saleSystemLoading } = useSaleSystem();
 
   // Memoize theme colors for performance
   const themeColors = useMemo(() => {
@@ -1131,8 +1135,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
               <th colSpan={2} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Purchase Price (P / U)</th>
               <th colSpan={3} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Disc % / Bonus (P / U)</th>
               <th colSpan={2} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Sale Price (P / U)</th>
-              <th colSpan={2} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Wholesale Price (P / U)</th>
-              <th colSpan={4} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Margin % / W.S.Mrg% / Avg / Sub Total</th>
+              <th colSpan={2} className={`border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100 ${!hasWholesale ? 'hidden' : ''}`}>Wholesale Price (P / U)</th>
+              <th colSpan={hasWholesale ? 4 : 3} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Margin % {hasWholesale && '/ W.S.Mrg%'} / Avg / Sub Total</th>
               <th rowSpan={2} className="border w-5 bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">+</th>
             </tr>
 
@@ -1149,10 +1153,10 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
               <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">UBonus</th>
               <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Pack.S</th>
               <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Unit.S</th>
-              <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">W.S.Pack</th>
-              <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">W.S.Unit</th>
+              <th className={`border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100 ${!hasWholesale ? 'hidden' : ''}`}>W.S.Pack</th>
+              <th className={`border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100 ${!hasWholesale ? 'hidden' : ''}`}>W.S.Unit</th>
               <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Margin%</th>
-              <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">W.S.Mrg%</th>
+              <th className={`border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100 ${!hasWholesale ? 'hidden' : ''}`}>W.S.Mrg%</th>
               <th className="border w-16 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Avg</th>
               <th className="border w-24 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Sub Total</th>
             </tr>
@@ -1439,7 +1443,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                 </td>
 
                 {/* Wholesale Pack Sale */}
-                <td className="border">
+                <td className={`border ${!hasWholesale ? 'hidden' : ''}`}>
                   <input
                     ref={(el) => (wholeSalePackPriceRefs.current[i] = el)}
                     type="text"
@@ -1452,8 +1456,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                   />
                 </td>
 
-                {/* Wholesale Unit Sale */}
-                <td className="border">
+{/* Wholesale Unit Sale */}
+                <td className={`border ${!hasWholesale ? 'hidden' : ''}`}>
                   <input
                     ref={(el) => (wholeSaleUnitPriceRefs.current[i] = el)}
                     type="text"
@@ -1477,8 +1481,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                   />
                 </td>
 
-                {/* W.S. Margin % */}
-                <td className="border">
+{/* W.S. Margin % */}
+                <td className={`border ${!hasWholesale ? 'hidden' : ''}`}>
                   <input
                     type="number"
                     readOnly

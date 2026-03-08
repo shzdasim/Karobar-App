@@ -12,6 +12,7 @@ import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
 import { usePermissions } from "@/api/usePermissions.js"; // 🔒
 import { useLicense } from "@/context/LicenseContext.jsx"; // 🔒 license context
 import { useTheme } from "@/context/ThemeContext.jsx"; // 🎨 theme context
+import { useSaleSystem } from "@/context/SaleSystemContext.jsx"; // Sale system context
 
 // 🧊 glass primitives
 import {
@@ -56,6 +57,7 @@ export default function Setting() {
   const [saving, setSaving] = useState(false);
   const license = useLicense();
   const { theme } = useTheme();
+  const { refreshSaleSystem } = useSaleSystem();
 
   const [form, setForm] = useState({
     store_name: "",
@@ -66,6 +68,7 @@ export default function Setting() {
     printer_type: "thermal",
     thermal_template: "standard",
     navigation_style: "sidebar",
+    sale_system: "retail_wholesale",
   });
 
   // FilePond files (supports remote preload)
@@ -92,6 +95,7 @@ export default function Setting() {
   const licenseRef = useRef(null);
   const noteRef = useRef(null);
   const saveBtnRef = useRef(null);
+  const saleSystemRef = useRef(null);
 
   // 🔒 permissions
   const { loading: permsLoading, canFor } = usePermissions();
@@ -271,6 +275,7 @@ export default function Setting() {
         printer_type: data.printer_type || "thermal",
         thermal_template: data.thermal_template || "standard",
         navigation_style: data.navigation_style || "sidebar",
+        sale_system: data.sale_system || "retail_wholesale",
       });
 
       // Preload existing logo into FilePond as remote file
@@ -293,6 +298,11 @@ export default function Setting() {
     setForm((s) => ({ ...s, [name]: value }));
   };
 
+  const handleSaleSystemChange = (e) => {
+    const { value } = e.target;
+    setForm((s) => ({ ...s, sale_system: value }));
+  };
+
   const handleSave = async () => {
     if (!can.update) {
       toast.error("You don’t have permission to update settings.");
@@ -309,6 +319,7 @@ export default function Setting() {
       fd.append("printer_type", form.printer_type || "a4");
       fd.append("thermal_template", form.thermal_template || "standard");
       fd.append("navigation_style", form.navigation_style || "sidebar");
+      fd.append("sale_system", form.sale_system || "retail_wholesale");
 
       // If user selected a new file (files[0].file will exist)
       if (files.length > 0 && files[0].file) {
@@ -326,6 +337,9 @@ export default function Setting() {
       
       // Dispatch custom event so DashboardLayout can react immediately
       window.dispatchEvent(new CustomEvent('settingsChanged', { detail: { navigation_style: form.navigation_style } }));
+      
+      // Refresh sale system context to reflect changes immediately
+      refreshSaleSystem();
       
       // Refresh FilePond with the latest stored logo
       if (data.logo_url) {
@@ -530,6 +544,8 @@ export default function Setting() {
           licenseRef={licenseRef}
           themeColors={themeColors}
           primaryTextColor={primaryTextColor}
+          saleSystemRef={saleSystemRef}
+          handleSaleSystemChange={handleSaleSystemChange}
         />
       )}
 

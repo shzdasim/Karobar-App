@@ -17,6 +17,7 @@ import {
   CurrencyDollarIcon,
 } from "@heroicons/react/24/solid";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
+import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 
 // Reusable components
 import {
@@ -160,6 +161,9 @@ export default function SaleInvoicesIndex() {
 
   // Get dark mode state
   const { isDark } = useTheme();
+  
+  // Get sale system setting
+  const { hasWholesale, loading: saleSystemLoading } = useSaleSystem();
 
   // 🎨 Dynamic Button styles using theme colors
   const buttonStyle = theme?.button_style || 'rounded';
@@ -346,13 +350,17 @@ export default function SaleInvoicesIndex() {
         // Alt+N -> retail sale
         navigate("/sale-invoices/create/retail");
       } else if (key === "w") {
-        // Alt+W -> wholesale sale
-        navigate("/sale-invoices/create/wholesale");
+        // Alt+W -> wholesale sale - only if wholesale is enabled
+        if (hasWholesale) {
+          navigate("/sale-invoices/create/wholesale");
+        } else {
+          toast.error("Wholesale sales are disabled. Please use Retail sales.");
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [navigate, can.create]);
+  }, [navigate, can.create, hasWholesale]);
 
   // ===== search + pagination =====
   // Debounce on filter change only
@@ -547,16 +555,18 @@ export default function SaleInvoicesIndex() {
                 Retail Sale
               </Link>
               
-              {/* Wholesale Sale Button */}
-              <Link
-                to="/sale-invoices/create/wholesale"
-                title="Add Wholesale Sale Invoice"
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${btnSecondary.className}`}
-                style={btnSecondary.style}
-              >
-                <PlusCircleIcon className="w-4 h-4" />
-                Wholesale Sale
-              </Link>
+              {/* Wholesale Sale Button - Only show if wholesale is enabled */}
+              {hasWholesale && (
+                <Link
+                  to="/sale-invoices/create/wholesale"
+                  title="Add Wholesale Sale Invoice"
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${btnSecondary.className}`}
+                  style={btnSecondary.style}
+                >
+                  <PlusCircleIcon className="w-4 h-4" />
+                  Wholesale Sale
+                </Link>
+              )}
             </Guard>
           </div>
         </div>

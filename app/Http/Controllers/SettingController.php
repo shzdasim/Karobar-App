@@ -17,6 +17,7 @@ class SettingController extends Controller
             'printer_type' => 'thermal',
             'thermal_template' => 'standard',
             'navigation_style' => 'sidebar',
+            'sale_system' => 'retail_wholesale',
         ]);
 
         return response()->json($setting);
@@ -37,6 +38,7 @@ class SettingController extends Controller
             'printer_type'   => ['required', Rule::in(['thermal','a4'])],
             'thermal_template' => ['nullable', Rule::in(['standard','minimal','detailed','compact','bold','barcode'])],
             'navigation_style' => ['nullable', Rule::in(['sidebar','topbar'])],
+            'sale_system'    => ['nullable', Rule::in(['retail', 'retail_wholesale'])],
             'logo'           => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],
         ]);
 
@@ -56,6 +58,11 @@ class SettingController extends Controller
         // Ensure navigation_style is always updated (it might not be in validated if null)
         if ($request->has('navigation_style')) {
             $setting->navigation_style = $request->input('navigation_style');
+        }
+        
+        // Ensure sale_system is always updated (it might not be in validated if null)
+        if ($request->has('sale_system')) {
+            $setting->sale_system = $request->input('sale_system');
         }
         
         $setting->save();

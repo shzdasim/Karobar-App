@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext.jsx";
 import { LicenseProvider } from "./context/LicenseContext.jsx";
 import { ThemeProvider } from "./context/ThemeContext.jsx";
+import { SaleSystemProvider } from "./context/SaleSystemContext.jsx";
 import Routing from "./routes/index.jsx";
 
 import { initAxiosAuth } from "./context/axiosSetup.js";
@@ -15,7 +16,9 @@ ReactDOM.createRoot(document.getElementById("app")).render(
     <AuthProvider>
       <LicenseProvider>
         <ThemeProvider>
-          <Routing />
+          <SaleSystemProvider>
+            <Routing />
+          </SaleSystemProvider>
         </ThemeProvider>
       </LicenseProvider>
     </AuthProvider>
