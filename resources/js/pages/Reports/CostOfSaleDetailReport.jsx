@@ -533,6 +533,7 @@ export default function CostOfSaleDetailReport() {
                     <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"} text-right`}>Qty</th>
                     <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"} text-right`}>Cost Price</th>
                     <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"} text-right`}>Sale Price</th>
+                    <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"} text-right`}>Disc %</th>
                     <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"} text-right`}>Total Cost</th>
                     <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"} text-right`}>Total Sale</th>
                     <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"} text-right`}>Profit</th>
@@ -557,6 +558,9 @@ export default function CostOfSaleDetailReport() {
                       <td className={`px-3 py-2 text-right ${isDark ? "text-slate-300" : "text-gray-700"}`}>{it.quantity ?? 0}</td>
                       <td className={`px-3 py-2 text-right ${isDark ? "text-slate-300" : "text-gray-700"}`}>Rs. {fmtCurrency(it.cost_price)}</td>
                       <td className={`px-3 py-2 text-right ${isDark ? "text-slate-300" : "text-gray-700"}`}>Rs. {fmtCurrency(it.sale_price)}</td>
+                      <td className={`px-3 py-2 text-right ${(it.item_discount_percentage ?? 0) > 0 ? "text-red-500 font-medium" : isDark ? "text-slate-300" : "text-gray-700"}`}>
+                        {(it.item_discount_percentage ?? 0) > 0 ? `${it.item_discount_percentage}%` : '-'}
+                      </td>
                       <td className={`px-3 py-2 text-right ${isDark ? "text-slate-300" : "text-gray-700"}`}>Rs. {fmtCurrency(it.total_cost)}</td>
                       <td className={`px-3 py-2 text-right ${isDark ? "text-slate-300" : "text-gray-700"}`}>Rs. {fmtCurrency(it.total_sale)}</td>
                       <td className={`px-3 py-2 text-right font-bold ${(it.profit ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
@@ -567,7 +571,7 @@ export default function CostOfSaleDetailReport() {
 
                   {(!inv.items || !inv.items.length) && (
                     <tr>
-                      <td colSpan={10} className={`px-3 py-6 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+                      <td colSpan={11} className={`px-3 py-6 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>
                         No items in this invoice.
                       </td>
                     </tr>
@@ -579,7 +583,7 @@ export default function CostOfSaleDetailReport() {
                   ${isDark ? "border-slate-600 bg-slate-800/80" : "border-gray-300 bg-gray-50"}
                 `}>
                   <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>
-                    <td colSpan={7} className={`px-3 py-2 text-right ${isDark ? "text-slate-200" : "text-gray-800"}`}><strong>TOTAL</strong></td>
+                    <td colSpan={8} className={`px-3 py-2 text-right ${isDark ? "text-slate-200" : "text-gray-800"}`}><strong>TOTAL</strong></td>
                     <td className={`px-3 py-2 text-right ${isDark ? "text-slate-200" : "text-gray-800"}`}><strong>Rs. {fmtCurrency(inv.total_cost)}</strong></td>
                     <td className={`px-3 py-2 text-right ${isDark ? "text-slate-200" : "text-gray-800"}`}><strong>Rs. {fmtCurrency(inv.total_sale)}</strong></td>
                     <td className={`px-3 py-2 text-right ${(inv.profit ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}><strong>Rs. {fmtCurrency(inv.profit)}</strong></td>
@@ -590,19 +594,23 @@ export default function CostOfSaleDetailReport() {
 
             {/* Invoice Footer Summary */}
             <div className={`px-4 py-3 border-t ${isDark ? "border-slate-600 bg-slate-700/50" : "border-gray-200 bg-gray-50"}`}>
-              <div className="flex justify-end gap-6 text-sm">
+              <div className="flex flex-wrap justify-end gap-x-6 gap-y-1 text-sm">
                 <div>
                   <span className={`${isDark ? "text-slate-400" : "text-gray-500"}`}>Gross Amount: </span>
                   <span className={`font-medium ${isDark ? "text-slate-200" : "text-gray-800"}`}>Rs. {fmtCurrency(inv.gross_amount)}</span>
                 </div>
-                <div>
-                  <span className={`${isDark ? "text-slate-400" : "text-gray-500"}`}>Discount: </span>
-                  <span className={`font-medium ${isDark ? "text-slate-200" : "text-gray-800"}`}>Rs. {fmtCurrency(inv.discount_amount)}</span>
-                </div>
-                <div>
-                  <span className={`${isDark ? "text-slate-400" : "text-gray-500"}`}>Tax: </span>
-                  <span className={`font-medium ${isDark ? "text-slate-200" : "text-gray-800"}`}>Rs. {fmtCurrency(inv.tax_amount)}</span>
-                </div>
+                {(inv.discount_percentage > 0 || inv.discount_amount > 0) && (
+                  <div>
+                    <span className={`${isDark ? "text-slate-400" : "text-gray-500"}`}>Disc {inv.discount_percentage ? `(${inv.discount_percentage}%)` : ''}: </span>
+                    <span className={`font-medium text-red-500`}>-Rs. {fmtCurrency(inv.discount_amount)}</span>
+                  </div>
+                )}
+                {(inv.tax_percentage > 0 || inv.tax_amount > 0) && (
+                  <div>
+                    <span className={`${isDark ? "text-slate-400" : "text-gray-500"}`}>Tax {inv.tax_percentage ? `(${inv.tax_percentage}%)` : ''}: </span>
+                    <span className={`font-medium ${isDark ? "text-slate-200" : "text-gray-800"}`}>+Rs. {fmtCurrency(inv.tax_amount)}</span>
+                  </div>
+                )}
                 <div>
                   <span className={`${isDark ? "text-slate-400" : "text-gray-500"}`}>Invoice Total: </span>
                   <span className={`font-bold text-lg ${isDark ? "text-white" : "text-gray-900"}`}>Rs. {fmtCurrency(inv.total)}</span>

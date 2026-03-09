@@ -99,6 +99,7 @@ class ReportsController extends Controller
             // ===== COGS on sales (per day) =====
             // Calculate cost using products.avg_price * sale_invoice_items.quantity
             // Fallback to unit_purchase_price if avg_price is 0 or NULL
+            // Note: We use quantity * cost_price (not sub_total) because cost remains the same regardless of discounts
             $cogsSales = $cogsQuery
                 ->selectRaw('DATE(si.date) as sale_date')
                 ->selectRaw('SUM(COALESCE(sii.quantity, 0) * CASE WHEN p.avg_price IS NULL OR p.avg_price = 0 THEN COALESCE(p.unit_purchase_price, 0) ELSE p.avg_price END) as cogs_sales')
@@ -211,9 +212,9 @@ class ReportsController extends Controller
                     
                     $quantity = $item->quantity ?? 0;
                     $salePrice = $item->price ?? 0;
-                    
+                    // Use sub_total (actual sale amount after item-level discounts) instead of quantity * price
                     $totalCost = $quantity * $costPrice;
-                    $totalSale = $quantity * $salePrice;
+                    $totalSale = $item->sub_total ?? 0;
                     $profit = $totalSale - $totalCost;
 
                     return [
@@ -225,6 +226,7 @@ class ReportsController extends Controller
                         'quantity' => $quantity,
                         'cost_price' => round($costPrice, 2),
                         'sale_price' => round($salePrice, 2),
+                        'item_discount_percentage' => round($item->item_discount_percentage ?? 0, 2),
                         'total_cost' => round($totalCost, 2),
                         'total_sale' => round($totalSale, 2),
                         'profit' => round($profit, 2),
@@ -234,8 +236,9 @@ class ReportsController extends Controller
                 });
 
                 // Calculate invoice totals
+                // Use invoice total which already has all discounts and taxes applied
                 $totalCost = $items->sum('total_cost');
-                $totalSale = $items->sum('total_sale');
+                $totalSale = $invoice->total ?? 0; // Invoice total includes all discounts and taxes
                 $profit = $totalSale - $totalCost;
                 $profitMargin = $totalSale > 0 ? round(($profit / $totalSale) * 100, 2) : 0;
 
@@ -247,7 +250,9 @@ class ReportsController extends Controller
                     'invoice_type' => $invoice->invoice_type ?? 'debit',
                     'sale_type' => $invoice->sale_type ?? 'retail',
                     'gross_amount' => round($invoice->gross_amount ?? 0, 2),
+                    'discount_percentage' => round($invoice->discount_percentage ?? 0, 2),
                     'discount_amount' => round($invoice->discount_amount ?? 0, 2),
+                    'tax_percentage' => round($invoice->tax_percentage ?? 0, 2),
                     'tax_amount' => round($invoice->tax_amount ?? 0, 2),
                     'total' => round($invoice->total ?? 0, 2),
                     'total_cost' => round($totalCost, 2),
@@ -322,9 +327,9 @@ class ReportsController extends Controller
                 
                 $quantity = (int) ($item->quantity ?? 0);
                 $salePrice = (float) ($item->price ?? 0);
-                
+                // Use sub_total (actual sale amount after item-level discounts) instead of quantity * price
                 $totalCost = $quantity * $costPrice;
-                $totalSale = $quantity * $salePrice;
+                $totalSale = (float) ($item->sub_total ?? 0);
                 $profit = $totalSale - $totalCost;
 
                 $items[] = [
@@ -334,6 +339,7 @@ class ReportsController extends Controller
                     'quantity' => (int) $quantity,
                     'cost_price' => round($costPrice, 2),
                     'sale_price' => round($salePrice, 2),
+                    'item_discount_percentage' => round($item->item_discount_percentage ?? 0, 2),
                     'total_cost' => round($totalCost, 2),
                     'total_sale' => round($totalSale, 2),
                     'profit' => round($profit, 2),
@@ -341,7 +347,8 @@ class ReportsController extends Controller
             }
 
             $totalCost = array_sum(array_column($items, 'total_cost'));
-            $totalSale = array_sum(array_column($items, 'total_sale'));
+            // Use invoice total which already has all discounts and taxes applied
+            $totalSale = (float) ($invoice->total ?? 0);
             $profit = $totalSale - $totalCost;
             $profitMargin = $totalSale > 0 ? round(($profit / $totalSale) * 100, 2) : 0;
 
@@ -353,7 +360,9 @@ class ReportsController extends Controller
                 'invoice_type' => (string) ($invoice->invoice_type ?? 'debit'),
                 'sale_type' => (string) ($invoice->sale_type ?? 'retail'),
                 'gross_amount' => round((float) ($invoice->gross_amount ?? 0), 2),
+                'discount_percentage' => round((float) ($invoice->discount_percentage ?? 0), 2),
                 'discount_amount' => round((float) ($invoice->discount_amount ?? 0), 2),
+                'tax_percentage' => round((float) ($invoice->tax_percentage ?? 0), 2),
                 'tax_amount' => round((float) ($invoice->tax_amount ?? 0), 2),
                 'total' => round((float) ($invoice->total ?? 0), 2),
                 'total_cost' => round($totalCost, 2),
