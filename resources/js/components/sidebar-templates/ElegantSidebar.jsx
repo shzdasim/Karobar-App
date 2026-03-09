@@ -26,6 +26,7 @@ import {
   DocumentTextIcon,
   CalculatorIcon,
   ClipboardDocumentListIcon as ReportIcon,
+  ClockIcon,
 } from "@heroicons/react/24/outline";
 import { usePermissions } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
@@ -84,6 +85,7 @@ export default function ElegantSidebar() {
     { name: "Sale Detail", path: "/reports/sale-detail", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, perm: "report.sale-detail.view", parent: "reports" },
     { name: "Stock Adjustment", path: "/reports/stock-adjustment", icon: <ArrowsRightLeftIcon className="w-5 h-5" />, perm: "report.stock-adjustment.view", parent: "reports" },
     { name: "Product Comprehensive", path: "/reports/product-comprehensive", icon: <ReportIcon className="w-5 h-5" />, perm: "report.product-comprehensive.view", parent: "reports" },
+    { name: "Near Expiry Product", path: "/reports/near-expiry-product", icon: <ClockIcon className="w-5 h-5" />, perm: "report.near-expiry-product.view", parent: "reports" },
     { type: "section", name: "System", key: "system", icon: <Cog6ToothIcon className="w-5 h-5" /> },
     { name: "Settings", path: "/settings", icon: <Cog6ToothIcon className="w-5 h-5" />, perm: "settings.view", parent: "system" },
     { name: "Users", path: "/users", icon: <UserGroupIcon className="w-5 h-5" />, perm: "user.view", parent: "system" },

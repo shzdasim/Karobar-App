@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Authorizables\CostOfSaleReport;
 use App\Authorizables\CurrentStockReport;
+use App\Authorizables\NearExpiryProductReport;
 use App\Authorizables\ProductComprehensiveReport;
 use App\Authorizables\PurchaseDetailReport;
 use App\Authorizables\SaleDetailReport;
@@ -1541,5 +1542,187 @@ class ReportsController extends Controller
             'transactions' => $allTransactions,
             'summary' => $summary,
         ];
+    }
+
+    /**
+     * GET /api/reports/near-expiry-product
+     * Returns products with expiry dates in the future within a date range
+     * Query params: from, to, supplier_id, brand_id, product_id
+     */
+    public function nearExpiryProduct(Request $req)
+    {
+        $this->authorize('view', NearExpiryProductReport::class);
+
+        $from = $req->query('from');
+        $to = $req->query('to');
+        $supplierId = $req->query('supplier_id');
+        $brandId = $req->query('brand_id');
+        $productId = $req->query('product_id');
+
+        // Defaults: today to 3 months ahead if not provided
+        $today = now()->toDateString();
+        $fromDate = $from ? Carbon::parse($from)->toDateString() : $today;
+        $toDate = $to ? Carbon::parse($to)->toDateString() : now()->addMonths(3)->toDateString();
+
+        // Ensure from date is not in the past (for near expiry, we want future expiry)
+        if ($fromDate < $today) {
+            $fromDate = $today;
+        }
+
+        if ($fromDate && $toDate && $fromDate > $toDate) {
+            [$fromDate, $toDate] = [$toDate, $fromDate];
+        }
+
+        $q = DB::table('batches as b')
+            ->join('products as p', 'p.id', '=', 'b.product_id')
+            ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
+            ->leftJoin('brands as br', 'br.id', '=', 'p.brand_id')
+            ->whereNotNull('b.expiry_date')
+            ->whereBetween(DB::raw('DATE(b.expiry_date)'), [$fromDate, $toDate])
+            ->where('b.quantity', '>', 0); // Only show products with available quantity > 0
+
+        if (!empty($supplierId)) {
+            $q->where('p.supplier_id', $supplierId);
+        }
+        if (!empty($brandId)) {
+            $q->where('p.brand_id', $brandId);
+        }
+        if (!empty($productId)) {
+            $q->where('p.id', $productId);
+        }
+
+        $rows = $q->orderBy('b.expiry_date')
+            ->orderBy('p.name')
+            ->select(
+                'b.id as batch_id',
+                'b.batch_number',
+                'b.expiry_date',
+                'b.quantity',
+                'p.id as product_id',
+                'p.product_code',
+                'p.name as product_name',
+                'p.supplier_id',
+                'p.brand_id',
+                DB::raw('COALESCE(s.name, "") as supplier_name'),
+                DB::raw('COALESCE(br.name, "") as brand_name')
+            )
+            ->limit(2000)
+            ->get();
+
+        // Calculate summary
+        $totalQuantity = $rows->sum('quantity');
+        $totalBatches = count($rows);
+
+        return response()->json([
+            'rows' => $rows,
+            'summary' => [
+                'total_batches' => $totalBatches,
+                'total_quantity' => $totalQuantity,
+            ],
+            'filters' => [
+                'from' => $fromDate,
+                'to' => $toDate,
+                'supplier_id' => $supplierId,
+                'brand_id' => $brandId,
+                'product_id' => $productId,
+            ],
+        ]);
+    }
+
+    /**
+     * GET /api/reports/near-expiry-product/pdf
+     */
+    public function nearExpiryProductPdf(Request $req)
+    {
+        $this->authorize('export', NearExpiryProductReport::class);
+
+        $from = $req->query('from');
+        $to = $req->query('to');
+        $supplierId = $req->query('supplier_id');
+        $brandId = $req->query('brand_id');
+        $productId = $req->query('product_id');
+
+        $today = now()->toDateString();
+        $fromDate = $from ? Carbon::parse($from)->toDateString() : $today;
+        $toDate = $to ? Carbon::parse($to)->toDateString() : now()->addMonths(3)->toDateString();
+
+        if ($fromDate < $today) {
+            $fromDate = $today;
+        }
+
+        if ($fromDate && $toDate && $fromDate > $toDate) {
+            [$fromDate, $toDate] = [$toDate, $fromDate];
+        }
+
+        $q = DB::table('batches as b')
+            ->join('products as p', 'p.id', '=', 'b.product_id')
+            ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
+            ->leftJoin('brands as br', 'br.id', '=', 'p.brand_id')
+            ->whereNotNull('b.expiry_date')
+            ->whereBetween(DB::raw('DATE(b.expiry_date)'), [$fromDate, $toDate])
+            ->where('b.quantity', '>', 0);
+
+        if (!empty($supplierId)) {
+            $q->where('p.supplier_id', $supplierId);
+        }
+        if (!empty($brandId)) {
+            $q->where('p.brand_id', $brandId);
+        }
+        if (!empty($productId)) {
+            $q->where('p.id', $productId);
+        }
+
+        $rows = $q->orderBy('b.expiry_date')
+            ->orderBy('p.name')
+            ->select(
+                'b.batch_number',
+                'b.expiry_date',
+                'b.quantity',
+                'p.product_code',
+                'p.name as product_name',
+                DB::raw('COALESCE(s.name, "") as supplier_name'),
+                DB::raw('COALESCE(br.name, "") as brand_name')
+            )
+            ->limit(2000)
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'batch_number' => $row->batch_number,
+                    'expiry_date' => $row->expiry_date instanceof \Carbon\Carbon 
+                        ? $row->expiry_date->format('Y-m-d') 
+                        : (is_string($row->expiry_date) ? substr($row->expiry_date, 0, 10) : $row->expiry_date),
+                    'quantity' => (int) $row->quantity,
+                    'product_code' => $row->product_code,
+                    'product_name' => $row->product_name,
+                    'supplier_name' => $row->supplier_name,
+                    'brand_name' => $row->brand_name,
+                ];
+            });
+
+        $summary = [
+            'total_batches' => count($rows),
+            'total_quantity' => $rows->sum('quantity'),
+        ];
+
+        $meta = [
+            'from' => $fromDate,
+            'to' => $toDate,
+            'generatedAt' => now()->format('Y-m-d H:i'),
+        ];
+
+        try {
+            $pdf = Pdf::loadView('reports.near_expiry_product_pdf', [
+                'rows' => $rows,
+                'summary' => $summary,
+                'meta' => $meta,
+            ])->setPaper('a4', 'landscape');
+
+            return $pdf->stream('near-expiry-product-report.pdf');
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Failed to generate PDF',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 }

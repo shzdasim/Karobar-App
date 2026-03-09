@@ -176,6 +176,8 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/reports/stock-adjustment/pdf',   [ReportsController::class, 'stockAdjustmentPdf']);
     Route::get('/reports/product-comprehensive',  [ReportsController::class, 'productComprehensive']);
     Route::get('/reports/product-comprehensive/pdf', [ReportsController::class, 'productComprehensivePdf']);
+    Route::get('/reports/near-expiry-product',     [ReportsController::class, 'nearExpiryProduct']);
+    Route::get('/reports/near-expiry-product/pdf', [ReportsController::class, 'nearExpiryProductPdf']);
     Route::put('/sale-invoices/{saleInvoice}/meta',[SaleInvoiceController::class, 'updateMeta']);
 
 

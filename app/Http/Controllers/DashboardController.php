@@ -89,7 +89,7 @@ class DashboardController extends Controller
         ]);
     }
 
-    public function nearExpiry(Request $request)
+public function nearExpiry(Request $request)
 {
     $months = (int) $request->query('months', 3);
     if (!in_array($months, [1,3,6,12,18], true)) {
@@ -107,7 +107,8 @@ class DashboardController extends Controller
         ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
         ->leftJoin('brands as br', 'br.id', '=', 'p.brand_id')
         ->whereNotNull('b.expiry_date')
-        ->whereBetween(DB::raw('DATE(b.expiry_date)'), [$today, $to]);
+        ->whereBetween(DB::raw('DATE(b.expiry_date)'), [$today, $to])
+        ->where('b.quantity', '>', 0); // Only show products with available quantity > 0
 
     if (!empty($supplierId)) $q->where('p.supplier_id', $supplierId);
     if (!empty($brandId))    $q->where('p.brand_id', $brandId);

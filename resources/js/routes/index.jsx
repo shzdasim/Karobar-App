@@ -39,6 +39,7 @@ import SaleDetailReport from "../pages/Reports/SaleDetailReport.jsx";
 import CurrentStockReport from "../pages/Reports/CurrentStockReport.jsx";
 import StockAdjustmentReport from "../pages/Reports/StockAdjustmentReport.jsx";
 import ProductComprehensiveReport from "../pages/Reports/ProductComprehensiveReport.jsx";
+import NearExpiryProductReport from "../pages/Reports/NearExpiryProductReport.jsx";
 import Setting from "../pages/Setting.jsx";
 import StockAdjustmentsIndex from "../pages/stock-adjustments/index.jsx";
 import CreateStockAdjustment from "../pages/stock-adjustments/Create.jsx";
@@ -415,6 +416,16 @@ export default function AppRoutes() {
         <ProtectedRoute>
           <DashboardLayout>
             <ProductComprehensiveReport />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      <Route
+      path="reports/near-expiry-product"
+      element= {
+        <ProtectedRoute>
+          <DashboardLayout>
+            <NearExpiryProductReport />
           </DashboardLayout>
         </ProtectedRoute>
       }
