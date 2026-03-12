@@ -27,7 +27,6 @@ class ReportsController extends Controller
      * total_sales, sale_return, cost_of_sales
      *
      * Frontend then derives:
-     * net_sale   = total_sales - sale_return
      * gp_amount  = net_sale - cost_of_sales
      * gp_pct     = (gp_amount / net_sale) * 100
      */
