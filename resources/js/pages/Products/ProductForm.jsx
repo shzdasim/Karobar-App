@@ -49,7 +49,6 @@ const ProductFormFields = forwardRef(({
   batches, 
   categories, 
   suppliers, 
-  brandOption, 
   isEdit, 
   handleChange, 
   loadBrandOptions, 
@@ -60,6 +59,17 @@ const ProductFormFields = forwardRef(({
   themeColors,
   primaryTextColor
 }, ref) => {
+  const [brandOption, setBrandOption] = useState(null);
+
+  // Preload brand for edit mode
+  useEffect(() => {
+    if (isEdit && form.brand_id && !brandOption) {
+      loadBrandOptions('').then(options => {
+        const opt = options.find(o => o.value === Number(form.brand_id));
+        if (opt) setBrandOption(opt);
+      });
+    }
+  }, [form.brand_id, isEdit, loadBrandOptions]);
   // Create refs locally
   const nameRef = useRef(null);
   const formulationRef = useRef(null);
@@ -199,7 +209,7 @@ const ProductFormFields = forwardRef(({
         </div>
         <div>
           <label className="block text-xs font-medium mb-1 dark:text-slate-300">Brand</label>
-          <AsyncSelect
+            <AsyncSelect
             ref={brandSelectRef}
             cacheOptions
             defaultOptions
@@ -207,8 +217,10 @@ const ProductFormFields = forwardRef(({
             value={brandOption}
             onChange={(opt) => {
               handleChange({ target: { name: "brand_id", value: opt?.value ?? null } });
+              setBrandOption(opt);
               setTimeout(() => supplierSelectRef.current?.focus(), 0);
             }}
+
             classNamePrefix="rs"
             isSearchable
             styles={getSmallSelectStyles(isDark)}
@@ -225,8 +237,9 @@ const ProductFormFields = forwardRef(({
             value={asList(suppliers).map((s) => ({ value: s.id, label: s.name })).find((opt) => opt.value === Number(form.supplier_id)) || null}
             onChange={(opt) => {
               handleChange({ target: { name: "supplier_id", value: opt?.value } });
-              setTimeout(() => saveBtnRef.current?.focus(), 0);
+              // setTimeout(() => saveBtnRef.current?.focus(), 0);
             }}
+
             classNamePrefix="rs"
             isSearchable
             styles={getSmallSelectStyles(isDark)}
@@ -323,7 +336,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
   const [suppliers, setSuppliers] = useState([]);
   const [files, setFiles] = useState([]);
   const [batches, setBatches] = useState([]);
-  const [brandOption, setBrandOption] = useState(null);
+
   const [isLoaded, setIsLoaded] = useState(false);
 
   const { isDark, theme } = useTheme();
@@ -454,13 +467,13 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
         await axios.post("/api/products", formData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
-        toast.success("✅ Product added!");
+      toast.success("✅ Product added!");
         setForm({ narcotic: "no" });
         setFiles([]);
-        setBrandOption(null);
         await fetchNewCodes();
         setTimeout(() => formFieldsRef.current?.focusName(), 50);
       }
+
 
       if (onSubmitSuccess) onSubmitSuccess();
     } catch (error) {
@@ -666,7 +679,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                 style={{ ...btnPrimary.style, boxShadow: `0 4px 14px 0 ${themeColors.primary}40` }}
                 title="Save (Alt+S)"
               >
-                <PlusCircleIcon className="w-4 h-4" />
+              <PlusCircleIcon className="w-4 h-4" />
                 <span className="text-sm font-medium">Save Product</span>
               </button>
             </div>
@@ -680,7 +693,6 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
               batches={batches}
               categories={categories}
               suppliers={suppliers}
-              brandOption={brandOption}
               isEdit={isEdit}
               handleChange={handleChange}
               loadBrandOptions={loadBrandOptions}
@@ -692,6 +704,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
               primaryTextColor={primaryTextColor}
             />
           </form>
+
         </GlassCard>
       </div>
     );
@@ -735,7 +748,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                 style={{ ...btnPrimary.style, boxShadow: `0 4px 14px 0 ${themeColors.primary}40` }}
                 title="Save (Alt+S)"
               >
-                <PencilSquareIcon className="w-4 h-4" />
+              <PencilSquareIcon className="w-4 h-4" />
                 <span className="text-sm font-medium">Save Changes</span>
               </button>
             </div>
@@ -749,7 +762,6 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
               batches={batches}
               categories={categories}
               suppliers={suppliers}
-              brandOption={brandOption}
               isEdit={isEdit}
               handleChange={handleChange}
               loadBrandOptions={loadBrandOptions}
@@ -761,6 +773,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
               primaryTextColor={primaryTextColor}
             />
           </form>
+
         </GlassCard>
 
         {/* Right: Batches Panel */}
