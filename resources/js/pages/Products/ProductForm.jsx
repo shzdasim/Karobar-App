@@ -61,6 +61,13 @@ const ProductFormFields = forwardRef(({
 }, ref) => {
   const [brandOption, setBrandOption] = useState(null);
 
+  // Reset brand option when form.brand_id changes to null/empty
+  useEffect(() => {
+    if (!form.brand_id) {
+      setBrandOption(null);
+    }
+  }, [form.brand_id]);
+
   // Preload brand for edit mode
   useEffect(() => {
     if (isEdit && form.brand_id && !brandOption) {
@@ -71,6 +78,7 @@ const ProductFormFields = forwardRef(({
     }
   }, [form.brand_id, isEdit, loadBrandOptions]);
   // Create refs locally
+
   const nameRef = useRef(null);
   const formulationRef = useRef(null);
   const packSizeRef = useRef(null);
