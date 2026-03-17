@@ -291,22 +291,23 @@ const ProductFormFields = forwardRef(({
               <tr className="odd:bg-white/90 even:bg-white/70 dark:odd:bg-slate-700/90 dark:even:bg-slate-700/70">
                 {[
                   { name: "quantity", disabled: true, value: form.quantity || "" },
-                  { name: "pack_purchase_price", disabled: true, value: form.pack_purchase_price || "" },
-                  { name: "pack_sale_price", disabled: true, value: form.pack_sale_price || "" },
-                  { name: "unit_purchase_price", disabled: true, value: form.unit_purchase_price || "" },
-                  { name: "unit_sale_price", disabled: true, value: form.unit_sale_price || "" },
-                  { name: "whole_sale_pack_price", disabled: true, value: form.whole_sale_pack_price || "" },
-                  { name: "whole_sale_unit_price", disabled: true, value: form.whole_sale_unit_price || "" },
-                  { name: "whole_sale_margin", disabled: true, value: form.whole_sale_margin || "" },
-                  { name: "avg_price", disabled: true, value: form.avg_price || "" },
-                  { name: "margin", disabled: true, value: form.margin || "" },
+                  { name: "pack_purchase_price", disabled: false, value: form.pack_purchase_price || "" },
+                  { name: "pack_sale_price", disabled: false, value: form.pack_sale_price || "" },
+                  { name: "unit_purchase_price", disabled: false, value: form.unit_purchase_price || "" },
+                  { name: "unit_sale_price", disabled: false, value: form.unit_sale_price || "" },
+                  { name: "whole_sale_pack_price", disabled: false, value: form.whole_sale_pack_price || "" },
+                  { name: "whole_sale_unit_price", disabled: false, value: form.whole_sale_unit_price || "" },
+                  { name: "whole_sale_margin", disabled: false, value: form.whole_sale_margin || "" },
+                  { name: "avg_price", disabled: false, value: form.avg_price || "" },
+                  { name: "margin", disabled: false, value: form.margin || "" },
                 ].map((cfg) => (
                   <td key={cfg.name} className="px-1 py-1">
-                    <GlassInput
+                      <GlassInput
                       type="number"
                       name={cfg.name}
                       value={cfg.value}
                       disabled={cfg.disabled}
+                      onChange={handleChange}
                       className="h-7 w-full bg-white/70 dark:bg-slate-600/70 text-center appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none dark:text-slate-200"
                     />
                   </td>
