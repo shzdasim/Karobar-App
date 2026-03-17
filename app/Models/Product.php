@@ -56,8 +56,23 @@ class Product extends Model
         return $this->hasMany(Batch::class);
     }
 
+    private function refreshMargins(): void
+    {
+        $avg = (float) ($this->avg_price ?? 0.0);
+        $retailSalePrice = (float) ($this->unit_sale_price ?? 0.0);
+        $wholesaleSalePrice = (float) ($this->whole_sale_unit_price ?? 0.0);
+
+        $this->margin = ($retailSalePrice > 0 && $avg > 0)
+            ? round((($retailSalePrice - $avg) / $retailSalePrice) * 100, 2)
+            : 0.0;
+
+        $this->whole_sale_margin = ($wholesaleSalePrice > 0 && $avg > 0)
+            ? round((($wholesaleSalePrice - $avg) / $wholesaleSalePrice) * 100, 2)
+            : 0.0;
+    }
+
     /**
-     * Apply a purchase item using incremental weighted-average logic.
+     * Apply a purchase item using moving weighted-average on CURRENT ON-HAND stock only.
      * IMPORTANT: use line-level avg_price (effective cost) so bonuses/discounts are included.
      *
      * $item keys expected:
@@ -66,16 +81,18 @@ class Product extends Model
      */
     public function applyPurchaseFromItem(array $item): void
     {
-        $oldQty   = (int) ($this->quantity ?? 0);
-        $oldAvg   = (float) ($this->avg_price ?? 0.0);
-        $newQty   = (int) ($item['quantity'] ?? 0);
-        $effCost  = (float) ($item['avg_price'] ?? $item['unit_purchase_price'] ?? 0.0); // <-- use effective cost
+        $oldQty  = max(0, (int) ($this->quantity ?? 0));
+        $oldAvg  = (float) ($this->avg_price ?? 0.0);
+        $newQty  = max(0, (int) ($item['quantity'] ?? 0));
+        $effCost = (float) ($item['avg_price'] ?? $item['unit_purchase_price'] ?? 0.0);
 
         $totalQty = $oldQty + $newQty;
+        $oldValue = $oldQty * $oldAvg;
+        $newValue = $newQty * $effCost;
 
         $weightedAvg = $totalQty > 0
-            ? (($oldQty * $oldAvg) + ($newQty * $effCost)) / $totalQty
-            : $effCost;
+            ? (($oldValue + $newValue) / $totalQty)
+            : 0.0;
 
         // Update live fields (latest prices kept if provided)
         $this->quantity = $totalQty;
@@ -92,8 +109,7 @@ class Product extends Model
         if (array_key_exists('unit_sale_price', $item)) {
             $this->unit_sale_price = $item['unit_sale_price'];
         }
-        
-        // Update wholesale prices if provided
+
         if (array_key_exists('whole_sale_pack_price', $item)) {
             $this->whole_sale_pack_price = $item['whole_sale_pack_price'];
         }
@@ -101,86 +117,57 @@ class Product extends Model
             $this->whole_sale_unit_price = $item['whole_sale_unit_price'];
         }
 
-        $this->avg_price = round($weightedAvg, 2);
-
-        // Margin on sale price
-        $this->margin = ($this->unit_sale_price > 0)
-            ? round((($this->unit_sale_price - $this->avg_price) / $this->unit_sale_price) * 100, 2)
-            : 0.0;
-        
-        // Wholesale margin (if wholesale unit price is set)
-        if ($this->whole_sale_unit_price > 0) {
-            // Calculate and store wholesale margin in a separate field
-            $this->whole_sale_margin = round((($this->whole_sale_unit_price - $this->avg_price) / $this->whole_sale_unit_price) * 100, 2);
-        }
+        $this->avg_price = round(max($weightedAvg, 0), 2);
+        $this->refreshMargins();
 
         $this->save();
     }
 
     /**
-     * Revert a purchase item using the exact inverse weighted-average math.
-     * Also uses line-level avg_price (effective cost).
+     * Revert a purchase item using the exact inverse weighted-average math
+     * against CURRENT ON-HAND inventory value.
+     *
+     * This is critical when some of the older purchased stock was already sold:
+     * we must not rebuild avg_price from full purchase history, otherwise sold stock
+     * gets counted again and the moving average becomes artificially high.
      *
      * $item may be array or PurchaseInvoiceItem model:
      * - quantity (units), avg_price
-     * 
+     *
      * @param mixed $item The item to revert (array or model)
-     * @param int|null $excludeItemId Optional item ID to exclude from remaining purchases calculation
+     * @param int|null $excludeItemId Kept for backward compatibility; no longer needed.
      */
     public function revertPurchaseFromItem($item, ?int $excludeItemId = null): void
     {
-        $qty = (int) (is_array($item) ? ($item['quantity'] ?? 0) : $item->quantity);
+        $currentQty = max(0, (int) ($this->quantity ?? 0));
+        $currentAvg = (float) ($this->avg_price ?? 0.0);
+        $qtyToRemove = max(0, (int) (is_array($item) ? ($item['quantity'] ?? 0) : $item->quantity));
+        $effCost = (float) (is_array($item)
+            ? ($item['avg_price'] ?? $item['unit_purchase_price'] ?? 0.0)
+            : ($item->avg_price ?? $item->unit_purchase_price ?? 0.0));
 
-        // Adjust quantity — allow negative inventory
-        $this->quantity = ((int) $this->quantity) - $qty;
+        $remainingQty = $currentQty - $qtyToRemove;
 
-        // If stock becomes zero or negative, reset average price to 0
-        // This ensures moving average resets when all stock is removed
-        if ($this->quantity <= 0) {
+        if ($remainingQty <= 0) {
+            $this->quantity = 0;
             $this->avg_price = 0;
-            $this->margin = 0;
-            $this->whole_sale_margin = 0;
+            $this->refreshMargins();
+            $this->save();
+            return;
         }
-        // If there's remaining stock, recalculate average from remaining purchase invoices
-        // This handles the case where we're deleting a purchase but other purchases still exist
-        elseif ($this->quantity > 0) {
-            // Get remaining purchase invoice items for this product, excluding the current item
-            $query = DB::table('purchase_invoice_items')
-                ->where('product_id', $this->id)
-                ->select('quantity', 'avg_price');
-            
-            // Exclude the current item from the calculation if ID is provided
-            if ($excludeItemId !== null) {
-                $query->where('id', '!=', $excludeItemId);
-            }
-            
-            $remainingItems = $query->get();
-            
-            $totalQty = 0;
-            $totalCost = 0.0;
-            
-            foreach ($remainingItems as $ri) {
-                $q = (int) $ri->quantity;
-                $totalQty += $q;
-                $totalCost += $q * (float) $ri->avg_price;
-            }
-            
-            // Recalculate average based on remaining purchase invoices
-            if ($totalQty > 0) {
-                $this->avg_price = round($totalCost / $totalQty, 2);
-            }
-            
-            // Recalculate margins
-            $this->margin = ($this->unit_sale_price > 0 && $this->avg_price > 0)
-                ? round((($this->unit_sale_price - $this->avg_price) / $this->unit_sale_price) * 100, 2)
-                : 0.0;
-                
-            if ($this->whole_sale_unit_price > 0) {
-                $this->whole_sale_margin = ($this->avg_price > 0)
-                    ? round((($this->whole_sale_unit_price - $this->avg_price) / $this->whole_sale_unit_price) * 100, 2)
-                    : 0.0;
-            }
+
+        $currentValue = $currentQty * $currentAvg;
+        $removedValue = $qtyToRemove * $effCost;
+        $remainingValue = $currentValue - $removedValue;
+
+        // Protect against rounding drift and historical bad data.
+        if ($remainingValue < 0) {
+            $remainingValue = 0;
         }
+
+        $this->quantity = $remainingQty;
+        $this->avg_price = round($remainingValue / $remainingQty, 2);
+        $this->refreshMargins();
 
         $this->save();
     }
