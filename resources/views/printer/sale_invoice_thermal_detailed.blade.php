@@ -9,6 +9,8 @@
     $time   = $invoice->date ? \Carbon\Carbon::parse($invoice->date)->format('h:i A') : '';
     $cust   = optional($invoice->customer)->name ?? '';
     $custPhone = optional($invoice->customer)->phone ?? '';
+    $doctor = $invoice->doctor_name ?? '';
+    $patient = $invoice->patient_name ?? '';
 
     $gross  = $invoice->items->sum('sub_total');
     $disc   = (float)($invoice->discount_amount ?? 0);
@@ -86,6 +88,8 @@
     <div class="pair"><span>Date</span><span>{{ $date }}</span></div>
     @if($cust)<div class="pair"><span>Customer</span><span>{{ $cust }}</span></div>@endif
     @if($custPhone)<div class="pair"><span>Phone</span><span>{{ $custPhone }}</span></div>@endif
+    @if($doctor)<div class="pair"><span>Doctor</span><span>{{ $doctor }}</span></div>@endif
+    @if($patient)<div class="pair"><span>Patient</span><span>{{ $patient }}</span></div>@endif
     @if($user)<div class="pair"><span>Cashier</span><span>{{ $user }}</span></div>@endif
   </div>
   

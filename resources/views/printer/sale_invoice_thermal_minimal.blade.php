@@ -7,6 +7,8 @@
     $posted = $invoice->posted_number ?? '';
     $date   = $invoice->date ? \Carbon\Carbon::parse($invoice->date)->format('d/m/Y') : '';
     $cust   = optional($invoice->customer)->name ?? '';
+    $doctor = $invoice->doctor_name ?? '';
+    $patient = $invoice->patient_name ?? '';
 
     $gross  = $invoice->items->sum('sub_total');
     $disc   = (float)($invoice->discount_amount ?? 0);
@@ -73,6 +75,8 @@
   <div class="pair"><span>Inv#</span><span>{{ $posted }}</span></div>
   <div class="pair"><span>Date</span><span>{{ $date }}</span></div>
   @if($cust)<div class="pair"><span>Cust</span><span>{{ $cust }}</span></div>@endif
+  @if($doctor)<div class="pair"><span>Dr</span><span>{{ $doctor }}</span></div>@endif
+  @if($patient)<div class="pair"><span>Pt</span><span>{{ $patient }}</span></div>@endif
   <div class="hr"></div>
   <table>
     <tbody>

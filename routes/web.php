@@ -19,7 +19,7 @@ Route::get('/supplier-ledger/print', [SupplierLedgerController::class, 'print'])
 
 Route::get('/customer-ledger/print', [CustomerLedgerController::class, 'print']);
 
-// Thermal template preview route
+    // Thermal template preview route
 Route::get('/print/thermal-preview/{template}', function ($template) {
     $validTemplates = ['standard', 'minimal', 'detailed', 'compact', 'bold', 'barcode'];
     
@@ -38,6 +38,8 @@ Route::get('/print/thermal-preview/{template}', function ($template) {
     $sampleInvoice->tax_amount = 0;
     $sampleInvoice->footer_note = '';
     $sampleInvoice->customer_id = null;
+    $sampleInvoice->doctor_name = 'Dr. Ahmed Khan';
+    $sampleInvoice->patient_name = 'Ali Ahmed';
     
     $user = new \stdClass();
     $user->name = 'Admin User';
@@ -99,7 +101,7 @@ Route::get('/print/thermal-preview/{template}', function ($template) {
     ]);
 })->name('thermal.preview');
 
-// A4 template preview route
+    // A4 template preview route
 Route::get('/print/a4-preview/{template}', function ($template) {
     $validTemplates = ['standard', 'minimal', 'detailed', 'compact', 'bold', 'barcode'];
     
@@ -118,6 +120,8 @@ Route::get('/print/a4-preview/{template}', function ($template) {
     $sampleInvoice->tax_amount = 0;
     $sampleInvoice->footer_note = '';
     $sampleInvoice->customer_id = null;
+    $sampleInvoice->doctor_name = 'Dr. Ahmed Khan';
+    $sampleInvoice->patient_name = 'Ali Ahmed';
     
     $user = new \stdClass();
     $user->name = 'Admin User';
