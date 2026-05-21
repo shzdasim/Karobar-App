@@ -199,52 +199,28 @@ const mergeSeries = (base, points) => {
   return Array.from(map.values());
 };
 
-function mergeTwo(a = [], b = []) {
-  const map = new Map();
-  for (const r of a) map.set(r.date, { date: r.date, a: Number(r.value || 0), b: 0 });
-  for (const r of b) {
-    const row = map.get(r.date) || { date: r.date, a: 0, b: 0 };
-    row.b += Number(r.value || 0);
-    map.set(r.date, row);
-  }
-  return Array.from(map.values());
-}
 
-function buildNetSeries(series) {
-  const map = new Map();
-  for (const row of series.sales || []) map.set(row.date, (map.get(row.date) || 0) + Number(row.value || 0));
-  for (const row of series.saleReturns || [])
-    map.set(row.date, (map.get(row.date) || 0) - Number(row.value || 0));
-  return Array.from(map.entries()).map(([date, value]) => ({ date, value }));
-}
 
 /* ===================== Component ===================== */
 export default function Dashboard() {
   const { isDark, theme } = useTheme();
   const [from, setFrom] = useState(todayStr());
   const [to, setTo] = useState(todayStr());
-  const [expiryMonths, setExpiryMonths] = useState(3);
-  const [supplierId, setSupplierId] = useState("");
-  const [brandId, setBrandId] = useState("");
-  const [supplierValue, setSupplierValue] = useState(null);
-  const [brandValue, setBrandValue] = useState(null);
-  const [nearExpiryRows, setNearExpiryRows] = useState([]);
-  const [loadingExpiry, setLoadingExpiry] = useState(false);
+  // Near expiry removed per requirements
+
   const [loading, setLoading] = useState(false);
   
   const [cards, setCards] = useState({
     sales: 0,
     purchases: 0,
-    saleReturns: 0,
-    purchaseReturns: 0,
   });
+
   
   const [series, setSeries] = useState({
     sales: [],
     purchases: [],
-    saleReturns: [],
-    purchaseReturns: [],
   });
+
 
   const [invoiceCounts, setInvoiceCounts] = useState({ total: 0, sale_invoices: 0, purchase_invoices: 0 });
   const [kpiMetrics, setKpiMetrics] = useState({
@@ -252,8 +228,8 @@ export default function Dashboard() {
     suppliers: 0,
     brands: 0,
     categories: 0,
-    near_expiry: 0,
   });
+
 
   // Get theme colors with defaults
   const themeColors = useMemo(() => ({
@@ -342,7 +318,8 @@ export default function Dashboard() {
   const btnSecondary = getButtonClasses.secondary;
   const btnTertiary = getButtonClasses.tertiary;
 
-  const netSales = useMemo(() => (cards.sales || 0) - (cards.saleReturns || 0), [cards]);
+  const netSales = useMemo(() => cards.sales || 0, [cards.sales]);
+
 
   useEffect(() => {
     fetchAll();
@@ -356,9 +333,7 @@ export default function Dashboard() {
     return () => window.removeEventListener("keydown", onKey);
   }, [from, to]);
 
-  useEffect(() => {
-    fetchNearExpiry();
-  }, [expiryMonths, supplierId, brandId]);
+
 
   useEffect(() => {
     fetchDashboardMetrics();
@@ -416,23 +391,7 @@ export default function Dashboard() {
     }
   }
 
-  async function fetchNearExpiry() {
-    setLoadingExpiry(true);
-    try {
-      const params = {
-        months: expiryMonths,
-        supplier_id: supplierId || undefined,
-        brand_id: brandId || undefined,
-      };
-      const { data } = await axios.get("/api/dashboard/near-expiry", { params });
-      setNearExpiryRows(Array.isArray(data?.rows) ? data.rows : []);
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to load near expiry data.");
-    } finally {
-      setLoadingExpiry(false);
-    }
-  }
+
 
   async function fetchAll() {
     const f = from || todayStr();
@@ -448,15 +407,12 @@ export default function Dashboard() {
       setCards({
         sales: Number(data?.totals?.sales || 0),
         purchases: Number(data?.totals?.purchases || 0),
-        saleReturns: Number(data?.totals?.sale_returns || 0),
-        purchaseReturns: Number(data?.totals?.purchase_returns || 0),
       });
       setSeries({
         sales: mergeSeries(scaf, data?.series?.sales || []),
         purchases: mergeSeries(scaf, data?.series?.purchases || []),
-        saleReturns: mergeSeries(scaf, data?.series?.sale_returns || []),
-        purchaseReturns: mergeSeries(scaf, data?.series?.purchase_returns || []),
       });
+
     } catch (err) {
       console.error(err);
       toast.error("Failed to load dashboard.");
@@ -541,7 +497,9 @@ export default function Dashboard() {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-3">
+
+
         {/* Sales Card */}
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden group hover:shadow-lg hover:scale-[1.02] transition-all duration-300">
           <div 
@@ -592,59 +550,14 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Sale Returns Card */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden group hover:shadow-lg hover:scale-[1.02] transition-all duration-300">
-          <div 
-            className="h-1.5"
-            style={{ background: `linear-gradient(to right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})` }}
-          />
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <div 
-                className="p-1.5 rounded-lg"
-                style={{ backgroundColor: themeColors.tertiaryLight }}
-              >
-                <ArrowUturnLeftIcon className="w-5 h-5" style={{ color: themeColors.tertiary }} />
-              </div>
-              <span className="text-xs font-medium" style={{ color: themeColors.tertiary }}>Sale Returns</span>
-            </div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">Rs {fmtCurrency(cards.saleReturns)}</div>
-            <div className="h-6 mt-2">
-              <svg viewBox="0 0 100 20" className="w-full h-full" preserveAspectRatio="none">
-                <path d="M0 5 Q 25 8, 50 12 T 100 15" fill="none" stroke={themeColors.tertiary} strokeWidth="2" className="opacity-60" />
-              </svg>
-            </div>
-          </div>
-        </div>
 
-        {/* Purchase Returns Card */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden group hover:shadow-lg hover:scale-[1.02] transition-all duration-300">
-          <div 
-            className="h-1.5"
-            style={{ background: `linear-gradient(to right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
-          />
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <div 
-                className="p-1.5 rounded-lg"
-                style={{ backgroundColor: themeColors.primaryLight }}
-              >
-                <ArrowUturnDownIcon className="w-5 h-5" style={{ color: themeColors.primary }} />
-              </div>
-              <span className="text-xs font-medium" style={{ color: themeColors.primary }}>Purchase Returns</span>
-            </div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">Rs {fmtCurrency(cards.purchaseReturns)}</div>
-            <div className="h-6 mt-2">
-              <svg viewBox="0 0 100 20" className="w-full h-full" preserveAspectRatio="none">
-                <path d="M0 12 Q 25 10, 50 8 T 100 5" fill="none" stroke={themeColors.primary} strokeWidth="2" className="opacity-60" />
-              </svg>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* KPI Metrics Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-stretch">
+
+
+
         {/* Net Sales */}
         <div 
           className="rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300"
@@ -704,21 +617,8 @@ export default function Dashboard() {
           <div className="text-xl font-bold">{kpiMetrics.suppliers || 0}</div>
         </div>
 
-        {/* Near Expiry */}
-        <div 
-          className={`rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300 ${(kpiMetrics.near_expiry || nearExpiryRows.length) > 0 ? '' : 'opacity-70'}`}
-          style={{ background: `linear-gradient(135deg, ${(kpiMetrics.near_expiry || nearExpiryRows.length) > 0 ? themeColors.secondary : '#64748b'} 0%, ${(kpiMetrics.near_expiry || nearExpiryRows.length) > 0 ? themeColors.secondaryHover : '#475569'} 100%)` }}
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
-              <ClockIcon className="w-4 h-4" />
-            </div>
-            <span className="text-xs font-medium text-white/80">Near Expiry</span>
-          </div>
-          <div className="text-xl font-bold">{kpiMetrics.near_expiry || nearExpiryRows.length}</div>
-        </div>
-
         {/* Brands */}
+
         <div 
           className="rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300"
           style={{ background: `linear-gradient(135deg, ${themeColors.secondary} 0%, ${themeColors.secondaryHover} 100%)` }}
@@ -734,7 +634,8 @@ export default function Dashboard() {
       </div>
 
       {/* Charts Row - Three Different Types */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
         {/* Pie Chart - Sales Distribution */}
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
           <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
@@ -780,7 +681,9 @@ export default function Dashboard() {
                     formatter={(val) => [`Rs ${fmtCurrency(val)}`, ""]}
                   />
                   <Legend iconType="circle" wrapperStyle={{ paddingTop: "10px" }} formatter={(value) => <span className="text-xs text-gray-600 dark:text-gray-300">{value}</span>} />
+
                 </PieChart>
+
               </ResponsiveContainer>
             </div>
           </div>
@@ -831,202 +734,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Area Chart - Returns Trend */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-            <div 
-              className="p-1.5 rounded-lg"
-              style={{ backgroundColor: themeColors.tertiaryLight }}
-            >
-              <ArrowUturnLeftIcon className="w-4 h-4" style={{ color: themeColors.tertiary }} />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Returns Trend</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Area chart - Over time</p>
-            </div>
-          </div>
-          <div className="p-4">
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={mergeTwo(series.saleReturns, series.purchaseReturns)} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="areaGrad2" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={themeColors.tertiary} stopOpacity={0.8} />
-                      <stop offset="100%" stopColor={themeColors.tertiary} stopOpacity={0.1} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.15} stroke={themeColors.tertiary} />
-                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={{ stroke: '#475569' }} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(val) => `Rs ${(val / 1000).toFixed(0)}k`} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "rgba(255, 255, 255, 0.95)",
-                      backdropFilter: "blur(10px)",
-                      border: "1px solid rgba(255, 255, 255, 0.3)",
-                      borderRadius: "12px",
-                      boxShadow: "0 10px 40px rgba(0, 0, 0, 0.1)",
-                      padding: "12px 16px",
-                    }}
-                    formatter={(val, name) => [`Rs ${fmtCurrency(val)}`, name === 'a' ? 'Sale Returns' : 'Purchase Returns']}
-                    labelFormatter={(label) => `Date: ${label}`}
-                  />
-                  <Legend iconType="circle" wrapperStyle={{ paddingTop: '10px' }} formatter={(value) => <span className="text-xs text-gray-600 dark:text-gray-300">{value}</span>} />
-                  <Area type="monotone" dataKey="a" name="Sale Returns" stroke={themeColors.tertiary} strokeWidth={2} fill="url(#areaGrad2)" />
-                  <Area type="monotone" dataKey="b" name="Purchase Returns" stroke={themeColors.secondary} strokeWidth={2} fill="transparent" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Near Expiry Table */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          <div className="flex items-center gap-3">
-            <div 
-              className="p-1.5 rounded-lg"
-              style={{ backgroundColor: themeColors.tertiaryLight }}
-            >
-              <ClockIcon className="w-4 h-4" style={{ color: themeColors.tertiary }} />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Near Expiry</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Products expiring soon</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1">
-              {[
-                { m: 1, label: "1 mo" },
-                { m: 3, label: "3 mo" },
-                { m: 6, label: "6 mo" },
-                { m: 12, label: "1 yr" },
-                { m: 18, label: "1.5 yr" },
-              ].map((opt) => (
-                <button
-                  key={opt.m}
-                  onClick={() => setExpiryMonths(opt.m)}
-                  className={`px-2.5 py-1 text-xs font-medium transition-all duration-200 ${btnPrimary.className} ${
-                    expiryMonths === opt.m
-                      ? ""
-                      : "hover:opacity-80"
-                  }`}
-                  style={expiryMonths === opt.m ? btnPrimary.style : { ...btnPrimary.style, opacity: 0.6 }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2 shrink-0" style={{ minWidth: 180 }}>
-              <span className="text-gray-700 dark:text-gray-300 text-xs">Supplier</span>
-              <div className="w-36 relative z-50">
-                <AsyncSelect
-                  cacheOptions
-                  defaultOptions={[{ value: "", label: "All Suppliers" }]}
-                  loadOptions={loadSuppliers}
-                  isClearable
-                  value={supplierValue}
-                  onChange={(opt) => {
-                    setSupplierValue(opt);
-                    setSupplierId(opt?.value || "");
-                  }}
-                  styles={getSmallSelectStyles(isDark)}
-                  menuPortalTarget={document.body}
-                  filterOption={createFilter({ matchFrom: "start", trim: true })}
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0" style={{ minWidth: 160 }}>
-              <span className="text-gray-700 dark:text-gray-300 text-xs">Brand</span>
-              <div className="w-36 relative z-50">
-                <AsyncSelect
-                  cacheOptions
-                  defaultOptions={[{ value: "", label: "All Brands" }]}
-                  loadOptions={loadBrands}
-                  isClearable
-                  value={brandValue}
-                  onChange={(opt) => {
-                    setBrandValue(opt);
-                    setBrandId(opt?.value || "");
-                  }}
-                  styles={getSmallSelectStyles(isDark)}
-                  menuPortalTarget={document.body}
-                  filterOption={createFilter({ matchFrom: "start", trim: true })}
-                />
-              </div>
-            </div>
-            <button
-              onClick={() => {
-                setSupplierValue(null);
-                setBrandValue(null);
-                setSupplierId("");
-                setBrandId("");
-              }}
-              className="px-3 py-1 text-xs font-medium bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition-all duration-200"
-            >
-              Clear
-            </button>
-            <button
-              onClick={fetchNearExpiry}
-              disabled={loadingExpiry}
-              className={`inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold ${btnSecondary.className} ${
-                loadingExpiry ? "cursor-not-allowed opacity-50" : ""
-              }`}
-              style={loadingExpiry ? { borderColor: themeColors.secondary, color: themeColors.secondary, backgroundColor: 'transparent' } : btnSecondary.style}
-            >
-              <ArrowPathIcon className={`w-3.5 h-3.5 ${loadingExpiry ? "animate-spin" : ""}`} />
-              {loadingExpiry ? "Loading…" : "Refresh"}
-            </button>
-          </div>
-        </div>
-        <div className="overflow-auto max-h-80">
-          <table className="min-w-full text-sm">
-            <thead className="sticky top-0 bg-gray-50 dark:bg-slate-800 z-10 border-b border-gray-200 dark:border-slate-700">
-              <tr className="text-left text-gray-700 dark:text-gray-300">
-                <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Product</th>
-                <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Supplier</th>
-                <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Brand</th>
-                <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Batch #</th>
-                <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Expiry</th>
-                <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider text-right">Qty</th>
-              </tr>
-            </thead>
-            <tbody>
-              {nearExpiryRows.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-8 text-center text-gray-500 dark:text-gray-400" colSpan={6}>
-                    {loadingExpiry ? (
-                      <span className="inline-flex items-center gap-2">
-                        <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                        Loading…
-                      </span>
-                    ) : (
-                      "No near-expiry items found."
-                    )}
-                  </td>
-                </tr>
-              ) : (
-                nearExpiryRows.map((r) => (
-                  <tr key={`b-${r.batch_id}`} className="odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/40 dark:even:bg-slate-800/40 hover:bg-blue-50 dark:hover:bg-slate-600/50 transition-colors border-b border-gray-100 dark:border-slate-700/50">
-                    <td className="px-4 py-2.5 text-gray-900 dark:text-gray-100">
-                      <div className="max-w-[280px] truncate font-medium" title={r.product_name}>{r.product_name}</div>
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-900 dark:text-gray-100">
-                      <div className="max-w-[200px] truncate">{r.supplier_name || "—"}</div>
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-900 dark:text-gray-100">
-                      <div className="max-w-[180px] truncate">{r.brand_name || "—"}</div>
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-900 dark:text-gray-100 font-mono text-xs">{r.batch_number}</td>
-                    <td className="px-4 py-2.5 text-gray-900 dark:text-gray-100">{(r.expiry_date || "").slice(0, 10)}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-900 dark:text-gray-100 font-medium">{Number(r.quantity ?? 0).toLocaleString()}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
       </div>
     </div>
   );
