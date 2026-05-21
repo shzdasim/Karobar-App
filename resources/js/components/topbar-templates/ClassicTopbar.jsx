@@ -92,15 +92,7 @@ export default function ClassicTopbar() {
         { name: "Sale Invoice", path: "/sale-invoices", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, perm: "sale-invoice.view" },
       ]
     },
-    {
-      name: "Returns",
-      key: "returns",
-      icon: <ArrowUturnLeftIcon className="w-5 h-5" />,
-      items: [
-        { name: "Purchase Return", path: "/purchase-returns", icon: <ArrowUturnDownIcon className="w-5 h-5" />, perm: "purchase-return.view" },
-        { name: "Sale Return", path: "/sale-returns", icon: <ArrowUturnLeftIcon className="w-5 h-5" />, perm: "sale-return.view" },
-      ]
-    },
+
     {
       name: "Transactions",
       key: "transactions",

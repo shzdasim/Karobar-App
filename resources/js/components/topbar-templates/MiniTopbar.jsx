@@ -81,10 +81,7 @@ export default function MiniTopbar() {
       { name: "Purchase Invoice", path: "/purchase-invoices", icon: <ClipboardDocumentListIcon className="w-4 h-4" />, perm: "purchase-invoice.view" },
       { name: "Sale Invoice", path: "/sale-invoices", icon: <DocumentCurrencyDollarIcon className="w-4 h-4" />, perm: "sale-invoice.view" },
     ]},
-    { name: "Returns", key: "returns", icon: <ArrowUturnLeftIcon className="w-4 h-4" />, items: [
-      { name: "Purchase Return", path: "/purchase-returns", icon: <ArrowUturnDownIcon className="w-4 h-4" />, perm: "purchase-return.view" },
-      { name: "Sale Return", path: "/sale-returns", icon: <ArrowUturnLeftIcon className="w-4 h-4" />, perm: "sale-return.view" },
-    ]},
+
     { name: "Transactions", key: "transactions", icon: <ShoppingCartIcon className="w-4 h-4" />, items: [
       { name: "Purchase Orders", path: "/purchase-orders", icon: <ClipboardDocumentCheckIcon className="w-4 h-4" />, perm: "purchase-order.view" },
       { name: "Stock Adjustments", path: "/stock-adjustments", icon: <ArrowsRightLeftIcon className="w-4 h-4" />, perm: "stock-adjustment.view" },

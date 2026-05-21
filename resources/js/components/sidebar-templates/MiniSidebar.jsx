@@ -65,7 +65,7 @@ export default function MiniSidebar() {
     { name: "Customers", path: "/customers", icon: <UserPlusIcon className="w-5 h-5" />, perm: "customer.view" },
     { name: "Purchase", path: "/purchase-invoices", icon: <ClipboardDocumentListIcon className="w-5 h-5" />, perm: "purchase-invoice.view" },
     { name: "Sales", path: "/sale-invoices", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, perm: "sale-invoice.view" },
-    { name: "Returns", path: "/purchase-returns", icon: <ArrowUturnLeftIcon className="w-5 h-5" />, perm: "purchase-return.view" },
+
     { name: "Stock", path: "/stock-adjustments", icon: <ArrowsRightLeftIcon className="w-5 h-5" />, perm: "stock-adjustment.view" },
     { name: "Ledger", path: "/supplier-ledger", icon: <BuildingStorefrontIcon className="w-5 h-5" />, perm: "ledger.supplier.view" },
     { name: "Reports", path: "/reports/current-stock", icon: <ChartBarIcon className="w-5 h-5" />, perm: "report.current-stock.view" },
