@@ -504,10 +504,15 @@ export default function QuotationForm({ quotationId, onSuccess }) {
       fetchBatches(productId).catch(() => {});
     }
 
-    // ✅ After product selection, move focus to quantity
+    // ✅ After product selection, move focus to quantity AND select value
     setTimeout(() => {
-      qtyRefs.current[rowIndex]?.focus?.();
-      qtyRefs.current[rowIndex]?.querySelector?.("input")?.focus?.();
+      const qtyNode = qtyRefs.current[rowIndex];
+      const input = qtyNode?.querySelector?.("input") || qtyNode;
+      if (input?.focus) input.focus();
+      if (input?.select) {
+        // Ensure select happens after focus.
+        requestAnimationFrame(() => input.select());
+      }
     }, 0);
   };
 
