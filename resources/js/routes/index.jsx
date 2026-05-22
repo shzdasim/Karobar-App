@@ -27,6 +27,10 @@ import CreateSaleInvoiceRetail from "../pages/SaleInvoice/CreateRetail.jsx";
 import CreateSaleInvoiceWholesale from "../pages/SaleInvoice/CreateWholesale.jsx";
 import EditSaleInvoice from "../pages/SaleInvoice/Edit.jsx";
 import ShowSaleInvoice from "../pages/SaleInvoice/Show.jsx";
+import QuotationsIndex from "../pages/Quotations/index.jsx";
+import QuotationsCreate from "../pages/Quotations/Create.jsx";
+import QuotationsEdit from "../pages/Quotations/Edit.jsx";
+import QuotationsShow from "../pages/Quotations/Show.jsx";
 import IndexSaleReturn from "../pages/SaleReturn/Index.jsx";
 import CreateSaleReturn from "../pages/SaleReturn/Create.jsx";
 import EditSaleReturn from "../pages/SaleReturn/Edit.jsx";
@@ -337,6 +341,48 @@ export default function AppRoutes() {
         </ProtectedRoute>
       }
       />
+      {/* Quotations */}
+      <Route
+        path="/quotations"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <QuotationsIndex />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/quotations/create"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <QuotationsCreate />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/quotations/:id/edit"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <QuotationsEdit />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/quotations/:id"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <QuotationsShow />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
       {/* Purchase Orders */}
       <Route
       path="purchase-orders"

@@ -80,6 +80,7 @@ export default function ModernTopbar() {
     { name: "Invoices", key: "invoices", icon: <DocumentTextIcon className="w-4 h-4" />, items: [
       { name: "Purchase Invoice", path: "/purchase-invoices", icon: <ClipboardDocumentListIcon className="w-4 h-4" />, perm: "purchase-invoice.view" },
       { name: "Sale Invoice", path: "/sale-invoices", icon: <DocumentCurrencyDollarIcon className="w-4 h-4" />, perm: "sale-invoice.view" },
+      { name: "Quotations", path: "/quotations", icon: <ClipboardDocumentListIcon className="w-4 h-4" />, perm: "quotation.view" },
     ]},
 
     { name: "Transactions", key: "transactions", icon: <ShoppingCartIcon className="w-4 h-4" />, items: [

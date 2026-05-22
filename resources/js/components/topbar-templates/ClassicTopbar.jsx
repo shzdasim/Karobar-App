@@ -90,6 +90,7 @@ export default function ClassicTopbar() {
       items: [
         { name: "Purchase Invoice", path: "/purchase-invoices", icon: <ClipboardDocumentListIcon className="w-5 h-5" />, perm: "purchase-invoice.view" },
         { name: "Sale Invoice", path: "/sale-invoices", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, perm: "sale-invoice.view" },
+        { name: "Quotations", path: "/quotations", icon: <ClipboardDocumentListIcon className="w-5 h-5" />, perm: "quotation.view" },
       ]
     },
 

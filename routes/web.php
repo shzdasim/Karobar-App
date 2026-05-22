@@ -4,6 +4,7 @@ use App\Http\Controllers\CustomerLedgerController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\SaleInvoiceController;
 use App\Http\Controllers\SupplierLedgerController;
+use App\Http\Controllers\QuotationPrintController;
 
 // --- Password Reset Route ---
 Route::get('/password/reset/{token}/{email}', function ($token, $email) {
@@ -14,6 +15,10 @@ Route::get('/password/reset/{token}/{email}', function ($token, $email) {
 Route::get('/print/sale-invoices/{invoice}', [SaleInvoiceController::class, 'print'])
     ->whereNumber('invoice')
     ->name('sale-invoices.print');
+
+Route::get('/print/quotations/{quotation}', [QuotationPrintController::class, 'print'])
+    ->whereNumber('quotation')
+    ->name('quotations.print');
 Route::get('/supplier-ledger/print', [SupplierLedgerController::class, 'print'])
      ->name('supplier-ledger.print');
 

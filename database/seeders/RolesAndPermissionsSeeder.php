@@ -55,6 +55,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'purchase-invoice',
             'sale-return',
             'purchase-return',
+            'quotation',
         ];
         $docActions = ['view','create','update','delete','export'];
 

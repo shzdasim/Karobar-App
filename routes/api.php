@@ -24,6 +24,7 @@ use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SaleInvoiceController;
 use App\Http\Controllers\SaleReturnController;
+use App\Http\Controllers\QuotationController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\StockAdjustmentController;
 use App\Http\Controllers\SupplierController;
@@ -145,6 +146,14 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('sale-invoices/new-code',          [SaleInvoiceController::class, 'generateNewCode']);
     Route::get('sale-invoices/search',            [SaleInvoiceController::class, 'search']);
     Route::apiResource('sale-invoices',           SaleInvoiceController::class);
+
+    // Quotations
+    Route::get('quotations', [QuotationController::class, 'index']);
+    Route::get('quotations/{id}', [QuotationController::class, 'show']);
+    Route::post('quotations', [QuotationController::class, 'store']);
+    Route::put('quotations/{id}', [QuotationController::class, 'update']);
+    Route::delete('quotations/{id}', [QuotationController::class, 'destroy']);
+
 
     // Sale returns
     Route::get('sale-returns/new-code',           [SaleReturnController::class, 'generateNewCode']);
