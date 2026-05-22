@@ -741,7 +741,7 @@ export default function QuotationForm({ quotationId, onSuccess }) {
         </div>
 
         <div className="px-2 pb-1 grid grid-cols-12 gap-1 text-[11px]">
-          <div className="col-span-2">
+          <div className="col-span-1">
             <label className={`block text-[9px] mb-0.5 ${isDark ? "text-slate-400" : "text-gray-600"}`}>Posted #</label>
             <input
               type="text"
@@ -757,7 +757,7 @@ export default function QuotationForm({ quotationId, onSuccess }) {
             />
           </div>
 
-          <div className="col-span-2">
+          <div className="col-span-1">
             <label className={`block text-[9px] mb-0.5 ${isDark ? "text-slate-400" : "text-gray-600"}`}>Date</label>
             <input
               type="date"
