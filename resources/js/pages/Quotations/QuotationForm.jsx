@@ -619,13 +619,15 @@ export default function QuotationForm({ quotationId, onSuccess }) {
       container.scrollTop = targetBottom - container.clientHeight + 4;
   };
 
-  const COLS = ["product", "quantity", "disc"];
+  const COLS = ["product", "quantity", "price", "disc"];
   const focusCell = (row, col) => {
     const map = {
       product: productRefs,
       quantity: qtyRefs,
+      price: priceRefs,
       disc: discRefs,
     };
+
     const ref = map[col]?.current?.[row];
     if (!ref) return;
     const input = ref.querySelector?.("input") || ref;
@@ -681,8 +683,13 @@ export default function QuotationForm({ quotationId, onSuccess }) {
         break;
       case "Enter":
         e.preventDefault();
-        if (col === "quantity") focusCell(row, "disc");
-        else moveNextCol(row, col);
+        if (col === "quantity") {
+          focusCell(row, "price");
+        } else if (col === "price") {
+          focusCell(row, "disc");
+        } else {
+          moveNextCol(row, col);
+        }
         break;
       default:
         break;
@@ -1020,12 +1027,7 @@ export default function QuotationForm({ quotationId, onSuccess }) {
                             ? "bg-slate-700 border-slate-600 text-slate-200"
                             : "bg-white border-gray-300 text-gray-800"
                         }`}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            setTimeout(() => discRefs.current[i]?.focus?.(), 0);
-                          }
-                        }}
+                        onKeyDown={(e) => onKeyNav(e, i, "price")}
                         onFocus={(e) => e.target.select()}
                       />
                     </td>
@@ -1041,7 +1043,8 @@ export default function QuotationForm({ quotationId, onSuccess }) {
                           const v = e.target.value;
                           if (v !== "" && v !== "-" && v !== "-.") {
                             const num = Number(v);
-                            if (Number.isFinite(num)) handleItemChange(i, "item_discount_percentage", num.toFixed(2));
+                            if (Number.isFinite(num))
+                              handleItemChange(i, "item_discount_percentage", num.toFixed(2));
                           }
                         }}
                         autoComplete="off"
