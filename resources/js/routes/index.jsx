@@ -10,8 +10,7 @@ import AuthGuard from "../components/AuthGuard.jsx";
 import Profile from "../pages/Profile.jsx";
 import Suppliers from "../pages/Suppliers.jsx";
 import Customers from "../pages/Customers.jsx";
-import Categories from "../pages/Categories.jsx";
-import Brands from "../pages/Brands.jsx";
+
 import ProductsIndex from "../pages/Products/index.jsx";
 import CreateProduct from "../pages/Products/Create.jsx";
 import EditProduct from "../pages/Products/Edit.jsx";
@@ -132,27 +131,7 @@ export default function AppRoutes() {
     }
   />
 
-  <Route
-    path="/categories"
-    element={
-      <ProtectedRoute>
-        <DashboardLayout>
-          <Categories />
-        </DashboardLayout>
-      </ProtectedRoute>
-    }
-  />
 
-  <Route
-    path="/brands"
-    element={
-      <ProtectedRoute>
-        <DashboardLayout>
-          <Brands />
-        </DashboardLayout>
-      </ProtectedRoute>
-    }
-  />
   <Route
   path="/products"
   element={

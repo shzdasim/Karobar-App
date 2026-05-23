@@ -46,8 +46,8 @@ export default function AuroraTopbar() {
   const menuSections = useMemo(() => [
     { name: "Management", key: "core", icon: <CubeIcon className="w-4 h-4" />, items: [
       { name: "Products", path: "/products", icon: <CubeIcon className="w-4 h-4" />, perm: "product.view" },
-      { name: "Categories", path: "/categories", icon: <Squares2X2Icon className="w-4 h-4" />, perm: "category.view" },
-      { name: "Brands", path: "/brands", icon: <TagIcon className="w-4 h-4" />, perm: "brand.view" },
+
+
       { name: "Suppliers", path: "/suppliers", icon: <TruckIcon className="w-4 h-4" />, perm: "supplier.view" },
       { name: "Customers", path: "/customers", icon: <UserPlusIcon className="w-4 h-4" />, perm: "customer.view" },
     ]},

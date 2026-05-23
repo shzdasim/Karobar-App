@@ -67,8 +67,7 @@ export default function DashboardLayout({ children }) {
     "/suppliers": "Suppliers",
     "/customers": "Customers",
     "/products": "Products",
-    "/categories": "Categories",
-    "/brands": "Brands",
+
     "/purchase-invoices": "Purchase Invoices",
     "/purchase-invoices/create": "Create Purchase Invoice",
     "/purchase-returns": "Purchase Returns",

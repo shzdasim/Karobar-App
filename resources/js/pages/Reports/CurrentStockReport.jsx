@@ -157,13 +157,10 @@ async function tryEndpoints(paths, params) {
 }
 
 export default function CurrentStockReport() {
-  // Filters
-  const [categoryValue, setCategoryValue] = useState(null);
-  const [categoryId, setCategoryId] = useState("");
-  const [brandValue, setBrandValue] = useState(null);
-  const [brandId, setBrandId] = useState("");
+  // Filters (categories/brands removed)
   const [supplierValue, setSupplierValue] = useState(null);
   const [supplierId, setSupplierId] = useState("");
+
 
   // Data + States
   const [data, setData] = useState({ rows: [], summary: {} });
@@ -455,8 +452,6 @@ export default function CurrentStockReport() {
     try {
       const res = await axios.get("/api/reports/current-stock", {
         params: {
-          category_id: categoryId || undefined,
-          brand_id: brandId || undefined,
           supplier_id: supplierId || undefined,
         },
       });
@@ -492,8 +487,6 @@ export default function CurrentStockReport() {
     try {
       const res = await axios.get("/api/reports/current-stock/pdf", {
         params: {
-          category_id: categoryId || undefined,
-          brand_id: brandId || undefined,
           supplier_id: supplierId || undefined,
         },
         responseType: "blob",
@@ -512,10 +505,6 @@ export default function CurrentStockReport() {
 
   /* ============ Reset filters ============ */
   const resetFilters = () => {
-    setCategoryValue(null);
-    setCategoryId("");
-    setBrandValue(null);
-    setBrandId("");
     setSupplierValue(null);
     setSupplierId("");
     setData({ rows: [], summary: {} });
@@ -562,52 +551,8 @@ export default function CurrentStockReport() {
 
         {/* Filters */}
         <GlassToolbar className="grid grid-cols-1 md:grid-cols-12 gap-3">
-          {/* Category */}
-          <div className="md:col-span-4">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Category</label>
-            <AsyncSelect
-              cacheOptions
-              defaultOptions={[{ value: "", label: "All Categories" }]}
-              loadOptions={loadCategories}
-              isClearable
-              value={categoryValue}
-              onChange={(opt) => {
-                setCategoryValue(opt);
-                setCategoryId(opt?.value || "");
-              }}
-              styles={getSelectStyles(isDark)}
-              menuPortalTarget={document.body}
-              filterOption={createFilter({
-                matchFrom: "start",
-                trim: true,
-              })}
-            />
-          </div>
-
-          {/* Brand */}
-          <div className="md:col-span-4">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Brand</label>
-            <AsyncSelect
-              cacheOptions
-              defaultOptions={[{ value: "", label: "All Brands" }]}
-              loadOptions={loadBrands}
-              isClearable
-              value={brandValue}
-              onChange={(opt) => {
-                setBrandValue(opt);
-                setBrandId(opt?.value || "");
-              }}
-              styles={getSelectStyles(isDark)}
-              menuPortalTarget={document.body}
-              filterOption={createFilter({
-                matchFrom: "start",
-                trim: true,
-              })}
-            />
-          </div>
-
           {/* Supplier */}
-          <div className="md:col-span-4">
+          <div className="md:col-span-12">
             <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Supplier</label>
             <AsyncSelect
               cacheOptions
@@ -755,8 +700,8 @@ export default function CurrentStockReport() {
                       <tr className="text-left">
                         <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-8">#</th>
                         <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Product Name</th>
-                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Brand</th>
                         <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Supplier</th>
+
                         <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-20">Pack Size</th>
                         <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-24">Quantity</th>
                         <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-24">Pack Purchase</th>
@@ -769,7 +714,7 @@ export default function CurrentStockReport() {
                     <tbody>
                       {rows.length === 0 && !loading && (
                         <tr>
-                          <td colSpan={10} className="px-2 py-12 text-center">
+                          <td colSpan={9} className="px-2 py-12 text-center">
                             <div className="flex flex-col items-center gap-2">
                               <CubeIcon className="w-8 h-8 text-gray-400" />
                               <p className="text-sm text-gray-500 dark:text-gray-400">No stock items found</p>
@@ -795,16 +740,11 @@ export default function CurrentStockReport() {
                           </td>
                           
                           <td className="px-2 py-2">
-                            <span className="px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs">
-                              {row.brand_name || "—"}
-                            </span>
-                          </td>
-                          
-                          <td className="px-2 py-2">
                             <span className="px-2 py-0.5 rounded bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 text-xs">
                               {row.supplier_name || "—"}
                             </span>
                           </td>
+
                           
                           <td className="px-2 py-2 text-right text-gray-700 dark:text-gray-300 tabular-nums">
                             {fmtNumber(row.pack_size)}

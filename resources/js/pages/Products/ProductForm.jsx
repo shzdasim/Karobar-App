@@ -2,7 +2,6 @@
 import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle, useMemo } from "react";
 import axios from "axios";
 import Select from "react-select";
-import AsyncSelect from "react-select/async";
 import toast from "react-hot-toast";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -24,13 +23,13 @@ import "filepond/dist/filepond.min.css";
 import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
 
 // 🧊 glass primitives
-import { GlassCard, GlassInput, GlassBtn } from "@/components/glass.jsx";
+import { GlassCard, GlassInput } from "@/components/glass.jsx";
 import { useTheme } from "@/context/ThemeContext";
 
 registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);
 
 // 👉 Normalize Laravel paginate payloads (or plain arrays) to a simple array
-const asList = (payload) => (Array.isArray(payload) ? payload : (payload?.data ?? payload?.items ?? []));
+const asList = (payload) => (Array.isArray(payload) ? payload : payload?.data ?? payload?.items ?? []);
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -42,58 +41,32 @@ const getContrastText = (hexColor) => {
   return luminance > 0.5 ? '#1f2937' : '#ffffff';
 };
 
-// ===== Form Fields Component =====
 const ProductFormFields = forwardRef(({ 
-  form, 
-  files, 
-  batches, 
-  categories, 
-  suppliers, 
-  isEdit, 
-  handleChange, 
-  loadBrandOptions, 
-  getSmallSelectStyles, 
-  isDark, 
-  onFilesChange, 
+  form,
+  files,
+  batches,
+  suppliers,
+  isEdit,
+  handleChange,
+  getSmallSelectStyles,
+  isDark,
+  onFilesChange,
   setFiles,
   themeColors,
   primaryTextColor
 }, ref) => {
-  const [brandOption, setBrandOption] = useState(null);
-
-  // Reset brand option when form.brand_id changes to null/empty
-  useEffect(() => {
-    if (!form.brand_id) {
-      setBrandOption(null);
-    }
-  }, [form.brand_id]);
-
-  // Preload brand for edit mode
-  useEffect(() => {
-    if (isEdit && form.brand_id && !brandOption) {
-      loadBrandOptions('').then(options => {
-        const opt = options.find(o => o.value === Number(form.brand_id));
-        if (opt) setBrandOption(opt);
-      });
-    }
-  }, [form.brand_id, isEdit, loadBrandOptions]);
-  // Create refs locally
-
   const nameRef = useRef(null);
   const formulationRef = useRef(null);
   const packSizeRef = useRef(null);
-  const categorySelectRef = useRef(null);
-  const brandSelectRef = useRef(null);
-  const supplierSelectRef = useRef(null);
 
-  // Expose focus methods to parent
   useImperativeHandle(ref, () => ({
     focusName: () => nameRef.current?.focus(),
   }));
 
+  const supplierOptions = asList(suppliers).map((s) => ({ value: s.id, label: s.name }));
+
   return (
     <>
-      {/* Image - moved to top, compact */}
       <div className="flex gap-3 items-start">
         <div className="w-32 shrink-0">
           <label className="block text-xs font-medium mb-1 dark:text-slate-300">Image</label>
@@ -110,20 +83,37 @@ const ProductFormFields = forwardRef(({
             />
           </div>
         </div>
-        
-        {/* Code / Barcode inline */}
+
         <div className="flex-1 grid grid-cols-2 gap-2">
           <div>
             <label className="block text-xs font-medium mb-1 dark:text-slate-300">Product Code</label>
-            <GlassInput type="text" name="product_code" value={form.product_code || ""} disabled className="w-full bg-white/70 dark:bg-slate-700/70 text-sm h-8 dark:text-slate-200" />
+            <GlassInput
+              type="text"
+              name="product_code"
+              value={form.product_code || ""}
+              disabled
+              className="w-full bg-white/70 dark:bg-slate-700/70 text-sm h-8 dark:text-slate-200"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium mb-1 dark:text-slate-300">Barcode</label>
-            <GlassInput type="text" name="barcode" value={form.barcode || ""} disabled className="w-full bg-white/70 dark:bg-slate-700/70 text-sm h-8 dark:text-slate-200" />
+            <GlassInput
+              type="text"
+              name="barcode"
+              value={form.barcode || ""}
+              disabled
+              className="w-full bg-white/70 dark:bg-slate-700/70 text-sm h-8 dark:text-slate-200"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium mb-1 dark:text-slate-300">Rack</label>
-            <GlassInput type="text" name="rack" value={form.rack || ""} onChange={handleChange} className="w-full text-sm h-8 dark:bg-slate-700/70 dark:text-slate-200" />
+            <GlassInput
+              type="text"
+              name="rack"
+              value={form.rack || ""}
+              onChange={handleChange}
+              className="w-full text-sm h-8 dark:bg-slate-700/70 dark:text-slate-200"
+            />
           </div>
           <div className="flex items-end">
             <label className="inline-flex items-center gap-1.5 text-xs dark:text-slate-300">
@@ -131,7 +121,11 @@ const ProductFormFields = forwardRef(({
                 type="checkbox"
                 name="narcotic"
                 checked={form.narcotic === "yes"}
-                onChange={(e) => handleChange({ target: { name: "narcotic", value: e.target.checked ? "yes" : "no" } })}
+                onChange={(e) =>
+                  handleChange({
+                    target: { name: "narcotic", value: e.target.checked ? "yes" : "no" },
+                  })
+                }
                 className="h-4 w-4 rounded border-gray-300 dark:border-slate-500 dark:bg-slate-600"
                 style={{ accentColor: themeColors?.primary }}
               />
@@ -141,7 +135,6 @@ const ProductFormFields = forwardRef(({
         </div>
       </div>
 
-      {/* Name / Formulation / Pack Size */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
           <label className="block text-xs font-medium mb-1 dark:text-slate-300">Name *</label>
@@ -186,89 +179,38 @@ const ProductFormFields = forwardRef(({
             name="pack_size"
             value={form.pack_size || ""}
             onChange={handleChange}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                categorySelectRef.current?.focus();
-              }
-            }}
             className="w-full text-sm h-8 dark:bg-slate-700/70 dark:text-slate-200"
           />
         </div>
       </div>
 
-      {/* Category / Brand / Supplier */}
+      {/* Supplier only (categories/brands removed) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div>
-          <label className="block text-xs font-medium mb-1 dark:text-slate-300">Category</label>
-          <Select
-            ref={categorySelectRef}
-            options={asList(categories).map((c) => ({ value: c.id, label: c.name }))}
-            value={asList(categories).map((c) => ({ value: c.id, label: c.name })).find((opt) => opt.value === Number(form.category_id)) || null}
-            onChange={(opt) => {
-              handleChange({ target: { name: "category_id", value: opt?.value } });
-              setTimeout(() => brandSelectRef.current?.focus(), 0);
-            }}
-            classNamePrefix="rs"
-            isSearchable
-            styles={getSmallSelectStyles(isDark)}
-            menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium mb-1 dark:text-slate-300">Brand</label>
-            <AsyncSelect
-            ref={brandSelectRef}
-            cacheOptions
-            defaultOptions
-            loadOptions={loadBrandOptions}
-            value={brandOption}
-            onChange={(opt) => {
-              handleChange({ target: { name: "brand_id", value: opt?.value ?? null } });
-              setBrandOption(opt);
-              setTimeout(() => supplierSelectRef.current?.focus(), 0);
-            }}
-
-            classNamePrefix="rs"
-            isSearchable
-            styles={getSmallSelectStyles(isDark)}
-            placeholder="Search brand..."
-            noOptionsMessage={() => "Type to search..."}
-            menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-          />
-        </div>
-        <div>
+        <div className="md:col-span-1">
           <label className="block text-xs font-medium mb-1 dark:text-slate-300">Supplier</label>
           <Select
-            ref={supplierSelectRef}
-            options={asList(suppliers).map((s) => ({ value: s.id, label: s.name }))}
-            value={asList(suppliers).map((s) => ({ value: s.id, label: s.name })).find((opt) => opt.value === Number(form.supplier_id)) || null}
-            onChange={(opt) => {
-              handleChange({ target: { name: "supplier_id", value: opt?.value } });
-              // setTimeout(() => saveBtnRef.current?.focus(), 0);
-            }}
-
+            options={supplierOptions}
+            value={supplierOptions.find((opt) => opt.value === Number(form.supplier_id)) || null}
+            onChange={(opt) => handleChange({ target: { name: "supplier_id", value: opt?.value ?? null } })}
             classNamePrefix="rs"
             isSearchable
             styles={getSmallSelectStyles(isDark)}
             menuPortalTarget={typeof document !== "undefined" ? document.body : null}
           />
         </div>
+
+        <div className="md:col-span-2">
+          <label className="block text-xs font-medium mb-1 dark:text-slate-300">Description</label>
+          <textarea
+            name="description"
+            value={form.description || ""}
+            onChange={handleChange}
+            className="w-full h-16 px-3 py-2 rounded-xl bg-white/70 dark:bg-slate-700/70 backdrop-blur-sm border border-gray-200/70 dark:border-slate-600/70 ring-1 ring-transparent focus:ring-blue-400/40 shadow-sm focus:outline-none text-sm resize-none dark:text-slate-200"
+            placeholder="Optional notes..."
+          />
+        </div>
       </div>
 
-      {/* Description - compact */}
-      <div>
-        <label className="block text-xs font-medium mb-1 dark:text-slate-300">Description</label>
-        <textarea
-          name="description"
-          value={form.description || ""}
-          onChange={handleChange}
-          className="w-full h-16 px-3 py-2 rounded-xl bg-white/70 dark:bg-slate-700/70 backdrop-blur-sm border border-gray-200/70 dark:border-slate-600/70 ring-1 ring-transparent focus:ring-blue-400/40 shadow-sm focus:outline-none text-sm resize-none dark:text-slate-200"
-          placeholder="Optional notes..."
-        />
-      </div>
-
-      {/* Compact pricing table */}
       <div>
         <div className="rounded-xl overflow-hidden ring-1 ring-gray-200/70 dark:ring-slate-600/70 bg-white/70 dark:bg-slate-700/70 backdrop-blur-sm">
           <table className="w-full text-[11px] text-gray-900 dark:text-slate-200">
@@ -302,7 +244,7 @@ const ProductFormFields = forwardRef(({
                   { name: "margin", disabled: false, value: form.margin || "" },
                 ].map((cfg) => (
                   <td key={cfg.name} className="px-1 py-1">
-                      <GlassInput
+                    <GlassInput
                       type="number"
                       name={cfg.name}
                       value={cfg.value}
@@ -329,6 +271,7 @@ const ProductFormFields = forwardRef(({
     </>
   );
 });
+
 ProductFormFields.displayName = "ProductFormFields";
 
 export default function ProductForm({ initialData = null, onSubmitSuccess }) {
@@ -341,7 +284,6 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     narcotic: initialData?.narcotic || "no",
   });
 
-  const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [files, setFiles] = useState([]);
   const [batches, setBatches] = useState([]);
@@ -350,7 +292,6 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
 
   const { isDark, theme } = useTheme();
 
-  // Memoize theme colors for performance
   const themeColors = useMemo(() => {
     if (!theme) {
       return {
@@ -372,20 +313,16 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     };
   }, [theme]);
 
-  // Calculate text color based on background brightness
-  const primaryTextColor = useMemo(() => 
-    getContrastText(themeColors.primaryHover || themeColors.primary), 
+  const primaryTextColor = useMemo(
+    () => getContrastText(themeColors.primaryHover || themeColors.primary),
     [themeColors.primary, themeColors.primaryHover]
   );
 
-  // ===== Load dropdown data =====
   const fetchDropdowns = async () => {
-    const [catRes, supRes] = await Promise.all([axios.get("/api/categories"), axios.get("/api/suppliers")]);
-    setCategories(asList(catRes.data));
+    const supRes = await axios.get("/api/suppliers");
     setSuppliers(asList(supRes.data));
   };
 
-  // ===== Preload a new product code =====
   const fetchNewCodes = async () => {
     const res = await axios.get("/api/products/new-code");
     setForm((prev) => ({
@@ -395,7 +332,6 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     }));
   };
 
-  // ===== Load batches on edit =====
   const fetchBatches = async () => {
     if (isEdit && initialData?.id) {
       try {
@@ -407,19 +343,6 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     }
   };
 
-  // ===== Preload selected Brand label on edit =====
-  const preloadBrandOption = async (brandId) => {
-    if (!brandId) return;
-    try {
-      const res = await axios.get(`/api/brands/${brandId}`);
-      const b = res.data;
-      if (b?.id && b?.name) setBrandOption({ value: b.id, label: b.name });
-    } catch {
-      // ignore
-    }
-  };
-
-  // Initial data fetch
   useEffect(() => {
     const loadData = async () => {
       await fetchDropdowns();
@@ -431,7 +354,6 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
           setFiles([{ source: imageUrl, options: { type: "remote" } }]);
         }
         await fetchBatches();
-        if (initialData?.brand_id) await preloadBrandOption(initialData.brand_id);
       }
       setIsLoaded(true);
     };
@@ -439,7 +361,6 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Focus Name after form is loaded and rendered
   useEffect(() => {
     if (isLoaded) {
       const timer = setTimeout(() => {
@@ -476,13 +397,12 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
         await axios.post("/api/products", formData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
-      toast.success("✅ Product added!");
+        toast.success("✅ Product added!");
         setForm({ narcotic: "no" });
         setFiles([]);
         await fetchNewCodes();
         setTimeout(() => formFieldsRef.current?.focusName(), 50);
       }
-
 
       if (onSubmitSuccess) onSubmitSuccess();
     } catch (error) {
@@ -497,7 +417,6 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     }
   };
 
-  // ===== Keyboard Shortcuts =====
   useEffect(() => {
     const handleShortcut = (e) => {
       if (e.altKey && (e.key.toLowerCase() === "s" || e.key.toLowerCase() === "n")) {
@@ -513,19 +432,6 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [navigate]);
 
-  // ===== Brand: async server-side search =====
-  const loadBrandOptions = async (inputValue) => {
-    try {
-      const res = await axios.get("/api/brands", {
-        params: { q_name: inputValue || "", per_page: 25 },
-      });
-      return asList(res.data).map((b) => ({ value: b.id, label: b.name }));
-    } catch {
-      return [];
-    }
-  };
-
-  // ===== Helper for react-select styles =====
   const getSmallSelectStyles = (isDarkMode = false) => ({
     control: (base) => ({
       ...base,
@@ -579,11 +485,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     }),
   });
 
-  // ===== Dynamic Button styles using theme colors =====
-  // Get button style from theme
   const buttonStyle = theme?.button_style || 'rounded';
-  
-  // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
       'rounded': 'rounded-lg',
@@ -591,7 +493,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
       'soft': 'rounded-xl',
     };
     const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
-    
+
     if (buttonStyle === 'outlined') {
       return {
         primary: {
@@ -611,8 +513,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
         },
       };
     }
-    
-    // Filled styles for rounded and soft
+
     return {
       primary: {
         className: radiusClass,
@@ -634,11 +535,9 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     };
   }, [buttonStyle, themeColors, isDark]);
 
-  // Destructure button classes for easier use
   const btnPrimary = getButtonClasses.primary;
   const btnGlass = getButtonClasses.glass;
 
-  // ===== Loading State =====
   if (!isLoaded) {
     return (
       <div className="p-3 md:p-4">
@@ -651,15 +550,13 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     );
   }
 
-  // ===== Add Mode: Full Width Card =====
   if (!isEdit) {
     return (
       <div className="p-3 md:p-4">
         <GlassCard>
-          {/* Modern Card Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
             <div className="flex items-center gap-3">
-              <div 
+              <div
                 className={`p-2 rounded-lg bg-gradient-to-br shadow-sm`}
                 style={{ background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}
               >
@@ -671,8 +568,8 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Link 
-                to="/products" 
+              <Link
+                to="/products"
                 className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg ${btnGlass.className}`}
                 style={btnGlass.style}
                 title="Back (Alt+C)"
@@ -688,7 +585,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                 style={{ ...btnPrimary.style, boxShadow: `0 4px 14px 0 ${themeColors.primary}40` }}
                 title="Save (Alt+S)"
               >
-              <PlusCircleIcon className="w-4 h-4" />
+                <PlusCircleIcon className="w-4 h-4" />
                 <span className="text-sm font-medium">Save Product</span>
               </button>
             </div>
@@ -700,11 +597,9 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
               form={form}
               files={files}
               batches={batches}
-              categories={categories}
               suppliers={suppliers}
               isEdit={isEdit}
               handleChange={handleChange}
-              loadBrandOptions={loadBrandOptions}
               getSmallSelectStyles={getSmallSelectStyles}
               isDark={isDark}
               onFilesChange={setFiles}
@@ -713,22 +608,18 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
               primaryTextColor={primaryTextColor}
             />
           </form>
-
         </GlassCard>
       </div>
     );
   }
 
-  // ===== Edit Mode: 2-Column Grid with Batches Panel =====
   return (
     <div className="p-3 md:p-4 space-y-3">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        {/* Left: Form */}
         <GlassCard className="lg:col-span-2">
-          {/* Modern Card Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
             <div className="flex items-center gap-3">
-              <div 
+              <div
                 className={`p-2 rounded-lg bg-gradient-to-br shadow-sm`}
                 style={{ background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}
               >
@@ -740,8 +631,8 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Link 
-                to="/products" 
+              <Link
+                to="/products"
                 className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg ${btnGlass.className}`}
                 style={btnGlass.style}
                 title="Back (Alt+C)"
@@ -757,7 +648,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                 style={{ ...btnPrimary.style, boxShadow: `0 4px 14px 0 ${themeColors.primary}40` }}
                 title="Save (Alt+S)"
               >
-              <PencilSquareIcon className="w-4 h-4" />
+                <PencilSquareIcon className="w-4 h-4" />
                 <span className="text-sm font-medium">Save Changes</span>
               </button>
             </div>
@@ -769,11 +660,9 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
               form={form}
               files={files}
               batches={batches}
-              categories={categories}
               suppliers={suppliers}
               isEdit={isEdit}
               handleChange={handleChange}
-              loadBrandOptions={loadBrandOptions}
               getSmallSelectStyles={getSmallSelectStyles}
               isDark={isDark}
               onFilesChange={setFiles}
@@ -782,10 +671,8 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
               primaryTextColor={primaryTextColor}
             />
           </form>
-
         </GlassCard>
 
-        {/* Right: Batches Panel */}
         <GlassCard className="lg:col-span-1">
           <div className="px-3 py-2 border-b border-gray-200/60 dark:border-gray-700/60">
             <div className="flex items-center justify-between">
@@ -806,7 +693,12 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                   </thead>
                   <tbody>
                     {batches.map((batch, i) => (
-                      <tr key={batch.id} className={`text-gray-900 dark:text-slate-200 ${i % 2 ? "bg-white/70 dark:bg-slate-700/70" : "bg-white/90 dark:bg-slate-600/90"}`}>
+                      <tr
+                        key={batch.id}
+                        className={`text-gray-900 dark:text-slate-200 ${
+                          i % 2 ? "bg-white/70 dark:bg-slate-700/70" : "bg-white/90 dark:bg-slate-600/90"
+                        }`}
+                      >
                         <td className="p-2 font-medium">{batch.batch_number}</td>
                         <td className="p-2 text-gray-600 dark:text-slate-400">{batch.expiry_date}</td>
                         <td className="p-2 text-right">{batch.quantity}</td>
