@@ -335,7 +335,7 @@ export default function SaleInvoicesIndex() {
     return () => ctrl.abort();
   }, [page, pageSize, permsLoading, can.view]);
 
-  // Alt+N -> create retail, Alt+W -> create wholesale
+  // Alt+N -> create retail, Alt+W  
   useEffect(() => {
     const onKeyDown = (e) => {
       if (!e.altKey) return;
@@ -349,13 +349,6 @@ export default function SaleInvoicesIndex() {
       if (key === "n") {
         // Alt+N -> retail sale
         navigate("/sale-invoices/create/retail");
-      } else if (key === "w") {
-        // Alt+W -> wholesale sale - only if wholesale is enabled
-        if (hasWholesale) {
-          navigate("/sale-invoices/create/wholesale");
-        } else {
-          toast.error("Wholesale sales are disabled. Please use Retail sales.");
-        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -552,21 +545,10 @@ export default function SaleInvoicesIndex() {
                 style={btnPrimary.style}
               >
                 <PlusCircleIcon className="w-4 h-4" />
-                Retail Sale
+                Create Sale Invoice
               </Link>
-              
-              {/* Wholesale Sale Button - Only show if wholesale is enabled */}
-              {hasWholesale && (
-                <Link
-                  to="/sale-invoices/create/wholesale"
-                  title="Add Wholesale Sale Invoice"
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${btnSecondary.className}`}
-                  style={btnSecondary.style}
-                >
-                  <PlusCircleIcon className="w-4 h-4" />
-                  Wholesale Sale
-                </Link>
-              )}
+            
+             
             </Guard>
           </div>
         </div>
