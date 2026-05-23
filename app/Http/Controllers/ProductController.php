@@ -15,9 +15,20 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ProductController extends Controller
 {
+    private function cleanupStaleBrandCategoryIds(): void
+    {
+        // Prevent stale relations when brands/categories were deleted.
+        // If the referenced record doesn't exist, null out the FK in products.
+        \Illuminate\Support\Facades\DB::statement('UPDATE products SET brand_id = NULL WHERE brand_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM brands b WHERE b.id = products.brand_id)');
+
+        \Illuminate\Support\Facades\DB::statement('UPDATE products SET category_id = NULL WHERE category_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM categories c WHERE c.id = products.category_id)');
+    }
+
     public function search(Request $req)
     {
+        $this->cleanupStaleBrandCategoryIds();
         $this->authorize('viewAny', Product::class);
+
 
         $q     = trim($req->input('q', ''));
         $ids   = $req->input('ids'); // can be array or comma-separated
@@ -108,7 +119,9 @@ class ProductController extends Controller
 
     public function index(Request $req)
     {
+        $this->cleanupStaleBrandCategoryIds();
         $this->authorize('viewAny', Product::class);
+
         $perPage = max(1, min((int)$req->input('per_page', 25), 100));
 
         $qName     = trim((string)$req->input('q_name', ''));
@@ -167,11 +180,12 @@ class ProductController extends Controller
             'margin' => 'nullable|numeric',
             'narcotic' => ['required', Rule::in(['yes', 'no'])],
             'max_discount' => 'nullable|integer',
-            'category_id' => 'required|exists:categories,id',
-            'brand_id' => 'required|exists:brands,id',
+            'category_id' => 'nullable|exists:categories,id',
+            'brand_id' => 'nullable|exists:brands,id',
             'supplier_id' => 'required|exists:suppliers,id',
             'rack' => 'nullable|string',
             'barcode' => 'required|unique:products,barcode',
+
         ]);
 
         if ($request->hasFile('image')) {
@@ -186,7 +200,9 @@ class ProductController extends Controller
 
     public function show($id)
     {
+        $this->cleanupStaleBrandCategoryIds();
         $product = Product::with(['brand','category','supplier'])->findOrFail($id);
+
         $this->authorize('view', $product);
         return response()->json($product);
     }
@@ -214,9 +230,10 @@ class ProductController extends Controller
             'margin' => 'nullable|numeric',
             'narcotic' => ['required', Rule::in(['yes', 'no'])],
             'max_discount' => 'nullable|integer',
-            'category_id' => 'required|exists:categories,id',
-            'brand_id' => 'required|exists:brands,id',
+            'category_id' => 'nullable|exists:categories,id',
+            'brand_id' => 'nullable|exists:brands,id',
             'supplier_id' => 'required|exists:suppliers,id',
+
             'rack' => 'nullable|string',
             'barcode' => ['required', Rule::unique('products', 'barcode')->ignore($product->id)],
         ]);

@@ -607,12 +607,7 @@ useEffect(() => {
               onChange={setQName} 
               placeholder="Search products..." 
             />
-            <TextSearch 
-              value={qBrand} 
-              onChange={setQBrand} 
-              placeholder="Filter by brand..." 
-              icon={<TagIcon className="w-4 h-4 text-gray-400" />} 
-            />
+
             <TextSearch 
               value={qSupplier} 
               onChange={setQSupplier} 
@@ -743,8 +738,6 @@ useEffect(() => {
                   />
                 </th>
                 <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Name</th>
-                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Category</th>
-                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Brand</th>
                 <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Supplier</th>
                 {hasActions && (
                   <th className="px-2 py-2 font-semibold text-center text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-32">Actions</th>
@@ -840,29 +833,6 @@ useEffect(() => {
                           {qty}
                         </span>
                       </div>
-                    </td>
-
-                    <td className="px-2 py-2">
-                      <span 
-                        className="px-2 py-0.5 rounded text-xs"
-                        style={{ 
-                          backgroundColor: '#dcfce7',
-                          color: '#16a34a'
-                        }}
-                      >
-                        {p.category?.name || "—"}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2">
-                      <span 
-                        className="px-2 py-0.5 rounded text-xs"
-                        style={{ 
-                          backgroundColor: '#fef3c7',
-                          color: '#d97706'
-                        }}
-                      >
-                        {p.brand?.name || "—"}
-                      </span>
                     </td>
                     <td className="px-2 py-2">
                       <span 
