@@ -409,7 +409,6 @@ const ProductSearchInput = forwardRef(
                               <th className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Pack Sale</th>
                               <th className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Unit Sale Price</th>
                               <th className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Supplier</th>
-                              <th className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Brand</th>
                               <th className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Margin %</th>
                               <th className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Avg. Price</th>
                             </tr>
@@ -434,7 +433,6 @@ const ProductSearchInput = forwardRef(
                                 <td className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{p?.pack_sale_price}</td>
                                 <td className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{p?.unit_sale_price}</td>
                                 <td className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{getSupplierName(p)}</td>
-                                <td className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{getBrandName(p)}</td>
                                 <td className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{getMargin(p)}</td>
                                 <td className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{getAvgPrice(p)}</td>
                               </tr>
