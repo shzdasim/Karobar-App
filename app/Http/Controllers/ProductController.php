@@ -19,9 +19,23 @@ class ProductController extends Controller
     {
         // Prevent stale relations when brands/categories were deleted.
         // If the referenced record doesn't exist, null out the FK in products.
-        \Illuminate\Support\Facades\DB::statement('UPDATE products SET brand_id = NULL WHERE brand_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM brands b WHERE b.id = products.brand_id)');
+        // Only run these maintenance queries if those columns actually exist.
+        $hasBrandIdCol = \Illuminate\Support\Facades\Schema::hasColumn('products', 'brand_id');
+        $hasCategoryIdCol = \Illuminate\Support\Facades\Schema::hasColumn('products', 'category_id');
 
-        \Illuminate\Support\Facades\DB::statement('UPDATE products SET category_id = NULL WHERE category_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM categories c WHERE c.id = products.category_id)');
+
+
+        if ($hasBrandIdCol) {
+            \Illuminate\Support\Facades\DB::connection()->statement(
+                'UPDATE products SET brand_id = NULL WHERE brand_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM brands b WHERE b.id = products.brand_id)'
+            );
+        }
+
+        if ($hasCategoryIdCol) {
+            \Illuminate\Support\Facades\DB::connection()->statement(
+                'UPDATE products SET category_id = NULL WHERE category_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM categories c WHERE c.id = products.category_id)'
+            );
+        }
     }
 
     public function search(Request $req)

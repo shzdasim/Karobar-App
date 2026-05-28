@@ -362,7 +362,6 @@ export default function ProductsIndex() {
           page: pageArg,
           per_page: pageSizeArg,
           q_name: qNameArg.trim(),
-          q_brand: qBrandArg.trim(),
           q_supplier: qSupplierArg.trim(),
         },
         signal,
@@ -501,7 +500,7 @@ useEffect(() => {
 
   // permissions-driven table layout
   const hasActions = can.update || can.delete;
-  const visibleColumns = 1 /*select*/ + 6 /*code,name,image,category,brand,supplier*/ + (hasActions ? 1 : 0);
+  const visibleColumns = 1 /*select*/ + 6 /*code,name,image,supplier*/ + (hasActions ? 1 : 0);
 
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view products.</div>;
