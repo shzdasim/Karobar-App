@@ -30,17 +30,12 @@ return new class extends Migration
             $table->enum('narcotic', ['yes', 'no'])->default('no');
 
             $table->bigInteger('max_discount')->nullable();
-            $table->unsignedBigInteger('category_id');
-            $table->unsignedBigInteger('brand_id');
             $table->unsignedBigInteger('supplier_id')->nullable();
 
             $table->string('rack')->nullable();
             $table->string('barcode')->unique();
 
             $table->timestamps();
-
-            $table->foreign('brand_id')->references('id')->on('brands')->onDelete('cascade');
-            $table->foreign('category_id')->references('id')->on('categories')->onDelete('cascade');
             $table->foreign('supplier_id')->references('id')->on('suppliers')->onDelete('set null');
         });
     }
