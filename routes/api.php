@@ -33,6 +33,8 @@ use App\Http\Controllers\SupplierLedgerController;
 use App\Http\Controllers\ThemeSettingController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserPreferenceController;
+use App\Http\Controllers\BankController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -188,6 +190,17 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/reports/near-expiry-product',     [ReportsController::class, 'nearExpiryProduct']);
     Route::get('/reports/near-expiry-product/pdf', [ReportsController::class, 'nearExpiryProductPdf']);
     Route::put('/sale-invoices/{saleInvoice}/meta',[SaleInvoiceController::class, 'updateMeta']);
+
+
+    // Banking
+    Route::get('/banks',                        [BankController::class, 'index']);
+    Route::post('/banks',                       [BankController::class, 'store']);
+    Route::get('/banks/{bank}',                [BankController::class, 'show']);
+    Route::put('/banks/{bank}',                [BankController::class, 'update']);
+    Route::delete('/banks/{bank}',             [BankController::class, 'destroy']);
+
+    // Bank Ledger
+    Route::get('/bank-ledger',                [\App\Http\Controllers\BankLedgerController::class, 'index']);
 
 
     // Settings

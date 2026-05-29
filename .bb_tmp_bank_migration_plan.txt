@@ -1,0 +1,5 @@
+Plan for migrations:
+- banks: bank_name, account_number, image_path (nullable), balance (decimal 15,2 default 0)
+- bank_ledgers: bank_id (FK banks), entry_date, entry_type, ref_type/ref_id, direction, amount, description
+  plus indexes on bank_id and entry_date
+

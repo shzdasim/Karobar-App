@@ -80,6 +80,8 @@ export default function ClassicSidebar() {
     { name: "Purchase Orders", path: "/purchase-orders", icon: <ClipboardDocumentCheckIcon className="w-5 h-5" />, perm: "purchase-order.view", parent: "transactions" },
     { name: "Stock Adjustments", path: "/stock-adjustments", icon: <ArrowsRightLeftIcon className="w-5 h-5" />, perm: "stock-adjustment.view", parent: "transactions" },
     { type: "section", name: "Finance", key: "finance", icon: <CurrencyDollarIcon className="w-5 h-5" /> },
+    { name: "Banks", path: "/banks", icon: <BanknotesIcon className="w-5 h-5" />, perm: "bank.view", parent: "finance" },
+    { name: "Bank Ledger", path: "/bank-ledger", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, perm: "bank.ledger.view", parent: "finance" },
     { name: "Supplier Ledger", path: "/supplier-ledger", icon: <BuildingStorefrontIcon className="w-5 h-5" />, perm: "ledger.supplier.view", parent: "finance" },
     { name: "Customer Ledger", path: "/customer-ledger", icon: <UsersIcon className="w-5 h-5" />, perm: "ledger.customer.view", parent: "finance" },
     { type: "section", name: "Reports", key: "reports", icon: <ChartBarIcon className="w-5 h-5" /> },

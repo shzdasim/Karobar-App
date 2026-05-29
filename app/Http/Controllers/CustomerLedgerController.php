@@ -223,7 +223,8 @@ class CustomerLedgerController extends Controller
             'credited_amount' => ['nullable','numeric'],
             'payment_ref'     => ['nullable','string','max:200'],
             'sale_invoice_id' => ['nullable','integer','exists:sale_invoices,id'],
-            'description'     => ['nullable','string','max:500'],
+'description'     => ['nullable','string','max:500'],
+            'bank_id'         => ['nullable','integer','exists:banks,id'],
         ]);
 
         $type = $data['entry_type'] ?? (!empty($data['credited_amount']) ? 'payment' : 'manual');
@@ -239,10 +240,40 @@ class CustomerLedgerController extends Controller
         $row->balance_remaining = max($row->invoice_total - $row->total_received, 0);
         $row->credited_amount   = (float)($data['credited_amount'] ?? 0);
         $row->payment_ref       = $data['payment_ref'] ?? null;
+        $row->bank_id           = $data['bank_id'] ?? null;
         $row->sale_invoice_id   = $data['sale_invoice_id'] ?? null;
         $row->description       = $data['description'] ?? null;
         $row->created_by        = Auth::id();
         $row->save();
+
+                // Create corresponding bank movement when a bank is selected and this row is a payment
+        // (manual rows behave like invoice rows in your current ledger math, so we only post bank movements for payment rows)
+        if (($row->entry_type === 'payment') && $row->bank_id) {
+            $amount = (float)($row->credited_amount ?? 0);
+
+            if ($amount > 0) {
+                $direction = 'credit'; // money received into bank
+
+                \App\Models\BankLedger::create([
+                    'bank_id'     => (int)$row->bank_id,
+                    'entry_date'  => $row->entry_date,
+                    'entry_type'  => 'customer_payment',
+                    // Tie bank movement to the customer_ledger row so bulk edits/rebuild can reconcile safely
+                    'ref_type'    => 'customer_ledger',
+                    'ref_id'      => $row->id,
+                    'direction'   => $direction,
+                    'amount'      => $amount,
+                    'description' => $row->description,
+                ]);
+
+                // update bank balance
+                $bank = \App\Models\Bank::find($row->bank_id);
+                if ($bank) {
+                    $bank->balance = (float)$bank->balance + $amount;
+                    $bank->save();
+                }
+            }
+        }
 
         return response()->json(['status' => 'ok', 'row' => $row], 201);
     }
@@ -262,9 +293,11 @@ class CustomerLedgerController extends Controller
             'rows.*.invoice_total'   => ['nullable','numeric'],
             'rows.*.total_received'  => ['nullable','numeric'],
             'rows.*.credited_amount' => ['nullable','numeric'],
-            'rows.*.payment_ref'     => ['nullable','string','max:200'],
+'rows.*.payment_ref'     => ['nullable','string','max:200'],
             'rows.*.description'     => ['nullable','string','max:500'],
+            'rows.*.bank_id'         => ['nullable','integer','exists:banks,id'],
         ]);
+
 
         DB::transaction(function () use ($payload) {
             foreach ($payload['rows'] as $r) {
@@ -287,10 +320,67 @@ class CustomerLedgerController extends Controller
                 if ($row->entry_type === 'payment' || $row->is_manual) {
                     $row->credited_amount = (float)($r['credited_amount'] ?? 0);
                     $row->payment_ref     = $r['payment_ref'] ?? null;
+                    $row->bank_id         = $r['bank_id'] ?? null;
+                }
+
+                // ---- Reconcile BankLedger for edited payment rows (bank_id, date, amount, description) ----
+                // We only post bank movements for entry_type = payment.
+                if ($row->entry_type === 'payment') {
+                    $old = CustomerLedger::query()->select(['bank_id','entry_date','credited_amount','description'])
+                        ->where('id', $row->id)
+                        ->first();
+
+                    $oldBankId = $old?->bank_id;
+                    $newBankId = $r['bank_id'] ?? null;
+
+                    $oldAmount = (float)($old?->credited_amount ?? 0);
+                    $newAmount = (float)($r['credited_amount'] ?? 0);
+
+                    $newEntryDate = $r['entry_date'];
+                    $newDescription = $r['description'] ?? null;
+
+
+                    // Delete old bank movement (if any) for this customer_ledger ref
+                    if ($oldBankId) {
+                        \App\Models\BankLedger::query()
+                            ->where('ref_type', 'customer_ledger')
+                            ->where('ref_id', $row->id)
+                            ->where('bank_id', (int)$oldBankId)
+                            ->delete();
+
+                        $oldBank = \App\Models\Bank::find($oldBankId);
+                        if ($oldBank && $oldAmount > 0) {
+                            $oldBank->balance = (float)$oldBank->balance - $oldAmount;
+                            $oldBank->save();
+                        }
+                    }
+
+                    // Create new bank movement (if new bank + amount present)
+                    if ($newBankId && $newAmount > 0) {
+                        \App\Models\BankLedger::create([
+                            'bank_id'     => (int)$newBankId,
+                            'entry_date'  => $newEntryDate,
+                            'entry_type'  => 'customer_payment',
+                            'ref_type'    => 'customer_ledger',
+                            'ref_id'      => $row->id,
+                            'direction'   => 'credit',
+                            'amount'      => $newAmount,
+                            'description' => $newDescription,
+                        ]);
+
+                        $newBank = \App\Models\Bank::find($newBankId);
+                        if ($newBank) {
+                            $newBank->balance = (float)$newBank->balance + $newAmount;
+                            $newBank->save();
+                        }
+                    }
                 }
 
                 $row->description = $r['description'] ?? null;
                 $row->save();
+
+                // Note: bank ledger reconciliation already handled above for payment rows.
+
             }
         });
 
@@ -351,6 +441,8 @@ class CustomerLedgerController extends Controller
                 // Use 'date' column from sale_invoices (not invoice_date which doesn't exist)
                 $entryDate = $inv->date ?? now()->toDateString();
 
+                // Rebuild only affects invoice rows.
+                // Payment/manual rows (which carry bank_id + bank_ledgers refs) must remain untouched.
                 CustomerLedger::updateOrCreate(
                     [
                         'customer_id'     => $customerId,
@@ -366,6 +458,7 @@ class CustomerLedgerController extends Controller
                         'balance_remaining' => max($invTotal - $recv, 0),
                         'credited_amount'   => 0,
                         'payment_ref'       => null,
+                        'bank_id'           => null,
                         'description'       => $this->str($inv->invoice_no ? ('Invoice #'.$inv->invoice_no) : null),
                     ]
                 );

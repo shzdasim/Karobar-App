@@ -67,6 +67,7 @@ class SupplierLedgerController extends Controller
             // payment
             'debited_amount'     => ['nullable','numeric','min:0'],
             'payment_ref'        => ['nullable','string','max:191'],
+            'bank_id'            => ['nullable','integer','exists:banks,id'],
 
             // tie to invoice if needed
             'purchase_invoice_id'=> ['nullable','integer','exists:purchase_invoices,id'],
@@ -92,10 +93,38 @@ class SupplierLedgerController extends Controller
             'total_paid'          => $totalPaid,
             'debited_amount'      => (float)($validated['debited_amount'] ?? 0),
             'payment_ref'         => $validated['payment_ref'] ?? null,
+            'bank_id'             => $validated['bank_id'] ?? null,
             'credit_remaining'    => $credit,
             'is_manual'           => $entryType !== 'invoice',
             'created_by'          => optional($request->user())->id,
         ]);
+
+        // Create corresponding bank movement for supplier payments
+        if ($row->entry_type === 'payment' && $row->bank_id) {
+            $amount = (float)($row->debited_amount ?? 0);
+            if ($amount > 0) {
+                $direction = 'debit'; // money leaving bank
+
+                \App\Models\BankLedger::create([
+                    'bank_id'     => (int)$row->bank_id,
+                    'entry_date'  => $row->entry_date,
+                    'entry_type'  => 'supplier_payment',
+                    // Tie bank movement to the supplier_ledger row so bulk edits/rebuild can reconcile safely
+                    'ref_type'    => 'supplier_ledger',
+                    'ref_id'      => $row->id,
+
+                    'direction'   => $direction,
+                    'amount'      => $amount,
+                    'description' => $row->description,
+                ]);
+
+                $bank = \App\Models\Bank::find($row->bank_id);
+                if ($bank) {
+                    $bank->balance = (float)$bank->balance - $amount;
+                    $bank->save();
+                }
+            }
+        }
 
         return response()->json(['data' => $row], 201);
     }
@@ -117,24 +146,76 @@ class SupplierLedgerController extends Controller
             'rows.*.total_paid'           => ['required','numeric','min:0'],
             'rows.*.debited_amount'       => ['nullable','numeric','min:0'],
             'rows.*.payment_ref'          => ['nullable','string','max:191'],
+            'rows.*.bank_id'              => ['nullable','integer','exists:banks,id'],
         ]);
 
         DB::transaction(function () use ($validated) {
             foreach ($validated['rows'] as $r) {
+                $row = SupplierLedger::findOrFail($r['id']);
+
                 $credit = round(($r['invoice_total'] ?? 0) - ($r['total_paid'] ?? 0), 2);
                 if ($credit < 0) $credit = 0;
 
-                SupplierLedger::where('id', $r['id'])->update([
-                    'entry_date'       => $r['entry_date'],
-                    'description'      => $r['description'] ?? null,
-                    'posted_number'    => $r['posted_number'] ?? null,
-                    'invoice_number'   => $r['invoice_number'] ?? null,
-                    'invoice_total'    => $r['invoice_total'] ?? 0,
-                    'total_paid'       => $r['total_paid'] ?? 0,
-                    'debited_amount'   => (float)($r['debited_amount'] ?? 0),
-                    'payment_ref'      => $r['payment_ref'] ?? null,
-                    'credit_remaining' => $credit,
-                ]);
+                // Capture old payment state for bank reconciliation
+                $oldBankId = $row->bank_id;
+                $oldAmount = (float)($row->debited_amount ?? 0);
+
+                // Update ledger row
+                $row->entry_date       = $r['entry_date'];
+                $row->description      = $r['description'] ?? null;
+                $row->posted_number    = $r['posted_number'] ?? null;
+                $row->invoice_number   = $r['invoice_number'] ?? null;
+                $row->invoice_total    = $r['invoice_total'] ?? 0;
+                $row->total_paid       = $r['total_paid'] ?? 0;
+                $row->debited_amount   = (float)($r['debited_amount'] ?? 0);
+                $row->payment_ref      = $r['payment_ref'] ?? null;
+                $row->bank_id           = $r['bank_id'] ?? null;
+                $row->credit_remaining = $credit;
+
+                $row->save();
+
+                // Reconcile BankLedger for edited supplier payment rows
+                if ($row->entry_type === 'payment') {
+                    $newBankId = $row->bank_id;
+                    $newAmount = (float)($row->debited_amount ?? 0);
+                    $newEntryDate = $row->entry_date;
+                    $newDescription = $row->description;
+
+                    // Remove old bank movement + reverse old balance
+                    if ($oldBankId && $oldAmount > 0) {
+                        \App\Models\BankLedger::query()
+                            ->where('ref_type', 'supplier_ledger')
+                            ->where('ref_id', $row->id)
+                            ->where('bank_id', (int)$oldBankId)
+                            ->delete();
+
+                        $oldBank = \App\Models\Bank::find($oldBankId);
+                        if ($oldBank) {
+                            $oldBank->balance = (float)$oldBank->balance + $oldAmount; // undo debit
+                            $oldBank->save();
+                        }
+                    }
+
+                    // Create new bank movement + apply balance
+                    if ($newBankId && $newAmount > 0) {
+                        \App\Models\BankLedger::create([
+                            'bank_id'     => (int)$newBankId,
+                            'entry_date'  => $newEntryDate,
+                            'entry_type'  => 'supplier_payment',
+                            'ref_type'    => 'supplier_ledger',
+                            'ref_id'      => $row->id,
+                            'direction'   => 'debit',
+                            'amount'      => $newAmount,
+                            'description' => $newDescription,
+                        ]);
+
+                        $newBank = \App\Models\Bank::find($newBankId);
+                        if ($newBank) {
+                            $newBank->balance = (float)$newBank->balance - $newAmount; // debit
+                            $newBank->save();
+                        }
+                    }
+                }
             }
         });
 
@@ -173,13 +254,15 @@ class SupplierLedgerController extends Controller
                 $credit = round(($inv->total_amount ?? 0) - ($inv->total_paid ?? 0), 2);
                 if ($credit < 0) $credit = 0;
 
+                // Rebuild only affects invoice rows.
+                // Payment/manual rows (which carry bank_id + bank_ledgers refs) must remain untouched.
                 SupplierLedger::updateOrCreate(
                     [
                         'supplier_id'         => $inv->supplier_id,
                         'purchase_invoice_id' => $inv->id,
+                        'entry_type'          => 'invoice',
                     ],
                     [
-                        'entry_type'       => 'invoice',
                         'entry_date'       => $inv->invoice_date ?? now()->toDateString(),
                         'description'      => 'Invoice #'.$inv->invoice_number,
                         'posted_number'    => $inv->posted_number,
@@ -189,6 +272,8 @@ class SupplierLedgerController extends Controller
                         'debited_amount'   => 0, // not a payment row
                         'credit_remaining' => $credit,
                         'is_manual'        => false,
+                        'bank_id'          => null,
+                        'payment_ref'      => null,
                     ]
                 );
             }

@@ -49,6 +49,12 @@ import CreateStockAdjustment from "../pages/stock-adjustments/Create.jsx";
 import EditStockAdjustment from "../pages/stock-adjustments/Edit.jsx";
 import SupplierLedgerPage from "../pages/Ledger/SupplierLedgerPage.jsx";
 import CustomerLedgerPage from "../pages/Ledger/CustomerLedgerPage.jsx";
+
+import BanksIndex from "../pages/Banks/index.jsx";
+import BanksCreate from "../pages/Banks/Create.jsx";
+import BanksEdit from "../pages/Banks/Edit.jsx";
+import BankLedgerPage from "../pages/BankLedger/index.jsx";
+
 import UsersIndex from "../pages/users/index.jsx";
 import CreateUser from "../pages/users/Create.jsx";
 import EditUser from "../pages/users/Edit.jsx";
@@ -60,6 +66,7 @@ import SaleSystemGuard from "../components/SaleSystemGuard.jsx";
 
 
 export default function AppRoutes() {
+
   return (
       <Routes>
         {/* Public - Login page (redirects to dashboard if already authenticated) */}
@@ -508,6 +515,48 @@ export default function AppRoutes() {
         </ProtectedRoute>
       }
       />
+      {/* Banking */}
+      <Route
+        path="/banks"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <BanksIndex />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/banks/create"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <BanksCreate />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/banks/:id/edit"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <BanksEdit />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/bank-ledger"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <BankLedgerPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
       {/* Customer Ledger */}
       <Route
       path="/customer-ledger"

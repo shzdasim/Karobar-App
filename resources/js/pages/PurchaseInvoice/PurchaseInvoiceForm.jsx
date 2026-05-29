@@ -8,6 +8,7 @@ import { recalcItem, recalcFooter } from "../../Formula/PurchaseInvoice.js";
 import { useTheme } from "@/context/ThemeContext";
 
 import ProductFormModal from "../../components/ProductFormModal.jsx";
+import BankSearch from "../../components/BankSearch.jsx";
 
 // Helper to determine text color based on background brightness
 // Returns dark text for light backgrounds, light text for dark backgrounds
@@ -63,6 +64,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
   const [form, setForm] = useState({
     invoice_type: "debit", // "debit" = pay now, "credit" = pay later
     supplier_id: "",
+    bank_id: "", // selected bank for debit invoices
     posted_number: "", // (auto on save, stays empty until saved)
     posted_date: new Date().toISOString().split("T")[0],
     remarks: "",
@@ -124,6 +126,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
 
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
+  const [banks, setBanks] = useState([]);
+
   const [currentField, setCurrentField] = useState("supplier");
   const [currentRowIndex, setCurrentRowIndex] = useState(0);
 
@@ -146,11 +150,21 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
 
 
   useEffect(() => {
-    fetchSuppliers();
-    fetchProducts();
-    if (invoiceId) {
-      fetchInvoice();
-    }
+    const init = async () => {
+      fetchSuppliers();
+      fetchProducts();
+
+      // Banks must be loaded before we set form in edit mode so react-select can
+      // immediately resolve the selected value.
+      await fetchBanks();
+
+      if (invoiceId) {
+        await fetchInvoice();
+      }
+    };
+
+    init();
+
     // IMPORTANT: we NO LONGER prefetch/assign a new posted_number here.
     // It is generated server-side on SAVE to avoid collisions when multiple forms are open.
   }, [invoiceId]);
@@ -181,6 +195,16 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
     setSuppliers(res.data);
   };
 
+  const fetchBanks = async () => {
+    try {
+      const { data } = await axios.get("/api/banks");
+      setBanks(Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []));
+    } catch (e) {
+      console.error(e);
+      setBanks([]);
+    }
+  };
+
   const fetchProducts = async (q = "") => {
     const { data } = await axios.get("/api/products/search", { params: { q, limit: 30 } });
     setProducts(data);
@@ -204,15 +228,49 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
   const fetchInvoice = async () => {
     const res = await axios.get(`/api/purchase-invoices/${invoiceId}`);
     let next = recalcFooter(res.data, "init");
-    // 🔗 Keep total_paid linked to total_amount on edit load
-    next.total_paid = next.total_amount ?? "";
+
+    // keep totals from server when editing
+    next.total_paid = res.data?.total_paid ?? res.data?.total_amount ?? "";
+
+    // DEBUG (bank select edit-mode): remove after confirming
+    // console.log('EDIT fetchInvoice bank_id from API:', res.data?.bank_id);
+
+
+    // Normalize bank_id to string so <select value={...}> matches <option value={b.id}>
+    // (b.id is a number, so we store bank_id as a string)
+    const apiBankId = res.data?.bank_id;
+    next.bank_id = apiBankId === null || apiBankId === undefined || apiBankId === ""
+      ? ""
+      : String(apiBankId);
+
+    // If bank_id is missing from the edit payload but there is exactly one bank in the system,
+    // auto-select it so edit mode always shows the expected bank.
+    // Ensure bank_id stays selected in edit mode.
+    // If API didn't send it (or it's null), we fallback only when the backend has not provided a value.
+    if (next.bank_id === "" || next.bank_id === null || next.bank_id === undefined) {
+      if (Array.isArray(banks) && banks.length === 1 && banks[0]?.id != null) {
+        next.bank_id = String(banks[0].id);
+      }
+    }
+
+    // If API provided bank_id but we haven't fetched banks yet, keep it for the UI.
+    // React-select will show it once `banks` finishes loading.
+    // (No action needed here besides not clearing it.)
+
     setForm(next);
     setPaidTouched(false);
+
     await ensureProductsForItems(next?.items || []);
   };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+
+    // integer fields (react-select / number inputs etc.)
+    if (name === "bank_id") {
+      setForm((prev) => ({ ...prev, bank_id: value }));
+      return;
+    }
 
     // Fields that should accept decimals as the user types
     const decimalFields = new Set([
@@ -617,6 +675,14 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
       return toast.error("Please select a supplier for credit purchase");
     }
 
+    const totalPaidNum = Number(form.total_paid || 0);
+
+    // Validate bank for debit invoices where payment is happening
+    if (form.invoice_type === "debit" && totalPaidNum > 0 && !form.bank_id) {
+      return toast.error("Please select bank to pay the supplier");
+    }
+
+
     // 0) Block if any selected product has margin <= 0 (or not a number)
     const badItem = form.items.find((item) => {
       if (!item.product_id) return false;
@@ -935,33 +1001,63 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
             Purchase Invoice (Use Enter to navigate, Alt+S to save)
           </h2>
           
-          {/* Invoice Type Radio Buttons */}
-          <div className="flex items-center gap-3 bg-gray-50 dark:bg-slate-700/50 px-3 py-1.5 rounded border border-gray-200 dark:border-slate-600">
-            <label className="flex items-center gap-1 cursor-pointer">
-              <input
-                type="radio"
-                name="invoice_type"
-                value="debit"
-                checked={form.invoice_type === "debit"}
-                onChange={() => handleInvoiceTypeChange("debit")}
-                className="cursor-pointer"
+          <div className="flex items-center gap-3">
+            {/* Invoice Type Radio Buttons */}
+            <div className="flex items-center gap-3 bg-gray-50 dark:bg-slate-700/50 px-3 py-1.5 rounded border border-gray-200 dark:border-slate-600">
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="radio"
+                  name="invoice_type"
+                  value="debit"
+                  checked={form.invoice_type === "debit"}
+                  onChange={() => handleInvoiceTypeChange("debit")}
+                  className="cursor-pointer"
+                />
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Debit</span>
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="radio"
+                  name="invoice_type"
+                  value="credit"
+                  checked={form.invoice_type === "credit"}
+                  onChange={() => handleInvoiceTypeChange("credit")}
+                  className="cursor-pointer"
+                />
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Credit</span>
+              </label>
+            </div>
+
+            {/* Bank select (Debit only) */}
+            <div className="min-w-[260px]">
+              <Select
+                name="bank_id"
+                isSearchable
+                isDisabled={form.invoice_type !== "debit"}
+                options={banks.map((b) => ({
+                  value: String(b.id),
+                  label: `${b.bank_name} (${b.account_number})`,
+                }))}
+                value={
+                  banks
+                    .map((b) => ({
+                      value: String(b.id),
+                      label: `${b.bank_name} (${b.account_number})`,
+                    }))
+                    .find((opt) => opt.value === String(form.bank_id ?? "")) || null
+                }
+                onChange={(opt) => {
+                  setForm((prev) => ({ ...prev, bank_id: opt?.value ?? "" }));
+                }}
+                className="text-xs"
+                styles={getSelectStyles(isDark)}
+                menuPortalTarget={typeof document !== "undefined" ? document.body : null}
               />
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Debit</span>
-            </label>
-            <label className="flex items-center gap-1 cursor-pointer">
-              <input
-                type="radio"
-                name="invoice_type"
-                value="credit"
-                checked={form.invoice_type === "credit"}
-                onChange={() => handleInvoiceTypeChange("credit")}
-                className="cursor-pointer"
-              />
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Credit</span>
-            </label>
+            </div>
           </div>
           
           {/* Add Product Button */}
+
           <button
             type="button"
             onClick={() => setShowProductModal(true)}
@@ -1546,6 +1642,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                   {...antiFill}
                 />
               </td>
+            
+
               <td className="border p-1 w-1/8 bg-gray-50 dark:bg-slate-700/50">
                 <label className="block text-[10px] text-gray-600 dark:text-gray-400">Total Paid</label>
                 <div className="flex items-center gap-1">
@@ -1553,6 +1651,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                     type="text"
                     name="total_paid"
                     value={form.total_paid ?? ""}
+                    disabled={form.invoice_type !== "credit"}
+
                     onChange={(e) => {
                       const v = sanitizeNumberInput(e.target.value, true);
                       setPaidTouched(true);
@@ -1568,12 +1668,13 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                         return { ...prev, total_paid: normalized };
                       });
                     }}
-                    className="border rounded w-full p-1 h-7 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    className={`border rounded w-full p-1 h-7 text-xs ${form.invoice_type !== "credit" ? "bg-gray-100 dark:bg-slate-600 text-gray-600 dark:text-gray-300 cursor-not-allowed" : "bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"}`}
                     {...antiFill}
                   />
                   <button
                     type="button"
                     title="Relink paid to total"
+                    disabled={form.invoice_type !== "credit"}
                     onClick={() => {
                       setPaidTouched(false);
                       setForm((prev) => ({ ...prev, total_paid: prev.total_amount ?? "" }));
@@ -1583,13 +1684,16 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                       background: isDark ? 'rgba(71, 85, 105, 0.6)' : 'rgba(255, 255, 255, 0.8)',
                       backdropFilter: 'blur(4px)',
                       border: '1px solid rgba(255, 255, 255, 0.2)',
-                      color: isDark ? '#94a3b8' : '#64748b'
+                      color: isDark ? '#94a3b8' : '#64748b',
+                      opacity: form.invoice_type !== "credit" ? 0.5 : 1,
+                      cursor: form.invoice_type !== "credit" ? "not-allowed" : "pointer",
                     }}
                   >
                     🔗
                   </button>
                 </div>
               </td>
+
               <td className="border p-1 w-1/8 bg-gray-50 dark:bg-slate-700/50">
                 <label className="block text-[10px] text-gray-600 dark:text-gray-400">Remaining</label>
                 <input
@@ -1601,6 +1705,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
                   {...antiFill}
                 />
               </td>
+
               <td className="border p-1 w-1/8 text-center align-middle bg-gray-50 dark:bg-slate-700/50">
                 <button
                   ref={saveButtonRef}

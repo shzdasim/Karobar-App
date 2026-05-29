@@ -6,6 +6,8 @@ use App\Models\Batch;
 use App\Models\Product;
 use App\Models\PurchaseInvoice;
 use App\Models\SupplierLedger;
+use App\Models\BankLedger;
+use App\Models\Bank;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -75,10 +77,10 @@ class PurchaseInvoiceController extends Controller
     public function store(Request $request)
     {
         $this->authorize('create', PurchaseInvoice::class);
+
         $data = $request->validate([
             'supplier_id'          => 'required|exists:suppliers,id',
             'invoice_type'         => 'nullable|string|in:credit,debit,default:debit',
-            // 'posted_number'      => now generated server-side
             'posted_date'          => 'required|date',
             'remarks'              => 'nullable|string',
             'invoice_number'       => 'required|string|unique:purchase_invoices,invoice_number',
@@ -89,6 +91,9 @@ class PurchaseInvoiceController extends Controller
             'discount_amount'      => 'nullable|numeric',
             'total_amount'         => 'required|numeric|min:0',
             'total_paid'           => 'nullable|numeric|min:0',
+
+            // bank used only for debit payments
+            'bank_id'              => 'nullable|integer|exists:banks,id',
 
             'items'                                => 'required|array',
             'items.*.product_id'                   => 'required|exists:products,id',
@@ -117,10 +122,15 @@ class PurchaseInvoiceController extends Controller
             $data['total_paid'] = $data['total_amount'] ?? 0;
         }
 
+        $invoiceType = $data['invoice_type'] ?? 'debit';
+        $totalPaid = (float) ($data['total_paid'] ?? 0);
+
+        if ($invoiceType === 'debit' && $totalPaid > 0 && empty($data['bank_id'])) {
+            return response()->json(['message' => 'Bank is required to pay supplier'], 422);
+        }
+
         try {
-            return DB::transaction(function () use ($data) {
-                // Lock the sequence by selecting last row FOR UPDATE to avoid two requests
-                // generating the same posted_number when saving concurrently.
+            return DB::transaction(function () use ($data, $invoiceType, $totalPaid) {
                 $prefix = 'PRINV-';
                 $lastPosted = DB::table('purchase_invoices')
                     ->whereNotNull('posted_number')
@@ -137,7 +147,7 @@ class PurchaseInvoiceController extends Controller
 
                 $invoice = PurchaseInvoice::create(array_merge($data, [
                     'posted_number' => $nextCode,
-                    'invoice_type'  => $data['invoice_type'] ?? 'debit',
+                    'invoice_type'  => $invoiceType,
                 ]));
 
                 $this->processInvoiceItems($invoice, $data['items']);
@@ -146,39 +156,76 @@ class PurchaseInvoiceController extends Controller
                     collect($data['items'])->pluck('product_id')->unique()->all()
                 );
 
-                // Create supplier ledger entry ONLY for credit purchases
-                $invoiceType = $data['invoice_type'] ?? 'debit';
-if ($invoiceType === 'credit') {
+                // credit invoice: supplier ledger invoice row only
+                if ($invoiceType === 'credit') {
                     $ledger = new SupplierLedger();
-                    $ledger->supplier_id       = $data['supplier_id'];
-                    $ledger->purchase_invoice_id = $invoice->id;
-                    $ledger->entry_type        = 'invoice';
-                    $ledger->is_manual         = false;
-                    $ledger->entry_date        = $data['posted_date'];
-                    $ledger->posted_number     = $nextCode;
-                    $ledger->invoice_number    = $data['invoice_number'];
-                    $ledger->invoice_total     = $data['total_amount'];
-                    $ledger->total_paid        = $data['total_paid'] ?? 0;
-                    $ledger->debited_amount    = 0;
-                    $ledger->credit_remaining  = max((float)$data['total_amount'] - (float)($data['total_paid'] ?? 0), 0);
-                    $ledger->payment_ref       = null;
-                    $ledger->description       = 'Purchase invoice ' . $nextCode;
-                    $ledger->created_by        = optional(Auth::user())->id;
+                    $ledger->supplier_id             = $data['supplier_id'];
+                    $ledger->purchase_invoice_id   = $invoice->id;
+                    $ledger->entry_type            = 'invoice';
+                    $ledger->is_manual             = false;
+                    $ledger->entry_date            = $data['posted_date'];
+                    $ledger->posted_number         = $nextCode;
+                    $ledger->invoice_number        = $data['invoice_number'];
+                    $ledger->invoice_total         = $data['total_amount'];
+                    $ledger->total_paid            = $data['total_paid'] ?? 0;
+                    $ledger->debited_amount        = 0;
+                    $ledger->credit_remaining      = max((float) $data['total_amount'] - (float) ($data['total_paid'] ?? 0), 0);
+                    $ledger->payment_ref           = null;
+                    $ledger->description           = 'Purchase invoice ' . $nextCode;
+                    $ledger->created_by            = optional(Auth::user())->id;
                     $ledger->save();
                 }
 
-                // Return the created invoice including items and supplier for the client
+                // debit invoice: supplier ledger invoice row + supplier payment row + bank movement
+                if ($invoiceType === 'debit') {
+                    // create invoice row (optional for debit; but ledger rebuild expects invoice rows for credit only)
+                    // Your current system only uses supplier ledger invoice rows for credit. For debit we create payment rows only.
+                    if ($totalPaid > 0) {
+                        $paymentRow = SupplierLedger::create([
+                            'supplier_id'           => $data['supplier_id'],
+                            'purchase_invoice_id'  => $invoice->id,
+                            'entry_type'            => 'payment',
+                            'entry_date'            => $data['posted_date'],
+                            'description'           => $data['remarks'] ? $data['remarks'] : ('Purchase payment ' . $nextCode),
+                            'posted_number'         => $nextCode,
+                            'invoice_number'        => $data['invoice_number'],
+                            'invoice_total'         => (float) $data['total_amount'],
+                            'total_paid'            => (float) $data['total_paid'] ?? 0,
+                            'debited_amount'        => $totalPaid,
+                            'payment_ref'           => $data['invoice_number'],
+                            'bank_id'                => $data['bank_id'],
+                            'credit_remaining'     => 0,
+                            'is_manual'             => false,
+                            'created_by'            => optional(Auth::user())->id,
+                        ]);
+
+                        BankLedger::create([
+                            'bank_id'     => (int) $data['bank_id'],
+                            'entry_date'  => $paymentRow->entry_date,
+                            'entry_type'  => 'supplier_payment',
+                            'ref_type'    => 'supplier_ledger',
+                            'ref_id'      => $paymentRow->id,
+                            'direction'   => 'debit',
+                            'amount'      => $totalPaid,
+                            'description' => $paymentRow->description,
+                        ]);
+
+                        $bank = Bank::find($data['bank_id']);
+                        if ($bank) {
+                            $bank->balance = (float) $bank->balance - $totalPaid;
+                            $bank->save();
+                        }
+                    }
+                }
+
                 return response()->json($invoice->load('items.product', 'supplier'), 201);
             });
-        } catch (\Illuminate\Database\QueryException $e) {
-            // Likely unique-constraint violation (invoice_number / posted_number)
-            return $this->respondDuplicateError($e);
         } catch (\Illuminate\Database\QueryException $e) {
             return $this->respondDuplicateError($e);
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Error creating purchase invoice',
-                'error'   => $e->getMessage()
+                'error'   => $e->getMessage(),
             ], 500);
         }
     }
@@ -187,10 +234,10 @@ if ($invoiceType === 'credit') {
     public function update(Request $request, PurchaseInvoice $purchaseInvoice)
     {
         $this->authorize('update', $purchaseInvoice);
+
         $data = $request->validate([
             'supplier_id'          => 'required|exists:suppliers,id',
             'invoice_type'         => 'nullable|string|in:credit,debit',
-            // 'posted_number'      => not user-editable on update
             'posted_date'          => 'required|date',
             'remarks'              => 'nullable|string',
             'invoice_number'       => 'required|string|unique:purchase_invoices,invoice_number,' . $purchaseInvoice->id,
@@ -201,6 +248,9 @@ if ($invoiceType === 'credit') {
             'discount_amount'      => 'nullable|numeric',
             'total_amount'         => 'required|numeric|min:0',
             'total_paid'           => 'nullable|numeric|min:0',
+
+            // bank used only when we create supplier payment + bank ledger movements
+            'bank_id'              => 'nullable|integer|exists:banks,id',
 
             'items'                                => 'required|array',
             'items.*.product_id'                   => 'required|exists:products,id',
@@ -225,30 +275,33 @@ if ($invoiceType === 'credit') {
             'items.*.quantity'                     => 'required|integer',
         ]);
 
+        $invoiceType = $data['invoice_type'] ?? ($purchaseInvoice->invoice_type ?? 'debit');
+        $totalPaid = (float) ($data['total_paid'] ?? 0);
+
+        if ($totalPaid > 0 && empty($data['bank_id'])) {
+            return response()->json(['message' => 'Bank is required to pay supplier'], 422);
+        }
+
         try {
-            return DB::transaction(function () use ($purchaseInvoice, $data) {
-                // Keep existing posted_number intact
+            return DB::transaction(function () use ($purchaseInvoice, $data, $invoiceType, $totalPaid) {
                 $data['posted_number'] = $purchaseInvoice->posted_number;
 
-                // Store old invoice type before update
                 $oldInvoiceType = $purchaseInvoice->invoice_type ?? 'debit';
-                $newInvoiceType = $data['invoice_type'] ?? $oldInvoiceType;
 
-                // Update invoice with explicit invoice_type
                 $purchaseInvoice->update([
-                    'supplier_id'        => $data['supplier_id'],
-                    'invoice_type'       => $newInvoiceType,
-                    'posted_number'      => $data['posted_number'],
-                    'posted_date'        => $data['posted_date'],
-                    'remarks'            => $data['remarks'] ?? null,
-                    'invoice_number'     => $data['invoice_number'],
-                    'invoice_amount'     => $data['invoice_amount'],
-                    'tax_percentage'     => $data['tax_percentage'] ?? 0,
-                    'tax_amount'         => $data['tax_amount'] ?? 0,
-                    'discount_percentage'=> $data['discount_percentage'] ?? 0,
-                    'discount_amount'    => $data['discount_amount'] ?? 0,
-                    'total_amount'       => $data['total_amount'],
-                    'total_paid'         => $data['total_paid'] ?? 0,
+                    'supplier_id'         => $data['supplier_id'],
+                    'invoice_type'        => $invoiceType,
+                    'posted_number'       => $data['posted_number'],
+                    'posted_date'         => $data['posted_date'],
+                    'remarks'             => $data['remarks'] ?? null,
+                    'invoice_number'      => $data['invoice_number'],
+                    'invoice_amount'      => $data['invoice_amount'],
+                    'tax_percentage'      => $data['tax_percentage'] ?? 0,
+                    'tax_amount'          => $data['tax_amount'] ?? 0,
+                    'discount_percentage' => $data['discount_percentage'] ?? 0,
+                    'discount_amount'     => $data['discount_amount'] ?? 0,
+                    'total_amount'        => $data['total_amount'],
+                    'total_paid'          => $data['total_paid'] ?? 0,
                 ]);
 
                 $purchaseInvoice->load('items');
@@ -263,63 +316,115 @@ if ($invoiceType === 'credit') {
 
                 $purchaseInvoice->items()->delete();
                 $this->processInvoiceItems($purchaseInvoice, $data['items']);
-
                 $this->recalcProductsByIds($affectedIds);
 
-                // Handle supplier ledger entries
-                // If invoice was previously credit but is now debit, delete the ledger entry
-                if ($oldInvoiceType === 'credit' && $newInvoiceType !== 'credit') {
-                    // Remove existing ledger entry for this invoice
-                    SupplierLedger::where('purchase_invoice_id', $purchaseInvoice->id)->delete();
-                }
-                // If invoice is now credit, create or update ledger entry
-                elseif ($newInvoiceType === 'credit') {
-                    // Check if a ledger entry already exists for this invoice
-                    $existingLedger = SupplierLedger::where('purchase_invoice_id', $purchaseInvoice->id)->first();
-                    
-                    if ($existingLedger) {
-                        // Update existing ledger entry
-                        $existingLedger->update([
+                // Always keep supplier ledger invoice row consistent for credit.
+                // For debit, this app previously created only payment rows; we keep that behavior.
+                if ($invoiceType === 'credit') {
+                    SupplierLedger::updateOrCreate(
+                        [
+                            'purchase_invoice_id' => $purchaseInvoice->id,
+                            'entry_type'          => 'invoice',
+                        ],
+                        [
                             'supplier_id'        => $data['supplier_id'],
                             'entry_date'         => $data['posted_date'],
+                            'posted_number'      => $data['posted_number'],
+                            'invoice_number'     => $data['invoice_number'],
                             'invoice_total'      => $data['total_amount'],
                             'total_paid'         => $data['total_paid'] ?? 0,
+                            'debited_amount'     => 0,
                             'credit_remaining'   => max((float)$data['total_amount'] - (float)($data['total_paid'] ?? 0), 0),
+                            'payment_ref'        => null,
                             'description'        => 'Purchase invoice ' . $data['posted_number'],
-                        ]);
-                    } else {
-                        // Create new ledger entry
-                        $ledger = new SupplierLedger();
-                        $ledger->supplier_id         = $data['supplier_id'];
-                        $ledger->purchase_invoice_id = $purchaseInvoice->id;
-                        $ledger->entry_type          = 'invoice';
-                        $ledger->is_manual           = false;
-                        $ledger->entry_date          = $data['posted_date'];
-                        $ledger->posted_number       = $data['posted_number'];
-                        $ledger->invoice_number      = $data['invoice_number'];
-                        $ledger->invoice_total       = $data['total_amount'];
-                        $ledger->total_paid          = $data['total_paid'] ?? 0;
-                        $ledger->debited_amount      = 0;
-                        $ledger->credit_remaining    = max((float)$data['total_amount'] - (float)($data['total_paid'] ?? 0), 0);
-                        $ledger->payment_ref         = null;
-                        $ledger->description         = 'Purchase invoice ' . $data['posted_number'];
-                        $ledger->created_by          = optional(Auth::user())->id;
-                        $ledger->save();
+                            'is_manual'          => false,
+                            'created_by'         => optional(Auth::user())->id,
+                        ]
+                    );
+                } elseif ($oldInvoiceType === 'credit' && $invoiceType !== 'credit') {
+                    // if switching away from credit, remove invoice ledger row(s)
+                    SupplierLedger::where('purchase_invoice_id', $purchaseInvoice->id)
+                        ->where('entry_type', 'invoice')
+                        ->delete();
+                }
+
+                // Reconcile supplier payment row + bank movement (for both credit & debit)
+                $oldPaymentRows = SupplierLedger::query()
+                    ->where('purchase_invoice_id', $purchaseInvoice->id)
+                    ->where('entry_type', 'payment')
+                    ->get();
+
+                foreach ($oldPaymentRows as $oldPay) {
+                    // delete linked bank ledger movement(s) and reverse balance
+                    $linkedBankLedger = BankLedger::query()
+                        ->where('ref_type', 'supplier_ledger')
+                        ->where('ref_id', $oldPay->id)
+                        ->get();
+
+                    foreach ($linkedBankLedger as $bl) {
+                        if ((float)$bl->amount > 0 && $bl->bank_id) {
+                            // previous was debit => add back
+                            $bank = Bank::find($bl->bank_id);
+                            if ($bank) {
+                                $bank->balance = (float)$bank->balance + (float)$bl->amount;
+                                $bank->save();
+                            }
+                        }
+                        $bl->delete();
+                    }
+
+                    $oldPay->delete();
+                }
+
+                if ($totalPaid > 0) {
+                    $paymentRow = SupplierLedger::create([
+                        'supplier_id'           => $data['supplier_id'],
+                        'purchase_invoice_id'  => $purchaseInvoice->id,
+                        'entry_type'            => 'payment',
+                        'entry_date'            => $data['posted_date'],
+                        'description'           => $data['remarks'] ? $data['remarks'] : ('Purchase payment ' . $data['posted_number']),
+                        'posted_number'         => $data['posted_number'],
+                        'invoice_number'        => $data['invoice_number'],
+                        'invoice_total'         => (float)$data['total_amount'],
+                        'total_paid'            => (float)($data['total_paid'] ?? 0),
+                        'debited_amount'        => $totalPaid,
+                        'payment_ref'           => $data['invoice_number'],
+                        'bank_id'               => $data['bank_id'],
+                        'credit_remaining'     => 0,
+                        'is_manual'            => false,
+                        'created_by'           => optional(Auth::user())->id,
+                    ]);
+
+                    BankLedger::create([
+                        'bank_id'     => (int)$data['bank_id'],
+                        'entry_date'  => $paymentRow->entry_date,
+                        'entry_type'  => 'supplier_payment',
+                        'ref_type'    => 'supplier_ledger',
+                        'ref_id'      => $paymentRow->id,
+                        'direction'   => 'debit',
+                        'amount'      => $totalPaid,
+                        'description' => $paymentRow->description,
+                    ]);
+
+                    $bank = Bank::find($data['bank_id']);
+                    if ($bank) {
+                        $bank->balance = (float)$bank->balance - $totalPaid;
+                        $bank->save();
                     }
                 }
 
                 return response()->json($purchaseInvoice->load('items.product', 'supplier'));
             });
         } catch (\Illuminate\Database\QueryException $e) {
-            // Likely unique-constraint violation (invoice_number / posted_number)
             return $this->respondDuplicateError($e);
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to update purchase invoice',
-                'error'   => $e->getMessage()
+                'error'   => $e->getMessage(),
             ], 500);
         }
     }
+
 
     // Delete invoice
     public function destroy(PurchaseInvoice $purchaseInvoice)
@@ -334,6 +439,38 @@ if ($invoiceType === 'credit') {
                 foreach ($purchaseInvoice->items as $item) {
                     $this->revertItem($item, true);
                 }
+
+                // === Ledger reconciliation for invoice payments (supplier_ledgers + bank_ledgers + bank balances) ===
+                $paymentRows = SupplierLedger::query()
+                    ->where('purchase_invoice_id', $purchaseInvoice->id)
+                    ->where('entry_type', 'payment')
+                    ->get();
+
+                foreach ($paymentRows as $pay) {
+                    $bankMovements = BankLedger::query()
+                        ->where('ref_type', 'supplier_ledger')
+                        ->where('ref_id', $pay->id)
+                        ->get();
+
+                    foreach ($bankMovements as $bl) {
+                        if ((float)$bl->amount > 0 && $bl->bank_id) {
+                            // bank movements for supplier payments are debit => reverse by adding back
+                            $bank = Bank::find($bl->bank_id);
+                            if ($bank) {
+                                $bank->balance = (float)$bank->balance + (float)$bl->amount;
+                                $bank->save();
+                            }
+                        }
+                        $bl->delete();
+                    }
+
+                    $pay->delete();
+                }
+
+                // delete supplier invoice ledger row(s)
+                SupplierLedger::where('purchase_invoice_id', $purchaseInvoice->id)
+                    ->where('entry_type', 'invoice')
+                    ->delete();
 
                 $purchaseInvoice->items()->delete();
                 $purchaseInvoice->delete();
@@ -352,6 +489,7 @@ if ($invoiceType === 'credit') {
             ], 500);
         }
     }
+
 
     
     private function respondDuplicateError(\Throwable $e)
