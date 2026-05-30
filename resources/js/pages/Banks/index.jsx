@@ -158,7 +158,20 @@ export default function BanksIndex() {
               {rows.map((b) => (
                 <tr key={b.id} className="border-b border-gray-100 dark:border-slate-800">
                   <td className="px-4 py-2">
-                    <div className="font-medium text-gray-900 dark:text-white">{b.bank_name}</div>
+                    <div className="flex items-center gap-3">
+                      {b.image_path ? (
+                        <img
+                          src={`/storage/${b.image_path}`}
+                          alt={b.bank_name}
+                          className="w-8 h-8 rounded-full object-cover border border-gray-200 dark:border-slate-600 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
+                          <BanknotesIcon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        </div>
+                      )}
+                      <div className="font-medium text-gray-900 dark:text-white">{b.bank_name}</div>
+                    </div>
                   </td>
                   <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{b.account_number}</td>
                   <td className="px-4 py-2 text-right font-semibold">

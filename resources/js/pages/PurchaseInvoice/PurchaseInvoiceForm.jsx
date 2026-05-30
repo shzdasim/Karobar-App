@@ -106,6 +106,10 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
   // Product modal state
   const [showProductModal, setShowProductModal] = useState(false);
 
+  // Bank search modal state
+  const [showBankSearch, setShowBankSearch] = useState(false);
+  const [selectedBankLabel, setSelectedBankLabel] = useState("");
+
   // only allow numbers (and optionally decimals)
   // allow decimals for price/percentage fields + Pack.Q and PBonus
   const sanitizeNumberInput = (value, allowDecimal = false) => {
@@ -233,8 +237,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
     next.total_paid = res.data?.total_paid ?? res.data?.total_amount ?? "";
 
 
-    // Normalize bank_id to string so <select value={...}> matches <option value={b.id}>
-    // (b.id is a number, so we store bank_id as a string)
+    // Normalize bank_id to string so value matches
     const apiBankId = res.data?.bank_id;
     next.bank_id = apiBankId === null || apiBankId === undefined || apiBankId === ""
       ? ""
@@ -242,17 +245,19 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
 
     // If bank_id is missing from the edit payload but there is exactly one bank in the system,
     // auto-select it so edit mode always shows the expected bank.
-    // Ensure bank_id stays selected in edit mode.
-    // If API didn't send it (or it's null), we fallback only when the backend has not provided a value.
     if (next.bank_id === "" || next.bank_id === null || next.bank_id === undefined) {
       if (Array.isArray(banks) && banks.length === 1 && banks[0]?.id != null) {
         next.bank_id = String(banks[0].id);
       }
     }
 
-    // If API provided bank_id but we haven't fetched banks yet, keep it for the UI.
-    // React-select will show it once `banks` finishes loading.
-    // (No action needed here besides not clearing it.)
+    // Resolve bank label for display
+    if (next.bank_id && Array.isArray(banks)) {
+      const matchedBank = banks.find((b) => String(b.id) === String(next.bank_id));
+      if (matchedBank) {
+        setSelectedBankLabel(`${matchedBank.bank_name} (${matchedBank.account_number})`);
+      }
+    }
 
     setForm(next);
     setPaidTouched(false);
@@ -1025,31 +1030,30 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
               </label>
             </div>
 
-            {/* Bank select (Debit only) */}
+            {/* Bank select (Debit only) — opens BankSearch modal */}
             <div className="min-w-[260px]">
-              <Select
-                name="bank_id"
-                isSearchable
-                isDisabled={form.invoice_type !== "debit"}
-                options={banks.map((b) => ({
-                  value: String(b.id),
-                  label: `${b.bank_name} (${b.account_number})`,
-                }))}
-                value={
-                  banks
-                    .map((b) => ({
-                      value: String(b.id),
-                      label: `${b.bank_name} (${b.account_number})`,
-                    }))
-                    .find((opt) => opt.value === String(form.bank_id ?? "")) || null
-                }
-                onChange={(opt) => {
-                  setForm((prev) => ({ ...prev, bank_id: opt?.value ?? "" }));
-                }}
-                className="text-xs"
-                styles={getSelectStyles(isDark)}
-                menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-              />
+              <button
+                type="button"
+                disabled={form.invoice_type !== "debit"}
+                onClick={() => setShowBankSearch(true)}
+                className={[
+                  "w-full flex items-center justify-between gap-2 px-3 h-[28px] text-xs rounded-lg border transition-all duration-150",
+                  form.invoice_type !== "debit"
+                    ? "opacity-50 cursor-not-allowed"
+                    : "cursor-pointer hover:border-blue-400 dark:hover:border-blue-500",
+                  isDark
+                    ? "bg-slate-700/70 border-slate-600/80 text-slate-100"
+                    : "bg-white/70 border-gray-200/80 text-gray-900",
+                ].join(" ")}
+                style={{ backdropFilter: "blur(6px)" }}
+              >
+                <span className={selectedBankLabel ? "" : (isDark ? "text-slate-500" : "text-gray-400")}>
+                  {selectedBankLabel || "Select Bank…"}
+                </span>
+                <svg className="w-3.5 h-3.5 flex-shrink-0 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </button>
             </div>
           </div>
           
@@ -1718,6 +1722,18 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
           </tbody>
         </table>
       </div>
+
+      {/* Bank Search Modal */}
+      <BankSearch
+        isOpen={showBankSearch}
+        onClose={() => setShowBankSearch(false)}
+        onSelect={(bank) => {
+          if (!bank) return;
+          setForm((prev) => ({ ...prev, bank_id: String(bank.id) }));
+          setSelectedBankLabel(`${bank.bank_name} (${bank.account_number})`);
+          setShowBankSearch(false);
+        }}
+      />
 
       {/* Product Form Modal */}
       <ProductFormModal
