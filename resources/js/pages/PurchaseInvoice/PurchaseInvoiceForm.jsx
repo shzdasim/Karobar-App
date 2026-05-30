@@ -232,9 +232,6 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
     // keep totals from server when editing
     next.total_paid = res.data?.total_paid ?? res.data?.total_amount ?? "";
 
-    // DEBUG (bank select edit-mode): remove after confirming
-    // console.log('EDIT fetchInvoice bank_id from API:', res.data?.bank_id);
-
 
     // Normalize bank_id to string so <select value={...}> matches <option value={b.id}>
     // (b.id is a number, so we store bank_id as a string)

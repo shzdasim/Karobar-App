@@ -302,6 +302,7 @@ class PurchaseInvoiceController extends Controller
                     'discount_amount'     => $data['discount_amount'] ?? 0,
                     'total_amount'        => $data['total_amount'],
                     'total_paid'          => $data['total_paid'] ?? 0,
+                    'bank_id'             => $data['bank_id'] ?? null,
                 ]);
 
                 $purchaseInvoice->load('items');

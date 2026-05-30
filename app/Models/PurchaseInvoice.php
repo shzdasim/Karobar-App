@@ -20,6 +20,7 @@ class PurchaseInvoice extends Model
         'discount_amount',
         'total_amount',
         'total_paid',
+        'bank_id',
     ];
     public function supplier()
     {
