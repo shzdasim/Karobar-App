@@ -285,31 +285,88 @@ const ProductSearchInput = forwardRef(
       document.removeEventListener("mouseup", stopDrag);
     };
 
-    // --- Resizing Logic ---
+    // --- Resizing Logic (all sides) ---
+    const MIN_WIDTH = 600;
+    const MIN_HEIGHT = 400;
+    const RESIZE_HANDLE_SIZE = 8; // px (visual/active area conceptually)
+
+    const getResizeDirection = (target) => {
+      const dir = target?.getAttribute?.("data-resize-dir");
+      return dir || "se";
+    };
+
     const startResize = (e) => {
+      if (!modalRef.current) return;
+      const dir = getResizeDirection(e.target);
+
       resizeRef.current = {
         isResizing: true,
+        dir,
         startX: e.clientX,
         startY: e.clientY,
-        startWidth: windowSize.width,
-        startHeight: windowSize.height,
+        startWidth: windowSizeRef.current.width,
+        startHeight: windowSizeRef.current.height,
+        startLeft: windowPosRef.current.x,
+        startTop: windowPosRef.current.y,
       };
+
       document.addEventListener("mousemove", handleResize);
       document.addEventListener("mouseup", stopResize);
     };
 
     const handleResize = (e) => {
       if (!resizeRef.current.isResizing) return;
-      const newWidth = Math.max(600, resizeRef.current.startWidth + (e.clientX - resizeRef.current.startX));
-      const newHeight = Math.max(400, resizeRef.current.startHeight + (e.clientY - resizeRef.current.startY));
+
+      const { dir, startX, startY, startWidth, startHeight, startLeft, startTop } =
+        resizeRef.current;
+
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+
+      let newLeft = startLeft;
+      let newTop = startTop;
+      let newWidth = startWidth;
+      let newHeight = startHeight;
+
+      // Right side
+      if (dir.includes("e")) {
+        newWidth = Math.max(MIN_WIDTH, startWidth + dx);
+      }
+
+      // Left side
+      if (dir.includes("w")) {
+        const desiredWidth = Math.max(MIN_WIDTH, startWidth - dx);
+        newLeft = startLeft + (startWidth - desiredWidth);
+        newWidth = desiredWidth;
+      }
+
+      // Bottom side
+      if (dir.includes("s")) {
+        newHeight = Math.max(MIN_HEIGHT, startHeight + dy);
+      }
+
+      // Top side
+      if (dir.includes("n")) {
+        const desiredHeight = Math.max(MIN_HEIGHT, startHeight - dy);
+        newTop = startTop + (startHeight - desiredHeight);
+        newHeight = desiredHeight;
+      }
+
+      setWindowPos({ x: newLeft, y: newTop });
       setWindowSize({ width: newWidth, height: newHeight });
     };
 
     const stopResize = () => {
       resizeRef.current.isResizing = false;
       const currentSize = windowSizeRef.current;
+      const currentPos = windowPosRef.current;
+
       savePreference('productModalSize', currentSize);
-      localStorage.setItem("productModalSize", JSON.stringify(currentSize)); // Keep as backup
+      savePreference('productModalPos', currentPos);
+
+      localStorage.setItem("productModalSize", JSON.stringify(currentSize));
+      localStorage.setItem("productModalPos", JSON.stringify(currentPos));
+
       document.removeEventListener("mousemove", handleResize);
       document.removeEventListener("mouseup", stopResize);
     };
@@ -361,6 +418,27 @@ const ProductSearchInput = forwardRef(
                   height: `${windowSize.height}px`,
                   minWidth: "600px",
                   minHeight: "400px",
+                }}
+                onMouseDown={(e) => {
+                  // Make the whole window draggable (except interactive controls)
+                  const target = e.target;
+                  const tag = target?.tagName?.toLowerCase?.() || "";
+                  const isInteractive =
+                    tag === "input" ||
+                    tag === "textarea" ||
+                    tag === "select" ||
+                    tag === "button" ||
+                    target?.isContentEditable;
+
+                  // Don't start drag if clicking the resize handle (handled separately)
+                  if (target?.closest?.("[data-resize-handle='true']")) return;
+
+                  // Still allow drag when clicking on the header button etc, but avoid stealing from inputs
+                  if (isInteractive) return;
+
+                  // Prevent text selection while dragging
+                  e.preventDefault();
+                  startDrag(e);
                 }}
               >
                 {/* Header (Draggable) */}
@@ -461,11 +539,62 @@ const ProductSearchInput = forwardRef(
                   </div>
                 </div>
 
-                {/* Resize Handle */}
+                {/* Resize Handles (all sides) */}
                 <div
+                  data-resize-handle="true"
+                  data-resize-dir="n"
                   onMouseDown={startResize}
-                  className="absolute bottom-1 right-1 w-3 h-3 bg-gray-400 dark:bg-slate-500 cursor-se-resize rounded-sm"
-                  title="Resize"
+                  className="absolute top-1 left-1 right-1 h-2 bg-transparent cursor-n-resize"
+                  title="Resize top"
+                />
+                <div
+                  data-resize-handle="true"
+                  data-resize-dir="s"
+                  onMouseDown={startResize}
+                  className="absolute bottom-1 left-1 right-1 h-2 bg-transparent cursor-s-resize"
+                  title="Resize bottom"
+                />
+                <div
+                  data-resize-handle="true"
+                  data-resize-dir="w"
+                  onMouseDown={startResize}
+                  className="absolute top-1 bottom-1 left-1 w-2 bg-transparent cursor-w-resize"
+                  title="Resize left"
+                />
+                <div
+                  data-resize-handle="true"
+                  data-resize-dir="e"
+                  onMouseDown={startResize}
+                  className="absolute top-1 bottom-1 right-1 w-2 bg-transparent cursor-e-resize"
+                  title="Resize right"
+                />
+                <div
+                  data-resize-handle="true"
+                  data-resize-dir="nw"
+                  onMouseDown={startResize}
+                  className="absolute -top-1 -left-1 w-3 h-3 bg-transparent cursor-nw-resize"
+                  title="Resize top-left"
+                />
+                <div
+                  data-resize-handle="true"
+                  data-resize-dir="ne"
+                  onMouseDown={startResize}
+                  className="absolute -top-1 -right-1 w-3 h-3 bg-transparent cursor-ne-resize"
+                  title="Resize top-right"
+                />
+                <div
+                  data-resize-handle="true"
+                  data-resize-dir="sw"
+                  onMouseDown={startResize}
+                  className="absolute -bottom-1 -left-1 w-3 h-3 bg-transparent cursor-sw-resize"
+                  title="Resize bottom-left"
+                />
+                <div
+                  data-resize-handle="true"
+                  data-resize-dir="se"
+                  onMouseDown={startResize}
+                  className="absolute -bottom-1 -right-1 w-3 h-3 bg-transparent cursor-se-resize"
+                  title="Resize bottom-right"
                 />
               </div>
             </div>,
