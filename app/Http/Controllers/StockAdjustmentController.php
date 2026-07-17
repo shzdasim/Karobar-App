@@ -37,10 +37,22 @@ class StockAdjustmentController extends Controller
         $p->save();
     }
 
+    protected function addProductQty(Product $p, float $delta): void
+    {
+        $current = $this->getProductQty($p);
+        $this->setProductQty($p, $current + $delta);
+    }
+
     protected function sumBatches(Product $p): float
     {
         // Sum all batches for product to keep product-level stock in sync
         return (float) Batch::where('product_id', $p->id)->sum(DB::raw('COALESCE(quantity, 0)'));
+    }
+
+    protected function addBatchQty(Batch $batch, float $delta): void
+    {
+        $batch->quantity = (float)($batch->quantity ?? 0) + $delta;
+        $batch->save();
     }
 
     // ===== Endpoints =====
@@ -209,88 +221,88 @@ class StockAdjustmentController extends Controller
         $data = $this->validatePayload($request, $id);
 
         return DB::transaction(function () use ($adj, $data) {
-            // Roll back previous effects
-            foreach ($adj->items as $old) {
+            $baselineQtyByKey = [];
+            $oldItems = $adj->items->keyBy(function ($item) {
+                return $this->stockAdjustmentItemKey([
+                    'product_id' => $item->product_id,
+                    'batch_number' => $item->batch_number,
+                    'expiry' => $item->expiry,
+                    'pack_size' => $item->pack_size,
+                ]);
+            });
+
+            $newItems = collect($data['items'])->keyBy(function ($row) {
+                return $this->stockAdjustmentItemKey($row);
+            });
+
+            $allKeys = array_values(array_unique(array_merge(
+                $oldItems->keys()->all(),
+                $newItems->keys()->all()
+            )));
+
+            foreach ($allKeys as $key) {
+                $old = $oldItems->get($key);
+                $new = $newItems->get($key);
+
+                $productId = (int)($new['product_id'] ?? $old->product_id ?? 0);
+                if ($productId <= 0) {
+                    continue;
+                }
+
                 /** @var Product $product */
-                $product = Product::query()->lockForUpdate()->findOrFail($old->product_id);
-                if ($old->batch_number) {
-                    /** @var Batch $batch */
-                    $batch = Batch::query()->lockForUpdate()
-                        ->where('product_id', $product->id)
-                        ->where('batch_number', $old->batch_number)
-                        ->first();
-                    if ($batch) {
-                        $batch->quantity = $old->previous_qty;
-                        $batch->save();
+                $product = Product::query()->lockForUpdate()->findOrFail($productId);
+                $baselineQtyByKey[$key] = $old ? (float)($old->previous_qty ?? 0) : 0.0;
+
+                $oldActual = (float)($old->actual_qty ?? 0);
+                $newActual = (float)($new['actual_qty'] ?? 0);
+                $delta = $newActual - $oldActual;
+
+                if ($delta !== 0.0) {
+                    if (!empty($new['batch_number']) || !empty($old->batch_number)) {
+                        $batchNumber = $new['batch_number'] ?? $old->batch_number;
+                        $batch = Batch::query()->lockForUpdate()
+                            ->where('product_id', $product->id)
+                            ->where('batch_number', $batchNumber)
+                            ->first();
+                        if ($batch) {
+                            $this->addBatchQty($batch, $delta);
+                        }
+                    } else {
+                        $this->addProductQty($product, $delta);
                     }
-                } else {
-                    $this->setProductQty($product, (float)$old->previous_qty);
                 }
             }
 
-            // Delete old items
+            // Delete old items after live stock has been adjusted by net deltas only
             $adj->items()->delete();
 
-            // Re-apply fresh
             $totalWorth = 0.0;
             $touchedProducts = [];
             foreach ($data['items'] as $row) {
                 /** @var Product $product */
                 $product = Product::query()->lockForUpdate()->findOrFail($row['product_id']);
                 $useBatch = isset($row['batch_number']) && $row['batch_number'] !== null && $row['batch_number'] !== '';
+                $key = $this->stockAdjustmentItemKey($row);
+                $previous = (float)($baselineQtyByKey[$key] ?? $this->getProductQty($product));
+                $actual   = (float)$row['actual_qty'];
+                $diff     = $actual - $previous;
+                $unitCost = (float)($row['unit_purchase_price'] ?? $product->unit_purchase_price ?? 0);
+                $worth    = abs($diff) * $unitCost;
 
-                if ($useBatch) {
-                    /** @var Batch $batch */
-                    $batch = Batch::query()->lockForUpdate()
-                        ->firstOrCreate(
-                            ['product_id' => $product->id, 'batch_number' => $row['batch_number']],
-                            ['expiry_date' => $row['expiry'] ?? null, 'quantity' => 0]
-                        );
+                StockAdjustmentItem::create([
+                    'stock_adjustment_id' => $adj->id,
+                    'product_id'          => $product->id,
+                    'batch_number'        => $row['batch_number'] ?? null,
+                    'expiry'              => $row['expiry'] ?? null,
+                    'pack_size'           => $row['pack_size'] ?? null,
+                    'previous_qty'        => $previous,
+                    'actual_qty'          => $actual,
+                    'diff_qty'            => $diff,
+                    'unit_purchase_price' => $unitCost,
+                    'worth_adjusted'      => $worth,
+                ]);
 
-                    $previous = (float)($batch->quantity ?? 0);
-                    $actual   = (float)$row['actual_qty'];
-                    $diff     = $actual - $previous;
-
-                    $unitCost = (float)($row['unit_purchase_price'] ?? $product->unit_purchase_price ?? 0);
-                    $worth    = abs($diff) * $unitCost;
-
-                    StockAdjustmentItem::create([
-                        'stock_adjustment_id' => $adj->id,
-                        'product_id'          => $product->id,
-                        'batch_number'        => $row['batch_number'],
-                        'expiry'              => $row['expiry'] ?? null,
-                        'pack_size'           => $row['pack_size'] ?? null,
-                        'previous_qty'        => $previous,
-                        'actual_qty'          => $actual,
-                        'diff_qty'            => $diff,
-                        'unit_purchase_price' => $unitCost,
-                        'worth_adjusted'      => $worth,
-                    ]);
-
-                    $totalWorth += $worth;
-                    $batch->quantity = $actual;
-                    $batch->save();
-                } else {
-                    $previous = $this->getProductQty($product);
-                    $actual   = (float)$row['actual_qty'];
-                    $diff     = $actual - $previous;
-                    $unitCost = (float)($row['unit_purchase_price'] ?? $product->unit_purchase_price ?? 0);
-                    $worth    = abs($diff) * $unitCost;
-
-                    StockAdjustmentItem::create([
-                        'stock_adjustment_id' => $adj->id,
-                        'product_id'          => $product->id,
-                        'previous_qty'        => $previous,
-                        'actual_qty'          => $actual,
-                        'diff_qty'            => $diff,
-                        'unit_purchase_price' => $unitCost,
-                        'worth_adjusted'      => $worth,
-                    ]);
-
-                    $totalWorth += $worth;
-                    $this->setProductQty($product, $actual);
-                }
-
+                $totalWorth += $worth;
                 $touchedProducts[$product->id] = true;
             }
 
@@ -328,6 +340,7 @@ class StockAdjustmentController extends Controller
             foreach ($adj->items as $item) {
                 /** @var Product $product */
                 $product = Product::query()->lockForUpdate()->findOrFail($item->product_id);
+                $inverseDiff = (float)($item->diff_qty ?? ((float)$item->actual_qty - (float)$item->previous_qty));
                 if ($item->batch_number) {
                     /** @var Batch $batch */
                     $batch = Batch::query()->lockForUpdate()
@@ -335,11 +348,10 @@ class StockAdjustmentController extends Controller
                         ->where('batch_number', $item->batch_number)
                         ->first();
                     if ($batch) {
-                        $batch->quantity = $item->previous_qty;
-                        $batch->save();
+                        $this->addBatchQty($batch, -$inverseDiff);
                     }
                 } else {
-                    $this->setProductQty($product, (float)$item->previous_qty);
+                    $this->addProductQty($product, -$inverseDiff);
                 }
                 $touchedProducts[$product->id] = true;
             }
@@ -376,6 +388,18 @@ class StockAdjustmentController extends Controller
             'items.*.batch_number'          => ['nullable','string','max:191'],
             'items.*.expiry'                => ['nullable','date'],
             'items.*.pack_size'             => ['nullable','numeric','min:0'],
+        ]);
+    }
+
+    protected function stockAdjustmentItemKey(array|object $row): string
+    {
+        $data = is_object($row) ? (array) $row : $row;
+
+        return implode('|', [
+            (int)($data['product_id'] ?? 0),
+            trim((string)($data['batch_number'] ?? '')),
+            trim((string)($data['expiry'] ?? '')),
+            trim((string)($data['pack_size'] ?? '')),
         ]);
     }
 }
