@@ -234,6 +234,61 @@ if ($invoiceType === 'credit') {
                 $oldInvoiceType = $purchaseInvoice->invoice_type ?? 'debit';
                 $newInvoiceType = $data['invoice_type'] ?? $oldInvoiceType;
 
+                $purchaseInvoice->load('items');
+                $oldItemsByKey = $this->groupPurchaseItemsByStockKey(
+                    $purchaseInvoice->items->toArray()
+                );
+                $newItemsByKey = $this->groupPurchaseItemsByStockKey($data['items']);
+
+                $allKeys = array_values(array_unique(array_merge(
+                    array_keys($oldItemsByKey),
+                    array_keys($newItemsByKey)
+                )));
+
+                foreach ($allKeys as $key) {
+                    $oldGroup = $oldItemsByKey[$key] ?? null;
+                    $newGroup = $newItemsByKey[$key] ?? null;
+
+                    if (!$oldGroup && !$newGroup) {
+                        continue;
+                    }
+
+                    $productId = (int) ($newGroup['product_id'] ?? $oldGroup['product_id'] ?? 0);
+                    if ($productId <= 0) {
+                        continue;
+                    }
+
+                    $delta = (int) ($newGroup['quantity'] ?? 0) - (int) ($oldGroup['quantity'] ?? 0);
+                    $product = Product::find($productId);
+                    if (!$product) {
+                        continue;
+                    }
+
+                    if ($delta > 0) {
+                        $payload = $newGroup['source'] ?? [];
+                        $payload['quantity'] = $delta;
+                        $payload['avg_price'] = $newGroup['avg_price'] ?? ($payload['avg_price'] ?? $payload['unit_purchase_price'] ?? 0);
+                        $product->applyPurchaseFromItem($payload);
+                    } elseif ($delta < 0) {
+                        $payload = $oldGroup['source'] ?? [];
+                        $payload['quantity'] = abs($delta);
+                        $payload['avg_price'] = $oldGroup['avg_price'] ?? ($payload['avg_price'] ?? $payload['unit_purchase_price'] ?? 0);
+                        $product->revertPurchaseFromItem($payload);
+                    }
+
+                    $batchSource = $newGroup['source'] ?? $oldGroup['source'] ?? [];
+                    $this->adjustBatchQuantity(
+                        $productId,
+                        $batchSource['batch'] ?? null,
+                        $batchSource['expiry'] ?? null,
+                        $delta
+                    );
+
+                    if ($newGroup) {
+                        $this->syncProductPricingFromItem($product, $batchSource);
+                    }
+                }
+
                 // Update invoice with explicit invoice_type
                 $purchaseInvoice->update([
                     'supplier_id'        => $data['supplier_id'],
@@ -251,20 +306,8 @@ if ($invoiceType === 'credit') {
                     'total_paid'         => $data['total_paid'] ?? 0,
                 ]);
 
-                $purchaseInvoice->load('items');
-
-                $affectedIds = $purchaseInvoice->items->pluck('product_id')->merge(
-                    collect($data['items'])->pluck('product_id')
-                )->unique()->all();
-
-                foreach ($purchaseInvoice->items as $oldItem) {
-                    $this->revertItem($oldItem, false);
-                }
-
                 $purchaseInvoice->items()->delete();
-                $this->processInvoiceItems($purchaseInvoice, $data['items']);
-
-                $this->recalcProductsByIds($affectedIds);
+                $this->persistInvoiceItems($purchaseInvoice, $data['items']);
 
                 // Handle supplier ledger entries
                 // If invoice was previously credit but is now debit, delete the ledger entry
@@ -401,6 +444,115 @@ if ($invoiceType === 'credit') {
                 $batch->save();
             }
         }
+    }
+
+    private function persistInvoiceItems(PurchaseInvoice $invoice, array $items): void
+    {
+        foreach ($items as $item) {
+            $invoice->items()->create($item);
+        }
+    }
+
+    private function groupPurchaseItemsByStockKey(array $items): array
+    {
+        $grouped = [];
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $key = $this->purchaseItemStockKey($item);
+            if (!isset($grouped[$key])) {
+                $grouped[$key] = [
+                    'product_id' => (int) ($item['product_id'] ?? 0),
+                    'quantity'   => 0,
+                    'avg_total'  => 0.0,
+                    'avg_price'  => 0.0,
+                    'source'     => $item,
+                ];
+            }
+
+            $qty = (int) ($item['quantity'] ?? 0);
+            $avg = (float) ($item['avg_price'] ?? $item['unit_purchase_price'] ?? 0.0);
+
+            $grouped[$key]['quantity'] += $qty;
+            $grouped[$key]['avg_total'] += ($qty * $avg);
+
+            if (empty($grouped[$key]['source'])) {
+                $grouped[$key]['source'] = $item;
+            }
+        }
+
+        foreach ($grouped as &$group) {
+            $group['avg_price'] = $group['quantity'] > 0
+                ? round($group['avg_total'] / $group['quantity'], 2)
+                : 0.0;
+            unset($group['avg_total']);
+        }
+        unset($group);
+
+        return $grouped;
+    }
+
+    private function purchaseItemStockKey(array $item): string
+    {
+        return implode('|', [
+            (int) ($item['product_id'] ?? 0),
+            trim((string) ($item['batch'] ?? '')),
+            trim((string) ($item['expiry'] ?? '')),
+            (int) ($item['pack_size'] ?? 0),
+        ]);
+    }
+
+    private function adjustBatchQuantity(int $productId, ?string $batch, ?string $expiry, int $delta): void
+    {
+        $batch = trim((string) $batch);
+        $expiry = trim((string) $expiry);
+
+        if ($batch === '' || $expiry === '' || $delta === 0) {
+            return;
+        }
+
+        $batchModel = Batch::where('product_id', $productId)
+            ->where('batch_number', $batch)
+            ->where('expiry_date', $expiry)
+            ->first();
+
+        if (!$batchModel) {
+            if ($delta < 0) {
+                return;
+            }
+
+            $batchModel = new Batch([
+                'product_id'   => $productId,
+                'batch_number' => $batch,
+                'expiry_date'  => $expiry,
+                'quantity'     => 0,
+            ]);
+        }
+
+        $batchModel->quantity = max(0, (int) $batchModel->quantity + $delta);
+        $batchModel->save();
+    }
+
+    private function syncProductPricingFromItem(Product $product, array $item): void
+    {
+        foreach ([
+            'pack_purchase_price',
+            'unit_purchase_price',
+            'pack_sale_price',
+            'unit_sale_price',
+            'whole_sale_pack_price',
+            'whole_sale_unit_price',
+        ] as $field) {
+            if (array_key_exists($field, $item)) {
+                $product->{$field} = $item[$field];
+            }
+        }
+
+        $product->save();
+        $this->recalcProductAverages($product);
     }
 
     private function revertItem($item, bool $deleteBatch = false): void
