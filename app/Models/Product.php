@@ -81,12 +81,30 @@ class Product extends Model
      */
     public function applyPurchaseFromItem(array $item): void
     {
-        $oldQty  = max(0, (int) ($this->quantity ?? 0));
+        $currentQty = (int) ($this->quantity ?? 0);
         $oldAvg  = (float) ($this->avg_price ?? 0.0);
         $newQty  = max(0, (int) ($item['quantity'] ?? 0));
         $effCost = (float) ($item['avg_price'] ?? $item['unit_purchase_price'] ?? 0.0);
 
-        $totalQty = $oldQty + $newQty;
+        $totalQty = $currentQty + $newQty;
+
+        if ($currentQty < 0) {
+            $this->quantity = $totalQty;
+
+            if ($totalQty <= 0) {
+                $this->avg_price = 0;
+                $this->refreshMargins();
+                $this->save();
+                return;
+            }
+
+            $this->avg_price = round(max($effCost, 0), 2);
+            $this->refreshMargins();
+            $this->save();
+            return;
+        }
+
+        $oldQty = max(0, $currentQty);
         $oldValue = $oldQty * $oldAvg;
         $newValue = $newQty * $effCost;
 
@@ -137,9 +155,9 @@ class Product extends Model
      * @param mixed $item The item to revert (array or model)
      * @param int|null $excludeItemId Kept for backward compatibility; no longer needed.
      */
-    public function revertPurchaseFromItem($item, ?int $excludeItemId = null): void
+    public function revertPurchaseFromItem($item, ?int $excludeItemId = null, bool $allowNegative = false): void
     {
-        $currentQty = max(0, (int) ($this->quantity ?? 0));
+        $currentQty = (int) ($this->quantity ?? 0);
         $currentAvg = (float) ($this->avg_price ?? 0.0);
         $qtyToRemove = max(0, (int) (is_array($item) ? ($item['quantity'] ?? 0) : $item->quantity));
         $effCost = (float) (is_array($item)
@@ -149,7 +167,7 @@ class Product extends Model
         $remainingQty = $currentQty - $qtyToRemove;
 
         if ($remainingQty <= 0) {
-            $this->quantity = 0;
+            $this->quantity = $allowNegative ? $remainingQty : 0;
             $this->avg_price = 0;
             $this->refreshMargins();
             $this->save();

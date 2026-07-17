@@ -375,7 +375,7 @@ if ($invoiceType === 'credit') {
                 $affectedIds = $purchaseInvoice->items->pluck('product_id')->unique()->all();
 
                 foreach ($purchaseInvoice->items as $item) {
-                    $this->revertItem($item, true);
+                    $this->revertItem($item, true, true);
                 }
 
                 $purchaseInvoice->items()->delete();
@@ -505,7 +505,7 @@ if ($invoiceType === 'credit') {
         ]);
     }
 
-    private function adjustBatchQuantity(int $productId, ?string $batch, ?string $expiry, int $delta): void
+    private function adjustBatchQuantity(int $productId, ?string $batch, ?string $expiry, int $delta, bool $allowNegative = false): void
     {
         $batch = trim((string) $batch);
         $expiry = trim((string) $expiry);
@@ -532,7 +532,8 @@ if ($invoiceType === 'credit') {
             ]);
         }
 
-        $batchModel->quantity = max(0, (int) $batchModel->quantity + $delta);
+        $nextQty = (int) $batchModel->quantity + $delta;
+        $batchModel->quantity = $allowNegative ? $nextQty : max(0, $nextQty);
         $batchModel->save();
     }
 
@@ -555,13 +556,13 @@ if ($invoiceType === 'credit') {
         $this->recalcProductAverages($product);
     }
 
-    private function revertItem($item, bool $deleteBatch = false): void
+    private function revertItem($item, bool $deleteBatch = false, bool $allowNegative = false): void
     {
         $product = Product::find($item->product_id);
         if ($product) {
             // Pass the item ID to exclude it from the remaining purchase invoices calculation
             $itemId = isset($item->id) ? $item->id : null;
-            $product->revertPurchaseFromItem($item, $itemId); // uses avg_price
+            $product->revertPurchaseFromItem($item, $itemId, $allowNegative); // uses avg_price
         }
 
         if (!empty($item->batch) && !empty($item->expiry)) {
@@ -572,7 +573,12 @@ if ($invoiceType === 'credit') {
 
             if ($batch) {
                 if ($deleteBatch) {
-                    $batch->delete();
+                    if ($allowNegative) {
+                        $batch->quantity = (int) $batch->quantity - (int) $item->quantity;
+                        $batch->save();
+                    } else {
+                        $batch->delete();
+                    }
                 } else {
                     $batch->quantity = max(0, (int) $batch->quantity - (int) $item->quantity);
                     $batch->save();
