@@ -100,6 +100,7 @@ const ProductSearchInput = forwardRef(
     const searchRef = useRef(null);
     const tableRef = useRef(null);
     const modalRef = useRef(null);
+    const focusFrameRef = useRef(null);
 
     const didRefreshRef = useRef(false);
     const debounceRef = useRef(null);
@@ -137,6 +138,7 @@ const ProductSearchInput = forwardRef(
     }));
 
     const openModal = (seedChar) => {
+      triggerRef.current?.blur?.();
       setIsOpen(true);
       setHighlightIndex(0);
       setSearch(
@@ -155,7 +157,26 @@ const ProductSearchInput = forwardRef(
     }, [isOpen]);
 
     useEffect(() => {
-      if (isOpen) setTimeout(() => searchRef.current?.focus(), 0);
+      if (!isOpen) return;
+
+      // Wait for the portal content to mount before focusing the search box.
+      // This is more reliable than a single timeout when the picker is opened
+      // from keyboard navigation across rows.
+      const raf1 = window.requestAnimationFrame(() => {
+        const raf2 = window.requestAnimationFrame(() => {
+          searchRef.current?.focus();
+          searchRef.current?.select?.();
+        });
+        focusFrameRef.current = raf2;
+      });
+
+      return () => {
+        window.cancelAnimationFrame(raf1);
+        if (focusFrameRef.current) {
+          window.cancelAnimationFrame(focusFrameRef.current);
+          focusFrameRef.current = null;
+        }
+      };
     }, [isOpen]);
 
     useEffect(() => {
