@@ -64,9 +64,15 @@ const ProductFormModal = forwardRef(({ open, onClose, onProductCreated }, ref) =
     return saved ? JSON.parse(saved) : { width: 800, height: 600 };
   });
 
-  const modalRef = useRef(null);
+const modalRef = useRef(null);
   const dragRef = useRef({ isDragging: false, offsetX: 0, offsetY: 0 });
   const nameInputRef = useRef(null);
+
+  // Resize state
+  const MIN_WIDTH = 600;
+  const MIN_HEIGHT = 400;
+  const resizeRef = useRef(null); // { direction, startX, startY, startWidth, startHeight, startLeft, startTop }
+  const [isResizing, setIsResizing] = useState(false);
 
   const { isDark, theme } = useTheme();
 
@@ -255,11 +261,120 @@ const ProductFormModal = forwardRef(({ open, onClose, onProductCreated }, ref) =
     });
   };
 
-  const stopDrag = () => {
+const stopDrag = () => {
     dragRef.current.isDragging = false;
     localStorage.setItem("productModalPos", JSON.stringify(windowPos));
     document.removeEventListener("mousemove", handleDrag);
     document.removeEventListener("mouseup", stopDrag);
+  };
+
+  // ---------- Resize ----------
+  const startResize = (e, direction) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!modalRef.current) return;
+
+    const rect = modalRef.current.getBoundingClientRect();
+    resizeRef.current = {
+      direction,
+      startX: e.clientX,
+      startY: e.clientY,
+      startWidth: rect.width,
+      startHeight: rect.height,
+      startLeft: rect.left,
+      startTop: rect.top,
+    };
+    setIsResizing(true);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = getResizeCursor(direction);
+    document.addEventListener("mousemove", handleResize);
+    document.addEventListener("mouseup", stopResize);
+  };
+
+  const getResizeCursor = (direction) => {
+    const cursors = {
+      n: "ns-resize",
+      s: "ns-resize",
+      e: "ew-resize",
+      w: "ew-resize",
+      ne: "nesw-resize",
+      sw: "nesw-resize",
+      nw: "nwse-resize",
+      se: "nwse-resize",
+    };
+    return cursors[direction] || "default";
+  };
+
+  const handleResize = (e) => {
+    const r = resizeRef.current;
+    if (!r) return;
+
+    const dx = e.clientX - r.startX;
+    const dy = e.clientY - r.startY;
+
+    let { width, height, left, top } = {
+      width: r.startWidth,
+      height: r.startHeight,
+      left: r.startLeft,
+      top: r.startTop,
+    };
+
+    const dir = r.direction;
+
+    // Right edges (e, ne, se)
+    if (dir.includes("e")) {
+      width = Math.max(MIN_WIDTH, r.startWidth + dx);
+    }
+    // Bottom edges (s, se, sw)
+    if (dir.includes("s")) {
+      height = Math.max(MIN_HEIGHT, r.startHeight + dy);
+    }
+    // Left edges (w, nw, sw)
+    if (dir.includes("w")) {
+      width = Math.max(MIN_WIDTH, r.startWidth - dx);
+      left = r.startLeft + (r.startWidth - width);
+    }
+    // Top edges (n, ne, nw)
+    if (dir.includes("n")) {
+      height = Math.max(MIN_HEIGHT, r.startHeight - dy);
+      top = r.startTop + (r.startHeight - height);
+    }
+
+    setWindowSize({ width, height });
+    setWindowPos({ x: left, y: top });
+  };
+
+  const stopResize = () => {
+    resizeRef.current = null;
+    setIsResizing(false);
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+    localStorage.setItem("productModalSize", JSON.stringify(windowSize));
+    localStorage.setItem("productModalPos", JSON.stringify(windowPos));
+    document.removeEventListener("mousemove", handleResize);
+    document.removeEventListener("mouseup", stopResize);
+  };
+
+  // Render a resize handle element
+  const renderResizeHandle = (direction) => {
+    const base = "absolute z-[10001]";
+    const positionMap = {
+      n: "top-0 left-0 w-full h-2 cursor-ns-resize",
+      s: "bottom-0 left-0 w-full h-2 cursor-ns-resize",
+      e: "top-0 right-0 w-2 h-full cursor-ew-resize",
+      w: "top-0 left-0 w-2 h-full cursor-ew-resize",
+      ne: "top-0 right-0 w-4 h-4 cursor-nesw-resize",
+      nw: "top-0 left-0 w-4 h-4 cursor-nwse-resize",
+      se: "bottom-0 right-0 w-4 h-4 cursor-nwse-resize",
+      sw: "bottom-0 left-0 w-4 h-4 cursor-nesw-resize",
+    };
+    return (
+      <div
+        key={direction}
+        className={`${base} ${positionMap[direction]}`}
+        onMouseDown={(e) => startResize(e, direction)}
+      />
+    );
   };
 
   // Select styles
@@ -303,15 +418,19 @@ const ProductFormModal = forwardRef(({ open, onClose, onProductCreated }, ref) =
       <div
         ref={modalRef}
         className="absolute bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-600 flex flex-col"
-        style={{
+style={{
           left: `${windowPos.x}px`,
           top: `${windowPos.y}px`,
           width: `${windowSize.width}px`,
           height: `${windowSize.height}px`,
           minWidth: "600px",
           minHeight: "400px",
+          userSelect: isResizing ? "none" : undefined,
         }}
       >
+        {/* Resize handles (all sides & corners) */}
+        {["n", "s", "e", "w", "ne", "nw", "se", "sw"].map(renderResizeHandle)}
+
         {/* Header (Draggable) */}
         <div
           className="px-4 py-3 border-b flex items-center justify-between cursor-move bg-gray-50 dark:bg-slate-700 rounded-t-xl border-gray-200 dark:border-slate-600"
