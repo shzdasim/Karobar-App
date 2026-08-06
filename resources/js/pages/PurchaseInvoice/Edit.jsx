@@ -63,13 +63,8 @@ export default function EditPurchaseInvoice() {
   if (loading) return <div className="p-6">Loading invoice…</div>;
   if (fetchErr) return <div className="p-6 text-red-600">{fetchErr}</div>;
 
-  return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Edit Purchase Invoice</h1>
-        <Link to="/purchase-invoices" className="text-blue-600 hover:underline">← Back</Link>
-      </div>
-
+return (
+    <div className="-m-3 md:-m-4">
       <Guard when={can.update}>
         <PurchaseInvoiceForm
           invoiceId={id}
@@ -78,7 +73,7 @@ export default function EditPurchaseInvoice() {
           onSuccess={() => navigate(`/purchase-invoices/${id}`)}
         />
       </Guard>
-      {!can.update && <div className="text-sm text-gray-700">You don’t have permission to update purchase invoices.</div>}
+      {!can.update && <div className="p-6 text-sm text-gray-700">You don’t have permission to update purchase invoices.</div>}
     </div>
   );
 }

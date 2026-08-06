@@ -958,167 +958,206 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
       style={{ minHeight: "74vh", maxHeight: "80vh" }}
       autoComplete="off" // disable browser suggestions globally
     >
-      {/* ================= HEADER SECTION ================= */}
-      <div className="sticky top-0 bg-white dark:bg-slate-800 shadow p-2 z-10 border-b border-gray-200 dark:border-slate-700" autoComplete="off">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100">
-            Purchase Invoice (Use Enter to navigate, Alt+S to save)
-          </h2>
-          
-          {/* Invoice Type Radio Buttons */}
-          <div className="flex items-center gap-3 bg-gray-50 dark:bg-slate-700/50 px-3 py-1.5 rounded border border-gray-200 dark:border-slate-600">
-            <label className="flex items-center gap-1 cursor-pointer">
-              <input
-                type="radio"
-                name="invoice_type"
-                value="debit"
-                checked={form.invoice_type === "debit"}
-                onChange={() => handleInvoiceTypeChange("debit")}
-                className="cursor-pointer"
-              />
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Debit</span>
-            </label>
-            <label className="flex items-center gap-1 cursor-pointer">
-              <input
-                type="radio"
-                name="invoice_type"
-                value="credit"
-                checked={form.invoice_type === "credit"}
-                onChange={() => handleInvoiceTypeChange("credit")}
-                className="cursor-pointer"
-              />
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Credit</span>
-            </label>
+{/* ================= HEADER SECTION ================= */}
+      <div className="sticky top-0 z-10 shadow-lg" autoComplete="off">
+{/* ---- Branded Title Banner ---- */}
+        <div
+          className="px-4 py-3 flex items-center justify-between"
+          style={{
+            background: themeColors.primary,
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center shadow-inner"
+              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
+            >
+              {/* Document / invoice icon */}
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="8" y1="13" x2="16" y1="13" />
+                <line x1="8" y1="17" x2="13" y1="17" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl font-extrabold tracking-wide text-white leading-none">
+                PURCHASE INVOICE
+              </h2>
+              <p className="text-[11px] text-white/80 mt-1">
+                Enter to navigate · Alt+S to save
+              </p>
+            </div>
           </div>
-          
-          {/* Add Product Button */}
-          <button
-            type="button"
-            onClick={() => setShowProductModal(true)}
-            className={`px-3 py-1.5 text-xs font-medium rounded transition-all duration-200 ${btnSecondary.className}`}
-            style={btnSecondary.style}
-          >
-            + Add Product
-          </button>
+
+          <div className="flex items-center gap-3">
+            {/* Invoice Type Segmented Control */}
+            <div
+              className="flex items-center rounded-lg p-1 shadow-inner"
+              style={{ backgroundColor: "rgba(0,0,0,0.18)" }}
+            >
+              {["debit", "credit"].map((type) => {
+                const active = form.invoice_type === type;
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => handleInvoiceTypeChange(type)}
+                    className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-all duration-200 ${
+                      active ? "text-white shadow" : "text-white/80 hover:text-white"
+                    }`}
+                    style={{
+                      backgroundColor: active ? "rgba(255,255,255,0.22)" : "transparent",
+                      backdropFilter: active ? "blur(4px)" : "none",
+                    }}
+                  >
+                    {type === "debit" ? "💳 Debit" : "🤝 Credit"}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Add Product Button */}
+            <button
+              type="button"
+              onClick={() => setShowProductModal(true)}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all duration-200 bg-white/95 hover:bg-white shadow`}
+              style={{ color: themeColors.primaryHover }}
+            >
+              + Add Product
+            </button>
+          </div>
         </div>
-        
-        <table className="w-full border-collapse text-xs">
-          <tbody>
-            <tr>
-              <td className="border p-1 w-1/12 bg-gray-50 dark:bg-slate-700/50">
-                <label className="block text-[10px] text-gray-600 dark:text-gray-400">Posted Number</label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  name="posted_number"
-                  readOnly
-                  placeholder="(auto on save)"
-                  value={form.posted_number || ""}
-                  className="bg-gray-100 dark:bg-slate-600 border rounded w-full p-1 h-7 text-xs text-gray-900 dark:text-gray-100"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/6 bg-gray-50 dark:bg-slate-700/50">
-                <label className="block text-[10px] text-gray-600 dark:text-gray-400">Posted Date</label>
-                <input
-                  type="date"
-                  name="posted_date"
-                  value={form.posted_date}
-                  onChange={handleChange}
-                  className="border rounded w-full p-1 h-7 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/3 bg-gray-50 dark:bg-slate-700/50">
-                <label className="block text-[10px] text-gray-600 dark:text-gray-400">Supplier *</label>
-                <div {...antiFill}>
-                  <Select
-                    ref={supplierRef}
-                    inputId="supplier_select"
-                    name="supplier_select"
-                    options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
-                    value={
-                      suppliers
-                        .map((s) => ({ value: s.id, label: s.name }))
-                        .find((s) => s.value === form.supplier_id) || null
-                    }
-                    onChange={(val) => {
-                      handleSelectChange("supplier_id", val);
-                      navigateToNextField("supplier");
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && form.supplier_id) {
-                        e.preventDefault();
-                        navigateToNextField("supplier");
-                      }
-                    }}
-                    isSearchable
-                    className="text-xs"
-                    styles={getSelectStyles(isDark)}
-                    menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-                  />
-                </div>
-              </td>
-              <td className="border p-1 w-1/8 bg-gray-50 dark:bg-slate-700/50">
-                <label className="block text-[10px] text-gray-600 dark:text-gray-400">Invoice Number</label>
-                <input
-                  ref={invoiceNumberRef}
-                  type="text"
-                  name="invoice_number"
-                  value={form.invoice_number}
-                  onChange={handleChange}
-                  onKeyDown={(e) => handleKeyDown(e, "invoice_number")}
-                  onFocus={(e) => e.target.select()}
-                  className="border rounded w-full p-1 h-7 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/8 bg-gray-50 dark:bg-slate-700/50">
-                <label className="block text-[10px] text-gray-600 dark:text-gray-400">Invoice Amount</label>
-                <input
-                  ref={invoiceAmountRef}
-                  type="text"
-                  name="invoice_amount"
-                  value={form.invoice_amount}
-                  onChange={handleChange}
-                  onKeyDown={(e) => handleKeyDown(e, "invoice_amount")}
-                  onFocus={(e) => e.target.select()}
-                  className="border rounded w-full p-1 h-7 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/8 bg-gray-50 dark:bg-slate-700/50">
-                <label className="block text-[10px] text-gray-600 dark:text-gray-400">Difference</label>
-                <input
-                  type="text"
-                  readOnly
+
+        {/* ---- Fields Card ---- */}
+        <div className="bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 px-3 py-2.5">
+<div className="grid grid-cols-12 gap-2 items-end">
+            {/* Posted Number - first */}
+            <div className="col-span-2">
+              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Posted Number</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                name="posted_number"
+                readOnly
+                placeholder="(auto on save)"
+                value={form.posted_number || ""}
+                className="bg-gray-100 dark:bg-slate-600 border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs text-gray-900 dark:text-gray-100"
+                {...antiFill}
+              />
+            </div>
+
+            {/* Date - second */}
+            <div className="col-span-2">
+              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Date</label>
+              <input
+                type="date"
+                name="posted_date"
+                value={form.posted_date}
+                onChange={handleChange}
+                className="border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                {...antiFill}
+              />
+            </div>
+
+{/* Supplier - longer */}
+            <div className="col-span-4">
+              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Supplier *</label>
+              <div {...antiFill}>
+                <Select
+                  ref={supplierRef}
+                  inputId="supplier_select"
+                  name="supplier_select"
+                  options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
                   value={
-                    form.invoice_amount && form.total_amount
-                      ? (Number(form.invoice_amount) - Number(form.total_amount)).toFixed(2)
-                      : ""
+                    suppliers
+                      .map((s) => ({ value: s.id, label: s.name }))
+                      .find((s) => s.value === form.supplier_id) || null
                   }
-                  className={`border rounded w-full p-1 h-7 text-xs font-bold text-center bg-gray-100 dark:bg-slate-600 ${
-                    Number(form.invoice_amount) - Number(form.total_amount) !== 0
-                      ? "text-red-600 dark:text-red-400"
-                      : "text-gray-700 dark:text-gray-300"
-                  }`}
-                  {...antiFill}
+                  onChange={(val) => {
+                    handleSelectChange("supplier_id", val);
+                    navigateToNextField("supplier");
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && form.supplier_id) {
+                      e.preventDefault();
+                      navigateToNextField("supplier");
+                    }
+                  }}
+                  isSearchable
+                  className="text-xs"
+                  styles={getSelectStyles(isDark)}
+                  menuPortalTarget={typeof document !== "undefined" ? document.body : null}
                 />
-              </td>
-              <td className="border p-1 w-1/6 bg-gray-50 dark:bg-slate-700/50">
-                <label className="block text-[10px] text-gray-600 dark:text-gray-400">Remarks</label>
-                <input
-                  type="text"
-                  name="remarks"
-                  value={form.remarks}
-                  onChange={handleChange}
-                  className="border rounded w-full p-1 h-7 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                  {...antiFill}
-                />
-              </td>
-            </tr>
-          </tbody>
-        </table>
+              </div>
+            </div>
+
+{/* Invoice Number */}
+            <div className="col-span-1">
+              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Invoice Number</label>
+              <input
+                ref={invoiceNumberRef}
+                type="text"
+                name="invoice_number"
+                value={form.invoice_number}
+                onChange={handleChange}
+                onKeyDown={(e) => handleKeyDown(e, "invoice_number")}
+                onFocus={(e) => e.target.select()}
+                className="border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                {...antiFill}
+              />
+            </div>
+
+{/* Invoice Amount */}
+            <div className="col-span-1">
+              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Invoice Amount</label>
+              <input
+                ref={invoiceAmountRef}
+                type="text"
+                name="invoice_amount"
+                value={form.invoice_amount}
+                onChange={handleChange}
+                onKeyDown={(e) => handleKeyDown(e, "invoice_amount")}
+                onFocus={(e) => e.target.select()}
+                className="border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                {...antiFill}
+              />
+            </div>
+
+{/* Difference */}
+            <div className="col-span-2">
+              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Difference</label>
+              <input
+                type="text"
+                readOnly
+                value={
+                  form.invoice_amount && form.total_amount
+                    ? (Number(form.invoice_amount) - Number(form.total_amount)).toFixed(2)
+                    : ""
+                }
+                className={`border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs font-bold text-center bg-gray-100 dark:bg-slate-600 ${
+                  Number(form.invoice_amount) - Number(form.total_amount) !== 0
+                    ? "text-red-600 dark:text-red-400"
+                    : "text-gray-700 dark:text-gray-300"
+                }`}
+                {...antiFill}
+              />
+            </div>
+          </div>
+
+          {/* Remarks row */}
+          <div className="mt-2">
+            <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Remarks</label>
+            <input
+              type="text"
+              name="remarks"
+              value={form.remarks}
+              onChange={handleChange}
+              className="border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+              {...antiFill}
+            />
+          </div>
+        </div>
       </div>
 
       {/* ================= ITEMS SECTION ================= */}
