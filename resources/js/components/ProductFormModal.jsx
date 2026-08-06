@@ -67,6 +67,14 @@ const ProductFormModal = forwardRef(({ open, onClose, onProductCreated }, ref) =
 const modalRef = useRef(null);
   const dragRef = useRef({ isDragging: false, offsetX: 0, offsetY: 0 });
   const nameInputRef = useRef(null);
+  const rackRef = useRef(null);
+  const formulationRef = useRef(null);
+  const packSizeRef = useRef(null);
+  const categoryRef = useRef(null);
+  const brandRef = useRef(null);
+const supplierRef = useRef(null);
+  const descriptionRef = useRef(null);
+  const saveButtonRef = useRef(null);
 
   // Resize state
   const MIN_WIDTH = 600;
@@ -155,9 +163,58 @@ const modalRef = useRef(null);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, form]);
 
-  const handleChange = (e) => {
+const handleChange = (e) => {
     const { name, value } = e.target;
     setForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  // Focus the next field when Enter is pressed
+  const focusNextField = (field) => {
+    setTimeout(() => {
+const ref = {
+        name: nameInputRef,
+        rack: rackRef,
+        formulation: formulationRef,
+        pack_size: packSizeRef,
+        category: categoryRef,
+        brand: brandRef,
+        supplier: supplierRef,
+        description: descriptionRef,
+        save: saveButtonRef,
+      }[field];
+      if (ref?.current) {
+        ref.current.focus();
+      }
+    }, 0);
+  };
+
+  // Generic Enter navigation handler for inputs
+const handleEnterNav = (e, nextField) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      focusNextField(nextField);
+    }
+  };
+
+// For react-select: only navigate on Enter when the dropdown menu is NOT open.
+  // When the menu is open, Enter should select the highlighted option.
+  const handleSelectEnterNav = (e, nextField, selectKey) => {
+    if (e.key === "Enter" && !selectMenuOpenRef.current[selectKey]) {
+      e.preventDefault();
+      focusNextField(nextField);
+    }
+  };
+
+  // Track open/closed state of each select menu using a ref (updates synchronously
+  // so the Enter handler always sees the latest value).
+  const selectMenuOpenRef = useRef({
+    category: false,
+    brand: false,
+    supplier: false,
+  });
+
+  const setSelectMenuOpen = (selectKey, isOpen) => {
+    selectMenuOpenRef.current[selectKey] = isOpen;
   };
 
   const handleSubmit = async (e) => {
@@ -473,13 +530,15 @@ style={{
                   className="w-full h-8 px-2 text-xs border rounded bg-gray-100 dark:bg-slate-600 dark:text-slate-200"
                 />
               </div>
-              <div>
+<div>
                 <label className="block text-xs font-medium mb-1 dark:text-slate-300">Rack</label>
                 <input
+                  ref={rackRef}
                   type="text"
                   name="rack"
                   value={form.rack || ""}
                   onChange={handleChange}
+                  onKeyDown={(e) => handleEnterNav(e, "name")}
                   className="w-full h-8 px-2 text-xs border rounded dark:bg-slate-700 dark:text-slate-200"
                 />
               </div>
@@ -489,40 +548,38 @@ style={{
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-medium mb-1 dark:text-slate-300">Name *</label>
-                <input
+<input
                   ref={nameInputRef}
                   type="text"
                   name="name"
                   value={form.name || ""}
                   onChange={handleChange}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      document.getElementById("product-form-input")?.focus();
-                    }
-                  }}
+                  onKeyDown={(e) => handleEnterNav(e, "formulation")}
                   className="w-full h-8 px-2 text-xs border rounded dark:bg-slate-700 dark:text-slate-200"
                   placeholder="Product name"
                 />
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1 dark:text-slate-300">Formulation</label>
-                <input
+<input
+                  ref={formulationRef}
                   type="text"
                   name="formulation"
-                  id="product-form-input"
                   value={form.formulation || ""}
                   onChange={handleChange}
+                  onKeyDown={(e) => handleEnterNav(e, "pack_size")}
                   className="w-full h-8 px-2 text-xs border rounded dark:bg-slate-700 dark:text-slate-200"
                 />
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1 dark:text-slate-300">Pack Size</label>
-                <input
+<input
+                  ref={packSizeRef}
                   type="text"
                   name="pack_size"
                   value={form.pack_size || ""}
                   onChange={handleChange}
+                  onKeyDown={(e) => handleEnterNav(e, "category")}
                   className="w-full h-8 px-2 text-xs border rounded dark:bg-slate-700 dark:text-slate-200"
                 />
               </div>
@@ -532,10 +589,14 @@ style={{
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-medium mb-1 dark:text-slate-300">Category</label>
-                <Select
+<Select
+                  ref={categoryRef}
                   options={categories.map((c) => ({ value: c.id, label: c.name }))}
                   value={categories.map((c) => ({ value: c.id, label: c.name })).find((opt) => opt.value === Number(form.category_id)) || null}
                   onChange={(opt) => setForm(prev => ({ ...prev, category_id: opt?.value || "" }))}
+                  onKeyDown={(e) => handleSelectEnterNav(e, "brand", "category")}
+                  onMenuOpen={() => setSelectMenuOpen("category", true)}
+                  onMenuClose={() => setSelectMenuOpen("category", false)}
                   isSearchable
                   classNamePrefix="rs"
                   styles={getSmallSelectStyles(isDark)}
@@ -545,7 +606,8 @@ style={{
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1 dark:text-slate-300">Brand</label>
-                <AsyncSelect
+<AsyncSelect
+                  ref={brandRef}
                   cacheOptions
                   defaultOptions
                   loadOptions={async (inputValue) => {
@@ -555,10 +617,13 @@ style={{
                     } catch { return []; }
                   }}
                   value={brandOption}
-                  onChange={(opt) => {
+onChange={(opt) => {
                     setBrandOption(opt);
                     setForm(prev => ({ ...prev, brand_id: opt?.value ?? null }));
                   }}
+                  onKeyDown={(e) => handleSelectEnterNav(e, "supplier", "brand")}
+                  onMenuOpen={() => setSelectMenuOpen("brand", true)}
+                  onMenuClose={() => setSelectMenuOpen("brand", false)}
                   isSearchable
                   classNamePrefix="rs"
                   styles={getSmallSelectStyles(isDark)}
@@ -569,10 +634,14 @@ style={{
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1 dark:text-slate-300">Supplier</label>
-                <Select
+<Select
+                  ref={supplierRef}
                   options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
                   value={suppliers.map((s) => ({ value: s.id, label: s.name })).find((opt) => opt.value === Number(form.supplier_id)) || null}
                   onChange={(opt) => setForm(prev => ({ ...prev, supplier_id: opt?.value || "" }))}
+                  onKeyDown={(e) => handleSelectEnterNav(e, "description", "supplier")}
+                  onMenuOpen={() => setSelectMenuOpen("supplier", true)}
+                  onMenuClose={() => setSelectMenuOpen("supplier", false)}
                   isSearchable
                   classNamePrefix="rs"
                   styles={getSmallSelectStyles(isDark)}
@@ -585,142 +654,24 @@ style={{
             {/* Description */}
             <div>
               <label className="block text-xs font-medium mb-1 dark:text-slate-300">Description</label>
-              <textarea
+<textarea
+                ref={descriptionRef}
                 name="description"
                 value={form.description || ""}
                 onChange={handleChange}
+onKeyDown={(e) => {
+                  // Enter without Shift moves to next field; Shift+Enter adds newline
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    focusNextField("save");
+                  }
+                }}
                 className="w-full h-16 px-2 py-1 text-xs border rounded dark:bg-slate-700 dark:text-slate-200 resize-none"
                 placeholder="Optional notes..."
               />
             </div>
 
-            {/* Pricing table - compact */}
-            <div>
-              <div className="rounded-lg overflow-hidden ring-1 ring-gray-200 dark:ring-slate-600 bg-white dark:bg-slate-700">
-                <table className="w-full text-[11px] text-gray-900 dark:text-slate-200">
-                  <thead className="bg-gray-50 dark:bg-slate-600">
-                    <tr className="text-left">
-                      <th className="px-2 py-1.5">Pack P.</th>
-                      <th className="px-2 py-1.5">Pack S.</th>
-                      <th className="px-2 py-1.5">Unit P.</th>
-                      <th className="px-2 py-1.5">Unit S.</th>
-                      <th className="px-2 py-1.5">W.S.Pack</th>
-                      <th className="px-2 py-1.5">W.S.Unit</th>
-                      <th className="px-2 py-1.5">W.S.Mrg%</th>
-                      <th className="px-2 py-1.5">Avg</th>
-                      <th className="px-2 py-1.5">Mrg%</th>
-                      <th className="px-2 py-1.5">Max.Disc</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="bg-white dark:bg-slate-700">
-                      <td className="px-1 py-1">
-                        <input
-                          type="number"
-                          name="pack_purchase_price"
-                          value={form.pack_purchase_price || ""}
-                          onChange={handleChange}
-                          className="h-6 w-full px-1 text-center border rounded dark:bg-slate-600"
-                          placeholder="0"
-                        />
-                      </td>
-                      <td className="px-1 py-1">
-                        <input
-                          type="number"
-                          name="pack_sale_price"
-                          value={form.pack_sale_price || ""}
-                          onChange={handleChange}
-                          className="h-6 w-full px-1 text-center border rounded dark:bg-slate-600"
-                          placeholder="0"
-                        />
-                      </td>
-                      <td className="px-1 py-1">
-                        <input
-                          type="number"
-                          name="unit_purchase_price"
-                          value={form.unit_purchase_price || ""}
-                          onChange={handleChange}
-                          className="h-6 w-full px-1 text-center border rounded dark:bg-slate-600"
-                          placeholder="0"
-                        />
-                      </td>
-                      <td className="px-1 py-1">
-                        <input
-                          type="number"
-                          name="unit_sale_price"
-                          value={form.unit_sale_price || ""}
-                          onChange={handleChange}
-                          className="h-6 w-full px-1 text-center border rounded dark:bg-slate-600"
-                          placeholder="0"
-                        />
-                      </td>
-                      <td className="px-1 py-1">
-                        <input
-                          type="number"
-                          name="whole_sale_pack_price"
-                          value={form.whole_sale_pack_price || ""}
-                          onChange={handleChange}
-                          className="h-6 w-full px-1 text-center border rounded dark:bg-slate-600"
-                          placeholder="0"
-                        />
-                      </td>
-                      <td className="px-1 py-1">
-                        <input
-                          type="number"
-                          name="whole_sale_unit_price"
-                          value={form.whole_sale_unit_price || ""}
-                          onChange={handleChange}
-                          className="h-6 w-full px-1 text-center border rounded dark:bg-slate-600"
-                          placeholder="0"
-                        />
-                      </td>
-                      <td className="px-1 py-1">
-                        <input
-                          type="number"
-                          name="whole_sale_margin"
-                          value={form.whole_sale_margin || ""}
-                          onChange={handleChange}
-                          className="h-6 w-full px-1 text-center border rounded dark:bg-slate-600"
-                          placeholder="0"
-                        />
-                      </td>
-                      <td className="px-1 py-1">
-                        <input
-                          type="number"
-                          name="avg_price"
-                          value={form.avg_price || ""}
-                          onChange={handleChange}
-                          className="h-6 w-full px-1 text-center border rounded dark:bg-slate-600"
-                          placeholder="0"
-                        />
-                      </td>
-                      <td className="px-1 py-1">
-                        <input
-                          type="number"
-                          name="margin"
-                          value={form.margin || ""}
-                          onChange={handleChange}
-                          className="h-6 w-full px-1 text-center border rounded dark:bg-slate-600"
-                          placeholder="0"
-                        />
-                      </td>
-                      <td className="px-1 py-1">
-                        <input
-                          type="number"
-                          name="max_discount"
-                          value={form.max_discount || ""}
-                          onChange={handleChange}
-                          className="h-6 w-full px-1 text-center border rounded dark:bg-slate-600"
-                          placeholder="0"
-                        />
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Narcotic checkbox */}
+{/* Narcotic checkbox */}
             <div className="flex items-center gap-2">
               <label className="inline-flex items-center gap-1.5 text-xs dark:text-slate-300">
                 <input
@@ -750,7 +701,8 @@ style={{
             >
               Cancel
             </button>
-            <button
+<button
+              ref={saveButtonRef}
               type="button"
               onClick={handleSubmit}
               disabled={saving}
