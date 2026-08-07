@@ -3,9 +3,9 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
-import Select from "react-select";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
+import CustomerSearch from "../../components/CustomerSearch.jsx";
 import { recalcItem, recalcFooter } from "../../Formula/SaleInvoice.js";
 import { useTheme } from "@/context/ThemeContext";
 
@@ -117,13 +117,14 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
   });
 
   // State for customer wholesale prices (fetched when customer is selected)
-  const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
+const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
   // State to store product data for validation (pack_purchase_price)
   const [productDataCache, setProductDataCache] = useState({});
   // State to track which rows have invalid prices (below purchase price)
   const [invalidPriceRows, setInvalidPriceRows] = useState({});
   const [receiveTouched, setReceiveTouched] = useState(false);
   const [marginPct, setMarginPct] = useState("");
+  const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
   // Store original invoice quantities for edit mode
   const [originalInvoiceQuantities, setOriginalInvoiceQuantities] = useState({});
   const navigate = useNavigate();
@@ -326,69 +327,7 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
   const btnSecondary = getButtonClasses.secondary;
   const btnDanger = getButtonClasses.danger;
 
-  // Helper to get react-select styles based on dark mode
-  const getSelectStyles = (isDarkMode = false) => ({
-    control: (base) => ({
-      ...base,
-      minHeight: "28px",
-      height: "28px",
-      fontSize: "11px",
-      borderColor: isDarkMode ? "rgba(71,85,105,0.8)" : "rgba(0,0,0,0.8)",
-      backgroundColor: isDarkMode ? "rgba(51,65,85,0.7)" : "rgba(255,255,255,0.7)",
-      backdropFilter: "blur(6px)",
-      boxShadow: isDarkMode ? "0 1px 2px rgba(0,0,0,0.2)" : "none",
-      borderRadius: 6,
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-    }),
-    valueContainer: (base) => ({
-      ...base,
-      height: "28px",
-      padding: "0 6px",
-    }),
-    indicatorsContainer: (base) => ({
-      ...base,
-      height: "28px",
-    }),
-    input: (base) => ({
-      ...base,
-      margin: 0,
-      padding: 0,
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-    }),
-    singleValue: (base) => ({
-      ...base,
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-    }),
-    placeholder: (base) => ({
-      ...base,
-      color: isDarkMode ? "#64748b" : "#9ca3af",
-    }),
-    menu: (base) => ({
-      ...base,
-      fontSize: "12px",
-      borderRadius: 8,
-      overflow: "hidden",
-      backgroundColor: isDarkMode ? "rgba(30,41,59,0.95)" : "rgba(255,255,255,0.95)",
-      backdropFilter: "blur(10px)",
-      boxShadow: isDarkMode ? "0 10px 30px -10px rgba(0,0,0,0.4)" : "0 10px 30px -10px rgba(30,64,175,0.18)",
-      border: isDarkMode ? "1px solid rgba(71,85,105,0.5)" : "none",
-    }),
-    option: (base, state) => ({
-      ...base,
-      backgroundColor: isDarkMode
-        ? state.isFocused
-          ? "rgba(71,85,105,1)"
-          : "rgba(51,65,85,1)"
-        : state.isFocused
-          ? "rgba(241,245,249,1)"
-          : "rgba(255,255,255,1)",
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-      cursor: "pointer",
-    }),
-    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-  });
-
-  /* -------- data -------- */
+/* -------- data -------- */
   const fetchCustomers = async () => {
     try {
       const res = await axios.get("/api/customers");
@@ -1411,22 +1350,28 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
                 className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
               />
             </div>
-            <div className="col-span-4">
+<div className="col-span-4">
               <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Customer *</label>
-              <Select
-                ref={customerSelectRef}
-                options={customers.map((c) => ({ value: c.id, label: c.name }))}
-                value={
-                  customers
-                    .map((c) => ({ value: c.id, label: c.name }))
-                    .find((s) => s.value === form.customer_id) || null
-                }
-                onChange={(val) => handleCustomerChange(val?.value || "")}
-                className="text-[11px]"
-                name="customer_select" inputId="customer_select" aria-autocomplete="list"
-                styles={getSelectStyles(isDark)}
-                isSearchable
-              />
+              <button
+                type="button"
+                onClick={() => setCustomerSearchOpen(true)}
+                className={`w-full h-9 px-3 rounded-lg border text-left text-sm flex items-center gap-2 transition-all ${
+                  selectedCustomer
+                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200"
+                    : "border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-500 dark:text-gray-400 hover:border-blue-400"
+                }`}
+                title={selectedCustomer?.name || "Click to search customer..."}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+                {selectedCustomer ? (
+                  <span className="truncate font-medium">{selectedCustomer.name}</span>
+                ) : (
+                  <span className="truncate">Click to search customer...</span>
+                )}
+              </button>
             </div>
             <div className="col-span-2">
               <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Doctor</label>
