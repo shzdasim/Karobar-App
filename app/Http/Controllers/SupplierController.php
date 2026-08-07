@@ -15,11 +15,20 @@ class SupplierController extends Controller
 
         $q     = trim($req->input('q', ''));
         $limit = max(1, min((int)$req->input('limit', 20), 100));
+        $page  = (int)$req->input('page', 0);
 
-        $query = Supplier::select('id','name')->orderBy('name');
+        $query = Supplier::select('id','name','address','phone')->orderBy('name');
 
         if ($q !== '') {
             $query->where('name','like',"%{$q}%");
+        }
+
+        // Paginated mode: used by the SupplierSearch modal (e.g. on the
+        // Purchase Invoice form). Backward compatible: when no `page` is
+        // provided we keep returning a plain array as before.
+        if ($page >= 1) {
+            $perPage = max(1, min((int)$req->input('per_page', 20), 100));
+            return $query->paginate($perPage, ['*'], 'page', $page);
         }
 
         return $query->limit($limit)->get();

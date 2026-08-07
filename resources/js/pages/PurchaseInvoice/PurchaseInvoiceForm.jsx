@@ -2,12 +2,13 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import Select from "react-select";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import { recalcItem, recalcFooter } from "../../Formula/PurchaseInvoice.js";
 import { useTheme } from "@/context/ThemeContext";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 import ProductFormModal from "../../components/ProductFormModal.jsx";
+import SupplierSearch from "../../components/SupplierSearch.jsx";
+import { BuildingStorefrontIcon } from "@heroicons/react/24/solid";
 
 // Helper to determine text color based on background brightness
 // Returns dark text for light backgrounds, light text for dark backgrounds
@@ -129,6 +130,10 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
   const [currentField, setCurrentField] = useState("supplier");
   const [currentRowIndex, setCurrentRowIndex] = useState(0);
 
+  // Supplier search modal state
+  const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
+  const [selectedSupplier, setSelectedSupplier] = useState(null);
+
   // Refs for navigation
   const supplierRef = useRef(null);
   const invoiceNumberRef = useRef(null);
@@ -159,12 +164,12 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
   }, [invoiceId]);
 
   useEffect(() => {
-    // Focus supplier field on load
-    setTimeout(() => {
-      if (supplierRef.current) {
-        supplierRef.current.focus();
-      }
-    }, 100);
+    // On load, auto-open the supplier search modal so its search field
+    // is focused (replaces the old inline react-select focus).
+    const t = setTimeout(() => {
+      setSupplierSearchOpen(true);
+    }, 150);
+    return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
@@ -211,6 +216,11 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
     next.total_paid = next.total_amount ?? "";
     setForm(next);
     setPaidTouched(false);
+    // Reflect the invoice's supplier in the search button display
+    if (next.supplier_id) {
+      const sup = res.data?.supplier || suppliers.find((s) => String(s.id) === String(next.supplier_id));
+      setSelectedSupplier(sup || { id: next.supplier_id, name: next.supplier_name || `Supplier #${next.supplier_id}` });
+    }
     await ensureProductsForItems(next?.items || []);
   };
 
@@ -244,8 +254,14 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
     setForm(nextForm);
   };
 
-  const handleSelectChange = (field, value) => {
-    setForm({ ...form, [field]: value?.value || "" });
+  // Called when a supplier is chosen from the SupplierSearch modal
+  const handleSupplierSelect = (supplier) => {
+    if (!supplier?.id) return;
+    setSelectedSupplier(supplier);
+    setForm((prev) => ({ ...prev, supplier_id: supplier.id }));
+    setSupplierSearchOpen(false);
+    // Advance to the Invoice Number field
+    navigateToNextField("supplier");
   };
 
   // Handle invoice type change (debit = pay now, credit = pay later)
@@ -895,63 +911,6 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
   const btnDanger = getButtonClasses.danger;
   const btnGlass = getButtonClasses.glass;
 
-  // Helper to merge dark mode styles - returns function-based styles for react-select
-  const getSelectStyles = (isDarkMode = false) => ({
-    control: (base) => ({
-      ...base,
-      minHeight: "28px",
-      height: "28px",
-      fontSize: "12px",
-      borderColor: isDarkMode ? "rgba(71,85,105,0.8)" : "rgba(229,231,235,0.8)",
-      backgroundColor: isDarkMode ? "rgba(51,65,85,0.7)" : "rgba(255,255,255,0.7)",
-      backdropFilter: "blur(6px)",
-      boxShadow: isDarkMode ? "0 1px 2px rgba(0,0,0,0.2)" : "0 1px 2px rgba(15,23,42,0.06)",
-      borderRadius: 8,
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-    }),
-    valueContainer: (base) => ({
-      ...base,
-      height: "28px",
-      padding: "0 4px",
-    }),
-    input: (base) => ({
-      ...base,
-      margin: 0,
-      padding: 0,
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-    }),
-    singleValue: (base) => ({
-      ...base,
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-    }),
-    placeholder: (base) => ({
-      ...base,
-      color: isDarkMode ? "#64748b" : "#9ca3af",
-    }),
-    menu: (base) => ({
-      ...base,
-      borderRadius: 8,
-      overflow: "hidden",
-      backgroundColor: isDarkMode ? "rgba(30,41,59,0.95)" : "rgba(255,255,255,0.95)",
-      backdropFilter: "blur(10px)",
-      boxShadow: isDarkMode ? "0 10px 30px -10px rgba(0,0,0,0.4)" : "0 10px 30px -10px rgba(30,64,175,0.18)",
-      border: isDarkMode ? "1px solid rgba(71,85,105,0.5)" : "none",
-    }),
-    option: (base, state) => ({
-      ...base,
-      backgroundColor: isDarkMode
-        ? state.isFocused
-          ? "rgba(71,85,105,1)"
-          : "rgba(51,65,85,1)"
-        : state.isFocused
-          ? "rgba(241,245,249,1)"
-          : "rgba(255,255,255,1)",
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-      cursor: "pointer",
-    }),
-    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-  });
-
   return (
     <form
       className="flex flex-col"
@@ -1060,36 +1019,30 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
               />
             </div>
 
-{/* Supplier - longer */}
+{/* Supplier - opens search modal */}
             <div className="col-span-4">
               <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Supplier *</label>
-              <div {...antiFill}>
-                <Select
-                  ref={supplierRef}
-                  inputId="supplier_select"
-                  name="supplier_select"
-                  options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
-                  value={
-                    suppliers
-                      .map((s) => ({ value: s.id, label: s.name }))
-                      .find((s) => s.value === form.supplier_id) || null
-                  }
-                  onChange={(val) => {
-                    handleSelectChange("supplier_id", val);
-                    navigateToNextField("supplier");
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && form.supplier_id) {
-                      e.preventDefault();
-                      navigateToNextField("supplier");
-                    }
-                  }}
-                  isSearchable
-                  className="text-xs"
-                  styles={getSelectStyles(isDark)}
-                  menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-                />
-              </div>
+              <button
+                type="button"
+                ref={supplierRef}
+                onClick={() => setSupplierSearchOpen(true)}
+                className={`w-full h-8 px-2 rounded-md border text-left text-xs flex items-center gap-2 transition-all duration-200
+                  ${selectedSupplier
+                    ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200'
+                    : 'border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-500 dark:text-gray-400 hover:border-blue-400'
+                  }`}
+                style={{ color: selectedSupplier ? undefined : (isDark ? "#94a3b8" : "#9ca3af") }}
+                {...antiFill}
+              >
+                <BuildingStorefrontIcon className="w-4 h-4 flex-shrink-0" />
+                {selectedSupplier ? (
+                  <span className="truncate font-medium" style={{ color: isDark ? "#bfdbfe" : "#1d4ed8" }}>
+                    {selectedSupplier.name}
+                  </span>
+                ) : (
+                  <span className="truncate">Click to search supplier...</span>
+                )}
+              </button>
             </div>
 
 {/* Invoice Number */}
@@ -1737,6 +1690,13 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
           // Update local products state
           setProducts(prev => [...(prev || []), newProduct]);
         }}
+      />
+
+      {/* Supplier Search Modal */}
+      <SupplierSearch
+        isOpen={supplierSearchOpen}
+        onClose={() => setSupplierSearchOpen(false)}
+        onSelect={handleSupplierSelect}
       />
     </form>
   );
