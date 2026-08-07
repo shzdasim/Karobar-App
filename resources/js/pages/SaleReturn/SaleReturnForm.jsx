@@ -2,10 +2,11 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
-import Select from "react-select";
 
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
+import CustomerSearch from "../../components/CustomerSearch.jsx";
+import SaleInvoiceSearch from "../../components/SaleInvoiceSearch.jsx";
 import { useTheme } from "@/context/ThemeContext";
 
 // Helper to determine text color based on background brightness
@@ -175,11 +176,14 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
 
   const [catalogProducts, setCatalogProducts] = useState([]);
   const [products, setProducts] = useState([]);
-  const [saleInvoices, setSaleInvoices] = useState([]);
+const [saleInvoices, setSaleInvoices] = useState([]);
   const [invoiceItems, setInvoiceItems] = useState([]);
   const [rowBatches, setRowBatches] = useState([]);
+  const [selectedInvoiceObj, setSelectedInvoiceObj] = useState(null);
 
   const [invoiceMenuOpen, setInvoiceMenuOpen] = useState(false);
+  const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
+  const [invoiceSearchOpen, setInvoiceSearchOpen] = useState(false);
 
   const customerSelectRef = useRef(null);
   const saleInvoiceRef = useRef(null);
@@ -330,68 +334,6 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
   const btnDanger = getButtonClasses.danger;
   const btnGlass = getButtonClasses.glass;
 
-  // Helper to get react-select styles based on dark mode
-  const getSelectStyles = (isDarkMode = false) => ({
-    control: (base) => ({
-      ...base,
-      minHeight: "28px",
-      height: "28px",
-      fontSize: "12px",
-      borderColor: isDarkMode ? "rgba(71,85,105,0.8)" : "rgba(0,0,0,0.8)",
-      backgroundColor: isDarkMode ? "rgba(51,65,85,0.7)" : "rgba(255,255,255,0.7)",
-      backdropFilter: "blur(6px)",
-      boxShadow: isDarkMode ? "0 1px 2px rgba(0,0,0,0.2)" : "none",
-      borderRadius: 6,
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-    }),
-    valueContainer: (base) => ({
-      ...base,
-      height: "28px",
-      padding: "0 4px",
-    }),
-    indicatorsContainer: (base) => ({
-      ...base,
-      height: "28px",
-    }),
-    input: (base) => ({
-      ...base,
-      margin: 0,
-      padding: 0,
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-    }),
-    singleValue: (base) => ({
-      ...base,
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-    }),
-    placeholder: (base) => ({
-      ...base,
-      color: isDarkMode ? "#64748b" : "#9ca3af",
-    }),
-    menu: (base) => ({
-      ...base,
-      fontSize: "12px",
-      borderRadius: 8,
-      overflow: "hidden",
-      backgroundColor: isDarkMode ? "rgba(30,41,59,0.95)" : "rgba(255,255,255,0.95)",
-      backdropFilter: "blur(10px)",
-      boxShadow: isDarkMode ? "0 10px 30px -10px rgba(0,0,0,0.4)" : "0 10px 30px -10px rgba(30,64,175,0.18)",
-      border: isDarkMode ? "1px solid rgba(71,85,105,0.5)" : "none",
-    }),
-    option: (base, state) => ({
-      ...base,
-      backgroundColor: isDarkMode
-        ? state.isFocused
-          ? "rgba(71,85,105,1)"
-          : "rgba(51,65,85,1)"
-        : state.isFocused
-          ? "rgba(241,245,249,1)"
-          : "rgba(255,255,255,1)",
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-      cursor: "pointer",
-    }),
-    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-  });
-
   useEffect(() => {
     productRefs.current = productRefs.current.slice(0, form.items.length);
     batchRefs.current = batchRefs.current.slice(0, form.items.length);
@@ -540,10 +482,12 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
     }
   };
 
-  const loadInvoice = async (invoiceId) => {
+const loadInvoice = async (invoiceId) => {
     try {
       const res = await axios.get(`/api/sale-invoices/${invoiceId}`);
-      const items = Array.isArray(res.data?.items) ? res.data.items : [];
+      const data = res.data || {};
+      setSelectedInvoiceObj(data);
+      const items = Array.isArray(data?.items) ? data.items : [];
       setInvoiceItems(items);
 
       // Reduce product list to only invoice items, merging with full catalog product object.
@@ -664,10 +608,11 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
     return 0;
   };
 
-  const handleSelectChange = async (field, value) => {
+const handleSelectChange = async (field, value) => {
     const v = value?.value ?? value ?? "";
     if (field === "customer_id") {
       setForm((prev) => ({ ...prev, customer_id: v, sale_invoice_id: "" }));
+      setSelectedInvoiceObj(null);
       await fetchSaleInvoices(v);
       setInvoiceItems([]);
       setProducts(catalogProducts);
@@ -681,8 +626,22 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
     }
     if (field === "sale_invoice_id") {
       setForm((prev) => ({ ...prev, sale_invoice_id: v }));
-      if (v) await loadInvoice(v);
-      else {
+      if (v) {
+        await loadInvoice(v);
+        // Fetch the full invoice to display its number and sync customer
+        try {
+          const invRes = await axios.get(`/api/sale-invoices/${v}`);
+          const inv = invRes.data || {};
+          setSelectedInvoiceObj(inv);
+          // Keep the invoice's customer in sync so the form is consistent
+          if (inv.customer_id) {
+            setForm((prev) => ({ ...prev, customer_id: inv.customer_id, sale_invoice_id: v }));
+          }
+        } catch (e) {
+          setSelectedInvoiceObj(null);
+        }
+      } else {
+        setSelectedInvoiceObj(null);
         setInvoiceItems([]);
         setProducts(catalogProducts);
       }
@@ -1083,97 +1042,155 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
     }
   };
 
-  // ===== Render =====
+// ===== Render =====
+  const selectedCustomer = (customers || []).find(
+    (c) => String(c.id) === String(form.customer_id)
+  );
+  const selectedInvoice =
+    selectedInvoiceObj ||
+    (saleInvoices || []).find(
+      (inv) => String(inv.id) === String(form.sale_invoice_id)
+    );
+
   return (
     <div className="relative">
-      <form className={`flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`} style={{ minHeight: "74vh", maxHeight: "80vh" }}>
-        {/* HEADER */}
-        <div className={`sticky top-0 shadow p-2 z-10 ${isDark ? "bg-slate-800 border-b border-slate-700" : "bg-white border-b border-gray-200"}`}>
-          <h2 className={`text-sm font-bold mb-2 ${isDark ? "text-slate-200" : "text-gray-800"}`}>Sale Return (Unit-based) — Enter to move, Arrow ↑/↓ to switch rows, Alt+S to save</h2>
-          <table className="w-full border-collapse text-xs">
-            <tbody>
-              <tr>
-                <td className={`border p-1 w-1/12 ${isDark ? "border-slate-700" : "border-gray-200"}`}>
-                  <label className={`block text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Posted Number</label>
-                  <input
-                    name="posted_number"
-                    type="text"
-                    readOnly
-                    value={form.posted_number || ""}
-                    className={`border rounded w-full p-1 h-7 text-xs ${
-                      isDark 
-                        ? "border-slate-600 bg-slate-700 text-slate-300" 
-                        : "border-gray-300 bg-gray-100 text-gray-700"
+      <form className={`h-[calc(100vh-110px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}>
+        {/* ===== HEADER ===== */}
+        <div className={`shrink-0 sticky top-0 z-20 shadow-lg border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+          {/* Branded Banner */}
+          <div
+            className="px-4 py-2.5 flex items-center justify-between gap-3"
+            style={{
+              background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
+            }}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center shadow-inner"
+                style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
+              >
+                {/* Return / revert icon */}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="1 4 1 10 7 10" />
+                  <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                </svg>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-extrabold tracking-wide text-white leading-none">SALE RETURN</h2>
+                  <span
+                    className="px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest text-white"
+                    style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(4px)" }}
+                  >
+                    UNIT-BASED
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest text-white ${
+                      returnId ? "bg-amber-400/90" : "bg-emerald-400/90"
                     }`}
-                  />
-                </td>
-                <td className={`border p-1 w-1/6 ${isDark ? "border-slate-700" : "border-gray-200"}`}>
-                  <label className={`block text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Date</label>
-                  <input
-                    name="date"
-                    type="date"
-                    value={form.date}
-                    onChange={(e) => setForm({ ...form, date: e.target.value })}
-                    className={`border rounded w-full p-1 h-7 text-xs ${
-                      isDark 
-                        ? "border-slate-600 bg-slate-700 text-slate-200" 
-                        : "border-gray-300 text-gray-800"
-                    }`}
-                  />
-                </td>
-                <td className={`border p-1 w-1/3 ${isDark ? "border-slate-700" : "border-gray-200"}`}>
-                  <label className={`block text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Customer *</label>
-                  <Select
-                    ref={customerSelectRef}
-                    options={customers.map((c) => ({ value: c.id, label: c.name }))}
-                    value={
-                      customers
-                        .map((c) => ({ value: c.id, label: c.name }))
-                        .find((c) => c.value === form.customer_id) || null
-                    }
-                    onChange={(val) => handleSelectChange("customer_id", val)}
-                    isSearchable
-                    classNamePrefix="react-select"
-                    styles={getSelectStyles(isDark)}
-                  />
-                </td>
-                <td className={`border p-1 w-1/3 ${isDark ? "border-slate-700" : "border-gray-200"}`}>
-                  <label className={`block text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Sale Invoice (optional)</label>
-                  <Select
-                    ref={saleInvoiceRef}
-                    options={saleInvoices.map((inv) => ({ value: inv.id, label: inv.posted_number }))}
-                    value={
-                      saleInvoices
-                        .map((inv) => ({ value: inv.id, label: inv.posted_number }))
-                        .find((x) => x.value === form.sale_invoice_id) || null
-                    }
-                    onChange={(val) => handleSelectChange("sale_invoice_id", val)}
-                    onMenuOpen={() => setInvoiceMenuOpen(true)}
-                    onMenuClose={() => setInvoiceMenuOpen(false)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        if (!invoiceMenuOpen && !form.sale_invoice_id) {
-                          e.preventDefault();
-                          setInvoiceItems([]);
-                          setProducts(catalogProducts);
-                          productBatchCache.current = new Map();
-                          setRowBatches([]);
-                          setForm((prev) => recalcFooter(prev));
-                          setTimeout(
-                            () => productRefs.current[0]?.querySelector("input")?.focus?.(),
-                            50
-                          );
-                        }
-                      }
-                    }}
-                    isSearchable
-                    classNamePrefix="react-select"
-                    styles={getSelectStyles(isDark)}
-                  />
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                    style={{ color: "#1e293b" }}
+                  >
+                    {returnId ? "EDIT" : "CREATE"}
+                  </span>
+                </div>
+                <p className="text-[10px] text-white/80 mt-0.5">
+                  Alt+S save · Enter=next · ↑/↓ rows
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSubmit}
+              className="px-4 py-2 rounded-lg text-[11px] font-bold bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
+              style={{ color: themeColors.primaryHover }}
+            >
+              {returnId ? "Edit (Alt+S)" : "Create (Alt+S)"}
+            </button>
+          </div>
+
+          {/* Fields Card */}
+          <div className={`bg-white dark:bg-slate-800 px-3 py-2`}>
+            <div className="grid grid-cols-12 gap-2 items-end">
+              {/* Posted Number */}
+              <div className="col-span-2">
+                <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Posted #</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={form.posted_number || ""}
+                  placeholder={returnId ? "" : "Auto on Save"}
+                  autoComplete="off"
+                  className={`w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] ${
+                    isDark ? "bg-slate-700 text-slate-200 placeholder-slate-500" : "bg-gray-100 text-gray-800"
+                  }`}
+                />
+              </div>
+
+              {/* Date */}
+              <div className="col-span-2">
+                <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Date</label>
+                <input
+                  type="date"
+                  name="date"
+                  value={form.date || ""}
+                  onChange={(e) => setForm({ ...form, date: e.target.value })}
+                  autoComplete="off"
+                  className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
+                />
+              </div>
+
+              {/* Customer trigger button */}
+              <div className="col-span-4">
+                <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Customer *</label>
+                <button
+                  type="button"
+                  onClick={() => setCustomerSearchOpen(true)}
+                  className={`w-full h-9 px-3 rounded-lg border text-left text-sm flex items-center gap-2 transition-all ${
+                    selectedCustomer
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200"
+                      : "border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-500 dark:text-gray-400 hover:border-blue-400"
+                  }`}
+                  title={selectedCustomer?.name || "Click to search customer..."}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  {selectedCustomer ? (
+                    <span className="truncate font-medium">{selectedCustomer.name}</span>
+                  ) : (
+                    <span className="truncate">Click to search customer...</span>
+                  )}
+                </button>
+              </div>
+
+              {/* Sale Invoice trigger button */}
+              <div className="col-span-4">
+                <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Sale Invoice (optional)</label>
+                <button
+                  type="button"
+                  onClick={() => setInvoiceSearchOpen(true)}
+                  className={`w-full h-9 px-3 rounded-lg border text-left text-sm flex items-center gap-2 transition-all ${
+                    selectedInvoice
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200"
+                      : "border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-500 dark:text-gray-400 hover:border-blue-400"
+                  }`}
+                  title={selectedInvoice?.posted_number || "Click to search invoice..."}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  {selectedInvoice ? (
+                    <span className="truncate font-medium">{selectedInvoice.posted_number}</span>
+                  ) : (
+                    <span className="truncate">Click to search invoice...</span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* ITEMS */}
@@ -1426,7 +1443,7 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
                     >
                       Cancel
                     </button>
-                    <button
+<button
                       type="button"
                       onClick={handleSubmit}
                       className={`px-8 py-3 text-sm font-semibold transition-all duration-200 ${btnPrimary.className}`}
@@ -1440,6 +1457,24 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
             </tbody>
           </table>
         </div>
+
+        {/* Customer Search Modal */}
+        <CustomerSearch
+          isOpen={customerSearchOpen}
+          onClose={() => setCustomerSearchOpen(false)}
+          onSelect={(customer) => {
+            handleSelectChange("customer_id", { value: customer?.id });
+          }}
+        />
+
+        {/* Sale Invoice Search Modal */}
+        <SaleInvoiceSearch
+          isOpen={invoiceSearchOpen}
+          onClose={() => setInvoiceSearchOpen(false)}
+          onSelect={(invoice) => {
+            handleSelectChange("sale_invoice_id", { value: invoice?.id });
+          }}
+        />
       </form>
     </div>
   );
