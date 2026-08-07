@@ -653,44 +653,74 @@ const [supplier, setSupplier] = useState(null);
 
 <div className="col-span-2 md:col-span-2 flex flex-col gap-1">
               <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Brand</label>
-              <button
-                type="button"
-                onClick={() => setBrandSearchOpen(true)}
-                className={`w-full h-9 px-3 rounded-lg border text-left text-xs flex items-center gap-2 transition-all ${
+              <div className={`w-full h-9 rounded-lg border flex items-center gap-1 overflow-hidden transition-all ${
                   brand
                     ? "border-white/60 bg-white/95 text-gray-800"
-                    : "border-white/30 bg-white/15 text-white/80 hover:bg-white/25"
-                }`}
-                title={brand?.label || "Click to search brand..."}
-              >
-                <TagIcon className="w-4 h-4 flex-shrink-0" />
-                {brand ? (
-                  <span className="truncate font-medium">{brand.label}</span>
-                ) : (
-                  <span className="truncate">Search brand...</span>
+                    : "border-white/30 bg-white/15 text-white/80"
+                }`}>
+                <button
+                  type="button"
+                  onClick={() => setBrandSearchOpen(true)}
+                  className="flex-1 h-full px-3 text-left text-xs flex items-center gap-2 min-w-0"
+                  title={brand?.label || "Click to search brand..."}
+                >
+                  <TagIcon className="w-4 h-4 flex-shrink-0" />
+                  {brand ? (
+                    <span className="truncate font-medium">{brand.label}</span>
+                  ) : (
+                    <span className="truncate">Search brand...</span>
+                  )}
+                </button>
+                {brand && (
+                  <button
+                    type="button"
+                    onClick={() => setBrand(null)}
+                    className="h-full px-2 flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 transition-colors flex-shrink-0"
+                    title="Clear brand"
+                    aria-label="Clear brand"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 )}
-              </button>
+              </div>
             </div>
 
             <div className="col-span-2 md:col-span-3 flex flex-col gap-1">
               <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Supplier</label>
-              <button
-                type="button"
-                onClick={() => setSupplierSearchOpen(true)}
-                className={`w-full h-9 px-3 rounded-lg border text-left text-xs flex items-center gap-2 transition-all ${
+<div className={`w-full h-9 rounded-lg border flex items-center gap-1 overflow-hidden transition-all ${
                   supplier
                     ? "border-white/60 bg-white/95 text-gray-800"
-                    : "border-white/30 bg-white/15 text-white/80 hover:bg-white/25"
-                }`}
-                title={supplier?.label || "Click to search supplier..."}
-              >
-                <BuildingStorefrontIcon className="w-4 h-4 flex-shrink-0" />
-                {supplier ? (
-                  <span className="truncate font-medium">{supplier.label}</span>
-                ) : (
-                  <span className="truncate">Search supplier...</span>
+                    : "border-white/30 bg-white/15 text-white/80"
+                }`}>
+                <button
+                  type="button"
+                  onClick={() => setSupplierSearchOpen(true)}
+                  className="flex-1 h-full px-3 text-left text-xs flex items-center gap-2 min-w-0"
+                  title={supplier?.label || "Click to search supplier..."}
+                >
+                  <BuildingStorefrontIcon className="w-4 h-4 flex-shrink-0" />
+                  {supplier ? (
+                    <span className="truncate font-medium">{supplier.label}</span>
+                  ) : (
+                    <span className="truncate">Search supplier...</span>
+                  )}
+                </button>
+                {supplier && (
+                  <button
+                    type="button"
+                    onClick={() => setSupplier(null)}
+                    className="h-full px-2 flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 transition-colors flex-shrink-0"
+                    title="Clear supplier"
+                    aria-label="Clear supplier"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 )}
-              </button>
+              </div>
             </div>
           </div>
         </div>
