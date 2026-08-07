@@ -74,7 +74,7 @@ export default function SaleReturnsIndex() {
   );
 
   // Get theme colors
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
 
   // Memoize theme colors for performance
   const themeColors = useMemo(() => {
@@ -110,26 +110,9 @@ export default function SaleReturnsIndex() {
     };
   }, [theme]);
 
-  // Calculate text colors based on background brightness
-  const primaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
-    [themeColors.primary, themeColors.primaryHover]
-  );
-  
-  const secondaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
-    [themeColors.secondary, themeColors.secondaryHover]
-  );
-  
-  const dangerTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.danger, themeColors.dangerHover), 
-    [themeColors.danger, themeColors.dangerHover]
-  );
-
   // Get button style from theme
   const buttonStyle = theme?.button_style || 'rounded';
   
-  // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
       'rounded': 'rounded-lg',
@@ -176,6 +159,10 @@ export default function SaleReturnsIndex() {
     }
     
     // Filled styles for rounded and soft
+    const primaryTextColor = getButtonTextColor(themeColors.primary, themeColors.primaryHover);
+    const secondaryTextColor = getButtonTextColor(themeColors.secondary, themeColors.secondaryHover);
+    const dangerTextColor = getButtonTextColor(themeColors.danger, themeColors.dangerHover);
+    
     return {
       primary: {
         className: radiusClass,
@@ -210,15 +197,12 @@ export default function SaleReturnsIndex() {
         }
       },
     };
-  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor, dangerTextColor]);
+  }, [buttonStyle, themeColors]);
 
   const btnPrimary = getButtonClasses.primary;
   const btnSecondary = getButtonClasses.secondary;
   const btnDanger = getButtonClasses.danger;
   const btnGlass = getButtonClasses.glass;
-
-  // Get dark mode state
-  const { isDark } = useTheme();
 
   // Fetch returns
   const fetchReturns = useCallback(async (signal) => {
@@ -347,54 +331,62 @@ export default function SaleReturnsIndex() {
 
   return (
     <div className="p-4 space-y-3">
-      {/* ===== Professional Header ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
-        {/* Header Top */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          {/* Title */}
+      {/* ===== Premium Gradient Hero Header ===== */}
+      <div
+        className="relative overflow-hidden rounded-2xl shadow-lg border border-white/10"
+        style={{
+          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
+        }}
+      >
+        {/* Decorative blurred blobs */}
+        <div
+          className="absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-30 blur-3xl pointer-events-none"
+          style={{ backgroundColor: "#ffffff" }}
+        />
+        <div
+          className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full opacity-20 blur-3xl pointer-events-none"
+          style={{ backgroundColor: themeColors.tertiary }}
+        />
+
+        {/* Hero Top */}
+        <div className="relative flex items-center justify-between px-5 py-4">
           <div className="flex items-center gap-3">
-            <div 
-              className="p-2 rounded-lg shadow-sm"
-              style={{ 
-                background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` 
-              }}
+            <div
+              className="p-2.5 rounded-xl shadow-inner"
+              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
             >
-              <DocumentTextIcon className="w-5 h-5 text-white" />
+              <DocumentTextIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Sale Returns</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{total} items</p>
+              <h1 className="text-xl font-extrabold tracking-wide text-white leading-none">Sale Returns</h1>
+              <p className="text-xs text-white/80 mt-1">{total} return(s) in records</p>
             </div>
           </div>
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2">
-            {/* Refresh Button */}
-            <GlassBtn
+            <button
               onClick={() => {
                 if (controllerRef.current) controllerRef.current.abort();
                 const ctrl = new AbortController();
                 controllerRef.current = ctrl;
                 fetchReturns(ctrl.signal);
               }}
-              className={`h-10 min-w-[120px] transition-all duration-200 ${btnGlass.className}`}
-              style={btnGlass.style}
+              className="h-10 px-4 inline-flex items-center gap-2 rounded-xl text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
               title="Refresh"
               aria-label="Refresh sale returns"
             >
-              <span className="inline-flex items-center gap-2">
-                <ArrowPathIcon className="w-5 h-5" />
-                Refresh
-              </span>
-            </GlassBtn>
+              <ArrowPathIcon className="w-4 h-4" />
+              Refresh
+            </button>
 
             <Guard when={can.create}>
               <Link
                 to="/sale-returns/create"
                 title="Add Sale Return (Alt+N)"
                 aria-keyshortcuts="Alt+N"
-                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold transition-all duration-200 ${btnPrimary.className}`}
-                style={btnPrimary.style}
+                className="h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-bold text-white bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
+                style={{ color: themeColors.primaryHover }}
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 Add Return
@@ -403,78 +395,71 @@ export default function SaleReturnsIndex() {
           </div>
         </div>
 
-        {/* Search Bar */}
-        <div className="px-4 py-3 bg-gray-50/50 dark:bg-slate-800/50">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <TextSearch
-              value={qPosted}
-              onChange={setQPosted}
-              placeholder="Search by Posted No (e.g., SR-000001 or SRRET-0001)…"
-              icon={<DocumentTextIcon className="w-4 h-4 text-gray-400" />}
-            />
-            <TextSearch
-              value={qCustomer}
-              onChange={setQCustomer}
-              placeholder="Search by Customer…"
-              icon={<UserIcon className="w-4 h-4 text-gray-400" />}
-            />
-          </div>
-        </div>
-
-        {/* Header Bottom */}
-        <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 dark:border-slate-700">
-          {/* Stats */}
-          <div className="flex items-center gap-4">
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              {loading ? (
-                <span className="inline-flex items-center gap-1">
-                  <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
-                  Loading...
-                </span>
-              ) : (
-                `${filtered.length === 0 ? 0 : start + 1}-${Math.min(filtered.length, start + pageSize)} of ${total}`
-              )}
-            </span>
-          </div>
-
-          {/* Right Actions */}
-          <div className="flex items-center gap-2">
-            {/* Page Size Selector */}
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/60 dark:bg-slate-800/60 border border-gray-200/60 dark:border-slate-600/40">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Show</label>
-              <select
-                value={pageSize}
-                onChange={(e) => setPageSize(Number(e.target.value))}
-                className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:border-transparent cursor-pointer"
-                style={{ '--tw-ring-color': themeColors.primary }}
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
+        {/* Integrated Search Bar */}
+        <div className="relative px-5 pb-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 rounded-xl p-3"
+            style={{ backgroundColor: "rgba(255,255,255,0.12)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)" }}>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                <DocumentTextIcon className="w-4 h-4 text-white/70" />
+              </div>
+              <input
+                type="text"
+                value={qPosted}
+                onChange={(e) => setQPosted(e.target.value)}
+                placeholder="Search by Posted No (e.g., SR-000001 or SRRET-0001)…"
+                className="w-full h-10 pl-9 pr-3 rounded-lg text-sm text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40"
+                autoComplete="off"
+              />
+            </div>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                <UserIcon className="w-4 h-4 text-white/70" />
+              </div>
+              <input
+                type="text"
+                value={qCustomer}
+                onChange={(e) => setQCustomer(e.target.value)}
+                placeholder="Search by Customer…"
+                className="w-full h-10 pl-9 pr-3 rounded-lg text-sm text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40"
+                autoComplete="off"
+              />
             </div>
           </div>
         </div>
       </div>
 
-      {/* ===== Returns Table ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      {/* ===== Returns Table Card ===== */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
         {/* Table Header */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
+        <div className="flex items-center justify-between px-4 py-3 bg-gray-50/70 dark:bg-slate-800/70 border-b border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2">
-            <div 
-              className="p-1 rounded"
-              style={{ backgroundColor: themeColors.secondaryLight }}
-            >
-              <DocumentTextIcon 
-                className="w-4 h-4" 
-                style={{ color: themeColors.secondary }}
-              />
+            <div className="p-1.5 rounded-lg shadow-sm" style={{ background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}>
+              <DocumentTextIcon className="w-4 h-4 text-white" />
             </div>
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Return List</span>
+            <div>
+              <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Return List</span>
+              <p className="text-[11px] text-gray-400">
+                {loading ? "Loading…" : `${start + 1}-${Math.min(filtered.length, start + pageSize)} of ${filtered.length}`}
+              </p>
+            </div>
           </div>
-          <span className="text-xs text-gray-400">{paged.length} items</span>
+
+          {/* Page Size Selector */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/70 dark:bg-slate-700/60 border border-gray-200 dark:border-slate-600/40">
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Show</label>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:border-transparent cursor-pointer"
+              style={{ '--tw-ring-color': themeColors.primary }}
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
         </div>
 
         <div className="max-h-[65vh] overflow-auto">

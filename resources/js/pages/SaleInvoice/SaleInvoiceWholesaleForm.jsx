@@ -1207,6 +1207,10 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
 
 
   /* ===================== R E N D E R ===================== */
+  const selectedCustomer = (customers || []).find(
+    (c) => String(c.id) === String(form.customer_id)
+  );
+
   return (
     <form
       className={`h-[calc(100vh-110px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`}
@@ -1813,12 +1817,21 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                 className={`w-full h-11 rounded-xl text-white text-[13px] font-bold transition-all duration-200 ${btnPrimary.className}`}
                 style={{ ...btnPrimary.style, boxShadow: `0 8px 20px -6px ${themeColors.primary}80` }}
               >
-                {saleId ? "Edit Sale" : "Create Sale"}
+{saleId ? "Edit Sale" : "Create Sale"}
               </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Customer Search Modal */}
+      <CustomerSearch
+        isOpen={customerSearchOpen}
+        onClose={() => setCustomerSearchOpen(false)}
+        onSelect={(customer) => {
+          handleCustomerChange(customer?.id || "");
+        }}
+      />
     </form>
   );
 }
