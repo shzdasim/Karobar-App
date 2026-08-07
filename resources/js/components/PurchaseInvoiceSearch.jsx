@@ -107,7 +107,7 @@ function ResultRow({ invoice, active, onHover, onOpen, rowRef }) {
 }
 
 /* ─────────────── Main Component ─────────────── */
-export default function PurchaseInvoiceSearch({ isOpen, onClose, onSelect }) {
+export default function PurchaseInvoiceSearch({ isOpen, onClose, onSelect, supplierId }) {
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -162,11 +162,12 @@ export default function PurchaseInvoiceSearch({ isOpen, onClose, onSelect }) {
     }
 
     try {
-      const res = await axios.get("/api/purchase-invoices/search", {
+const res = await axios.get("/api/purchase-invoices/search", {
         params: { 
           q: searchTerm, 
           page: pageNum,
-          per_page: 20 
+          per_page: 20,
+          supplier_id: supplierId || undefined
         },
         signal,
       });
@@ -186,7 +187,7 @@ export default function PurchaseInvoiceSearch({ isOpen, onClose, onSelect }) {
         setActiveIdx(newResults.length ? 0 : -1);
       }
       
-      setHasMore(hasMoreData);
+setHasMore(hasMoreData);
       setPage(pageNum);
     } catch (err) {
       if (!axios.isCancel(err)) console.error(err);
@@ -197,16 +198,16 @@ export default function PurchaseInvoiceSearch({ isOpen, onClose, onSelect }) {
         setLoading(false);
       }
     }
-  }, []);
+  }, [supplierId]);
 
-  // Fetch recent invoices when modal opens
+// Fetch recent invoices when modal opens or supplier changes
   useEffect(() => {
     if (!isOpen) return;
     
     const searchTerm = q.trim();
     setLastSearchTerm(searchTerm);
     fetchInvoices(searchTerm, 1, false);
-  }, [isOpen]);
+  }, [isOpen, supplierId]);
 
   // Close on Escape
   useEffect(() => {

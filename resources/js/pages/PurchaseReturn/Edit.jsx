@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams, Link } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import PurchaseReturnForm from "./PurchaseReturnForm";
@@ -63,13 +63,8 @@ export default function EditPurchaseReturn() {
   if (loading) return <div className="p-6">Loading return…</div>;
   if (fetchErr) return <div className="p-6 text-red-600">{fetchErr}</div>;
 
-  return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Edit Purchase Return</h1>
-        <Link to="/purchase-returns" className="text-blue-600 hover:underline">← Back</Link>
-      </div>
-
+return (
+    <div className="w-full h-full">
       <Guard when={can.update}>
         <PurchaseReturnForm
           returnId={id}

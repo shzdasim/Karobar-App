@@ -34,9 +34,8 @@ export default function CreatePurchaseReturn() {
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.create) return <div className="p-6 text-sm text-gray-700">You don’t have permission to create purchase returns.</div>;
 
-  return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Create Purchase Return</h1>
+return (
+    <div className="w-full h-full">
       <PurchaseReturnForm onSubmit={onSubmit} onSuccess={() => navigate("/purchase-returns")} />
     </div>
   );

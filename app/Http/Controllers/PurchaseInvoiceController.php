@@ -657,20 +657,30 @@ if ($invoiceType === 'credit') {
         ]);
     }
 
-    // Search purchase invoices
+// Search purchase invoices
     public function search(Request $request)
     {
         $this->authorize('viewAny', PurchaseInvoice::class);
 
         $q = trim((string) $request->query('q', ''));
+        $supplierId = $request->query('supplier_id');
         
         // Pagination parameters
         $page = (int) $request->query('page', 1);
         $perPage = (int) $request->query('per_page', 20);
 
+        // Base query with optional supplier filter
+        $baseQuery = function () use ($supplierId) {
+            $query = PurchaseInvoice::with(['supplier']);
+            if ($supplierId) {
+                $query->where('supplier_id', $supplierId);
+            }
+            return $query;
+        };
+
         // If no search query, return recent invoices
         if (strlen($q) < 1) {
-            $results = PurchaseInvoice::with(['supplier'])
+            $results = $baseQuery()
                 ->orderByDesc('id')
                 ->paginate($perPage, ['*'], 'page', $page);
 
@@ -686,7 +696,7 @@ if ($invoiceType === 'credit') {
             return response()->json($results);
         }
 
-        $query = PurchaseInvoice::with(['supplier'])
+        $query = $baseQuery()
             ->orderByDesc('id');
 
         // Search by posted_number, invoice_number, or supplier name

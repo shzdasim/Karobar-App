@@ -7,7 +7,8 @@ import Select from "react-select";
 
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
-import SupplierSearchInput from "../../components/SupplierSearchInput.jsx";
+import SupplierSearch from "../../components/SupplierSearch.jsx";
+import PurchaseInvoiceSearch from "../../components/PurchaseInvoiceSearch.jsx";
 import { recalcItem, recalcFooter } from "../../Formula/PurchaseReturn.js";
 import { useTheme } from "@/context/ThemeContext";
 
@@ -88,8 +89,14 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
   // Track react-select menu state to mimic SaleReturn behavior
   const [invoiceMenuOpen, setInvoiceMenuOpen] = useState(false);
 
-  // Track when edit mode data is fully loaded
+// Track when edit mode data is fully loaded
   const [isEditModeLoaded, setIsEditModeLoaded] = useState(false);
+
+  // Modal + selected-object state for header search
+  const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
+  const [invoiceSearchOpen, setInvoiceSearchOpen] = useState(false);
+  const [selectedSupplierObj, setSelectedSupplierObj] = useState(null);
+  const [selectedInvoiceObj, setSelectedInvoiceObj] = useState(null);
 
   // ===== refs =====
   const supplierSelectRef = useRef(null);
@@ -414,7 +421,11 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
           total: toNum(data.total),
         };
         setForm((prev) => recalcFooter({ ...prev, ...normalized }, "init"));
-        if (normalized.supplier_id) await fetchPurchaseInvoices(normalized.supplier_id);
+        if (normalized.supplier_id) {
+          await fetchPurchaseInvoices(normalized.supplier_id);
+          const supplierObj = (suppliers || []).find((s) => String(s.id) === String(normalized.supplier_id)) || null;
+          setSelectedSupplierObj(supplierObj);
+        }
         if (normalized.purchase_invoice_id) {
           await loadInvoice(normalized.purchase_invoice_id);
         } else {
@@ -497,10 +508,12 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
     return map;
   };
 
-  const loadInvoice = async (invoiceId) => {
+const loadInvoice = async (invoiceId) => {
     try {
       const res = await axios.get(`/api/purchase-invoices/${invoiceId}`);
-      const items = Array.isArray(res.data?.items) ? res.data.items : [];
+      const data = res.data || {};
+      setSelectedInvoiceObj(data);
+      const items = Array.isArray(data?.items) ? data.items : [];
       setInvoiceItems(items);
 
       // Build unique product list from invoice (keep invoice prices)
@@ -622,10 +635,13 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
     setForm(next);
   };
 
-  const handleSelectChange = async (field, value) => {
+const handleSelectChange = async (field, value) => {
     const v = value?.value ?? value ?? "";
     if (field === "supplier_id") {
       setForm((prev) => ({ ...prev, supplier_id: v, purchase_invoice_id: "" }));
+      const supplierObj = (suppliers || []).find((s) => String(s.id) === String(v)) || null;
+      setSelectedSupplierObj(supplierObj);
+      setSelectedInvoiceObj(null);
       await fetchPurchaseInvoices(v);
       setInvoiceItems([]);
       setRowErrors([]);
@@ -658,7 +674,21 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
       setForm((prev) => ({ ...prev, purchase_invoice_id: id }));
       if (id) {
         await loadInvoice(id);
+        // Sync the supplier to the invoice's supplier for consistency
+        try {
+          const invRes = await axios.get(`/api/purchase-invoices/${id}`);
+          const inv = invRes.data || {};
+          setSelectedInvoiceObj(inv);
+          if (inv.supplier_id) {
+            setForm((prev) => ({ ...prev, supplier_id: inv.supplier_id, purchase_invoice_id: id }));
+            const supplierObj = (suppliers || []).find((s) => String(s.id) === String(inv.supplier_id)) || null;
+            setSelectedSupplierObj(supplierObj);
+          }
+        } catch (e) {
+          setSelectedInvoiceObj(null);
+        }
       } else {
+        setSelectedInvoiceObj(null);
         setInvoiceItems([]);
         setProducts(catalogProducts);
       }
@@ -1455,102 +1485,158 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
   }, [returnId, form.purchase_invoice_id, invoiceItems]);
 
 
-  // ===== render =====
+// ===== render =====
   return (
-    <div className="relative">
-      <form className="flex flex-col" style={{ minHeight: "74vh", maxHeight: "80vh" }}>
-        {/* ================= HEADER ================= */}
-        <div className="sticky top-0 bg-white dark:bg-slate-800 shadow p-2 z-10 border-b border-gray-200 dark:border-slate-700">
-          <h2 className="text-sm font-bold mb-2 text-gray-900 dark:text-gray-100">Purchase Return (Use Enter to navigate, Alt+S to save)</h2>
-          <table className="w-full border-collapse text-xs">
-            <tbody>
-              <tr>
-                <td className="border p-1 w-1/12 bg-gray-50 dark:bg-slate-700/50">
-                  <label className="block text-[10px] text-gray-600 dark:text-gray-400">Posted Number</label>
-                  <input
-                    name="posted_number"
-                    type="text"
-                    readOnly
-                    value={form.posted_number || ""}
-                    className="bg-gray-100 dark:bg-slate-600 border rounded w-full p-1 h-7 text-xs text-gray-900 dark:text-gray-100"
-                  />
-                </td>
+    <div className="relative w-full h-full">
+      <form className={`h-[calc(100vh-110px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}>
+{/* ================= HEADER ================= */}
+        <div className="sticky top-0 z-20 shadow-lg border-b border-gray-200 dark:border-slate-700">
+          {/* Branded Banner */}
+          <div
+            className="px-4 py-2.5 flex items-center justify-between gap-3"
+            style={{
+              background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
+            }}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center shadow-inner"
+                style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
+              >
+                {/* Return / revert icon */}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="1 4 1 10 7 10" />
+                  <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                </svg>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-extrabold tracking-wide text-white leading-none">PURCHASE RETURN</h2>
+                  <span
+                    className="px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest text-white"
+                    style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(4px)" }}
+                  >
+                    UNIT-BASED
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest text-white ${
+                      returnId ? "bg-amber-400/90" : "bg-emerald-400/90"
+                    }`}
+                    style={{ color: "#1e293b" }}
+                  >
+                    {returnId ? "EDIT" : "CREATE"}
+                  </span>
+                </div>
+                <p className="text-[10px] text-white/80 mt-0.5">
+                  Alt+S save · Enter=next · ↑/↓ rows
+                </p>
+              </div>
+            </div>
 
-                <td className="border p-1 w-1/6 bg-gray-50 dark:bg-slate-700/50">
-                  <label className="block text-[10px] text-gray-600 dark:text-gray-400">Date</label>
-                  <input
-                    name="date"
-                    type="date"
-                    value={form.date}
-                    onChange={handleChange}
-                    className="border rounded w-full p-1 h-7 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                  />
-                </td>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              className="px-4 py-2 rounded-lg text-[11px] font-bold bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
+              style={{ color: themeColors.primaryHover }}
+            >
+              {returnId ? "Update (Alt+S)" : "Create (Alt+S)"}
+            </button>
+          </div>
 
-                <td className="border p-1 w-1/3 bg-gray-50 dark:bg-slate-700/50">
-                  <label className="block text-[10px] text-gray-600 dark:text-gray-400">Supplier *</label>
-                  <SupplierSearchInput
-                    ref={supplierSelectRef}
-                    value={form.supplier_id}
-                    suppliers={suppliers}
-                    autoFocus={!returnId} // ✅ focus only in create mode
-                    onChange={(id) => {
-                      // keep your existing behavior
-                      handleSelectChange("supplier_id", { value: id });
-                      // then move focus to invoice picker
-                      setTimeout(() => purchaseInvoiceRef.current?.focus?.(), 50);
-                    }}
-                  />
-                </td>
+          {/* Fields Card */}
+          <div className="bg-white dark:bg-slate-800 px-3 py-2">
+            <div className="grid grid-cols-12 gap-2 items-end">
+              {/* Posted Number */}
+              <div className="col-span-2">
+                <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Posted #</label>
+                <input
+                  name="posted_number"
+                  type="text"
+                  readOnly
+                  value={form.posted_number || ""}
+                  placeholder={returnId ? "" : "Auto on Save"}
+                  className={`w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] ${
+                    isDark ? "bg-slate-700 text-slate-200 placeholder-slate-500" : "bg-gray-100 text-gray-800"
+                  }`}
+                />
+              </div>
 
-                <td className="border p-1 w-1/3 bg-gray-50 dark:bg-slate-700/50">
-                  <label className="block text-[10px] text-gray-600 dark:text-gray-400">Purchase Invoice (optional)</label>
-                  <Select
-                    ref={purchaseInvoiceRef}
-                    options={invoiceOptions}
-                    value={invoiceOptions.find((inv) => inv.value === form.purchase_invoice_id) || null}
-                    onChange={(val) => handleSelectChange("purchase_invoice_id", val)}
-                    onMenuOpen={() => setInvoiceMenuOpen(true)}
-                    onMenuClose={() => setInvoiceMenuOpen(false)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        // If the menu is CLOSED and nothing is selected, treat Enter as "skip invoice" like SaleReturn
-                        if (!invoiceMenuOpen && !form.purchase_invoice_id) {
-                          e.preventDefault();
-                          // Ensure we're in open-return mode
-                          setInvoiceItems([]);
-                          setProducts(catalogProducts);
-                          productBatchCache.current = new Map();
-                          setRowBatches([]);
-                          setRowErrors([]);
-                          setForm((prev) => recalcFooter(prev));
-                          // Focus the first Product
-                          advanceToFirstProduct();
-                        }
-                        // If menu is OPEN, do NOTHING here so react-select can commit the highlighted option.
-                        // handleSelectChange will then move focus to Product automatically.
-                      }
-                    }}
-                    isSearchable
-                    classNamePrefix="react-select"
-                    styles={getSelectStyles(isDark)}
-                    menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-                  />
-                </td>
+              {/* Date */}
+              <div className="col-span-2">
+                <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Date</label>
+                <input
+                  name="date"
+                  type="date"
+                  value={form.date}
+                  onChange={handleChange}
+                  className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
+                />
+              </div>
 
-                <td className="border p-1 w-1/4 bg-gray-50 dark:bg-slate-700/50">
-                  <label className="block text-[10px] text-gray-600 dark:text-gray-400">Remarks</label>
-                  <input
-                    name="remarks"
-                    type="text"
-                    value={form.remarks}
-                    onChange={handleChange}
-                    className="border rounded w-full p-1 h-7 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                  />
-                </td>
-              </tr>
-            </tbody>
-          </table>
+              {/* Supplier trigger button */}
+              <div className="col-span-4">
+                <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Supplier *</label>
+                <button
+                  type="button"
+                  onClick={() => setSupplierSearchOpen(true)}
+                  className={`w-full h-9 px-3 rounded-lg border text-left text-sm flex items-center gap-2 transition-all ${
+                    selectedSupplierObj
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200"
+                      : "border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-500 dark:text-gray-400 hover:border-blue-400"
+                  }`}
+                  title={selectedSupplierObj?.name || "Click to search supplier..."}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                    <path d="M3 21h18" />
+                    <path d="M5 21V7l7-4 7 4v14" />
+                    <path d="M9 9h1M9 13h1M14 9h1M14 13h1M9 17h6" />
+                  </svg>
+                  {selectedSupplierObj ? (
+                    <span className="truncate font-medium">{selectedSupplierObj.name}</span>
+                  ) : (
+                    <span className="truncate">Click to search supplier...</span>
+                  )}
+                </button>
+              </div>
+
+              {/* Purchase Invoice trigger button */}
+              <div className="col-span-4">
+                <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Purchase Invoice (optional)</label>
+                <button
+                  type="button"
+                  onClick={() => setInvoiceSearchOpen(true)}
+                  className={`w-full h-9 px-3 rounded-lg border text-left text-sm flex items-center gap-2 transition-all ${
+                    selectedInvoiceObj
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200"
+                      : "border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-500 dark:text-gray-400 hover:border-blue-400"
+                  }`}
+                  title={selectedInvoiceObj?.posted_number || "Click to search invoice..."}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  {selectedInvoiceObj ? (
+                    <span className="truncate font-medium">{selectedInvoiceObj.posted_number}</span>
+                  ) : (
+                    <span className="truncate">Click to search invoice...</span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Remarks */}
+            <div className="mt-2">
+              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Remarks</label>
+              <input
+                name="remarks"
+                type="text"
+                value={form.remarks}
+                onChange={handleChange}
+                className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
+              />
+            </div>
+          </div>
         </div>
 
         {/* ================= ITEMS ================= */}
@@ -1748,67 +1834,122 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
           </table>
         </div>
 
-        {/* ================= FOOTER ================= */}
-        <div className="sticky bottom-0 bg-white dark:bg-slate-800 shadow p-2 z-10 border-t border-gray-200 dark:border-slate-700">
-          <table className="w-full border-collapse text-xs">
-            <tbody>
-              <tr>
-                <td className="border p-1 w-1/6 bg-gray-50 dark:bg-slate-700/50">
-                  <label className="block text-[10px] text-gray-600 dark:text-gray-400">Gross Total</label>
-                  <input type="number" readOnly value={(Number(form.gross_total) || 0).toFixed(2)} className="border rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100" />
-                </td>
+{/* ================= FOOTER ================= */}
+        <div className={`sticky bottom-0 shadow p-2 z-10 ${isDark ? "bg-slate-800 border-t border-slate-700" : "bg-white border-t border-gray-200"}`}>
+          <div className="grid grid-cols-6 gap-2 text-xs">
+            <div className={`p-1.5 rounded-lg border ${isDark ? "border-slate-700 bg-slate-700/40" : "border-gray-200 bg-gray-50"}`}>
+              <label className={`block text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Gross Total</label>
+              <input
+                type="number"
+                readOnly
+                value={(Number(form.gross_total) || 0).toFixed(2)}
+                className={`mt-1 border rounded-md w-full px-2 h-7 text-xs font-medium ${
+                  isDark ? "border-slate-600 bg-slate-700 text-slate-300" : "border-gray-300 bg-gray-100 text-gray-700"
+                }`}
+              />
+            </div>
 
-                <td className="border p-1 w-1/6 bg-gray-50 dark:bg-slate-700/50">
-                  <label className="block text-[10px] text-gray-600 dark:text-gray-400">Discount %</label>
-                  <input name="discount_percentage" type="number" value={form.discount_percentage} onChange={handleChange} className="border rounded w-full p-1 h-7 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100" />
-                </td>
+            <div className={`p-1.5 rounded-lg border ${isDark ? "border-slate-700 bg-slate-700/40" : "border-gray-200 bg-gray-50"}`}>
+              <label className={`block text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Discount %</label>
+              <input
+                name="discount_percentage"
+                type="number"
+                value={form.discount_percentage}
+                onChange={handleChange}
+                className={`mt-1 border rounded-md w-full px-2 h-7 text-xs ${
+                  isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-300 text-gray-800"
+                }`}
+              />
+            </div>
 
-                <td className="border p-1 w-1/6 bg-gray-50 dark:bg-slate-700/50">
-                  <label className="block text-[10px] text-gray-600 dark:text-gray-400">Discount Amount</label>
-                  <input type="number" readOnly value={(Number(form.discount_amount) || 0).toFixed(2)} className="border rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100" />
-                </td>
+            <div className={`p-1.5 rounded-lg border ${isDark ? "border-slate-700 bg-slate-700/40" : "border-gray-200 bg-gray-50"}`}>
+              <label className={`block text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Discount Amount</label>
+              <input
+                type="number"
+                readOnly
+                value={(Number(form.discount_amount) || 0).toFixed(2)}
+                className={`mt-1 border rounded-md w-full px-2 h-7 text-xs ${
+                  isDark ? "border-slate-600 bg-slate-700 text-slate-300" : "border-gray-300 bg-gray-100 text-gray-700"
+                }`}
+              />
+            </div>
 
-                <td className="border p-1 w-1/6 bg-gray-50 dark:bg-slate-700/50">
-                  <label className="block text-[10px] text-gray-600 dark:text-gray-400">Tax %</label>
-                  <input name="tax_percentage" type="number" value={form.tax_percentage} onChange={handleChange} className="border rounded w-full p-1 h-7 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100" />
-                </td>
+            <div className={`p-1.5 rounded-lg border ${isDark ? "border-slate-700 bg-slate-700/40" : "border-gray-200 bg-gray-50"}`}>
+              <label className={`block text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Tax %</label>
+              <input
+                name="tax_percentage"
+                type="number"
+                value={form.tax_percentage}
+                onChange={handleChange}
+                className={`mt-1 border rounded-md w-full px-2 h-7 text-xs ${
+                  isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-300 text-gray-800"
+                }`}
+              />
+            </div>
 
-                <td className="border p-1 w-1/6 bg-gray-50 dark:bg-slate-700/50">
-                  <label className="block text-[10px] text-gray-600 dark:text-gray-400">Tax Amount</label>
-                  <input type="number" readOnly value={(Number(form.tax_amount) || 0).toFixed(2)} className="border rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100" />
-                </td>
+            <div className={`p-1.5 rounded-lg border ${isDark ? "border-slate-700 bg-slate-700/40" : "border-gray-200 bg-gray-50"}`}>
+              <label className={`block text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Tax Amount</label>
+              <input
+                type="number"
+                readOnly
+                value={(Number(form.tax_amount) || 0).toFixed(2)}
+                className={`mt-1 border rounded-md w-full px-2 h-7 text-xs ${
+                  isDark ? "border-slate-600 bg-slate-700 text-slate-300" : "border-gray-300 bg-gray-100 text-gray-700"
+                }`}
+              />
+            </div>
 
-                <td className="border p-1 w-1/6 text-right align-middle bg-gray-50 dark:bg-slate-700/50">
-                  <label className="block text-[10px] text-gray-600 dark:text-gray-400">Total</label>
-                  <input type="number" readOnly value={(Number(form.total) || 0).toFixed(2)} className="border rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100 text-right" />
-                </td>
-              </tr>
+            <div className={`p-1.5 rounded-lg border ${isDark ? "border-slate-700 bg-slate-700/40" : "border-gray-200 bg-gray-50"}`}>
+              <label className={`block text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Total</label>
+              <input
+                type="number"
+                readOnly
+                value={(Number(form.total) || 0).toFixed(2)}
+                className={`mt-1 border rounded-md w-full px-2 h-7 text-xs font-bold ${
+                  isDark ? "border-slate-600 bg-slate-700 text-rose-400" : "border-gray-300 bg-gray-100 text-red-600"
+                }`}
+              />
+            </div>
+          </div>
 
-              <tr>
-                <td colSpan={6} className="p-2">
-                  <div className="flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={handleCancel}
-                      className={`px-6 py-3 rounded text-sm font-semibold transition-all duration-200 ${btnTertiary.className}`}
-                      style={btnTertiary.style}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSubmit}
-                      className={`px-8 py-3 rounded text-sm font-semibold transition-all duration-200 ${btnPrimary.className}`}
-                      style={btnPrimary.style}
-                    >
-                      {form.returnId || returnId ? "Update Return" : "Create Return"}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={handleCancel}
+              className={`px-6 py-3 text-sm font-medium transition-all duration-200 ${btnTertiary.className}`}
+              style={btnTertiary.style}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              className={`px-8 py-3 text-sm font-semibold transition-all duration-200 ${btnPrimary.className}`}
+              style={btnPrimary.style}
+            >
+              {form.returnId || returnId ? "Update Return" : "Create Return"}
+            </button>
+          </div>
         </div>
+
+        {/* Supplier Search Modal */}
+        <SupplierSearch
+          isOpen={supplierSearchOpen}
+          onClose={() => setSupplierSearchOpen(false)}
+          onSelect={(supplier) => {
+            handleSelectChange("supplier_id", { value: supplier?.id });
+          }}
+        />
+
+{/* Purchase Invoice Search Modal */}
+        <PurchaseInvoiceSearch
+          isOpen={invoiceSearchOpen}
+          onClose={() => setInvoiceSearchOpen(false)}
+          supplierId={form.supplier_id || selectedSupplierObj?.id || undefined}
+          onSelect={(invoice) => {
+            handleSelectChange("purchase_invoice_id", { value: invoice?.id });
+          }}
+        />
       </form>
     </div>
   );
