@@ -2,7 +2,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import AsyncSelect from "react-select/async";
 import {
   ArrowPathIcon,
   PlayCircleIcon,
@@ -11,9 +10,13 @@ import {
   CalendarIcon,
   ShieldCheckIcon,
   CubeIcon,
+  TagIcon,
+  BuildingStorefrontIcon,
 } from "@heroicons/react/24/solid";
 import { usePermissions } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext.jsx";
+import BrandSearch from "../components/BrandSearch.jsx";
+import SupplierSearch from "../components/SupplierSearch.jsx";
 
 // Reusable components
 import {
@@ -247,8 +250,10 @@ export default function PurchaseOrder() {
   const [safetyPacks, setSafetyPacks] = useState(1);
   const [moqPacks, setMoqPacks] = useState(0);
 
-  const [supplier, setSupplier] = useState(null);
+const [supplier, setSupplier] = useState(null);
   const [brand, setBrand] = useState(null);
+  const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
+  const [brandSearchOpen, setBrandSearchOpen] = useState(false);
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -488,40 +493,60 @@ export default function PurchaseOrder() {
 
   return (
     <div className="p-4 space-y-3 print:p-0" onKeyDown={onKeyDownTable}>
-      {/* ===== Professional Header ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
-        {/* Header Top */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          {/* Title */}
+{/* ===== Premium Gradient Hero Header ===== */}
+      <div
+        className="relative overflow-hidden rounded-2xl shadow-lg"
+        style={{
+          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
+        }}
+      >
+        {/* Decorative blurred blobs */}
+        <div
+          className="absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-30 blur-3xl pointer-events-none"
+          style={{ backgroundColor: "#ffffff" }}
+        />
+        <div
+          className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full opacity-20 blur-3xl pointer-events-none"
+          style={{ backgroundColor: themeColors.tertiary }}
+        />
+
+        {/* Hero Top */}
+        <div className="relative flex items-center justify-between px-5 py-4">
           <div className="flex items-center gap-3">
-            <div 
-              className="p-2 rounded-lg shadow-sm"
-              style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+            <div
+              className="p-2.5 rounded-xl shadow-inner"
+              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
             >
-              <CalculatorIcon className="w-5 h-5 text-white" />
+              <CalculatorIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Purchase Order (Forecast)</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{rows.length} items</p>
+              <h1 className="text-xl font-extrabold tracking-wide text-white leading-none">Purchase Order (Forecast)</h1>
+              <p className="text-xs text-white/80 mt-1">
+                {loading ? (
+                  <span className="inline-flex items-center gap-1">
+                    <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
+                    Loading...
+                  </span>
+                ) : (
+                  `${rows.length} item(s) in forecast`
+                )}
+              </p>
             </div>
           </div>
 
-{/* Action Buttons */}
-          <div className="flex items-center gap-2">
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             {/* Generate Button */}
             <button
               onClick={handleFetch}
               disabled={loading || !canGenerate}
-              className={`
-                inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold
-                transition-all duration-200
-                ${canGenerate 
-                  ? `${btnPrimary.className} cursor-pointer` 
-                  : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"
-                }
-              `}
-              style={canGenerate ? btnPrimary.style : {}}
-              title={!canGenerate ? "Not permitted" : "Generate forecast"}
+              className={`h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-bold shadow-lg transition-all duration-200 ${
+                canGenerate
+                  ? "text-white bg-white/95 hover:bg-white"
+                  : "bg-white/20 text-white/60 cursor-not-allowed"
+              }`}
+              style={canGenerate ? { color: themeColors.primaryHover } : {}}
+              title={!canGenerate ? "Not permitted" : "Generate forecast (Alt+G)"}
             >
               <PlayCircleIcon className="w-4 h-4" />
               {loading ? "Loading…" : "Generate"}
@@ -531,167 +556,159 @@ export default function PurchaseOrder() {
             <button
               onClick={pruneNoPackPrice}
               disabled={!rows.length}
-              className={`
-                inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold
-                transition-all duration-200
-                ${rows.length 
-                  ? `${btnPrimary.className} cursor-pointer` 
-                  : "bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed"
-                }
-              `}
-              style={rows.length ? btnPrimary.style : {}}
+              className={`h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-bold shadow-lg transition-all duration-200 ${
+                rows.length
+                  ? "text-white bg-white/95 hover:bg-white"
+                  : "bg-white/20 text-white/60 cursor-not-allowed"
+              }`}
+              style={rows.length ? { color: themeColors.primaryHover } : {}}
               title="Remove products with no Pack Purchase Price"
             >
-              <span className="text-lg">×</span>
+              <span className="text-base leading-none">×</span>
               Remove Zero
             </button>
 
-            <div className="w-px h-8 bg-gray-200 dark:bg-slate-600 mx-1" />
+            <div className="w-px h-8 bg-white/30 mx-1" />
 
             {/* Refresh Button */}
             <button
               onClick={() => window.location.reload()}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold ${btnSecondary.className}`}
-              style={btnSecondary.style}
+              className="h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
               title="Refresh"
               aria-label="Refresh page"
             >
               <ArrowPathIcon className="w-4 h-4" />
-              Refresh
+              <span className="hidden sm:inline">Refresh</span>
             </button>
 
             {/* Print Button */}
             <button
               ref={printBtnRef}
               onClick={doPrint}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold ${btnTertiary.className}`}
-              style={btnTertiary.style}
+              className="h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
               title="Print (Alt+P)"
             >
               <PrinterIcon className="w-4 h-4" />
-              Print
+              <span className="hidden sm:inline">Print</span>
             </button>
           </div>
         </div>
 
-{/* Filters */}
-        <div className="px-4 py-3 bg-gray-50/50 dark:bg-slate-800/50">
-          <div className="grid grid-cols-2 md:grid-cols-12 gap-3">
-            <div className="col-span-2 md:col-span-2 flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">From</label>
-              <GlassInput 
-                type="date" 
-                value={dateFrom} 
-                onChange={(e) => setDateFrom(e.target.value)} 
-                className="w-full h-8 text-xs"
+        {/* Integrated Filters */}
+        <div className="relative px-5 pb-4">
+          <div
+            className="grid grid-cols-2 md:grid-cols-12 gap-3 rounded-xl p-3"
+            style={{ backgroundColor: "rgba(255,255,255,0.12)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)" }}
+          >
+            <div className="col-span-1 md:col-span-2 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">From</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40 [color-scheme:dark]"
               />
             </div>
-            <div className="col-span-2 md:col-span-2 flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">To</label>
-              <GlassInput 
-                type="date" 
-                value={dateTo} 
-                onChange={(e) => setDateTo(e.target.value)} 
-                className="w-full h-8 text-xs"
+            <div className="col-span-1 md:col-span-2 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">To</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40 [color-scheme:dark]"
               />
             </div>
             <div className="col-span-1 md:col-span-1 flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Proj. Days</label>
-              <GlassInput
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Proj. Days</label>
+              <input
                 type="number"
                 min={1}
                 value={projectedDays}
                 onChange={(e) => setProjectedDays(parseInt(e.target.value || 0, 10))}
-                className="w-full h-8 text-xs"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40 no-spinners"
               />
             </div>
 
             <div className="col-span-1 md:col-span-1 flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Safety</label>
-              <GlassInput
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Safety</label>
+              <input
                 type="number"
                 min={0}
                 value={safetyPacks}
-                onChange={(e)=>setSafetyPacks(parseInt(e.target.value || 0, 10))}
-                className="w-full h-8 text-xs"
+                onChange={(e) => setSafetyPacks(parseInt(e.target.value || 0, 10))}
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40 no-spinners"
               />
             </div>
 
             <div className="col-span-1 md:col-span-1 flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">MOQ</label>
-              <GlassInput
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">MOQ</label>
+              <input
                 type="number"
                 min={0}
                 value={moqPacks}
-                onChange={(e)=>setMoqPacks(parseInt(e.target.value || 0, 10))}
-                className="w-full h-8 text-xs"
+                onChange={(e) => setMoqPacks(parseInt(e.target.value || 0, 10))}
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40 no-spinners"
               />
             </div>
 
-            <div className="col-span-2 md:col-span-2 flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Brand</label>
-              <AsyncSelect
-                cacheOptions={false}
-                defaultOptions={[]}
-                loadOptions={loadBrandOptions}
-                styles={getSelectStyles(isDark)}
-                value={brand}
-                onChange={setBrand}
-                placeholder="Search brand..."
-                isClearable
-                filterOption={() => true}
-                menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-                menuPosition="fixed"
-                classNamePrefix="rs"
-              />
+<div className="col-span-2 md:col-span-2 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Brand</label>
+              <button
+                type="button"
+                onClick={() => setBrandSearchOpen(true)}
+                className={`w-full h-9 px-3 rounded-lg border text-left text-xs flex items-center gap-2 transition-all ${
+                  brand
+                    ? "border-white/60 bg-white/95 text-gray-800"
+                    : "border-white/30 bg-white/15 text-white/80 hover:bg-white/25"
+                }`}
+                title={brand?.label || "Click to search brand..."}
+              >
+                <TagIcon className="w-4 h-4 flex-shrink-0" />
+                {brand ? (
+                  <span className="truncate font-medium">{brand.label}</span>
+                ) : (
+                  <span className="truncate">Search brand...</span>
+                )}
+              </button>
             </div>
 
             <div className="col-span-2 md:col-span-3 flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Supplier</label>
-              <AsyncSelect
-                cacheOptions={false}
-                defaultOptions={[]}
-                loadOptions={loadSupplierOptions}
-                styles={getSelectStyles(isDark)}
-                value={supplier}
-                onChange={setSupplier}
-                placeholder="Search supplier..."
-                isClearable
-                filterOption={() => true}
-                menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-                menuPosition="fixed"
-                classNamePrefix="rs"
-              />
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Supplier</label>
+              <button
+                type="button"
+                onClick={() => setSupplierSearchOpen(true)}
+                className={`w-full h-9 px-3 rounded-lg border text-left text-xs flex items-center gap-2 transition-all ${
+                  supplier
+                    ? "border-white/60 bg-white/95 text-gray-800"
+                    : "border-white/30 bg-white/15 text-white/80 hover:bg-white/25"
+                }`}
+                title={supplier?.label || "Click to search supplier..."}
+              >
+                <BuildingStorefrontIcon className="w-4 h-4 flex-shrink-0" />
+                {supplier ? (
+                  <span className="truncate font-medium">{supplier.label}</span>
+                ) : (
+                  <span className="truncate">Search supplier...</span>
+                )}
+              </button>
             </div>
           </div>
-        </div>
-
-        {/* Header Bottom */}
-        <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 dark:border-slate-700">
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            {loading ? (
-              <span className="inline-flex items-center gap-1">
-                <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
-                Loading...
-              </span>
-            ) : (
-              `${rows.length} items`
-            )}
-          </span>
         </div>
       </div>
 
-      {/* ===== Table ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+{/* ===== Table ===== */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300">
         {/* Table Header */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
+        <div className="flex items-center justify-between px-4 py-3 bg-gray-50/70 dark:bg-slate-800/70 border-b border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2">
-            <div className={`p-1 rounded ${SECTION_CONFIG.core.bgDark}`}>
-              <CubeIcon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <div className="p-1.5 rounded-lg shadow-sm" style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}>
+              <CubeIcon className="w-4 h-4 text-white" />
             </div>
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Forecast Items</span>
+            <div>
+              <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Forecast Items</span>
+              <p className="text-[11px] text-gray-400">{rows.length} item(s)</p>
+            </div>
           </div>
-          <span className="text-xs text-gray-400">{rows.length} items</span>
         </div>
 
         <div
@@ -796,6 +813,22 @@ export default function PurchaseOrder() {
           </table>
         </div>
       </div>
+
+{/* ===== Brand & Supplier Search Modals ===== */}
+      <BrandSearch
+        isOpen={brandSearchOpen}
+        onClose={() => setBrandSearchOpen(false)}
+        onSelect={(brandObj) => {
+          setBrand(brandObj ? { value: brandObj.id, label: brandObj.name } : null);
+        }}
+      />
+      <SupplierSearch
+        isOpen={supplierSearchOpen}
+        onClose={() => setSupplierSearchOpen(false)}
+        onSelect={(supplierObj) => {
+          setSupplier(supplierObj ? { value: supplierObj.id, label: supplierObj.name } : null);
+        }}
+      />
 
       {/* Print styles */}
       <style>{`

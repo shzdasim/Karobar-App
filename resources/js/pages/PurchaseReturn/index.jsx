@@ -42,26 +42,6 @@ const getButtonTextColor = (primaryColor, primaryHoverColor) => {
   return getContrastText(primaryHoverColor || primaryColor);
 };
 
-// Section configuration with color schemes - matching sidebar design
-const SECTION_CONFIG = {
-  core: {
-    gradient: "from-blue-500 to-cyan-600",
-    bgLight: "bg-blue-50",
-    bgDark: "dark:bg-blue-900/20",
-    borderColor: "border-blue-200 dark:border-blue-700",
-    iconColor: "text-blue-600 dark:text-blue-400",
-    ringColor: "ring-blue-300 dark:ring-blue-700",
-  },
-  management: {
-    gradient: "from-violet-500 to-purple-600",
-    bgLight: "bg-violet-50",
-    bgDark: "dark:bg-violet-900/20",
-    borderColor: "border-violet-200 dark:border-violet-700",
-    iconColor: "text-violet-600 dark:text-violet-400",
-    ringColor: "ring-violet-300 dark:ring-violet-700",
-  },
-};
-
 export default function PurchaseReturnsIndex() {
   const [returns, setReturns] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -96,7 +76,7 @@ export default function PurchaseReturnsIndex() {
   useEffect(() => { document.title = "Purchase Returns - Pharmacy ERP"; }, []);
 
   // Get theme colors
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
 
   // Memoize theme colors for performance
   const themeColors = useMemo(() => {
@@ -133,24 +113,24 @@ export default function PurchaseReturnsIndex() {
   }, [theme]);
 
   // Calculate text colors based on background brightness
-  const primaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
+  const primaryTextColor = useMemo(() =>
+    getButtonTextColor(themeColors.primary, themeColors.primaryHover),
     [themeColors.primary, themeColors.primaryHover]
   );
-  
-  const secondaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
+
+  const secondaryTextColor = useMemo(() =>
+    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover),
     [themeColors.secondary, themeColors.secondaryHover]
   );
-  
-  const dangerTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.danger, themeColors.dangerHover), 
+
+  const dangerTextColor = useMemo(() =>
+    getButtonTextColor(themeColors.danger, themeColors.dangerHover),
     [themeColors.danger, themeColors.dangerHover]
   );
 
   // Get button style from theme
   const buttonStyle = theme?.button_style || 'rounded';
-  
+
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
@@ -159,7 +139,7 @@ export default function PurchaseReturnsIndex() {
       'soft': 'rounded-xl',
     };
     const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
-    
+
     if (buttonStyle === 'outlined') {
       return {
         primary: {
@@ -186,17 +166,17 @@ export default function PurchaseReturnsIndex() {
             backgroundColor: 'transparent',
           }
         },
-        tertiary: {
+        glass: {
           className: `${radiusClass} border-2 transition-all duration-200`,
           style: {
-            borderColor: themeColors.tertiary,
-            color: themeColors.tertiary,
+            borderColor: '#64748b',
+            color: '#64748b',
             backgroundColor: 'transparent',
           }
         },
       };
     }
-    
+
     // Filled styles for rounded and soft
     return {
       primary: {
@@ -223,12 +203,12 @@ export default function PurchaseReturnsIndex() {
           boxShadow: `0 4px 14px 0 ${themeColors.danger}40`,
         }
       },
-      tertiary: {
+      glass: {
         className: radiusClass,
         style: {
-          background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
-          color: getButtonTextColor(themeColors.tertiary, themeColors.tertiaryHover),
-          boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`,
+          background: `linear-gradient(to bottom right, #64748b, #475569)`,
+          color: 'white',
+          boxShadow: `0 4px 14px 0 #64748b40`,
         }
       },
     };
@@ -237,10 +217,6 @@ export default function PurchaseReturnsIndex() {
   const btnPrimary = getButtonClasses.primary;
   const btnSecondary = getButtonClasses.secondary;
   const btnDanger = getButtonClasses.danger;
-  const btnTertiary = getButtonClasses.tertiary;
-
-  // Get dark mode state
-  const { isDark } = useTheme();
 
   // Fetch returns
   const fetchReturns = useCallback(async (signal) => {
@@ -368,55 +344,63 @@ export default function PurchaseReturnsIndex() {
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view purchase returns.</div>;
 
   return (
-    <div className="p-4 space-y-3">
-      {/* ===== Professional Header ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
-        {/* Header Top */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          {/* Title */}
+    <div className="p-3 md:p-4 space-y-4">
+      {/* ===== Premium Gradient Hero Header ===== */}
+      <div
+        className="relative overflow-hidden rounded-2xl shadow-lg"
+        style={{
+          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
+        }}
+      >
+        {/* Decorative blurred blobs */}
+        <div
+          className="absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-30 blur-3xl pointer-events-none"
+          style={{ backgroundColor: "#ffffff" }}
+        />
+        <div
+          className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full opacity-20 blur-3xl pointer-events-none"
+          style={{ backgroundColor: themeColors.tertiary }}
+        />
+
+        {/* Hero Top */}
+        <div className="relative flex items-center justify-between px-5 py-4">
           <div className="flex items-center gap-3">
-            <div 
-              className="p-2 rounded-lg shadow-sm"
-              style={{ 
-                background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` 
-              }}
+            <div
+              className="p-2.5 rounded-xl shadow-inner"
+              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
             >
-              <DocumentTextIcon className="w-5 h-5 text-white" />
+              <DocumentTextIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Purchase Returns</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{total} items</p>
+              <h1 className="text-xl font-extrabold tracking-wide text-white leading-none">Purchase Returns</h1>
+              <p className="text-xs text-white/80 mt-1">{total} return(s) in records</p>
             </div>
           </div>
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2">
-            {/* Refresh Button */}
-            <GlassBtn
+            <button
               onClick={() => {
                 if (controllerRef.current) controllerRef.current.abort();
                 const ctrl = new AbortController();
                 controllerRef.current = ctrl;
                 fetchReturns(ctrl.signal);
               }}
-              className={`h-10 min-w-[120px] transition-all duration-200 ${btnTertiary.className}`}
-              style={btnTertiary.style}
+              className="h-10 px-4 inline-flex items-center gap-2 rounded-xl text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
               title="Refresh"
               aria-label="Refresh purchase returns"
             >
-              <span className="inline-flex items-center gap-2">
-                <ArrowPathIcon className="w-5 h-5" />
-                Refresh
-              </span>
-            </GlassBtn>
+              <ArrowPathIcon className="w-4 h-4" />
+              Refresh
+            </button>
 
             <Guard when={can.create}>
               <Link
                 to="/purchase-returns/create"
                 title="Add Return (Alt+N)"
                 aria-keyshortcuts="Alt+N"
-                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold transition-all duration-200 ${btnPrimary.className}`}
-                style={btnPrimary.style}
+                className="h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-bold text-white bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
+                style={{ color: themeColors.primaryHover }}
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 Add Return
@@ -425,77 +409,71 @@ export default function PurchaseReturnsIndex() {
           </div>
         </div>
 
-        {/* Search Bar */}
-        <div className="px-4 py-3 bg-gray-50/50 dark:bg-slate-800/50">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <TextSearch
-              value={qPosted}
-              onChange={setQPosted}
-              placeholder="Search by Posted No (e.g., PRRET-0001)…"
-              icon={<DocumentTextIcon className="w-4 h-4 text-gray-400" />}
-            />
-            <TextSearch
-              value={qSupplier}
-              onChange={setQSupplier}
-              placeholder="Search by Supplier…"
-              icon={<BuildingStorefrontIcon className="w-4 h-4 text-gray-400" />}
-            />
-          </div>
-        </div>
-
-        {/* Header Bottom */}
-        <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 dark:border-slate-700">
-          {/* Stats */}
-          <div className="flex items-center gap-4">
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              {loading ? (
-                <span className="inline-flex items-center gap-1">
-                  <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
-                  Loading...
-                </span>
-              ) : (
-                `${filtered.length === 0 ? 0 : start + 1}-${Math.min(filtered.length, start + pageSize)} of ${total}`
-              )}
-            </span>
-          </div>
-
-          {/* Right Actions */}
-          <div className="flex items-center gap-2">
-            {/* Page Size Selector */}
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/60 dark:bg-slate-800/60 border border-gray-200/60 dark:border-slate-600/40">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Show</label>
-              <select
-                value={pageSize}
-                onChange={(e) => setPageSize(Number(e.target.value))}
-                className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-violet-500 focus:border-transparent cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
+        {/* Integrated Search Bar */}
+        <div className="relative px-5 pb-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 rounded-xl p-3"
+            style={{ backgroundColor: "rgba(255,255,255,0.12)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)" }}>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                <DocumentTextIcon className="w-4 h-4 text-white/70" />
+              </div>
+              <input
+                type="text"
+                value={qPosted}
+                onChange={(e) => setQPosted(e.target.value)}
+                placeholder="Search by Posted No (e.g., PRRET-0001)…"
+                className="w-full h-10 pl-9 pr-3 rounded-lg text-sm text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40"
+                autoComplete="off"
+              />
+            </div>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                <BuildingStorefrontIcon className="w-4 h-4 text-white/70" />
+              </div>
+              <input
+                type="text"
+                value={qSupplier}
+                onChange={(e) => setQSupplier(e.target.value)}
+                placeholder="Search by Supplier…"
+                className="w-full h-10 pl-9 pr-3 rounded-lg text-sm text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40"
+                autoComplete="off"
+              />
             </div>
           </div>
         </div>
       </div>
 
-      {/* ===== Returns Table ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      {/* ===== Returns Table Card ===== */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300">
         {/* Table Header */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
+        <div className="flex items-center justify-between px-4 py-3 bg-gray-50/70 dark:bg-slate-800/70 border-b border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2">
-            <div 
-              className="p-1 rounded"
-              style={{ backgroundColor: themeColors.secondaryLight + '40' }}
-            >
-              <DocumentTextIcon 
-                className="w-4 h-4" 
-                style={{ color: themeColors.secondary }} 
-              />
+            <div className="p-1.5 rounded-lg shadow-sm" style={{ background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}>
+              <DocumentTextIcon className="w-4 h-4 text-white" />
             </div>
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Return List</span>
+            <div>
+              <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Return List</span>
+              <p className="text-[11px] text-gray-400">
+                {loading ? "Loading…" : `${filtered.length === 0 ? 0 : start + 1}-${Math.min(filtered.length, start + pageSize)} of ${filtered.length}`}
+              </p>
+            </div>
           </div>
-          <span className="text-xs text-gray-400">{paged.length} items</span>
+
+          {/* Page Size Selector */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/70 dark:bg-slate-700/60 border border-gray-200 dark:border-slate-600/40">
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Show</label>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:border-transparent cursor-pointer"
+              style={{ '--tw-ring-color': themeColors.primary }}
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
         </div>
 
         <div className="max-h-[65vh] overflow-auto">
@@ -552,9 +530,9 @@ export default function PurchaseReturnsIndex() {
                       {start + idx + 1}
                     </td>
                     <td className="px-3 py-3">
-                      <span 
+                      <span
                         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium"
-                        style={{ 
+                        style={{
                           backgroundColor: themeColors.secondaryLight,
                           color: themeColors.secondary
                         }}
@@ -565,8 +543,8 @@ export default function PurchaseReturnsIndex() {
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
-                        <BuildingStorefrontIcon 
-                          className="w-4 h-4" 
+                        <BuildingStorefrontIcon
+                          className="w-4 h-4"
                           style={{ color: themeColors.tertiary }}
                         />
                         <span className="text-gray-800 dark:text-gray-200">{ret.supplier?.name ?? "N/A"}</span>
@@ -574,8 +552,8 @@ export default function PurchaseReturnsIndex() {
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
-                        <CalendarIcon 
-                          className="w-4 h-4" 
+                        <CalendarIcon
+                          className="w-4 h-4"
                           style={{ color: themeColors.tertiary }}
                         />
                         <span className="text-gray-800 dark:text-gray-200">{formatDate(ret.date)}</span>
@@ -583,8 +561,8 @@ export default function PurchaseReturnsIndex() {
                     </td>
                     <td className="px-3 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <CurrencyDollarIcon 
-                          className="w-4 h-4" 
+                        <CurrencyDollarIcon
+                          className="w-4 h-4"
                           style={{ color: themeColors.primary }}
                         />
                         <span className="font-semibold text-gray-800 dark:text-gray-200">
@@ -711,16 +689,11 @@ export default function PurchaseReturnsIndex() {
         title="Delete purchase return"
         isDeleting={deleting}
         setIsDeleting={setDeleting}
-        tintClasses={{ 
-          red: "transition-all duration-200",
-          redStyle: {
-            background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-            boxShadow: `0 4px 14px 0 ${themeColors.danger}40`
-          },
-          glass: "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200" 
+        tintClasses={{
+          red: `bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700 active:scale-[0.98] transition-all duration-200`,
+          glass: "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
         }}
       />
     </div>
   );
 }
-
