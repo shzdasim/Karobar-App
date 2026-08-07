@@ -337,50 +337,52 @@ export default function PurchaseInvoicesIndex() {
   const hasActions = can.view || can.update || can.delete;
 
   return (
-    <div className="p-4 space-y-3">
-      {/* ===== Professional Header ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
-        {/* Header Top */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          {/* Title */}
-          <div className="flex items-center gap-3">
-            <div 
-              className="p-2 rounded-lg shadow-sm"
-              style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
-            >
-              <ClipboardDocumentListIcon className="w-5 h-5 text-white" />
+    <div className="p-3 md:p-4 space-y-4">
+      {/* ===== Premium Hero Header ===== */}
+      <div
+        className="relative rounded-2xl overflow-hidden shadow-lg"
+        style={{ background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+      >
+        {/* Decorative blurred blobs */}
+        <div className="absolute -top-10 -right-8 w-64 h-64 rounded-full bg-white/15 blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-16 left-1/4 w-72 h-72 rounded-full bg-white/10 blur-3xl pointer-events-none" />
+
+        {/* Top row */}
+        <div className="relative px-6 pt-5 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur shadow-inner flex items-center justify-center">
+              <ClipboardDocumentListIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Purchase Invoices</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{total} items</p>
+              <h1 className="text-2xl font-extrabold tracking-wide text-white leading-none">Purchase Invoices</h1>
+              <p className="text-xs text-white/85 mt-1.5 flex items-center gap-1.5">
+                <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
+                {total} invoices
+              </p>
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            {/* Refresh Button */}
-            <GlassBtn
-              className={`h-9 px-3 ${btnSecondary.className}`}
+          {/* Actions */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
               onClick={() => {
                 if (controllerRef.current) controllerRef.current.abort();
                 const ctrl = new AbortController();
                 controllerRef.current = ctrl;
                 fetchInvoices(ctrl.signal);
               }}
-              style={btnSecondary.style}
+              title="Refresh"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur transition-all duration-200"
             >
-              <span className="inline-flex items-center gap-1.5">
-                <ArrowPathIcon className="w-4 h-4" />
-                <span className="hidden sm:inline">Refresh</span>
-              </span>
-            </GlassBtn>
+              <ArrowPathIcon className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
 
-            {/* Primary Add Button */}
             <Guard when={can.create}>
               <Link
                 to="/purchase-invoices/create"
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${btnPrimary.className}`}
-                style={btnPrimary.style}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-bold text-white bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
+                style={{ color: themeColors.primaryHover }}
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 <span className="hidden sm:inline">Add Invoice</span>
@@ -390,81 +392,79 @@ export default function PurchaseInvoicesIndex() {
           </div>
         </div>
 
-        {/* Search Bar */}
-        <div className="px-4 py-3 bg-gray-50/50 dark:bg-slate-800/50">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="relative">
-              <MagnifyingGlassIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        {/* Filter bar integrated in hero */}
+        <div className="relative px-6 pt-2 pb-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-white/15 backdrop-blur border border-white/20 rounded-xl p-3">
+            <div className="flex items-center gap-2">
+              <MagnifyingGlassIcon className="w-4 h-4 text-white/80 flex-shrink-0" />
               <GlassInput
                 value={qPosted}
                 onChange={(e) => setQPosted(e.target.value)}
                 placeholder="Search by Posted No..."
-                className="pl-9 w-full h-9"
+                className="w-full"
               />
             </div>
-            <div className="relative">
-              <MagnifyingGlassIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <div className="flex items-center gap-2">
+              <MagnifyingGlassIcon className="w-4 h-4 text-white/80 flex-shrink-0" />
               <GlassInput
                 value={qSupplier}
                 onChange={(e) => setQSupplier(e.target.value)}
                 placeholder="Search by Supplier..."
-                className="pl-9 w-full h-9"
+                className="w-full"
               />
-            </div>
-          </div>
-        </div>
-
-        {/* Header Bottom */}
-        <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 dark:border-slate-700">
-          {/* Stats */}
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            {loading ? (
-              <span className="inline-flex items-center gap-1">
-                <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
-                Loading...
-              </span>
-            ) : (
-              `${rows.length === 0 ? 0 : start}-${end} of ${total}`
-            )}
-          </span>
-
-          {/* Right Actions */}
-          <div className="flex items-center gap-2">
-            {/* Page Size Selector */}
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/60 dark:bg-slate-800/60 border border-gray-200/60 dark:border-slate-600/40">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Show</label>
-              <select
-                value={pageSize}
-                onChange={(e) => setPageSize(Number(e.target.value))}
-                className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-emerald-500 focus:border-transparent cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
             </div>
           </div>
         </div>
       </div>
 
       {/* ===== Table Card ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300">
         {/* Table Header */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+          <div className="flex items-center gap-2.5">
             <div 
-              className="p-1.5 rounded"
-              style={{ backgroundColor: themeColors.primaryLight }}
+              className="p-2 rounded-xl shadow-sm"
+              style={{ backgroundColor: themeColors.secondaryLight }}
             >
               <ClipboardDocumentListIcon 
                 className="w-4 h-4" 
-                style={{ color: themeColors.primary }} 
+                style={{ color: themeColors.secondary }} 
               />
             </div>
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Invoice List</span>
+            <div>
+              <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">Invoice List</span>
+              <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                {loading ? (
+                  <span className="inline-flex items-center gap-1">
+                    <ArrowPathIcon className="w-3 h-3 animate-spin" />
+                    Loading...
+                  </span>
+                ) : (
+                  `${rows.length === 0 ? 0 : start}-${end} of ${total}`
+                )}
+              </p>
+            </div>
           </div>
-          <span className="text-xs text-gray-400">{rows.length} items</span>
+
+          {/* Page Size Selector */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-gray-50 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600">
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Show</label>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:border-transparent cursor-pointer"
+              style={{
+                '--tw-ring-color': themeColors.primary,
+                outlineColor: themeColors.primary,
+                accentColor: themeColors.primary,
+              }}
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
         </div>
 
         <div className="max-h-[65vh] overflow-auto">
