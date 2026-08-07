@@ -19,7 +19,6 @@ import { usePermissions, Guard } from "@/api/usePermissions.js";
 
 // Reusable components
 import {
-  GlassBtn,
   ProductImportModal,
   DeleteConfirmationModal,
   BulkEditModal,
@@ -36,82 +35,20 @@ const normalizeList = (payload) => {
   return [];
 };
 
-const debouncePromise = (fn, wait = 300) => {
-  let timeout;
-  let pendingReject;
-  return (...args) =>
-    new Promise((resolve, reject) => {
-      if (timeout) clearTimeout(timeout);
-      if (pendingReject) pendingReject("debounced");
-      pendingReject = reject;
-      timeout = setTimeout(async () => {
-        try {
-          const res = await fn(...args);
-          resolve(res);
-        } catch (e) {
-          reject(e);
-        } finally {
-          pendingReject = null;
-        }
-      }, wait);
-    });
-};
-
-// Section configuration with color schemes - will use dynamic theme colors
-const SECTION_CONFIG = {
-  core: {
-    key: 'primary',
-  },
-  management: {
-    key: 'secondary',
-  },
-};
-
-// Helper to get color value from theme
-const getThemeColor = (theme, colorKey, variant = 'color') => {
-  if (!theme) return '#3b82f6';
-  const key = `${colorKey}_${variant}`;
-  return theme[key] || '#3b82f6';
-};
-
 // Helper to determine text color based on background brightness
-// Returns 'white' for dark backgrounds, 'black' (or dark gray) for light backgrounds
+// Returns dark text for light backgrounds, light text for dark backgrounds
 const getContrastText = (hexColor) => {
-  // Remove hash if present
   hexColor = hexColor.replace('#', '');
-  
-  // Parse RGB values
   const r = parseInt(hexColor.substring(0, 2), 16);
   const g = parseInt(hexColor.substring(2, 4), 16);
   const b = parseInt(hexColor.substring(4, 6), 16);
-  
-  // Calculate relative luminance (per WCAG formula)
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  
-  // Return dark text for light backgrounds, light text for dark backgrounds
   return luminance > 0.5 ? '#1f2937' : '#ffffff';
 };
 
 // Helper to get button text color with fallback
 const getButtonTextColor = (primaryColor, primaryHoverColor) => {
-  // Use hover color for text color calculation as it's slightly darker
   return getContrastText(primaryHoverColor || primaryColor);
-};
-
-// Helper to generate section styles from theme
-const getSectionStyles = (theme, colorKey) => {
-  const baseColor = getThemeColor(theme, colorKey, 'color');
-  const hoverColor = getThemeColor(theme, colorKey, 'hover');
-  const lightColor = getThemeColor(theme, colorKey, 'light');
-  
-  return {
-    gradient: `from-[${baseColor}] to-[${hoverColor}]`,
-    bgLight: `bg-[${lightColor}]`,
-    bgDark: `dark:bg-[${lightColor}]`,
-    borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
-    iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
-    ringColor: `ring-[${baseColor}]/30`,
-  };
 };
 
 export default function ProductsIndex() {
@@ -507,76 +444,103 @@ useEffect(() => {
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view products.</div>;
 
   return (
-    <div className="p-4 space-y-3">
-      {/* ===== Professional Header ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
-        {/* Header Top */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+    <div className="p-4 space-y-4">
+      {/* ===== Premium Hero Header ===== */}
+      <div
+        className="relative rounded-2xl overflow-hidden shadow-lg"
+        style={{ background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+      >
+        {/* Decorative blurred blobs */}
+        <div className="absolute -top-10 -right-8 w-64 h-64 rounded-full bg-white/15 blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-16 left-1/4 w-72 h-72 rounded-full bg-white/10 blur-3xl pointer-events-none" />
+
+        {/* Top row */}
+        <div className="relative px-6 pt-5 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           {/* Title */}
-          <div className="flex items-center gap-3">
-            <div 
-              className="p-2 rounded-lg bg-gradient-to-br shadow-sm"
-              style={{ background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}
-            >
-              <CubeIcon className="w-5 h-5 text-white" />
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur shadow-inner flex items-center justify-center">
+              <CubeIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Products</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{total} items</p>
+              <h1 className="text-2xl font-extrabold tracking-wide text-white leading-none">Products</h1>
+              <p className="text-xs text-white/85 mt-1.5 flex items-center gap-1.5">
+                <Squares2X2Icon className="w-3.5 h-3.5" />
+                {total} products in your inventory
+              </p>
             </div>
           </div>
 
-          {/* Action Buttons - Modern card-style layout */}
-          <div className="flex items-center gap-2">
-            {/* Bulk Actions Dropdown-style buttons */}
-            <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-lg bg-gray-100/80 dark:bg-slate-700/60 border border-gray-200/60 dark:border-slate-600/40">
+          {/* Actions */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Bulk actions pill group */}
+            <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-xl bg-white/15 backdrop-blur border border-white/20">
               <Guard when={can.update}>
                 <button
                   onClick={openBulkModal}
                   disabled={selectedIds.size === 0}
                   className={`
-                    inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium
+                    inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold
                     transition-all duration-200
-                    ${selectedIds.size > 0 
-                      ? btnSecondary.className
-                      : tintDisabled
-                    }
+                    ${selectedIds.size > 0 ? btnSecondary.className : tintDisabled}
                   `}
                   style={selectedIds.size > 0 ? btnSecondary.style : {}}
                 >
                   <PencilSquareIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Edit</span>
                   {selectedIds.size > 0 && (
-                    <span className="ml-0.5 px-1 py-0.5 rounded bg-white/20 text-[10px]">
+                    <span className="ml-0.5 px-1 py-0.5 rounded-full bg-white/20 text-[10px]">
                       {selectedIds.size}
                     </span>
                   )}
                 </button>
               </Guard>
 
-              <div className="w-px h-5 bg-gray-300/60 dark:bg-slate-600/60" />
+              <div className="w-px h-5 bg-white/30" />
 
               <Guard when={can.delete}>
                 <button
                   onClick={() => setShowBulkDelete(true)}
                   disabled={selectedIds.size === 0}
                   className={`
-                    inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium
+                    inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold
                     transition-all duration-200
-                    ${selectedIds.size > 0 
-                      ? btnDanger.className
-                      : tintDisabled
-                    }
+                    ${selectedIds.size > 0 ? btnDanger.className : tintDisabled}
                   `}
                   style={selectedIds.size > 0 ? btnDanger.style : {}}
                 >
                   <TrashIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Delete</span>
                   {selectedIds.size > 0 && (
-                    <span className="ml-0.5 px-1 py-0.5 rounded bg-white/20 text-[10px]">
+                    <span className="ml-0.5 px-1 py-0.5 rounded-full bg-white/20 text-[10px]">
                       {selectedIds.size}
                     </span>
                   )}
+                </button>
+              </Guard>
+            </div>
+
+            {/* Import / Export pill group */}
+            <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-xl bg-white/15 backdrop-blur border border-white/20">
+              <Guard when={can.import}>
+                <button
+                  onClick={() => setImportOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 transition-all duration-200"
+                >
+                  <ArrowUpTrayIcon className="w-3.5 h-3.5" />
+                  Import
+                </button>
+              </Guard>
+
+              <div className="w-px h-5 bg-white/30" />
+
+              <Guard when={can.export}>
+                <button
+                  onClick={handleExport}
+                  disabled={exporting}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 transition-all duration-200"
+                >
+                  <ArrowPathIcon className={`w-3.5 h-3.5 ${exporting ? "animate-spin" : ""}`} />
+                  {exporting ? "..." : "Export"}
                 </button>
               </Guard>
             </div>
@@ -585,11 +549,8 @@ useEffect(() => {
             <Guard when={can.create}>
               <Link
                 to="/products/create"
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold ${btnPrimary.className}`}
-                style={{ 
-                  ...btnPrimary.style,
-                  boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                }}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-bold text-white bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
+                style={{ color: themeColors.primaryHover }}
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 <span className="hidden sm:inline">Add Product</span>
@@ -599,128 +560,86 @@ useEffect(() => {
           </div>
         </div>
 
-        {/* Search Bar */}
-        <div className="px-4 py-3 bg-gray-50/50 dark:bg-slate-800/50">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <TextSearch 
-              value={qName} 
-              onChange={setQName} 
-              placeholder="Search products..." 
-            />
-            <TextSearch 
-              value={qBrand} 
-              onChange={setQBrand} 
-              placeholder="Filter by brand..." 
-              icon={<TagIcon className="w-4 h-4 text-gray-400" />} 
-            />
-            <TextSearch 
-              value={qSupplier} 
-              onChange={setQSupplier} 
-              placeholder="Filter by supplier..." 
-              icon={<BuildingStorefrontIcon className="w-4 h-4 text-gray-400" />} 
-            />
-          </div>
-        </div>
-
-        {/* Header Bottom */}
-        <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 dark:border-slate-700">
-          {/* Stats */}
-          <div className="flex items-center gap-4">
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              {loading ? (
-                <span className="inline-flex items-center gap-1">
-                  <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
-                  Loading...
-                </span>
-              ) : (
-                `${rows.length === 0 ? 0 : start}-${end} of ${total}`
-              )}
-            </span>
-            {selectedIds.size > 0 && (
-              <span 
-                className="text-xs px-2 py-0.5 rounded-full font-medium"
-                style={{ 
-                  backgroundColor: themeColors.primaryLight,
-                  color: themeColors.primary 
-                }}
-              >
-                {selectedIds.size} selected
-              </span>
-            )}
-          </div>
-
-          {/* Right Actions - Modern card-style layout */}
-          <div className="flex items-center gap-2">
-            {/* Quick Actions Group */}
-            <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-lg bg-gray-100/80 dark:bg-slate-700/60 border border-gray-200/60 dark:border-slate-600/40">
-              <Guard when={can.import}>
-                <button
-                  onClick={() => setImportOpen(true)}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${btnPrimary.className}`}
-                  style={{ 
-                    ...btnPrimary.style,
-                    boxShadow: `0 4px 14px 0 ${themeColors.primary}40`
-                  }}
-                >
-                  <ArrowUpTrayIcon className="w-3.5 h-3.5" />
-                  Import
-                </button>
-              </Guard>
-
-              <div className="w-px h-5 bg-gray-300/60 dark:bg-slate-600/60" />
-
-              <Guard when={can.export}>
-                <button
-                  onClick={handleExport}
-                  disabled={exporting}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${btnGlass.className}`}
-                  style={btnGlass.style}
-                >
-                  <ArrowPathIcon className={`w-3.5 h-3.5 ${exporting ? "animate-spin" : ""}`} />
-                  {exporting ? "..." : "Export"}
-                </button>
-              </Guard>
+        {/* Filter bar integrated in hero */}
+        <div className="relative px-6 pt-2 pb-5">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-white/15 backdrop-blur border border-white/20 rounded-xl p-3">
+            <div className="flex items-center gap-2">
+              <Squares2X2Icon className="w-4 h-4 text-white/80 flex-shrink-0" />
+              <TextSearch
+                value={qName}
+                onChange={setQName}
+                placeholder="Search products..."
+                className="w-full"
+              />
             </div>
-
-            {/* Page Size Selector */}
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/60 dark:bg-slate-800/60 border border-gray-200/60 dark:border-slate-600/40">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Show</label>
-              <select
-                value={pageSize}
-                onChange={(e) => setPageSize(Number(e.target.value))}
-                className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:border-transparent cursor-pointer"
-                style={{ 
-                  '--tw-ring-color': themeColors.primary,
-                  outlineColor: themeColors.primary
-                }}
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
+            <div className="flex items-center gap-2">
+              <TagIcon className="w-4 h-4 text-white/80 flex-shrink-0" />
+              <TextSearch
+                value={qBrand}
+                onChange={setQBrand}
+                placeholder="Filter by brand..."
+                className="w-full"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <BuildingStorefrontIcon className="w-4 h-4 text-white/80 flex-shrink-0" />
+              <TextSearch
+                value={qSupplier}
+                onChange={setQSupplier}
+                placeholder="Filter by supplier..."
+                className="w-full"
+              />
             </div>
           </div>
         </div>
       </div>
 
       {/* ===== Product Table ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300">
         {/* Table Header */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
-          <div className="flex items-center gap-2">
-            <div 
-              className="p-1 rounded"
-              style={{ backgroundColor: themeColors.secondaryLight + '40' }}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+          <div className="flex items-center gap-2.5">
+            <div
+              className="p-2 rounded-xl shadow-sm"
+              style={{ backgroundColor: themeColors.secondaryLight }}
             >
-              <Squares2X2Icon 
-                className="w-4 h-4" 
-                style={{ color: themeColors.secondary }} 
-              />
+              <Squares2X2Icon className="w-4 h-4" style={{ color: themeColors.secondary }} />
             </div>
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Product List</span>
+            <div>
+              <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">Product List</span>
+              <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                {loading ? (
+                  <span className="inline-flex items-center gap-1">
+                    <ArrowPathIcon className="w-3 h-3 animate-spin" />
+                    Loading...
+                  </span>
+                ) : (
+                  `${rows.length === 0 ? 0 : start}-${end} of ${total}`
+                )}
+                {selectedIds.size > 0 && ` · ${selectedIds.size} selected`}
+              </p>
+            </div>
           </div>
-          <span className="text-xs text-gray-400">{rows.length} items</span>
+
+          {/* Page Size Selector */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-gray-50 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600">
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Show</label>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:border-transparent cursor-pointer"
+              style={{
+                '--tw-ring-color': themeColors.primary,
+                outlineColor: themeColors.primary,
+                accentColor: themeColors.primary,
+              }}
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
         </div>
 
         <div className="max-h-[65vh] overflow-auto">

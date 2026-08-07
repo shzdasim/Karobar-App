@@ -324,109 +324,77 @@ export default function Suppliers() {
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view suppliers.</div>;
 
-  return (
-    <div className="p-3 md:p-4 space-y-3">
-      {/* Header Card */}
-      <GlassCard>
-        {/* Modern Card Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
-          <div className="flex items-center gap-3">
-            <div 
-              className="p-2 rounded-lg shadow-sm"
-              style={{ background: SECTION_CONFIG.management.gradient }}
-            >
-              <BuildingStorefrontIcon 
-                className="w-5 h-5" 
-                style={{ color: 'white' }} 
-              />
+return (
+    <div className="p-3 md:p-4 space-y-4">
+      {/* ===== Premium Hero Header ===== */}
+      <div
+        className="relative rounded-2xl overflow-hidden shadow-lg"
+        style={{ background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+      >
+        {/* Decorative blurred blobs */}
+        <div className="absolute -top-10 -right-8 w-64 h-64 rounded-full bg-white/15 blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-16 left-1/4 w-72 h-72 rounded-full bg-white/10 blur-3xl pointer-events-none" />
+
+        {/* Top row */}
+        <div className="relative px-6 pt-5 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur shadow-inner flex items-center justify-center">
+              <BuildingStorefrontIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Suppliers</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{suppliers.length} items</p>
+              <h1 className="text-2xl font-extrabold tracking-wide text-white leading-none">Suppliers</h1>
+              <p className="text-xs text-white/85 mt-1.5 flex items-center gap-1.5">
+                <BuildingStorefrontIcon className="w-3.5 h-3.5" />
+                {suppliers.length} suppliers
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <GlassBtn 
-              className={`h-9 px-3 ${btnSecondary.className}`} 
+
+          {/* Actions */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <Guard when={can.import}>
+              <button
+                onClick={() => setImportOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur transition-all duration-200"
+              >
+                <ArrowUpTrayIcon className="w-3.5 h-3.5" />
+                Import
+              </button>
+            </Guard>
+            <Guard when={can.export}>
+              <button
+                onClick={handleExport}
+                disabled={exporting}
+                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur transition-all duration-200"
+              >
+                <ArrowDownTrayIcon className={`w-3.5 h-3.5 ${exporting ? "animate-spin" : ""}`} />
+                {exporting ? "..." : "Export"}
+              </button>
+            </Guard>
+            <button
               onClick={fetchSuppliers}
-              style={btnSecondary.style}
+              title="Refresh"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur transition-all duration-200"
             >
-              <span className="inline-flex items-center gap-1.5">
-                <ArrowPathIcon className="w-4 h-4" />
-                <span className="hidden sm:inline">Refresh</span>
-              </span>
-            </GlassBtn>
+              <ArrowPathIcon className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
           </div>
         </div>
 
-        {/* Search and Actions */}
-        <div className="px-4 py-3 bg-gray-50/50 dark:bg-slate-800/50">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1 max-w-md">
-              <MagnifyingGlassIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <GlassInput
-                value={qName}
-                onChange={(e) => setQName(e.target.value)}
-                placeholder="Search suppliers..."
-                className="pl-9 w-full h-9"
-              />
-            </div>
-            <div className="flex items-center gap-2 sm:ml-auto">
-              <Guard when={can.import}>
-                <GlassBtn 
-                  className={`h-9 px-3 ${btnPrimary.className}`} 
-                  onClick={() => setImportOpen(true)}
-                  style={btnPrimary.style}
-                >
-                  <span className="inline-flex items-center gap-1.5">
-                    <ArrowUpTrayIcon className="w-4 h-4" />
-                    <span className="hidden sm:inline">Import</span>
-                  </span>
-                </GlassBtn>
-              </Guard>
-              <Guard when={can.export}>
-                <GlassBtn 
-                  className={`h-9 px-3 ${btnGlass.className}`} 
-                  onClick={handleExport} 
-                  disabled={exporting}
-                  style={btnGlass.style}
-                >
-                  <span className="inline-flex items-center gap-1.5">
-                    <ArrowDownTrayIcon className={`w-4 h-4 ${exporting ? "animate-spin" : ""}`} />
-                    <span className="hidden sm:inline">{exporting ? "..." : "Export"}</span>
-                  </span>
-                </GlassBtn>
-              </Guard>
-            </div>
+        {/* Filter bar integrated in hero */}
+        <div className="relative px-6 pt-2 pb-5">
+          <div className="flex items-center gap-2 bg-white/15 backdrop-blur border border-white/20 rounded-xl px-3 py-2">
+            <MagnifyingGlassIcon className="w-4 h-4 text-white/80 flex-shrink-0" />
+            <GlassInput
+              value={qName}
+              onChange={(e) => setQName(e.target.value)}
+              placeholder="Search suppliers..."
+              className="w-full"
+            />
           </div>
         </div>
-
-        {/* Footer with stats */}
-        <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 dark:border-slate-700 text-xs">
-          <span className="text-gray-500 dark:text-gray-400">
-            {loading ? (
-              <span className="inline-flex items-center gap-1">
-                <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
-                Loading...
-              </span>
-            ) : (
-              `${filtered.length === 0 ? 0 : start + 1}-${Math.min(filtered.length, start + pageSize)} of ${filtered.length}`
-            )}
-          </span>
-          <div className="flex items-center gap-2">
-            <label className="text-gray-500 dark:text-gray-400">Show</label>
-            <select
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-              className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs"
-            >
-              <option value={10}>10</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-            </select>
-          </div>
-        </div>
-      </GlassCard>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {/* Left: Form Card */}

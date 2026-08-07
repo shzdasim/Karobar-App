@@ -36,8 +36,9 @@ import {
   CheckCircleIcon,
   ArrowPathIcon,
   ChartPieIcon,
+  SparklesIcon,
+  CalendarDaysIcon,
 } from "@heroicons/react/24/outline";
-import { GlassCard, GlassSectionHeader, GlassToolbar, GlassInput, GlassBtn } from "@/components/Glass";
 
 // Get theme colors for sections - dynamically from context
 const getSectionConfig = (key, theme) => {
@@ -465,33 +466,49 @@ export default function Dashboard() {
     }
   }
 
-  return (
+return (
     <div className="p-4 space-y-4 bg-gradient-to-br from-slate-50 via-white to-blue-50/30 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
-      {/* ===== Professional Header ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
-        {/* Header Top */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          {/* Title */}
-          <div className="flex items-center gap-3">
-            <div 
-              className="p-2 rounded-lg shadow-sm"
-              style={{ background: `linear-gradient(135deg, ${themeColors.secondary} 0%, ${themeColors.secondaryHover} 100%)` }}
-            >
-              <ChartPieIcon className="w-5 h-5 text-white" />
+      {/* ===== Premium Hero Header ===== */}
+      <div
+        className="relative overflow-hidden rounded-2xl shadow-lg"
+        style={{
+          background: `linear-gradient(120deg, ${themeColors.secondary} 0%, ${themeColors.secondaryHover} 55%, ${themeColors.primary} 100%)`,
+        }}
+      >
+        {/* Decorative blobs */}
+        <div className="absolute -top-10 -right-10 w-52 h-52 rounded-full bg-white/10 blur-2xl" />
+        <div className="absolute -bottom-12 left-1/3 w-64 h-64 rounded-full bg-white/10 blur-3xl" />
+
+        <div className="relative px-6 py-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          {/* Title block */}
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shadow-inner">
+              <ChartPieIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Business Dashboard</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Overview of your business metrics</p>
+              <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-white leading-none">
+                Business Dashboard
+              </h1>
+              <p className="text-sm text-white/80 mt-1.5 flex items-center gap-1.5">
+                <SparklesIcon className="w-4 h-4" />
+                Overview of your business performance
+              </p>
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
+          {/* Right side: date + refresh */}
+          <div className="flex items-center gap-3">
+            <div className="hidden md:flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/15 backdrop-blur-md shadow-inner">
+              <CalendarDaysIcon className="w-4 h-4 text-white/80" />
+              <span className="text-sm font-medium text-white">
+                {new Date().toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
+              </span>
+            </div>
             <button
               onClick={fetchAll}
               disabled={loading}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold ${btnSecondary.className}`}
-              style={btnSecondary.style}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-sm font-semibold shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+              style={{ color: themeColors.secondaryHover }}
             >
               <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
               {loading ? "Loading…" : "Refresh"}
@@ -499,42 +516,54 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Filters Bar */}
-        <div className="px-4 py-3 bg-gray-50/50 dark:bg-slate-800/50">
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-            <div className="flex flex-col">
-              <label className="text-gray-700 dark:text-gray-300 text-sm mb-1">From</label>
-              <GlassInput type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        {/* Filters bar attached to hero */}
+        <div className="relative px-6 pb-6">
+          <div className="flex flex-col md:flex-row gap-3 rounded-xl bg-white/15 backdrop-blur-md p-2.5 shadow-inner">
+            <div className="flex flex-col md:flex-row md:flex-1 gap-2">
+              <div className="flex items-center gap-2 flex-1 min-w-[140px]">
+                <span className="text-xs font-semibold text-white/80 uppercase tracking-wide whitespace-nowrap">From</span>
+                <input
+                  type="date"
+                  value={from}
+                  onChange={(e) => setFrom(e.target.value)}
+                  className="w-full rounded-lg border-0 bg-white/90 px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-white/60"
+                />
+              </div>
+              <div className="flex items-center gap-2 flex-1 min-w-[140px]">
+                <span className="text-xs font-semibold text-white/80 uppercase tracking-wide whitespace-nowrap">To</span>
+                <input
+                  type="date"
+                  value={to}
+                  onChange={(e) => setTo(e.target.value)}
+                  className="w-full rounded-lg border-0 bg-white/90 px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-white/60"
+                />
+              </div>
             </div>
-            <div className="flex flex-col">
-              <label className="text-gray-700 dark:text-gray-300 text-sm mb-1">To</label>
-              <GlassInput type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-            </div>
-            <div className="md:col-span-3 col-span-1 flex items-end gap-2 overflow-x-auto whitespace-nowrap">
-              <GlassBtn variant="ghost" onClick={() => { setFrom(todayStr()); setTo(todayStr()); }}>
-                Today
-              </GlassBtn>
-              <GlassBtn variant="ghost" onClick={() => { setFrom(firstDayOfMonthStr()); setTo(todayStr()); }}>
-                This Month
-              </GlassBtn>
-              <GlassBtn variant="ghost" onClick={() => {
-                const d = new Date();
-                const toStr = todayStr();
-                const fromDate = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate() - 6));
-                setFrom(fromDate.toISOString().substring(0, 10));
-                setTo(toStr);
-              }}>
-                Last 7 Days
-              </GlassBtn>
-              <GlassBtn variant="ghost" onClick={() => {
-                const d = new Date();
-                const toStr = todayStr();
-                const fromDate = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate() - 29));
-                setFrom(fromDate.toISOString().substring(0, 10));
-                setTo(toStr);
-              }}>
-                Last 30 Days
-              </GlassBtn>
+            <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap">
+              {[
+                { label: "Today", fn: () => { setFrom(todayStr()); setTo(todayStr()); } },
+                { label: "This Month", fn: () => { setFrom(firstDayOfMonthStr()); setTo(todayStr()); } },
+                { label: "7 Days", fn: () => {
+                  const d = new Date();
+                  const fromDate = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate() - 6));
+                  setFrom(fromDate.toISOString().substring(0, 10));
+                  setTo(todayStr());
+                } },
+                { label: "30 Days", fn: () => {
+                  const d = new Date();
+                  const fromDate = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate() - 29));
+                  setFrom(fromDate.toISOString().substring(0, 10));
+                  setTo(todayStr());
+                } },
+              ].map((r) => (
+                <button
+                  key={r.label}
+                  onClick={r.fn}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/20 text-white backdrop-blur-sm hover:bg-white/30 active:scale-95 transition-all duration-150"
+                >
+                  {r.label}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -543,7 +572,7 @@ export default function Dashboard() {
       {/* Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Sales Card */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden group hover:shadow-lg hover:scale-[1.02] transition-all duration-300">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden group hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
           <div 
             className="h-1.5"
             style={{ background: `linear-gradient(to right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
@@ -551,24 +580,25 @@ export default function Dashboard() {
           <div className="p-4">
             <div className="flex items-center justify-between mb-2">
               <div 
-                className="p-1.5 rounded-lg"
+                className="p-2 rounded-xl shadow-sm"
                 style={{ backgroundColor: themeColors.primaryLight }}
               >
                 <CurrencyDollarIcon className="w-5 h-5" style={{ color: themeColors.primary }} />
               </div>
-              <span className="text-xs font-medium" style={{ color: themeColors.primary }}>Sales</span>
+              <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: themeColors.primary }}>Sales</span>
             </div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">Rs {fmtCurrency(cards.sales)}</div>
+            <div className="text-2xl font-extrabold text-gray-900 dark:text-white">Rs {fmtCurrency(cards.sales)}</div>
             <div className="h-6 mt-2">
               <svg viewBox="0 0 100 20" className="w-full h-full" preserveAspectRatio="none">
-                <path d="M0 15 Q 25 12, 50 10 T 100 5" fill="none" stroke={themeColors.primary} strokeWidth="2" className="opacity-60" />
+                <path d="M0 15 Q 25 12, 50 10 T 100 5" fill="none" stroke={themeColors.primary} strokeWidth="2.5" className="opacity-60" />
+                <path d="M0 15 Q 25 12, 50 10 T 100 5 L100 20 L0 20 Z" fill={themeColors.primary} className="opacity-10" />
               </svg>
             </div>
           </div>
         </div>
 
         {/* Purchases Card */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden group hover:shadow-lg hover:scale-[1.02] transition-all duration-300">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden group hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
           <div 
             className="h-1.5"
             style={{ background: `linear-gradient(to right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}
@@ -576,24 +606,25 @@ export default function Dashboard() {
           <div className="p-4">
             <div className="flex items-center justify-between mb-2">
               <div 
-                className="p-1.5 rounded-lg"
+                className="p-2 rounded-xl shadow-sm"
                 style={{ backgroundColor: themeColors.secondaryLight }}
               >
                 <ShoppingCartIcon className="w-5 h-5" style={{ color: themeColors.secondary }} />
               </div>
-              <span className="text-xs font-medium" style={{ color: themeColors.secondary }}>Purchases</span>
+              <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: themeColors.secondary }}>Purchases</span>
             </div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">Rs {fmtCurrency(cards.purchases)}</div>
+            <div className="text-2xl font-extrabold text-gray-900 dark:text-white">Rs {fmtCurrency(cards.purchases)}</div>
             <div className="h-6 mt-2">
               <svg viewBox="0 0 100 20" className="w-full h-full" preserveAspectRatio="none">
-                <path d="M0 15 Q 25 10, 50 8 T 100 3" fill="none" stroke={themeColors.secondary} strokeWidth="2" className="opacity-60" />
+                <path d="M0 15 Q 25 10, 50 8 T 100 3" fill="none" stroke={themeColors.secondary} strokeWidth="2.5" className="opacity-60" />
+                <path d="M0 15 Q 25 10, 50 8 T 100 3 L100 20 L0 20 Z" fill={themeColors.secondary} className="opacity-10" />
               </svg>
             </div>
           </div>
         </div>
 
         {/* Sale Returns Card */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden group hover:shadow-lg hover:scale-[1.02] transition-all duration-300">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden group hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
           <div 
             className="h-1.5"
             style={{ background: `linear-gradient(to right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})` }}
@@ -601,24 +632,25 @@ export default function Dashboard() {
           <div className="p-4">
             <div className="flex items-center justify-between mb-2">
               <div 
-                className="p-1.5 rounded-lg"
+                className="p-2 rounded-xl shadow-sm"
                 style={{ backgroundColor: themeColors.tertiaryLight }}
               >
                 <ArrowUturnLeftIcon className="w-5 h-5" style={{ color: themeColors.tertiary }} />
               </div>
-              <span className="text-xs font-medium" style={{ color: themeColors.tertiary }}>Sale Returns</span>
+              <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: themeColors.tertiary }}>Sale Returns</span>
             </div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">Rs {fmtCurrency(cards.saleReturns)}</div>
+            <div className="text-2xl font-extrabold text-gray-900 dark:text-white">Rs {fmtCurrency(cards.saleReturns)}</div>
             <div className="h-6 mt-2">
               <svg viewBox="0 0 100 20" className="w-full h-full" preserveAspectRatio="none">
-                <path d="M0 5 Q 25 8, 50 12 T 100 15" fill="none" stroke={themeColors.tertiary} strokeWidth="2" className="opacity-60" />
+                <path d="M0 5 Q 25 8, 50 12 T 100 15" fill="none" stroke={themeColors.tertiary} strokeWidth="2.5" className="opacity-60" />
+                <path d="M0 5 Q 25 8, 50 12 T 100 15 L100 20 L0 20 Z" fill={themeColors.tertiary} className="opacity-10" />
               </svg>
             </div>
           </div>
         </div>
 
         {/* Purchase Returns Card */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden group hover:shadow-lg hover:scale-[1.02] transition-all duration-300">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden group hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
           <div 
             className="h-1.5"
             style={{ background: `linear-gradient(to right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
@@ -626,120 +658,121 @@ export default function Dashboard() {
           <div className="p-4">
             <div className="flex items-center justify-between mb-2">
               <div 
-                className="p-1.5 rounded-lg"
+                className="p-2 rounded-xl shadow-sm"
                 style={{ backgroundColor: themeColors.primaryLight }}
               >
                 <ArrowUturnDownIcon className="w-5 h-5" style={{ color: themeColors.primary }} />
               </div>
-              <span className="text-xs font-medium" style={{ color: themeColors.primary }}>Purchase Returns</span>
+              <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: themeColors.primary }}>Purchase Returns</span>
             </div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">Rs {fmtCurrency(cards.purchaseReturns)}</div>
+            <div className="text-2xl font-extrabold text-gray-900 dark:text-white">Rs {fmtCurrency(cards.purchaseReturns)}</div>
             <div className="h-6 mt-2">
               <svg viewBox="0 0 100 20" className="w-full h-full" preserveAspectRatio="none">
-                <path d="M0 12 Q 25 10, 50 8 T 100 5" fill="none" stroke={themeColors.primary} strokeWidth="2" className="opacity-60" />
+                <path d="M0 12 Q 25 10, 50 8 T 100 5" fill="none" stroke={themeColors.primary} strokeWidth="2.5" className="opacity-60" />
+                <path d="M0 12 Q 25 10, 50 8 T 100 5 L100 20 L0 20 Z" fill={themeColors.primary} className="opacity-10" />
               </svg>
             </div>
           </div>
         </div>
       </div>
 
-      {/* KPI Metrics Row */}
+{/* KPI Metrics Row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {/* Net Sales */}
-        <div 
-          className="rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300"
+        <div className="rounded-2xl p-4 text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden"
           style={{ background: `linear-gradient(135deg, ${themeColors.primary} 0%, ${themeColors.primaryHover} 100%)` }}
         >
+          <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/10 blur-xl" />
           <div className="flex items-center gap-2 mb-2">
-            <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
+            <div className="p-1.5 bg-white/20 rounded-xl backdrop-blur-sm">
               <BanknotesIcon className="w-4 h-4" />
             </div>
-            <span className="text-xs font-medium text-white/80">Net Sales</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-white/80">Net Sales</span>
           </div>
-          <div className="text-xl font-bold">Rs {fmtCurrency(netSales)}</div>
+          <div className="text-xl font-extrabold">Rs {fmtCurrency(netSales)}</div>
         </div>
 
         {/* Invoices */}
-        <div 
-          className="rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300"
+        <div className="rounded-2xl p-4 text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden"
           style={{ background: `linear-gradient(135deg, ${themeColors.secondary} 0%, ${themeColors.secondaryHover} 100%)` }}
         >
+          <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/10 blur-xl" />
           <div className="flex items-center gap-2 mb-2">
-            <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
+            <div className="p-1.5 bg-white/20 rounded-xl backdrop-blur-sm">
               <ClipboardDocumentListIcon className="w-4 h-4" />
             </div>
-            <span className="text-xs font-medium text-white/80">Invoices</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-white/80">Invoices</span>
           </div>
-          <div className="text-xl font-bold">{invoiceCounts.total}</div>
+          <div className="text-xl font-extrabold">{invoiceCounts.total}</div>
           <div className="text-[10px] text-white/70 mt-1 truncate">
             {invoiceCounts.sale_invoices} sales, {invoiceCounts.purchase_invoices} purchases
           </div>
         </div>
 
         {/* Products */}
-        <div 
-          className="rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300"
+        <div className="rounded-2xl p-4 text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden"
           style={{ background: `linear-gradient(135deg, ${themeColors.primary} 0%, ${themeColors.primaryHover} 100%)` }}
         >
+          <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/10 blur-xl" />
           <div className="flex items-center gap-2 mb-2">
-            <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
+            <div className="p-1.5 bg-white/20 rounded-xl backdrop-blur-sm">
               <CubeIcon className="w-4 h-4" />
             </div>
-            <span className="text-xs font-medium text-white/80">Products</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-white/80">Products</span>
           </div>
-          <div className="text-xl font-bold">{kpiMetrics.active_products || 0}</div>
+          <div className="text-xl font-extrabold">{kpiMetrics.active_products || 0}</div>
         </div>
 
         {/* Suppliers */}
-        <div 
-          className="rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300"
+        <div className="rounded-2xl p-4 text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden"
           style={{ background: `linear-gradient(135deg, ${themeColors.tertiary} 0%, ${themeColors.tertiaryHover} 100%)` }}
         >
+          <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/10 blur-xl" />
           <div className="flex items-center gap-2 mb-2">
-            <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
+            <div className="p-1.5 bg-white/20 rounded-xl backdrop-blur-sm">
               <ScaleIcon className="w-4 h-4" />
             </div>
-            <span className="text-xs font-medium text-white/80">Suppliers</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-white/80">Suppliers</span>
           </div>
-          <div className="text-xl font-bold">{kpiMetrics.suppliers || 0}</div>
+          <div className="text-xl font-extrabold">{kpiMetrics.suppliers || 0}</div>
         </div>
 
         {/* Near Expiry */}
-        <div 
-          className={`rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300 ${(kpiMetrics.near_expiry || nearExpiryRows.length) > 0 ? '' : 'opacity-70'}`}
+        <div className={`rounded-2xl p-4 text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden ${(kpiMetrics.near_expiry || nearExpiryRows.length) > 0 ? '' : 'opacity-70'}`}
           style={{ background: `linear-gradient(135deg, ${(kpiMetrics.near_expiry || nearExpiryRows.length) > 0 ? themeColors.secondary : '#64748b'} 0%, ${(kpiMetrics.near_expiry || nearExpiryRows.length) > 0 ? themeColors.secondaryHover : '#475569'} 100%)` }}
         >
+          <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/10 blur-xl" />
           <div className="flex items-center gap-2 mb-2">
-            <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
+            <div className="p-1.5 bg-white/20 rounded-xl backdrop-blur-sm">
               <ClockIcon className="w-4 h-4" />
             </div>
-            <span className="text-xs font-medium text-white/80">Near Expiry</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-white/80">Near Expiry</span>
           </div>
-          <div className="text-xl font-bold">{kpiMetrics.near_expiry || nearExpiryRows.length}</div>
+          <div className="text-xl font-extrabold">{kpiMetrics.near_expiry || nearExpiryRows.length}</div>
         </div>
 
         {/* Brands */}
-        <div 
-          className="rounded-xl p-3 text-white shadow-lg hover:shadow-xl transition-shadow duration-300"
+        <div className="rounded-2xl p-4 text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden"
           style={{ background: `linear-gradient(135deg, ${themeColors.secondary} 0%, ${themeColors.secondaryHover} 100%)` }}
         >
+          <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/10 blur-xl" />
           <div className="flex items-center gap-2 mb-2">
-            <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
+            <div className="p-1.5 bg-white/20 rounded-xl backdrop-blur-sm">
               <CheckCircleIcon className="w-4 h-4" />
             </div>
-            <span className="text-xs font-medium text-white/80">Brands</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-white/80">Brands</span>
           </div>
-          <div className="text-xl font-bold">{kpiMetrics.brands || 0}</div>
+          <div className="text-xl font-extrabold">{kpiMetrics.brands || 0}</div>
         </div>
       </div>
 
       {/* Charts Row - Three Different Types */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Pie Chart - Sales Distribution */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300">
           <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
             <div 
-              className="p-1.5 rounded-lg"
+              className="p-2 rounded-xl shadow-sm"
               style={{ backgroundColor: themeColors.secondaryLight }}
             >
               <ChartPieIcon className="w-4 h-4" style={{ color: themeColors.secondary }} />
@@ -787,10 +820,10 @@ export default function Dashboard() {
         </div>
 
         {/* Bar Chart - Sales vs Purchases */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300">
           <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
             <div 
-              className="p-1.5 rounded-lg"
+              className="p-2 rounded-xl shadow-sm"
               style={{ backgroundColor: themeColors.primaryLight }}
             >
               <ShoppingCartIcon className="w-4 h-4" style={{ color: themeColors.primary }} />
@@ -832,10 +865,10 @@ export default function Dashboard() {
         </div>
 
         {/* Area Chart - Returns Trend */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300">
           <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
             <div 
-              className="p-1.5 rounded-lg"
+              className="p-2 rounded-xl shadow-sm"
               style={{ backgroundColor: themeColors.tertiaryLight }}
             >
               <ArrowUturnLeftIcon className="w-4 h-4" style={{ color: themeColors.tertiary }} />
@@ -881,11 +914,11 @@ export default function Dashboard() {
       </div>
 
       {/* Near Expiry Table */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-3">
             <div 
-              className="p-1.5 rounded-lg"
+              className="p-2 rounded-xl shadow-sm"
               style={{ backgroundColor: themeColors.tertiaryLight }}
             >
               <ClockIcon className="w-4 h-4" style={{ color: themeColors.tertiary }} />
@@ -895,7 +928,7 @@ export default function Dashboard() {
               <p className="text-xs text-gray-500 dark:text-gray-400">Products expiring soon</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1">
               {[
                 { m: 1, label: "1 mo" },
@@ -983,13 +1016,13 @@ export default function Dashboard() {
         <div className="overflow-auto max-h-80">
           <table className="min-w-full text-sm">
             <thead className="sticky top-0 bg-gray-50 dark:bg-slate-800 z-10 border-b border-gray-200 dark:border-slate-700">
-              <tr className="text-left text-gray-700 dark:text-gray-300">
-                <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Product</th>
-                <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Supplier</th>
-                <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Brand</th>
-                <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Batch #</th>
-                <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider">Expiry</th>
-                <th className="px-4 py-2.5 font-medium text-xs uppercase tracking-wider text-right">Qty</th>
+              <tr className="text-left text-gray-600 dark:text-gray-300">
+                <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Product</th>
+                <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Supplier</th>
+                <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Brand</th>
+                <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Batch #</th>
+                <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Expiry</th>
+                <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Qty</th>
               </tr>
             </thead>
             <tbody>
