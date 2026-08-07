@@ -37,8 +37,7 @@ export default function CreateSaleInvoiceWholesale() {
   if (!can.create) return <div className="p-6 text-sm text-gray-700">You don't have permission to create sale invoices.</div>;
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Create Wholesale Sale Invoice</h1>
+    <div className="-mx-4 md:-mx-6 -mt-2 md:-mt-2">
       <SaleInvoiceWholesaleForm onSubmit={onSubmit} onSuccess={() => navigate("/sale-invoices")} />
     </div>
   );

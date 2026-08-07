@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams, Link } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import SaleInvoiceRetailForm from "./SaleInvoiceRetailForm.jsx";
@@ -72,14 +72,7 @@ export default function EditSaleInvoice() {
   const isWholesale = saleType === "wholesale";
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">
-          Edit {isWholesale ? "Wholesale" : "Retail"} Sale Invoice
-        </h1>
-        <Link to="/sale-invoices" className="text-blue-600 hover:underline">← Back</Link>
-      </div>
-
+    <div className="-mx-4 md:-mx-6 -mt-2 md:-mt-2">
       <Guard when={can.update}>
         {isWholesale ? (
           <SaleInvoiceWholesaleForm
