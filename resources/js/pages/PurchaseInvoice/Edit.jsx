@@ -64,7 +64,7 @@ export default function EditPurchaseInvoice() {
   if (fetchErr) return <div className="p-6 text-red-600">{fetchErr}</div>;
 
 return (
-    <div className="-m-3 md:-m-4">
+    <div className="-mx-4 md:-mx-6 -mt-2 md:-mt-2">
       <Guard when={can.update}>
         <PurchaseInvoiceForm
           invoiceId={id}

@@ -142,6 +142,9 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
   const discountPercentageRef = useRef(null);
   const saveButtonRef = useRef(null);
 
+  // Scroll container for the items section
+  const itemsScrollRef = useRef(null);
+
   // productSearchRefs will hold container DOM nodes (wrapping ProductSearchInput)
   const productSearchRefs = useRef([]);
   const batchRefs = useRef([]);
@@ -324,34 +327,38 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
   }
 
   const addItem = () => {
-    setForm((prev) => ({
-      ...prev,
-      items: [
-        ...prev.items,
-        {
-          product_id: "",
-          batch: "",
-          expiry: "",
-          pack_quantity: "",
-          pack_size: "",
-          unit_quantity: "",
-          pack_purchase_price: "",
-          unit_purchase_price: "",
-          pack_sale_price: "",
-          unit_sale_price: "",
-          whole_sale_pack_price: "",
-          whole_sale_unit_price: "",
-          whole_sale_margin: "",
-          pack_bonus: "",
-          unit_bonus: "",
-          item_discount_percentage: "",
-          margin: "",
-          sub_total: "",
-          avg_price: "",
-          quantity: "",
-        },
-      ],
-    }));
+    setForm((prev) => {
+      const nextIndex = prev.items.length;
+      setTimeout(() => scrollItemsTo(nextIndex), 60);
+      return {
+        ...prev,
+        items: [
+          ...prev.items,
+          {
+            product_id: "",
+            batch: "",
+            expiry: "",
+            pack_quantity: "",
+            pack_size: "",
+            unit_quantity: "",
+            pack_purchase_price: "",
+            unit_purchase_price: "",
+            pack_sale_price: "",
+            unit_sale_price: "",
+            whole_sale_pack_price: "",
+            whole_sale_unit_price: "",
+            whole_sale_margin: "",
+            pack_bonus: "",
+            unit_bonus: "",
+            item_discount_percentage: "",
+            margin: "",
+            sub_total: "",
+            avg_price: "",
+            quantity: "",
+          },
+        ],
+      };
+    });
     setCurrentRowIndex(form.items.length);
   };
 
@@ -367,6 +374,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
 
   // Helper: robustly focus the ProductSearchInput inside its wrapper
   const focusProductSearch = (rowIndex = 0) => {
+    scrollItemsTo(rowIndex);
     const tryFocus = () => {
       const container = productSearchRefs.current[rowIndex];
       if (!container) return false;
@@ -402,6 +410,44 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
       setTimeout(retry, 50);
     };
     setTimeout(retry, 30);
+  };
+
+// Scroll the items container so a specific row is visible.
+  // Computes the delta between the row and the container's visible box and nudges
+  // the container's scrollTop by exactly that delta — moving the scrollbar row by
+  // row (both up and down) without ever scrolling the outer page.
+  const scrollItemsTo = (rowIndex = null) => {
+    const container = itemsScrollRef.current;
+    if (!container) return;
+    requestAnimationFrame(() => {
+      if (rowIndex !== null && rowIndex !== undefined) {
+        const el = productSearchRefs.current[rowIndex]?.closest?.("tr") || productSearchRefs.current[rowIndex];
+        if (el) {
+const contRect = container.getBoundingClientRect();
+          const elRect = el.getBoundingClientRect();
+          // Space reserved in the container's viewport (header + breathing room)
+          const headerPad = 8;
+
+          // Scroll DOWN: row is below the visible bottom → scroll just enough to show it
+          if (elRect.bottom > contRect.bottom) {
+            container.scrollTo({
+              top: container.scrollTop + (elRect.bottom - contRect.bottom + headerPad),
+              behavior: "smooth",
+            });
+          }
+          // Scroll UP: row is above the visible top → scroll just enough to show it
+          else if (elRect.top < contRect.top) {
+            container.scrollTo({
+              top: container.scrollTop - (contRect.top - elRect.top + headerPad),
+              behavior: "smooth",
+            });
+          }
+          // Otherwise the row is already fully visible — no scroll needed
+          return;
+        }
+      }
+      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+    });
   };
 
   // Merge new products into state (by id, dedup)
@@ -450,6 +496,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
   };
 
   const focusOnField = (field, rowIndex) => {
+    scrollItemsTo(rowIndex);
     setTimeout(() => {
       switch (field) {
         case "batch":
@@ -913,8 +960,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
 
   return (
     <form
-      className="flex flex-col"
-      style={{ minHeight: "74vh", maxHeight: "80vh" }}
+      className="flex flex-col h-full"
+      style={{ minHeight: "calc(100vh - 130px)", maxHeight: "calc(100vh - 130px)" }}
       autoComplete="off" // disable browser suggestions globally
     >
 {/* ================= HEADER SECTION ================= */}
@@ -1114,7 +1161,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
       </div>
 
       {/* ================= ITEMS SECTION ================= */}
-      <div className="flex-1 overflow-auto p-1 bg-gray-50 dark:bg-slate-800/50" autoComplete="off">
+      <div ref={itemsScrollRef} className="flex-1 min-h-0 overflow-auto pt-1 px-1 pb-16 bg-gray-50 dark:bg-slate-800/50" autoComplete="off">
         <h2 className="text-xs font-bold mb-1 text-gray-900 dark:text-gray-100">Items (↑↓ arrows to navigate rows)</h2>
 
         <table className="w-full border-collapse text-[11px]">
@@ -1536,148 +1583,185 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
       </div>
 
       {/* ================= FOOTER SECTION ================= */}
-      <div className="sticky bottom-0 bg-white dark:bg-slate-800 shadow p-2 z-10 border-t border-gray-200 dark:border-slate-700" autoComplete="off">
-        <table className="w-full border-collapse text-xs">
-          <tbody>
-            <tr>
-              <td className="border p-1 w-1/8 bg-gray-50 dark:bg-slate-700/50">
-                <label className="block text-[10px] text-gray-600 dark:text-gray-400">Tax %</label>
-                <input
-                  ref={taxPercentageRef}
-                  type="text"
-                  name="tax_percentage"
-                  value={form.tax_percentage ?? ""}
-                  onChange={handleChange}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      discountPercentageRef.current?.focus();
-                    }
-                  }}
-                  className="border rounded w-full p-1 h-7 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/8 bg-gray-50 dark:bg-slate-700/50">
-                <label className="block text-[10px] text-gray-600 dark:text-gray-400">Tax Amount</label>
-                <input
-                  type="text"
-                  name="tax_amount"
-                  value={form.tax_amount ?? ""}
-                  onChange={handleChange}
-                  className="border rounded w-full p-1 h-7 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/8 bg-gray-50 dark:bg-slate-700/50">
-                <label className="block text-[10px] text-gray-600 dark:text-gray-400">Discount %</label>
-                <input
-                  ref={discountPercentageRef}
-                  type="text"
-                  name="discount_percentage"
-                  value={form.discount_percentage ?? ""}
-                  onChange={handleChange}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      saveButtonRef.current?.focus();
-                    }
-                  }}
-                  className="border rounded w-full p-1 h-7 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/8 bg-gray-50 dark:bg-slate-700/50">
-                <label className="block text-[10px] text-gray-600 dark:text-gray-400">Discount Amount</label>
-                <input
-                  type="text"
-                  name="discount_amount"
-                  value={form.discount_amount ?? ""}
-                  onChange={handleChange}
-                  className="border rounded w-full p-1 h-7 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/8 bg-gray-50 dark:bg-slate-700/50">
-                <label className="block text-[10px] text-gray-600 dark:text-gray-400">Total Amount</label>
-                <input
-                  type="number"
-                  name="total_amount"
-                  readOnly
-                  value={form.total_amount}
-                  className="border rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/8 bg-gray-50 dark:bg-slate-700/50">
-                <label className="block text-[10px] text-gray-600 dark:text-gray-400">Total Paid</label>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="text"
-                    name="total_paid"
-                    value={form.total_paid ?? ""}
-                    onChange={(e) => {
-                      const v = sanitizeNumberInput(e.target.value, true);
-                      setPaidTouched(true);
-                      setForm((prev) => ({ ...prev, total_paid: v }));
-                    }}
-                    onBlur={() => {
-                      setForm((prev) => {
-                        const normalized = prev.total_paid === "" ? "" : to2(prev.total_paid).toFixed(2);
-                        const amt = prev.total_amount === "" || prev.total_amount == null ? "" : to2(prev.total_amount).toFixed(2);
-                        if (normalized !== "" && normalized === amt) {
-                          setPaidTouched(false);
+      <div className="sticky bottom-0 z-10 bg-white dark:bg-slate-800 shadow-[0_-4px_16px_-6px_rgba(0,0,0,0.18)] border-t border-gray-200 dark:border-slate-700" autoComplete="off">
+        <div className="px-4 py-3">
+          <div className="flex gap-5">
+            {/* ---- Left: Invoice Summary Breakdown ---- */}
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2">
+                Invoice Summary
+              </div>
+              <div className="flex gap-6 flex-wrap">
+                {/* Editable adjustment fields */}
+                <div className="flex gap-2 items-end">
+                  <div>
+                    <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Discount %</label>
+                    <input
+                      ref={discountPercentageRef}
+                      type="text"
+                      name="discount_percentage"
+                      value={form.discount_percentage ?? ""}
+                      onChange={handleChange}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          taxPercentageRef.current?.focus();
                         }
-                        return { ...prev, total_paid: normalized };
-                      });
-                    }}
-                    className="border rounded w-full p-1 h-7 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                    {...antiFill}
-                  />
-                  <button
-                    type="button"
-                    title="Relink paid to total"
-                    onClick={() => {
-                      setPaidTouched(false);
-                      setForm((prev) => ({ ...prev, total_paid: prev.total_amount ?? "" }));
-                    }}
-                    className="px-2 py-1 text-[11px] rounded transition-all duration-200"
-                    style={{
-                      background: isDark ? 'rgba(71, 85, 105, 0.6)' : 'rgba(255, 255, 255, 0.8)',
-                      backdropFilter: 'blur(4px)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      color: isDark ? '#94a3b8' : '#64748b'
-                    }}
-                  >
-                    🔗
-                  </button>
+                      }}
+                      className="border border-gray-200 dark:border-slate-600 rounded-md w-16 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-400/40"
+                      {...antiFill}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Discount</label>
+                    <input
+                      type="text"
+                      name="discount_amount"
+                      value={form.discount_amount ?? ""}
+                      onChange={handleChange}
+                      className="border border-gray-200 dark:border-slate-600 rounded-md w-24 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-400/40"
+                      {...antiFill}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Tax %</label>
+                    <input
+                      ref={taxPercentageRef}
+                      type="text"
+                      name="tax_percentage"
+                      value={form.tax_percentage ?? ""}
+                      onChange={handleChange}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          saveButtonRef.current?.focus();
+                        }
+                      }}
+                      className="border border-gray-200 dark:border-slate-600 rounded-md w-16 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-400/40"
+                      {...antiFill}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Tax</label>
+                    <input
+                      type="text"
+                      name="tax_amount"
+                      value={form.tax_amount ?? ""}
+                      onChange={handleChange}
+                      className="border border-gray-200 dark:border-slate-600 rounded-md w-24 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-400/40"
+                      {...antiFill}
+                    />
+                  </div>
                 </div>
-              </td>
-              <td className="border p-1 w-1/8 bg-gray-50 dark:bg-slate-700/50">
-                <label className="block text-[10px] text-gray-600 dark:text-gray-400">Remaining</label>
-                <input
-                  type="number"
-                  name="remaining_amount"
-                  readOnly
-                  value={to2((form.total_amount || 0) - (form.total_paid || 0)).toFixed(2)}
-                  className="border rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/8 text-center align-middle bg-gray-50 dark:bg-slate-700/50">
-                <button
-                  ref={saveButtonRef}
-                  type="button"
-                  onClick={handleSubmit}
-                  className={`px-9 py-2 rounded text-sm font-semibold transition-all duration-200 ${btnPrimary.className}`}
-                  style={btnPrimary.style}
-                >
-                  {invoiceId ? "Update " : "Save"}
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+
+                {/* Computed totals */}
+                <div className="flex-1 min-w-[240px]">
+                  <div className="rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-1 border-b border-gray-100 dark:border-slate-700 text-[11px]">
+                      <span className="text-gray-500 dark:text-gray-400">Items Total</span>
+                      <span className="font-medium text-gray-900 dark:text-gray-100">
+                        {to2(form.rows_total || 0).toFixed(2)}
+                      </span>
+                    </div>
+                    {Number(form.discount_amount || 0) > 0 && (
+                      <div className="flex items-center justify-between px-3 py-1 border-b border-gray-100 dark:border-slate-700 text-[11px]">
+                        <span className="text-gray-500 dark:text-gray-400">Discount {form.discount_percentage ? `(${to2(form.discount_percentage)}%)` : ""}</span>
+                        <span className="font-medium text-red-500 dark:text-red-400">
+                          − {to2(form.discount_amount || 0).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    {Number(form.tax_amount || 0) > 0 && (
+                      <div className="flex items-center justify-between px-3 py-1 border-b border-gray-100 dark:border-slate-700 text-[11px]">
+                        <span className="text-gray-500 dark:text-gray-400">Tax {form.tax_percentage ? `(${to2(form.tax_percentage)}%)` : ""}</span>
+                        <span className="font-medium text-gray-900 dark:text-gray-100">
+                          + {to2(form.tax_amount || 0).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    <div
+                      className="flex items-center justify-between px-3 py-1.5 text-xs font-bold"
+                      style={{ background: `${themeColors.primary}14`, color: themeColors.primary }}
+                    >
+                      <span>Total Amount</span>
+                      <span className="text-sm">{to2(form.total_amount || 0).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ---- Right: Payment + Action ---- */}
+            <div className="w-[250px] flex-shrink-0 flex flex-col justify-between">
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Total Paid</label>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      name="total_paid"
+                      value={form.total_paid ?? ""}
+                      onChange={(e) => {
+                        const v = sanitizeNumberInput(e.target.value, true);
+                        setPaidTouched(true);
+                        setForm((prev) => ({ ...prev, total_paid: v }));
+                      }}
+                      onBlur={() => {
+                        setForm((prev) => {
+                          const normalized = prev.total_paid === "" ? "" : to2(prev.total_paid).toFixed(2);
+                          const amt = prev.total_amount === "" || prev.total_amount == null ? "" : to2(prev.total_amount).toFixed(2);
+                          if (normalized !== "" && normalized === amt) {
+                            setPaidTouched(false);
+                          }
+                          return { ...prev, total_paid: normalized };
+                        });
+                      }}
+                      className="border border-gray-200 dark:border-slate-600 rounded-md w-full px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-400/40"
+                      {...antiFill}
+                    />
+                    <button
+                      type="button"
+                      title="Relink paid to total"
+                      onClick={() => {
+                        setPaidTouched(false);
+                        setForm((prev) => ({ ...prev, total_paid: prev.total_amount ?? "" }));
+                      }}
+                      className="px-1.5 py-1 text-[10px] rounded-md transition-all duration-200 flex-shrink-0"
+                      style={{
+                        background: isDark ? 'rgba(71, 85, 105, 0.6)' : 'rgba(255, 255, 255, 0.8)',
+                        backdropFilter: 'blur(4px)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        color: isDark ? '#94a3b8' : '#64748b'
+                      }}
+                    >
+                      🔗
+                    </button>
+                  </div>
+                </div>
+                <div className="w-20">
+                  <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Remaining</label>
+                  <div className={`h-7 flex items-center px-1.5 rounded-md text-xs font-bold border border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-600/50 ${
+                    (form.total_amount || 0) - (form.total_paid || 0) > 0
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-emerald-600 dark:text-emerald-400"
+                  }`}>
+                    {to2((form.total_amount || 0) - (form.total_paid || 0)).toFixed(2)}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                ref={saveButtonRef}
+                type="button"
+                onClick={handleSubmit}
+                className={`w-full mt-2 py-2 rounded-lg text-sm font-bold tracking-wide transition-all duration-200 ${btnPrimary.className}`}
+                style={btnPrimary.style}
+              >
+                {invoiceId ? "Update Invoice" : "Save Invoice"}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Product Form Modal */}

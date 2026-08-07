@@ -133,9 +133,9 @@ export default function DashboardLayout({ children }) {
         )}
       </div>
 
-      {/* Main content: bottom-right cell */}
+{/* Main content: bottom-right cell */}
       <main className="row-start-2 col-start-2 min-h-0 overflow-y-auto">
-        <div className="p-4 md:p-6">
+        <div className="p-4 md:p-6 h-full flex flex-col">
           <Toaster position="top-right" reverseOrder={false} />
           {children}
         </div>
