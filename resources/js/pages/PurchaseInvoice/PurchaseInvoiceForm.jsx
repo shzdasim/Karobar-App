@@ -166,14 +166,16 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
     // It is generated server-side on SAVE to avoid collisions when multiple forms are open.
   }, [invoiceId]);
 
-  useEffect(() => {
-    // On load, auto-open the supplier search modal so its search field
-    // is focused (replaces the old inline react-select focus).
+useEffect(() => {
+    // On load, auto-open the supplier search modal ONLY for a new (create) form
+    // so its search field is focused. In edit mode we keep the modal closed and
+    // just show the existing supplier.
+    if (invoiceId) return; // skip in edit mode
     const t = setTimeout(() => {
       setSupplierSearchOpen(true);
     }, 150);
     return () => clearTimeout(t);
-  }, []);
+  }, [invoiceId]);
 
   useEffect(() => {
     // Handle Alt+S for save (from anywhere)
