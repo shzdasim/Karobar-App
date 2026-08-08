@@ -23,10 +23,26 @@ const ProductSearchInput = forwardRef(
     const [highlightIndex, setHighlightIndex] = useState(0);
     const [isInvalidInput, setIsInvalidInput] = useState(false);
 
-    const triggerRef = useRef(null);
+const triggerRef = useRef(null);
     const searchRef = useRef(null);
     const listRef = useRef(null);
     const rowRefs = useRef([]);
+    const modalRef = useRef(null);
+    const dragRef = useRef({ isDragging: false, offsetX: 0, offsetY: 0 });
+    const resizeRef = useRef(null);
+    const [isResizing, setIsResizing] = useState(false);
+
+    const MIN_WIDTH = 640;
+    const MIN_HEIGHT = 420;
+    const [windowPos, setWindowPos] = useState(() => {
+      const width = 960;
+      const height = 600;
+      return {
+        x: (window.innerWidth - width) / 2,
+        y: Math.max((window.innerHeight - height) / 2, 10),
+      };
+    });
+    const [windowSize, setWindowSize] = useState({ width: 960, height: 600 });
 
     const didRefreshRef = useRef(false);
     const debounceRef = useRef(null);
@@ -203,7 +219,7 @@ const getQuantity = (p) => p?.quantity ?? p?.current_quantity ?? null;
       }
     };
 
-    const handleSearchChange = (e) => {
+const handleSearchChange = (e) => {
       const val = e.target.value;
       const valid = /^[a-zA-Z0-9-.()/\s]*$/;
       if (!valid.test(val)) {
@@ -213,6 +229,134 @@ const getQuantity = (p) => p?.quantity ?? p?.current_quantity ?? null;
       }
       setSearch(val);
       setHighlightIndex(0);
+    };
+
+    // ---------- Dragging ----------
+    const startDrag = (e) => {
+      if (!modalRef.current) return;
+      dragRef.current = {
+        isDragging: true,
+        offsetX: e.clientX - windowPos.x,
+        offsetY: e.clientY - windowPos.y,
+      };
+      document.addEventListener("mousemove", handleDrag);
+      document.addEventListener("mouseup", stopDrag);
+    };
+
+    const handleDrag = (e) => {
+      if (!dragRef.current.isDragging) return;
+      setWindowPos({
+        x: e.clientX - dragRef.current.offsetX,
+        y: e.clientY - dragRef.current.offsetY,
+      });
+    };
+
+    const stopDrag = () => {
+      dragRef.current.isDragging = false;
+      document.removeEventListener("mousemove", handleDrag);
+      document.removeEventListener("mouseup", stopDrag);
+    };
+
+    // ---------- Resizing ----------
+    const getResizeCursor = (direction) => {
+      const cursors = {
+        n: "ns-resize",
+        s: "ns-resize",
+        e: "ew-resize",
+        w: "ew-resize",
+        ne: "nesw-resize",
+        sw: "nesw-resize",
+        nw: "nwse-resize",
+        se: "nwse-resize",
+      };
+      return cursors[direction] || "default";
+    };
+
+    const startResize = (e, direction) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!modalRef.current) return;
+
+      const rect = modalRef.current.getBoundingClientRect();
+      resizeRef.current = {
+        direction,
+        startX: e.clientX,
+        startY: e.clientY,
+        startWidth: rect.width,
+        startHeight: rect.height,
+        startLeft: rect.left,
+        startTop: rect.top,
+      };
+      setIsResizing(true);
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = getResizeCursor(direction);
+      document.addEventListener("mousemove", handleResize);
+      document.addEventListener("mouseup", stopResize);
+    };
+
+    const handleResize = (e) => {
+      const r = resizeRef.current;
+      if (!r) return;
+
+      const dx = e.clientX - r.startX;
+      const dy = e.clientY - r.startY;
+
+      let { width, height, left, top } = {
+        width: r.startWidth,
+        height: r.startHeight,
+        left: r.startLeft,
+        top: r.startTop,
+      };
+
+      const dir = r.direction;
+
+      if (dir.includes("e")) {
+        width = Math.max(MIN_WIDTH, r.startWidth + dx);
+      }
+      if (dir.includes("s")) {
+        height = Math.max(MIN_HEIGHT, r.startHeight + dy);
+      }
+      if (dir.includes("w")) {
+        width = Math.max(MIN_WIDTH, r.startWidth - dx);
+        left = r.startLeft + (r.startWidth - width);
+      }
+      if (dir.includes("n")) {
+        height = Math.max(MIN_HEIGHT, r.startHeight - dy);
+        top = r.startTop + (r.startHeight - height);
+      }
+
+      setWindowSize({ width, height });
+      setWindowPos({ x: left, y: top });
+    };
+
+    const stopResize = () => {
+      resizeRef.current = null;
+      setIsResizing(false);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      document.removeEventListener("mousemove", handleResize);
+      document.removeEventListener("mouseup", stopResize);
+    };
+
+    const renderResizeHandle = (direction) => {
+      const base = "absolute z-[10001]";
+      const positionMap = {
+        n: "top-0 left-0 w-full h-2 cursor-ns-resize",
+        s: "bottom-0 left-0 w-full h-2 cursor-ns-resize",
+        e: "top-0 right-0 w-2 h-full cursor-ew-resize",
+        w: "top-0 left-0 w-2 h-full cursor-ew-resize",
+        ne: "top-0 right-0 w-4 h-4 cursor-nesw-resize",
+        nw: "top-0 left-0 w-4 h-4 cursor-nwse-resize",
+        se: "bottom-0 right-0 w-4 h-4 cursor-nwse-resize",
+        sw: "bottom-0 left-0 w-4 h-4 cursor-nesw-resize",
+      };
+      return (
+        <div
+          key={direction}
+          className={`${base} ${positionMap[direction]}`}
+          onMouseDown={(e) => startResize(e, direction)}
+        />
+      );
     };
 
     return (
@@ -252,37 +396,54 @@ className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer tran
           />
         </div>
 
-        {/* Modal */}
+{/* Modal */}
         {isOpen &&
           createPortal(
             <div
-              className="fixed inset-0 z-[10000] flex items-start justify-center pt-[6vh] bg-black/50"
+              className="fixed inset-0 z-[10000] bg-black/50"
               onKeyDown={handleModalKeyDown}
               onClick={(e) => {
                 if (e.target === e.currentTarget) closeModal();
               }}
             >
-              <div className="w-full max-w-6xl mx-4">
-                <GlassCard className="overflow-hidden bg-white dark:bg-slate-800 shadow-2xl ring-1 ring-slate-200/50 dark:ring-slate-700/50">
-                  {/* Search Bar */}
-                  <div className="flex items-center gap-3 px-5 py-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
-                    <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 flex-shrink-0" />
-                    <input
-                      ref={searchRef}
-                      type="text"
-                      value={search}
-                      onChange={handleSearchChange}
-                      onKeyDown={handleModalKeyDown}
-                      placeholder="Search by product name, code, or barcode..."
-                      className={`flex-1 bg-transparent border-0 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 text-sm text-slate-900 dark:text-slate-100 ${
-                        isInvalidInput ? "animate-shake" : ""
-                      }`}
-                      autoFocus
-                    />
-                    <kbd className="text-[10px] border border-slate-200 dark:border-slate-600 rounded px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-mono flex-shrink-0">
-                      Esc
-                    </kbd>
-                  </div>
+              {/* Draggable + Resizable Dialog */}
+              <div
+                ref={modalRef}
+                className="absolute bg-white dark:bg-slate-800 rounded-xl shadow-2xl ring-1 ring-slate-200/50 dark:ring-slate-700/50 flex flex-col overflow-hidden"
+                style={{
+                  left: `${windowPos.x}px`,
+                  top: `${windowPos.y}px`,
+                  width: `${windowSize.width}px`,
+                  height: `${windowSize.height}px`,
+                  minWidth: `${MIN_WIDTH}px`,
+                  minHeight: `${MIN_HEIGHT}px`,
+                  userSelect: isResizing ? "none" : undefined,
+                }}
+              >
+                {/* Resize handles (all sides & corners) */}
+                {["n", "s", "e", "w", "ne", "nw", "se", "sw"].map(renderResizeHandle)}
+
+                {/* Header (Draggable) */}
+                <div
+                  className="flex items-center gap-3 px-5 py-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 cursor-move select-none"
+                  onMouseDown={startDrag}
+                >
+                  <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 flex-shrink-0" />
+                  <input
+                    ref={searchRef}
+                    type="text"
+                    value={search}
+                    onChange={handleSearchChange}
+                    placeholder="Search by product name, code, or barcode..."
+                    className={`flex-1 bg-transparent border-0 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 text-sm text-slate-900 dark:text-slate-100 ${
+                      isInvalidInput ? "animate-shake" : ""
+                    }`}
+                    autoFocus
+                  />
+                  <kbd className="text-[10px] border border-slate-200 dark:border-slate-600 rounded px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-mono flex-shrink-0">
+                    Esc
+                  </kbd>
+                </div>
 
                   {/* Results table */}
                   {filtered.length === 0 ? (
@@ -405,7 +566,7 @@ className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer tran
                     </div>
                   )}
 
-                  {/* Footer */}
+{/* Footer */}
                   <GlassToolbar className="items-center justify-between py-2 px-4 bg-slate-50/80 dark:bg-slate-800/80 border-t border-slate-100 dark:border-slate-700">
                     <div className="text-xs text-slate-500 dark:text-slate-400">
                       {search ? (
@@ -432,7 +593,6 @@ className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer tran
                       </span>
                     </div>
                   </GlassToolbar>
-                </GlassCard>
               </div>
             </div>,
             document.body
