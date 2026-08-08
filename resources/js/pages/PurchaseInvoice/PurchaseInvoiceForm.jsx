@@ -381,8 +381,8 @@ useEffect(() => {
       const container = productSearchRefs.current[rowIndex];
       if (!container) return false;
 
-      if (container instanceof HTMLElement) {
-        const input = container.querySelector('input, [contenteditable="true"]');
+if (container instanceof HTMLElement) {
+        const input = container.querySelector('input, button, [contenteditable="true"]');
         if (input && typeof input.focus === "function") {
           input.focus();
           if (typeof input.select === "function") input.select();

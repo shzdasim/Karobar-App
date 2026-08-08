@@ -7,105 +7,29 @@ import React, {
   useMemo,
 } from "react";
 import { createPortal } from "react-dom";
+import {
+  MagnifyingGlassIcon,
+  CubeIcon,
+  TagIcon,
+} from "@heroicons/react/24/solid";
+import { GlassCard, GlassToolbar } from "@/components/glass";
 
 const ProductSearchInput = forwardRef(
   ({ value, onChange, products, onRefreshProducts, onKeyDown: onKeyDownProp }, ref) => {
     const [display, setDisplay] = useState("");
+    const [selectedProduct, setSelectedProduct] = useState(null);
     const [isOpen, setIsOpen] = useState(false);
     const [search, setSearch] = useState("");
     const [highlightIndex, setHighlightIndex] = useState(0);
     const [isInvalidInput, setIsInvalidInput] = useState(false);
-    const [preferencesLoaded, setPreferencesLoaded] = useState(false);
-
-    const [windowPos, setWindowPos] = useState(() => {
-      const width = 1000;
-      const height = 600;
-      const x = (window.innerWidth - width) / 2;
-      const y = (window.innerHeight - height) / 2;
-      return { x, y };
-    });
-
-    const [windowSize, setWindowSize] = useState(() => {
-      const saved = localStorage.getItem("productModalSize");
-      return saved ? JSON.parse(saved) : { width: 900, height: 600 };
-    });
-
-    // Use refs to track current position/size for event handlers
-    const windowPosRef = useRef(windowPos);
-    const windowSizeRef = useRef(windowSize);
-
-    // Keep refs in sync with state
-    useEffect(() => {
-      windowPosRef.current = windowPos;
-    }, [windowPos]);
-
-    useEffect(() => {
-      windowSizeRef.current = windowSize;
-    }, [windowSize]);
-
-    // Fetch preferences from API on mount
-    useEffect(() => {
-      const fetchPreferences = async () => {
-        const token = localStorage.getItem('token') || localStorage.getItem('api_token');
-        try {
-          const response = await fetch('/api/preferences', {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          });
-          if (response.ok) {
-            const data = await response.json();
-            const prefs = data.preferences || {};
-            
-            if (prefs.productModalPos) {
-              setWindowPos(prefs.productModalPos);
-            }
-            if (prefs.productModalSize) {
-              setWindowSize(prefs.productModalSize);
-            }
-          }
-        } catch (error) {
-          // Fallback to localStorage if API fails
-          const savedPos = localStorage.getItem("productModalPos");
-          if (savedPos) setWindowPos(JSON.parse(savedPos));
-          const savedSize = localStorage.getItem("productModalSize");
-          if (savedSize) setWindowSize(JSON.parse(savedSize));
-        } finally {
-          setPreferencesLoaded(true);
-        }
-      };
-      fetchPreferences();
-    }, []);
-
-    // Save preference to API
-    const savePreference = async (key, value) => {
-      const token = localStorage.getItem('token') || localStorage.getItem('api_token');
-      try {
-        await fetch(`/api/preferences/${key}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ value }),
-        });
-      } catch (error) {
-        // Fallback to localStorage if API fails
-        localStorage.setItem(key, JSON.stringify(value));
-      }
-    };
 
     const triggerRef = useRef(null);
     const searchRef = useRef(null);
-    const tableRef = useRef(null);
-    const modalRef = useRef(null);
-    const focusFrameRef = useRef(null);
+    const listRef = useRef(null);
+    const rowRefs = useRef([]);
 
     const didRefreshRef = useRef(false);
     const debounceRef = useRef(null);
-    const dragRef = useRef({ isDragging: false, offsetX: 0, offsetY: 0 });
-    const resizeRef = useRef({ isResizing: false, startX: 0, startY: 0, startWidth: 0, startHeight: 0 });
 
     const items = useMemo(() => {
       if (Array.isArray(products)) return products;
@@ -113,21 +37,32 @@ const ProductSearchInput = forwardRef(
       return [];
     }, [products]);
 
+    // Clear refs when results change
+    useEffect(() => {
+      rowRefs.current = [];
+    }, [items.length]);
+
     useEffect(() => {
       if (highlightIndex >= items.length) setHighlightIndex(0);
     }, [items.length, highlightIndex]);
 
+    // Sync display + selectedProduct from value
     useEffect(() => {
       if (!value) {
         setDisplay("");
+        setSelectedProduct(null);
         return;
       }
       if (typeof value === "object") {
         setDisplay(value?.name || "");
+        setSelectedProduct(value);
         return;
       }
       const selected = items.find((p) => p?.id === value);
-      if (selected) setDisplay(selected.name || "");
+      if (selected) {
+        setDisplay(selected.name || "");
+        setSelectedProduct(selected);
+      }
     }, [value, items]);
 
     useImperativeHandle(ref, () => ({
@@ -143,7 +78,7 @@ const ProductSearchInput = forwardRef(
       setHighlightIndex(0);
       setSearch(
         typeof seedChar === "string" && seedChar.length === 1
-          ? (search + seedChar).toLowerCase()  // Append character to existing search
+          ? (search + seedChar).toLowerCase() // Append character to existing search
           : (display || "")
       );
     };
@@ -158,25 +93,10 @@ const ProductSearchInput = forwardRef(
 
     useEffect(() => {
       if (!isOpen) return;
-
-      // Wait for the portal content to mount before focusing the search box.
-      // This is more reliable than a single timeout when the picker is opened
-      // from keyboard navigation across rows.
-      const raf1 = window.requestAnimationFrame(() => {
-        const raf2 = window.requestAnimationFrame(() => {
-          searchRef.current?.focus();
-          searchRef.current?.select?.();
-        });
-        focusFrameRef.current = raf2;
-      });
-
-      return () => {
-        window.cancelAnimationFrame(raf1);
-        if (focusFrameRef.current) {
-          window.cancelAnimationFrame(focusFrameRef.current);
-          focusFrameRef.current = null;
-        }
-      };
+      setTimeout(() => {
+        searchRef.current?.focus();
+        searchRef.current?.select?.();
+      }, 50);
     }, [isOpen]);
 
     useEffect(() => {
@@ -212,41 +132,59 @@ const ProductSearchInput = forwardRef(
 
     // Infinite scroll
     useEffect(() => {
-      const container = tableRef.current?.parentElement;
+      const container = listRef.current;
       if (!container) return;
       const handleScroll = () => {
         if (
           container.scrollTop + container.clientHeight >=
-          container.scrollHeight - 50
+          container.scrollHeight - 80
         ) {
           onRefreshProducts?.(search);
         }
       };
       container.addEventListener("scroll", handleScroll);
       return () => container.removeEventListener("scroll", handleScroll);
-    }, [onRefreshProducts, search]);
+    }, [onRefreshProducts, search, isOpen]);
 
     const getPackSize = (p) => p?.pack_size ?? p?.packSize ?? p?.packsize ?? "";
-    const getSupplierName = (p) => p?.supplier?.name || p?.supplier_name || "-";
-    const getBrandName = (p) => p?.brand?.name || p?.brand_name || "-";
+    const getSupplierName = (p) => p?.supplier?.name || p?.supplier_name || "";
+    const getBrandName = (p) => p?.brand?.name || p?.brand_name || "";
+const getQuantity = (p) => p?.quantity ?? p?.current_quantity ?? null;
     const getMargin = (p) =>
-      p?.margin ?? p?.margin_percentage ?? p?.marginPercent ?? "-";
+      p?.margin ?? p?.margin_percentage ?? p?.marginPercent ?? null;
     const getAvgPrice = (p) =>
-      p?.avg_price ?? p?.average_price ?? p?.avgPrice ?? "-";
+      p?.avg_price ?? p?.average_price ?? p?.avgPrice ?? null;
+
+    const numFmt = (v) => {
+      if (v === null || v === undefined || v === "") return "—";
+      const n = Number(v);
+      return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 3 }) : "—";
+    };
 
     const handleSelect = (product) => {
       setDisplay(product?.name || "");
+      setSelectedProduct(product);
       onChange?.(product);
       closeModal();
     };
 
+    // Auto-scroll to active row
     useEffect(() => {
       if (!isOpen) return;
-      const rows = tableRef.current?.querySelectorAll("tbody tr");
-      if (!rows || rows.length === 0) return;
-      const el = rows[highlightIndex];
-      if (el) el.scrollIntoView({ block: "nearest" });
+      if (highlightIndex < 0) return;
+      const row = rowRefs.current[highlightIndex];
+      if (row) row.scrollIntoView({ block: "nearest" });
     }, [highlightIndex, isOpen, filtered.length]);
+
+    // Close on Escape
+    useEffect(() => {
+      if (!isOpen) return;
+      const onEsc = (e) => {
+        if (e.key === "Escape") closeModal();
+      };
+      window.addEventListener("keydown", onEsc);
+      return () => window.removeEventListener("keydown", onEsc);
+    }, [isOpen]);
 
     const handleModalKeyDown = (e) => {
       if (!isOpen) return;
@@ -277,351 +215,228 @@ const ProductSearchInput = forwardRef(
       setHighlightIndex(0);
     };
 
-    // --- Dragging Logic ---
-    const startDrag = (e) => {
-      if (!modalRef.current) return;
-      dragRef.current = {
-        isDragging: true,
-        offsetX: e.clientX - windowPos.x,
-        offsetY: e.clientY - windowPos.y,
-      };
-      document.addEventListener("mousemove", handleDrag);
-      document.addEventListener("mouseup", stopDrag);
-    };
-
-    const handleDrag = (e) => {
-      if (!dragRef.current.isDragging) return;
-      setWindowPos({
-        x: e.clientX - dragRef.current.offsetX,
-        y: e.clientY - dragRef.current.offsetY,
-      });
-    };
-
-    const stopDrag = () => {
-      dragRef.current.isDragging = false;
-      const currentPos = windowPosRef.current;
-      savePreference('productModalPos', currentPos);
-      localStorage.setItem("productModalPos", JSON.stringify(currentPos)); // Keep as backup
-      document.removeEventListener("mousemove", handleDrag);
-      document.removeEventListener("mouseup", stopDrag);
-    };
-
-    // --- Resizing Logic (all sides) ---
-    const MIN_WIDTH = 600;
-    const MIN_HEIGHT = 400;
-    const RESIZE_HANDLE_SIZE = 8; // px (visual/active area conceptually)
-
-    const getResizeDirection = (target) => {
-      const dir = target?.getAttribute?.("data-resize-dir");
-      return dir || "se";
-    };
-
-    const startResize = (e) => {
-      if (!modalRef.current) return;
-      const dir = getResizeDirection(e.target);
-
-      resizeRef.current = {
-        isResizing: true,
-        dir,
-        startX: e.clientX,
-        startY: e.clientY,
-        startWidth: windowSizeRef.current.width,
-        startHeight: windowSizeRef.current.height,
-        startLeft: windowPosRef.current.x,
-        startTop: windowPosRef.current.y,
-      };
-
-      document.addEventListener("mousemove", handleResize);
-      document.addEventListener("mouseup", stopResize);
-    };
-
-    const handleResize = (e) => {
-      if (!resizeRef.current.isResizing) return;
-
-      const { dir, startX, startY, startWidth, startHeight, startLeft, startTop } =
-        resizeRef.current;
-
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-
-      let newLeft = startLeft;
-      let newTop = startTop;
-      let newWidth = startWidth;
-      let newHeight = startHeight;
-
-      // Right side
-      if (dir.includes("e")) {
-        newWidth = Math.max(MIN_WIDTH, startWidth + dx);
-      }
-
-      // Left side
-      if (dir.includes("w")) {
-        const desiredWidth = Math.max(MIN_WIDTH, startWidth - dx);
-        newLeft = startLeft + (startWidth - desiredWidth);
-        newWidth = desiredWidth;
-      }
-
-      // Bottom side
-      if (dir.includes("s")) {
-        newHeight = Math.max(MIN_HEIGHT, startHeight + dy);
-      }
-
-      // Top side
-      if (dir.includes("n")) {
-        const desiredHeight = Math.max(MIN_HEIGHT, startHeight - dy);
-        newTop = startTop + (startHeight - desiredHeight);
-        newHeight = desiredHeight;
-      }
-
-      setWindowPos({ x: newLeft, y: newTop });
-      setWindowSize({ width: newWidth, height: newHeight });
-    };
-
-    const stopResize = () => {
-      resizeRef.current.isResizing = false;
-      const currentSize = windowSizeRef.current;
-      const currentPos = windowPosRef.current;
-
-      savePreference('productModalSize', currentSize);
-      savePreference('productModalPos', currentPos);
-
-      localStorage.setItem("productModalSize", JSON.stringify(currentSize));
-      localStorage.setItem("productModalPos", JSON.stringify(currentPos));
-
-      document.removeEventListener("mousemove", handleResize);
-      document.removeEventListener("mouseup", stopResize);
-    };
-
     return (
       <>
-        {/* Trigger Input */}
-        <input
-          ref={triggerRef}
-          type="text"
-          value={display}
-          readOnly
-          placeholder="Search product…"
-          className="border w-full h-6 text-[11px] px-1 cursor-text rounded-lg bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400/40 dark:focus:ring-indigo-400/40"
-          onFocus={() => openModal()}
-          onClick={() => openModal()}
-          onKeyDown={(e) => {
-            if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) {
-              e.preventDefault();
-              openModal(e.key);
-              return;
-            }
-            if (e.key === "Enter" || e.key === "ArrowDown") {
-              e.preventDefault();
-              openModal();
-              return;
-            }
-            onKeyDownProp?.(e);
-          }}
-        />
+{/* Trigger Input — shows selected product like other selects */}
+        <div className="relative w-full">
+          <input
+            ref={triggerRef}
+            type="text"
+            value={display}
+            readOnly
+            placeholder="Search product…"
+            className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer transition-all border pr-6 ${
+              selectedProduct
+                ? "border-blue-400 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200 font-medium"
+                : "border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-500 dark:text-gray-400 placeholder-gray-400 dark:placeholder-gray-500"
+            } focus:outline-none focus:ring-2 focus:ring-blue-400/40`}
+            title={selectedProduct?.name || "Search product…"}
+            onFocus={() => openModal()}
+            onClick={() => openModal()}
+            onKeyDown={(e) => {
+              if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) {
+                e.preventDefault();
+                openModal(e.key);
+                return;
+              }
+              if (e.key === "Enter" || e.key === "ArrowDown") {
+                e.preventDefault();
+                openModal();
+                return;
+              }
+              onKeyDownProp?.(e);
+            }}
+          />
+          <CubeIcon
+            className="w-3.5 h-3.5 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none flex-shrink-0"
+          />
+        </div>
 
         {/* Modal */}
         {isOpen &&
           createPortal(
             <div
-              className="fixed inset-0 z-[10000] flex items-center justify-center"
+              className="fixed inset-0 z-[10000] flex items-start justify-center pt-[6vh] bg-black/50"
               onKeyDown={handleModalKeyDown}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) closeModal();
+              }}
             >
-              <div className="absolute inset-0 bg-black/40" onClick={closeModal} />
-
-              {/* Draggable + Resizable Dialog */}
-              <div
-                ref={modalRef}
-                className="absolute bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-600 flex flex-col"
-                style={{
-                  left: `${windowPos.x}px`,
-                  top: `${windowPos.y}px`,
-                  width: `${windowSize.width}px`,
-                  height: `${windowSize.height}px`,
-                  minWidth: "600px",
-                  minHeight: "400px",
-                }}
-                onMouseDown={(e) => {
-                  // Make the whole window draggable (except interactive controls)
-                  const target = e.target;
-                  const tag = target?.tagName?.toLowerCase?.() || "";
-                  const isInteractive =
-                    tag === "input" ||
-                    tag === "textarea" ||
-                    tag === "select" ||
-                    tag === "button" ||
-                    target?.isContentEditable;
-
-                  // Don't start drag if clicking the resize handle (handled separately)
-                  if (target?.closest?.("[data-resize-handle='true']")) return;
-
-                  // Still allow drag when clicking on the header button etc, but avoid stealing from inputs
-                  if (isInteractive) return;
-
-                  // Prevent text selection while dragging
-                  e.preventDefault();
-                  startDrag(e);
-                }}
-              >
-                {/* Header (Draggable) */}
-                <div
-                  className="px-4 py-3 border-b flex items-center justify-between cursor-move bg-gray-50 dark:bg-slate-700 rounded-t-xl border-gray-200 dark:border-slate-600"
-                  onMouseDown={startDrag}
-                >
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Select Product</h3>
-                  <button
-                    type="button"
-                    onClick={closeModal}
-                    className="text-xs px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-slate-600 text-gray-900 dark:text-gray-100"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                {/* Body */}
-                <div className="flex-1 overflow-hidden flex flex-col">
-                  {/* Search */}
-                  <div className="p-3">
+              <div className="w-full max-w-6xl mx-4">
+                <GlassCard className="overflow-hidden bg-white dark:bg-slate-800 shadow-2xl ring-1 ring-slate-200/50 dark:ring-slate-700/50">
+                  {/* Search Bar */}
+                  <div className="flex items-center gap-3 px-5 py-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+                    <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 flex-shrink-0" />
                     <input
                       ref={searchRef}
                       type="text"
                       value={search}
                       onChange={handleSearchChange}
-                      placeholder="Type to search… (Enter to select, Esc to close)"
-                      className={`border w-full h-8 text-sm px-2 rounded-lg bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400/40 dark:focus:ring-indigo-400/40 ${
-                        isInvalidInput ? "animate-shake border-red-400" : ""
+                      onKeyDown={handleModalKeyDown}
+                      placeholder="Search by product name, code, or barcode..."
+                      className={`flex-1 bg-transparent border-0 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 text-sm text-slate-900 dark:text-slate-100 ${
+                        isInvalidInput ? "animate-shake" : ""
                       }`}
+                      autoFocus
                     />
+                    <kbd className="text-[10px] border border-slate-200 dark:border-slate-600 rounded px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-mono flex-shrink-0">
+                      Esc
+                    </kbd>
                   </div>
 
-                  {/* Results */}
-                  <div className="px-3 pb-3 flex-1 overflow-auto">
-                    <div className="border rounded overflow-hidden h-full border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800">
-                      <div className="max-h-full overflow-auto">
-                        <table ref={tableRef} className="w-full border-collapse text-[11px]">
-                          <thead className="bg-gray-100 dark:bg-slate-700 sticky top-0">
-                            <tr className="text-left text-[10px]">
-                              <th colSpan="3" className="border px-1 w-1/3 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Name</th>
-                              <th className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Pack Size</th>
-                              <th className="border px-1 font-bold text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Quantity</th>
-                              <th className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Pack Purchase</th>
-                              <th className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Unit Purchase Price</th>
-                              <th className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Pack Sale</th>
-                              <th className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Unit Sale Price</th>
-                              <th className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Supplier</th>
-                              <th className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Brand</th>
-                              <th className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Margin %</th>
-                              <th className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">Avg. Price</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filtered.map((p, idx) => (
+                  {/* Results table */}
+                  {filtered.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-14 text-slate-400">
+                      <CubeIcon className="w-8 h-8 mb-2" />
+                      <span className="text-sm">No products found</span>
+                    </div>
+                  ) : (
+                    <div ref={listRef} className="max-h-[58vh] overflow-y-auto">
+                      <table className="w-full border-collapse text-[12px]">
+                        {/* Grouped header */}
+<thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-600">
+<tr>
+                            <th rowSpan={2} className="bg-slate-200/80 dark:bg-slate-700 px-4 py-2 text-left font-bold text-slate-600 dark:text-slate-200 w-[240px]">Product</th>
+                            <th rowSpan={2} className="px-3 py-1.5 text-center font-semibold text-[10px] uppercase tracking-wide text-sky-600 dark:text-sky-300">Qty</th>
+                            <th colSpan={2} className="px-2 py-1.5 text-center font-semibold text-[10px] uppercase tracking-wide text-cyan-600 dark:text-cyan-300">Purchase</th>
+                            <th colSpan={2} className="px-2 py-1.5 text-center font-semibold text-[10px] uppercase tracking-wide text-green-600 dark:text-green-300">Sale</th>
+                            <th className="px-3 py-1.5 text-center font-semibold text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Avg</th>
+                            <th className="px-3 py-1.5 text-center font-semibold text-[10px] uppercase tracking-wide text-emerald-600 dark:text-emerald-300">Mrg %</th>
+                          </tr>
+                          <tr>
+                            <th className="px-3 py-1.5 text-center font-medium text-slate-500 dark:text-slate-400 border-l border-slate-200 dark:border-slate-600">Pack</th>
+                            <th className="px-3 py-1.5 text-center font-medium text-slate-500 dark:text-slate-400">Unit</th>
+                            <th className="px-3 py-1.5 text-center font-medium text-slate-500 dark:text-slate-400 border-l border-slate-200 dark:border-slate-600">Pack</th>
+                            <th className="px-3 py-1.5 text-center font-medium text-slate-500 dark:text-slate-400">Unit</th>
+                            <th className="px-3 py-1.5" />
+                            <th className="px-3 py-1.5" />
+                          </tr>
+                        </thead>
+                        <tbody className="text-slate-700 dark:text-slate-200">
+                          {filtered.map((p, idx) => {
+                            const active = idx === highlightIndex;
+                            const qty = getQuantity(p);
+                            const margin = getMargin(p);
+                            const avg = getAvgPrice(p);
+                            const rowCls = active
+                              ? "bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30"
+                              : "hover:bg-slate-50 dark:hover:bg-slate-700/30";
+                            return (
                               <tr
                                 key={p.id}
-                                onClick={() => handleSelect(p)}
-                                className={`cursor-pointer ${
-                                  idx === highlightIndex
-                                    ? "bg-green-600 text-white"
-                                    : "odd:bg-white/90 even:bg-white/70 dark:odd:bg-slate-700/60 dark:even:bg-slate-800/60 hover:bg-gray-100 dark:hover:bg-slate-600"
-                                }`}
+                                ref={(el) => (rowRefs.current[idx] = el)}
                                 onMouseEnter={() => setHighlightIndex(idx)}
+                                onClick={() => handleSelect(p)}
+                                className={`cursor-pointer border-b border-slate-100 dark:border-slate-700/50 ${rowCls}`}
+                                title="Select product"
+                                aria-label="Select product"
                               >
-                                <td colSpan="3" className="border px-1 text-[13px] w-1/3 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{p?.name}</td>
-                                <td className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{getPackSize(p)}</td>
-                                <td className="border px-1 font-bold text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{p?.quantity}</td>
-                                <td className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{p?.pack_purchase_price}</td>
-                                <td className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{p?.unit_purchase_price}</td>
-                                <td className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{p?.pack_sale_price}</td>
-                                <td className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{p?.unit_sale_price}</td>
-                                <td className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{getSupplierName(p)}</td>
-                                <td className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{getBrandName(p)}</td>
-                                <td className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{getMargin(p)}</td>
-                                <td className="border px-1 text-gray-900 dark:text-gray-100 border-gray-200 dark:border-slate-600">{getAvgPrice(p)}</td>
-                              </tr>
-                            ))}
-                            {filtered.length === 0 && (
-                              <tr>
-                                <td
-                                  colSpan={13}
-                                  className="text-center py-6 text-gray-500 dark:text-gray-400"
-                                >
-                                  No products found
+                                {/* Product identity */}
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className="flex-shrink-0">
+                                      <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
+                                        <CubeIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                                      </div>
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className={`font-bold text-[13px] truncate ${active ? "text-indigo-700 dark:text-indigo-300" : "text-indigo-600 dark:text-indigo-400"}`}>
+                                        {p?.name || "—"}
+                                      </div>
+                                      <div className="flex items-center gap-2 text-[11px] mt-0.5 text-slate-500 dark:text-slate-400 flex-wrap">
+                                        {getBrandName(p) && (
+                                          <span className="font-semibold">{getBrandName(p)}</span>
+                                        )}
+                                        {getPackSize(p) && (
+                                          <span className="flex items-center gap-0.5">
+                                            <TagIcon className="w-3 h-3" />
+                                            {getPackSize(p)}
+                                          </span>
+                                        )}
+                                        {getSupplierName(p) && <span>• {getSupplierName(p)}</span>}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+
+{/* Qty */}
+                                <td className="px-3 py-3 text-center">
+                                  {qty != null ? (
+                                    <span className="inline-block px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300 font-bold">
+                                      {qty}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400">—</span>
+                                  )}
+                                </td>
+
+                                {/* Purchase prices */}
+                                <td className={`px-3 py-3 text-center font-semibold border-l border-slate-100 dark:border-slate-700 text-cyan-700 dark:text-cyan-300`}>
+                                  {numFmt(p?.pack_purchase_price)}
+                                </td>
+                                <td className={`px-3 py-3 text-center font-medium ${active ? "text-slate-800 dark:text-slate-100" : "text-slate-600 dark:text-slate-300"}`}>
+                                  {numFmt(p?.unit_purchase_price)}
+                                </td>
+
+                                {/* Sale prices */}
+                                <td className={`px-3 py-3 text-center font-semibold border-l border-slate-100 dark:border-slate-700 text-green-700 dark:text-green-300`}>
+                                  {numFmt(p?.pack_sale_price)}
+                                </td>
+                                <td className={`px-3 py-3 text-center font-medium ${active ? "text-slate-800 dark:text-slate-100" : "text-slate-600 dark:text-slate-300"}`}>
+                                  {numFmt(p?.unit_sale_price)}
+                                </td>
+
+                                {/* Avg */}
+                                <td className={`px-3 py-3 text-center font-semibold ${active ? "text-slate-800 dark:text-slate-100" : "text-slate-700 dark:text-slate-200"}`}>
+                                  {numFmt(avg)}
+                                </td>
+
+                                {/* Margin */}
+                                <td className={`px-3 py-3 text-center text-emerald-600 dark:text-emerald-400`}>
+                                  <span className="inline-block px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 font-bold">
+                                    {margin != null ? `${margin}%` : "—"}
+                                  </span>
                                 </td>
                               </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
-                  </div>
+                  )}
 
                   {/* Footer */}
-                  <div className="px-4 py-2 border-t text-[10px] text-gray-600 dark:text-gray-400 border-gray-200 dark:border-slate-600">
-                    ↑/↓ to navigate • Enter to select • Esc to close
-                  </div>
-                </div>
-
-                {/* Resize Handles (all sides) */}
-                <div
-                  data-resize-handle="true"
-                  data-resize-dir="n"
-                  onMouseDown={startResize}
-                  className="absolute top-1 left-1 right-1 h-2 bg-transparent cursor-n-resize"
-                  title="Resize top"
-                />
-                <div
-                  data-resize-handle="true"
-                  data-resize-dir="s"
-                  onMouseDown={startResize}
-                  className="absolute bottom-1 left-1 right-1 h-2 bg-transparent cursor-s-resize"
-                  title="Resize bottom"
-                />
-                <div
-                  data-resize-handle="true"
-                  data-resize-dir="w"
-                  onMouseDown={startResize}
-                  className="absolute top-1 bottom-1 left-1 w-2 bg-transparent cursor-w-resize"
-                  title="Resize left"
-                />
-                <div
-                  data-resize-handle="true"
-                  data-resize-dir="e"
-                  onMouseDown={startResize}
-                  className="absolute top-1 bottom-1 right-1 w-2 bg-transparent cursor-e-resize"
-                  title="Resize right"
-                />
-                <div
-                  data-resize-handle="true"
-                  data-resize-dir="nw"
-                  onMouseDown={startResize}
-                  className="absolute -top-1 -left-1 w-3 h-3 bg-transparent cursor-nw-resize"
-                  title="Resize top-left"
-                />
-                <div
-                  data-resize-handle="true"
-                  data-resize-dir="ne"
-                  onMouseDown={startResize}
-                  className="absolute -top-1 -right-1 w-3 h-3 bg-transparent cursor-ne-resize"
-                  title="Resize top-right"
-                />
-                <div
-                  data-resize-handle="true"
-                  data-resize-dir="sw"
-                  onMouseDown={startResize}
-                  className="absolute -bottom-1 -left-1 w-3 h-3 bg-transparent cursor-sw-resize"
-                  title="Resize bottom-left"
-                />
-                <div
-                  data-resize-handle="true"
-                  data-resize-dir="se"
-                  onMouseDown={startResize}
-                  className="absolute -bottom-1 -right-1 w-3 h-3 bg-transparent cursor-se-resize"
-                  title="Resize bottom-right"
-                />
+                  <GlassToolbar className="items-center justify-between py-2 px-4 bg-slate-50/80 dark:bg-slate-800/80 border-t border-slate-100 dark:border-slate-700">
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      {search ? (
+                        <>
+                          <span className="font-bold">{filtered.length}</span> results for{" "}
+                          <span className="font-medium">"{search}"</span>
+                        </>
+                      ) : (
+                        <>All products</>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 text-[10px] text-slate-400">
+                      <span className="flex items-center gap-1">
+                        <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">↑↓</kbd>
+                        <span>Navigate</span>
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">↵</kbd>
+                        <span>Select</span>
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">Esc</kbd>
+                        <span>Close</span>
+                      </span>
+                    </div>
+                  </GlassToolbar>
+                </GlassCard>
               </div>
             </div>,
             document.body
           )}
-
       </>
     );
   }
