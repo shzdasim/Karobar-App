@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import CustomerSearchInput from "../../components/CustomerSearchInput.jsx";
+import CustomerSearch from "../../components/CustomerSearch.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext.jsx";
 
@@ -79,8 +79,9 @@ const getSectionStyles = (theme, colorKey) => {
    Customer Ledger Page (Modernized)
    ========================= */
 export default function CustomerLedgerPage() {
-  const [customers, setCustomers] = useState([]);
+const [customers, setCustomers] = useState([]);
   const [customerId, setCustomerId] = useState("");
+  const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [rows, setRows] = useState([]);
@@ -682,99 +683,151 @@ export default function CustomerLedgerPage() {
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don’t have permission to view customer ledger.</div>;
 
-  return (
+return (
     <div className="p-4 space-y-3">
-      {/* ===== Professional Header ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
-        {/* Header Top */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          {/* Title */}
+      {/* ===== Premium Gradient Hero Header ===== */}
+      <div
+        className="relative overflow-hidden rounded-2xl shadow-lg"
+        style={{
+          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
+        }}
+      >
+        {/* Decorative blurred blobs */}
+        <div
+          className="absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-30 blur-3xl pointer-events-none"
+          style={{ backgroundColor: "#ffffff" }}
+        />
+        <div
+          className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full opacity-20 blur-3xl pointer-events-none"
+          style={{ backgroundColor: themeColors.tertiary }}
+        />
+
+        {/* Hero Top */}
+        <div className="relative flex items-center justify-between px-5 py-4">
           <div className="flex items-center gap-3">
-            <div 
-              className="p-2 rounded-lg shadow-sm"
-              style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+            <div
+              className="p-2.5 rounded-xl shadow-inner"
+              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
             >
-              <UserIcon className="w-5 h-5 text-white" />
+              <UserIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Customer Ledger</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                {customerId ? `Managing ledger for selected customer` : 'Select a customer to view ledger'}
+              <h1 className="text-xl font-extrabold tracking-wide text-white leading-none">Customer Ledger</h1>
+              <p className="text-xs text-white/80 mt-1">
+                {customerId ? "Managing ledger for selected customer" : "Select a customer to view ledger"}
               </p>
             </div>
           </div>
 
-          {/* Action Buttons - Modern card-style layout */}
-          <div className="flex items-center gap-2">
-            {/* Bulk Actions Dropdown-style buttons */}
-            <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-lg bg-gray-100/80 dark:bg-slate-700/60 border border-gray-200/60 dark:border-slate-600/40">
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {/* Customer Select (new modal search) */}
+            <div
+              className={`w-64 h-10 rounded-xl border flex items-center gap-1 overflow-hidden transition-all ${
+                customerId
+                  ? "border-white/60 bg-white/95 text-gray-800"
+                  : "border-white/30 bg-white/15 text-white/80"
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => setCustomerSearchOpen(true)}
+                className="flex-1 h-full px-3 text-left text-xs flex items-center gap-2 min-w-0"
+                title={customerId ? (customers.find(c => String(c.id) === String(customerId))?.name || "Selected customer") : "Click to search customer..."}
+              >
+                <UserIcon className="w-4 h-4 flex-shrink-0" />
+                {customerId ? (
+                  <span className="truncate font-medium">
+                    {customers.find(c => String(c.id) === String(customerId))?.name || "Selected customer"}
+                  </span>
+                ) : (
+                  <span className="truncate">Search customer...</span>
+                )}
+              </button>
+              {customerId && (
+                <button
+                  type="button"
+                  onClick={() => setCustomerId("")}
+                  className="h-full px-2 flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 transition-colors flex-shrink-0"
+                  title="Clear customer"
+                  aria-label="Clear customer"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            <div className="w-px h-8 bg-white/30 mx-1" />
+
+            {/* Shared action group */}
+            <div
+              className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-xl"
+              style={{ backgroundColor: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.2)" }}
+            >
               <Guard when={can.update}>
                 <button
                   onClick={rebuild}
                   disabled={!customerId}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId ? btnTertiary.className : ''}`}
-                  style={customerId ? btnTertiary.style : {}}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg text-white transition-all duration-200 ${customerId ? "hover:bg-white/20" : "opacity-40 cursor-not-allowed"}`}
                 >
                   <ArrowPathIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Refresh</span>
                 </button>
               </Guard>
 
-              <div className="w-px h-5 bg-gray-300/60 dark:bg-slate-600/60" />
+              <div className="w-px h-5 bg-white/30" />
 
               <Guard when={can.create}>
                 <button
                   onClick={openAddPayment}
                   disabled={!customerId}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId ? btnPrimary.className : ''}`}
-                  style={customerId ? btnPrimary.style : {}}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg text-white transition-all duration-200 ${customerId ? "hover:bg-white/20" : "opacity-40 cursor-not-allowed"}`}
                 >
                   <PlusCircleIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Payment</span>
                 </button>
               </Guard>
 
-              <div className="w-px h-5 bg-gray-300/60 dark:bg-slate-600/60" />
+              <div className="w-px h-5 bg-white/30" />
 
               <Guard when={can.create}>
                 <button
                   onClick={openAddManual}
                   disabled={!customerId}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId ? btnSecondary.className : ''}`}
-                  style={customerId ? btnSecondary.style : {}}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg text-white transition-all duration-200 ${customerId ? "hover:bg-white/20" : "opacity-40 cursor-not-allowed"}`}
                 >
                   <WrenchScrewdriverIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Manual</span>
                 </button>
               </Guard>
 
-              <div className="w-px h-5 bg-gray-300/60 dark:bg-slate-600/60" />
+              <div className="w-px h-5 bg-white/30" />
 
               <Guard when={can.update}>
                 <button
                   onClick={fetchData}
                   disabled={!customerId}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId ? btnEmerald.className : ''}`}
-                  style={customerId ? btnEmerald.style : {}}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg text-white transition-all duration-200 ${customerId ? "hover:bg-white/20" : "opacity-40 cursor-not-allowed"}`}
                 >
                   <ArrowPathIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Load</span>
                 </button>
               </Guard>
 
-              <div className="w-px h-5 bg-gray-300/60 dark:bg-slate-600/60" />
+              <div className="w-px h-5 bg-white/30" />
 
               <Guard when={can.update}>
                 <button
                   onClick={openSaveModal}
                   disabled={!customerId || (newCount === 0 && updCount === 0)}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${customerId && (newCount > 0 || updCount > 0) ? btnTertiary.className : ''}`}
-                  style={customerId && (newCount > 0 || updCount > 0) ? btnTertiary.style : {}}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg text-white transition-all duration-200 ${customerId && (newCount > 0 || updCount > 0) ? "hover:bg-white/20" : "opacity-40 cursor-not-allowed"}`}
                 >
                   <ArrowDownOnSquareIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Save</span>
                   {(newCount > 0 || updCount > 0) && customerId && (
-                    <span className="ml-0.5 px-1 py-0.5 rounded bg-white/20 text-[10px]">
+                    <span className="ml-0.5 px-1 py-0.5 rounded bg-white/30 text-[10px]">
                       {newCount + updCount}
                     </span>
                   )}
@@ -786,8 +839,7 @@ export default function CustomerLedgerPage() {
             <button
               onClick={() => handlePrint()}
               disabled={!customerId}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold ${customerId ? btnSecondary.className : ''}`}
-              style={customerId ? btnSecondary.style : {}}
+              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
             >
               <PrinterIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Print</span>
@@ -795,25 +847,43 @@ export default function CustomerLedgerPage() {
           </div>
         </div>
 
-        {/* Search Bar */}
-        <div className="px-4 py-3 bg-gray-50/50 dark:bg-slate-800/50">
-          <div className="flex-1">
-            <CustomerSearchInput
-              value={customerId}
-              onChange={setCustomerId}
-              customers={customers}
-              autoFocus
-              menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-              menuPosition="fixed"
-              styles={{
-                menuPortal: base => ({ ...base, zIndex: 9999 }),
-                control: (base) => ({
-                  ...base,
-                  minHeight: '38px',
-                  borderRadius: '0.5rem',
-                }),
-              }}
-            />
+        {/* From / To filters */}
+        <div className="relative px-5 pb-4">
+          <div
+            className="grid grid-cols-2 md:grid-cols-12 gap-3 rounded-xl p-3"
+            style={{ backgroundColor: "rgba(255,255,255,0.12)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)" }}
+          >
+<div className="col-span-1 md:col-span-4 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">From</label>
+              <input
+                type="date"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+              />
+            </div>
+            <div className="col-span-1 md:col-span-4 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">To</label>
+              <input
+                type="date"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+              />
+            </div>
+            <div className="col-span-2 md:col-span-4 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">&nbsp;</label>
+              <button
+                onClick={fetchData}
+                disabled={!customerId}
+                className={`h-9 px-4 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs font-bold text-white transition-all duration-200 ${
+                  customerId ? "bg-white/25 hover:bg-white/35 backdrop-blur-sm" : "opacity-40 cursor-not-allowed"
+                }`}
+              >
+                <ArrowPathIcon className="w-3.5 h-3.5" />
+                Apply Filters
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1143,6 +1213,16 @@ export default function CustomerLedgerPage() {
           </div>
         </div>
       )}
+
+{/* ===== Customer Search Modal (new select) ===== */}
+      <CustomerSearch
+        isOpen={customerSearchOpen}
+        onClose={() => setCustomerSearchOpen(false)}
+        onSelect={(cust) => {
+          setCustomerId(cust ? String(cust.id) : "");
+          setCustomerSearchOpen(false);
+        }}
+      />
 
       {/* print + portal helpers */}
       <style>{`

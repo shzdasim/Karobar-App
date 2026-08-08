@@ -255,8 +255,11 @@ const [supplier, setSupplier] = useState(null);
   const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
   const [brandSearchOpen, setBrandSearchOpen] = useState(false);
 
-  const [rows, setRows] = useState([]);
+const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // === printer type (a4 | thermal) — respects saved setting ===
+  const [printerType, setPrinterType] = useState("a4");
 
   // === keyboard navigation state/refs ===
   const [selectedIndex, setSelectedIndex] = useState(-1);
@@ -265,6 +268,16 @@ const [supplier, setSupplier] = useState(null);
   const rowRefs = useRef({});
 
   const printBtnRef = useRef(null);
+
+  // Load saved printer preference
+  useEffect(() => {
+    axios
+      .get("/api/settings")
+      .then(({ data }) => {
+        if (data?.printer_type) setPrinterType(String(data.printer_type).toLowerCase());
+      })
+      .catch(() => {});
+  }, []);
 
   // Alt+P: print
   useEffect(() => {
@@ -277,15 +290,193 @@ const [supplier, setSupplier] = useState(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [rows, canView]);
-
-  const doPrint = () => {
-    if (!canView) return toast.error("You don't have permission to view/print.");
-    if (!rows.length) return toast.error("Nothing to print.");
-    window.print();
-  };
+  }, [rows, canView, printerType]);
 
   const fmt2 = (v) => Number(v ?? 0).toFixed(2);
+
+  // Rows to print: only products with order_packs > 0
+  const printRows = useMemo(
+    () => rows.filter((r) => Number(r.order_packs || 0) > 0),
+    [rows]
+  );
+
+  const printTotalPacks = useMemo(
+    () => printRows.reduce((sum, r) => sum + Number(r.order_packs || 0), 0),
+    [printRows]
+  );
+
+  // Build a self-contained HTML document for A4 or thermal (80mm)
+  const buildPrintHtml = (type) => {
+    const isA4 = type === "a4";
+    const dateLabel = new Date().toLocaleDateString();
+    const supplierLabel = supplier?.label || (rows[0]?.supplier_name || "—");
+    const brandLabel = brand?.label || (rows[0]?.brand_name || "—");
+
+    const esc = (s) =>
+      String(s ?? "")
+        .replace(/&/g, "&" + "amp;")
+        .replace(/</g, "&" + "lt;")
+        .replace(/>/g, "&" + "gt;")
+        .replace(/"/g, "&" + "quot;");
+
+    const rowsHtml = printRows
+      .map(
+        (r) => `
+          <tr>
+            <td class="name">${esc(r.product_name)}</td>
+            <td class="qty">${Number(r.order_packs || 0)}</td>
+          </tr>`
+      )
+      .join("");
+
+    // Thermal (80mm) styles
+    const thermalCss = `
+      @page { size: 80mm auto; margin: 0; }
+      * { box-sizing: border-box; }
+      body { margin:0; padding:0; color:#000; background:#fff; font-family:'Courier New',monospace; font-weight:700; font-size:12px; line-height:1.35; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      .receipt { width:80mm; max-width:100%; margin:0 auto; padding:8px 6px; }
+      .center { text-align:center; }
+      .store { font-size:18px; text-align:center; }
+      .meta { text-align:center; font-size:10px; }
+      .hr { border-top:1px dashed #000; margin:5px 0; }
+      .double-hr { border-top:2px double #000; margin:6px 0; }
+      .pair { display:flex; justify-content:space-between; }
+      .pair + .pair { margin-top:2px; }
+      table { width:100%; border-collapse:collapse; }
+      thead th { text-align:left; padding:2px 0; border-bottom:1px solid #000; }
+      tbody td { padding:2px 0; border-bottom:1px solid #000; }
+      td.qty, th.qty { text-align:right; white-space:nowrap; }
+      .total { font-size:13px; font-weight:bold; margin-top:4px; display:flex; justify-content:space-between; }
+      .foot { margin-top:8px; text-align:center; font-size:9px; }
+    `;
+
+    // A4 styles
+    const a4Css = `
+      @page { size: A4; margin: 14mm; }
+      * { box-sizing: border-box; }
+      body { margin:0; padding:0; color:#111; background:#fff; font-family:Arial,Helvetica,sans-serif; }
+      .page { width:100%; }
+      .header { display:flex; align-items:center; gap:14px; border-bottom:1px solid #ccc; padding-bottom:12px; }
+      .store h1 { margin:0; font-size:20px; letter-spacing:.4px; }
+      .store .meta { margin-top:4px; font-size:12px; color:#666; line-height:1.4; }
+      .title-row { display:flex; justify-content:space-between; align-items:baseline; margin:16px 0 6px; }
+      .title-row .title { font-size:18px; font-weight:700; }
+      .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px 16px; font-size:12px; margin-bottom:10px; }
+      .grid .lbl { color:#666; }
+      .grid .val { font-weight:600; }
+      table { width:100%; border-collapse:collapse; margin-top:8px; font-size:12px; }
+      thead th { text-align:left; border-bottom:1px solid #ccc; padding:7px 6px; }
+      tbody td { border-bottom:1px dashed #e0e0e0; padding:7px 6px; }
+      td.qty, th.qty { text-align:right; }
+      .footer-total { width:45%; margin-left:auto; border:1px solid #ccc; border-radius:6px; overflow:hidden; margin-top:14px; }
+      .footer-total .row { display:flex; justify-content:space-between; padding:9px 12px; }
+      .footer-total .row.total { font-weight:800; }
+      .foot { margin-top:24px; text-align:center; font-size:12px; color:#666; }
+    `;
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Purchase Order</title>
+<style>${isA4 ? a4Css : thermalCss}</style>
+</head>
+<body>
+${isA4 ? `
+<div class="page">
+  <div class="header">
+    <div class="store">
+      <h1>Purchase Order</h1>
+      <div class="meta">${esc(supplierLabel)}</div>
+    </div>
+  </div>
+  <div class="title-row">
+    <div class="title">Purchase Order</div>
+    <div class="meta">Date: ${dateLabel}</div>
+  </div>
+  <div class="grid">
+    <div><span class="lbl">Supplier:</span> <span class="val">${esc(supplierLabel)}</span></div>
+    <div><span class="lbl">Brand:</span> <span class="val">${esc(brandLabel)}</span></div>
+    <div><span class="lbl">Items:</span> <span class="val">${printRows.length}</span></div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:85%">Product</th>
+        <th class="qty" style="width:15%">Order Packs</th>
+      </tr>
+    </thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+  <div class="footer-total">
+    <div class="row total"><div>Total Packs</div><div>${printTotalPacks}</div></div>
+  </div>
+  <div class="foot">Generated on ${dateLabel}</div>
+</div>
+` : `
+<div class="receipt">
+  <div class="store">PURCHASE ORDER</div>
+  <div class="meta">${esc(supplierLabel)}</div>
+  <div class="hr"></div>
+  <div class="pair"><div>Date</div><div>${dateLabel}</div></div>
+  <div class="pair"><div>Brand</div><div>${esc(brandLabel)}</div></div>
+  <div class="pair"><div>Items</div><div>${printRows.length}</div></div>
+  <div class="double-hr"></div>
+  <table>
+    <thead>
+      <tr>
+        <th>Product</th>
+        <th class="qty">Packs</th>
+      </tr>
+    </thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+  <div class="hr"></div>
+  <div class="total"><div>TOTAL PACKS</div><div>${printTotalPacks}</div></div>
+  <div class="foot">Generated on ${dateLabel}</div>
+</div>
+`}
+</body>
+</html>`;
+  };
+
+  const doPrint = (type = printerType) => {
+    if (!canView) return toast.error("You don't have permission to view/print.");
+    if (!rows.length) return toast.error("Nothing to print.");
+    if (!printRows.length) return toast.error("No products with Order Packs > 0 to print.");
+
+    const html = buildPrintHtml(type);
+
+    const width = type === "thermal" ? 400 : 900;
+    const height = 700;
+    const left = Math.max(0, (window.screenX || 0) + (window.outerWidth - width) / 2);
+    const top = Math.max(0, (window.screenY || 0) + (window.outerHeight - height) / 2);
+    const features = [
+      `width=${width}`,
+      `height=${height}`,
+      `left=${left}`,
+      `top=${top}`,
+      "menubar=no",
+      "toolbar=no",
+      "location=no",
+      "status=no",
+      "scrollbars=yes",
+      "resizable=yes",
+    ].join(",");
+
+    const w = window.open("", "poPrintWin", features);
+    if (!w) return toast.error("Popup blocked. Please allow popups to print.");
+
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+
+    const trigger = () => {
+      try { w.focus(); w.print(); } catch {}
+    };
+    w.onload = trigger;
+    setTimeout(trigger, 400);
+  };
 
   const handleFetch = async () => {
     if (!canGenerate) return toast.error("You don't have permission to generate.");
@@ -581,12 +772,34 @@ const [supplier, setSupplier] = useState(null);
               <span className="hidden sm:inline">Refresh</span>
             </button>
 
+            {/* Printer Type Toggle */}
+            <div
+              className="flex items-center rounded-xl p-0.5 backdrop-blur-sm border border-white/20 bg-white/15 overflow-hidden"
+              title="Select print format"
+            >
+              {["a4", "thermal"].map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setPrinterType(t)}
+                  className={`h-8 px-3 text-[10px] font-bold uppercase tracking-wide rounded-lg transition-all duration-200 ${
+                    printerType === t
+                      ? "text-white shadow"
+                      : "text-white/70 hover:text-white"
+                  }`}
+                  style={printerType === t ? { backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(4px)" } : {}}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+
             {/* Print Button */}
             <button
               ref={printBtnRef}
               onClick={doPrint}
               className="h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
-              title="Print (Alt+P)"
+              title={`Print ${printerType === "thermal" ? "Thermal (80mm)" : "A4"} (Alt+P)`}
             >
               <PrinterIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Print</span>
