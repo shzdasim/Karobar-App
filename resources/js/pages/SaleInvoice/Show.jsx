@@ -36,8 +36,8 @@ export default function SaleInvoiceShow() {
   // Search modal state
   const [searchOpen, setSearchOpen] = useState(false);
 
-  // Get theme colors
-  const { theme } = useTheme();
+// Get theme colors
+  const { theme, isDark } = useTheme();
 
   // Memoize theme colors for performance
   const themeColors = useMemo(() => {
@@ -446,7 +446,7 @@ export default function SaleInvoiceShow() {
   const fmt = (v) => ((v ?? "") === "" ? "" : String(v));
 
   return (
-    <div className="h-[calc(95vh-100px)] flex flex-col bg-white dark:bg-slate-800">
+    <div className={`h-[calc(100vh-110px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`}>
       <style>{`
         @media print {
           .no-print { display: none !important; }
@@ -454,203 +454,243 @@ export default function SaleInvoiceShow() {
         }
       `}</style>
 
-      {/* === Top Bar (glassy, same placement as Form) === */}
-      <div className="shrink-0 sticky top-0 z-30 border-b bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm dark:border-slate-700">
-        <div className="px-2 py-1 flex items-center gap-2">
-          <div className="text-xs font-semibold dark:text-gray-200">Sale Invoice</div>
+      {/* === Header (branded banner, matches Sale Invoice form) === */}
+      <div className={`shrink-0 sticky top-0 z-20 shadow-lg border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+        {/* Branded Banner */}
+        <div
+          className="px-4 py-2.5 flex items-center justify-between gap-3"
+          style={{
+            background: `linear-gradient(135deg, ${themeColors.tertiary || themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center shadow-inner"
+              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
+            >
+              {/* Receipt icon */}
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z" />
+                <line x1="8" y1="7" x2="16" y2="7" />
+                <line x1="8" y1="11" x2="16" y2="11" />
+                <line x1="8" y1="15" x2="13" y2="15" />
+              </svg>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-extrabold tracking-wide text-white leading-none">SALE INVOICE</h2>
+                <span
+                  className="px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest text-white"
+                  style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(4px)" }}
+                >
+                  {(inv?.sale_type || "retail").toUpperCase()}
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest text-white`}
+                  style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(4px)" }}
+                >
+                  #{fmt(inv.posted_number)}
+                </span>
+              </div>
+              <p className="text-[10px] text-white/80 mt-0.5">
+                Alt+F search · Alt+E edit · Alt+P print · Alt+B back
+              </p>
+            </div>
+          </div>
 
-          {/* Inline shortcuts (same zone as Alt+S in form) */}
-          <div className="ml-auto flex items-center gap-2 text-[10px] text-gray-600 dark:text-gray-400 no-print">
-            <span className="hidden sm:inline-flex items-center gap-1">
-              <span className={chip}>Alt</span><span>+</span><span className={chip}>F</span><span>Search</span>
-            </span>
-            <span className="hidden sm:inline">•</span>
-            <span className="hidden sm:inline-flex items-center gap-1">
-              <span className={chip}>Alt</span><span>+</span><span className={chip}>E</span><span>Edit</span>
-            </span>
-            <span className="hidden sm:inline">•</span>
-            <span className="hidden sm:inline-flex items-center gap-1">
-              <span className={chip}>Alt</span><span>+</span><span className={chip}>P</span><span>Print</span>
-            </span>
-            <span className="hidden sm:inline">•</span>
-            <span className="hidden sm:inline-flex items-center gap-1">
-              <span className={chip}>Alt</span><span>+</span><span className={chip}>B</span><span>Back</span>
-            </span>
+          <div className="flex items-center gap-2.5 no-print">
+            {/* Invoice Type Segmented Control (read-only) */}
+            <div
+              className="flex items-center rounded-lg p-0.5 shadow-inner"
+              style={{ backgroundColor: "rgba(0,0,0,0.18)" }}
+            >
+              {["debit", "credit"].map((type) => {
+                const active = inv?.invoice_type === type;
+                return (
+                  <span
+                    key={type}
+                    className={`px-3.5 py-1.5 text-[11px] font-semibold rounded-md ${
+                      active ? "text-white shadow" : "text-white/70"
+                    }`}
+                    style={{
+                      backgroundColor: active ? "rgba(255,255,255,0.22)" : "transparent",
+                      backdropFilter: active ? "blur(4px)" : "none",
+                    }}
+                  >
+                    {type === "debit" ? "💳 Debit" : "🤝 Credit"}
+                  </span>
+                );
+              })}
+            </div>
 
-            {/* Actions (right) */}
-            <div className="ml-2 flex items-center gap-2">
+            {/* Action buttons */}
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              className="px-3 py-2 rounded-lg text-[11px] font-bold bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
+              style={{ color: themeColors.primaryHover }}
+            >
+              🔍 Search
+            </button>
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="px-3 py-2 rounded-lg text-[11px] font-bold bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
+              style={{ color: themeColors.primaryHover }}
+            >
+              🖨️ Print
+            </button>
+            <Guard when={can.update}>
               <button
                 type="button"
-                onClick={() => setSearchOpen(true)}
-                className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
-                style={btnSecondary.style}
-                title="Alt+F"
+                onClick={() => navigate(`/sale-invoices/${id}/edit`)}
+                className="px-3 py-2 rounded-lg text-[11px] font-bold bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
+                style={{ color: themeColors.primaryHover }}
               >
-                🔍 Search
+                ✏️ Edit
               </button>
+            </Guard>
+            <Guard when={can.delete}>
               <button
                 type="button"
-                onClick={handlePrint}
-                className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200 ${btnSuccess.className}`}
-                style={btnSuccess.style}
-                title="Alt+P"
+                onClick={openDeleteModal}
+                className="px-3 py-2 rounded-lg text-[11px] font-bold bg-red-500/90 hover:bg-red-500 shadow-lg transition-all duration-200"
               >
-                🖨️ Print
+                🗑 Delete
               </button>
-              <Guard when={can.update}>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/sale-invoices/${id}/edit`)}
-                  className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200 ${btnPrimary.className}`}
-                  style={btnPrimary.style}
-                  title="Alt+E"
-                >
-                  ✏️ Edit
-                </button>
-              </Guard>
-              <Guard when={can.delete}>
-                <button
-                  type="button"
-                  onClick={openDeleteModal}
-                  className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200 ${btnDanger.className}`}
-                  style={btnDanger.style}
-                  title="Alt+D"
-                >
-                  🗑 Delete
-                </button>
-              </Guard>
-              <Guard when={can.create}>
+            </Guard>
+            <Guard when={can.create}>
               <button
                 type="button"
                 onClick={() => {
-                  // Navigate based on the current invoice's sale_type
                   const saleType = inv?.sale_type || "retail";
-                  if (saleType === "wholesale") {
-                    navigate("/sale-invoices/create/wholesale");
-                  } else {
-                    navigate("/sale-invoices/create/retail");
-                  }
+                  if (saleType === "wholesale") navigate("/sale-invoices/create/wholesale");
+                  else navigate("/sale-invoices/create/retail");
                 }}
-                className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
-                style={btnSecondary.style}
-                title="Alt+N"
+                className="px-3 py-2 rounded-lg text-[11px] font-bold bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
+                style={{ color: themeColors.primaryHover }}
               >
                 ➕ New
               </button>
             </Guard>
-              <button
-                type="button"
-                onClick={() => navigate(-1)}
-                className={`px-3 py-1.5 rounded text-[11px] font-semibold transition-all duration-200 ${btnGlass.className}`}
-                style={btnGlass.style}
-                title="Alt+B"
-              >
-                ← Back
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="px-3 py-2 rounded-lg text-[11px] font-bold bg-black/25 hover:bg-black/30 shadow-lg transition-all duration-200 text-white"
+            >
+              ← Back
+            </button>
           </div>
         </div>
 
-        {/* Meta strip (super compact, same grid rhythm as form) */}
-        <div className="px-2 pb-1 grid grid-cols-12 gap-1 text-[11px]">
-          <div className="col-span-2">
-            <label className="block text-[9px] mb-0.5 dark:text-gray-400">Posted #</label>
-            <input
-              type="text"
-              value={fmt(inv.posted_number)}
-              readOnly
-              className="w-full h-7 border-2 border-black dark:border-slate-600 rounded px-1 bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-            />
-          </div>
-          <div className="col-span-2">
-            <label className="block text-[9px] mb-0.5 dark:text-gray-400">Date</label>
-            <input
-              type="text"
-              value={fmt(inv.date)}
-              readOnly
-              className="w-full h-7 border-2 border-black dark:border-slate-600 rounded px-1 bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-            />
-          </div>
-          <div className="col-span-4">
-            <label className="block text-[9px] mb-0.5 dark:text-gray-400">Customer</label>
-            <input
-              type="text"
-              value={inv.customer?.name ?? inv.customer_id ?? ""}
-              readOnly
-              className="w-full h-7 border-2 border-black dark:border-slate-600 rounded px-1 bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-            />
-          </div>
-          <div className="col-span-2">
-            <label className="block text-[9px] mb-0.5 dark:text-gray-400">Doctor</label>
-            <input
-              type="text"
-              value={fmt(inv.doctor_name)}
-              readOnly
-              className="w-full h-7 border-2 border-black dark:border-slate-600 rounded px-1 bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-            />
-          </div>
+        {/* Fields Card */}
+        <div className="bg-white dark:bg-slate-800 px-3 py-2">
+          <div className="grid grid-cols-12 gap-2 items-end">
             <div className="col-span-2">
-            <label className="block text-[9px] mb-0.5 dark:text-gray-400">Patient</label>
-            <input
-              type="text"
-              value={fmt(inv.patient_name)}
-              readOnly
-              className="w-full h-7 border-2 border-black dark:border-slate-600 rounded px-1 bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-            />
-          </div>
+              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Posted #</label>
+              <input
+                type="text"
+                readOnly
+                value={fmt(inv.posted_number)}
+                className={`w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] ${
+                  isDark ? "bg-slate-700 text-slate-200" : "bg-gray-100 text-gray-800"
+                }`}
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Date</label>
+              <input
+                type="text"
+                readOnly
+                value={fmt(inv.date)}
+                className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
+              />
+            </div>
+            <div className="col-span-4">
+              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Customer</label>
+              <div className={`w-full h-8 px-3 rounded-md border flex items-center gap-2 text-[11px] font-medium ${
+                isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-blue-200 bg-blue-50 text-blue-700"
+              }`}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+                <span className="truncate">{inv.customer?.name ?? inv.customer_id ?? ""}</span>
+              </div>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Doctor</label>
+              <input
+                type="text"
+                readOnly
+                value={fmt(inv.doctor_name)}
+                className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Patient</label>
+              <input
+                type="text"
+                readOnly
+                value={fmt(inv.patient_name)}
+                className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
+              />
+            </div>
 
-          <div className="col-span-10">
-            <label className="block text-[9px] mb-0.5 dark:text-gray-400">Remarks</label>
-            <input
-              type="text"
-              value={fmt(inv.remarks)}
-              readOnly
-              className="w-full h-7 border-2 border-black dark:border-slate-600 rounded px-1 bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-            />
-          </div>
-          <div className="col-span-2">
-            <label className="block text-[9px] mb-0.5 dark:text-gray-400">Items</label>
-            <input
-              type="text"
-              value={(inv.items || []).length}
-              readOnly
-              className="w-full h-7 border-2 border-black dark:border-slate-600 rounded px-1 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 text-center"
-            />
+            <div className="col-span-10">
+              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Remarks</label>
+              <input
+                type="text"
+                readOnly
+                value={fmt(inv.remarks)}
+                className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Items</label>
+              <input
+                type="text"
+                readOnly
+                value={(inv.items || []).length}
+                className={`w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] text-center ${
+                  isDark ? "bg-slate-700 text-slate-200" : "bg-gray-100 text-gray-800"
+                }`}
+              />
+            </div>
           </div>
         </div>
       </div>
 
-      {/* === Main workspace: Items (fluid) + Summary (240px) === */}
-      <div className="flex-1 grid grid-cols-[1fr_240px] gap-2 px-2 py-2 overflow-hidden">
-        {/* LEFT: Items table (same scroll & sticky header as form) */}
+      {/* === Main workspace: Items (fluid) + Summary (280px) === */}
+      <div className={`flex-1 grid grid-cols-[1fr_280px] gap-2 px-2 py-2 overflow-hidden ${isDark ? "bg-slate-900" : "bg-white"}`}>
+        {/* LEFT: Items */}
         <div className="flex flex-col min-h-0">
-          <div className="text-[11px] font-semibold mb-1 dark:text-gray-200">Items</div>
-          <div
-            ref={itemsScrollRef}
-            className="flex-1 overflow-auto border-2 rounded relative dark:border-slate-600"
-          >
+          <div className={`text-[11px] font-semibold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Items</div>
+          <div ref={itemsScrollRef} className={`flex-1 overflow-auto border-2 rounded relative ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
             <table className="w-full text-[11px] table-fixed border-collapse print-table">
-              <thead className="sticky top-0 z-20 bg-white/80 dark:bg-slate-700/80 backdrop-blur-sm border-b border-gray-200/70 dark:border-slate-600">
-                <tr className="[&>th]:py-1 [&>th]:px-1 [&>th]:text-left dark:[&>th]:text-gray-200">
-                  <th className="w-7 text-center dark:text-gray-200">#</th>
-                  <th className="w-[180px] dark:text-gray-200">Product</th>
-                  <th className="w-14 text-center dark:text-gray-200">PSize</th>
-                  <th className="w-24 dark:text-gray-200">Batch</th>
-                  <th className="w-15 text-center dark:text-gray-200">Expiry</th>
-                  <th className="w-25 text-center dark:text-gray-200">Qty</th>
-                  <th className="w-22 text-center dark:text-gray-200">Price</th>
-                  <th className="w-18 text-center dark:text-gray-200">Disc%</th>
-                  <th className="w-26 text-center dark:text-gray-200">Sub Total</th>
+              <thead className={`sticky top-0 z-20 ${isDark ? "bg-slate-800/90 backdrop-blur-sm" : "bg-white/80 backdrop-blur-sm"} border-b ${isDark ? "border-slate-700" : "border-gray-200/70"}`}>
+                <tr className="[&>th]:py-1 [&>th]:px-1 [&>th]:text-left">
+                  <th className={`w-7 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>#</th>
+                  <th className={`w-[180px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Product</th>
+                  <th className={`w-14 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>PSize</th>
+                  <th className={`w-24 ${isDark ? "text-slate-400" : "text-gray-600"}`}>Batch</th>
+                  <th className={`w-15 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Expiry</th>
+                  <th className={`w-18 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Avail</th>
+                  <th className={`w-25 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Qty</th>
+                  <th className={`w-22 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Price</th>
+                  <th className={`w-18 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Disc%</th>
+                  <th className={`w-26 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Sub Total</th>
                 </tr>
               </thead>
-              <tbody className="[&>tr>td]:py-1 [&>tr>td]:px-0.5 dark:[&>tr>td]:text-gray-300">
+              <tbody className={`[&>tr>td]:py-1 [&>tr>td]:px-0.5 ${isDark ? "[&>tr]:border-slate-700 [&>tr>td]:text-slate-300" : "[&>tr]:border-gray-100 [&>tr>td]:text-gray-700"}`}>
                 {(inv.items || []).map((it, i) => (
-                  <tr key={i} className="border-b dark:border-slate-600 text-center dark:text-gray-300">
+                  <tr key={i} className={`border-b ${isDark ? "border-slate-700" : "border-gray-100"} text-center`}>
                     <td className="px-1">{i + 1}</td>
                     <td className="px-1 text-left">{it.product?.name ?? it.product_id}</td>
                     <td className="px-1">{fmt(it.pack_size)}</td>
                     <td className="px-1">{fmt(it.batch_number)}</td>
                     <td className="px-1">{fmt(it.expiry)}</td>
+                    <td className="px-1">{fmt(it.current_quantity)}</td>
                     <td className="px-1">{fmt(it.quantity)}</td>
                     <td className="px-1">{fmt(it.price)}</td>
                     <td className="px-1">{fmt(it.item_discount_percentage)}</td>
@@ -662,120 +702,137 @@ export default function SaleInvoiceShow() {
           </div>
         </div>
 
-        {/* RIGHT: Slim summary (read-only, mirrors form layout) */}
+        {/* RIGHT: Summary panel (mirrors form layout) */}
         <div className="min-h-0">
-          <div className="sticky top-[20px] space-y-2">
-            <div className="border-2 rounded p-2 dark:border-slate-600 dark:bg-slate-800/50">
-              <div className="text-[18px] font-semibold mb-1 dark:text-gray-200">Summary</div>
-              <div className="grid grid-cols-2 gap-1 text-[11px]">
-                <label className="text-[13px] font-bold self-center dark:text-gray-300">Tax %</label>
-                <input
-                  type="text"
-                  readOnly
-                  value={fmt(inv.tax_percentage)}
-                  className="h-7 border-2 border-black dark:border-slate-600 rounded px-1 bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-                />
+          <div className={`h-full flex flex-col rounded-2xl overflow-hidden shadow-lg ${isDark ? "bg-slate-800" : "bg-white"}`}>
+            {/* Panel Header */}
+            <div
+              className="px-4 py-3 flex items-center justify-between shrink-0"
+              style={{ background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+            >
+              <span className="text-white font-bold text-sm tracking-wide">Invoice Summary</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="20" x2="18" y2="10" />
+                <line x1="12" y1="20" x2="12" y2="4" />
+                <line x1="6" y1="20" x2="6" y2="14" />
+              </svg>
+            </div>
 
-                <label className="text-[13px] font-bold self-center dark:text-gray-300">Tax Amt</label>
-                <input
-                  type="text"
-                  readOnly
-                  value={fmt(inv.tax_amount)}
-                  className="h-7 border-2 border-black dark:border-slate-600 rounded px-1 bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-                />
-
-                <label className="text-[13px] font-bold self-center dark:text-gray-300">Disc %</label>
-                <input
-                  type="text"
-                  readOnly
-                  value={fmt(inv.discount_percentage)}
-                  className="h-7 border-2 border-black dark:border-slate-600 rounded px-1 bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-                />
-
-                <label className="text-[13px] font-bold self-center dark:text-gray-300">Disc Amt</label>
-                <input
-                  type="text"
-                  readOnly
-                  value={fmt(inv.discount_amount)}
-                  className="h-7 border-2 border-black dark:border-slate-600 rounded px-1 bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-                />
-
-                <label className="text-[13px] font-bold self-center dark:text-gray-300">Gross</label>
-                <input
-                  type="text"
-                  readOnly
-                  value={fmt(inv.gross_amount)}
-                  className="h-7 border-2 border-black dark:border-slate-600 rounded px-1 bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-                />
-
-                <label className="text-[13px] font-bold self-center dark:text-gray-300">Total</label>
-                <input
-                  type="text"
-                  readOnly
-                  value={fmt(inv.total)}
-                  className="h-7 border-2 border-black dark:border-slate-600 rounded px-1 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 font-extrabold text-red-600 dark:text-red-400 text-lg"
-                />
-
-                <label className="text-[13px] font-bold self-center dark:text-gray-300">Receive</label>
-                <input
-                  type="text"
-                  readOnly
-                  value={invReceived.toLocaleString()}
-                  className="h-7 border-2 border-black dark:border-slate-600 rounded px-1 bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-                />
-
-                <label className="text-[13px] font-bold self-center dark:text-gray-300">Remaining</label>
-                <input
-                  type="text"
-                  readOnly
-                  value={invRemaining.toLocaleString()}
-                  className="h-7 border-2 border-black dark:border-slate-600 rounded px-1 bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-                />
+            {/* Content */}
+            <div className="flex-1 flex flex-col min-h-0 px-4 py-3 text-[12px]">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Tax %</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={fmt(inv.tax_percentage)}
+                    className={`w-28 h-8 border rounded-lg px-2 text-center text-[12px] ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 bg-gray-50 text-gray-800"}`}
+                  />
+                </div>
+                <div className={`flex items-center justify-between border-t border-dashed pt-2 ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Tax Amt</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={fmt(inv.tax_amount)}
+                    className={`w-28 h-8 border rounded-lg px-2 text-right font-semibold text-[12px] ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 text-gray-800"}`}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Disc %</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={fmt(inv.discount_percentage)}
+                    className={`w-28 h-8 border rounded-lg px-2 text-center text-[12px] ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 text-gray-800"}`}
+                  />
+                </div>
+                <div className="flex items-center justify-between border-t border-dashed pt-2">
+                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Disc Amt</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={fmt(inv.discount_amount)}
+                    className={`w-28 h-8 border rounded-lg px-2 text-right font-semibold text-[12px] ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 text-gray-800"}`}
+                  />
+                </div>
               </div>
 
-              {/* Printer info (matches your show page) */}
+              {/* Totals */}
+              <div
+                className="mt-3 px-4 py-3 rounded-xl"
+                style={{ background: `linear-gradient(135deg, ${themeColors.primary}1a, ${themeColors.primaryHover}26)` }}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-[10px] font-medium uppercase tracking-wide ${isDark ? "text-slate-400" : "text-gray-500"}`}>Gross</span>
+                  <span className={`text-[13px] font-bold ${isDark ? "text-slate-200" : "text-gray-800"}`}>{fmt(inv.gross_amount) ?? 0}</span>
+                </div>
+                <div className="flex items-center justify-between border-t border-dashed pt-2" style={{ borderColor: `${themeColors.primary}33` }}>
+                  <span className={`text-[13px] font-bold ${isDark ? "text-slate-200" : "text-gray-800"}`}>Total</span>
+                  <span className={`text-2xl font-extrabold ${isDark ? "text-red-400" : "text-red-600"}`}>{fmt(inv.total) ?? 0}</span>
+                </div>
+              </div>
+
+              {/* Payment */}
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Received</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={invReceived.toLocaleString()}
+                    className={`w-28 h-8 border rounded-lg px-2 text-right font-semibold text-[12px] ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 text-gray-800"}`}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Remaining</label>
+                  <span className={`text-lg font-extrabold ${invRemaining > 0 ? "text-amber-500" : (isDark ? "text-emerald-400" : "text-emerald-600")}`}>
+                    {invRemaining}
+                  </span>
+                </div>
+              </div>
+
               <div className="pt-2 text-[11px] text-gray-500 dark:text-gray-400">
-                Using printer template: <b className="dark:text-gray-300">{(printerType || "a4").toUpperCase()}</b>
+                Printer: <b className="dark:text-gray-300">{(printerType || "a4").toUpperCase()}</b>
               </div>
+            </div>
 
-              {/* Primary actions (mirror top bar; kept for convenience on long lists) */}
-              <div className="pt-2 grid grid-cols-2 gap-2 no-print">
+            {/* Actions (compact) */}
+            <div className="px-3 py-2 shrink-0 border-t space-y-1.5" style={{ borderColor: isDark ? "rgba(71,85,105,0.5)" : "rgba(229,231,235,0.8)" }}>
+              <div className="grid grid-cols-2 gap-1.5 no-print">
                 <button
                   type="button"
                   onClick={handlePrint}
-                  className={`h-9 rounded text-[12px] font-semibold transition-all duration-200 ${btnSuccess.className}`}
+                  className={`h-8 rounded-lg text-[11px] font-semibold transition-all duration-200 ${btnSuccess.className}`}
                   style={btnSuccess.style}
                   title="Alt+P"
                 >
                   🖨️ Print
                 </button>
-                
                 <Guard when={can.update}>
                   <button
                     type="button"
                     onClick={() => navigate(`/sale-invoices/${id}/edit`)}
-                    className={`h-9 rounded text-[12px] font-semibold transition-all duration-200 ${btnPrimary.className}`}
+                    className={`h-8 rounded-lg text-[11px] font-semibold transition-all duration-200 ${btnPrimary.className}`}
                     style={btnPrimary.style}
                     title="Alt+E"
                   >
                     ✏️ Edit
                   </button>
                 </Guard>
+              </div>
+              <div className="flex gap-1.5 no-print">
                 <Guard when={can.create}>
                   <button
                     type="button"
                     onClick={() => {
-                      // Navigate based on the current invoice's sale_type
                       const saleType = inv?.sale_type || "retail";
-                      if (saleType === "wholesale") {
-                        navigate("/sale-invoices/create/wholesale");
-                      } else {
-                        navigate("/sale-invoices/create/retail");
-                      }
+                      if (saleType === "wholesale") navigate("/sale-invoices/create/wholesale");
+                      else navigate("/sale-invoices/create/retail");
                     }}
-                    className={`col-span-2 h-9 rounded text-[12px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
+                    className={`flex-1 h-8 rounded-lg text-[11px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
                     style={btnSecondary.style}
-                    title="Alt+N"
                   >
                     ➕ New
                   </button>
@@ -784,9 +841,8 @@ export default function SaleInvoiceShow() {
                   <button
                     type="button"
                     onClick={openDeleteModal}
-                    className={`col-span-2 h-9 rounded text-[12px] font-semibold transition-all duration-200 ${btnDanger.className}`}
+                    className={`flex-1 h-8 rounded-lg text-[11px] font-semibold transition-all duration-200 ${btnDanger.className}`}
                     style={btnDanger.style}
-                    title="Alt+D"
                   >
                     🗑 Delete
                   </button>
@@ -794,9 +850,8 @@ export default function SaleInvoiceShow() {
                 <button
                   type="button"
                   onClick={() => navigate(-1)}
-                  className={`col-span-2 h-9 rounded text-[12px] font-semibold transition-all duration-200 ${btnGlass.className}`}
+                  className={`flex-1 h-8 rounded-lg text-[11px] font-semibold transition-all duration-200 ${btnGlass.className}`}
                   style={btnGlass.style}
-                  title="Alt+B"
                 >
                   ← Back
                 </button>
