@@ -70,7 +70,7 @@ export default function DashboardLayout({ children }) {
     "/categories": "Categories",
     "/brands": "Brands",
     "/purchase-invoices": "Purchase Invoices",
-    "/purchase-invoices/create": "Create Purchase Invoice",
+    "/purchase-invoices/create": "Purchase Invoice",
     "/purchase-returns": "Purchase Returns",
     "/purchase-returns/create": "Create Purchase Return",
     "/sale-invoices": "Sale Invoices",

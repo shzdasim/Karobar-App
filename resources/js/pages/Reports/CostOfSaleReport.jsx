@@ -373,141 +373,162 @@ export default function CostOfSaleReport() {
 
   return (
     <div className="p-4 space-y-3">
-      {/* ===== Professional Header ===== */}
-      <GlassCard>
-        {/* Header Top */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          {/* Title */}
+      {/* ===== Premium Gradient Hero Header ===== */}
+      <div
+        className="relative overflow-hidden rounded-2xl shadow-lg"
+        style={{
+          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
+        }}
+      >
+        {/* Decorative blurred blobs */}
+        <div
+          className="absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-30 blur-3xl pointer-events-none"
+          style={{ backgroundColor: "#ffffff" }}
+        />
+        <div
+          className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full opacity-20 blur-3xl pointer-events-none"
+          style={{ backgroundColor: themeColors.tertiary }}
+        />
+
+        {/* Hero Top */}
+        <div className="relative flex items-center justify-between px-5 py-4 flex-wrap gap-2">
           <div className="flex items-center gap-3">
-            <div 
-              className="p-2 rounded-lg shadow-sm"
-              style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+            <div
+              className="p-2.5 rounded-xl shadow-inner"
+              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
             >
-              <DocumentChartBarIcon className="w-5 h-5 text-white" />
+              <DocumentChartBarIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Cost of Sale Report</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{computed.withDerived.length} entries</p>
+              <h1 className="text-xl font-extrabold tracking-wide text-white leading-none">Cost of Sale Report</h1>
+              <p className="text-xs text-white/80 mt-1">{computed.withDerived.length} entries</p>
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            <GlassBtn
-              className={`h-9 ${btnPrimary.className}`}
+          {/* Header Actions */}
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <button
               title="Reset to Default (Yesterday → Today)"
               onClick={() => {
                 setFromDate(yesterdayStr());
                 setToDate(todayStr());
                 setRows([]);
               }}
-              style={btnPrimary.style}
+              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
             >
-              Reset
-            </GlassBtn>
+              <ArrowPathIcon className="w-4 h-4" />
+              <span>Reset</span>
+            </button>
             <Guard when={can.view}>
-              <GlassBtn
-                className={`h-9 ${btnPrimary.className}`}
+              <button
                 title="Load / Refresh"
                 onClick={fetchReport}
                 disabled={loading}
-                style={btnPrimary.style}
+                className={`h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 ${
+                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 shadow-lg"
+                }`}
               >
-                <span className="inline-flex items-center gap-2">
-                  <ArrowPathIcon className={`w-5 h-5 ${loading ? "animate-spin" : ""}`} />
-                  {loading ? "Loading…" : "Load"}
-                </span>
-              </GlassBtn>
+                <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+                {loading ? "Loading…" : "Load"}
+              </button>
             </Guard>
           </div>
         </div>
 
-        {/* Filter toolbar */}
-        <GlassToolbar className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-12 gap-3">
-          {/* From Date */}
-          <div className="sm:col-span-1 lg:col-span-2">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>From</label>
-            <GlassInput type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-full" />
-          </div>
-          
-          {/* To Date */}
-          <div className="sm:col-span-1 lg:col-span-2">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>To</label>
-            <GlassInput type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-full" />
-          </div>
-          
-          {/* Invoice Type Filter */}
-          <div className="sm:col-span-1 lg:col-span-3">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Sale Type</label>
-            <div className="relative">
-              <select
-                value={invoiceType}
-                onChange={(e) => setInvoiceType(e.target.value)}
-                className={`w-full h-9 px-3 pr-8 text-sm border rounded-lg appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-all duration-200 ${
-                  isDark 
-                    ? "bg-slate-800 border-slate-600 text-slate-200" 
-                    : "bg-white border-gray-200 text-gray-900"
-                }`}
-              >
-                <option value="all">All Sales</option>
-                <option value="credit">Credit Sales</option>
-                <option value="debit">Debit Sales</option>
-              </select>
-              {/* Dropdown arrow */}
-              <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
-                <svg className={`w-4 h-4 ${isDark ? "text-slate-400" : "text-gray-500"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
+        {/* Filters */}
+        <div className="relative px-5 pb-4">
+          <div
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 rounded-xl p-3"
+            style={{ backgroundColor: "rgba(255,255,255,0.12)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)" }}
+          >
+            {/* From Date */}
+            <div className="lg:col-span-2 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">From</label>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+              />
+            </div>
+
+            {/* To Date */}
+            <div className="lg:col-span-2 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">To</label>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+              />
+            </div>
+
+            {/* Sale Type Filter */}
+            <div className="lg:col-span-3 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Sale Type</label>
+              <div className="relative">
+                <select
+                  value={invoiceType}
+                  onChange={(e) => setInvoiceType(e.target.value)}
+                  className="w-full h-9 px-3 pr-8 rounded-lg text-xs appearance-none focus:outline-none focus:ring-2 focus:ring-white/50 cursor-pointer transition-all duration-200 text-white bg-slate-900/50 border border-white/30 backdrop-blur-sm"
+                >
+                  <option className="text-gray-900" value="all">All Sales</option>
+                  <option className="text-gray-900" value="credit">Credit Sales</option>
+                  <option className="text-gray-900" value="debit">Debit Sales</option>
+                </select>
+                <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-white/80">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
               </div>
             </div>
+
+            {/* Quick date filters */}
+            <div className="lg:col-span-5 flex flex-wrap items-end gap-2">
+              <button
+                onClick={() => {
+                  const end = new Date();
+                  const start = new Date();
+                  start.setDate(end.getDate() - 1);
+                  setFromDate(start.toISOString().slice(0, 10));
+                  setToDate(end.toISOString().slice(0, 10));
+                }}
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+              >
+                Today
+              </button>
+
+              <button
+                onClick={() => {
+                  const end = new Date();
+                  const start = new Date();
+                  start.setDate(end.getDate() - 3);
+                  setFromDate(start.toISOString().slice(0, 10));
+                  setToDate(end.toISOString().slice(0, 10));
+                }}
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+              >
+                3 Days
+              </button>
+
+              <button
+                onClick={() => {
+                  const end = new Date();
+                  const start = new Date();
+                  start.setDate(end.getDate() - 7);
+                  setFromDate(start.toISOString().slice(0, 10));
+                  setToDate(end.toISOString().slice(0, 10));
+                }}
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+              >
+                7 Days
+              </button>
+            </div>
           </div>
+        </div>
+      </div>
 
-          {/* Quick date filters */}
-          <div className="sm:col-span-1 lg:col-span-5 flex flex-wrap items-end gap-2">
-            <GlassBtn
-              className={`h-9 ${btnSecondary.className}`}
-              onClick={() => {
-                const end = new Date();
-                const start = new Date();
-                start.setDate(end.getDate() - 1);
-                setFromDate(start.toISOString().slice(0, 10));
-                setToDate(end.toISOString().slice(0, 10));
-              }}
-              style={btnSecondary.style}
-            >
-              Today
-            </GlassBtn>
-
-            <GlassBtn
-              className={`h-9 ${btnTertiary.className}`}
-              onClick={() => {
-                const end = new Date();
-                const start = new Date();
-                start.setDate(end.getDate() - 3);
-                setFromDate(start.toISOString().slice(0, 10));
-                setToDate(end.toISOString().slice(0, 10));
-              }}
-              style={btnTertiary.style}
-            >
-              3 Days
-            </GlassBtn>
-
-            <GlassBtn
-              className={`h-9 ${btnEmerald.className}`}
-              onClick={() => {
-                const end = new Date();
-                const start = new Date();
-                start.setDate(end.getDate() - 7);
-                setFromDate(start.toISOString().slice(0, 10));
-                setToDate(end.toISOString().slice(0, 10));
-              }}
-              style={btnEmerald.style}
-            >
-              7 Days
-            </GlassBtn>
-          </div>
-        </GlassToolbar>
-      </GlassCard>
 
       {/* ===== Data Table ===== */}
       <GlassCard className="relative z-10">

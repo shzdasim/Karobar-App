@@ -17,8 +17,11 @@ import {
   ArrowPathIcon,
   ArrowDownOnSquareIcon,
   DocumentTextIcon,
+  BuildingStorefrontIcon,
   Squares2X2Icon,
 } from "@heroicons/react/24/solid";
+import SupplierSearch from "@/components/SupplierSearch.jsx";
+import ProductSearchInput from "@/components/ProductSearchInput.jsx";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -80,6 +83,47 @@ const fmtCurrency = (v) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+
+// Helper for react-select controls on the dark gradient hero background
+const getSelectStylesOnDark = (isDark = false) => ({
+  control: (base) => ({
+    ...base,
+    minHeight: 36,
+    height: 36,
+    borderRadius: 10,
+    borderColor: "rgba(255,255,255,0.3)",
+    backgroundColor: "rgba(15,23,42,0.5)",
+    backdropFilter: "blur(6px)",
+    boxShadow: "none",
+    cursor: "pointer",
+    "&:hover": {
+      borderColor: "rgba(255,255,255,0.5)",
+    },
+  }),
+  valueContainer: (base) => ({ ...base, height: 36, padding: "0 8px" }),
+  indicatorsContainer: (base) => ({ ...base, height: 36, color: "rgba(255,255,255,0.8)" }),
+  input: (base) => ({ ...base, margin: 0, padding: 0, color: "#ffffff" }),
+  singleValue: (base) => ({ ...base, color: "#ffffff" }),
+  placeholder: (base) => ({ ...base, color: "rgba(255,255,255,0.7)" }),
+  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+  menu: (base) => ({
+    ...base,
+    borderRadius: 10,
+    overflow: "hidden",
+    backgroundColor: isDark ? "rgba(30,41,59,0.98)" : "rgba(255,255,255,0.98)",
+    backdropFilter: "blur(10px)",
+    boxShadow: "0 10px 30px -10px rgba(0,0,0,0.4)",
+    border: isDark ? "1px solid rgba(71,85,105,0.5)" : "none",
+  }),
+  option: (base, state) => ({
+    ...base,
+    backgroundColor: isDark
+      ? state.isFocused ? "rgba(71,85,105,1)" : "rgba(51,65,85,1)"
+      : state.isFocused ? "rgba(241,245,249,1)" : "rgba(255,255,255,1)",
+    color: isDark ? "#f1f5f9" : "#111827",
+    cursor: "pointer",
+  }),
+});
 
 // Helper to merge dark mode styles - returns function-based styles for react-select
 const getSmallSelectStyles = (isDark = false) => ({
@@ -147,10 +191,12 @@ export default function PurchaseDetailReport() {
   // Default: yesterday → today
   const [fromDate, setFromDate] = useState(yesterdayStr());
   const [toDate, setToDate] = useState(todayStr());
-  const [supplierId, setSupplierId] = useState("");
+const [supplierId, setSupplierId] = useState("");
   const [supplierValue, setSupplierValue] = useState(null);
   const [productId, setProductId] = useState("");
   const [productValue, setProductValue] = useState(null);
+  const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
+  const [products, setProducts] = useState([]);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -382,6 +428,26 @@ export default function PurchaseDetailReport() {
     [supplierId]
   );
 
+/* ------------------ Product fetch (for ProductSearchInput) ------------------ */
+  const fetchProducts = async (q = "") => {
+    try {
+      const { data } = await axios.get("/api/products/search", { params: { q, limit: 30 } });
+      setProducts(Array.isArray(data) ? data : []);
+    } catch {
+      setProducts([]);
+    }
+  };
+
+  /* ------------------ Supplier selected from modal ------------------ */
+  const handleSupplierSelect = (supplier) => {
+    if (!supplier?.id) return;
+    setSupplierValue(supplier);
+    setSupplierId(String(supplier.id));
+    setProductId("");
+    setProductValue(null);
+    setSupplierSearchOpen(false);
+  };
+
   /* ------------------ Fetch report ------------------ */
   const fetchReport = async () => {
     if (!can.view) return toast.error("You don't have permission to view this report.");
@@ -439,13 +505,15 @@ export default function PurchaseDetailReport() {
     }
   };
 
-  const resetFilters = () => {
+const resetFilters = () => {
     setFromDate(yesterdayStr());
     setToDate(todayStr());
     setSupplierId("");
     setSupplierValue(null);
+    setSupplierSearchOpen(false);
     setProductId("");
     setProductValue(null);
+    setProducts([]);
     setData([]);
   };
 
@@ -474,179 +542,216 @@ export default function PurchaseDetailReport() {
 
   return (
     <div className="p-4 space-y-3">
-      {/* ===== Professional Header ===== */}
-      <GlassCard>
-        {/* Header Top */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          {/* Title */}
+      {/* ===== Premium Gradient Hero Header ===== */}
+      <div
+        className="relative overflow-hidden rounded-2xl shadow-lg"
+        style={{
+          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
+        }}
+      >
+        {/* Decorative blurred blobs */}
+        <div
+          className="absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-30 blur-3xl pointer-events-none"
+          style={{ backgroundColor: "#ffffff" }}
+        />
+        <div
+          className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full opacity-20 blur-3xl pointer-events-none"
+          style={{ backgroundColor: themeColors.tertiary }}
+        />
+
+        {/* Hero Top */}
+        <div className="relative flex items-center justify-between px-5 py-4 flex-wrap gap-2">
           <div className="flex items-center gap-3">
-            <div 
-              className="p-2 rounded-lg shadow-sm"
-              style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+            <div
+              className="p-2.5 rounded-xl shadow-inner"
+              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
             >
-              <DocumentTextIcon className="w-5 h-5 text-white" />
+              <DocumentTextIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Purchase Detail Report</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{data.length} entries</p>
+              <h1 className="text-xl font-extrabold tracking-wide text-white leading-none">Purchase Detail Report</h1>
+              <p className="text-xs text-white/80 mt-1">{data.length} entries</p>
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            <GlassBtn
-              className={`h-9 ${btnPrimary.className}`}
+          {/* Header Actions */}
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <button
               onClick={resetFilters}
-              style={btnPrimary.style}
+              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
             >
-              Reset
-            </GlassBtn>
+              <ArrowPathIcon className="w-4 h-4" />
+              <span>Reset</span>
+            </button>
             <Guard when={can.view}>
-              <GlassBtn
-                className={`h-9 ${btnPrimary.className}`}
+              <button
                 onClick={fetchReport}
                 disabled={loading}
-                style={btnPrimary.style}
+                className={`h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 ${
+                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 shadow-lg"
+                }`}
               >
-                <span className="inline-flex items-center gap-2">
-                  <ArrowPathIcon className={`w-5 h-5 ${loading ? "animate-spin" : ""}`} />
-                  {loading ? "Loading…" : "Load"}
-                </span>
-              </GlassBtn>
+                <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+                {loading ? "Loading…" : "Load"}
+              </button>
             </Guard>
           </div>
         </div>
 
         {/* Filters */}
-        <GlassToolbar className="grid grid-cols-1 md:grid-cols-12 gap-3">
-          {/* From Date */}
-          <div className="md:col-span-2">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>From</label>
-            <GlassInput
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="w-full"
-            />
-          </div>
+        <div className="relative px-5 pb-4">
+          <div
+            className="grid grid-cols-1 md:grid-cols-12 gap-3 rounded-xl p-3"
+            style={{ backgroundColor: "rgba(255,255,255,0.12)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)" }}
+          >
+            {/* From Date */}
+            <div className="md:col-span-2 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">From</label>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+              />
+            </div>
 
-          {/* To Date */}
-          <div className="md:col-span-2">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>To</label>
-            <GlassInput
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="w-full"
-            />
-          </div>
+            {/* To Date */}
+            <div className="md:col-span-2 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">To</label>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+              />
+            </div>
 
-          {/* Supplier */}
-          <div className="md:col-span-4">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Supplier</label>
-            <AsyncSelect
-              cacheOptions
-              defaultOptions={[{ value: "", label: "All Suppliers" }]}
-              loadOptions={loadSuppliers}
-              isClearable
-              value={supplierValue}
-              onChange={(opt) => {
-                setSupplierValue(opt);
-                setSupplierId(opt?.value || "");
-                setProductId("");
-                setProductValue(null);
-              }}
-              styles={getSmallSelectStyles(isDark)}
-              menuPortalTarget={document.body}
-              filterOption={createFilter({
-                matchFrom: "start",
-                trim: true,
-              })}
-            />
-          </div>
+{/* Supplier */}
+            <div className="md:col-span-4 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Supplier</label>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setSupplierSearchOpen(true)}
+                  className={`w-full h-9 px-3 rounded-lg border text-left text-xs flex items-center gap-2 transition-all
+                    ${supplierValue 
+                      ? 'border-white/40 bg-white/20 text-white' 
+                      : 'border-white/30 bg-slate-900/50 text-white/70 hover:border-white/50'
+                    }`}
+                >
+                  <BuildingStorefrontIcon className="w-4 h-4 shrink-0" />
+                  <span className="truncate flex-1">
+                    {supplierValue?.name || "All Suppliers"}
+                  </span>
+                </button>
+                {supplierValue && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSupplierValue(null);
+                      setSupplierId("");
+                      setProductId("");
+                      setProductValue(null);
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded-full bg-white/20 text-white/80 hover:bg-white/35 text-[10px] leading-none"
+                    title="Clear supplier"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
 
-          {/* Product */}
-          <div className="md:col-span-4">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Product</label>
-            <AsyncSelect
-              cacheOptions
-              defaultOptions={[{ value: "", label: "All Products" }]}
-              loadOptions={loadProducts}
-              isClearable
-              value={productValue}
-              onChange={(opt) => {
-                setProductValue(opt);
-                setProductId(opt?.value || "");
-              }}
-              styles={getSmallSelectStyles(isDark)}
-              menuPortalTarget={document.body}
-              filterOption={createFilter({
-                matchFrom: "start",
-                trim: true,
-              })}
-            />
-          </div>
+            {/* Product */}
+            <div className="md:col-span-4 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Product</label>
+              <div className="flex items-center gap-1">
+                <div className="flex-1">
+<ProductSearchInput
+                    className="h-9 text-xs px-3 rounded-lg"
+                    value={productValue || productId}
+                    onChange={(val) => {
+                      const selected = val && typeof val === "object" ? val : null;
+                      setProductValue(selected);
+                      setProductId(selected?.id ? String(selected.id) : "");
+                    }}
+                    products={products}
+                    onRefreshProducts={fetchProducts}
+                  />
+                </div>
+                {productId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProductId("");
+                      setProductValue(null);
+                    }}
+                    className="w-5 h-5 flex items-center justify-center rounded-full bg-white/20 text-white/80 hover:bg-white/35 text-[10px] leading-none flex-shrink-0"
+                    title="Clear product"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
 
-          {/* Quick Filters & Export */}
-          <div className="md:col-span-12 flex flex-wrap items-end gap-2">
-            <GlassBtn
-              className={`h-9 ${btnSecondary.className}`}
-              onClick={() => {
-                const end = new Date();
-                const start = new Date();
-                start.setDate(end.getDate() - 1);
-                setFromDate(start.toISOString().slice(0, 10));
-                setToDate(end.toISOString().slice(0, 10));
-              }}
-              style={btnSecondary.style}
-            >
-              Today
-            </GlassBtn>
-
-            <GlassBtn
-              className={`h-9 ${btnTertiary.className}`}
-              onClick={() => {
-                const end = new Date();
-                const start = new Date();
-                start.setDate(end.getDate() - 3);
-                setFromDate(start.toISOString().slice(0, 10));
-                setToDate(end.toISOString().slice(0, 10));
-              }}
-              style={btnTertiary.style}
-            >
-              3 Days
-            </GlassBtn>
-
-            <GlassBtn
-              className={`h-9 ${btnEmerald.className}`}
-              onClick={() => {
-                const end = new Date();
-                const start = new Date();
-                start.setDate(end.getDate() - 7);
-                setFromDate(start.toISOString().slice(0, 10));
-                setToDate(end.toISOString().slice(0, 10));
-              }}
-              style={btnEmerald.style}
-            >
-              7 Days
-            </GlassBtn>
-
-            <Guard when={can.export}>
-              <GlassBtn
-                className={`h-9 ${btnSecondary.className}`}
-                onClick={exportPdf}
-                disabled={pdfLoading || data.length === 0}
-                style={btnSecondary.style}
+            {/* Quick Filters & Export */}
+            <div className="md:col-span-12 flex flex-wrap items-end gap-2">
+              <button
+                onClick={() => {
+                  const end = new Date();
+                  const start = new Date();
+                  start.setDate(end.getDate() - 1);
+                  setFromDate(start.toISOString().slice(0, 10));
+                  setToDate(end.toISOString().slice(0, 10));
+                }}
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
               >
-                <span className="inline-flex items-center gap-2">
-                  <ArrowDownOnSquareIcon className="w-5 h-5" />
+                Today
+              </button>
+
+              <button
+                onClick={() => {
+                  const end = new Date();
+                  const start = new Date();
+                  start.setDate(end.getDate() - 3);
+                  setFromDate(start.toISOString().slice(0, 10));
+                  setToDate(end.toISOString().slice(0, 10));
+                }}
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+              >
+                3 Days
+              </button>
+
+              <button
+                onClick={() => {
+                  const end = new Date();
+                  const start = new Date();
+                  start.setDate(end.getDate() - 7);
+                  setFromDate(start.toISOString().slice(0, 10));
+                  setToDate(end.toISOString().slice(0, 10));
+                }}
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+              >
+                7 Days
+              </button>
+
+              <Guard when={can.export}>
+                <button
+                  onClick={exportPdf}
+                  disabled={pdfLoading || data.length === 0}
+                  className={`h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold text-white transition-all duration-200 ${
+                    pdfLoading || data.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20"
+                  }`}
+                >
+                  <ArrowDownOnSquareIcon className="w-4 h-4" />
                   {pdfLoading ? "Generating…" : "Export PDF"}
-                </span>
-              </GlassBtn>
-            </Guard>
+                </button>
+              </Guard>
+            </div>
           </div>
-        </GlassToolbar>
-      </GlassCard>
+        </div>
+      </div>
 
       {/* ===== Results ===== */}
       {data.length === 0 && !loading && (
@@ -768,6 +873,13 @@ export default function PurchaseDetailReport() {
           </div>
         ))}
       </div>
+
+{/* ===== Supplier Search Modal ===== */}
+      <SupplierSearch
+        isOpen={supplierSearchOpen}
+        onClose={() => setSupplierSearchOpen(false)}
+        onSelect={handleSupplierSelect}
+      />
 
       {/* Print styles */}
       <style>{`

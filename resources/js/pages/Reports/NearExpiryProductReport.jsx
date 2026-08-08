@@ -1,8 +1,6 @@
 // resources/js/pages/Reports/NearExpiryProductReport.jsx
 import { useMemo, useState } from "react";
 import axios from "axios";
-import AsyncSelect from "react-select/async";
-import { createFilter } from "react-select";
 import toast from "react-hot-toast";
 import { usePermissions, Guard } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext.jsx";
@@ -19,10 +17,15 @@ import {
 import { 
   ArrowDownOnSquareIcon, 
   ArrowPathIcon,
+  BuildingStorefrontIcon,
+  TagIcon,
   ClockIcon,
   CalendarIcon,
   ClipboardDocumentListIcon,
 } from "@heroicons/react/24/solid";
+import SupplierSearch from "@/components/SupplierSearch.jsx";
+import BrandSearch from "@/components/BrandSearch.jsx";
+import ProductSearchInput from "@/components/ProductSearchInput.jsx";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -52,6 +55,47 @@ const localISODate = (d = new Date()) => {
   const tzOffsetMs = d.getTimezoneOffset() * 60000;
   return new Date(d.getTime() - tzOffsetMs).toISOString().slice(0, 10);
 };
+
+/* react-select → control on the dark gradient hero background */
+const getSelectStylesOnDark = (isDark = false) => ({
+  control: (base) => ({
+    ...base,
+    minHeight: 36,
+    height: 36,
+    borderRadius: 10,
+    borderColor: "rgba(255,255,255,0.3)",
+    backgroundColor: "rgba(15,23,42,0.5)",
+    backdropFilter: "blur(6px)",
+    boxShadow: "none",
+    cursor: "pointer",
+    "&:hover": {
+      borderColor: "rgba(255,255,255,0.5)",
+    },
+  }),
+  valueContainer: (base) => ({ ...base, height: 36, padding: "0 8px" }),
+  indicatorsContainer: (base) => ({ ...base, height: 36, color: "rgba(255,255,255,0.8)" }),
+  input: (base) => ({ ...base, margin: 0, padding: 0, color: "#ffffff" }),
+  singleValue: (base) => ({ ...base, color: "#ffffff" }),
+  placeholder: (base) => ({ ...base, color: "rgba(255,255,255,0.7)" }),
+  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+  menu: (base) => ({
+    ...base,
+    borderRadius: 10,
+    overflow: "hidden",
+    backgroundColor: isDark ? "rgba(30,41,59,0.98)" : "rgba(255,255,255,0.98)",
+    backdropFilter: "blur(10px)",
+    boxShadow: "0 10px 30px -10px rgba(0,0,0,0.4)",
+    border: isDark ? "1px solid rgba(71,85,105,0.5)" : "none",
+  }),
+  option: (base, state) => ({
+    ...base,
+    backgroundColor: isDark
+      ? state.isFocused ? "rgba(71,85,105,1)" : "rgba(51,65,85,1)"
+      : state.isFocused ? "rgba(241,245,249,1)" : "rgba(255,255,255,1)",
+    color: isDark ? "#f1f5f9" : "#111827",
+    cursor: "pointer",
+  }),
+});
 
 /* react-select → glassy control */
 const getSelectStyles = (isDarkMode = false) => ({
@@ -132,12 +176,15 @@ export default function NearExpiryProductReport() {
   const [fromDate, setFromDate] = useState(today);
   const [toDate, setToDate] = useState(defaultToDate);
   
-  const [supplierValue, setSupplierValue] = useState(null);
+const [supplierValue, setSupplierValue] = useState(null);
   const [supplierId, setSupplierId] = useState("");
   const [brandValue, setBrandValue] = useState(null);
   const [brandId, setBrandId] = useState("");
   const [productValue, setProductValue] = useState(null);
   const [productId, setProductId] = useState("");
+  const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
+  const [brandSearchOpen, setBrandSearchOpen] = useState(false);
+  const [products, setProducts] = useState([]);
 
   // Data + States
   const [data, setData] = useState({ rows: [], summary: {} });
@@ -254,84 +301,30 @@ export default function NearExpiryProductReport() {
   const btnPrimary = getButtonClasses.primary;
   const btnSecondary = getButtonClasses.secondary;
 
-  /* ============ Async loaders ============ */
-  const loadSuppliers = useMemo(
-    () => async (input) => {
-      const q = String(input || "").trim();
-      if (!q) return [{ value: "", label: "All Suppliers" }];
-      try {
-        const res = await tryEndpoints(
-          ["/api/suppliers/search", "/suppliers/search"],
-          { q, limit: 30 }
-        );
-        const rows = Array.isArray(res.data?.data)
-          ? res.data.data
-          : Array.isArray(res.data)
-          ? res.data
-          : [];
-        return rows.map((r) => ({
-          value: r.id,
-          label: r.name ?? r.label ?? `#${r.id}`,
-        }));
-      } catch {
-        toast.error("Supplier search failed");
-        return [{ value: "", label: "No results" }];
-      }
-    },
-    []
-  );
+/* ============ Product fetch (for ProductSearchInput) ============ */
+  const fetchProducts = async (q = "") => {
+    try {
+      const { data } = await axios.get("/api/products/search", { params: { q, limit: 30 } });
+      setProducts(Array.isArray(data) ? data : []);
+    } catch {
+      setProducts([]);
+    }
+  };
 
-  const loadBrands = useMemo(
-    () => async (input) => {
-      const q = String(input || "").trim();
-      if (!q) return [{ value: "", label: "All Brands" }];
-      try {
-        const res = await tryEndpoints(
-          ["/api/brands/search", "/brands/search"],
-          { q, limit: 30 }
-        );
-        const rows = Array.isArray(res.data?.data)
-          ? res.data.data
-          : Array.isArray(res.data)
-          ? res.data
-          : [];
-        return rows.map((r) => ({
-          value: r.id,
-          label: r.name ?? r.label ?? `#${r.id}`,
-        }));
-      } catch {
-        toast.error("Brand search failed");
-        return [{ value: "", label: "No results" }];
-      }
-    },
-    []
-  );
+  /* ============ Supplier selected from modal ============ */
+  const handleSupplierSelect = (supplier) => {
+    if (!supplier?.id) return;
+    setSupplierValue(supplier);
+    setSupplierId(String(supplier.id));
+    setSupplierSearchOpen(false);
+  };
 
-  const loadProducts = useMemo(
-    () => async (input) => {
-      const q = String(input || "").trim();
-      if (!q) return [{ value: "", label: "All Products" }];
-      try {
-        const res = await tryEndpoints(
-          ["/api/products/search", "/products/search"],
-          { q, limit: 30 }
-        );
-        const rows = Array.isArray(res.data?.data)
-          ? res.data.data
-          : Array.isArray(res.data)
-          ? res.data
-          : [];
-        return rows.map((r) => ({
-          value: r.id,
-          label: r.name ? `${r.name} (${r.product_code || ''})` : `#${r.id}`,
-        }));
-      } catch {
-        toast.error("Product search failed");
-        return [{ value: "", label: "No results" }];
-      }
-    },
-    []
-  );
+  const handleBrandSelect = (brand) => {
+    if (!brand?.id) return;
+    setBrandValue(brand);
+    setBrandId(String(brand.id));
+    setBrandSearchOpen(false);
+  };
 
   /* ============ Fetch report ============ */
   const fetchReport = async () => {
@@ -409,165 +402,228 @@ export default function NearExpiryProductReport() {
 
   return (
     <div className="p-4 space-y-3">
-      {/* ===== Professional Header ===== */}
-      <GlassCard>
-        {/* Header Top */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          {/* Title */}
+      {/* ===== Premium Gradient Hero Header ===== */}
+      <div
+        className="relative overflow-hidden rounded-2xl shadow-lg"
+        style={{
+          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
+        }}
+      >
+        {/* Decorative blurred blobs */}
+        <div
+          className="absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-30 blur-3xl pointer-events-none"
+          style={{ backgroundColor: "#fff7ed" }}
+        />
+        <div
+          className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full opacity-20 blur-3xl pointer-events-none"
+          style={{ backgroundColor: themeColors.primary }}
+        />
+
+        {/* Hero Top */}
+        <div className="relative flex items-center justify-between px-5 py-4 flex-wrap gap-2">
           <div className="flex items-center gap-3">
-            <div 
-              className="p-2 rounded-lg shadow-sm"
-              style={{ background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})` }}
+            <div
+              className="p-2.5 rounded-xl shadow-inner"
+              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
             >
-              <ClockIcon className="w-5 h-5 text-white" />
+              <ClockIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Near Expiry Product Report</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{rows.length} items expiring</p>
+              <h1 className="text-xl font-extrabold tracking-wide text-white leading-none">Near Expiry Product Report</h1>
+              <p className="text-xs text-white/80 mt-1">{rows.length} items expiring</p>
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            <GlassBtn
-              className={`h-9 ${btnPrimary.className}`}
+          {/* Header Actions */}
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <button
               title="Reset Filters"
               onClick={resetFilters}
-              style={btnPrimary.style}
+              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
             >
-              Reset
-            </GlassBtn>
+              <ArrowPathIcon className="w-4 h-4" />
+              <span>Reset</span>
+            </button>
+            <Guard when={can.view}>
+              <button
+                onClick={fetchReport}
+                disabled={loading}
+                className={`h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 ${
+                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 shadow-lg"
+                }`}
+              >
+                <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+                {loading ? "Loading…" : "Load Report"}
+              </button>
+            </Guard>
           </div>
         </div>
 
         {/* Filters */}
-        <GlassToolbar className="grid grid-cols-1 md:grid-cols-12 gap-3">
-          {/* From Date */}
-          <div className="md:col-span-2">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>
-              <CalendarIcon className="w-4 h-4 inline mr-1" />
-              From (Expiry)
-            </label>
-            <GlassInput
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-            />
-          </div>
+        <div className="relative px-5 pb-4">
+          <div
+            className="grid grid-cols-1 md:grid-cols-12 gap-3 rounded-xl p-3"
+            style={{ backgroundColor: "rgba(255,255,255,0.12)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)" }}
+          >
+            {/* From Date */}
+            <div className="md:col-span-2 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">
+                <CalendarIcon className="w-3.5 h-3.5 inline mr-1" /> From (Expiry)
+              </label>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+              />
+            </div>
 
-          {/* To Date */}
-          <div className="md:col-span-2">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>
-              <CalendarIcon className="w-4 h-4 inline mr-1" />
-              To (Expiry)
-            </label>
-            <GlassInput
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-            />
-          </div>
+            {/* To Date */}
+            <div className="md:col-span-2 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">
+                <CalendarIcon className="w-3.5 h-3.5 inline mr-1" /> To (Expiry)
+              </label>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+              />
+            </div>
 
-          {/* Supplier */}
-          <div className="md:col-span-3">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Supplier</label>
-            <AsyncSelect
-              cacheOptions
-              defaultOptions={[{ value: "", label: "All Suppliers" }]}
-              loadOptions={loadSuppliers}
-              isClearable
-              value={supplierValue}
-              onChange={(opt) => {
-                setSupplierValue(opt);
-                setSupplierId(opt?.value || "");
-              }}
-              styles={getSelectStyles(isDark)}
-              menuPortalTarget={document.body}
-              filterOption={createFilter({
-                matchFrom: "start",
-                trim: true,
-              })}
-            />
-          </div>
-
-          {/* Brand */}
-          <div className="md:col-span-3">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Brand</label>
-            <AsyncSelect
-              cacheOptions
-              defaultOptions={[{ value: "", label: "All Brands" }]}
-              loadOptions={loadBrands}
-              isClearable
-              value={brandValue}
-              onChange={(opt) => {
-                setBrandValue(opt);
-                setBrandId(opt?.value || "");
-              }}
-              styles={getSelectStyles(isDark)}
-              menuPortalTarget={document.body}
-              filterOption={createFilter({
-                matchFrom: "start",
-                trim: true,
-              })}
-            />
-          </div>
-
-          {/* Product */}
-          <div className="md:col-span-2">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Product</label>
-            <AsyncSelect
-              cacheOptions
-              defaultOptions={[{ value: "", label: "All Products" }]}
-              loadOptions={loadProducts}
-              isClearable
-              value={productValue}
-              onChange={(opt) => {
-                setProductValue(opt);
-                setProductId(opt?.value || "");
-              }}
-              styles={getSelectStyles(isDark)}
-              menuPortalTarget={document.body}
-              filterOption={createFilter({
-                matchFrom: "start",
-                trim: true,
-              })}
-            />
-          </div>
-
-          {/* Buttons */}
-          <div className="md:col-span-12 flex flex-wrap gap-2">
-            <Guard when={can.view}>
-              <GlassBtn
-                className={`h-9 min-w-[110px] ${btnPrimary.className}`}
-                onClick={fetchReport}
-                disabled={loading}
-                style={btnPrimary.style}
-              >
-                {loading ? (
-                  <span className="inline-flex items-center gap-2">
-                    <ArrowPathIcon className="w-5 h-5 animate-spin" />
-                    Loading…
-                  </span>
-                ) : (
-                  "Load Report"
+{/* Supplier */}
+            <div className="md:col-span-3 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Supplier</label>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setSupplierSearchOpen(true)}
+                  className={`h-9 w-full px-3 rounded-lg text-xs text-left inline-flex items-center gap-2 transition-all duration-200 border border-white/30 bg-slate-900/50 backdrop-blur-sm ${
+                    supplierValue ? "text-white font-medium" : "text-white/70"
+                  }`}
+                >
+                  <BuildingStorefrontIcon className="w-4 h-4 flex-shrink-0 text-white/70" />
+                  <span className="truncate">{supplierValue?.name || "All Suppliers"}</span>
+                </button>
+                {supplierValue && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSupplierValue(null);
+                      setSupplierId("");
+                    }}
+                    className="h-9 w-8 flex-shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-sm transition-all duration-200"
+                    title="Clear supplier"
+                  >
+                    ×
+                  </button>
                 )}
-              </GlassBtn>
-            </Guard>
+              </div>
+            </div>
 
-            <Guard when={can.export}>
-              <GlassBtn
-                className={`h-9 flex items-center gap-2 ${btnSecondary.className}`}
-                onClick={exportPdf}
-                disabled={pdfLoading || rows.length === 0}
-                style={btnSecondary.style}
-              >
-                <ArrowDownOnSquareIcon className="w-5 h-5" />
-                {pdfLoading ? "Generating…" : "Export PDF"}
-              </GlassBtn>
-            </Guard>
+{/* Brand */}
+            <div className="md:col-span-3 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Brand</label>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setBrandSearchOpen(true)}
+                  className={`h-9 w-full px-3 rounded-lg text-xs text-left inline-flex items-center gap-2 transition-all duration-200 border border-white/30 bg-slate-900/50 backdrop-blur-sm ${
+                    brandValue ? "text-white font-medium" : "text-white/70"
+                  }`}
+                >
+                  <TagIcon className="w-4 h-4 flex-shrink-0 text-white/70" />
+                  <span className="truncate">{brandValue?.name || "All Brands"}</span>
+                </button>
+                {brandValue && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBrandValue(null);
+                      setBrandId("");
+                    }}
+                    className="h-9 w-8 flex-shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-sm transition-all duration-200"
+                    title="Clear brand"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
+
+{/* Product */}
+            <div className="md:col-span-2 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Product</label>
+              <div className="flex items-center gap-1">
+                <div className="flex-1">
+                  <ProductSearchInput
+                    className="h-9 text-xs px-3 rounded-lg"
+                    value={productValue || productId}
+                    onChange={(val) => {
+                      const selected = val && typeof val === "object" ? val : null;
+                      setProductValue(selected);
+                      setProductId(selected?.id ? String(selected.id) : "");
+                    }}
+                    products={products}
+                    onRefreshProducts={fetchProducts}
+                  />
+                </div>
+                {productValue && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProductValue(null);
+                      setProductId("");
+                    }}
+                    className="h-9 w-8 flex-shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-sm transition-all duration-200"
+                    title="Clear product"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Buttons */}
+            <div className="md:col-span-12 flex flex-wrap gap-2 pt-1">
+              <Guard when={can.view}>
+                <button
+                  onClick={fetchReport}
+                  disabled={loading}
+                  className={`h-9 min-w-[130px] px-4 inline-flex items-center justify-center gap-2 rounded-lg text-xs font-bold text-white transition-all duration-200 ${
+                    loading ? "opacity-50 cursor-not-allowed" : "bg-white/25 hover:bg-white/35 backdrop-blur-sm"
+                  }`}
+                >
+                  {loading ? (
+                    <>
+                      <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                      Loading…
+                    </>
+                  ) : (
+                    <>
+                      <ClockIcon className="w-4 h-4" />
+                      Load Report
+                    </>
+                  )}
+                </button>
+              </Guard>
+
+              <Guard when={can.export}>
+                <button
+                  onClick={exportPdf}
+                  disabled={pdfLoading || rows.length === 0}
+                  className={`h-9 min-w-[130px] px-4 inline-flex items-center justify-center gap-2 rounded-lg text-xs font-bold text-white transition-all duration-200 ${
+                    pdfLoading || rows.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/25 hover:bg-white/35 backdrop-blur-sm"
+                  }`}
+                >
+                  <ArrowDownOnSquareIcon className="w-4 h-4" />
+                  {pdfLoading ? "Generating…" : "Export PDF"}
+                </button>
+              </Guard>
+            </div>
           </div>
-        </GlassToolbar>
-      </GlassCard>
+        </div>
+      </div>
 
       {/* ===== Permission / Loading states ===== */}
       {permsLoading && (
@@ -740,7 +796,7 @@ export default function NearExpiryProductReport() {
         </>
       )}
 
-      <style>{`
+<style>{`
         .tabular-nums { font-variant-numeric: tabular-nums; }
         @media print {
           input, button, select, [role="button"], .rs__control { display: none !important; }
@@ -748,6 +804,18 @@ export default function NearExpiryProductReport() {
           thead { position: sticky; top: 0; }
         }
       `}</style>
+
+      {/* Search modals */}
+      <SupplierSearch
+        isOpen={supplierSearchOpen}
+        onClose={() => setSupplierSearchOpen(false)}
+        onSelect={handleSupplierSelect}
+      />
+      <BrandSearch
+        isOpen={brandSearchOpen}
+        onClose={() => setBrandSearchOpen(false)}
+        onSelect={handleBrandSelect}
+      />
     </div>
   );
 }

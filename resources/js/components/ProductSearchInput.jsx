@@ -15,7 +15,7 @@ import {
 import { GlassCard, GlassToolbar } from "@/components/glass";
 
 const ProductSearchInput = forwardRef(
-  ({ value, onChange, products, onRefreshProducts, onKeyDown: onKeyDownProp }, ref) => {
+  ({ value, onChange, products, onRefreshProducts, onKeyDown: onKeyDownProp, className = "" }, ref) => {
     const [display, setDisplay] = useState("");
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [isOpen, setIsOpen] = useState(false);
@@ -225,7 +225,7 @@ const getQuantity = (p) => p?.quantity ?? p?.current_quantity ?? null;
             value={display}
             readOnly
             placeholder="Search product…"
-            className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer transition-all border pr-6 ${
+className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer transition-all border pr-6 ${className} ${
               selectedProduct
                 ? "border-blue-400 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200 font-medium"
                 : "border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-500 dark:text-gray-400 placeholder-gray-400 dark:placeholder-gray-500"

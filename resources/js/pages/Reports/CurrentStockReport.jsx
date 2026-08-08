@@ -529,139 +529,163 @@ export default function CurrentStockReport() {
 
   return (
     <div className="p-4 space-y-3">
-      {/* ===== Professional Header ===== */}
-      <GlassCard>
-        {/* Header Top */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          {/* Title */}
+      {/* ===== Premium Gradient Hero Header ===== */}
+      <div
+        className="relative overflow-hidden rounded-2xl shadow-lg"
+        style={{
+          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
+        }}
+      >
+        {/* Decorative blurred blobs */}
+        <div
+          className="absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-30 blur-3xl pointer-events-none"
+          style={{ backgroundColor: "#ffffff" }}
+        />
+        <div
+          className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full opacity-20 blur-3xl pointer-events-none"
+          style={{ backgroundColor: themeColors.tertiary }}
+        />
+
+        {/* Hero Top */}
+        <div className="relative flex items-center justify-between px-5 py-4">
           <div className="flex items-center gap-3">
-            <div 
-              className="p-2 rounded-lg shadow-sm"
-              style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+            <div
+              className="p-2.5 rounded-xl shadow-inner"
+              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
             >
-              <CubeIcon className="w-5 h-5 text-white" />
+              <CubeIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Current Stock Report</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{rows.length} items</p>
+              <h1 className="text-xl font-extrabold tracking-wide text-white leading-none">Current Stock Report</h1>
+              <p className="text-xs text-white/80 mt-1">{rows.length} items in stock</p>
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            <GlassBtn
-              className={`h-9 ${btnPrimary.className}`}
-              title="Reset Filters"
+          {/* Header Actions */}
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <button
               onClick={resetFilters}
-              style={btnPrimary.style}
+              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
             >
-              Reset
-            </GlassBtn>
+              <ArrowPathIcon className="w-4 h-4" />
+              <span>Reset</span>
+            </button>
           </div>
         </div>
 
         {/* Filters */}
-        <GlassToolbar className="grid grid-cols-1 md:grid-cols-12 gap-3">
-          {/* Category */}
-          <div className="md:col-span-4">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Category</label>
-            <AsyncSelect
-              cacheOptions
-              defaultOptions={[{ value: "", label: "All Categories" }]}
-              loadOptions={loadCategories}
-              isClearable
-              value={categoryValue}
-              onChange={(opt) => {
-                setCategoryValue(opt);
-                setCategoryId(opt?.value || "");
-              }}
-              styles={getSelectStyles(isDark)}
-              menuPortalTarget={document.body}
-              filterOption={createFilter({
-                matchFrom: "start",
-                trim: true,
-              })}
-            />
-          </div>
+        <div className="relative px-5 pb-4">
+          <div
+            className="grid grid-cols-1 md:grid-cols-12 gap-3 rounded-xl p-3"
+            style={{ backgroundColor: "rgba(255,255,255,0.12)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)" }}
+          >
+            {/* Category */}
+            <div className="md:col-span-4 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Category</label>
+              <AsyncSelect
+                cacheOptions
+                defaultOptions={[{ value: "", label: "All Categories" }]}
+                loadOptions={loadCategories}
+                isClearable
+                value={categoryValue}
+                onChange={(opt) => {
+                  setCategoryValue(opt);
+                  setCategoryId(opt?.value || "");
+                }}
+                styles={getSelectStyles(isDark)}
+                menuPortalTarget={document.body}
+                filterOption={createFilter({
+                  matchFrom: "start",
+                  trim: true,
+                })}
+              />
+            </div>
 
-          {/* Brand */}
-          <div className="md:col-span-4">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Brand</label>
-            <AsyncSelect
-              cacheOptions
-              defaultOptions={[{ value: "", label: "All Brands" }]}
-              loadOptions={loadBrands}
-              isClearable
-              value={brandValue}
-              onChange={(opt) => {
-                setBrandValue(opt);
-                setBrandId(opt?.value || "");
-              }}
-              styles={getSelectStyles(isDark)}
-              menuPortalTarget={document.body}
-              filterOption={createFilter({
-                matchFrom: "start",
-                trim: true,
-              })}
-            />
-          </div>
+            {/* Brand */}
+            <div className="md:col-span-4 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Brand</label>
+              <AsyncSelect
+                cacheOptions
+                defaultOptions={[{ value: "", label: "All Brands" }]}
+                loadOptions={loadBrands}
+                isClearable
+                value={brandValue}
+                onChange={(opt) => {
+                  setBrandValue(opt);
+                  setBrandId(opt?.value || "");
+                }}
+                styles={getSelectStyles(isDark)}
+                menuPortalTarget={document.body}
+                filterOption={createFilter({
+                  matchFrom: "start",
+                  trim: true,
+                })}
+              />
+            </div>
 
-          {/* Supplier */}
-          <div className="md:col-span-4">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Supplier</label>
-            <AsyncSelect
-              cacheOptions
-              defaultOptions={[{ value: "", label: "All Suppliers" }]}
-              loadOptions={loadSuppliers}
-              isClearable
-              value={supplierValue}
-              onChange={(opt) => {
-                setSupplierValue(opt);
-                setSupplierId(opt?.value || "");
-              }}
-              styles={getSelectStyles(isDark)}
-              menuPortalTarget={document.body}
-              filterOption={createFilter({
-                matchFrom: "start",
-                trim: true,
-              })}
-            />
-          </div>
+            {/* Supplier */}
+            <div className="md:col-span-4 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Supplier</label>
+              <AsyncSelect
+                cacheOptions
+                defaultOptions={[{ value: "", label: "All Suppliers" }]}
+                loadOptions={loadSuppliers}
+                isClearable
+                value={supplierValue}
+                onChange={(opt) => {
+                  setSupplierValue(opt);
+                  setSupplierId(opt?.value || "");
+                }}
+                styles={getSelectStyles(isDark)}
+                menuPortalTarget={document.body}
+                filterOption={createFilter({
+                  matchFrom: "start",
+                  trim: true,
+                })}
+              />
+            </div>
 
-          {/* Buttons */}
-          <div className="md:col-span-12 flex flex-wrap gap-2">
-            <Guard when={can.view}>
-              <GlassBtn
-                className={`h-9 min-w-[110px] ${btnPrimary.className}`}
-                onClick={fetchReport}
-                disabled={loading}
-                style={btnPrimary.style}
-              >
-                {loading ? (
-                  <span className="inline-flex items-center gap-2">
-                    <ArrowPathIcon className="w-5 h-5 animate-spin" />
-                    Loading…
-                  </span>
-                ) : (
-                  "Load Report"
-                )}
-              </GlassBtn>
-            </Guard>
+            {/* Buttons */}
+            <div className="md:col-span-12 flex flex-wrap gap-2 pt-1">
+              <Guard when={can.view}>
+                <button
+                  onClick={fetchReport}
+                  disabled={loading}
+                  className={`h-9 min-w-[130px] px-4 inline-flex items-center justify-center gap-2 rounded-lg text-xs font-bold text-white transition-all duration-200 ${
+                    loading ? "opacity-50 cursor-not-allowed" : "bg-white/25 hover:bg-white/35 backdrop-blur-sm"
+                  }`}
+                >
+                  {loading ? (
+                    <>
+                      <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                      Loading…
+                    </>
+                  ) : (
+                    <>
+                      <CubeIcon className="w-4 h-4" />
+                      Load Report
+                    </>
+                  )}
+                </button>
+              </Guard>
 
-            <Guard when={can.export}>
-              <GlassBtn
-                className={`h-9 flex items-center gap-2 ${btnSecondary.className}`}
-                onClick={exportPdf}
-                disabled={pdfLoading || rows.length === 0}
-                style={btnSecondary.style}
-              >
-                <ArrowDownOnSquareIcon className="w-5 h-5" />
-                {pdfLoading ? "Generating…" : "Export PDF"}
-              </GlassBtn>
-            </Guard>
+              <Guard when={can.export}>
+                <button
+                  onClick={exportPdf}
+                  disabled={pdfLoading || rows.length === 0}
+                  className={`h-9 min-w-[130px] px-4 inline-flex items-center justify-center gap-2 rounded-lg text-xs font-bold text-white transition-all duration-200 ${
+                    pdfLoading || rows.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/25 hover:bg-white/35 backdrop-blur-sm"
+                  }`}
+                >
+                  <ArrowDownOnSquareIcon className="w-4 h-4" />
+                  {pdfLoading ? "Generating…" : "Export PDF"}
+                </button>
+              </Guard>
+            </div>
           </div>
-        </GlassToolbar>
-      </GlassCard>
+        </div>
+      </div>
+
 
       {/* ===== Permission / Loading states ===== */}
       {permsLoading && (

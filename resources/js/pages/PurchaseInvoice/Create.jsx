@@ -37,7 +37,7 @@ export default function CreatePurchaseInvoice() {
   if (!can.create) return <div className="p-6 text-sm text-gray-700">You don't have permission to create purchase invoices.</div>;
 
 return (
-    <div className="-mx-4 md:-mx-6 -mt-2 md:-mt-2">
+    <div className="h-full w-full -mx-4 md:-mx-6 -mt-4 md:-mt-6">
       <PurchaseInvoiceForm onSubmit={handleSubmit} />
     </div>
   );

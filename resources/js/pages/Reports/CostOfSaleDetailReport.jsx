@@ -16,6 +16,7 @@ import SaleInvoiceSearch from "@/components/SaleInvoiceSearch.jsx";
 
 import { 
   ArrowDownOnSquareIcon, 
+  ArrowPathIcon,
   DocumentTextIcon,
 } from "@heroicons/react/24/solid";
 
@@ -285,147 +286,161 @@ export default function CostOfSaleDetailReport() {
 
   return (
     <div className="p-4 space-y-3">
-      {/* ===== Professional Header ===== */}
-      <GlassCard>
-        {/* Header Top */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          {/* Title */}
+{/* ===== Premium Gradient Hero Header ===== */}
+      <div
+        className="relative overflow-hidden rounded-2xl shadow-lg"
+        style={{
+          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
+        }}
+      >
+        {/* Decorative blurred blobs */}
+        <div
+          className="absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-30 blur-3xl pointer-events-none"
+          style={{ backgroundColor: "#ffffff" }}
+        />
+        <div
+          className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full opacity-20 blur-3xl pointer-events-none"
+          style={{ backgroundColor: themeColors.tertiary }}
+        />
+
+        {/* Hero Top */}
+        <div className="relative flex items-center justify-between px-5 py-4 flex-wrap gap-2">
           <div className="flex items-center gap-3">
-            <div 
-              className="p-2 rounded-lg shadow-sm"
-              style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+            <div
+              className="p-2.5 rounded-xl shadow-inner"
+              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
             >
-              <DocumentTextIcon className="w-5 h-5 text-white" />
+              <DocumentTextIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Cost of Sale Detail Report</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
+              <h1 className="text-xl font-extrabold tracking-wide text-white leading-none">Cost of Sale Detail Report</h1>
+              <p className="text-xs text-white/80 mt-1">
                 {invoices.length} invoice(s) • {summary.total_items || 0} items
               </p>
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            <GlassBtn
-              className={`h-9 ${btnSecondary.className}`}
+          {/* Header Actions */}
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <button
               onClick={resetFilters}
-              style={btnSecondary.style}
+              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
             >
-              Reset
-            </GlassBtn>
+              <ArrowPathIcon className="w-4 h-4" />
+              <span>Reset</span>
+            </button>
             <Guard when={can.view}>
-              <GlassBtn
-                className={`h-9 ${btnPrimary.className}`}
+              <button
                 onClick={fetchReport}
                 disabled={loading}
-                style={btnPrimary.style}
+                className={`h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 ${
+                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 shadow-lg"
+                }`}
               >
-                <span className="inline-flex items-center gap-2">
-                  {loading ? "Loading…" : "Load"}
-                </span>
-              </GlassBtn>
+                <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+                {loading ? "Loading…" : "Load"}
+              </button>
             </Guard>
           </div>
         </div>
 
         {/* Filters */}
-        <GlassToolbar className="grid grid-cols-1 md:grid-cols-12 gap-3">
-          {/* From Date */}
-          <div className="md:col-span-2">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>From</label>
-            <input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="w-full h-9 px-3 rounded-lg border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white text-sm"
-            />
-          </div>
+        <div className="relative px-5 pb-4">
+          <div
+            className="grid grid-cols-1 md:grid-cols-12 gap-3 rounded-xl p-3"
+            style={{ backgroundColor: "rgba(255,255,255,0.12)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)" }}
+          >
+            {/* From Date */}
+            <div className="md:col-span-2 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">From</label>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+              />
+            </div>
 
-          {/* To Date */}
-          <div className="md:col-span-2">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>To</label>
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="w-full h-9 px-3 rounded-lg border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white text-sm"
-            />
-          </div>
+            {/* To Date */}
+            <div className="md:col-span-2 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">To</label>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+              />
+            </div>
 
-          {/* Invoice Selector Button */}
-          <div className="md:col-span-4">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>
-              Select Invoice
-            </label>
-            <button
-              onClick={() => setSearchOpen(true)}
-              className={`w-full h-9 px-3 rounded-lg border text-left text-sm flex items-center gap-2 transition-all
-                ${selectedInvoice 
-                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200' 
-                  : 'border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-500 dark:text-gray-400 hover:border-blue-400'
-                }`}
-            >
-              <DocumentTextIcon className="w-5 h-5" />
-              {selectedInvoice ? (
-                <span className="truncate">
-                  {selectedInvoice.posted_number || `#${selectedInvoice.id}`} - {selectedInvoice.customer_name || 'Walk-in'}
-                </span>
-              ) : (
-                <span>Click to search invoice...</span>
-              )}
-            </button>
-          </div>
-
-          {/* Quick Filters & Export */}
-          <div className="md:col-span-4 flex flex-wrap items-end gap-2">
-            <GlassBtn
-              className={`h-9 ${btnEmerald.className}`}
-              onClick={() => {
-                const end = new Date();
-                const start = new Date();
-                start.setDate(1);
-                setFromDate(start.toISOString().slice(0, 10));
-                setToDate(end.toISOString().slice(0, 10));
-                fetchReport();
-              }}
-              style={btnEmerald.style}
-            >
-              This Month
-            </GlassBtn>
-
-            <GlassBtn
-              className={`h-9 ${btnSecondary.className}`}
-              onClick={() => {
-                const end = new Date();
-                const start = new Date();
-                start.setMonth(start.getMonth() - 1);
-                start.setDate(1);
-                setFromDate(start.toISOString().slice(0, 10));
-                setToDate(end.toISOString().slice(0, 10));
-                fetchReport();
-              }}
-              style={btnSecondary.style}
-            >
-              Last Month
-            </GlassBtn>
-
-            <Guard when={can.export}>
-              <GlassBtn
-                className={`h-9 ${btnSecondary.className}`}
-                onClick={exportPdf}
-                disabled={pdfLoading || invoices.length === 0}
-                style={btnSecondary.style}
+            {/* Invoice Selector Button */}
+            <div className="md:col-span-4 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Select Invoice</label>
+              <button
+                onClick={() => setSearchOpen(true)}
+                className={`w-full h-9 px-3 rounded-lg border text-left text-xs flex items-center gap-2 transition-all
+                  ${selectedInvoice 
+                    ? 'border-white/40 bg-white/20 text-white' 
+                    : 'border-white/30 bg-slate-900/50 text-white/70 hover:border-white/50'
+                  }`}
               >
-                <span className="inline-flex items-center gap-2">
-                  <ArrowDownOnSquareIcon className="w-5 h-5" />
+                <DocumentTextIcon className="w-5 h-5 shrink-0" />
+                {selectedInvoice ? (
+                  <span className="truncate">
+                    {selectedInvoice.posted_number || `#${selectedInvoice.id}`} - {selectedInvoice.customer_name || 'Walk-in'}
+                  </span>
+                ) : (
+                  <span>Click to search invoice...</span>
+                )}
+              </button>
+            </div>
+
+            {/* Quick Filters & Export */}
+            <div className="md:col-span-4 flex flex-wrap items-end gap-2">
+              <button
+                onClick={() => {
+                  const end = new Date();
+                  const start = new Date();
+                  start.setDate(1);
+                  setFromDate(start.toISOString().slice(0, 10));
+                  setToDate(end.toISOString().slice(0, 10));
+                  fetchReport();
+                }}
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+              >
+                This Month
+              </button>
+
+              <button
+                onClick={() => {
+                  const end = new Date();
+                  const start = new Date();
+                  start.setMonth(start.getMonth() - 1);
+                  start.setDate(1);
+                  setFromDate(start.toISOString().slice(0, 10));
+                  setToDate(end.toISOString().slice(0, 10));
+                  fetchReport();
+                }}
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+              >
+                Last Month
+              </button>
+
+              <Guard when={can.export}>
+                <button
+                  onClick={exportPdf}
+                  disabled={pdfLoading || invoices.length === 0}
+                  className={`h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold text-white transition-all duration-200 ${
+                    pdfLoading || invoices.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20"
+                  }`}
+                >
+                  <ArrowDownOnSquareIcon className="w-4 h-4" />
                   {pdfLoading ? "Generating…" : "Export PDF"}
-                </span>
-              </GlassBtn>
-            </Guard>
+                </button>
+              </Guard>
+            </div>
           </div>
-        </GlassToolbar>
-      </GlassCard>
+        </div>
+      </div>
 
       {/* ===== Summary Section ===== */}
       {invoices.length > 0 && (

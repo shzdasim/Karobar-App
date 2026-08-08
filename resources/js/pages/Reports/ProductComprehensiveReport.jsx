@@ -1,8 +1,6 @@
 // resources/js/pages/Reports/ProductComprehensiveReport.jsx
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import AsyncSelect from "react-select/async";
-import { createFilter } from "react-select";
 import toast from "react-hot-toast";
 import { usePermissions, Guard } from "@/api/usePermissions";
 
@@ -19,9 +17,11 @@ import { useTheme } from "@/context/ThemeContext";
 import { 
   ArrowDownOnSquareIcon, 
   ArrowPathIcon,
+  CubeIcon,
   DocumentTextIcon,
   Squares2X2Icon,
 } from "@heroicons/react/24/solid";
+import ProductSearchInput from "@/components/ProductSearchInput.jsx";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -92,6 +92,47 @@ const fmtDate = (v) => {
   return v;
 };
 
+// Helper for react-select controls on the dark gradient hero background
+const getSelectStylesOnDark = (isDark = false) => ({
+  control: (base) => ({
+    ...base,
+    minHeight: 36,
+    height: 36,
+    borderRadius: 10,
+    borderColor: "rgba(255,255,255,0.3)",
+    backgroundColor: "rgba(15,23,42,0.5)",
+    backdropFilter: "blur(6px)",
+    boxShadow: "none",
+    cursor: "pointer",
+    "&:hover": {
+      borderColor: "rgba(255,255,255,0.5)",
+    },
+  }),
+  valueContainer: (base) => ({ ...base, height: 36, padding: "0 8px" }),
+  indicatorsContainer: (base) => ({ ...base, height: 36, color: "rgba(255,255,255,0.8)" }),
+  input: (base) => ({ ...base, margin: 0, padding: 0, color: "#ffffff" }),
+  singleValue: (base) => ({ ...base, color: "#ffffff" }),
+  placeholder: (base) => ({ ...base, color: "rgba(255,255,255,0.7)" }),
+  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+  menu: (base) => ({
+    ...base,
+    borderRadius: 10,
+    overflow: "hidden",
+    backgroundColor: isDark ? "rgba(30,41,59,0.98)" : "rgba(255,255,255,0.98)",
+    backdropFilter: "blur(10px)",
+    boxShadow: "0 10px 30px -10px rgba(0,0,0,0.4)",
+    border: isDark ? "1px solid rgba(71,85,105,0.5)" : "none",
+  }),
+  option: (base, state) => ({
+    ...base,
+    backgroundColor: isDark
+      ? state.isFocused ? "rgba(71,85,105,1)" : "rgba(51,65,85,1)"
+      : state.isFocused ? "rgba(241,245,249,1)" : "rgba(255,255,255,1)",
+    color: isDark ? "#f1f5f9" : "#111827",
+    cursor: "pointer",
+  }),
+});
+
 // Helper to merge dark mode styles - returns function-based styles for react-select
 const getSelectStyles = (isDarkMode = false) => ({
   control: (base) => ({
@@ -161,10 +202,11 @@ async function tryEndpoints(paths, params) {
 
 export default function ProductComprehensiveReport() {
   // Filters
-  const [fromDate, setFromDate] = useState("");
+const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [productValue, setProductValue] = useState(null);
   const [productId, setProductId] = useState("");
+  const [products, setProducts] = useState([]);
 
   // Data + States
   const [data, setData] = useState({ product: null, transactions: [], summary: {} });
@@ -324,33 +366,15 @@ export default function ProductComprehensiveReport() {
     if (!toDate) setToDate(formatYMD(lastDay));
   }, []);
 
-  /* ============ Async product loader ============ */
-  const loadProducts = useMemo(
-    () => async (input) => {
-      const q = String(input || "").trim();
-      if (!q) return [{ value: "", label: "Search products..." }];
-      try {
-        const res = await tryEndpoints(
-          ["/api/products/search", "/products/search"],
-          { q, limit: 30 }
-        );
-        const rows = Array.isArray(res.data?.data)
-          ? res.data.data
-          : Array.isArray(res.data)
-          ? res.data
-          : [];
-        return rows.map((r) => ({
-          value: r.id,
-          label: r.name ?? r.label ?? `#${r.id}`,
-          product_code: r.product_code,
-        }));
-      } catch {
-        toast.error("Product search failed");
-        return [{ value: "", label: "No results" }];
-      }
-    },
-    []
-  );
+/* ============ Product fetch (for ProductSearchInput) ============ */
+  const fetchProducts = async (q = "") => {
+    try {
+      const { data } = await axios.get("/api/products/search", { params: { q, limit: 30 } });
+      setProducts(Array.isArray(data) ? data : []);
+    } catch {
+      setProducts([]);
+    }
+  };
 
   /* ============ Fetch report ============ */
   const fetchReport = async () => {
@@ -498,113 +522,141 @@ export default function ProductComprehensiveReport() {
 
   return (
     <div className="p-4 space-y-3">
-      {/* ===== Professional Header ===== */}
-      <GlassCard>
-        {/* Header Top */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-{/* Title */}
+{/* ===== Premium Gradient Hero Header ===== */}
+      <div
+        className="relative overflow-hidden rounded-2xl shadow-lg"
+        style={{
+          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
+        }}
+      >
+        {/* Decorative blurred blobs */}
+        <div
+          className="absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-30 blur-3xl pointer-events-none"
+          style={{ backgroundColor: "#ffffff" }}
+        />
+        <div
+          className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full opacity-20 blur-3xl pointer-events-none"
+          style={{ backgroundColor: themeColors.tertiary }}
+        />
+
+        {/* Hero Top */}
+        <div className="relative flex items-center justify-between px-5 py-4 flex-wrap gap-2">
           <div className="flex items-center gap-3">
-            <div 
-              className="p-2 rounded-lg shadow-sm"
-              style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+            <div
+              className="p-2.5 rounded-xl shadow-inner"
+              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
             >
-              <DocumentTextIcon className="w-5 h-5 text-white" />
+              <DocumentTextIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Product Comprehensive Report</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{transactions.length} transactions</p>
+              <h1 className="text-xl font-extrabold tracking-wide text-white leading-none">Product Comprehensive Report</h1>
+              <p className="text-xs text-white/80 mt-1">{transactions.length} transactions</p>
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            <GlassBtn
-              className={`h-9 ${btnPrimary.className}`}
+          {/* Header Actions */}
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <button
               onClick={resetFilters}
-              style={btnPrimary.style}
+              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
             >
-              Reset
-            </GlassBtn>
+              <ArrowPathIcon className="w-4 h-4" />
+              <span>Reset</span>
+            </button>
             <Guard when={can.view}>
-              <GlassBtn
-                className={`h-9 ${btnPrimary.className}`}
+              <button
                 onClick={fetchReport}
                 disabled={loading}
-                style={btnPrimary.style}
+                className={`h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 ${
+                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 shadow-lg"
+                }`}
               >
-                <span className="inline-flex items-center gap-2">
-                  <ArrowPathIcon className={`w-5 h-5 ${loading ? "animate-spin" : ""}`} />
-                  {loading ? "Loading…" : "Load"}
-                </span>
-              </GlassBtn>
+                <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+                {loading ? "Loading…" : "Load"}
+              </button>
             </Guard>
           </div>
         </div>
 
         {/* Filters */}
-        <GlassToolbar className="grid grid-cols-1 md:grid-cols-12 gap-3">
-          {/* From Date */}
-          <div className="md:col-span-3">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>From Date</label>
-            <GlassInput
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="w-full"
-            />
-          </div>
+        <div className="relative px-5 pb-4">
+          <div
+            className="grid grid-cols-1 md:grid-cols-12 gap-3 rounded-xl p-3"
+            style={{ backgroundColor: "rgba(255,255,255,0.12)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)" }}
+          >
+            {/* From Date */}
+            <div className="md:col-span-3 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">From Date</label>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+              />
+            </div>
 
-          {/* To Date */}
-          <div className="md:col-span-3">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>To Date</label>
-            <GlassInput
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="w-full"
-            />
-          </div>
+            {/* To Date */}
+            <div className="md:col-span-3 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">To Date</label>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+              />
+            </div>
 
-          {/* Product Selector */}
-          <div className="md:col-span-4">
-            <label className={`text-sm mb-1 block ${isDark ? "text-slate-300" : "text-gray-700"}`}>Product</label>
-            <AsyncSelect
-              cacheOptions
-              loadOptions={loadProducts}
-              isClearable
-              value={productValue}
-              onChange={(opt) => {
-                setProductValue(opt);
-                setProductId(opt?.value || "");
-              }}
-              styles={getSelectStyles(isDark)}
-              menuPortalTarget={document.body}
-              filterOption={createFilter({
-                matchFrom: "start",
-                trim: true,
-              })}
-              placeholder="Search product by name..."
-            />
-          </div>
+{/* Product Selector */}
+            <div className="md:col-span-4 flex flex-col gap-1">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Product</label>
+              <div className="flex items-center gap-1">
+                <div className="flex-1">
+                  <ProductSearchInput
+                    className="h-9 text-xs px-3 rounded-lg"
+                    value={productValue || productId}
+                    onChange={(val) => {
+                      const selected = val && typeof val === "object" ? val : null;
+                      setProductValue(selected);
+                      setProductId(selected?.id ? String(selected.id) : "");
+                    }}
+products={products}
+                    onRefreshProducts={fetchProducts}
+                  />
+                </div>
+                {productValue && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProductValue(null);
+                      setProductId("");
+                    }}
+                    className="h-9 w-8 flex-shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-sm transition-all duration-200"
+                    title="Clear product"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
 
-{/* Export PDF */}
-          <div className="md:col-span-2 flex items-end">
-            <Guard when={can.export}>
-              <GlassBtn
-                className={`h-9 ${btnSecondary.className}`}
-                onClick={exportPdf}
-                disabled={pdfLoading || transactions.length === 0}
-                style={btnSecondary.style}
-              >
-                <span className="inline-flex items-center gap-2">
-                  <ArrowDownOnSquareIcon className="w-5 h-5" />
+            {/* Export PDF */}
+            <div className="md:col-span-2 flex flex-col gap-1 justify-end">
+              <Guard when={can.export}>
+                <button
+                  onClick={exportPdf}
+                  disabled={pdfLoading || transactions.length === 0}
+                  className={`h-9 px-3 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs font-semibold text-white transition-all duration-200 ${
+                    pdfLoading || transactions.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20"
+                  }`}
+                >
+                  <ArrowDownOnSquareIcon className="w-4 h-4" />
                   {pdfLoading ? "..." : "Export PDF"}
-                </span>
-              </GlassBtn>
-            </Guard>
+                </button>
+              </Guard>
+            </div>
           </div>
-        </GlassToolbar>
-      </GlassCard>
+        </div>
+      </div>
 
       {/* ===== Results ===== */}
       {transactions.length === 0 && !loading && (
