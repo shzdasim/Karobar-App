@@ -457,7 +457,8 @@ className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer tran
                         {/* Grouped header */}
 <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-600">
 <tr>
-                            <th rowSpan={2} className="bg-slate-200/80 dark:bg-slate-700 px-4 py-2 text-left font-bold text-slate-600 dark:text-slate-200 w-[240px]">Product</th>
+<th rowSpan={2} className="bg-slate-200/80 dark:bg-slate-700 px-4 py-2 text-left font-bold text-slate-600 dark:text-slate-200 w-[240px]">Product</th>
+                            <th rowSpan={2} className="px-3 py-1.5 text-center font-semibold text-[10px] uppercase tracking-wide text-cyan-600 dark:text-cyan-300">Pack Size</th>
                             <th rowSpan={2} className="px-3 py-1.5 text-center font-semibold text-[10px] uppercase tracking-wide text-sky-600 dark:text-sky-300">Qty</th>
                             <th colSpan={2} className="px-2 py-1.5 text-center font-semibold text-[10px] uppercase tracking-wide text-cyan-600 dark:text-cyan-300">Purchase</th>
                             <th colSpan={2} className="px-2 py-1.5 text-center font-semibold text-[10px] uppercase tracking-wide text-green-600 dark:text-green-300">Sale</th>
@@ -474,14 +475,31 @@ className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer tran
                           </tr>
                         </thead>
                         <tbody className="text-slate-700 dark:text-slate-200">
-                          {filtered.map((p, idx) => {
+{filtered.map((p, idx) => {
                             const active = idx === highlightIndex;
                             const qty = getQuantity(p);
                             const margin = getMargin(p);
                             const avg = getAvgPrice(p);
-                            const rowCls = active
-                              ? "bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30"
-                              : "hover:bg-slate-50 dark:hover:bg-slate-700/30";
+                            const packSizeRaw = getPackSize(p);
+                            const packSizeNum = packSizeRaw !== "" && packSizeRaw != null ? Number(packSizeRaw) : null;
+                            const qtyNum = qty != null ? Number(qty) : null;
+                            // Low stock: on-hand quantity < pack size
+                            const lowStock = qtyNum != null && packSizeNum != null && qtyNum < packSizeNum;
+                            // Trend: down when below pack size, up when at/above it
+                            const trend = qtyNum == null || packSizeNum == null
+                              ? null
+                              : (qtyNum < packSizeNum ? "down" : "up");
+                            const rowCls = lowStock
+                              ? active
+                                ? "bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-900/30 dark:to-rose-900/30"
+                                : "bg-red-50/70 dark:bg-red-900/20 hover:bg-red-100/70 dark:hover:bg-red-900/30"
+                              : active
+                                ? "bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30"
+                                : "hover:bg-slate-50 dark:hover:bg-slate-700/30";
+                            // Text color: everything red when low stock
+                            const tc = lowStock
+                              ? "text-red-700 dark:text-red-300"
+                              : "text-slate-700 dark:text-slate-200";
                             return (
                               <tr
                                 key={p.id}
@@ -492,69 +510,91 @@ className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer tran
                                 title="Select product"
                                 aria-label="Select product"
                               >
-                                {/* Product identity */}
+{/* Product identity */}
                                 <td className="px-4 py-3">
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <div className="flex-shrink-0">
-                                      <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
-                                        <CubeIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                                      </div>
-                                    </div>
-                                    <div className="min-w-0">
-                                      <div className={`font-bold text-[13px] truncate ${active ? "text-indigo-700 dark:text-indigo-300" : "text-indigo-600 dark:text-indigo-400"}`}>
+                                  <div className="min-w-0">
+<div className="flex items-center gap-2 flex-wrap">
+                                      <span className={`text-base leading-tight font-extrabold tracking-tight truncate ${lowStock ? "text-red-700 dark:text-red-300" : active ? "text-indigo-700 dark:text-indigo-200" : "text-slate-900 dark:text-white"}`}>
                                         {p?.name || "—"}
-                                      </div>
-                                      <div className="flex items-center gap-2 text-[11px] mt-0.5 text-slate-500 dark:text-slate-400 flex-wrap">
-                                        {getBrandName(p) && (
-                                          <span className="font-semibold">{getBrandName(p)}</span>
-                                        )}
-                                        {getPackSize(p) && (
-                                          <span className="flex items-center gap-0.5">
-                                            <TagIcon className="w-3 h-3" />
-                                            {getPackSize(p)}
-                                          </span>
-                                        )}
-                                        {getSupplierName(p) && <span>• {getSupplierName(p)}</span>}
-                                      </div>
+                                      </span>
+                                      {getBrandName(p) && (
+                                        <span className={`font-bold text-xs ${lowStock ? "text-red-600/80 dark:text-red-400/70" : "text-slate-500 dark:text-slate-400"}`}>
+                                          {getBrandName(p)}
+                                        </span>
+                                      )}
+                                    </div>
+<div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                      {getSupplierName(p) && (
+                                        <span className={`font-semibold text-xs ${lowStock ? "text-red-600/80 dark:text-red-400/70" : "text-slate-500 dark:text-slate-400"}`}>
+                                          • {getSupplierName(p)}
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
+                                </td>
+
+{/* Pack Size */}
+                                <td className="px-3 py-3 text-center">
+                                  {getPackSize(p) ? (
+                                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-extrabold text-sm ring-1 ${lowStock ? "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 ring-red-200 dark:ring-red-800" : "bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300 ring-cyan-200 dark:ring-cyan-800"}`}>
+                                      <TagIcon className="w-4 h-4" />
+                                      {getPackSize(p)}
+                                    </span>
+                                  ) : (
+                                    <span className={`font-bold ${lowStock ? "text-red-400 dark:text-red-500" : "text-slate-400"}`}>—</span>
+                                  )}
                                 </td>
 
 {/* Qty */}
                                 <td className="px-3 py-3 text-center">
                                   {qty != null ? (
-                                    <span className="inline-block px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300 font-bold">
+                                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-extrabold text-sm ${lowStock ? "bg-red-600 text-white dark:bg-red-500" : "bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300"}`}>
+                                      {qty != null && trend && (
+                                        <svg
+                                          width="12"
+                                          height="12"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth="3"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          className={trend === "down" ? "" : "rotate-180"}
+                                        >
+                                          <polyline points="6 9 12 15 18 9" />
+                                        </svg>
+                                      )}
                                       {qty}
                                     </span>
                                   ) : (
-                                    <span className="text-slate-400">—</span>
+                                    <span className={`font-bold ${lowStock ? "text-red-400 dark:text-red-500" : "text-slate-400"}`}>—</span>
                                   )}
                                 </td>
 
-                                {/* Purchase prices */}
-                                <td className={`px-3 py-3 text-center font-semibold border-l border-slate-100 dark:border-slate-700 text-cyan-700 dark:text-cyan-300`}>
+{/* Purchase prices */}
+                                <td className={`px-3 py-3 text-center font-extrabold text-sm border-l border-slate-100 dark:border-slate-700 ${lowStock ? "text-red-600 dark:text-red-400" : "text-cyan-700 dark:text-cyan-300"}`}>
                                   {numFmt(p?.pack_purchase_price)}
                                 </td>
-                                <td className={`px-3 py-3 text-center font-medium ${active ? "text-slate-800 dark:text-slate-100" : "text-slate-600 dark:text-slate-300"}`}>
+                                <td className={`px-3 py-3 text-center font-bold text-sm ${lowStock ? "text-red-600/90 dark:text-red-400/90" : active ? "text-slate-800 dark:text-slate-100" : "text-slate-600 dark:text-slate-300"}`}>
                                   {numFmt(p?.unit_purchase_price)}
                                 </td>
 
                                 {/* Sale prices */}
-                                <td className={`px-3 py-3 text-center font-semibold border-l border-slate-100 dark:border-slate-700 text-green-700 dark:text-green-300`}>
+                                <td className={`px-3 py-3 text-center font-extrabold text-sm border-l border-slate-100 dark:border-slate-700 ${lowStock ? "text-red-600 dark:text-red-400" : "text-green-700 dark:text-green-300"}`}>
                                   {numFmt(p?.pack_sale_price)}
                                 </td>
-                                <td className={`px-3 py-3 text-center font-medium ${active ? "text-slate-800 dark:text-slate-100" : "text-slate-600 dark:text-slate-300"}`}>
+                                <td className={`px-3 py-3 text-center font-bold text-sm ${lowStock ? "text-red-600/90 dark:text-red-400/90" : active ? "text-slate-800 dark:text-slate-100" : "text-slate-600 dark:text-slate-300"}`}>
                                   {numFmt(p?.unit_sale_price)}
                                 </td>
 
                                 {/* Avg */}
-                                <td className={`px-3 py-3 text-center font-semibold ${active ? "text-slate-800 dark:text-slate-100" : "text-slate-700 dark:text-slate-200"}`}>
+                                <td className={`px-3 py-3 text-center font-extrabold text-sm ${lowStock ? "text-red-600 dark:text-red-400" : active ? "text-slate-800 dark:text-slate-100" : "text-slate-700 dark:text-slate-200"}`}>
                                   {numFmt(avg)}
                                 </td>
 
                                 {/* Margin */}
-                                <td className={`px-3 py-3 text-center text-emerald-600 dark:text-emerald-400`}>
-                                  <span className="inline-block px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 font-bold">
+                                <td className={`px-3 py-3 text-center ${lowStock ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+                                  <span className={`inline-block px-2.5 py-1 rounded-full font-extrabold text-sm ${lowStock ? "bg-red-100 dark:bg-red-900/40" : "bg-emerald-100 dark:bg-emerald-900/40"}`}>
                                     {margin != null ? `${margin}%` : "—"}
                                   </span>
                                 </td>
