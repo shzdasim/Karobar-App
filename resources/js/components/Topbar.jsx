@@ -2,11 +2,13 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
-import { ClipboardDocumentListIcon, ShoppingCartIcon, ClockIcon } from "@heroicons/react/24/solid";
+import { ClipboardDocumentListIcon, ShoppingCartIcon, ClockIcon, BellIcon } from "@heroicons/react/24/solid";
 import { useLicense } from "@/context/LicenseContext.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import ProductSearch from "@/components/ProductSearch.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
+import NotificationCenter from "./NotificationCenter.jsx";
+import axios from "axios";
 
 function formatRemaining(ms) {
   if (ms == null) return "Perpetual";
@@ -26,9 +28,40 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
   const menuRef = useRef(null);
   const btnRef = useRef(null);
 
+  // Notification center state
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifCount, setNotifCount] = useState(0);
+
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { theme } = useTheme();
+
+// Poll for low-stock notification count
+  useEffect(() => {
+    let cancelled = false;
+    const fetchCount = async () => {
+      try {
+        const { data } = await axios.get("/api/notifications/low-stock", {
+          params: { limit: 1 },
+        });
+        if (!cancelled) setNotifCount(Number(data?.count || 0));
+      } catch {
+        if (!cancelled) setNotifCount(0);
+      }
+    };
+    fetchCount();
+    const interval = setInterval(fetchCount, 60000); // every 60s
+
+    // Refresh immediately when notifications are dismissed elsewhere
+    const onChanged = () => fetchCount();
+    window.addEventListener("notifications-changed", onChanged);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener("notifications-changed", onChanged);
+    };
+  }, []);
 
   // License status
   const { loading: licLoading, valid: licValid, remainingMs } = useLicense();
@@ -129,10 +162,37 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
             <ProductSearch navigationStyle={navigationStyle} />
           </div>
 
-          {/* Right: License badge + Quick actions + Theme Toggle + User */}
+{/* Right: License badge + Quick actions + Theme Toggle + User */}
           <div className="flex items-center gap-2">
             {/* Theme Toggle */}
             <ThemeToggle />
+
+            {/* Notification Bell */}
+            <button
+              onClick={() => setNotifOpen(true)}
+              title="Open Notification Center"
+              aria-label="Open notification center"
+              className={`relative inline-flex items-center justify-center ${buttonStyleClass} p-2 transition-all hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-${themeColors.primary}/50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}
+              style={{
+                background: getButtonBg(themeColors.primary),
+                border: getButtonBorder(themeColors.primary),
+                color: getButtonTextColor(themeColors.primary),
+                borderRadius: 'var(--btn-radius, 0.5rem)',
+              }}
+            >
+              <BellIcon className="w-4 h-4" />
+              {notifCount > 0 && (
+                <span
+                  className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold text-white"
+                  style={{
+                    background: 'linear-gradient(to bottom right, #ef4444, #dc2626)',
+                    boxShadow: '0 2px 6px rgba(239,68,68,0.5)',
+                  }}
+                >
+                  {notifCount > 99 ? "99+" : notifCount}
+                </span>
+              )}
+            </button>
 
             {/* License badge */}
             <button
@@ -256,7 +316,13 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
             </div>
           </div>
         </div>
-      </header>
+</header>
+
+      {/* Notification Center side panel */}
+      <NotificationCenter
+        open={notifOpen}
+        onClose={() => setNotifOpen(false)}
+      />
     </div>
   );
 }

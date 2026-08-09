@@ -32,6 +32,7 @@ use App\Http\Controllers\SupplierLedgerController;
 use App\Http\Controllers\ThemeSettingController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserPreferenceController;
+use App\Http\Controllers\NotificationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -153,7 +154,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     // Purchase Orders
     Route::get('/purchase-orders/forecast',       [PurchaseOrderController::class, 'forecast']);
 
-    // Dashboard
+// Dashboard
     Route::get('/dashboard/summary',              [DashboardController::class, 'summary']);
     Route::get('/dashboard/near-expiry',          [DashboardController::class, 'nearExpiry']);
     Route::get('/dashboard/near-expiry/filters',  [DashboardController::class, 'nearExpiryFilters']);
@@ -161,6 +162,11 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/dashboard/sales-by-brands',      [DashboardController::class, 'salesByBrands']);
     Route::get('/dashboard/top-products',         [DashboardController::class, 'topProducts']);
     Route::get('/dashboard/kpi-metrics',          [DashboardController::class, 'kpiMetrics']);
+
+// Notifications
+    Route::get('/notifications/low-stock',        [NotificationController::class, 'lowStock']);
+    Route::post('/notifications/dismiss',         [NotificationController::class, 'dismiss']);
+    Route::post('/notifications/dismiss-all',     [NotificationController::class, 'dismissAll']);
 
     // Reports
     Route::get('/reports/cost-of-sale',           [ReportsController::class, 'costOfSale']);
