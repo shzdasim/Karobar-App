@@ -6,6 +6,7 @@ import React, {
   useImperativeHandle,
   useMemo,
 } from "react";
+import axios from "axios";
 import { createPortal } from "react-dom";
 import {
   MagnifyingGlassIcon,
@@ -32,8 +33,11 @@ const triggerRef = useRef(null);
     const resizeRef = useRef(null);
     const [isResizing, setIsResizing] = useState(false);
 
-    const MIN_WIDTH = 640;
+const MIN_WIDTH = 640;
     const MIN_HEIGHT = 420;
+    const PREF_KEY_POS = "productSearchModalPos";
+    const PREF_KEY_SIZE = "productSearchModalSize";
+
     const [windowPos, setWindowPos] = useState(() => {
       const width = 960;
       const height = 600;
@@ -43,6 +47,53 @@ const triggerRef = useRef(null);
       };
     });
     const [windowSize, setWindowSize] = useState({ width: 960, height: 600 });
+
+    // Load saved modal size & position from DB preferences on mount
+    useEffect(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const { data } = await axios.get("/api/preferences");
+          const prefs = data?.preferences || {};
+          const savedSize = prefs[PREF_KEY_SIZE];
+          const savedPos = prefs[PREF_KEY_POS];
+          if (!cancelled) {
+            if (savedSize && Number(savedSize.width) && Number(savedSize.height)) {
+              setWindowSize({
+                width: Math.max(MIN_WIDTH, Number(savedSize.width)),
+                height: Math.max(MIN_HEIGHT, Number(savedSize.height)),
+              });
+            }
+            if (savedPos && savedPos.x != null && savedPos.y != null) {
+              setWindowPos({
+                x: Number(savedPos.x),
+                y: Number(savedPos.y),
+              });
+            }
+          }
+        } catch (_) {
+          /* ignore - fall back to defaults */
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+// Persist size & position to DB on drag/resize end
+    const savePreferences = async (overrides = {}) => {
+      try {
+        await axios.put("/api/preferences", {
+          preferences: {
+            [PREF_KEY_POS]: overrides.pos || windowPos,
+            [PREF_KEY_SIZE]: overrides.size || windowSize,
+          },
+        });
+      } catch (_) {
+        /* ignore - non-critical */
+      }
+    };
 
     const didRefreshRef = useRef(false);
     const debounceRef = useRef(null);
@@ -251,10 +302,15 @@ const handleSearchChange = (e) => {
       });
     };
 
-    const stopDrag = () => {
+const stopDrag = () => {
       dragRef.current.isDragging = false;
       document.removeEventListener("mousemove", handleDrag);
       document.removeEventListener("mouseup", stopDrag);
+      // Persist final position to DB
+      setWindowPos((prev) => {
+        savePreferences({ pos: prev });
+        return prev;
+      });
     };
 
     // ---------- Resizing ----------
@@ -329,13 +385,21 @@ const handleSearchChange = (e) => {
       setWindowPos({ x: left, y: top });
     };
 
-    const stopResize = () => {
+const stopResize = () => {
       resizeRef.current = null;
       setIsResizing(false);
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
       document.removeEventListener("mousemove", handleResize);
       document.removeEventListener("mouseup", stopResize);
+      // Persist final size & position to DB
+      setWindowSize((prevSize) => {
+        setWindowPos((prevPos) => {
+          savePreferences({ size: prevSize, pos: prevPos });
+          return prevPos;
+        });
+        return prevSize;
+      });
     };
 
     const renderResizeHandle = (direction) => {
@@ -489,17 +553,9 @@ className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer tran
                             const trend = qtyNum == null || packSizeNum == null
                               ? null
                               : (qtyNum < packSizeNum ? "down" : "up");
-                            const rowCls = lowStock
-                              ? active
-                                ? "bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-900/30 dark:to-rose-900/30"
-                                : "bg-red-50/70 dark:bg-red-900/20 hover:bg-red-100/70 dark:hover:bg-red-900/30"
-                              : active
-                                ? "bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30"
-                                : "hover:bg-slate-50 dark:hover:bg-slate-700/30";
-                            // Text color: everything red when low stock
-                            const tc = lowStock
-                              ? "text-red-700 dark:text-red-300"
-                              : "text-slate-700 dark:text-slate-200";
+const rowCls = active
+                              ? "bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30"
+                              : "hover:bg-slate-50 dark:hover:bg-slate-700/30";
                             return (
                               <tr
                                 key={p.id}
@@ -514,18 +570,18 @@ className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer tran
                                 <td className="px-4 py-3">
                                   <div className="min-w-0">
 <div className="flex items-center gap-2 flex-wrap">
-                                      <span className={`text-base leading-tight font-extrabold tracking-tight truncate ${lowStock ? "text-red-700 dark:text-red-300" : active ? "text-indigo-700 dark:text-indigo-200" : "text-slate-900 dark:text-white"}`}>
+                                      <span className={`text-base leading-tight font-extrabold tracking-tight truncate ${active ? "text-indigo-700 dark:text-indigo-200" : "text-slate-900 dark:text-white"}`}>
                                         {p?.name || "—"}
                                       </span>
                                       {getBrandName(p) && (
-                                        <span className={`font-bold text-xs ${lowStock ? "text-red-600/80 dark:text-red-400/70" : "text-slate-500 dark:text-slate-400"}`}>
+                                        <span className={`font-bold text-xs ${active ? "text-indigo-600/70 dark:text-indigo-300/70" : "text-slate-500 dark:text-slate-400"}`}>
                                           {getBrandName(p)}
                                         </span>
                                       )}
                                     </div>
 <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                       {getSupplierName(p) && (
-                                        <span className={`font-semibold text-xs ${lowStock ? "text-red-600/80 dark:text-red-400/70" : "text-slate-500 dark:text-slate-400"}`}>
+                                        <span className={`font-semibold text-xs ${active ? "text-indigo-600/70 dark:text-indigo-300/70" : "text-slate-500 dark:text-slate-400"}`}>
                                           • {getSupplierName(p)}
                                         </span>
                                       )}
@@ -536,16 +592,16 @@ className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer tran
 {/* Pack Size */}
                                 <td className="px-3 py-3 text-center">
                                   {getPackSize(p) ? (
-                                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-extrabold text-sm ring-1 ${lowStock ? "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 ring-red-200 dark:ring-red-800" : "bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300 ring-cyan-200 dark:ring-cyan-800"}`}>
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300 font-extrabold text-sm ring-1 ring-cyan-200 dark:ring-cyan-800">
                                       <TagIcon className="w-4 h-4" />
                                       {getPackSize(p)}
                                     </span>
                                   ) : (
-                                    <span className={`font-bold ${lowStock ? "text-red-400 dark:text-red-500" : "text-slate-400"}`}>—</span>
+                                    <span className={`font-bold ${active ? "text-indigo-400 dark:text-indigo-300" : "text-slate-400"}`}>—</span>
                                   )}
                                 </td>
 
-{/* Qty */}
+{/* Qty — only this cell is colored red for low stock */}
                                 <td className="px-3 py-3 text-center">
                                   {qty != null ? (
                                     <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-extrabold text-sm ${lowStock ? "bg-red-600 text-white dark:bg-red-500" : "bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300"}`}>
@@ -567,34 +623,34 @@ className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer tran
                                       {qty}
                                     </span>
                                   ) : (
-                                    <span className={`font-bold ${lowStock ? "text-red-400 dark:text-red-500" : "text-slate-400"}`}>—</span>
+                                    <span className={`font-bold ${lowStock ? "text-red-600 dark:text-red-500" : active ? "text-indigo-400 dark:text-indigo-300" : "text-slate-400"}`}>—</span>
                                   )}
                                 </td>
 
 {/* Purchase prices */}
-                                <td className={`px-3 py-3 text-center font-extrabold text-sm border-l border-slate-100 dark:border-slate-700 ${lowStock ? "text-red-600 dark:text-red-400" : "text-cyan-700 dark:text-cyan-300"}`}>
+                                <td className={`px-3 py-3 text-center font-extrabold text-sm border-l border-slate-100 dark:border-slate-700 ${active ? "text-cyan-600 dark:text-cyan-300" : "text-cyan-700 dark:text-cyan-300"}`}>
                                   {numFmt(p?.pack_purchase_price)}
                                 </td>
-                                <td className={`px-3 py-3 text-center font-bold text-sm ${lowStock ? "text-red-600/90 dark:text-red-400/90" : active ? "text-slate-800 dark:text-slate-100" : "text-slate-600 dark:text-slate-300"}`}>
+                                <td className={`px-3 py-3 text-center font-bold text-sm ${active ? "text-slate-800 dark:text-slate-100" : "text-slate-600 dark:text-slate-300"}`}>
                                   {numFmt(p?.unit_purchase_price)}
                                 </td>
 
                                 {/* Sale prices */}
-                                <td className={`px-3 py-3 text-center font-extrabold text-sm border-l border-slate-100 dark:border-slate-700 ${lowStock ? "text-red-600 dark:text-red-400" : "text-green-700 dark:text-green-300"}`}>
+                                <td className={`px-3 py-3 text-center font-extrabold text-sm border-l border-slate-100 dark:border-slate-700 ${active ? "text-green-600 dark:text-green-300" : "text-green-700 dark:text-green-300"}`}>
                                   {numFmt(p?.pack_sale_price)}
                                 </td>
-                                <td className={`px-3 py-3 text-center font-bold text-sm ${lowStock ? "text-red-600/90 dark:text-red-400/90" : active ? "text-slate-800 dark:text-slate-100" : "text-slate-600 dark:text-slate-300"}`}>
+                                <td className={`px-3 py-3 text-center font-bold text-sm ${active ? "text-slate-800 dark:text-slate-100" : "text-slate-600 dark:text-slate-300"}`}>
                                   {numFmt(p?.unit_sale_price)}
                                 </td>
 
                                 {/* Avg */}
-                                <td className={`px-3 py-3 text-center font-extrabold text-sm ${lowStock ? "text-red-600 dark:text-red-400" : active ? "text-slate-800 dark:text-slate-100" : "text-slate-700 dark:text-slate-200"}`}>
+                                <td className={`px-3 py-3 text-center font-extrabold text-sm ${active ? "text-slate-800 dark:text-slate-100" : "text-slate-700 dark:text-slate-200"}`}>
                                   {numFmt(avg)}
                                 </td>
 
                                 {/* Margin */}
-                                <td className={`px-3 py-3 text-center ${lowStock ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}>
-                                  <span className={`inline-block px-2.5 py-1 rounded-full font-extrabold text-sm ${lowStock ? "bg-red-100 dark:bg-red-900/40" : "bg-emerald-100 dark:bg-emerald-900/40"}`}>
+                                <td className={`px-3 py-3 text-center ${active ? "text-emerald-600 dark:text-emerald-400" : "text-emerald-700 dark:text-emerald-400"}`}>
+                                  <span className="inline-block px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 font-extrabold text-sm">
                                     {margin != null ? `${margin}%` : "—"}
                                   </span>
                                 </td>
