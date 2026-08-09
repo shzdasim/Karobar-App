@@ -31,8 +31,11 @@ class RolesAndPermissionsSeeder extends Seeder
             'customer-ledger.view','customer-ledger.create','customer-ledger.update','customer-ledger.delete',
             'supplier-ledger.view','supplier-ledger.create','supplier-ledger.update','supplier-ledger.delete',
 
-            // Purchase Order Forecast
+// Purchase Order Forecast
             'purchase-order.view','purchase-order.generate',
+
+            // User Demands
+            'user-demands.view','user-demands.create','user-demands.update','user-demands.delete',
 
             // Reports
             'report.cost-of-sale.view', 'report.cost-of-sale.export',

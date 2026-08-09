@@ -43,8 +43,8 @@ class PurchaseOrderController extends Controller
                 DB::raw('MAX(si.date) as last_sold_date_in_range')
             );
 
-        // Only include products that SOLD in the selected period
-        $rows = DB::table('products as p')
+// ---- Products that SOLD in the selected period (STRICT filter) ----
+        $soldRows = DB::table('products as p')
             ->joinSub($salesInRange, 'sx', function ($j) {
                 $j->on('p.id', '=', 'sx.product_id');
             })
@@ -66,11 +66,66 @@ class PurchaseOrderController extends Controller
                 'p.supplier_id',
                 'b.name as brand_name',
                 's.name as supplier_name',
-                DB::raw('sx.units_sold as units_sold'),
-                DB::raw('sx.last_sold_date_in_range as last_sold_date')
+DB::raw('sx.units_sold as units_sold'),
+                DB::raw('sx.last_sold_date_in_range as last_sold_date'),
+                DB::raw('0 as is_user_demand')
             )
             ->orderByDesc('sx.units_sold')
             ->get();
+
+        // ---- Products with active (pending) user demands, even if they didn't sell ----
+        $demandRows = DB::table('user_demands as ud')
+            ->join('products as p', 'p.id', '=', 'ud.product_id')
+            ->leftJoin('brands as b', 'b.id', '=', 'p.brand_id')
+            ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
+            ->where('ud.status', 'pending')
+            ->when($data['supplier_id'] ?? null, fn($q, $sid) => $q->where('p.supplier_id', $sid))
+            ->when($data['brand_id'] ?? null, fn($q, $bid) => $q->where('p.brand_id', $bid))
+            ->groupBy(
+                'p.id', 'p.product_code', 'p.name', 'p.pack_size', 'p.quantity',
+                'p.unit_purchase_price', 'p.pack_purchase_price', 'p.unit_sale_price',
+                'p.brand_id', 'p.supplier_id', 'b.name', 's.name'
+            )
+            ->select(
+                'p.id as product_id',
+                'p.product_code',
+                'p.name as product_name',
+                'p.pack_size as product_pack_size',
+                'p.quantity as current_stock_units',
+                'p.unit_purchase_price',
+                'p.pack_purchase_price',
+                'p.unit_sale_price',
+                'p.brand_id',
+                'p.supplier_id',
+                'b.name as brand_name',
+                's.name as supplier_name',
+                DB::raw('SUM(ud.requested_quantity) as units_sold'),
+                DB::raw('MAX(ud.created_at) as last_sold_date'),
+                DB::raw('1 as is_user_demand')
+            )
+            ->get();
+
+// Merge: sold products first, then any user-demand products not already present.
+        // Mark sold products that also have a pending user demand.
+        $pendingDemandProductIds = DB::table('user_demands')
+            ->where('status', 'pending')
+            ->pluck('product_id')
+            ->map(fn($id) => (int) $id)
+            ->all();
+
+        $seen = [];
+        $rows = collect();
+        foreach ($soldRows as $r) {
+            $seen[(int) $r->product_id] = true;
+            $r->is_user_demand = in_array((int) $r->product_id, $pendingDemandProductIds, true) ? 1 : 0;
+            $rows->push($r);
+        }
+        foreach ($demandRows as $r) {
+            if (isset($seen[(int) $r->product_id])) {
+                continue;
+            }
+            $rows->push($r);
+        }
 
         $items = $rows->map(function ($row) use ($days, $proj, $safetyPacks, $moqPacks) {
             $packSize = max(1, (int) ($row->product_pack_size ?? 0));
@@ -117,9 +172,10 @@ class PurchaseOrderController extends Controller
                 'suggested_units'       => (int) ($suggested * $packSize),
                 'pack_price'            => round($packPrice, 2),
                 'pack_purchase_price'   => (float) $ppp,         // for "Remove Zero"
-                'last_sold_date'        => $row->last_sold_date, // within range
+'last_sold_date'        => $row->last_sold_date, // within range
                 'unit_purchase_price'   => $ppu,
                 'unit_sale_price'       => $row->unit_sale_price,
+                'is_user_demand'        => (int) ($row->is_user_demand ?? 0), // 1 = originated from a user demand
 
                 // Optional: aid debugging in UI (safe to keep or remove)
                 'policy' => [

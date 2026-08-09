@@ -36,15 +36,19 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
   const { user, logout } = useAuth();
   const { theme } = useTheme();
 
-// Poll for low-stock notification count
+// Poll for low-stock + user-demand notification count
   useEffect(() => {
     let cancelled = false;
     const fetchCount = async () => {
       try {
-        const { data } = await axios.get("/api/notifications/low-stock", {
-          params: { limit: 1 },
-        });
-        if (!cancelled) setNotifCount(Number(data?.count || 0));
+        const [lowStockRes, demandsRes] = await Promise.allSettled([
+          axios.get("/api/notifications/low-stock", { params: { limit: 1 } }),
+          axios.get("/api/user-demands", { params: { status: "pending", limit: 1 } }),
+        ]);
+        if (cancelled) return;
+        const lowStockCount = lowStockRes.status === "fulfilled" ? Number(lowStockRes.value.data?.count || 0) : 0;
+        const demandCount = demandsRes.status === "fulfilled" ? Number(demandsRes.value.data?.pending_count || 0) : 0;
+        setNotifCount(lowStockCount + demandCount);
       } catch {
         if (!cancelled) setNotifCount(0);
       }

@@ -31,6 +31,8 @@ import IndexSaleReturn from "../pages/SaleReturn/Index.jsx";
 import CreateSaleReturn from "../pages/SaleReturn/Create.jsx";
 import EditSaleReturn from "../pages/SaleReturn/Edit.jsx";
 import PurchaseOrder from "../pages/PurchaseOrder.jsx";
+import UserDemandsIndex from "../pages/UserDemand/index.jsx";
+import CreateUserDemand from "../pages/UserDemand/Create.jsx";
 import Dashboard from "../pages/Dashboard.jsx";
 import CostOfSaleReport from "../pages/Reports/CostOfSaleReport.jsx";
 import CostOfSaleDetailReport from "../pages/Reports/CostOfSaleDetailReport.jsx";
@@ -337,13 +339,34 @@ export default function AppRoutes() {
         </ProtectedRoute>
       }
       />
-      {/* Purchase Orders */}
+{/* Purchase Orders */}
       <Route
       path="purchase-orders"
       element= {
         <ProtectedRoute>
           <DashboardLayout>
             <PurchaseOrder />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      {/* User Demands */}
+      <Route
+      path="user-demands"
+      element= {
+        <ProtectedRoute>
+          <DashboardLayout>
+            <UserDemandsIndex />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      <Route
+      path="user-demands/create"
+      element= {
+        <ProtectedRoute>
+          <DashboardLayout>
+            <CreateUserDemand />
           </DashboardLayout>
         </ProtectedRoute>
       }

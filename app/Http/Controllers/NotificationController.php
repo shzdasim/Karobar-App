@@ -53,13 +53,13 @@ class NotificationController extends Controller
             $dismissed = [];
         }
 
-        $buildQuery = function ($query) use ($purchasedProductIds, $dismissed) {
-            $query->whereIn('id', $purchasedProductIds)
-                ->whereNotNull('quantity')
-                ->whereColumn('quantity', '<', 'pack_size');
+$buildQuery = function ($query) use ($purchasedProductIds, $dismissed) {
+            $query->whereIn('p.id', $purchasedProductIds)
+                ->whereNotNull('p.quantity')
+                ->whereColumn('p.quantity', '<', 'p.pack_size');
 
             if (count($dismissed) > 0) {
-                $query->whereNotIn('id', array_map('intval', $dismissed));
+                $query->whereNotIn('p.id', array_map('intval', $dismissed));
             }
 
             return $query;
@@ -88,7 +88,7 @@ class NotificationController extends Controller
             ->limit($limit)
             ->get();
 
-        $countQuery = $buildQuery(DB::table('products'));
+$countQuery = $buildQuery(DB::table('products as p'));
         $count = $countQuery->count();
 
         return response()->json([

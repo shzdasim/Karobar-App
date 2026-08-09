@@ -9,7 +9,9 @@ import {
   CheckCircleIcon,
   ArrowPathIcon,
   ArrowRightIcon,
-  BellSlashIcon,
+BellSlashIcon,
+  HandRaisedIcon,
+  PlusCircleIcon,
 } from "@heroicons/react/24/outline";
 
 const fmtNumber = (v) =>
@@ -32,9 +34,15 @@ export default function NotificationCenter({ open, onClose }) {
     danger: theme?.danger_color || '#ef4444',
   }), [theme]);
 
-  const [rows, setRows] = useState([]);
+const [rows, setRows] = useState([]);
   const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(false);
+
+  // User demand tab state
+  const [tab, setTab] = useState("low-stock");
+  const [demands, setDemands] = useState([]);
+  const [demandCount, setDemandCount] = useState(0);
+  const [demandsLoading, setDemandsLoading] = useState(false);
 
   const fetchLowStock = useCallback(async () => {
     setLoading(true);
@@ -53,10 +61,30 @@ export default function NotificationCenter({ open, onClose }) {
     }
   }, []);
 
+  const fetchDemands = useCallback(async () => {
+    setDemandsLoading(true);
+    try {
+      const { data } = await axios.get("/api/user-demands", {
+        params: { status: "pending", limit: 100 },
+      });
+      setDemands(Array.isArray(data?.rows) ? data.rows : []);
+      setDemandCount(Number(data?.pending_count || 0));
+    } catch (err) {
+      console.error("Failed to fetch user demands:", err);
+      setDemands([]);
+      setDemandCount(0);
+    } finally {
+      setDemandsLoading(false);
+    }
+  }, []);
+
   // Fetch when opened
   useEffect(() => {
-    if (open) fetchLowStock();
-  }, [open, fetchLowStock]);
+    if (open) {
+      fetchLowStock();
+      fetchDemands();
+    }
+  }, [open, fetchLowStock, fetchDemands]);
 
   // Close on Escape
   useEffect(() => {
@@ -83,6 +111,11 @@ export default function NotificationCenter({ open, onClose }) {
 const goToProducts = () => {
     onClose();
     navigate("/products");
+  };
+
+  const goToDemands = () => {
+    onClose();
+    navigate("/user-demands");
   };
 
   // Notify Toolbar/topbar listeners that the notification count changed
@@ -147,10 +180,12 @@ const goToProducts = () => {
             <div className="p-2 rounded-xl bg-white/20 backdrop-blur-md">
               <BellIcon className="w-5 h-5" />
             </div>
-            <div>
+<div>
               <h2 className="text-base font-bold leading-none">Notification Center</h2>
               <p className="text-xs text-white/80 mt-1">
-                {count} low stock alert{count === 1 ? "" : "s"}
+                {tab === "low-stock"
+                  ? `${count} low stock alert${count === 1 ? "" : "s"}`
+                  : `${demandCount} pending product demand${demandCount === 1 ? "" : "s"}`}
               </p>
             </div>
           </div>
@@ -177,14 +212,116 @@ const goToProducts = () => {
               title="Close (Esc)"
               className="p-2 rounded-lg hover:bg-white/20 transition-all duration-200"
             >
-              <XMarkIcon className="w-5 h-5" />
+<XMarkIcon className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Body */}
+        {/* Tabs */}
+        <div className="flex border-b border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 pt-2 gap-1">
+          <button
+            onClick={() => setTab("low-stock")}
+            className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-t-lg text-xs font-semibold transition-all duration-200 ${
+              tab === "low-stock"
+                ? "text-white"
+                : "text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-700"
+            }`}
+            style={tab === "low-stock" ? { background: `linear-gradient(to right, ${themeColors.danger}, ${themeColors.secondary})` } : {}}
+          >
+            <ExclamationTriangleIcon className="w-3.5 h-3.5" />
+            Low Stock
+            {count > 0 && (
+              <span className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold inline-flex items-center justify-center"
+                style={{ backgroundColor: tab === "low-stock" ? "rgba(255,255,255,0.3)" : themeColors.danger, color: "#fff" }}>
+                {count > 99 ? "99+" : count}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setTab("demands")}
+            className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-t-lg text-xs font-semibold transition-all duration-200 ${
+              tab === "demands"
+                ? "text-white"
+                : "text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-700"
+            }`}
+            style={tab === "demands" ? { background: `linear-gradient(to right, ${themeColors.tertiary}, ${themeColors.primary})` } : {}}
+          >
+            <HandRaisedIcon className="w-3.5 h-3.5" />
+            Demands
+            {demandCount > 0 && (
+              <span className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold inline-flex items-center justify-center"
+                style={{ backgroundColor: tab === "demands" ? "rgba(255,255,255,0.3)" : themeColors.tertiary, color: "#fff" }}>
+                {demandCount > 99 ? "99+" : demandCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+{/* Body */}
         <div className="h-[calc(100%-64px)] overflow-y-auto">
-          {loading && rows.length === 0 ? (
+          {tab === "demands" ? (
+            demandsLoading && demands.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-500 dark:text-gray-400">
+                <ArrowPathIcon className="w-8 h-8 animate-spin" style={{ color: themeColors.tertiary }} />
+                <span className="text-sm">Loading demands…</span>
+              </div>
+            ) : demands.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full gap-3 p-6 text-center">
+                <div className="p-4 rounded-2xl" style={{ backgroundColor: themeColors.tertiaryLight }}>
+                  <HandRaisedIcon className="w-10 h-10" style={{ color: themeColors.tertiary }} />
+                </div>
+                <h3 className="text-base font-semibold text-gray-800 dark:text-gray-100">No pending demands</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 max-w-[260px]">
+                  Customers haven't requested any new products yet. Click below to add one.
+                </p>
+                <button
+                  onClick={() => { onClose(); navigate("/user-demands/create"); }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white mt-2"
+                  style={{ background: `linear-gradient(to right, ${themeColors.tertiary}, ${themeColors.primary})` }}
+                >
+                  <PlusCircleIcon className="w-4 h-4" />
+                  Request Product
+                </button>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100 dark:divide-slate-700">
+                {demands.map((d) => (
+                  <div
+                    key={d.id}
+                    className="p-4 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer"
+                    onClick={goToDemands}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 rounded-xl shrink-0" style={{ backgroundColor: themeColors.tertiaryLight }}>
+                        <HandRaisedIcon className="w-5 h-5" style={{ color: themeColors.tertiary }} />
+                      </div>
+<div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                          {d.requested_name || d.product?.name || "Product demand"}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          {(d.customer?.name || d.customer_name || "Walk-in customer")} · {d.requested_quantity || d.quantity_requested || 0} unit(s)
+                        </p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                          Requested {d.created_at ? new Date(d.created_at).toLocaleDateString() : ""}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <div className="p-3">
+                  <button
+                    onClick={goToDemands}
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.01]"
+                    style={{ background: `linear-gradient(to right, ${themeColors.tertiary}, ${themeColors.primary})` }}
+                  >
+                    View All Demands
+                    <ArrowRightIcon className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )
+          ) : loading && rows.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-500 dark:text-gray-400">
               <ArrowPathIcon className="w-8 h-8 animate-spin" style={{ color: themeColors.secondary }} />
               <span className="text-sm">Checking stock levels…</span>
@@ -286,8 +423,22 @@ return (
           )}
         </div>
 
-        {/* Footer */}
-        {rows.length > 0 && (
+{/* Footer */}
+        {tab === "demands" && demands.length > 0 ? (
+          <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <button
+              onClick={goToDemands}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99]"
+              style={{
+                background: `linear-gradient(to right, ${themeColors.tertiary}, ${themeColors.primary})`,
+                boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`,
+              }}
+            >
+              View All Demands
+              <ArrowRightIcon className="w-4 h-4" />
+            </button>
+          </div>
+        ) : tab === "low-stock" && rows.length > 0 ? (
           <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800">
             <button
               onClick={goToProducts}
@@ -301,7 +452,7 @@ return (
               <ArrowRightIcon className="w-4 h-4" />
             </button>
           </div>
-        )}
+        ) : null}
       </aside>
     </>
   );

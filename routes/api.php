@@ -33,6 +33,7 @@ use App\Http\Controllers\ThemeSettingController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserPreferenceController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\UserDemandController;
 
 /*
 |--------------------------------------------------------------------------
@@ -167,6 +168,10 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/notifications/low-stock',        [NotificationController::class, 'lowStock']);
     Route::post('/notifications/dismiss',         [NotificationController::class, 'dismiss']);
     Route::post('/notifications/dismiss-all',     [NotificationController::class, 'dismissAll']);
+
+    // User Demands
+    Route::get('/user-demands/count',             [UserDemandController::class, 'count']);
+    Route::apiResource('user-demands',            UserDemandController::class);
 
     // Reports
     Route::get('/reports/cost-of-sale',           [ReportsController::class, 'costOfSale']);
