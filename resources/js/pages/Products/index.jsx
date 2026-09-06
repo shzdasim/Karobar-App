@@ -1,7 +1,7 @@
 // src/pages/products/index.jsx
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import axios from "axios";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   TrashIcon,
@@ -14,6 +14,8 @@ import {
   Squares2X2Icon,
   ArrowPathIcon,
   CubeIcon,
+  ExclamationTriangleIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/solid";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 
@@ -63,6 +65,10 @@ export default function ProductsIndex() {
   const [qName, setQName] = useState("");
   const [qBrand, setQBrand] = useState("");
   const [qSupplier, setQSupplier] = useState("");
+
+  // Low-stock filter (enabled via /products?low_stock=1)
+  const [searchParams] = useSearchParams();
+  const [lowStockOnly, setLowStockOnly] = useState(() => searchParams.get("low_stock") === "1");
 
   // pagination (server-side)
   const [page, setPage] = useState(1);
@@ -301,6 +307,7 @@ export default function ProductsIndex() {
           q_name: qNameArg.trim(),
           q_brand: qBrandArg.trim(),
           q_supplier: qSupplierArg.trim(),
+          low_stock: lowStockOnly ? 1 : '',
         },
         signal,
       });
@@ -319,7 +326,7 @@ export default function ProductsIndex() {
   } finally {
     setLoading(false);
   }
-}, [page, pageSize, qName, qBrand, qSupplier]);
+}, [page, pageSize, qName, qBrand, qSupplier, lowStockOnly]);
 
 
 // Fetch when page or pageSize changes
@@ -345,7 +352,7 @@ useEffect(() => {
     clearTimeout(debounceRef.current);
     ctrl.abort();
   };
-}, [qName, qBrand, qSupplier, permsLoading, can.view]);
+}, [qName, qBrand, qSupplier, lowStockOnly, permsLoading, can.view]);
 
 
   const start = rows.length ? (page - 1) * pageSize + 1 : 0;
@@ -562,7 +569,7 @@ useEffect(() => {
 
         {/* Filter bar integrated in hero */}
         <div className="relative px-6 pt-2 pb-5">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-white/15 backdrop-blur border border-white/20 rounded-xl p-3">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-white/15 backdrop-blur border border-white/20 rounded-xl p-3">
             <div className="flex items-center gap-2">
               <Squares2X2Icon className="w-4 h-4 text-white/80 flex-shrink-0" />
               <TextSearch
@@ -590,7 +597,43 @@ useEffect(() => {
                 className="w-full"
               />
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !lowStockOnly;
+                setLowStockOnly(next);
+                const sp = new URLSearchParams(searchParams);
+                if (next) sp.set("low_stock", "1");
+                else sp.delete("low_stock");
+                const qs = sp.toString();
+                navigate(`/products${qs ? `?${qs}` : ""}`, { replace: true });
+              }}
+              title={
+                lowStockOnly
+                  ? "Low-stock filter is ON — click to clear and show all products"
+                  : "Show only products whose quantity is below pack size"
+              }
+              className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+                lowStockOnly
+                  ? "bg-rose-500/90 text-white shadow-md hover:bg-rose-500"
+                  : "bg-white/15 text-white/85 hover:bg-white/25 border border-white/10"
+              }`}
+            >
+              <ExclamationTriangleIcon className="w-4 h-4" />
+              <span>Low stock only</span>
+              {lowStockOnly && (
+                <XMarkIcon className="w-3.5 h-3.5 opacity-90" />
+              )}
+            </button>
           </div>
+          {lowStockOnly && (
+            <div className="mt-2 flex items-center gap-2 text-xs text-white/80">
+              <span className="inline-flex items-center gap-1 rounded-md bg-rose-500/20 border border-rose-300/30 px-2.5 py-1">
+                <ExclamationTriangleIcon className="w-3.5 h-3.5 text-rose-200" />
+                Showing products whose quantity is below pack size (needs reorder)
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

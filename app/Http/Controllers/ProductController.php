@@ -114,6 +114,7 @@ class ProductController extends Controller
         $qName     = trim((string)$req->input('q_name', ''));
         $qBrand    = trim((string)$req->input('q_brand', ''));
         $qSupplier = trim((string)$req->input('q_supplier', ''));
+        $lowStock  = (int) $req->input('low_stock', 0);
 
         $q = Product::query()
             ->select([
@@ -137,6 +138,19 @@ class ProductController extends Controller
         }
         if ($qSupplier !== '') {
             $q->whereHas('supplier', fn(Builder $s) => $s->where('name', 'like', $qSupplier.'%'));
+        }
+
+        // 🟠 Low stock only — running products (ever purchased) whose on-hand
+        // quantity has dropped below pack_size. Matches the dashboard count and
+        // the low-stock notification logic.
+        if ($lowStock === 1) {
+            $purchasedProductIds = PurchaseInvoiceItem::query()
+                ->distinct()
+                ->pluck('product_id');
+
+            $q->whereIn('id', $purchasedProductIds)
+                ->whereNotNull('quantity')
+                ->whereColumn('quantity', '<', 'pack_size');
         }
 
         $q->orderByDesc('id');

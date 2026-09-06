@@ -31,11 +31,27 @@ class DashboardController extends Controller
         // ---- Totals (use your actual columns) ----
         $salesTotal = (float) SaleInvoice::whereBetween('date', [$from, $to])->sum('total');
 
+        // Sales split by payment type:
+        //   debit  = cash/paid now, credit = sale on account (pay later)
+        $salesCredit = (float) SaleInvoice::whereBetween('date', [$from, $to])
+            ->where('invoice_type', 'credit')
+            ->sum('total');
+        $salesDebit = $salesTotal - $salesCredit;
+
         // Purchases use posted_date; fall back to created_at if null
         $purchasesTotal = (float) PurchaseInvoice::whereBetween(
             DB::raw('DATE(COALESCE(posted_date, created_at))'),
             [$from, $to]
         )->sum('total_amount');
+
+        // Purchases split by payment type:
+        //   debit  = paid now (cash), credit = purchase on account (owe supplier)
+        $purchasesCredit = (float) PurchaseInvoice::whereBetween(
+            DB::raw('DATE(COALESCE(posted_date, created_at))'),
+            [$from, $to]
+        )->where('invoice_type', 'credit')
+            ->sum('total_amount');
+        $purchasesDebit = $purchasesTotal - $purchasesCredit;
 
         $saleReturnsTotal = (float) SaleReturn::whereBetween('date', [$from, $to])->sum('total');
         $purchaseReturnsTotal = (float) PurchaseReturn::whereDate('date', '>=', $from)->whereDate('date', '<=', $to)->sum('total');
@@ -46,6 +62,10 @@ class DashboardController extends Controller
             'sale_returns'     => $saleReturnsTotal,
             'purchase_returns' => $purchaseReturnsTotal,
             'net_sales'        => $salesTotal - $saleReturnsTotal,
+            'sales_credit'     => $salesCredit,
+            'sales_debit'      => $salesDebit,
+            'purchases_credit' => $purchasesCredit,
+            'purchases_debit'  => $purchasesDebit,
         ];
 
         // ---- Series (group by business date) ----
@@ -205,11 +225,17 @@ public function nearExpiryFilters()
         // Total suppliers
         $supplierCount = DB::table('suppliers')->count();
 
+        // Total customers
+        $customerCount = DB::table('customers')->count();
+
         // Total brands
         $brandCount = DB::table('brands')->count();
 
         // Total categories
         $categoryCount = DB::table('categories')->count();
+
+        // Total users
+        $userCount = DB::table('users')->count();
 
         // Near expiry count (within 3 months)
         $nearExpiryCount = DB::table('batches as b')
@@ -218,12 +244,46 @@ public function nearExpiryFilters()
             ->where('b.expiry_date', '<=', now()->addMonths(3)->toDateString())
             ->count();
 
+        // Low stock count — running products (ever purchased) whose on-hand
+        // quantity has dropped below pack_size. Mirrors the notification logic.
+        $purchasedProductIds = DB::table('purchase_invoice_items')
+            ->distinct()
+            ->pluck('product_id');
+
+        $lowStockCount = DB::table('products')
+            ->whereIn('id', $purchasedProductIds)
+            ->whereNotNull('quantity')
+            ->whereColumn('quantity', '<', 'pack_size')
+            ->count();
+
+        // Amount of stock adjustment documents posted
+        $stockAdjustmentCount = DB::table('stock_adjustments')->count();
+
+        // User-demands still awaiting action
+        $pendingDemandsCount = DB::table('user_demands')
+            ->where('status', 'pending')
+            ->count();
+
+        // Approx stock on hand (units) and valuation
+        $stockUnits = (float) DB::table('products')->sum('quantity');
+
+        $stockValue = (float) DB::table('products')
+            ->selectRaw('COALESCE(SUM(COALESCE(quantity,0) * COALESCE(avg_price, unit_purchase_price, pack_purchase_price, 0)), 0) as value')
+            ->value('value');
+
         return response()->json([
-            'active_products' => $activeProducts,
-            'suppliers' => $supplierCount,
-            'brands' => $brandCount,
-            'categories' => $categoryCount,
-            'near_expiry' => $nearExpiryCount,
+            'active_products'    => $activeProducts,
+            'customers'          => $customerCount,
+            'suppliers'          => $supplierCount,
+            'brands'             => $brandCount,
+            'categories'         => $categoryCount,
+            'users'              => $userCount,
+            'near_expiry'        => $nearExpiryCount,
+            'low_stock'          => $lowStockCount,
+            'stock_adjustments'  => $stockAdjustmentCount,
+            'pending_demands'    => $pendingDemandsCount,
+            'stock_units'        => $stockUnits,
+            'stock_value'        => $stockValue,
         ]);
     }
 
