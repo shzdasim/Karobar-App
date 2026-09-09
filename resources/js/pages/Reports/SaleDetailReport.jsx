@@ -13,6 +13,7 @@ import {
   GlassBtn,
 } from "@/components/glass.jsx";
 import { useTheme } from "@/context/ThemeContext";
+import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 
 import { 
   ArrowDownOnSquareIcon, 
@@ -227,6 +228,7 @@ export default function SaleDetailReport() {
 
   // Get dark mode state and theme colors
   const { isDark, theme } = useTheme();
+  const { isPharmacy } = useSaleSystem();
 
   // 🎨 Modern button palette (will use dynamic theme colors)
   const tintPrimary = useMemo(() => `
@@ -829,9 +831,14 @@ export default function SaleDetailReport() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-6 text-xs">
                   <KV isDark={isDark} label="User:" value={inv.user_name || "-"} />
-                  <KV isDark={isDark} label="Doctor:" value={inv.doctor_name || "-"} />
-                  <KV isDark={isDark} label="Patient:" value={inv.patient_name || "-"} />
+                  {(isPharmacy || inv?.doctor_name || inv?.patient_name) && (
+                    <>
+                      <KV isDark={isDark} label="Doctor:" value={inv.doctor_name || "-"} />
+                      <KV isDark={isDark} label="Patient:" value={inv.patient_name || "-"} />
+                    </>
+                  )}
                 </div>
+                {isPharmacy && (
                 <Guard when={can.edit}>
                   {editingInvoiceId === inv.id ? (
                     <div className="flex gap-1">
@@ -865,10 +872,11 @@ export default function SaleDetailReport() {
                     </GlassBtn>
                   )}
                 </Guard>
+                )}
               </div>
               
-              {/* Edit inputs */}
-              {editingInvoiceId === inv.id && (
+              {/* Edit inputs (pharmacy only — doctor/patient are pharmacy fields) */}
+              {isPharmacy && editingInvoiceId === inv.id && (
                 <div className="flex gap-2 mt-2">
                   <GlassInput
                     className="h-7 text-xs"

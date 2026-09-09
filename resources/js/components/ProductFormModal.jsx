@@ -5,6 +5,7 @@ import Select from "react-select";
 import AsyncSelect from "react-select/async";
 import toast from "react-hot-toast";
 import { useTheme } from "@/context/ThemeContext.jsx";
+import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -83,6 +84,7 @@ const supplierRef = useRef(null);
   const [isResizing, setIsResizing] = useState(false);
 
   const { isDark, theme } = useTheme();
+  const { isPharmacy } = useSaleSystem();
 
   // Memoize theme colors for performance
   const themeColors = useMemo(() => {
@@ -544,8 +546,8 @@ style={{
               </div>
             </div>
 
-            {/* Name / Formulation / Pack Size */}
-            <div className="grid grid-cols-3 gap-3">
+            {/* Name / Formulation / Pack Size (Formulation only for pharmacy shops) */}
+            <div className={`grid ${isPharmacy ? "grid-cols-3" : "grid-cols-2"} gap-3`}>
               <div>
                 <label className="block text-xs font-medium mb-1 dark:text-slate-300">Name *</label>
 <input
@@ -554,11 +556,12 @@ style={{
                   name="name"
                   value={form.name || ""}
                   onChange={handleChange}
-                  onKeyDown={(e) => handleEnterNav(e, "formulation")}
+                  onKeyDown={(e) => handleEnterNav(e, isPharmacy ? "formulation" : "pack_size")}
                   className="w-full h-8 px-2 text-xs border rounded dark:bg-slate-700 dark:text-slate-200"
                   placeholder="Product name"
                 />
               </div>
+              {isPharmacy && (
               <div>
                 <label className="block text-xs font-medium mb-1 dark:text-slate-300">Formulation</label>
 <input
@@ -571,6 +574,7 @@ style={{
                   className="w-full h-8 px-2 text-xs border rounded dark:bg-slate-700 dark:text-slate-200"
                 />
               </div>
+              )}
               <div>
                 <label className="block text-xs font-medium mb-1 dark:text-slate-300">Pack Size</label>
 <input
@@ -671,7 +675,8 @@ onKeyDown={(e) => {
               />
             </div>
 
-{/* Narcotic checkbox */}
+{/* Narcotic checkbox — pharmacy only */}
+            {isPharmacy && (
             <div className="flex items-center gap-2">
               <label className="inline-flex items-center gap-1.5 text-xs dark:text-slate-300">
                 <input
@@ -685,6 +690,7 @@ onKeyDown={(e) => {
                 <span>Narcotic</span>
               </label>
             </div>
+            )}
           </div>
         </form>
 

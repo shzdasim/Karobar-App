@@ -8,6 +8,7 @@ import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext";
 // Search modal
 import SaleInvoiceSearch from "@/components/SaleInvoiceSearch.jsx";
+import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -38,6 +39,7 @@ export default function SaleInvoiceShow() {
 
 // Get theme colors
   const { theme, isDark } = useTheme();
+  const { isPharmacy } = useSaleSystem();
 
   // Memoize theme colors for performance
   const themeColors = useMemo(() => {
@@ -618,6 +620,8 @@ export default function SaleInvoiceShow() {
                 <span className="truncate">{inv.customer?.name ?? inv.customer_id ?? ""}</span>
               </div>
             </div>
+            {(isPharmacy || inv?.doctor_name || inv?.patient_name) && (
+            <>
             <div className="col-span-2">
               <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Doctor</label>
               <input
@@ -636,6 +640,8 @@ export default function SaleInvoiceShow() {
                 className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
               />
             </div>
+            </>
+          )}
 
             <div className="col-span-10">
               <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Remarks</label>

@@ -9,6 +9,7 @@ import {
   CurrencyDollarIcon,
 } from "@heroicons/react/24/solid";
 import { GlassCard, GlassInput, GlassToolbar } from "@/components/glass";
+import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 
 /* ─────────────── Helpers ─────────────── */
 function fmtMoney(v) {
@@ -33,6 +34,7 @@ function ResultRow({ invoice, active, onHover, onOpen, rowRef }) {
   const received = Number(invoice.total_receive ?? 0);
   const remaining = invoice.remaining ?? Math.max(invTotal - received, 0);
   const isCredit = invoice.invoice_type === 'credit';
+  const { isPharmacy } = useSaleSystem();
 
   return (
     <li
@@ -76,7 +78,7 @@ function ResultRow({ invoice, active, onHover, onOpen, rowRef }) {
               <UserIcon className="w-3 h-3 flex-shrink-0" />
               <span className="truncate">{invoice.customer_name || "N/A"}</span>
             </div>
-            {(invoice.doctor_name || invoice.patient_name) && (
+            {isPharmacy && (invoice.doctor_name || invoice.patient_name) && (
               <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 <span className="truncate">
                   {invoice.doctor_name && <span>Dr: {invoice.doctor_name}</span>}

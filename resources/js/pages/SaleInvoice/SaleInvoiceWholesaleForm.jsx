@@ -8,6 +8,7 @@ import BatchSearchInput from "../../components/BatchSearchInput.jsx";
 import CustomerSearch from "../../components/CustomerSearch.jsx";
 import { recalcItem, recalcFooter } from "../../Formula/SaleInvoice.js";
 import { useTheme } from "@/context/ThemeContext";
+import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -232,6 +233,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
 
   // Get dark mode state and theme colors
   const { isDark, theme } = useTheme();
+  const { isPharmacy } = useSaleSystem();
 
   // Memoize theme colors for performance
   const themeColors = useMemo(() => {
@@ -990,7 +992,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
     // Check if any item has a narcotic product
     const hasNarcoticProduct = form.items.some(item => item.is_narcotic === true);
 
-    if (hasNarcoticProduct) {
+    if (isPharmacy && hasNarcoticProduct) {
       if (!form.doctor_name || form.doctor_name.trim() === "") {
         return toast.error("Doctor name is required for narcotic products");
       }
@@ -1377,6 +1379,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                 )}
               </button>
             </div>
+            {isPharmacy && (
             <div className="col-span-2">
               <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Doctor</label>
               <input
@@ -1388,6 +1391,8 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                 className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
               />
             </div>
+            )}
+            {isPharmacy && (
             <div className="col-span-2">
               <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Patient</label>
               <input
@@ -1399,6 +1404,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                 className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
               />
             </div>
+            )}
 
             <div className="col-span-10">
               <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Remarks</label>

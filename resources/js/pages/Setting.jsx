@@ -72,6 +72,7 @@ export default function Setting() {
     a4_template: "standard",
     navigation_style: "sidebar",
     sale_system: "retail_wholesale",
+    shop_type: "pharmacy",
   });
 
   // FilePond files (supports remote preload)
@@ -281,6 +282,7 @@ export default function Setting() {
         a4_template: data.a4_template || "standard",
         navigation_style: data.navigation_style || "sidebar",
         sale_system: data.sale_system || "retail_wholesale",
+        shop_type: data.shop_type || "pharmacy",
       });
 
       // Preload existing logo into FilePond as remote file
@@ -308,6 +310,11 @@ export default function Setting() {
     setForm((s) => ({ ...s, sale_system: value }));
   };
 
+  const handleShopTypeChange = (e) => {
+    const { value } = e.target;
+    setForm((s) => ({ ...s, shop_type: value }));
+  };
+
   const handleSave = async () => {
     if (!can.update) {
       toast.error("You don’t have permission to update settings.");
@@ -326,6 +333,7 @@ export default function Setting() {
       fd.append("a4_template", form.a4_template || "standard");
       fd.append("navigation_style", form.navigation_style || "sidebar");
       fd.append("sale_system", form.sale_system || "retail_wholesale");
+      fd.append("shop_type", form.shop_type || "pharmacy");
 
       // If user selected a new file (files[0].file will exist)
       if (files.length > 0 && files[0].file) {
@@ -572,6 +580,7 @@ export default function Setting() {
         <SaleSystemSetting
           form={form}
           handleSaleSystemChange={handleSaleSystemChange}
+          handleShopTypeChange={handleShopTypeChange}
           disableInputs={disableInputs}
           themeColors={themeColors}
         />

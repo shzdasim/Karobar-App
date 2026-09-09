@@ -5,6 +5,7 @@ const SaleSystemContext = createContext(null);
 
 export function SaleSystemProvider({ children }) {
   const [saleSystem, setSaleSystem] = useState("retail_wholesale"); // default to retail + wholesale
+  const [shopType, setShopType] = useState("pharmacy"); // default to pharmacy
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,6 +27,7 @@ export function SaleSystemProvider({ children }) {
     try {
       const { data } = await axios.get("/api/settings");
       setSaleSystem(data?.sale_system || "retail_wholesale");
+      setShopType(data?.shop_type || "pharmacy");
     } catch (error) {
       console.error("Failed to fetch sale system setting:", error);
       setSaleSystem("retail_wholesale"); // default on error
@@ -37,10 +39,16 @@ export function SaleSystemProvider({ children }) {
   const hasWholesale = saleSystem === "retail_wholesale";
   const isRetailOnly = saleSystem === "retail";
 
+  const isPharmacy = shopType === "pharmacy";
+  const isGeneralStore = shopType === "general_store";
+
   const value = {
     saleSystem,
     hasWholesale,
     isRetailOnly,
+    shopType,
+    isPharmacy,
+    isGeneralStore,
     loading,
     refreshSaleSystem: fetchSaleSystem,
   };

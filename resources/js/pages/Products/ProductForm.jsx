@@ -26,6 +26,7 @@ import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
 // 🧊 glass primitives
 import { GlassCard, GlassInput, GlassBtn } from "@/components/glass.jsx";
 import { useTheme } from "@/context/ThemeContext";
+import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 
 registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);
 
@@ -60,6 +61,9 @@ const ProductFormFields = forwardRef(({
   primaryTextColor
 }, ref) => {
   const [brandOption, setBrandOption] = useState(null);
+
+  // Pharmacy shop types get the formulation + narcotic fields
+  const { isPharmacy } = useSaleSystem();
 
   // Reset brand option when form.brand_id changes to null/empty
   useEffect(() => {
@@ -121,10 +125,11 @@ const ProductFormFields = forwardRef(({
             <label className="block text-xs font-medium mb-1 dark:text-slate-300">Barcode</label>
             <GlassInput type="text" name="barcode" value={form.barcode || ""} disabled className="w-full bg-white/70 dark:bg-slate-700/70 text-sm h-8 dark:text-slate-200" />
           </div>
-          <div>
+          <div className={isPharmacy ? "" : "col-span-2"}>
             <label className="block text-xs font-medium mb-1 dark:text-slate-300">Rack</label>
             <GlassInput type="text" name="rack" value={form.rack || ""} onChange={handleChange} className="w-full text-sm h-8 dark:bg-slate-700/70 dark:text-slate-200" />
           </div>
+          {isPharmacy && (
           <div className="flex items-end">
             <label className="inline-flex items-center gap-1.5 text-xs dark:text-slate-300">
               <input
@@ -138,11 +143,12 @@ const ProductFormFields = forwardRef(({
               <span>Narcotic</span>
             </label>
           </div>
+          )}
         </div>
       </div>
 
-      {/* Name / Formulation / Pack Size */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {/* Name / Formulation / Pack Size (Formulation only for pharmacy shops) */}
+      <div className={`grid grid-cols-1 ${isPharmacy ? "md:grid-cols-3" : "md:grid-cols-2"} gap-3`}>
         <div>
           <label className="block text-xs font-medium mb-1 dark:text-slate-300">Name *</label>
           <GlassInput
@@ -154,13 +160,14 @@ const ProductFormFields = forwardRef(({
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                formulationRef.current?.focus();
+                (isPharmacy ? formulationRef : packSizeRef).current?.focus();
               }
             }}
             className="w-full text-sm h-8 dark:bg-slate-700/70 dark:text-slate-200"
             placeholder="Product name"
           />
         </div>
+        {isPharmacy && (
         <div>
           <label className="block text-xs font-medium mb-1 dark:text-slate-300">Formulation</label>
           <GlassInput
@@ -178,6 +185,7 @@ const ProductFormFields = forwardRef(({
             className="w-full text-sm h-8 dark:bg-slate-700/70 dark:text-slate-200"
           />
         </div>
+        )}
         <div>
           <label className="block text-xs font-medium mb-1 dark:text-slate-300">Pack Size</label>
           <GlassInput

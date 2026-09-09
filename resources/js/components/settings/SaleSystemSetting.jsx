@@ -12,6 +12,8 @@ import {
   ArrowTrendingUpIcon,
   InformationCircleIcon,
   SparklesIcon,
+  BeakerIcon,
+  BuildingStorefrontIcon,
 } from "@heroicons/react/24/solid";
 
 // Feature sets shown for each sale system mode
@@ -48,14 +50,53 @@ const FEATURES = {
   },
 };
 
+// Shop type choices shown for each kind of store
+const SHOP_TYPES = {
+  pharmacy: {
+    icon: BeakerIcon,
+    accent: 'teal',
+    title: 'Pharmacy',
+    tagline: 'Medicine, controlled items & prescription sales',
+    description:
+      'Best for medical / pharmacy stores. Unlocks pharmacy-specific fields like product formulation, the narcotic / controlled-product flag, and Doctor & Patient name fields on sale invoices.',
+    bullets: [
+      'Formulation field on product entry',
+      'Narcotic / controlled-product flag',
+      'Doctor & Patient name fields on sale invoices',
+      'Doctor / Patient shown in search & reports',
+    ],
+  },
+  general_store: {
+    icon: BuildingStorefrontIcon,
+    accent: 'amber',
+    title: 'General Store',
+    tagline: 'Everyday retail goods — no pharmacy-specific fields',
+    description:
+      'Best for general / grocery / non-pharmacy stores. Hides pharmacy-only fields so product entry and sale invoices stay clean and focused on standard pricing and stock.',
+    bullets: [
+      'No formulation field on product entry',
+      'No narcotic / controlled-product flag',
+      'No Doctor / Patient fields on sale invoices',
+      'Clean, generic sale invoice workflow',
+    ],
+  },
+};
+
 export default function SaleSystemSetting({
   form,
   handleSaleSystemChange,
+  handleShopTypeChange,
   disableInputs,
   themeColors,
 }) {
   const { isDark } = useTheme();
-  const { saleSystem: activeSaleSystem, hasWholesale, loading: saleSystemLoading } = useSaleSystem();
+  const {
+    saleSystem: activeSaleSystem,
+    hasWholesale,
+    shopType: activeShopType,
+    isPharmacy,
+    loading: saleSystemLoading,
+  } = useSaleSystem();
 
   // Use passed themeColors if available, otherwise use defaults
   const colors = themeColors || {
@@ -70,7 +111,11 @@ export default function SaleSystemSetting({
   // Pending selection (from the settings form) falls back to the saved system
   const selected = form?.sale_system || activeSaleSystem || 'retail_wholesale';
 
+  // Pending shop type falls back to the saved shop type
+  const selectedShopType = form?.shop_type || activeShopType || 'pharmacy';
+
   const activeLabel = hasWholesale ? 'Retail + Wholesale' : 'Retail Only';
+  const activeShopTypeLabel = isPharmacy ? 'Pharmacy' : 'General Store';
   const activeNote = hasWholesale
     ? 'Wholesale is enabled — you can sell both retail and in bulk.'
     : 'Retail only — wholesale columns and bulk sale actions are hidden.';
@@ -89,7 +134,7 @@ export default function SaleSystemSetting({
           <div>
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Sale System Configuration</h2>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Choose how your business handles sales — retail only, or retail + wholesale.
+              Choose your sale mode (retail / wholesale) and shop type (pharmacy / general store).
             </p>
           </div>
         </div>
@@ -111,6 +156,16 @@ export default function SaleSystemSetting({
               {activeLabel}
             </span>
           )}
+          <span
+            className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full ${
+              isPharmacy
+                ? "bg-teal-50 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300 ring-1 ring-teal-200 dark:ring-teal-700"
+                : "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-700"
+            }`}
+          >
+            <CheckBadgeIcon className="w-3.5 h-3.5" />
+            {activeShopTypeLabel}
+          </span>
           <span className={`text-xs ${isDark ? "text-slate-400" : "text-gray-500"}`}>{activeNote}</span>
           {!saleSystemLoading && (
             <span className="ml-auto text-[11px] text-gray-400 dark:text-gray-500">
@@ -182,6 +237,88 @@ export default function SaleSystemSetting({
                   {feature.bullets.map((bullet, i) => (
                     <div key={i} className="flex items-start gap-1.5">
                       <CheckIcon className={`w-3.5 h-3.5 shrink-0 ${isActive ? textAccent : "text-gray-400"}`} />
+                      <span className={`text-[11px] leading-snug ${isDark ? "text-slate-400" : "text-gray-600"}`}>
+                        {bullet}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </label>
+            );
+          })}
+        </div>
+      </GlassCard>
+
+      {/* ===== Shop Type Selection ===== */}
+      <GlassCard>
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-slate-700">
+          <BuildingStorefrontIcon className="w-4 h-4 text-teal-500" />
+          <h2 className="text-sm font-medium text-gray-900 dark:text-white">Choose a Shop Type</h2>
+        </div>
+
+        <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          {Object.entries(SHOP_TYPES).map(([key, shopTypeFeature]) => {
+            const Icon = shopTypeFeature.icon;
+            const isActive = selectedShopType === key;
+            const accent = shopTypeFeature.accent; // 'teal' | 'amber'
+            const accentMap = {
+              teal: {
+                activeBorder: 'border-teal-500 bg-teal-50 dark:bg-teal-900/20 ring-2 ring-teal-200 dark:ring-teal-800',
+                textAccent: 'text-teal-700 dark:text-teal-400',
+                radioActive: 'border-teal-500 bg-teal-500',
+              },
+              amber: {
+                activeBorder: 'border-amber-500 bg-amber-50 dark:bg-amber-900/20 ring-2 ring-amber-200 dark:ring-amber-800',
+                textAccent: 'text-amber-700 dark:text-amber-400',
+                radioActive: 'border-amber-500 bg-amber-500',
+              },
+            }[accent] || {
+              activeBorder: 'border-teal-500 bg-teal-50 dark:bg-teal-900/20 ring-2 ring-teal-200 dark:ring-teal-800',
+              textAccent: 'text-teal-700 dark:text-teal-400',
+              radioActive: 'border-teal-500 bg-teal-500',
+            };
+
+            return (
+              <label
+                key={key}
+                className={`relative flex flex-col p-3 rounded-xl border-2 cursor-pointer transition-all duration-200 ${
+                  isActive ? accentMap.activeBorder : 'border-gray-200 dark:border-slate-600 hover:border-gray-300 dark:hover:border-slate-500'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="shop_type"
+                  value={key}
+                  checked={isActive}
+                  onChange={handleShopTypeChange}
+                  disabled={disableInputs}
+                  className="sr-only"
+                />
+
+                {/* Title + radio indicator */}
+                <div className="flex items-center gap-2 mb-1">
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                    isActive ? accentMap.radioActive : 'border-gray-300 dark:border-slate-500'
+                  }`}>
+                    {isActive && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </div>
+                  <Icon className={`w-5 h-5 ${isActive ? accentMap.textAccent : "text-gray-400"}`} />
+                  <span className={`font-semibold text-sm ${isDark ? "text-slate-200" : "text-gray-800"}`}>
+                    {shopTypeFeature.title}
+                  </span>
+                  {isActive && <CheckIcon className={`w-4 h-4 ml-auto ${accentMap.textAccent}`} />}
+                </div>
+
+                <p className={`text-[11px] ${isDark ? "text-slate-400" : "text-gray-500"}`}>{shopTypeFeature.tagline}</p>
+                <p className={`text-xs mt-1 leading-relaxed ${isDark ? "text-slate-300" : "text-gray-700"}`}>
+                  {shopTypeFeature.description}
+                </p>
+
+                {/* Feature bullets */}
+                <div className="mt-2 space-y-1">
+                  {shopTypeFeature.bullets.map((bullet, i) => (
+                    <div key={i} className="flex items-start gap-1.5">
+                      <CheckIcon className={`w-3.5 h-3.5 shrink-0 ${isActive ? accentMap.textAccent : "text-gray-400"}`} />
                       <span className={`text-[11px] leading-snug ${isDark ? "text-slate-400" : "text-gray-600"}`}>
                         {bullet}
                       </span>

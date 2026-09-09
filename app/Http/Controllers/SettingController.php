@@ -19,6 +19,7 @@ class SettingController extends Controller
             'a4_template' => 'standard',
             'navigation_style' => 'sidebar',
             'sale_system' => 'retail_wholesale',
+            'shop_type' => 'pharmacy',
         ]);
 
         return response()->json($setting);
@@ -41,6 +42,7 @@ class SettingController extends Controller
             'a4_template' => ['nullable', Rule::in(['standard','minimal','detailed','compact','bold','barcode'])],
             'navigation_style' => ['nullable', Rule::in(['sidebar','topbar'])],
             'sale_system'    => ['nullable', Rule::in(['retail', 'retail_wholesale'])],
+            'shop_type'      => ['nullable', Rule::in(['pharmacy', 'general_store'])],
             'logo'           => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],
         ]);
 
@@ -65,6 +67,11 @@ class SettingController extends Controller
         // Ensure sale_system is always updated (it might not be in validated if null)
         if ($request->has('sale_system')) {
             $setting->sale_system = $request->input('sale_system');
+        }
+        
+        // Ensure shop_type is always updated (it might not be in validated if null)
+        if ($request->has('shop_type')) {
+            $setting->shop_type = $request->input('shop_type');
         }
         
         $setting->save();
