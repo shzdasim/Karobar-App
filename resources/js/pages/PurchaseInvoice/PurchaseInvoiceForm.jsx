@@ -316,7 +316,45 @@ useEffect(() => {
     }
 
     const newItems = [...form.items];
-    newItems[index] = recalcItem({ ...newItems[index], [field]: value }, field);
+    // Base item with only the edited field applied
+    let nextItem = { ...newItems[index], [field]: value };
+
+    // Keep wholesale pack price in sync with the retail pack sale price so users
+    // in retail mode get sensible default wholesale prices when they later switch
+    // to wholesale mode. Only auto-update while the wholesale price is still
+    // "linked" (blank/0, or numerically equal to the previous retail price) so a
+    // deliberately different wholesale price is not clobbered.
+    let syncWholesale = false;
+    if (field === "pack_sale_price") {
+      const oldPackSale = newItems[index].pack_sale_price;
+      const oldWholeSale = newItems[index].whole_sale_pack_price;
+      // recalcItem persists blank wholesale fields as the number 0, so treat
+      // 0 / "0" as "empty" too.
+      const isBlank = (v) =>
+        v === "" || v === null || v === undefined || v === 0 || v === "0";
+      const wholesaleEmpty = isBlank(oldWholeSale);
+      const wholesaleLinked =
+        !wholesaleEmpty &&
+        !isBlank(oldPackSale) &&
+        Number(oldWholeSale) === Number(oldPackSale);
+      syncWholesale = wholesaleEmpty || wholesaleLinked;
+
+      if (syncWholesale) {
+        nextItem.whole_sale_pack_price = value;
+        nextItem.whole_sale_unit_price = "";
+      }
+    }
+
+    newItems[index] = recalcItem(nextItem, field);
+
+    // Second pass with the wholesale side treated as the changed field so the
+    // wholesale unit price & margin derive from the (possibly synced) pack price,
+    // then restore the raw text of the field the user is editing.
+    if (syncWholesale) {
+      const rawEdited = nextItem[field];
+      newItems[index] = recalcItem(newItems[index], "whole_sale_pack_price");
+      newItems[index][field] = rawEdited;
+    }
 
     let newForm = { ...form, items: newItems };
     newForm = recalcFooter(newForm, "items");
@@ -984,8 +1022,8 @@ const contRect = container.getBoundingClientRect();
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
-                <line x1="8" y1="13" x2="16" y1="13" />
-                <line x1="8" y1="17" x2="13" y1="17" />
+                <line x1="8" y1="13" x2="16" y2="13" />
+                <line x1="8" y1="17" x2="13" y2="17" />
               </svg>
             </div>
             <div>
