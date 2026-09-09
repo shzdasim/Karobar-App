@@ -31,10 +31,12 @@ import {
   ServerIcon,
   Bars3Icon,
   ViewColumnsIcon,
+  ShoppingCartIcon,
 } from "@heroicons/react/24/solid";
 
 // Setting Components
 import GeneralSetting from "@/components/settings/GeneralSetting.jsx";
+import SaleSystemSetting from "@/components/settings/SaleSystemSetting.jsx";
 import ThemeSetting from "@/components/settings/ThemeSetting.jsx";
 import PrinterSetting from "@/components/settings/PrinterSetting.jsx";
 import LicenseSetting from "@/components/settings/LicenseSetting.jsx";
@@ -82,6 +84,8 @@ export default function Setting() {
   useEffect(() => {
     if (window.location.hash === "#license") {
       setActiveTab("license");
+    } else if (window.location.hash === "#sale") {
+      setActiveTab("sale");
     }
   }, []);
 
@@ -96,7 +100,6 @@ export default function Setting() {
   const licenseRef = useRef(null);
   const noteRef = useRef(null);
   const saveBtnRef = useRef(null);
-  const saleSystemRef = useRef(null);
 
   // 🔒 permissions
   const { loading: permsLoading, canFor } = usePermissions();
@@ -456,6 +459,24 @@ export default function Setting() {
             <span>General</span>
           </button>
           
+          {/* Sale System Settings Tab */}
+          <button
+            onClick={() => setActiveTab("sale")}
+            className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
+              activeTab === "sale"
+                ? ""
+                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
+            }`}
+            style={activeTab === "sale" ? {
+              borderColor: themeColors.primary,
+              color: themeColors.primary,
+              backgroundColor: `${themeColors.primaryLight}70`,
+            } : {}}
+          >
+            <ShoppingCartIcon className="w-5 h-5" />
+            <span>Sale System</span>
+          </button>
+
           {/* Theme Settings Tab */}
           <button
             onClick={() => setActiveTab("navigation")}
@@ -544,8 +565,15 @@ export default function Setting() {
           licenseRef={licenseRef}
           themeColors={themeColors}
           primaryTextColor={primaryTextColor}
-          saleSystemRef={saleSystemRef}
+        />
+      )}
+
+      {activeTab === "sale" && (
+        <SaleSystemSetting
+          form={form}
           handleSaleSystemChange={handleSaleSystemChange}
+          disableInputs={disableInputs}
+          themeColors={themeColors}
         />
       )}
 
