@@ -12,6 +12,8 @@ import {
   CubeIcon,
   TagIcon,
   BuildingStorefrontIcon,
+  ArrowUturnLeftIcon,
+  HandRaisedIcon,
 } from "@heroicons/react/24/solid";
 import { usePermissions } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext.jsx";
@@ -251,12 +253,18 @@ export default function PurchaseOrder() {
   const [moqPacks, setMoqPacks] = useState(0);
 
 const [supplier, setSupplier] = useState(null);
-  const [brand, setBrand] = useState(null);
+  const [brands, setBrands] = useState([]); // supports multiple selected brands
   const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
   const [brandSearchOpen, setBrandSearchOpen] = useState(false);
 
 const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // === result filters (client-side, applied to the fetched rows) ===
+  const [resultBrandId, setResultBrandId] = useState("all"); // "all" | brand key ("none" = no brand)
+  const [stockFilter, setStockFilter] = useState("all"); // all | out | low | in
+  const [lowStockThreshold, setLowStockThreshold] = useState(10);
+  const [orderFilter, setOrderFilter] = useState("all"); // all | to_order | no_order
 
   // === printer type (a4 | thermal) — respects saved setting ===
   const [printerType, setPrinterType] = useState("a4");
@@ -279,7 +287,61 @@ const [rows, setRows] = useState([]);
       .catch(() => {});
   }, []);
 
-  // Alt+P: print
+  const fmt2 = (v) => Number(v ?? 0).toFixed(2);
+
+  // === Result filters: brand options come only from brands present in the current results ===
+  const availableBrands = useMemo(() => {
+    const map = new Map();
+    for (const r of rows) {
+      const id = r.brand_id ?? null;
+      const key = String(id ?? "none");
+      if (!map.has(key)) {
+        map.set(key, { key, id, name: r.brand_name || (id ? `Brand #${id}` : "No Brand"), count: 0 });
+      }
+      map.get(key).count += 1;
+    }
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows]);
+
+  // Rows visible in the table after applying the result filters
+  const visibleRows = useMemo(() => {
+    return rows.filter((r) => {
+      if (resultBrandId !== "all" && String(r.brand_id ?? "none") !== String(resultBrandId)) return false;
+
+      const stock = Number(r.current_stock_units || 0);
+      if (stockFilter === "out" && stock !== 0) return false;
+      if (stockFilter === "low" && stock > lowStockThreshold) return false;
+      if (stockFilter === "in" && stock <= 0) return false;
+
+      const packs = Number(r.order_packs || 0);
+      if (orderFilter === "to_order" && packs <= 0) return false;
+      if (orderFilter === "no_order" && packs > 0) return false;
+
+      return true;
+    });
+  }, [rows, resultBrandId, stockFilter, lowStockThreshold, orderFilter]);
+
+  const hasActiveResultFilters =
+    resultBrandId !== "all" || stockFilter !== "all" || orderFilter !== "all";
+
+  const clearResultFilters = () => {
+    setResultBrandId("all");
+    setStockFilter("all");
+    setOrderFilter("all");
+  };
+
+  // Rows to print: the visible (filtered) rows with order_packs > 0 — what you see is what you print
+  const printRows = useMemo(
+    () => visibleRows.filter((r) => Number(r.order_packs || 0) > 0),
+    [visibleRows]
+  );
+
+  const printTotalPacks = useMemo(
+    () => printRows.reduce((sum, r) => sum + Number(r.order_packs || 0), 0),
+    [printRows]
+  );
+
+  // Alt+P: print (must be declared after printRows so its deps array can reference it)
   useEffect(() => {
     const onKey = (e) => {
       if (!e.altKey) return;
@@ -290,27 +352,23 @@ const [rows, setRows] = useState([]);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [rows, canView, printerType]);
-
-  const fmt2 = (v) => Number(v ?? 0).toFixed(2);
-
-  // Rows to print: only products with order_packs > 0
-  const printRows = useMemo(
-    () => rows.filter((r) => Number(r.order_packs || 0) > 0),
-    [rows]
-  );
-
-  const printTotalPacks = useMemo(
-    () => printRows.reduce((sum, r) => sum + Number(r.order_packs || 0), 0),
-    [printRows]
-  );
+  }, [rows, printRows, brands, supplier, resultBrandId, canView, printerType]);
 
   // Build a self-contained HTML document for A4 or thermal (80mm)
   const buildPrintHtml = (type) => {
     const isA4 = type === "a4";
     const dateLabel = new Date().toLocaleDateString();
     const supplierLabel = supplier?.label || (rows[0]?.supplier_name || "—");
-    const brandLabel = brand?.label || (rows[0]?.brand_name || "—");
+    // Brand label: the active result-brand filter wins, else selected brands, else distinct brands in rows
+    const filteredBrand =
+      resultBrandId !== "all"
+        ? availableBrands.find((b) => b.key === String(resultBrandId))
+        : null;
+    const brandLabel = filteredBrand
+      ? filteredBrand.name
+      : brands.length
+        ? brands.map((b) => b.label).join(", ")
+        : (Array.from(new Set(rows.map((r) => r.brand_name).filter(Boolean))).join(", ") || "—");
 
     const esc = (s) =>
       String(s ?? "")
@@ -493,7 +551,7 @@ ${isA4 ? `
         moq_packs: moqPacks,
       };
       if (supplier) params.supplier_id = supplier.value;
-      if (brand) params.brand_id = brand.value;
+      if (brands.length) params.brand_ids = brands.map((b) => b.value);
 
       const { data } = await axios.get("/api/purchase-orders/forecast", { params });
 
@@ -506,6 +564,10 @@ ${isA4 ? `
 
       setRows(mapped);
       setSelectedIndex(mapped.length ? 0 : -1);
+      // Reset result filters for the new forecast
+      setResultBrandId("all");
+      setStockFilter("all");
+      setOrderFilter("all");
       toast.success("Forecast ready.");
     } catch (err) {
       console.error(err);
@@ -533,13 +595,13 @@ ${isA4 ? `
 
   const totals = useMemo(() => {
     let packs = 0, units = 0, amount = 0;
-    for (const r of rows) {
+    for (const r of visibleRows) {
       packs  += Number(r.order_packs || 0);
       units  += Number(r.order_units || 0);
       amount += Number(r.order_amount || 0);
     }
     return { packs, units, amount };
-  }, [rows]);
+  }, [visibleRows]);
 
   const updateOrderPacks = (rowId, value) => {
     setRows((prev) =>
@@ -642,10 +704,10 @@ ${isA4 ? `
     menuPortal: (base) => ({ ...base, zIndex: 9999 }),
   });
 
-  // Keyboard navigation handlers
+  // Keyboard navigation handlers (operate over the visible/filtered rows)
   useEffect(() => {
-    if (selectedIndex < 0 || selectedIndex >= rows.length) return;
-    const row = rows[selectedIndex];
+    if (selectedIndex < 0 || selectedIndex >= visibleRows.length) return;
+    const row = visibleRows[selectedIndex];
     const inputEl = inputRefs.current[row._rowId];
     const trEl = rowRefs.current[row._rowId];
 
@@ -663,7 +725,7 @@ ${isA4 ? `
         inputEl.select();
       });
     }
-  }, [selectedIndex, rows]);
+  }, [selectedIndex, visibleRows]);
 
   const onKeyDownTable = (e) => {
     const key = e.key;
@@ -672,7 +734,7 @@ ${isA4 ? `
       setSelectedIndex((idx) => {
         const next =
           key === "ArrowDown"
-            ? Math.min((idx < 0 ? -1 : idx) + 1, rows.length - 1)
+            ? Math.min((idx < 0 ? -1 : idx) + 1, visibleRows.length - 1)
             : Math.max((idx < 0 ? 0 : idx) - 1, 0);
         return next;
       });
@@ -799,7 +861,7 @@ ${isA4 ? `
               ref={printBtnRef}
               onClick={doPrint}
               className="h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
-              title={`Print ${printerType === "thermal" ? "Thermal (80mm)" : "A4"} (Alt+P)`}
+              title={`Print ${printerType === "thermal" ? "Thermal (80mm)" : "A4"} (Alt+P)${hasActiveResultFilters ? " — prints the filtered view" : ""}`}
             >
               <PrinterIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Print</span>
@@ -866,36 +928,66 @@ ${isA4 ? `
 
 <div className="col-span-2 md:col-span-2 flex flex-col gap-1">
               <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Brand</label>
-              <div className={`w-full h-9 rounded-lg border flex items-center gap-1 overflow-hidden transition-all ${
-                  brand
+              <div className={`w-full min-h-[2.25rem] rounded-lg border p-1 flex flex-wrap items-center gap-1 transition-all ${
+                  brands.length
                     ? "border-white/60 bg-white/95 text-gray-800"
                     : "border-white/30 bg-white/15 text-white/80"
                 }`}>
-                <button
-                  type="button"
-                  onClick={() => setBrandSearchOpen(true)}
-                  className="flex-1 h-full px-3 text-left text-xs flex items-center gap-2 min-w-0"
-                  title={brand?.label || "Click to search brand..."}
-                >
-                  <TagIcon className="w-4 h-4 flex-shrink-0" />
-                  {brand ? (
-                    <span className="truncate font-medium">{brand.label}</span>
-                  ) : (
-                    <span className="truncate">Search brand...</span>
-                  )}
-                </button>
-                {brand && (
+                {brands.length === 0 ? (
                   <button
                     type="button"
-                    onClick={() => setBrand(null)}
-                    className="h-full px-2 flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 transition-colors flex-shrink-0"
-                    title="Clear brand"
-                    aria-label="Clear brand"
+                    onClick={() => setBrandSearchOpen(true)}
+                    className="flex-1 h-7 px-2 text-left text-xs flex items-center gap-2 min-w-0"
+                    title="Click to search brands..."
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                    <TagIcon className="w-4 h-4 flex-shrink-0" />
+                    <span className="truncate">Search brands...</span>
                   </button>
+                ) : (
+                  <>
+                    {brands.map((b) => (
+                      <span
+                        key={b.value}
+                        className="inline-flex items-center gap-1 h-7 pl-2 pr-1 rounded-md bg-violet-100 text-violet-800 text-[11px] font-medium max-w-full"
+                        title={b.label}
+                      >
+                        <span className="truncate max-w-[96px]">{b.label}</span>
+                        <button
+                          type="button"
+                          onClick={() => setBrands((prev) => prev.filter((x) => x.value !== b.value))}
+                          className="p-0.5 rounded hover:bg-violet-200 transition-colors flex-shrink-0"
+                          title={`Remove ${b.label}`}
+                          aria-label={`Remove ${b.label}`}
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </span>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setBrandSearchOpen(true)}
+                      className="h-7 min-w-[1.75rem] px-1 inline-flex items-center justify-center rounded-md text-violet-700 hover:bg-violet-100 transition-colors flex-shrink-0"
+                      title="Add more brands"
+                      aria-label="Add more brands"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBrands([])}
+                      className="h-7 min-w-[1.75rem] px-1 inline-flex items-center justify-center rounded-md text-gray-500 hover:bg-black/10 dark:hover:bg-white/10 transition-colors flex-shrink-0"
+                      title="Clear all brands"
+                      aria-label="Clear all brands"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -941,16 +1033,105 @@ ${isA4 ? `
 
 {/* ===== Table ===== */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300">
-        {/* Table Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-gray-50/70 dark:bg-slate-800/70 border-b border-gray-200 dark:border-slate-700">
+        {/* Table Header + Result Filters */}
+        <div className="flex items-center justify-between gap-3 px-4 py-3 bg-gray-50/70 dark:bg-slate-800/70 border-b border-gray-200 dark:border-slate-700 flex-wrap">
           <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-lg shadow-sm" style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}>
               <CubeIcon className="w-4 h-4 text-white" />
             </div>
             <div>
               <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Forecast Items</span>
-              <p className="text-[11px] text-gray-400">{rows.length} item(s)</p>
+              <p className="text-[11px] text-gray-400">
+                {hasActiveResultFilters
+                  ? `${visibleRows.length} of ${rows.length} shown`
+                  : `${rows.length} item(s)`}
+              </p>
             </div>
+          </div>
+
+          {/* Result filters (client-side over the fetched rows) */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Brand filter — only brands present in the current results */}
+            <div className="flex items-center gap-1.5">
+              <TagIcon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+              <select
+                value={resultBrandId}
+                onChange={(e) => setResultBrandId(e.target.value)}
+                disabled={!rows.length}
+                className="h-8 px-2 rounded-lg text-xs font-medium bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed [color-scheme:light] dark:[color-scheme:dark]"
+                title="Filter results by brand (only brands in the current results)"
+                aria-label="Filter results by brand"
+              >
+                <option value="all">All Brands ({rows.length})</option>
+                {availableBrands.map((b) => (
+                  <option key={b.key} value={b.key}>
+                    {b.name} ({b.count})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Current stock quantity filter */}
+            <select
+              value={stockFilter}
+              onChange={(e) => setStockFilter(e.target.value)}
+              disabled={!rows.length}
+              className="h-8 px-2 rounded-lg text-xs font-medium bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed [color-scheme:light] dark:[color-scheme:dark]"
+              title="Filter by current stock quantity (units)"
+              aria-label="Filter by current stock quantity"
+            >
+              <option value="all">All Stock</option>
+              <option value="out">Out of Stock (= 0)</option>
+              <option value="low">Low Stock (≤ threshold)</option>
+              <option value="in">In Stock (&gt; 0)</option>
+            </select>
+
+            {stockFilter === "low" && (
+              <input
+                type="number"
+                min={0}
+                value={lowStockThreshold}
+                onChange={(e) => setLowStockThreshold(parseInt(e.target.value || 0, 10))}
+                disabled={!rows.length}
+                className="h-8 w-16 px-2 rounded-lg text-xs text-right no-spinners bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
+                title="Low stock threshold (units)"
+                aria-label="Low stock threshold (units)"
+              />
+            )}
+
+            {/* Order packs filter */}
+            <select
+              value={orderFilter}
+              onChange={(e) => setOrderFilter(e.target.value)}
+              disabled={!rows.length}
+              className="h-8 px-2 rounded-lg text-xs font-medium bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed [color-scheme:light] dark:[color-scheme:dark]"
+              title="Filter by order quantity (packs)"
+              aria-label="Filter by order quantity"
+            >
+              <option value="all">All Items</option>
+              <option value="to_order">To Order (&gt; 0 packs)</option>
+              <option value="no_order">No Order (= 0 packs)</option>
+            </select>
+
+            {hasActiveResultFilters && (
+              <button
+                type="button"
+                onClick={clearResultFilters}
+                className="h-8 px-2.5 inline-flex items-center gap-1 rounded-lg text-xs font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
+                title="Clear result filters"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Reset
+              </button>
+            )}
+
+            {hasActiveResultFilters && (
+              <span className="text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                {visibleRows.length} of {rows.length} shown
+              </span>
+            )}
           </div>
         </div>
 
@@ -979,7 +1160,7 @@ ${isA4 ? `
             </thead>
 
             <tbody>
-              {rows.map((r, idx) => {
+              {visibleRows.map((r, idx) => {
                 const isActive = idx === selectedIndex;
                 return (
                   <tr
@@ -997,12 +1178,47 @@ ${isA4 ? `
                   >
                     <td className="px-3 py-3 text-gray-600 dark:text-gray-300">{idx + 1}</td>
                     <td className="px-3 py-3">
-                      <div className="font-medium text-gray-800 dark:text-gray-200 truncate max-w-[280px]" title={r.product_name}>
-                        {r.product_name}
+                      <div className="flex items-start gap-1.5">
+                        {Number(r.has_purchase_return) === 1 && (
+                          <span
+                            className="flex-shrink-0 mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-100 dark:bg-red-900/40"
+                            title={`Returned via Purchase Return${r.purchase_return_units ? ` — ${r.purchase_return_units} unit(s)` : ""}${r.last_purchase_return_date ? ` on ${r.last_purchase_return_date}` : ""}`}
+                            aria-label="Returned via purchase return"
+                          >
+                            <ArrowUturnLeftIcon className="w-3 h-3 text-red-600 dark:text-red-400" />
+                          </span>
+                        )}
+                        <div className="min-w-0">
+                          <div
+                            className={`font-medium truncate max-w-[260px] ${
+                              Number(r.has_purchase_return) === 1
+                                ? "text-red-600 dark:text-red-400"
+                                : "text-gray-800 dark:text-gray-200"
+                            }`}
+                            title={r.product_name}
+                          >
+                            {r.product_name}
+                          </div>
+                          {r.product_code && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400">{r.product_code}</div>
+                          )}
+                          {Number(r.is_user_demand) === 1 && (
+                            <div
+                              className="text-[11px] font-medium text-violet-600 dark:text-violet-400 flex items-center gap-1 mt-0.5"
+                              title={
+                                r.user_demand_customers
+                                  ? `User demand from: ${r.user_demand_customers}${r.user_demand_quantity ? ` (${r.user_demand_quantity} unit(s) requested)` : ""}`
+                                  : "Originated from a user demand"
+                              }
+                            >
+                              <HandRaisedIcon className="w-3 h-3 flex-shrink-0" />
+                              <span className="truncate">
+                                User Demand{r.user_demand_customers ? `: ${r.user_demand_customers}` : ""}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      {r.product_code && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400">{r.product_code}</div>
-                      )}
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-gray-600 dark:text-gray-300">{r.pack_size}</td>
                     <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-gray-600 dark:text-gray-300">{r.units_sold}</td>
@@ -1041,12 +1257,32 @@ ${isA4 ? `
                   </td>
                 </tr>
               )}
+
+              {rows.length > 0 && !visibleRows.length && (
+                <tr>
+                  <td colSpan={10} className="px-3 py-12 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <CalculatorIcon className="w-8 h-8 text-gray-400" />
+                      <p className="text-sm text-gray-500 dark:text-gray-400">No items match the current result filters.</p>
+                      <button
+                        type="button"
+                        onClick={clearResultFilters}
+                        className="h-8 px-3 rounded-lg text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                      >
+                        Reset filters
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
 
-            {rows.length > 0 && (
+            {visibleRows.length > 0 && (
               <tfoot>
                 <tr className="font-semibold bg-gray-50 dark:bg-slate-700/50 border-t border-gray-200 dark:border-slate-600">
-                  <td className="px-3 py-3 text-gray-700 dark:text-gray-200" colSpan={7}>Totals</td>
+                  <td className="px-3 py-3 text-gray-700 dark:text-gray-200" colSpan={7}>
+                    Totals{hasActiveResultFilters ? " (filtered)" : ""}
+                  </td>
                   <td className="px-3 py-3 text-right tabular-nums text-gray-700 dark:text-gray-200">{totals.packs}</td>
                   <td className="px-3 py-3 text-right tabular-nums text-gray-700 dark:text-gray-200">{totals.units}</td>
                   <td className="px-3 py-3 text-right tabular-nums text-gray-800 dark:text-gray-100">{fmt2(totals.amount)}</td>
@@ -1061,8 +1297,15 @@ ${isA4 ? `
       <BrandSearch
         isOpen={brandSearchOpen}
         onClose={() => setBrandSearchOpen(false)}
-        onSelect={(brandObj) => {
-          setBrand(brandObj ? { value: brandObj.id, label: brandObj.name } : null);
+        multiple
+        selectedIds={brands.map((b) => b.value)}
+        onToggle={(brandObj) => {
+          if (!brandObj) return;
+          setBrands((prev) =>
+            prev.some((b) => b.value === brandObj.id)
+              ? prev.filter((b) => b.value !== brandObj.id)
+              : [...prev, { value: brandObj.id, label: brandObj.name }]
+          );
         }}
       />
       <SupplierSearch

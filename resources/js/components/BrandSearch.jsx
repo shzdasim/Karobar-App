@@ -9,7 +9,7 @@ import {
 import { GlassCard, GlassToolbar } from "@/components/glass";
 
 /* ─────────────── List Row ─────────────── */
-function ResultRow({ brand, active, onHover, onOpen, rowRef }) {
+function ResultRow({ brand, active, selected, multiple, onHover, onOpen, rowRef }) {
   return (
     <li
       ref={rowRef}
@@ -17,12 +17,14 @@ function ResultRow({ brand, active, onHover, onOpen, rowRef }) {
       onClick={onOpen}
       className={[
         "px-4 py-3 transition-all duration-150 cursor-pointer border-b border-slate-100 dark:border-slate-700/50 last:border-0",
-        active
+        selected
+          ? "bg-gradient-to-r from-violet-50 to-indigo-50 dark:from-violet-900/30 dark:to-indigo-900/20"
+          : active
           ? "bg-gradient-to-r from-violet-50 to-indigo-50 dark:from-violet-900/30 dark:to-indigo-900/20"
           : "hover:bg-slate-50 dark:hover:bg-slate-700/30",
       ].join(" ")}
-      title="Select brand"
-      aria-label="Select brand"
+      title={multiple ? (selected ? "Deselect brand" : "Select brand") : "Select brand"}
+      aria-label={multiple ? (selected ? "Deselect brand" : "Select brand") : "Select brand"}
     >
       <div className="flex items-center gap-3 flex-1 min-w-0">
         <div className="flex-shrink-0">
@@ -40,13 +42,40 @@ function ResultRow({ brand, active, onHover, onOpen, rowRef }) {
             </span>
           )}
         </div>
+        {multiple && (
+          <div className="flex-shrink-0">
+            <span
+              className={[
+                "w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all",
+                selected
+                  ? "bg-violet-600 border-violet-600"
+                  : "border-slate-300 dark:border-slate-500",
+              ].join(" ")}
+            >
+              {selected && (
+                <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </span>
+          </div>
+        )}
       </div>
     </li>
   );
 }
 
 /* ─────────────── Main Component ─────────────── */
-export default function BrandSearch({ isOpen, onClose, onSelect }) {
+export default function BrandSearch({
+  isOpen,
+  onClose,
+  onSelect,
+  // Multi-select (opt-in): pass `multiple`, `selectedIds` and `onToggle`.
+  // Single-select behavior is preserved when `multiple` is false/omitted.
+  multiple = false,
+  selectedIds = [],
+  onToggle,
+}) {
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState([]);
@@ -164,6 +193,11 @@ export default function BrandSearch({ isOpen, onClose, onSelect }) {
   };
 
   const handleSelect = (brand) => {
+    if (multiple) {
+      // Multi-select: toggle the row and keep the modal open
+      if (onToggle) onToggle(brand);
+      return;
+    }
     if (onSelect) onSelect(brand);
     handleClose();
   };
@@ -254,6 +288,8 @@ export default function BrandSearch({ isOpen, onClose, onSelect }) {
                     key={brand.id}
                     brand={brand}
                     active={idx === activeIdx}
+                    multiple={multiple}
+                    selected={multiple && selectedIds.includes(Number(brand.id))}
                     onHover={() => setActiveIdx(idx)}
                     onOpen={() => handleSelect(brand)}
                     rowRef={(el) => (rowRefs.current[idx] = el)}
@@ -273,20 +309,48 @@ export default function BrandSearch({ isOpen, onClose, onSelect }) {
               ) : (
                 <>All brands</>
               )}
+              {multiple && selectedIds.length > 0 && (
+                <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 text-[10px] font-bold">
+                  {selectedIds.length} selected
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-3 text-[10px] text-slate-400">
-              <span className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">↑↓</kbd>
-                <span>Navigate</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">↵</kbd>
-                <span>Select</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">Esc</kbd>
-                <span>Close</span>
-              </span>
+              {multiple ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleClose}
+                    className="h-7 px-3 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-bold transition-colors"
+                    title="Apply selected brands"
+                  >
+                    Done
+                  </button>
+                  <span className="flex items-center gap-1">
+                    <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">↵</kbd>
+                    <span>Toggle</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">Esc</kbd>
+                    <span>Close</span>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="flex items-center gap-1">
+                    <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">↑↓</kbd>
+                    <span>Navigate</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">↵</kbd>
+                    <span>Select</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">Esc</kbd>
+                    <span>Close</span>
+                  </span>
+                </>
+              )}
             </div>
           </GlassToolbar>
         </GlassCard>

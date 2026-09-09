@@ -20,9 +20,17 @@ class PurchaseOrderController extends Controller
             'projected_days' => 'required|integer|min:1',
             'supplier_id'    => 'nullable|integer|exists:suppliers,id',
             'brand_id'       => 'nullable|integer|exists:brands,id',
+            'brand_ids'      => 'nullable|array',
+            'brand_ids.*'    => 'integer|exists:brands,id',
             'safety_packs'   => 'nullable|integer|min:0',
             'moq_packs'      => 'nullable|integer|min:0',
         ]);
+
+        // Merge single brand_id (backward compatible) with multi brand_ids into a unique list
+        $brandIds = collect(array_merge(
+            isset($data['brand_id']) ? [(int) $data['brand_id']] : [],
+            array_map('intval', $data['brand_ids'] ?? [])
+        ))->filter()->unique()->values()->all();
 
         $from = Carbon::parse($data['date_from'])->startOfDay();
         $to   = Carbon::parse($data['date_to'])->endOfDay();
@@ -51,7 +59,7 @@ class PurchaseOrderController extends Controller
             ->leftJoin('brands as b', 'b.id', '=', 'p.brand_id')
             ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
             ->when($data['supplier_id'] ?? null, fn($q, $sid) => $q->where('p.supplier_id', $sid))
-            ->when($data['brand_id'] ?? null, fn($q, $bid) => $q->where('p.brand_id', $bid))
+            ->when(!empty($brandIds), fn($q) => $q->whereIn('p.brand_id', $brandIds))
             ->where('sx.units_sold', '>', 0)
             ->select(
                 'p.id as product_id',
@@ -80,7 +88,7 @@ DB::raw('sx.units_sold as units_sold'),
             ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
             ->where('ud.status', 'pending')
             ->when($data['supplier_id'] ?? null, fn($q, $sid) => $q->where('p.supplier_id', $sid))
-            ->when($data['brand_id'] ?? null, fn($q, $bid) => $q->where('p.brand_id', $bid))
+            ->when(!empty($brandIds), fn($q) => $q->whereIn('p.brand_id', $brandIds))
             ->groupBy(
                 'p.id', 'p.product_code', 'p.name', 'p.pack_size', 'p.quantity',
                 'p.unit_purchase_price', 'p.pack_purchase_price', 'p.unit_sale_price',
@@ -105,14 +113,37 @@ DB::raw('sx.units_sold as units_sold'),
             )
             ->get();
 
-// Merge: sold products first, then any user-demand products not already present.
-        // Mark sold products that also have a pending user demand.
-        $pendingDemandProductIds = DB::table('user_demands')
-            ->where('status', 'pending')
-            ->pluck('product_id')
-            ->map(fn($id) => (int) $id)
-            ->all();
+// Pending user-demand info per product (customer names + total requested units)
+        $demandInfoRows = DB::table('user_demands as ud')
+            ->leftJoin('customers as c', 'c.id', '=', 'ud.customer_id')
+            ->where('ud.status', 'pending')
+            ->groupBy('ud.product_id')
+            ->select(
+                'ud.product_id',
+                DB::raw('GROUP_CONCAT(DISTINCT COALESCE(c.name, ud.requested_name)) as customer_names'),
+                DB::raw('SUM(ud.requested_quantity) as demand_quantity')
+            )
+            ->get()
+            ->keyBy(fn ($r) => (int) $r->product_id);
 
+        $pendingDemandProductIds = $demandInfoRows->keys()->all();
+
+        // ---- Products returned via purchase returns within the selected date range ----
+        $returnedRows = DB::table('purchase_return_items as pri')
+            ->join('purchase_returns as pr', 'pr.id', '=', 'pri.purchase_return_id')
+            ->whereDate('pr.date', '>=', $from->toDateString())
+            ->whereDate('pr.date', '<=', $to->toDateString())
+            ->groupBy('pri.product_id')
+            ->select(
+                'pri.product_id',
+                DB::raw('SUM(pri.return_unit_quantity) as returned_units'),
+                DB::raw('MAX(pr.date) as last_purchase_return_date')
+            )
+            ->get()
+            ->keyBy(fn ($r) => (int) $r->product_id);
+
+        // Merge: sold products first, then any user-demand products not already present.
+        // Mark sold products that also have a pending user demand.
         $seen = [];
         $rows = collect();
         foreach ($soldRows as $r) {
@@ -127,7 +158,7 @@ DB::raw('sx.units_sold as units_sold'),
             $rows->push($r);
         }
 
-        $items = $rows->map(function ($row) use ($days, $proj, $safetyPacks, $moqPacks) {
+        $items = $rows->map(function ($row) use ($days, $proj, $safetyPacks, $moqPacks, $demandInfoRows, $returnedRows) {
             $packSize = max(1, (int) ($row->product_pack_size ?? 0));
 
             // ===== Demand model (UNITS) =====
@@ -156,6 +187,11 @@ DB::raw('sx.units_sold as units_sold'),
             $ppp       = (float) ($row->pack_purchase_price ?? 0);
             $packPrice = $ppp > 0 ? $ppp : ($ppu > 0 ? $ppu * $packSize : 0);
 
+            // ===== Flags: user demand & purchase return =====
+            $demandInfo   = $demandInfoRows->get((int) $row->product_id);
+            $returnInfo   = $returnedRows->get((int) $row->product_id);
+            $isUserDemand = ((int) ($row->is_user_demand ?? 0) === 1) || $demandInfo !== null;
+
             return [
                 'product_id'            => (int) $row->product_id,
                 'product_code'          => $row->product_code,
@@ -175,7 +211,13 @@ DB::raw('sx.units_sold as units_sold'),
 'last_sold_date'        => $row->last_sold_date, // within range
                 'unit_purchase_price'   => $ppu,
                 'unit_sale_price'       => $row->unit_sale_price,
-                'is_user_demand'        => (int) ($row->is_user_demand ?? 0), // 1 = originated from a user demand
+                'is_user_demand'        => $isUserDemand ? 1 : 0, // 1 = originated from a user demand
+                'user_demand_customers' => $demandInfo?->customer_names, // comma-separated customer names (pending demands)
+                'user_demand_quantity'  => $demandInfo ? (int) $demandInfo->demand_quantity : 0,
+
+                'has_purchase_return'       => $returnInfo ? 1 : 0, // 1 = returned via purchase return in the selected range
+                'purchase_return_units'     => $returnInfo ? (int) $returnInfo->returned_units : 0,
+                'last_purchase_return_date' => $returnInfo ? substr((string) $returnInfo->last_purchase_return_date, 0, 10) : null,
 
                 // Optional: aid debugging in UI (safe to keep or remove)
                 'policy' => [
@@ -198,6 +240,7 @@ DB::raw('sx.units_sold as units_sold'),
                 'filter'         => [
                     'supplier_id' => $data['supplier_id'] ?? null,
                     'brand_id'    => $data['brand_id'] ?? null,
+                    'brand_ids'   => !empty($brandIds) ? $brandIds : null,
                     'safety_packs'=> $safetyPacks,
                     'moq_packs'   => $moqPacks,
                 ],
