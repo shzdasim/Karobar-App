@@ -4,9 +4,7 @@ import axios from "axios";
 import { useLocation } from "react-router-dom";
 import Sidebar from "../components/Sidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
-import TopbarNavigation from "../components/TopbarNavigation.jsx";
 import { Toaster } from "react-hot-toast";
-import { useTheme } from "@/context/ThemeContext";
 
 export default function DashboardLayout({ children }) {
   const location = useLocation();
@@ -14,16 +12,6 @@ export default function DashboardLayout({ children }) {
   // Brand from /api/settings
   const [appName, setAppName] = useState("ERP");
   const [logoUrl, setLogoUrl] = useState(null);
-
-  // Navigation style - read from localStorage first for instant effect
-  const [navigationStyle, setNavigationStyle] = useState(() => {
-    return localStorage.getItem('navigation_style') || 'sidebar';
-  });
-
-  // Get templates from theme for forcing re-render
-  const { theme } = useTheme();
-  const sidebarTemplate = theme?.sidebar_template || 'classic';
-  const topbarTemplate = theme?.topbar_template || 'classic';
 
   // Fetch settings from API and sync with localStorage
   useEffect(() => {
@@ -33,31 +21,11 @@ export default function DashboardLayout({ children }) {
         const sn = (data?.store_name || "").trim();
         setAppName(sn || "ERP");
         setLogoUrl(data?.logo_url || null);
-        
-        // Get navigation_style from API, fallback to localStorage, then default
-        const apiNavStyle = data?.navigation_style || localStorage.getItem('navigation_style') || 'sidebar';
-        setNavigationStyle(apiNavStyle);
-        localStorage.setItem('navigation_style', apiNavStyle);
       } catch {
         setAppName("ERP");
         setLogoUrl(null);
-        // Keep localStorage value on error
       }
     })();
-  }, []);
-
-  // Listen for settings changes from other components
-  useEffect(() => {
-    const handleSettingsChange = (event) => {
-      const { navigation_style } = event.detail;
-      if (navigation_style) {
-        setNavigationStyle(navigation_style);
-        localStorage.setItem('navigation_style', navigation_style);
-      }
-    };
-
-    window.addEventListener('settingsChanged', handleSettingsChange);
-    return () => window.removeEventListener('settingsChanged', handleSettingsChange);
   }, []);
 
   // Page titles
@@ -77,7 +45,7 @@ export default function DashboardLayout({ children }) {
     "/sale-invoices/create": "Create Sale Invoice",
     "/sale-returns": "Sale Returns",
     "/sale-returns/create": "Create Sale Return",
-"/purchase-orders": "Purchase Orders",
+    "/purchase-orders": "Purchase Orders",
     "/user-demands": "User Demands",
     "/user-demands/create": "Request Product",
     "/settings": "Settings",
@@ -99,7 +67,7 @@ export default function DashboardLayout({ children }) {
     document.title = `${pageTitle} - ${appName || "ERP"}`;
   }, [pageTitle, appName]);
 
-  // Use original grid-based layout
+  // Single fixed layout: sidebar + topbar
   return (
     <div
       className="
@@ -111,31 +79,17 @@ export default function DashboardLayout({ children }) {
     >
       {/* Sidebar: left column, spans both rows */}
       <div className="row-span-2 col-start-1 relative">
-        {navigationStyle === "sidebar" && (
-          <div className="sticky top-0 h-screen min-h-0">
-            <Sidebar 
-              key={sidebarTemplate}
-              appName={appName} 
-              logoUrl={logoUrl} 
-            />
-          </div>
-        )}
+        <div className="sticky top-0 h-screen min-h-0">
+          <Sidebar appName={appName} logoUrl={logoUrl} />
+        </div>
       </div>
 
       {/* Topbar: top-right cell */}
       <div className="row-start-1 col-start-2 relative z-40">
-        {/* TopbarNavigation - only in topbar mode */}
-        {navigationStyle === "topbar" ? (
-          <TopbarNavigation key={topbarTemplate} />
-        ) : (
-          <Topbar 
-            pageTitle={pageTitle} 
-            navigationStyle={navigationStyle}
-          />
-        )}
+        <Topbar pageTitle={pageTitle} />
       </div>
 
-{/* Main content: bottom-right cell */}
+      {/* Main content: bottom-right cell */}
       <main className="row-start-2 col-start-2 min-h-0 overflow-y-auto">
         <div className="p-4 md:p-6 h-full flex flex-col">
           <Toaster position="top-right" reverseOrder={false} />

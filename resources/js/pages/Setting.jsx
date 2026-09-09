@@ -334,12 +334,9 @@ export default function Setting() {
       });
 
       toast.success("✅ Settings saved!");
-      
-      // Save navigation_style to localStorage for instant effect
-      localStorage.setItem('navigation_style', form.navigation_style);
-      
-      // Dispatch custom event so DashboardLayout can react immediately
-      window.dispatchEvent(new CustomEvent('settingsChanged', { detail: { navigation_style: form.navigation_style } }));
+
+      // Dispatch custom event so other contexts (e.g. sale system) refresh immediately
+      window.dispatchEvent(new CustomEvent('settingsChanged'));
       
       // Refresh sale system context to reflect changes immediately
       refreshSaleSystem();

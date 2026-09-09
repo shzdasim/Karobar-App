@@ -6,14 +6,10 @@ import { useTheme } from "@/context/ThemeContext";
 import { GlassCard, GlassToolbar } from "@/components/glass.jsx";
 import { 
   PaintBrushIcon, 
-  Bars3Icon,
-  ViewColumnsIcon,
   CheckIcon,
   Cog6ToothIcon,
   Square2StackIcon
 } from "@heroicons/react/24/solid";
-import SidebarTemplateSetting from "./SidebarTemplateSetting";
-import TopbarTemplateSetting from "./TopbarTemplateSetting";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -143,7 +139,7 @@ function generateVariants(baseColor) {
   return { hover: hoverColor, light: `rgba(${r}, ${g}, ${b}, 0.1)` };
 }
 
-export default function ThemeSetting({ form: parentForm, setForm, disableInputs }) {
+export default function ThemeSetting({ disableInputs }) {
   const { theme, saveTheme, activateTheme, loading: themeLoading } = useTheme();
   
   // Get section styles from theme
@@ -206,9 +202,6 @@ export default function ThemeSetting({ form: parentForm, setForm, disableInputs 
   const [hasChanges, setHasChanges] = useState(false);
   // Track which preset is active (null means custom colors)
   const [activePreset, setActivePreset] = useState(null);
-
-  // Get navigation style from parent form
-  const navigation_style = parentForm?.navigation_style || 'sidebar';
 
   // Load saved theme from context
   useEffect(() => {
@@ -361,15 +354,6 @@ export default function ThemeSetting({ form: parentForm, setForm, disableInputs 
     }
   };
 
-  const handleNavigationChange = (style) => {
-    if (!disableInputs) {
-      setForm(s => ({ ...s, navigation_style: style }));
-      toast.success(`Navigation set to ${style}`);
-    } else {
-      toast.error("You don't have permission to update settings.");
-    }
-  };
-
   if (themeLoading) {
     return <div className="p-4 animate-pulse"><div className="h-20 bg-gray-200 dark:bg-slate-700 rounded-lg"></div></div>;
   }
@@ -382,72 +366,7 @@ export default function ThemeSetting({ form: parentForm, setForm, disableInputs 
 
   return (
     <div className="p-4 space-y-3">
-      {/* ===== Navigation Style (Small Card) ===== */}
-      <GlassCard>
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-slate-700">
-          <Bars3Icon className="w-4 h-4 text-blue-500" />
-          <h2 className="text-sm font-medium text-gray-900 dark:text-white">Navigation Style</h2>
-        </div>
-        <GlassToolbar className="p-2 gap-2">
-          {/* Sidebar Option */}
-          <div
-            className={`flex-1 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-              navigation_style === "sidebar"
-                ? "border-blue-500 bg-blue-50/50 dark:bg-blue-900/20"
-                : "border-gray-200 dark:border-slate-600 hover:border-gray-300"
-            }`}
-            onClick={() => handleNavigationChange("sidebar")}
-          >
-            <div className="flex items-center gap-2">
-              <ViewColumnsIcon className={`w-5 h-5 ${navigation_style === "sidebar" ? "text-blue-500" : "text-gray-400"}`} />
-              <div>
-                <span className="text-xs font-medium text-gray-900 dark:text-white">Sidebar</span>
-                <p className="text-[10px] text-gray-500">Left side navigation</p>
-              </div>
-              {navigation_style === "sidebar" && <CheckIcon className="w-4 h-4 text-blue-500 ml-auto" />}
-            </div>
-          </div>
-
-          {/* Topbar Option */}
-          <div
-            className={`flex-1 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-              navigation_style === "topbar"
-                ? "border-blue-500 bg-blue-50/50 dark:bg-blue-900/20"
-                : "border-gray-200 dark:border-slate-600 hover:border-gray-300"
-            }`}
-            onClick={() => handleNavigationChange("topbar")}
-          >
-            <div className="flex items-center gap-2">
-              <Bars3Icon className={`w-5 h-5 ${navigation_style === "topbar" ? "text-blue-500" : "text-gray-400"}`} />
-              <div>
-                <span className="text-xs font-medium text-gray-900 dark:text-white">Topbar</span>
-                <p className="text-[10px] text-gray-500">Horizontal navigation</p>
-              </div>
-              {navigation_style === "topbar" && <CheckIcon className="w-4 h-4 text-blue-500 ml-auto" />}
-            </div>
-          </div>
-        </GlassToolbar>
-      </GlassCard>
-
-      {/* ===== Sidebar Template Selection ===== */}
-      {navigation_style === 'sidebar' && (
-        <SidebarTemplateSetting 
-          form={parentForm} 
-          setForm={setForm} 
-          disableInputs={disableInputs} 
-        />
-      )}
-
-      {/* ===== Topbar Template Selection ===== */}
-      {navigation_style === 'topbar' && (
-        <TopbarTemplateSetting 
-          form={parentForm} 
-          setForm={setForm} 
-          disableInputs={disableInputs} 
-        />
-      )}
-
-      {/* ===== Button Style (New Section) ===== */}
+      {/* ===== Button Style ===== */}
       <GlassCard>
         <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-slate-700">
           <Square2StackIcon className="w-4 h-4 text-emerald-500" />
