@@ -1049,7 +1049,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       <div className={`shrink-0 sticky top-0 z-20 shadow-lg border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
         {/* Branded Banner */}
         <div
-          className="px-4 py-2.5 flex items-center justify-between gap-3"
+          className="px-3 sm:px-4 py-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2"
           style={{
             background: `linear-gradient(135deg, ${themeColors.tertiary || themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
           }}
@@ -1069,7 +1069,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-extrabold tracking-wide text-white leading-none">SALE INVOICE</h2>
+                <h2 className="text-base sm:text-lg font-extrabold tracking-wide text-white leading-none">SALE INVOICE</h2>
                 <span
                   className="px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest text-white"
                   style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(4px)" }}
@@ -1085,13 +1085,13 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                   {saleId ? "EDIT" : "CREATE"}
                 </span>
               </div>
-              <p className="text-[10px] text-white/80 mt-0.5">
+              <p className="text-[10px] text-white/80 mt-0.5 hidden sm:block">
                 Alt+S save · Enter=next · ↑/↓ rows
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center ml-auto gap-2.5">
             {/* Invoice Type Segmented Control */}
             <div
               className="flex items-center rounded-lg p-0.5 shadow-inner"
@@ -1131,8 +1131,8 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
 
         {/* Fields Card */}
         <div className="bg-white dark:bg-slate-800 px-3 py-2">
-          <div className="grid grid-cols-12 gap-2 items-end">
-            <div className="col-span-2">
+          <div className="grid grid-cols-2 md:grid-cols-12 gap-2 items-end">
+            <div className="col-span-1 md:col-span-2">
               <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Posted #</label>
               <input
                 type="text"
@@ -1147,7 +1147,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                 }`}
               />
             </div>
-            <div className="col-span-2">
+            <div className="col-span-1 md:col-span-2">
               <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Date</label>
               <input
                 type="date"
@@ -1158,7 +1158,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                 className={`w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200`}
               />
             </div>
-<div className="col-span-4">
+<div className="col-span-2 md:col-span-4">
               <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Customer *</label>
               <button
                 type="button"
@@ -1181,7 +1181,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                 )}
               </button>
             </div>
-            <div className="col-span-2">
+            <div className="col-span-1 md:col-span-2">
               <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Doctor</label>
               <input
                 type="text"
@@ -1192,7 +1192,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                 className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
               />
             </div>
-            <div className="col-span-2">
+            <div className="col-span-1 md:col-span-2">
               <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Patient</label>
               <input
                 type="text"
@@ -1204,7 +1204,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
               />
             </div>
 
-            <div className="col-span-10">
+            <div className="col-span-2 md:col-span-10">
               <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Remarks</label>
               <input
                 type="text"
@@ -1232,12 +1232,12 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       </div>
 
       {/* Main workspace: Items + Summary */}
-      <div className={`flex-1 grid grid-cols-[1fr_280px] gap-2 px-2 py-2 overflow-hidden ${isDark ? "bg-slate-900" : "bg-white"}`}>
+      <div className={`flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_280px] gap-2 px-2 py-2 overflow-hidden ${isDark ? "bg-slate-900" : "bg-white"}`}>
         {/* LEFT: Items */}
-        <div className="flex flex-col min-h-0">
+        <div className="flex flex-col min-h-0 flex-1 lg:flex-none">
           <div className={`text-[11px] font-semibold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Items</div>
           <div ref={itemsScrollRef} className={`flex-1 overflow-auto border-2 rounded relative ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
-            <table className="w-full text-[11px] table-fixed border-collapse" autoComplete="off">
+            <table className="w-full min-w-[560px] text-[11px] table-fixed border-collapse" autoComplete="off">
               <thead className={`sticky top-0 z-20 ${isDark ? "bg-slate-800/90 backdrop-blur-sm border-slate-700" : "bg-white/80 backdrop-blur-sm border-gray-200/70"} border-b`}>
                 <tr className="[&>th]:py-1 [&>th]:px-1 [&>th]:text-left">
                   <th className={`w-7 text-center ${isDark ? "text-rose-400" : "text-red-600"}`}>DEL</th>
@@ -1448,7 +1448,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         </div>
 
         {/* RIGHT: Summary */}
-        <div className="min-h-0">
+        <div className="min-h-0 w-full shrink-0 max-h-[45%] lg:max-h-none lg:w-auto">
           <div className={`h-full flex flex-col rounded-2xl overflow-hidden shadow-lg ${isDark ? "bg-slate-800" : "bg-white"}`}>
             {/* Panel Header */}
             <div
@@ -1464,7 +1464,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
             </div>
 
 {/* Non-scrollable content */}
-            <div className="flex-1 flex flex-col min-h-0 px-4 py-3 text-[12px]">
+            <div className="flex-1 flex flex-col min-h-0 px-4 py-3 text-[12px] overflow-y-auto">
               {/* Equal-width inputs */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
