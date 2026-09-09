@@ -48,6 +48,12 @@ const MIN_WIDTH = 640;
     });
     const [windowSize, setWindowSize] = useState({ width: 960, height: 600 });
 
+    // Scale text with modal size so it doesn't stay huge/bold on small screens
+    const scale = useMemo(() => {
+      const s = Math.min(windowSize.width / 960, windowSize.height / 600);
+      return Math.min(Math.max(s, 0.7), 1.3);
+    }, [windowSize]);
+
     // Load saved modal size & position from DB preferences on mount
     useEffect(() => {
       let cancelled = false;
@@ -433,10 +439,10 @@ const stopResize = () => {
             value={display}
             readOnly
             placeholder="Search product…"
-className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer transition-all border pr-6 ${className} ${
-              selectedProduct
-                ? "border-blue-400 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200 font-medium"
-                : "border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-500 dark:text-gray-400 placeholder-gray-400 dark:placeholder-gray-500"
+className={`w-full h-6 text-sm px-1 rounded-md text-left cursor-pointer transition-all border pr-6 ${className} ${
+                selectedProduct
+                  ? "border-blue-400 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200 font-medium"
+                  : "border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-500 dark:text-gray-400 placeholder-gray-400 dark:placeholder-gray-500"
             } focus:outline-none focus:ring-2 focus:ring-blue-400/40`}
             title={selectedProduct?.name || "Search product…"}
             onFocus={() => openModal()}
@@ -482,6 +488,7 @@ className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer tran
                   minWidth: `${MIN_WIDTH}px`,
                   minHeight: `${MIN_HEIGHT}px`,
                   userSelect: isResizing ? "none" : undefined,
+                  fontSize: `${14 * scale}px`,
                 }}
               >
                 {/* Resize handles (all sides & corners) */}
@@ -499,12 +506,12 @@ className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer tran
                     value={search}
                     onChange={handleSearchChange}
                     placeholder="Search by product name, code, or barcode..."
-                    className={`flex-1 bg-transparent border-0 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 text-sm text-slate-900 dark:text-slate-100 ${
+                    className={`flex-1 bg-transparent border-0 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 text-[1em] text-slate-900 dark:text-slate-100 ${
                       isInvalidInput ? "animate-shake" : ""
                     }`}
                     autoFocus
                   />
-                  <kbd className="text-[10px] border border-slate-200 dark:border-slate-600 rounded px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-mono flex-shrink-0">
+                  <kbd className="text-[0.714em] border border-slate-200 dark:border-slate-600 rounded px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-mono flex-shrink-0">
                     Esc
                   </kbd>
                 </div>
@@ -513,21 +520,21 @@ className={`w-full h-6 text-[11px] px-1 rounded-md text-left cursor-pointer tran
                   {filtered.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-14 text-slate-400">
                       <CubeIcon className="w-8 h-8 mb-2" />
-                      <span className="text-sm">No products found</span>
+                      <span className="text-[1em]">No products found</span>
                     </div>
                   ) : (
                     <div ref={listRef} className="max-h-[58vh] overflow-y-auto">
-                      <table className="w-full border-collapse text-[12px]">
+                      <table className="w-full border-collapse text-[0.857em]">
                         {/* Grouped header */}
 <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-600">
 <tr>
 <th rowSpan={2} className="bg-slate-200/80 dark:bg-slate-700 px-4 py-2 text-left font-bold text-slate-600 dark:text-slate-200 w-[240px]">Product</th>
-                            <th rowSpan={2} className="px-3 py-1.5 text-center font-semibold text-[10px] uppercase tracking-wide text-cyan-600 dark:text-cyan-300">Pack Size</th>
-                            <th rowSpan={2} className="px-3 py-1.5 text-center font-semibold text-[10px] uppercase tracking-wide text-sky-600 dark:text-sky-300">Qty</th>
-                            <th colSpan={2} className="px-2 py-1.5 text-center font-semibold text-[10px] uppercase tracking-wide text-cyan-600 dark:text-cyan-300">Purchase</th>
-                            <th colSpan={2} className="px-2 py-1.5 text-center font-semibold text-[10px] uppercase tracking-wide text-green-600 dark:text-green-300">Sale</th>
-                            <th className="px-3 py-1.5 text-center font-semibold text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Avg</th>
-                            <th className="px-3 py-1.5 text-center font-semibold text-[10px] uppercase tracking-wide text-emerald-600 dark:text-emerald-300">Mrg %</th>
+                            <th rowSpan={2} className="px-3 py-1.5 text-center font-semibold text-[0.714em] uppercase tracking-wide text-cyan-600 dark:text-cyan-300">Pack Size</th>
+                            <th rowSpan={2} className="px-3 py-1.5 text-center font-semibold text-[0.714em] uppercase tracking-wide text-sky-600 dark:text-sky-300">Qty</th>
+                            <th colSpan={2} className="px-2 py-1.5 text-center font-semibold text-[0.714em] uppercase tracking-wide text-cyan-600 dark:text-cyan-300">Purchase</th>
+                            <th colSpan={2} className="px-2 py-1.5 text-center font-semibold text-[0.714em] uppercase tracking-wide text-green-600 dark:text-green-300">Sale</th>
+                            <th className="px-3 py-1.5 text-center font-semibold text-[0.714em] uppercase tracking-wide text-slate-500 dark:text-slate-400">Avg</th>
+                            <th className="px-3 py-1.5 text-center font-semibold text-[0.714em] uppercase tracking-wide text-emerald-600 dark:text-emerald-300">Mrg %</th>
                           </tr>
                           <tr>
                             <th className="px-3 py-1.5 text-center font-medium text-slate-500 dark:text-slate-400 border-l border-slate-200 dark:border-slate-600">Pack</th>
@@ -570,18 +577,18 @@ const rowCls = active
                                 <td className="px-4 py-3">
                                   <div className="min-w-0">
 <div className="flex items-center gap-2 flex-wrap">
-                                      <span className={`text-base leading-tight font-extrabold tracking-tight truncate ${active ? "text-indigo-700 dark:text-indigo-200" : "text-slate-900 dark:text-white"}`}>
+                                      <span className={`text-[1.143em] leading-tight font-extrabold tracking-tight truncate ${active ? "text-indigo-700 dark:text-indigo-200" : "text-slate-900 dark:text-white"}`}>
                                         {p?.name || "—"}
                                       </span>
                                       {getBrandName(p) && (
-                                        <span className={`font-bold text-xs ${active ? "text-indigo-600/70 dark:text-indigo-300/70" : "text-slate-500 dark:text-slate-400"}`}>
+                                        <span className={`font-bold text-[0.857em] ${active ? "text-indigo-600/70 dark:text-indigo-300/70" : "text-slate-500 dark:text-slate-400"}`}>
                                           {getBrandName(p)}
                                         </span>
                                       )}
                                     </div>
 <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                       {getSupplierName(p) && (
-                                        <span className={`font-semibold text-xs ${active ? "text-indigo-600/70 dark:text-indigo-300/70" : "text-slate-500 dark:text-slate-400"}`}>
+                                        <span className={`font-semibold text-[0.857em] ${active ? "text-indigo-600/70 dark:text-indigo-300/70" : "text-slate-500 dark:text-slate-400"}`}>
                                           • {getSupplierName(p)}
                                         </span>
                                       )}
@@ -592,7 +599,7 @@ const rowCls = active
 {/* Pack Size */}
                                 <td className="px-3 py-3 text-center">
                                   {getPackSize(p) ? (
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300 font-extrabold text-sm ring-1 ring-cyan-200 dark:ring-cyan-800">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300 font-extrabold text-[1em] ring-1 ring-cyan-200 dark:ring-cyan-800">
                                       <TagIcon className="w-4 h-4" />
                                       {getPackSize(p)}
                                     </span>
@@ -604,7 +611,7 @@ const rowCls = active
 {/* Qty — only this cell is colored red for low stock */}
                                 <td className="px-3 py-3 text-center">
                                   {qty != null ? (
-                                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-extrabold text-sm ${lowStock ? "bg-red-600 text-white dark:bg-red-500" : "bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300"}`}>
+                                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-extrabold text-[1em] ${lowStock ? "bg-red-600 text-white dark:bg-red-500" : "bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300"}`}>
                                       {qty != null && trend && (
                                         <svg
                                           width="12"
@@ -628,29 +635,29 @@ const rowCls = active
                                 </td>
 
 {/* Purchase prices */}
-                                <td className={`px-3 py-3 text-center font-extrabold text-sm border-l border-slate-100 dark:border-slate-700 ${active ? "text-cyan-600 dark:text-cyan-300" : "text-cyan-700 dark:text-cyan-300"}`}>
+                                <td className={`px-3 py-3 text-center font-extrabold text-[1em] border-l border-slate-100 dark:border-slate-700 ${active ? "text-cyan-600 dark:text-cyan-300" : "text-cyan-700 dark:text-cyan-300"}`}>
                                   {numFmt(p?.pack_purchase_price)}
                                 </td>
-                                <td className={`px-3 py-3 text-center font-bold text-sm ${active ? "text-slate-800 dark:text-slate-100" : "text-slate-600 dark:text-slate-300"}`}>
+                                <td className={`px-3 py-3 text-center font-bold text-[1em] ${active ? "text-slate-800 dark:text-slate-100" : "text-slate-600 dark:text-slate-300"}`}>
                                   {numFmt(p?.unit_purchase_price)}
                                 </td>
 
                                 {/* Sale prices */}
-                                <td className={`px-3 py-3 text-center font-extrabold text-sm border-l border-slate-100 dark:border-slate-700 ${active ? "text-green-600 dark:text-green-300" : "text-green-700 dark:text-green-300"}`}>
+                                <td className={`px-3 py-3 text-center font-extrabold text-[1em] border-l border-slate-100 dark:border-slate-700 ${active ? "text-green-600 dark:text-green-300" : "text-green-700 dark:text-green-300"}`}>
                                   {numFmt(p?.pack_sale_price)}
                                 </td>
-                                <td className={`px-3 py-3 text-center font-bold text-sm ${active ? "text-slate-800 dark:text-slate-100" : "text-slate-600 dark:text-slate-300"}`}>
+                                <td className={`px-3 py-3 text-center font-bold text-[1em] ${active ? "text-slate-800 dark:text-slate-100" : "text-slate-600 dark:text-slate-300"}`}>
                                   {numFmt(p?.unit_sale_price)}
                                 </td>
 
                                 {/* Avg */}
-                                <td className={`px-3 py-3 text-center font-extrabold text-sm ${active ? "text-slate-800 dark:text-slate-100" : "text-slate-700 dark:text-slate-200"}`}>
+                                <td className={`px-3 py-3 text-center font-extrabold text-[1em] ${active ? "text-slate-800 dark:text-slate-100" : "text-slate-700 dark:text-slate-200"}`}>
                                   {numFmt(avg)}
                                 </td>
 
                                 {/* Margin */}
                                 <td className={`px-3 py-3 text-center ${active ? "text-emerald-600 dark:text-emerald-400" : "text-emerald-700 dark:text-emerald-400"}`}>
-                                  <span className="inline-block px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 font-extrabold text-sm">
+                                  <span className="inline-block px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 font-extrabold text-[1em]">
                                     {margin != null ? `${margin}%` : "—"}
                                   </span>
                                 </td>
@@ -664,7 +671,7 @@ const rowCls = active
 
 {/* Footer */}
                   <GlassToolbar className="items-center justify-between py-2 px-4 bg-slate-50/80 dark:bg-slate-800/80 border-t border-slate-100 dark:border-slate-700">
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                    <div className="text-[0.857em] text-slate-500 dark:text-slate-400">
                       {search ? (
                         <>
                           <span className="font-bold">{filtered.length}</span> results for{" "}
@@ -674,17 +681,17 @@ const rowCls = active
                         <>All products</>
                       )}
                     </div>
-                    <div className="flex items-center gap-3 text-[10px] text-slate-400">
+                    <div className="flex items-center gap-3 text-[0.714em] text-slate-400">
                       <span className="flex items-center gap-1">
-                        <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">↑↓</kbd>
+                        <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[0.643em]">↑↓</kbd>
                         <span>Navigate</span>
                       </span>
                       <span className="flex items-center gap-1">
-                        <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">↵</kbd>
+                        <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[0.643em]">↵</kbd>
                         <span>Select</span>
                       </span>
                       <span className="flex items-center gap-1">
-                        <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">Esc</kbd>
+                        <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[0.643em]">Esc</kbd>
                         <span>Close</span>
                       </span>
                     </div>
