@@ -150,7 +150,7 @@ const goToProducts = () => {
     <>
       {/* Overlay */}
       <div
-        className={`fixed inset-0 z-[9998] bg-slate-900/50 backdrop-blur-sm transition-opacity duration-300 ${
+        className={`fixed inset-0 z-9998 bg-slate-900/50 backdrop-blur-xs transition-opacity duration-300 ${
           open ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
         onClick={onClose}
@@ -163,7 +163,7 @@ const goToProducts = () => {
         aria-modal="true"
         aria-label="Notification Center"
         className={[
-          "fixed top-0 right-0 h-full w-full sm:w-[400px] z-[9999]",
+          "fixed top-0 right-0 h-full w-full sm:w-[400px] react-select__menu-portal",
           "bg-white dark:bg-slate-800 shadow-2xl",
           "transform transition-transform duration-300 ease-out",
           open ? "translate-x-0" : "translate-x-full",

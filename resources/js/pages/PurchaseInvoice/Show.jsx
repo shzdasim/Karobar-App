@@ -96,12 +96,12 @@ export default function PurchaseInvoiceShow() {
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -187,7 +187,7 @@ export default function PurchaseInvoiceShow() {
   const btnGlass = getButtonClasses.glass;
 
   const chip =
-    "px-1 py-0.5 border rounded bg-gray-50 dark:bg-slate-700 text-[10px] leading-none text-gray-700 dark:text-gray-300";
+    "px-1 py-0.5 border rounded-sm bg-gray-50 dark:bg-slate-700 text-[10px] leading-none text-gray-700 dark:text-gray-300";
 
   // 🔒 permissions
   const { loading: permsLoading, canFor } = usePermissions?.() || {};
@@ -354,7 +354,7 @@ return (
                 <span
                   key={t}
                   className={`px-4 py-1.5 text-xs font-semibold rounded-md ${
-                    active ? "text-white shadow" : "text-white/70"
+                    active ? "text-white shadow-sm" : "text-white/70"
                   }`}
                   style={{
                     backgroundColor: active ? "rgba(255,255,255,0.22)" : "transparent",
@@ -402,7 +402,7 @@ return (
             <div className="col-span-4">
               <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Supplier *</label>
               <div className="w-full h-8 px-2 rounded-md border border-gray-200 dark:border-slate-600 bg-gray-100 dark:bg-slate-600 flex items-center text-xs font-medium text-gray-900 dark:text-gray-100">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-gray-400 flex-shrink-0">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-gray-400 shrink-0">
                   <path d="M3 21h18" />
                   <path d="M5 21V7l7-4 7 4v14" />
                   <path d="M9 9h1" />
@@ -782,7 +782,7 @@ return (
       </div>
 
       {/* ================= FOOTER SECTION ================= */}
-      <div className="sticky bottom-0 bg-white dark:bg-slate-800 shadow p-2 z-10 dark:shadow-slate-700" autoComplete="off">
+      <div className="sticky bottom-0 bg-white dark:bg-slate-800 shadow-sm p-2 z-10 dark:shadow-slate-700" autoComplete="off">
         <table className="w-full border-collapse text-xs">
           <tbody>
             <tr>
@@ -793,7 +793,7 @@ return (
                   name="tax_percentage"
                   readOnly
                   value={fmt(inv.tax_percentage)}
-                  className="border dark:border-slate-600 rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
+                  className="border dark:border-slate-600 rounded-sm w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
                   {...antiFill}
                 />
               </td>
@@ -804,7 +804,7 @@ return (
                   name="tax_amount"
                   readOnly
                   value={fmt(inv.tax_amount)}
-                  className="border dark:border-slate-600 rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
+                  className="border dark:border-slate-600 rounded-sm w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
                   {...antiFill}
                 />
               </td>
@@ -815,7 +815,7 @@ return (
                   name="discount_percentage"
                   readOnly
                   value={fmt(inv.discount_percentage)}
-                  className="border dark:border-slate-600 rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
+                  className="border dark:border-slate-600 rounded-sm w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
                   {...antiFill}
                 />
               </td>
@@ -826,7 +826,7 @@ return (
                   name="discount_amount"
                   readOnly
                   value={fmt(inv.discount_amount)}
-                  className="border dark:border-slate-600 rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
+                  className="border dark:border-slate-600 rounded-sm w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
                   {...antiFill}
                 />
               </td>
@@ -837,7 +837,7 @@ return (
                   name="total_amount"
                   readOnly
                   value={totalAmount.toFixed(2)}
-                  className="border dark:border-slate-600 rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200 font-bold"
+                  className="border dark:border-slate-600 rounded-sm w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200 font-bold"
                   {...antiFill}
                 />
               </td>
@@ -848,7 +848,7 @@ return (
                   name="total_paid"
                   readOnly
                   value={totalPaid.toFixed(2)}
-                  className="border dark:border-slate-600 rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
+                  className="border dark:border-slate-600 rounded-sm w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
                   {...antiFill}
                 />
               </td>
@@ -859,7 +859,7 @@ return (
                   name="remaining_amount"
                   readOnly
                   value={remainingAmount.toFixed(2)}
-                  className="border dark:border-slate-600 rounded w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
+                  className="border dark:border-slate-600 rounded-sm w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
                   {...antiFill}
                 />
               </td>
@@ -867,7 +867,7 @@ return (
                 <button
                   type="button"
                   onClick={() => navigate(`/purchase-invoices/${id}/edit`)}
-                  className={`w-full px-3 py-2 rounded text-xs font-semibold transition-all duration-200 mb-1 ${btnSecondary.className}`}
+                  className={`w-full px-3 py-2 rounded-sm text-xs font-semibold transition-all duration-200 mb-1 ${btnSecondary.className}`}
                   style={btnSecondary.style}
                 >
                   ✏️ Edit
@@ -875,7 +875,7 @@ return (
                 <button
                   type="button"
                   onClick={() => navigate("/purchase-invoices/create")}
-                  className={`w-full px-3 py-2 rounded text-xs font-semibold transition-all duration-200 ${btnPrimary.className}`}
+                  className={`w-full px-3 py-2 rounded-sm text-xs font-semibold transition-all duration-200 ${btnPrimary.className}`}
                   style={btnPrimary.style}
                 >
                   ➕ New Invoice
@@ -907,13 +907,13 @@ return (
                 <p className="text-sm text-gray-600 dark:text-gray-400">This action cannot be undone.</p>
                 <div className="mt-4 flex justify-end gap-2">
                   <button 
-                    className="px-3 py-1 rounded border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700 transition-all duration-200" 
+                    className="px-3 py-1 rounded-sm border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700 transition-all duration-200" 
                     onClick={closeDeleteModal}
                   >
                     Cancel
                   </button>
                   <button
-                    className={`px-3 py-1 rounded text-white font-semibold transition-all duration-200 ${btnDanger.className}`}
+                    className={`px-3 py-1 rounded-sm text-white font-semibold transition-all duration-200 ${btnDanger.className}`}
                     style={btnDanger.style}
                     onClick={() => setDeleteStep(2)}
                   >
@@ -935,7 +935,7 @@ return (
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Your password"
-                  className="mt-3 w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:border-slate-600 dark:text-gray-200 dark:placeholder-gray-500"
+                  className="mt-3 w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:border-slate-600 dark:text-gray-200 dark:placeholder-gray-500"
                   onKeyDown={(e) => {
                     if (e.key === "Enter") confirmAndDelete();
                     if (e.key === "Escape") closeDeleteModal();
@@ -943,7 +943,7 @@ return (
                 />
                 <div className="mt-4 flex justify-between">
                   <button
-                    className="px-3 py-1 rounded border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700 transition-all duration-200"
+                    className="px-3 py-1 rounded-sm border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700 transition-all duration-200"
                     onClick={() => setDeleteStep(1)}
                     disabled={deleting}
                   >
@@ -951,14 +951,14 @@ return (
                   </button>
                   <div className="flex gap-2">
                     <button 
-                      className="px-3 py-1 rounded border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700 transition-all duration-200" 
+                      className="px-3 py-1 rounded-sm border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700 transition-all duration-200" 
                       onClick={closeDeleteModal} 
                       disabled={deleting}
                     >
                       Cancel
                     </button>
                     <button
-                      className={`px-3 py-1 rounded text-white font-semibold transition-all duration-200 disabled:opacity-60 ${btnDanger.className}`}
+                      className={`px-3 py-1 rounded-sm text-white font-semibold transition-all duration-200 disabled:opacity-60 ${btnDanger.className}`}
                       style={btnDanger.style}
                       onClick={confirmAndDelete}
                       disabled={deleting || password.trim() === ""}

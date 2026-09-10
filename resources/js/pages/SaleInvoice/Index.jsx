@@ -166,11 +166,11 @@ export default function SaleInvoicesIndex() {
   const { hasWholesale, loading: saleSystemLoading } = useSaleSystem();
 
   // 🎨 Dynamic Button styles using theme colors
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -514,7 +514,7 @@ export default function SaleInvoicesIndex() {
         {/* Top row */}
         <div className="relative px-6 pt-5 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur shadow-inner flex items-center justify-center">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm shadow-inner flex items-center justify-center">
               <DocumentTextIcon className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -542,7 +542,7 @@ export default function SaleInvoicesIndex() {
               }}
               title="Refresh"
               aria-label="Refresh sale invoices"
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur transition-all duration-200"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm transition-all duration-200"
             >
               <ArrowPathIcon className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Refresh</span>
@@ -564,7 +564,7 @@ export default function SaleInvoicesIndex() {
                 <Link
                   to="/sale-invoices/create/wholesale"
                   title="Add Wholesale Sale Invoice"
-                  className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-bold text-white bg-white/20 hover:bg-white/30 backdrop-blur border border-white/30 shadow-lg transition-all duration-200"
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-bold text-white bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/30 shadow-lg transition-all duration-200"
                 >
                   <PlusCircleIcon className="w-4 h-4" />
                   <span className="hidden sm:inline">Wholesale Sale</span>
@@ -577,9 +577,9 @@ export default function SaleInvoicesIndex() {
 
         {/* Filter bar integrated in hero */}
         <div className="relative px-6 pt-2 pb-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-white/15 backdrop-blur border border-white/20 rounded-xl p-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-white/15 backdrop-blur-sm border border-white/20 rounded-xl p-3">
             <div className="flex items-center gap-2">
-              <DocumentTextIcon className="w-4 h-4 text-white/80 flex-shrink-0" />
+              <DocumentTextIcon className="w-4 h-4 text-white/80 shrink-0" />
               <TextSearch
                 value={qPosted}
                 onChange={setQPosted}
@@ -588,7 +588,7 @@ export default function SaleInvoicesIndex() {
               />
             </div>
             <div className="flex items-center gap-2">
-              <UserIcon className="w-4 h-4 text-white/80 flex-shrink-0" />
+              <UserIcon className="w-4 h-4 text-white/80 shrink-0" />
               <TextSearch
                 value={qCustomer}
                 onChange={setQCustomer}
@@ -601,12 +601,12 @@ export default function SaleInvoicesIndex() {
       </div>
 
       {/* ===== Invoices Table ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden hover:shadow-lg transition-shadow duration-300">
         {/* Table Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-2.5">
             <div 
-              className="p-2 rounded-xl shadow-sm"
+              className="p-2 rounded-xl shadow-xs"
               style={{ backgroundColor: themeColors.secondaryLight }}
             >
               <DocumentTextIcon className="w-4 h-4" style={{ color: themeColors.secondary }} />
@@ -632,7 +632,7 @@ export default function SaleInvoicesIndex() {
             <select
               value={pageSize}
               onChange={(e) => setPageSize(Number(e.target.value))}
-              className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:border-transparent cursor-pointer"
+              className="h-7 px-2 rounded-sm border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:border-transparent cursor-pointer"
               style={{
                 '--tw-ring-color': themeColors.primary,
                 outlineColor: themeColors.primary,
@@ -649,7 +649,7 @@ export default function SaleInvoicesIndex() {
 
         <div className="max-h-[65vh] overflow-auto">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
+            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
               <tr className="text-left">
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">#</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Type</th>
@@ -704,11 +704,11 @@ export default function SaleInvoicesIndex() {
                     </td>
                     <td className="px-3 py-3">
                       {invoice.invoice_type === 'credit' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400">
                           Credit
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400">
                           Debit
                         </span>
                       )}
@@ -813,14 +813,14 @@ export default function SaleInvoicesIndex() {
             <button
               onClick={() => setPage(1)}
               disabled={page === 1}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
             >
               ⏮
             </button>
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
             >
               ◀
             </button>
@@ -860,14 +860,14 @@ export default function SaleInvoicesIndex() {
             <button
               onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
               disabled={page === lastPage}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
             >
               ▶
             </button>
             <button
               onClick={() => setPage(lastPage)}
               disabled={page === lastPage}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
             >
               ⏭
             </button>

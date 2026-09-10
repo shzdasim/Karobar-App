@@ -185,22 +185,22 @@ export default function CurrentStockReport() {
 
   // 🎨 Modern button palette (will use dynamic theme colors)
   const tintPrimary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintSecondary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintTertiary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintGlass = useMemo(() => `
-    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-xs ring-1 ring-gray-200/60 dark:ring-white/10
     hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
@@ -276,12 +276,12 @@ export default function CurrentStockReport() {
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -565,7 +565,7 @@ export default function CurrentStockReport() {
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <button
               onClick={resetFilters}
-              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
+              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
             >
               <ArrowPathIcon className="w-4 h-4" />
               <span>Reset</span>
@@ -652,7 +652,7 @@ export default function CurrentStockReport() {
                   onClick={fetchReport}
                   disabled={loading}
                   className={`h-9 min-w-[130px] px-4 inline-flex items-center justify-center gap-2 rounded-lg text-xs font-bold text-white transition-all duration-200 ${
-                    loading ? "opacity-50 cursor-not-allowed" : "bg-white/25 hover:bg-white/35 backdrop-blur-sm"
+                    loading ? "opacity-50 cursor-not-allowed" : "bg-white/25 hover:bg-white/35 backdrop-blur-xs"
                   }`}
                 >
                   {loading ? (
@@ -674,7 +674,7 @@ export default function CurrentStockReport() {
                   onClick={exportPdf}
                   disabled={pdfLoading || rows.length === 0}
                   className={`h-9 min-w-[130px] px-4 inline-flex items-center justify-center gap-2 rounded-lg text-xs font-bold text-white transition-all duration-200 ${
-                    pdfLoading || rows.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/25 hover:bg-white/35 backdrop-blur-sm"
+                    pdfLoading || rows.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/25 hover:bg-white/35 backdrop-blur-xs"
                   }`}
                 >
                   <ArrowDownOnSquareIcon className="w-4 h-4" />
@@ -755,12 +755,12 @@ export default function CurrentStockReport() {
               </div>
 
               {/* ===== Data Table (matching Products page style) ===== */}
-              <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+              <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden">
                 {/* Table Header */}
                 <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
                   <div className="flex items-center gap-2">
                     <div 
-                      className="p-1 rounded"
+                      className="p-1 rounded-sm"
                       style={{ backgroundColor: themeColors.primaryLight + '40' }}
                     >
                       <Squares2X2Icon 
@@ -775,7 +775,7 @@ export default function CurrentStockReport() {
 
                 <div className="max-h-[65vh] overflow-auto">
                   <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
+                    <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
                       <tr className="text-left">
                         <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-8">#</th>
                         <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Product Name</th>
@@ -819,13 +819,13 @@ export default function CurrentStockReport() {
                           </td>
                           
                           <td className="px-2 py-2">
-                            <span className="px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs">
+                            <span className="px-2 py-0.5 rounded-sm bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs">
                               {row.brand_name || "—"}
                             </span>
                           </td>
                           
                           <td className="px-2 py-2">
-                            <span className="px-2 py-0.5 rounded bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 text-xs">
+                            <span className="px-2 py-0.5 rounded-sm bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 text-xs">
                               {row.supplier_name || "—"}
                             </span>
                           </td>
@@ -836,8 +836,8 @@ export default function CurrentStockReport() {
                           
                           <td className="px-2 py-2 text-right">
                             <span className={`
-                              inline-flex items-center justify-center min-w-[3rem] px-2 py-0.5 rounded-full text-xs font-bold
-                              bg-gradient-to-br from-emerald-400 to-emerald-500 text-white
+                              inline-flex items-center justify-center min-w-12 px-2 py-0.5 rounded-full text-xs font-bold
+                              bg-linear-to-br from-emerald-400 to-emerald-500 text-white
                               shadow-lg shadow-emerald-500/25 ring-1 ring-emerald-400/30
                             `}>
                               {fmtNumber(row.quantity)}
@@ -869,7 +869,7 @@ export default function CurrentStockReport() {
 
                     {/* Footer with Totals */}
                     <tfoot className={`
-                      border-t-2 backdrop-blur-sm font-semibold
+                      border-t-2 backdrop-blur-xs font-semibold
                       ${isDark ? "border-slate-600 bg-slate-800/80" : "border-gray-300 bg-gray-50"}
                     `}>
                       <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>
@@ -877,8 +877,8 @@ export default function CurrentStockReport() {
                         <td className="px-2 py-2 text-right text-gray-500 dark:text-gray-400">-</td>
                         <td className="px-2 py-2 text-right">
                           <span className={`
-                            inline-flex items-center justify-center min-w-[3rem] px-2 py-0.5 rounded-full text-xs font-bold
-                            bg-gradient-to-br from-emerald-400 to-emerald-500 text-white
+                            inline-flex items-center justify-center min-w-12 px-2 py-0.5 rounded-full text-xs font-bold
+                            bg-linear-to-br from-emerald-400 to-emerald-500 text-white
                             shadow-lg shadow-emerald-500/25 ring-1 ring-emerald-400/30
                           `}>
                             {fmtNumber(summary.total_quantity)}
@@ -940,19 +940,19 @@ function KpiCard({ label, value, icon: Icon, highlight = false, gradient = "from
   return (
     <div
       className={[
-        "group rounded-xl px-4 py-3 backdrop-blur-sm bg-white/55 ring-1 ring-white/30 shadow-sm relative overflow-hidden",
+        "group rounded-xl px-4 py-3 backdrop-blur-xs bg-white/55 ring-1 ring-white/30 shadow-xs relative overflow-hidden",
         "transition-all duration-200",
         "hover:bg-white/80 hover:backdrop-blur-md hover:shadow-[0_10px_30px_-10px_rgba(59,130,246,0.35)]",
         "hover:ring-white/40",
-        highlight ? "outline outline-1 outline-emerald-200/50" : "",
+        highlight ? "outline-solid outline-1 outline-emerald-200/50" : "",
       ].join(" ")}
     >
       {/* Gradient accent bar */}
-      <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${cardGradient}`} />
+      <div className={`absolute top-0 left-0 right-0 h-1 bg-linear-to-r ${cardGradient}`} />
       
       <div className="flex items-center gap-2 mb-1 relative z-10">
         <div 
-          className="p-1.5 rounded-lg shadow-sm"
+          className="p-1.5 rounded-lg shadow-xs"
           style={{ background: `linear-gradient(to bottom right, ${cardColor}, ${themeColors.primaryHover})` }}
         >
           <Icon className="w-4 h-4 text-white" />

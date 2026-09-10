@@ -112,12 +112,12 @@ export default function CostOfSaleDetailReport() {
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -324,7 +324,7 @@ export default function CostOfSaleDetailReport() {
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <button
               onClick={resetFilters}
-              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
+              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
             >
               <ArrowPathIcon className="w-4 h-4" />
               <span>Reset</span>
@@ -334,7 +334,7 @@ export default function CostOfSaleDetailReport() {
                 onClick={fetchReport}
                 disabled={loading}
                 className={`h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 ${
-                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 shadow-lg"
+                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 shadow-lg"
                 }`}
               >
                 <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -357,7 +357,7 @@ export default function CostOfSaleDetailReport() {
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
               />
             </div>
 
@@ -368,7 +368,7 @@ export default function CostOfSaleDetailReport() {
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
               />
             </div>
 
@@ -405,7 +405,7 @@ export default function CostOfSaleDetailReport() {
                   setToDate(end.toISOString().slice(0, 10));
                   fetchReport();
                 }}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200"
               >
                 This Month
               </button>
@@ -420,7 +420,7 @@ export default function CostOfSaleDetailReport() {
                   setToDate(end.toISOString().slice(0, 10));
                   fetchReport();
                 }}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200"
               >
                 Last Month
               </button>
@@ -430,7 +430,7 @@ export default function CostOfSaleDetailReport() {
                   onClick={exportPdf}
                   disabled={pdfLoading || invoices.length === 0}
                   className={`h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold text-white transition-all duration-200 ${
-                    pdfLoading || invoices.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20"
+                    pdfLoading || invoices.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20"
                   }`}
                 >
                   <ArrowDownOnSquareIcon className="w-4 h-4" />
@@ -500,10 +500,10 @@ export default function CostOfSaleDetailReport() {
         {invoices.map((inv, idxInv) => (
           <div
             key={idxInv + "-" + (inv.invoice_id ?? inv.posted_number ?? "")}
-            className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden"
+            className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden"
           >
             {/* Invoice Header */}
-            <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-700 dark:to-slate-600 border-b border-gray-200 dark:border-slate-600">
+            <div className="flex items-center justify-between px-4 py-3 bg-linear-to-r from-blue-50 to-indigo-50 dark:from-slate-700 dark:to-slate-600 border-b border-gray-200 dark:border-slate-600">
               <div className="flex items-center gap-4">
                 <div 
                   className="px-3 py-1 rounded-full text-white text-sm font-bold"
@@ -539,7 +539,7 @@ export default function CostOfSaleDetailReport() {
             {/* Items Table */}
             <div className="relative max-w-full overflow-auto">
               <table className="w-full min-w-[900px] text-sm">
-                <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
+                <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
                   <tr className="text-left bg-gray-50 dark:bg-slate-700">
                     <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"}`}>#</th>
                     <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"}`}>Product Name</th>
@@ -594,7 +594,7 @@ export default function CostOfSaleDetailReport() {
                 </tbody>
 
                 <tfoot className={`
-                  border-t-2 backdrop-blur-sm font-semibold
+                  border-t-2 backdrop-blur-xs font-semibold
                   ${isDark ? "border-slate-600 bg-slate-800/80" : "border-gray-300 bg-gray-50"}
                 `}>
                   <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>

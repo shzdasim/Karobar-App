@@ -34,10 +34,10 @@ const SECTION_CONFIG = {
 // Button style options
 const BUTTON_STYLES = [
   { 
-    id: 'rounded', 
+    id: 'rounded-sm', 
     name: 'Rounded', 
     icon: '◼',
-    description: 'Modern rounded corners',
+    description: 'Modern rounded-sm corners',
     className: 'rounded-lg',
     variant: 'filled'
   },
@@ -53,7 +53,7 @@ const BUTTON_STYLES = [
     id: 'soft', 
     name: 'Soft', 
     icon: '▣',
-    description: 'Medium rounded corners',
+    description: 'Medium rounded-sm corners',
     className: 'rounded-xl',
     variant: 'filled'
   },
@@ -196,7 +196,7 @@ export default function ThemeSetting({ disableInputs }) {
     tertiary_color: '#06b6d4',
     tertiary_hover: '#0891b2',
     tertiary_light: 'rgba(6, 182, 212, 0.1)',
-    button_style: 'rounded',
+    button_style: 'rounded-sm',
   });
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
@@ -217,7 +217,7 @@ export default function ThemeSetting({ disableInputs }) {
         tertiary_color: theme.tertiary_color,
         tertiary_hover: theme.tertiary_hover,
         tertiary_light: theme.tertiary_light,
-        button_style: theme.button_style || 'rounded',
+        button_style: theme.button_style || 'rounded-sm',
       });
       
       // Check if loaded theme matches a preset
@@ -304,7 +304,7 @@ export default function ThemeSetting({ disableInputs }) {
       tertiary_color: preset.tertiary,
       tertiary_hover: tv.hover,
       tertiary_light: tv.light,
-      button_style: themeSettings.button_style || 'rounded',
+      button_style: themeSettings.button_style || 'rounded-sm',
     };
     
     // Update local state immediately for instant preview
@@ -343,7 +343,7 @@ export default function ThemeSetting({ disableInputs }) {
         tertiary_color: savedTheme.tertiary_color,
         tertiary_hover: savedTheme.tertiary_hover,
         tertiary_light: savedTheme.tertiary_light,
-        button_style: savedTheme.button_style || 'rounded',
+        button_style: savedTheme.button_style || 'rounded-sm',
       });
       setHasChanges(false);
     } catch (err) {
@@ -389,7 +389,7 @@ export default function ThemeSetting({ disableInputs }) {
                 {/* Visual Preview */}
                 <div className="flex justify-center gap-2 mb-2">
                   <div 
-                    className={`w-8 h-8 flex items-center justify-center text-xs font-medium shadow-sm ${style.className} ${
+                    className={`w-8 h-8 flex items-center justify-center text-xs font-medium shadow-xs ${style.className} ${
                       style.variant === 'outlined' 
                         ? 'border-2 bg-transparent' 
                         : 'text-white'
@@ -403,7 +403,7 @@ export default function ThemeSetting({ disableInputs }) {
                     {style.icon}
                   </div>
                   <div 
-                    className={`w-8 h-8 flex items-center justify-center text-xs font-medium shadow-sm ${style.className} ${
+                    className={`w-8 h-8 flex items-center justify-center text-xs font-medium shadow-xs ${style.className} ${
                       style.variant === 'outlined' 
                         ? 'border-2 bg-transparent' 
                         : 'text-white'
@@ -440,7 +440,7 @@ export default function ThemeSetting({ disableInputs }) {
             <button
               onClick={handleSaveTheme}
               disabled={disableInputs || saving}
-              className="ml-auto px-2 py-1 text-xs font-medium rounded transition-all duration-200"
+              className="ml-auto px-2 py-1 text-xs font-medium rounded-sm transition-all duration-200"
               style={{
                 background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
                 color: primaryTextColor,
@@ -570,26 +570,26 @@ export default function ThemeSetting({ disableInputs }) {
         <div className="p-3 flex items-center gap-3 flex-wrap">
           <button
             disabled
-            className={`px-3 py-1.5 text-xs font-medium text-white shadow-sm ${getButtonStyleClass(themeSettings.button_style)}`}
+            className={`px-3 py-1.5 text-xs font-medium text-white shadow-xs ${getButtonStyleClass(themeSettings.button_style)}`}
             style={{ backgroundColor: themeSettings.primary_color }}
           >
             Primary
           </button>
           <button
             disabled
-            className={`px-3 py-1.5 text-xs font-medium text-white shadow-sm ${getButtonStyleClass(themeSettings.button_style)}`}
+            className={`px-3 py-1.5 text-xs font-medium text-white shadow-xs ${getButtonStyleClass(themeSettings.button_style)}`}
             style={{ backgroundColor: themeSettings.secondary_color }}
           >
             Secondary
           </button>
           <span
-            className={`px-2 py-1 text-xs font-medium shadow-sm ${getButtonStyleClass(themeSettings.buttonStyle)}`}
+            className={`px-2 py-1 text-xs font-medium shadow-xs ${getButtonStyleClass(themeSettings.buttonStyle)}`}
             style={{ backgroundColor: themeSettings.tertiary_color, color: 'white' }}
           >
             Tertiary
           </span>
           <span
-            className={`px-2 py-1 text-xs font-medium shadow-sm ${getButtonStyleClass(themeSettings.button_style)}`}
+            className={`px-2 py-1 text-xs font-medium shadow-xs ${getButtonStyleClass(themeSettings.button_style)}`}
             style={{ backgroundColor: themeSettings.primary_light || generateVariants(themeSettings.primary_color).light, color: themeSettings.primary_color }}
           >
             Light

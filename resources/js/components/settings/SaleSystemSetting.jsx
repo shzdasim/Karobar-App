@@ -126,7 +126,7 @@ export default function SaleSystemSetting({
       <GlassCard>
         <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-slate-700">
           <div
-            className="p-1.5 rounded-lg shadow-sm"
+            className="p-1.5 rounded-lg shadow-xs"
             style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
           >
             <ShoppingCartIcon className="w-4 h-4 text-white" />

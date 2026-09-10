@@ -178,12 +178,12 @@ export default function UsersIndex() {
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -253,22 +253,22 @@ export default function UsersIndex() {
 
   // 🎨 Modern button palette (will use dynamic theme colors)
   const tintPrimary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintSecondary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintTertiary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintGlass = useMemo(() => `
-    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-xs ring-1 ring-gray-200/60 dark:ring-white/10
     hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
@@ -429,12 +429,12 @@ export default function UsersIndex() {
   return (
     <div className="p-4 space-y-3">
       {/* ===== Professional Header ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xs">
         {/* Header Top */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           {/* Title */}
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-gradient-to-br ${SECTION_CONFIG.management.gradient} shadow-sm`}>
+            <div className={`p-2 rounded-lg bg-linear-to-br ${SECTION_CONFIG.management.gradient} shadow-xs`}>
               <UserCircleIcon className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -522,7 +522,7 @@ export default function UsersIndex() {
               <select
                 value={pageSize}
                 onChange={(e) => setPageSize(Number(e.target.value))}
-                className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-violet-500 focus:border-transparent cursor-pointer"
+                className="h-7 px-2 rounded-sm border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-violet-500 focus:border-transparent cursor-pointer"
               >
                 <option value={10}>10</option>
                 <option value={25}>25</option>
@@ -535,11 +535,11 @@ export default function UsersIndex() {
       </div>
 
       {/* ===== Users Table ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden">
         {/* Table Header */}
         <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2">
-            <div className={`p-1 rounded ${SECTION_CONFIG.management.bgDark}`}>
+            <div className={`p-1 rounded-sm ${SECTION_CONFIG.management.bgDark}`}>
               <UserCircleIcon className="w-4 h-4 text-violet-600 dark:text-violet-400" />
             </div>
             <span className="text-sm font-medium text-gray-700 dark:text-gray-200">User List</span>
@@ -549,7 +549,7 @@ export default function UsersIndex() {
 
         <div className="max-h-[65vh] overflow-auto">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
+            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
               <tr className="text-left">
                 <th className="px-3 py-2 w-8">
                   <input
@@ -560,7 +560,7 @@ export default function UsersIndex() {
                       if (el) el.indeterminate = pageIndeterminate;
                     }}
                     onChange={(e) => togglePageAll(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded border-gray-300 cursor-pointer"
+                    className="w-3.5 h-3.5 rounded-sm border-gray-300 cursor-pointer"
                     style={{ 
                       accentColor: themeColors.secondary 
                     }}
@@ -620,7 +620,7 @@ export default function UsersIndex() {
                         checked={isSelected}
                         onChange={(e) => toggleOne(u.id, e.target.checked)}
                         aria-label={`Select user ${u.name}`}
-                        className="w-3.5 h-3.5 rounded border-gray-300 cursor-pointer"
+                        className="w-3.5 h-3.5 rounded-sm border-gray-300 cursor-pointer"
                         style={{ 
                           accentColor: themeColors.secondary 
                         }}
@@ -695,14 +695,14 @@ export default function UsersIndex() {
             <button
               onClick={() => setPage(1)}
               disabled={page === 1}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
             >
               ⏮
             </button>
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
             >
               ◀
             </button>
@@ -745,14 +745,14 @@ export default function UsersIndex() {
             <button
               onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
               disabled={page === lastPage}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
             >
               ▶
             </button>
             <button
               onClick={() => setPage(lastPage)}
               disabled={page === lastPage}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
             >
               ⏭
             </button>

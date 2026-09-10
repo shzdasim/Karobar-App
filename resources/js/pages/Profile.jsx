@@ -89,7 +89,7 @@ export default function Profile() {
   };
 
   return (
-    <div className="max-w-xl mx-auto bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
+    <div className="max-w-xl mx-auto bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm">
       <h2 className="text-2xl font-bold mb-4 dark:text-gray-100">My Profile</h2>
       {message && <p className="mb-4 text-green-600 dark:text-green-400">{message}</p>}
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -100,7 +100,7 @@ export default function Profile() {
             name="name"
             value={form.name}
             onChange={handleChange}
-            className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
+            className="w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
             style={{ '--tw-ring-color': themeColors.primary }}
           />
         </div>
@@ -111,7 +111,7 @@ export default function Profile() {
             name="email"
             value={form.email}
             onChange={handleChange}
-            className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
+            className="w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
             style={{ '--tw-ring-color': themeColors.primary }}
           />
         </div>
@@ -122,7 +122,7 @@ export default function Profile() {
             name="password"
             value={form.password}
             onChange={handleChange}
-            className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
+            className="w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
             style={{ '--tw-ring-color': themeColors.primary }}
           />
         </div>
@@ -133,14 +133,14 @@ export default function Profile() {
             name="password_confirmation"
             value={form.password_confirmation}
             onChange={handleChange}
-            className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
+            className="w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
             style={{ '--tw-ring-color': themeColors.primary }}
           />
         </div>
         <button
           type="submit"
           disabled={loading}
-          className="px-6 py-2 rounded font-semibold transition-all duration-200"
+          className="px-6 py-2 rounded-sm font-semibold transition-all duration-200"
           style={{
             background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
             color: primaryTextColor,

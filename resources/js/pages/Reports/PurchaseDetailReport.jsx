@@ -217,17 +217,17 @@ const [supplierId, setSupplierId] = useState("");
 
   // 🎨 Modern button palette (will use dynamic theme colors)
   const tintPrimary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintSecondary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintGlass = useMemo(() => `
-    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-xs ring-1 ring-gray-200/60 dark:ring-white/10
     hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
@@ -282,12 +282,12 @@ const [supplierId, setSupplierId] = useState("");
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -578,7 +578,7 @@ const resetFilters = () => {
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <button
               onClick={resetFilters}
-              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
+              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
             >
               <ArrowPathIcon className="w-4 h-4" />
               <span>Reset</span>
@@ -588,7 +588,7 @@ const resetFilters = () => {
                 onClick={fetchReport}
                 disabled={loading}
                 className={`h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 ${
-                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 shadow-lg"
+                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 shadow-lg"
                 }`}
               >
                 <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -611,7 +611,7 @@ const resetFilters = () => {
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
               />
             </div>
 
@@ -622,7 +622,7 @@ const resetFilters = () => {
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
               />
             </div>
 
@@ -686,7 +686,7 @@ const resetFilters = () => {
                       setProductId("");
                       setProductValue(null);
                     }}
-                    className="w-5 h-5 flex items-center justify-center rounded-full bg-white/20 text-white/80 hover:bg-white/35 text-[10px] leading-none flex-shrink-0"
+                    className="w-5 h-5 flex items-center justify-center rounded-full bg-white/20 text-white/80 hover:bg-white/35 text-[10px] leading-none shrink-0"
                     title="Clear product"
                   >
                     ×
@@ -705,7 +705,7 @@ const resetFilters = () => {
                   setFromDate(start.toISOString().slice(0, 10));
                   setToDate(end.toISOString().slice(0, 10));
                 }}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200"
               >
                 Today
               </button>
@@ -718,7 +718,7 @@ const resetFilters = () => {
                   setFromDate(start.toISOString().slice(0, 10));
                   setToDate(end.toISOString().slice(0, 10));
                 }}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200"
               >
                 3 Days
               </button>
@@ -731,7 +731,7 @@ const resetFilters = () => {
                   setFromDate(start.toISOString().slice(0, 10));
                   setToDate(end.toISOString().slice(0, 10));
                 }}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200"
               >
                 7 Days
               </button>
@@ -741,7 +741,7 @@ const resetFilters = () => {
                   onClick={exportPdf}
                   disabled={pdfLoading || data.length === 0}
                   className={`h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold text-white transition-all duration-200 ${
-                    pdfLoading || data.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20"
+                    pdfLoading || data.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20"
                   }`}
                 >
                   <ArrowDownOnSquareIcon className="w-4 h-4" />
@@ -767,13 +767,13 @@ const resetFilters = () => {
         {data.map((inv) => (
           <div
             key={inv.id || `${inv.posted_number}-${inv.invoice_number}-${inv.invoice_date}`}
-            className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden"
+            className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden"
           >
             {/* Table Header (matching Products page style) */}
             <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
               <div className="flex items-center gap-2">
                 <div 
-                  className="p-1 rounded"
+                  className="p-1 rounded-sm"
                   style={{ backgroundColor: themeColors.primaryLight + '40' }}
                 >
                   <Squares2X2Icon 
@@ -795,7 +795,7 @@ const resetFilters = () => {
             {/* Items table */}
             <div className="relative max-w-full overflow-auto">
               <table className="w-full min-w-[900px] text-sm">
-                <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
+                <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
                   <tr className="text-left">
                     <Th isDark={isDark}>Product Name</Th>
                     <Th isDark={isDark}>Batch</Th>
@@ -848,7 +848,7 @@ const resetFilters = () => {
                 </tbody>
 
                 <tfoot className={`
-                  border-t-2 backdrop-blur-sm font-semibold
+                  border-t-2 backdrop-blur-xs font-semibold
                   ${isDark ? "border-slate-600 bg-slate-800/80" : "border-gray-300 bg-gray-50"}
                 `}>
                   <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>

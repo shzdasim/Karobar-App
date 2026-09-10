@@ -101,7 +101,7 @@ const ProductFormFields = forwardRef(({
       <div className="flex gap-3 items-start">
         <div className="w-32 shrink-0">
           <label className="block text-xs font-medium mb-1 dark:text-slate-300">Image</label>
-          <div className="rounded-xl bg-white/60 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-slate-600/60 p-1.5">
+          <div className="rounded-xl bg-white/60 dark:bg-slate-700/60 backdrop-blur-xs ring-1 ring-gray-200/60 dark:ring-slate-600/60 p-1.5">
             <FilePond
               files={files}
               onupdatefiles={onFilesChange}
@@ -137,7 +137,7 @@ const ProductFormFields = forwardRef(({
                 name="narcotic"
                 checked={form.narcotic === "yes"}
                 onChange={(e) => handleChange({ target: { name: "narcotic", value: e.target.checked ? "yes" : "no" } })}
-                className="h-4 w-4 rounded border-gray-300 dark:border-slate-500 dark:bg-slate-600"
+                className="h-4 w-4 rounded-sm border-gray-300 dark:border-slate-500 dark:bg-slate-600"
                 style={{ accentColor: themeColors?.primary }}
               />
               <span>Narcotic</span>
@@ -271,16 +271,16 @@ const ProductFormFields = forwardRef(({
           name="description"
           value={form.description || ""}
           onChange={handleChange}
-          className="w-full h-16 px-3 py-2 rounded-xl bg-white/70 dark:bg-slate-700/70 backdrop-blur-sm border border-gray-200/70 dark:border-slate-600/70 ring-1 ring-transparent focus:ring-blue-400/40 shadow-sm focus:outline-none text-sm resize-none dark:text-slate-200"
+          className="w-full h-16 px-3 py-2 rounded-xl bg-white/70 dark:bg-slate-700/70 backdrop-blur-xs border border-gray-200/70 dark:border-slate-600/70 ring-1 ring-transparent focus:ring-blue-400/40 shadow-xs focus:outline-hidden text-sm resize-none dark:text-slate-200"
           placeholder="Optional notes..."
         />
       </div>
 
       {/* Compact pricing table */}
       <div>
-        <div className="rounded-xl overflow-hidden ring-1 ring-gray-200/70 dark:ring-slate-600/70 bg-white/70 dark:bg-slate-700/70 backdrop-blur-sm">
+        <div className="rounded-xl overflow-hidden ring-1 ring-gray-200/70 dark:ring-slate-600/70 bg-white/70 dark:bg-slate-700/70 backdrop-blur-xs">
           <table className="w-full text-[11px] text-gray-900 dark:text-slate-200">
-            <thead className="bg-white/80 dark:bg-slate-600/80 backdrop-blur-sm border-b border-gray-200/70 dark:border-slate-500/70">
+            <thead className="bg-white/80 dark:bg-slate-600/80 backdrop-blur-xs border-b border-gray-200/70 dark:border-slate-500/70">
               <tr className="text-left">
                 <th className="px-2 py-1.5 dark:text-slate-200">Qty</th>
                 <th className="px-2 py-1.5 dark:text-slate-200">Pack P.</th>
@@ -589,12 +589,12 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
 
   // ===== Dynamic Button styles using theme colors =====
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -668,7 +668,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
             <div className="flex items-center gap-3">
               <div 
-                className={`p-2 rounded-lg bg-gradient-to-br shadow-sm`}
+                className={`p-2 rounded-lg bg-linear-to-br shadow-xs`}
                 style={{ background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}
               >
                 <CubeIcon className="w-5 h-5 text-white" />
@@ -737,7 +737,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
             <div className="flex items-center gap-3">
               <div 
-                className={`p-2 rounded-lg bg-gradient-to-br shadow-sm`}
+                className={`p-2 rounded-lg bg-linear-to-br shadow-xs`}
                 style={{ background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}
               >
                 <CubeIcon className="w-5 h-5 text-white" />
@@ -805,7 +805,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
             {batches.length > 0 ? (
               <div className="rounded-xl overflow-hidden ring-1 ring-gray-200/70 dark:ring-slate-600/70 bg-white/60 dark:bg-slate-700/60">
                 <table className="w-full text-xs">
-                  <thead className="bg-white/80 dark:bg-slate-600/80 backdrop-blur-sm border-b border-gray-200/70 dark:border-slate-500/70 text-left">
+                  <thead className="bg-white/80 dark:bg-slate-600/80 backdrop-blur-xs border-b border-gray-200/70 dark:border-slate-500/70 text-left">
                     <tr>
                       <th className="p-2 dark:text-slate-200">Batch #</th>
                       <th className="p-2 dark:text-slate-200">Expiry</th>

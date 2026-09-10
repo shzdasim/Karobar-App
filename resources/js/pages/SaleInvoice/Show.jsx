@@ -101,12 +101,12 @@ export default function SaleInvoiceShow() {
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -209,7 +209,7 @@ export default function SaleInvoiceShow() {
   const btnGlass = getButtonClasses.glass;
 
   const chip =
-    "px-1 py-0.5 border rounded bg-gray-50 dark:bg-slate-700 text-[10px] leading-none text-gray-700 dark:text-gray-300";
+    "px-1 py-0.5 border rounded-sm bg-gray-50 dark:bg-slate-700 text-[10px] leading-none text-gray-700 dark:text-gray-300";
 
   // 🔒 permissions
   const { loading: permsLoading, canFor } = usePermissions?.() || {};
@@ -512,7 +512,7 @@ export default function SaleInvoiceShow() {
                   <span
                     key={type}
                     className={`px-3.5 py-1.5 text-[11px] font-semibold rounded-md ${
-                      active ? "text-white shadow" : "text-white/70"
+                      active ? "text-white shadow-sm" : "text-white/70"
                     }`}
                     style={{
                       backgroundColor: active ? "rgba(255,255,255,0.22)" : "transparent",
@@ -613,7 +613,7 @@ export default function SaleInvoiceShow() {
               <div className={`w-full h-8 px-3 rounded-md border flex items-center gap-2 text-[11px] font-medium ${
                 isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-blue-200 bg-blue-50 text-blue-700"
               }`}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                   <circle cx="12" cy="7" r="4" />
                 </svg>
@@ -672,9 +672,9 @@ export default function SaleInvoiceShow() {
         {/* LEFT: Items */}
         <div className="flex flex-col min-h-0">
           <div className={`text-[11px] font-semibold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Items</div>
-          <div ref={itemsScrollRef} className={`flex-1 overflow-auto border-2 rounded relative ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
+          <div ref={itemsScrollRef} className={`flex-1 overflow-auto border-2 rounded-sm relative ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
             <table className="w-full text-[11px] table-fixed border-collapse print-table">
-              <thead className={`sticky top-0 z-20 ${isDark ? "bg-slate-800/90 backdrop-blur-sm" : "bg-white/80 backdrop-blur-sm"} border-b ${isDark ? "border-slate-700" : "border-gray-200/70"}`}>
+              <thead className={`sticky top-0 z-20 ${isDark ? "bg-slate-800/90 backdrop-blur-xs" : "bg-white/80 backdrop-blur-xs"} border-b ${isDark ? "border-slate-700" : "border-gray-200/70"}`}>
                 <tr className="[&>th]:py-1 [&>th]:px-1 [&>th]:text-left">
                   <th className={`w-7 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>#</th>
                   <th className={`w-[180px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Product</th>
@@ -886,11 +886,11 @@ export default function SaleInvoiceShow() {
                 </div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">This action cannot be undone.</p>
                 <div className="mt-4 flex justify-end gap-2">
-                  <button className="px-3 py-1 rounded border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700" onClick={closeDeleteModal}>
+                  <button className="px-3 py-1 rounded-sm border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700" onClick={closeDeleteModal}>
                     Cancel
                   </button>
                   <button
-                    className={`px-3 py-1 rounded text-white font-semibold transition-all duration-200 ${btnDanger.className}`}
+                    className={`px-3 py-1 rounded-sm text-white font-semibold transition-all duration-200 ${btnDanger.className}`}
                     style={btnDanger.style}
                     onClick={proceedAfterConfirm}
                   >
@@ -934,11 +934,11 @@ export default function SaleInvoiceShow() {
                   </label>
                 </div>
                 <div className="mt-4 flex justify-between">
-                  <button className="px-3 py-1 rounded border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700" onClick={() => setDeleteStep(1)}>
+                  <button className="px-3 py-1 rounded-sm border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700" onClick={() => setDeleteStep(1)}>
                     ← Back
                   </button>
                   <button
-                    className={`px-3 py-1 rounded text-white font-semibold transition-all duration-200 ${btnPrimary.className}`}
+                    className={`px-3 py-1 rounded-sm text-white font-semibold transition-all duration-200 ${btnPrimary.className}`}
                     style={btnPrimary.style}
                     onClick={proceedToPassword}
                   >
@@ -961,7 +961,7 @@ export default function SaleInvoiceShow() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Your password"
-                  className="mt-3 w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:border-slate-600 dark:text-gray-200 dark:placeholder-gray-500"
+                  className="mt-3 w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:border-slate-600 dark:text-gray-200 dark:placeholder-gray-500"
                   onKeyDown={(e) => {
                     if (e.key === "Enter") confirmAndDelete();
                     if (e.key === "Escape") closeDeleteModal();
@@ -969,18 +969,18 @@ export default function SaleInvoiceShow() {
                 />
                 <div className="mt-4 flex justify-between">
                   <button
-                    className="px-3 py-1 rounded border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700"
+                    className="px-3 py-1 rounded-sm border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700"
                     onClick={() => setDeleteStep(needsChoice ? 2 : 1)}
                     disabled={deleting}
                   >
                     ← Back
                   </button>
                   <div className="flex gap-2">
-                    <button className="px-3 py-1 rounded border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700" onClick={closeDeleteModal} disabled={deleting}>
+                    <button className="px-3 py-1 rounded-sm border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700" onClick={closeDeleteModal} disabled={deleting}>
                       Cancel
                     </button>
                     <button
-                      className={`px-3 py-1 rounded text-white font-semibold transition-all duration-200 disabled:opacity-60 ${btnDanger.className}`}
+                      className={`px-3 py-1 rounded-sm text-white font-semibold transition-all duration-200 disabled:opacity-60 ${btnDanger.className}`}
                       style={btnDanger.style}
                       onClick={confirmAndDelete}
                       disabled={deleting || password.trim() === ""}

@@ -111,11 +111,11 @@ export default function SaleReturnsIndex() {
   }, [theme]);
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -372,7 +372,7 @@ export default function SaleReturnsIndex() {
                 controllerRef.current = ctrl;
                 fetchReturns(ctrl.signal);
               }}
-              className="h-10 px-4 inline-flex items-center gap-2 rounded-xl text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
+              className="h-10 px-4 inline-flex items-center gap-2 rounded-xl text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
               title="Refresh"
               aria-label="Refresh sale returns"
             >
@@ -408,7 +408,7 @@ export default function SaleReturnsIndex() {
                 value={qPosted}
                 onChange={(e) => setQPosted(e.target.value)}
                 placeholder="Search by Posted No (e.g., SR-000001 or SRRET-0001)…"
-                className="w-full h-10 pl-9 pr-3 rounded-lg text-sm text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40"
+                className="w-full h-10 pl-9 pr-3 rounded-lg text-sm text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/40"
                 autoComplete="off"
               />
             </div>
@@ -421,7 +421,7 @@ export default function SaleReturnsIndex() {
                 value={qCustomer}
                 onChange={(e) => setQCustomer(e.target.value)}
                 placeholder="Search by Customer…"
-                className="w-full h-10 pl-9 pr-3 rounded-lg text-sm text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40"
+                className="w-full h-10 pl-9 pr-3 rounded-lg text-sm text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/40"
                 autoComplete="off"
               />
             </div>
@@ -430,11 +430,11 @@ export default function SaleReturnsIndex() {
       </div>
 
       {/* ===== Returns Table Card ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden">
         {/* Table Header */}
         <div className="flex items-center justify-between px-4 py-3 bg-gray-50/70 dark:bg-slate-800/70 border-b border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg shadow-sm" style={{ background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}>
+            <div className="p-1.5 rounded-lg shadow-xs" style={{ background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}>
               <DocumentTextIcon className="w-4 h-4 text-white" />
             </div>
             <div>
@@ -451,7 +451,7 @@ export default function SaleReturnsIndex() {
             <select
               value={pageSize}
               onChange={(e) => setPageSize(Number(e.target.value))}
-              className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:border-transparent cursor-pointer"
+              className="h-7 px-2 rounded-sm border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:border-transparent cursor-pointer"
               style={{ '--tw-ring-color': themeColors.primary }}
             >
               <option value={10}>10</option>
@@ -464,7 +464,7 @@ export default function SaleReturnsIndex() {
 
         <div className="max-h-[65vh] overflow-auto">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
+            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
               <tr className="text-left">
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">#</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Posted No</th>
@@ -604,14 +604,14 @@ export default function SaleReturnsIndex() {
             <button
               onClick={() => setPage(1)}
               disabled={page === 1}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
             >
               ⏮
             </button>
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
             >
               ◀
             </button>
@@ -651,14 +651,14 @@ export default function SaleReturnsIndex() {
             <button
               onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
               disabled={page === pageCount}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === pageCount ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === pageCount ? 'opacity-40' : ''}`}
             >
               ▶
             </button>
             <button
               onClick={() => setPage(pageCount)}
               disabled={page === pageCount}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === pageCount ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === pageCount ? 'opacity-40' : ''}`}
             >
               ⏭
             </button>
@@ -676,8 +676,8 @@ export default function SaleReturnsIndex() {
         isDeleting={deleting}
         setIsDeleting={setDeleting}
         tintClasses={{ 
-          red: `bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700 active:scale-[0.98] transition-all duration-200`,
-          glass: "bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+          red: `bg-linear-to-br from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700 active:scale-[0.98] transition-all duration-200`,
+          glass: "bg-white/80 dark:bg-slate-700/60 backdrop-blur-xs text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
         }}
       />
     </div>

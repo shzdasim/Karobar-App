@@ -219,7 +219,7 @@ export default function TopNavigation() {
       ">
         <div className="flex items-stretch h-13">
           {/* Logo & Brand - Enhanced visibility */}
-          <div className="flex items-center gap-2.5 px-4 border-r border-gray-200/60 dark:border-slate-700/60 flex-shrink-0">
+          <div className="flex items-center gap-2.5 px-4 border-r border-gray-200/60 dark:border-slate-700/60 shrink-0">
             <div className="relative group">
               <picture>
                 {logoCandidates.map((src) => (
@@ -237,10 +237,10 @@ export default function TopNavigation() {
                 ))}
               </picture>
               {/* Decorative gradient ring */}
-              <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-violet-500/30 to-purple-500/30 dark:from-violet-400/30 dark:to-purple-400/30" />
+              <div className="absolute inset-0 rounded-xl bg-linear-to-br from-violet-500/30 to-purple-500/30 dark:from-violet-400/30 dark:to-purple-400/30" />
             </div>
             <div className="flex flex-col">
-              <span className="text-sm font-bold bg-gradient-to-r from-gray-900 to-gray-700 dark:from-white dark:to-gray-300 bg-clip-text text-transparent whitespace-nowrap">
+              <span className="text-sm font-bold bg-linear-to-r from-gray-900 to-gray-700 dark:from-white dark:to-gray-300 bg-clip-text text-transparent whitespace-nowrap">
                 {brandName}
               </span>
               <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">
@@ -269,7 +269,7 @@ export default function TopNavigation() {
                   key={item.path}
                   to={item.path}
                   className={`
-                    flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5
+                    shrink-0 flex items-center gap-1 px-2.5 py-1.5
                     rounded-lg text-sm font-medium
                     transition-all duration-200
                     whitespace-nowrap
@@ -299,7 +299,7 @@ export default function TopNavigation() {
             })}
 
             {/* Section Divider */}
-            <div className="flex-shrink-0 w-px h-5 bg-gray-200 dark:bg-slate-600 my-auto mx-1" />
+            <div className="shrink-0 w-px h-5 bg-gray-200 dark:bg-slate-600 my-auto mx-1" />
 
             {/* Dropdown Sections - Color coded with dynamic theme colors */}
             {menuSections.map((section) => {
@@ -313,7 +313,7 @@ export default function TopNavigation() {
               return (
                 <div 
                   key={section.name} 
-                  className="relative flex-shrink-0"
+                  className="relative shrink-0"
                   onMouseEnter={() => setHoveredDropdown(section.key)}
                   onMouseLeave={() => setHoveredDropdown(null)}
                 >
@@ -363,7 +363,7 @@ export default function TopNavigation() {
         return (
           <div
             ref={dropdownRef}
-            className="fixed bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl rounded-xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 py-2 z-[99999] overflow-hidden"
+            className="fixed bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl rounded-xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 py-2 z-99999 overflow-hidden"
             style={{
               top: dropdownPosition.top,
               left: dropdownPosition.left,

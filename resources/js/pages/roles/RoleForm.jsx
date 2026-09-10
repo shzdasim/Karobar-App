@@ -45,12 +45,12 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
 
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -298,7 +298,7 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
         <h1 className="text-2xl font-bold dark:text-gray-100">{initial ? "Edit Role" : "Create Role"}</h1>
         <div className="text-sm text-gray-600 dark:text-gray-400">
           <span className="hidden sm:inline">Shortcut:&nbsp;</span>
-          <span className="border rounded px-1 py-0.5 text-xs dark:border-gray-600 dark:text-gray-400">Alt+S</span>&nbsp;to Save
+          <span className="border rounded-sm px-1 py-0.5 text-xs dark:border-gray-600 dark:text-gray-400">Alt+S</span>&nbsp;to Save
         </div>
       </div>
 
@@ -311,7 +311,7 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
+              className="w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
               style={{ '--tw-ring-color': themeColors.primary }}
               placeholder="e.g. Manager"
             />
@@ -327,13 +327,13 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 placeholder="Filter permissions…"
-                className="w-64 border rounded px-3 py-1.5 focus:outline-none focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
+                className="w-64 border rounded-sm px-3 py-1.5 focus:outline-hidden focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
                 style={{ '--tw-ring-color': themeColors.primary }}
               />
               <button
                 type="button"
                 onClick={selectAllPermissions}
-                className="text-xs border rounded px-2 py-1 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700/70 dark:hover:bg-slate-600 dark:text-gray-300"
+                className="text-xs border rounded-sm px-2 py-1 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700/70 dark:hover:bg-slate-600 dark:text-gray-300"
                 title="Select all (every permission)"
               >
                 Select All (All)
@@ -341,7 +341,7 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
               <button
                 type="button"
                 onClick={clearAllPermissions}
-                className="text-xs border rounded px-2 py-1 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700/70 dark:hover:bg-slate-600 dark:text-gray-300"
+                className="text-xs border rounded-sm px-2 py-1 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700/70 dark:hover:bg-slate-600 dark:text-gray-300"
                 title="Clear all"
               >
                 Clear All
@@ -365,9 +365,9 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
           </div>
 
           {/* Grouped modules */}
-          <div className="space-y-4 max-h-[32rem] overflow-auto pr-1">
+          <div className="space-y-4 max-h-128 overflow-auto pr-1">
             {groupedFiltered.map((group) => (
-              <div key={group.module} className="border rounded dark:border-slate-600">
+              <div key={group.module} className="border rounded-sm dark:border-slate-600">
                 <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b dark:bg-slate-700/60 dark:border-slate-600">
                   <div className="font-medium dark:text-gray-200">{group.label} Permissions</div>
                   <label className="text-xs inline-flex items-center gap-2 dark:text-gray-300">
@@ -390,7 +390,7 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
                     {group.actions.map(({ action, perm }) => (
                       <label
                         key={perm}
-                        className="inline-flex items-center gap-2 border rounded px-2 py-1 dark:border-slate-600 dark:bg-slate-700/70"
+                        className="inline-flex items-center gap-2 border rounded-sm px-2 py-1 dark:border-slate-600 dark:bg-slate-700/70"
                         title={perm}
                       >
                         <input
@@ -421,7 +421,7 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
             type="submit"
             aria-keyshortcuts="Alt+S"
             title="Save (Alt+S)"
-            className={`px-6 py-2 rounded font-semibold transition-all duration-200 ${btnPrimary.className}`}
+            className={`px-6 py-2 rounded-sm font-semibold transition-all duration-200 ${btnPrimary.className}`}
             style={{
               ...btnPrimary.style,
               opacity: submitting ? 0.6 : 1,

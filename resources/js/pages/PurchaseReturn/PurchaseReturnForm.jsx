@@ -1318,12 +1318,12 @@ const handleSelectChange = async (field, value) => {
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -1586,7 +1586,7 @@ const handleSelectChange = async (field, value) => {
                   }`}
                   title={selectedSupplierObj?.name || "Click to search supplier..."}
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                     <path d="M3 21h18" />
                     <path d="M5 21V7l7-4 7 4v14" />
                     <path d="M9 9h1M9 13h1M14 9h1M14 13h1M9 17h6" />
@@ -1612,7 +1612,7 @@ const handleSelectChange = async (field, value) => {
                   }`}
                   title={selectedInvoiceObj?.posted_number || "Click to search invoice..."}
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                     <polyline points="14 2 14 8 20 8" />
                   </svg>
@@ -1676,7 +1676,7 @@ const handleSelectChange = async (field, value) => {
                     <button
                       type="button"
                       onClick={() => removeItem(i)}
-                      className={`px-1 rounded text-[10px] transition-all duration-200 ${btnDanger.className}`}
+                      className={`px-1 rounded-sm text-[10px] transition-all duration-200 ${btnDanger.className}`}
                       style={btnDanger.style}
                     >
                       X
@@ -1688,7 +1688,7 @@ const handleSelectChange = async (field, value) => {
                     <div
                       ref={(el) => (productSearchRefs.current[i] = el)}
                       onFocusCapture={() => { if (!form.purchase_invoice_id) refreshProducts(""); }}
-                      className={rowErrors[i]?.product ? "ring-2 ring-red-500 rounded" : ""}
+                      className={rowErrors[i]?.product ? "ring-2 ring-red-500 rounded-sm" : ""}
                     >
                       <ProductSearchInput
                         value={item.product_id}
@@ -1712,7 +1712,7 @@ const handleSelectChange = async (field, value) => {
 
                   {/* Batch */}
                   <td className="border w-16">
-                    <div className={rowErrors[i]?.batch ? "ring-2 ring-red-500 rounded" : ""}>
+                    <div className={rowErrors[i]?.batch ? "ring-2 ring-red-500 rounded-sm" : ""}>
                       <BatchSearchInput
                         ref={(el) => {
                           if (el && currentField === "batch" && currentRowIndex === i) {
@@ -1822,7 +1822,7 @@ const handleSelectChange = async (field, value) => {
                     <button
                       type="button"
                       onClick={addItem}
-                      className={`px-1 rounded text-[10px] transition-all duration-200 ${btnSecondary.className}`}
+                      className={`px-1 rounded-sm text-[10px] transition-all duration-200 ${btnSecondary.className}`}
                       style={btnSecondary.style}
                     >
                       +
@@ -1835,7 +1835,7 @@ const handleSelectChange = async (field, value) => {
         </div>
 
 {/* ================= FOOTER ================= */}
-        <div className={`sticky bottom-0 shadow p-2 z-10 ${isDark ? "bg-slate-800 border-t border-slate-700" : "bg-white border-t border-gray-200"}`}>
+        <div className={`sticky bottom-0 shadow-sm p-2 z-10 ${isDark ? "bg-slate-800 border-t border-slate-700" : "bg-white border-t border-gray-200"}`}>
           <div className="grid grid-cols-6 gap-2 text-xs">
             <div className={`p-1.5 rounded-lg border ${isDark ? "border-slate-700 bg-slate-700/40" : "border-gray-200 bg-gray-50"}`}>
               <label className={`block text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Gross Total</label>

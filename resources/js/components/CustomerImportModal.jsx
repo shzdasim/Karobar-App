@@ -58,7 +58,7 @@ export default function CustomerImportModal({ open, onClose, onImported }) {
       <div className="bg-white w-[min(900px,95vw)] rounded-2xl shadow-xl overflow-hidden">
         <div className="px-6 py-4 border-b flex items-center justify-between">
           <h2 className="text-xl font-semibold">Import Customers (CSV)</h2>
-          <button className="px-3 py-1 rounded border hover:bg-gray-50"
+          <button className="px-3 py-1 rounded-sm border hover:bg-gray-50"
                   onClick={() => { reset(); onClose?.(); }}>✕</button>
         </div>
 
@@ -70,11 +70,11 @@ export default function CustomerImportModal({ open, onClose, onImported }) {
               </label>
               <input type="file" accept=".csv,text/csv"
                      onChange={(e)=>setFile(e.target.files?.[0]||null)}
-                     className="block w-full border rounded p-2" />
+                     className="block w-full border rounded-sm p-2" />
               <div className="flex items-center gap-3">
                 <label className="text-sm text-gray-700">Delimiter</label>
                 <select value={delimiter} onChange={(e)=>setDelimiter(e.target.value)}
-                        className="border rounded h-9 px-2 text-sm">
+                        className="border rounded-sm h-9 px-2 text-sm">
                   <option value=",">Comma (,)</option>
                   <option value=";">Semicolon (;)</option>
                   <option value="\t">Tab</option>
@@ -104,7 +104,7 @@ export default function CustomerImportModal({ open, onClose, onImported }) {
               {res.invalid_samples?.length > 0 && (
                 <div>
                   <h3 className="font-medium mb-2">Invalid sample rows (first {res.invalid_samples.length}):</h3>
-                  <div className="max-h-64 overflow-auto border rounded">
+                  <div className="max-h-64 overflow-auto border rounded-sm">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 sticky top-0">
                         <tr><Th>Row#</Th><Th>Name</Th><Th>Email</Th><Th>Phone</Th><Th>Address</Th><Th>Errors</Th></tr>
@@ -133,7 +133,7 @@ export default function CustomerImportModal({ open, onClose, onImported }) {
               {res.valid_samples?.length > 0 && (
                 <div>
                   <h3 className="font-medium mb-2">Valid sample rows (first {res.valid_samples.length}):</h3>
-                  <div className="max-h-48 overflow-auto border rounded">
+                  <div className="max-h-48 overflow-auto border rounded-sm">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 sticky top-0">
                         <tr><Th>Row#</Th><Th>Name</Th><Th>Email</Th><Th>Phone</Th><Th>Address</Th></tr>
@@ -162,25 +162,25 @@ export default function CustomerImportModal({ open, onClose, onImported }) {
             <>
               <div className="text-sm text-gray-600">CSV header: <code>name[,email,phone,address]</code></div>
               <div className="flex items-center gap-2">
-                <button className="px-4 h-10 rounded border" onClick={()=>{reset(); onClose?.();}}>Cancel</button>
+                <button className="px-4 h-10 rounded-sm border" onClick={()=>{reset(); onClose?.();}}>Cancel</button>
                 <button disabled={!canValidate} onClick={handleValidate}
-                        className={`px-4 h-10 rounded text-white ${validating?'bg-blue-400':'bg-blue-600 hover:bg-blue-700'}`}>
+                        className={`px-4 h-10 rounded-sm text-white ${validating?'bg-blue-400':'bg-blue-600 hover:bg-blue-700'}`}>
                   {validating ? 'Validating…' : 'Validate'}
                 </button>
               </div>
             </>
           ) : (
             <>
-              <button className="px-4 h-10 rounded border" onClick={reset}>Start Over</button>
+              <button className="px-4 h-10 rounded-sm border" onClick={reset}>Start Over</button>
               <div className="flex items-center gap-2">
                 <button disabled={committing} onClick={()=>handleCommit(true)}
-                        className={`px-4 h-10 rounded text-white ${committing?'bg-green-400':'bg-green-600 hover:bg-green-700'}`}
+                        className={`px-4 h-10 rounded-sm text-white ${committing?'bg-green-400':'bg-green-600 hover:bg-green-700'}`}
                         title="Insert/Update only valid rows">
                   {committing ? 'Importing…' : `Import ${res.invalid ? 'Valid Rows Only' : 'All'}`}
                 </button>
                 {res.invalid > 0 && (
                   <button disabled={committing} onClick={()=>handleCommit(false)}
-                          className="px-4 h-10 rounded border border-red-600 text-red-700 hover:bg-red-50"
+                          className="px-4 h-10 rounded-sm border border-red-600 text-red-700 hover:bg-red-50"
                           title="Abort on first error">
                     Import (Abort on Error)
                   </button>
@@ -200,7 +200,7 @@ function Badge({ label, variant="gray" }) {
     green:"bg-green-100 text-green-700",
     red:"bg-red-100 text-red-700",
   };
-  return <span className={`inline-flex items-center px-2 py-1 rounded text-sm ${map[variant]}`}>{label}</span>;
+  return <span className={`inline-flex items-center px-2 py-1 rounded-sm text-sm ${map[variant]}`}>{label}</span>;
 }
 function Th({children}){ return <th className="border p-2 text-left">{children}</th> }
 function Td({children}){ return <td className="border p-2 align-top">{children}</td> }

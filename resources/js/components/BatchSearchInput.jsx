@@ -95,7 +95,7 @@ const BatchSearchInput = forwardRef(
           }}
           onFocus={() => setShowDropdown(true)}
           onKeyDown={handleKeyDown}
-          className="border w-full h-6 text-[11px] px-1 rounded-lg bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400/40 dark:focus:ring-indigo-400/40"
+          className="border w-full h-6 text-[11px] px-1 rounded-lg bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-hidden focus:ring-2 focus:ring-blue-400/40 dark:focus:ring-indigo-400/40"
           placeholder="Search batch..."
         />
         {showDropdown && filtered.length > 0 && (

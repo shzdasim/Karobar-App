@@ -85,10 +85,10 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
   }), [theme]);
 
   // Get button style class from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   const isOutlined = buttonStyle === 'outlined';
   const buttonStyleClass = {
-    'rounded': 'rounded-lg',
+    'rounded-sm': 'rounded-lg',
     'outlined': 'rounded-lg',
     'soft': 'rounded-xl',
   }[buttonStyle] || 'rounded-lg';
@@ -100,7 +100,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
 
   // Dynamic button class generator
   const getButtonClass = (baseColor, hoverColor, shadowColor) => 
-    `inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-${baseColor}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-lg'}`;
+    `inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-hidden focus:ring-2 focus:ring-${baseColor}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-lg'}`;
 
   const openInNewTab = (path) => window.open(path, "_blank", "noopener,noreferrer");
 
@@ -155,7 +155,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
       <header
         role="banner"
         className={[
-          "w-full bg-white/55 backdrop-blur-sm ring-1 ring-white/30 dark:bg-slate-800/70 dark:ring-white/10 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.25)]",
+          "w-full bg-white/55 backdrop-blur-xs ring-1 ring-white/30 dark:bg-slate-800/70 dark:ring-white/10 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.25)]",
           "relative px-4 py-3",
           "before:absolute before:inset-0 before:ring-1 before:ring-white/30 dark:before:ring-white/10",
         ].join(" ")}
@@ -176,7 +176,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
               onClick={() => setNotifOpen(true)}
               title="Open Notification Center"
               aria-label="Open notification center"
-              className={`relative inline-flex items-center justify-center ${buttonStyleClass} p-2 transition-all hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-${themeColors.primary}/50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}
+              className={`relative inline-flex items-center justify-center ${buttonStyleClass} p-2 transition-all hover:scale-105 active:scale-95 focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}
               style={{
                 background: getButtonBg(themeColors.primary),
                 border: getButtonBorder(themeColors.primary),
@@ -201,7 +201,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
             {/* License badge */}
             <button
               onClick={() => navigate("/settings#license")}
-              className={`inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-${themeColors.secondary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}
+              className={`inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-hidden focus:ring-2 focus:ring-${themeColors.secondary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}
               style={{ 
                 background: getButtonBg(themeColors.secondary),
                 border: getButtonBorder(themeColors.secondary),
@@ -218,7 +218,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
               onClick={() => openInNewTab("/purchase-invoices/create")}
               aria-keyshortcuts="Alt+1"
               title="Open Purchase Invoice (Alt+1) in a new tab"
-              className={`inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-${themeColors.secondary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}
+              className={`inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-hidden focus:ring-2 focus:ring-${themeColors.secondary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}
               style={{ 
                 background: getButtonBg(themeColors.secondary),
                 border: getButtonBorder(themeColors.secondary),
@@ -234,7 +234,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
               onClick={() => openInNewTab("/sale-invoices/create/retail")}
               aria-keyshortcuts="Alt+2"
               title="Open Sale Invoice (Alt+2) in a new tab"
-              className={`inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-${themeColors.primary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}
+              className={`inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}
               style={{ 
                 background: getButtonBg(themeColors.primary),
                 border: getButtonBorder(themeColors.primary),
@@ -246,14 +246,14 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
               <span className="hidden sm:inline">Sale</span>
             </button>
 
-            <div className="mx-1 h-6 w-px bg-gradient-to-b from-transparent via-slate-300/60 to-transparent" />
+            <div className="mx-1 h-6 w-px bg-linear-to-b from-transparent via-slate-300/60 to-transparent" />
 
             {/* User menu */}
             <div className="relative">
               <button
                 ref={btnRef}
                 onClick={() => setOpen((v) => !v)}
-                className={`flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-${themeColors.primary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}
+                className={`flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}
                 style={{ 
                   background: getButtonBg(themeColors.primary),
                   border: getButtonBorder(themeColors.primary),
@@ -265,7 +265,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
                 aria-controls="topbar-user-menu"
               >
                 <span 
-                  className={`inline-grid h-5 w-5 place-items-center rounded-full bg-white/90 text-xs font-bold shadow ${isOutlined ? '' : ''}`}
+                  className={`inline-grid h-5 w-5 place-items-center rounded-full bg-white/90 text-xs font-bold shadow-sm ${isOutlined ? '' : ''}`}
                   style={{ color: themeColors.primary }}
                 >
                   {(user?.name || "U").slice(0, 1).toUpperCase()}
@@ -285,8 +285,8 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
                   role="menu"
                   className={[
                     "absolute right-0 mt-2 w-48 rounded-xl overflow-hidden",
-                    "bg-white/95 backdrop-blur ring-1 ring-gray-200/70 shadow-xl",
-                    navigationStyle === 'topbar' ? 'z-[1000000]' : '',
+                    "bg-white/95 backdrop-blur-sm ring-1 ring-gray-200/70 shadow-xl",
+                    navigationStyle === 'topbar' ? 'z-1000000' : '',
                   ].join(" ")}
                 >
                   <button
@@ -295,7 +295,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
                       setOpen(false);
                       navigate("/profile");
                     }}
-                    className="block w-full px-4 py-2 text-left text-sm hover:bg-white/80 focus:bg-white/80 focus:outline-none"
+                    className="block w-full px-4 py-2 text-left text-sm hover:bg-white/80 focus:bg-white/80 focus:outline-hidden"
                   >
                     Profile
                   </button>
@@ -311,7 +311,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
                         navigate("/");
                       });
                     }}
-                    className="block w-full px-4 py-2 text-left text-sm hover:bg-white/80 focus:bg-white/80 focus:outline-none"
+                    className="block w-full px-4 py-2 text-left text-sm hover:bg-white/80 focus:bg-white/80 focus:outline-hidden"
                   >
                     Logout
                   </button>

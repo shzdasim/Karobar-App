@@ -222,7 +222,7 @@ function Sparkline({ data, color, suffix }) {
 
 function SectionCard({ children, className = "" }) {
   return (
-    <div className={`rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 shadow-sm ${className}`}>
+    <div className={`rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 shadow-xs ${className}`}>
       {children}
     </div>
   );
@@ -232,7 +232,7 @@ function CardHeader({ icon: Icon, iconStyle, title, subtitle, right }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-slate-100 dark:border-slate-700/70">
       <div className="flex items-center gap-3 min-w-0">
-        <div className="p-2 rounded-xl shadow-sm shrink-0" style={{ backgroundColor: iconStyle?.bg || "transparent" }}>
+        <div className="p-2 rounded-xl shadow-xs shrink-0" style={{ backgroundColor: iconStyle?.bg || "transparent" }}>
           <Icon className="w-4 h-4" style={{ color: iconStyle?.color || "#64748b" }} />
         </div>
         <div className="min-w-0">
@@ -779,7 +779,7 @@ return (
         </div>
 
         <div className="flex items-center gap-2.5">
-          <span className="hidden sm:inline-flex items-center gap-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 px-3.5 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 shadow-sm">
+          <span className="hidden sm:inline-flex items-center gap-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 px-3.5 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 shadow-xs">
             <SparklesIcon className="w-4 h-4" style={{ color: themeColors.primary }} />
             {daysInPeriod > 1 ? `${daysInPeriod}-day view` : "Today's overview"}
           </span>
@@ -805,7 +805,7 @@ return (
                 type="date"
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
-                className="w-full min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-700/60 px-3 py-1.5 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-shadow"
+                className="w-full min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-700/60 px-3 py-1.5 text-sm text-slate-800 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-500/40 transition-shadow"
               />
             </div>
             <div className="flex items-center gap-2 flex-1 min-w-[150px]">
@@ -814,7 +814,7 @@ return (
                 type="date"
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
-                className="w-full min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-700/60 px-3 py-1.5 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-shadow"
+                className="w-full min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-700/60 px-3 py-1.5 text-sm text-slate-800 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-500/40 transition-shadow"
               />
             </div>
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -866,12 +866,12 @@ return (
               }
             }}
             title={k.path ? `Open ${k.label} page` : undefined}
-            className="group relative rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 shadow-sm hover:shadow-lg hover:-translate-y-0.5 hover:ring-2 hover:ring-blue-500/20 transition-all duration-300 overflow-hidden cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+            className="group relative rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 shadow-xs hover:shadow-lg hover:-translate-y-0.5 hover:ring-2 hover:ring-blue-500/20 transition-all duration-300 overflow-hidden cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500/40"
           >
             <div className="h-1 w-full" style={{ background: `linear-gradient(to right, ${k.color}, ${k.color}B3)` }} />
             <div className="p-5">
               <div className="flex items-center justify-between gap-3 mb-1">
-                <div className="p-2.5 rounded-xl shadow-sm" style={{ backgroundColor: k.bg }}>
+                <div className="p-2.5 rounded-xl shadow-xs" style={{ backgroundColor: k.bg }}>
                   <k.icon className="w-5 h-5" style={{ color: k.color }} />
                 </div>
                 <div className="flex items-center gap-2">
@@ -933,7 +933,7 @@ return (
               }
             }}
             title={chip.path ? `Open ${chip.label} page` : undefined}
-            className="group flex items-center gap-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 shadow-sm px-4 py-3.5 hover:shadow-md hover:-translate-y-0.5 hover:ring-2 hover:ring-blue-500/20 transition-all duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+            className="group flex items-center gap-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 shadow-xs px-4 py-3.5 hover:shadow-md hover:-translate-y-0.5 hover:ring-2 hover:ring-blue-500/20 transition-all duration-200 cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500/40"
           >
             <div className="p-2 rounded-xl shrink-0" style={{ backgroundColor: chip.bg }}>
               <chip.icon className="w-4 h-4" style={{ color: chip.color }} />
@@ -1287,7 +1287,7 @@ return (
                   onClick={() => setExpiryMonths(opt.m)}
                   className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all duration-200 ${
                     expiryMonths === opt.m
-                      ? "text-white shadow-sm"
+                      ? "text-white shadow-xs"
                       : "text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700"
                   }`}
                   style={expiryMonths === opt.m ? { background: `linear-gradient(135deg, ${themeColors.tertiary}, ${themeColors.tertiaryHover})` } : {}}
@@ -1353,7 +1353,7 @@ return (
             <button
               onClick={fetchNearExpiry}
               disabled={loadingExpiry}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white rounded-lg shadow-sm hover:shadow-md active:scale-95 transition-all duration-200 disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white rounded-lg shadow-xs hover:shadow-md active:scale-95 transition-all duration-200 disabled:opacity-60"
               style={{ background: `linear-gradient(135deg, ${themeColors.tertiary}, ${themeColors.tertiaryHover})` }}
             >
               <ArrowPathIcon className={`w-3.5 h-3.5 ${loadingExpiry ? "animate-spin" : ""}`} />

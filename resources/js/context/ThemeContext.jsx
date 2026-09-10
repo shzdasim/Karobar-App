@@ -23,7 +23,7 @@ const DARK_THEME = {
   danger_color: '#ef4444',
   border_color: '#334155',
   shadow_color: '#000000',
-  button_style: 'rounded',
+  button_style: 'rounded-sm',
   sidebar_template: 'classic',
   topbar_template: 'classic',
 };
@@ -47,7 +47,7 @@ const LIGHT_THEME = {
   danger_color: '#ef4444',
   border_color: '#e2e8f0',
   shadow_color: '#1e293b',
-  button_style: 'rounded',
+  button_style: 'rounded-sm',
   sidebar_template: 'classic',
   topbar_template: 'classic',
 };
@@ -220,7 +220,7 @@ export function ThemeProvider({ children }) {
     
     // Button style radius
     const radiusMap = {
-      'rounded': '0.5rem',  // 8px
+      'rounded-sm': '0.5rem',  // 8px
       'outlined': '0.5rem', // 8px
       'soft': '0.75rem',   // 12px - medium rounded
     };
@@ -318,7 +318,7 @@ export function ThemeProvider({ children }) {
       
       // Apply button style radius
       const radiusMap = {
-        'rounded': '0.5rem',  // 8px
+        'rounded-sm': '0.5rem',  // 8px
         'outlined': '0.5rem', // 8px
         'soft': '0.75rem',   // 12px - medium rounded
       };

@@ -184,7 +184,7 @@ if (selectedProduct) {
       >
         <div className="absolute -top-10 -right-8 w-64 h-64 rounded-full bg-white/15 blur-3xl pointer-events-none" />
         <div className="relative px-6 py-5 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur shadow-inner flex items-center justify-center">
+          <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm shadow-inner flex items-center justify-center">
             <HandRaisedIcon className="w-6 h-6 text-white" />
           </div>
           <div>
@@ -196,7 +196,7 @@ if (selectedProduct) {
         </div>
       </div>
 
-      <GlassCard className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      <GlassCard className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden">
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* Product name / existing product picker */}
           <div>
@@ -216,7 +216,7 @@ if (selectedProduct) {
                     }
                   }}
                   placeholder="Type a product name..."
-                  className="flex-1 h-10 bg-transparent outline-none text-sm dark:text-slate-100"
+                  className="flex-1 h-10 bg-transparent outline-hidden text-sm dark:text-slate-100"
                 />
                 {searching && <ArrowPathIcon className="w-4 h-4 animate-spin text-gray-400" />}
               </div>

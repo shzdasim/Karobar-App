@@ -259,11 +259,11 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   );
 
   // 🎨 Dynamic Button styles using theme colors
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -1107,7 +1107,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                     type="button"
                     onClick={() => handleInvoiceTypeChange(type)}
                     className={`px-3.5 py-1.5 text-[11px] font-semibold rounded-md transition-all duration-200 ${
-                      active ? "text-white shadow" : "text-white/80 hover:text-white"
+                      active ? "text-white shadow-sm" : "text-white/80 hover:text-white"
                     }`}
                     style={{
                       backgroundColor: active ? "rgba(255,255,255,0.22)" : "transparent",
@@ -1172,7 +1172,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                 }`}
                 title={selectedCustomer?.name || "Click to search customer..."}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                   <circle cx="12" cy="7" r="4" />
                 </svg>
@@ -1242,9 +1242,9 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         {/* LEFT: Items */}
         <div className="flex flex-col min-h-0 flex-1 lg:flex-none">
           <div className={`text-[11px] font-semibold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Items</div>
-          <div ref={itemsScrollRef} className={`flex-1 overflow-auto border-2 rounded relative ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
+          <div ref={itemsScrollRef} className={`flex-1 overflow-auto border-2 rounded-sm relative ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
             <table className="w-full min-w-[560px] text-[11px] table-fixed border-collapse" autoComplete="off">
-              <thead className={`sticky top-0 z-20 ${isDark ? "bg-slate-800/90 backdrop-blur-sm border-slate-700" : "bg-white/80 backdrop-blur-sm border-gray-200/70"} border-b`}>
+              <thead className={`sticky top-0 z-20 ${isDark ? "bg-slate-800/90 backdrop-blur-xs border-slate-700" : "bg-white/80 backdrop-blur-xs border-gray-200/70"} border-b`}>
                 <tr className="[&>th]:py-1 [&>th]:px-1 [&>th]:text-left">
                   <th className={`w-7 text-center ${isDark ? "text-rose-400" : "text-red-600"}`}>DEL</th>
                   <th className={`w-7 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>#</th>
@@ -1267,7 +1267,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                       <button
                         type="button"
                         onClick={() => removeRow(i)}
-                        className={`px-2 rounded text-white text-[10px] font-semibold transition-all duration-200 ${btnDanger.className}`}
+                        className={`px-2 rounded-sm text-white text-[10px] font-semibold transition-all duration-200 ${btnDanger.className}`}
                         style={btnDanger.style}
                       >
                         X
@@ -1440,7 +1440,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                       <button
                         type="button"
                         onClick={addRow}
-                        className={`px-2 rounded text-white text-[10px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
+                        className={`px-2 rounded-sm text-white text-[10px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
                         style={btnSecondary.style}
                       >
                         +

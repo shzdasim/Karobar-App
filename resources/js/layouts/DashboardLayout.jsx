@@ -72,7 +72,7 @@ export default function DashboardLayout({ children }) {
     <div
       className="
         h-screen bg-gray-100 dark:bg-slate-900
-        grid grid-rows-[auto,1fr] grid-cols-[auto,1fr]
+        grid grid-rows-[auto_1fr] grid-cols-[auto_1fr]
         overflow-hidden
         transform-gpu
       "

@@ -159,12 +159,12 @@ export default function StockAdjustmentsIndex() {
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -368,7 +368,7 @@ export default function StockAdjustmentsIndex() {
         {/* Top row */}
         <div className="relative px-6 pt-5 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur shadow-inner flex items-center justify-center">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm shadow-inner flex items-center justify-center">
               <ClipboardDocumentListIcon className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -390,7 +390,7 @@ export default function StockAdjustmentsIndex() {
                 fetchAdjustments(ctrl.signal);
               }}
               title="Refresh"
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur transition-all duration-200"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm transition-all duration-200"
             >
               <ArrowPathIcon className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Refresh</span>
@@ -414,9 +414,9 @@ export default function StockAdjustmentsIndex() {
 
         {/* Filter bar integrated in hero */}
         <div className="relative px-6 pt-2 pb-5">
-          <div className="flex items-center gap-3 bg-white/15 backdrop-blur border border-white/20 rounded-xl p-3">
+          <div className="flex items-center gap-3 bg-white/15 backdrop-blur-sm border border-white/20 rounded-xl p-3">
             <div className="flex-1 flex items-center gap-2">
-              <MagnifyingGlassIcon className="w-4 h-4 text-white/80 flex-shrink-0" />
+              <MagnifyingGlassIcon className="w-4 h-4 text-white/80 shrink-0" />
               <GlassInput
                 value={q}
                 onChange={(e) => { setQ(e.target.value); setPage(1); }}
@@ -425,7 +425,7 @@ export default function StockAdjustmentsIndex() {
               />
             </div>
             {/* Stats + Page Size */}
-            <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="flex items-center gap-3 shrink-0">
               <span className="text-xs text-white/85 whitespace-nowrap hidden md:inline">
                 {loading ? (
                   <span className="inline-flex items-center gap-1">
@@ -438,12 +438,12 @@ export default function StockAdjustmentsIndex() {
               </span>
 
               {/* Page Size Selector */}
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/20 backdrop-blur border border-white/25">
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/20 backdrop-blur-sm border border-white/25">
                 <label className="text-xs font-medium text-white/85">Show</label>
                 <select
                   value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="h-7 px-2 rounded bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-white/50 focus:border-transparent cursor-pointer"
+                  className="h-7 px-2 rounded-sm bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-white/50 focus:border-transparent cursor-pointer"
                 >
                   <option value={10}>10</option>
                   <option value={25}>25</option>
@@ -457,12 +457,12 @@ export default function StockAdjustmentsIndex() {
       </div>
 
 {/* ===== Stock Adjustments Table ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden hover:shadow-lg transition-shadow duration-300">
         {/* Table Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-2.5">
             <div
-              className="p-2 rounded-xl shadow-sm"
+              className="p-2 rounded-xl shadow-xs"
               style={{ backgroundColor: themeColors.secondaryLight }}
             >
               <ClipboardDocumentListIcon
@@ -479,7 +479,7 @@ export default function StockAdjustmentsIndex() {
 
         <div className="max-h-[65vh] overflow-auto">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
+            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
               <tr className="text-left">
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">#</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Posted No</th>
@@ -550,7 +550,7 @@ export default function StockAdjustmentsIndex() {
                       </span>
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <span className="inline-flex items-center justify-center min-w-[2.5rem] px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                      <span className="inline-flex items-center justify-center min-w-10 px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
                         {itemsCount}
                       </span>
                     </td>
@@ -610,14 +610,14 @@ export default function StockAdjustmentsIndex() {
             <button
               onClick={() => setPage(1)}
               disabled={page === 1}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
             >
               ⏮
             </button>
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
             >
               ◀
             </button>
@@ -657,14 +657,14 @@ export default function StockAdjustmentsIndex() {
             <button
               onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
               disabled={page === pageCount}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === pageCount ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === pageCount ? 'opacity-40' : ''}`}
             >
               ▶
             </button>
             <button
               onClick={() => setPage(pageCount)}
               disabled={page === pageCount}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === pageCount ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === pageCount ? 'opacity-40' : ''}`}
             >
               ⏭
             </button>

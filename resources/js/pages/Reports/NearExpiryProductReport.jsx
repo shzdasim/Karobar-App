@@ -245,12 +245,12 @@ const [supplierValue, setSupplierValue] = useState(null);
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -439,7 +439,7 @@ const [supplierValue, setSupplierValue] = useState(null);
             <button
               title="Reset Filters"
               onClick={resetFilters}
-              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
+              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
             >
               <ArrowPathIcon className="w-4 h-4" />
               <span>Reset</span>
@@ -449,7 +449,7 @@ const [supplierValue, setSupplierValue] = useState(null);
                 onClick={fetchReport}
                 disabled={loading}
                 className={`h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 ${
-                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 shadow-lg"
+                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 shadow-lg"
                 }`}
               >
                 <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -474,7 +474,7 @@ const [supplierValue, setSupplierValue] = useState(null);
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
               />
             </div>
 
@@ -487,7 +487,7 @@ const [supplierValue, setSupplierValue] = useState(null);
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
               />
             </div>
 
@@ -498,11 +498,11 @@ const [supplierValue, setSupplierValue] = useState(null);
                 <button
                   type="button"
                   onClick={() => setSupplierSearchOpen(true)}
-                  className={`h-9 w-full px-3 rounded-lg text-xs text-left inline-flex items-center gap-2 transition-all duration-200 border border-white/30 bg-slate-900/50 backdrop-blur-sm ${
+                  className={`h-9 w-full px-3 rounded-lg text-xs text-left inline-flex items-center gap-2 transition-all duration-200 border border-white/30 bg-slate-900/50 backdrop-blur-xs ${
                     supplierValue ? "text-white font-medium" : "text-white/70"
                   }`}
                 >
-                  <BuildingStorefrontIcon className="w-4 h-4 flex-shrink-0 text-white/70" />
+                  <BuildingStorefrontIcon className="w-4 h-4 shrink-0 text-white/70" />
                   <span className="truncate">{supplierValue?.name || "All Suppliers"}</span>
                 </button>
                 {supplierValue && (
@@ -512,7 +512,7 @@ const [supplierValue, setSupplierValue] = useState(null);
                       setSupplierValue(null);
                       setSupplierId("");
                     }}
-                    className="h-9 w-8 flex-shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-sm transition-all duration-200"
+                    className="h-9 w-8 shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-xs transition-all duration-200"
                     title="Clear supplier"
                   >
                     ×
@@ -528,11 +528,11 @@ const [supplierValue, setSupplierValue] = useState(null);
                 <button
                   type="button"
                   onClick={() => setBrandSearchOpen(true)}
-                  className={`h-9 w-full px-3 rounded-lg text-xs text-left inline-flex items-center gap-2 transition-all duration-200 border border-white/30 bg-slate-900/50 backdrop-blur-sm ${
+                  className={`h-9 w-full px-3 rounded-lg text-xs text-left inline-flex items-center gap-2 transition-all duration-200 border border-white/30 bg-slate-900/50 backdrop-blur-xs ${
                     brandValue ? "text-white font-medium" : "text-white/70"
                   }`}
                 >
-                  <TagIcon className="w-4 h-4 flex-shrink-0 text-white/70" />
+                  <TagIcon className="w-4 h-4 shrink-0 text-white/70" />
                   <span className="truncate">{brandValue?.name || "All Brands"}</span>
                 </button>
                 {brandValue && (
@@ -542,7 +542,7 @@ const [supplierValue, setSupplierValue] = useState(null);
                       setBrandValue(null);
                       setBrandId("");
                     }}
-                    className="h-9 w-8 flex-shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-sm transition-all duration-200"
+                    className="h-9 w-8 shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-xs transition-all duration-200"
                     title="Clear brand"
                   >
                     ×
@@ -575,7 +575,7 @@ const [supplierValue, setSupplierValue] = useState(null);
                       setProductValue(null);
                       setProductId("");
                     }}
-                    className="h-9 w-8 flex-shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-sm transition-all duration-200"
+                    className="h-9 w-8 shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-xs transition-all duration-200"
                     title="Clear product"
                   >
                     ×
@@ -591,7 +591,7 @@ const [supplierValue, setSupplierValue] = useState(null);
                   onClick={fetchReport}
                   disabled={loading}
                   className={`h-9 min-w-[130px] px-4 inline-flex items-center justify-center gap-2 rounded-lg text-xs font-bold text-white transition-all duration-200 ${
-                    loading ? "opacity-50 cursor-not-allowed" : "bg-white/25 hover:bg-white/35 backdrop-blur-sm"
+                    loading ? "opacity-50 cursor-not-allowed" : "bg-white/25 hover:bg-white/35 backdrop-blur-xs"
                   }`}
                 >
                   {loading ? (
@@ -613,7 +613,7 @@ const [supplierValue, setSupplierValue] = useState(null);
                   onClick={exportPdf}
                   disabled={pdfLoading || rows.length === 0}
                   className={`h-9 min-w-[130px] px-4 inline-flex items-center justify-center gap-2 rounded-lg text-xs font-bold text-white transition-all duration-200 ${
-                    pdfLoading || rows.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/25 hover:bg-white/35 backdrop-blur-sm"
+                    pdfLoading || rows.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/25 hover:bg-white/35 backdrop-blur-xs"
                   }`}
                 >
                   <ArrowDownOnSquareIcon className="w-4 h-4" />
@@ -669,12 +669,12 @@ const [supplierValue, setSupplierValue] = useState(null);
               </div>
 
               {/* ===== Data Table ===== */}
-              <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+              <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden">
                 {/* Table Header */}
                 <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
                   <div className="flex items-center gap-2">
                     <div 
-                      className="p-1 rounded"
+                      className="p-1 rounded-sm"
                       style={{ backgroundColor: themeColors.tertiaryLight + '40' }}
                     >
                       <ClockIcon 
@@ -689,7 +689,7 @@ const [supplierValue, setSupplierValue] = useState(null);
 
                 <div className="max-h-[65vh] overflow-auto">
                   <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
+                    <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
                       <tr className="text-left">
                         <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-8">#</th>
                         <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Product</th>
@@ -731,13 +731,13 @@ const [supplierValue, setSupplierValue] = useState(null);
                           </td>
                           
                           <td className="px-2 py-2">
-                            <span className="px-2 py-0.5 rounded bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 text-xs">
+                            <span className="px-2 py-0.5 rounded-sm bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 text-xs">
                               {row.supplier_name || "—"}
                             </span>
                           </td>
                           
                           <td className="px-2 py-2">
-                            <span className="px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs">
+                            <span className="px-2 py-0.5 rounded-sm bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs">
                               {row.brand_name || "—"}
                             </span>
                           </td>
@@ -759,8 +759,8 @@ const [supplierValue, setSupplierValue] = useState(null);
                           
                           <td className="px-2 py-2 text-right">
                             <span className={`
-                              inline-flex items-center justify-center min-w-[3rem] px-2 py-0.5 rounded-full text-xs font-bold
-                              bg-gradient-to-br from-amber-400 to-orange-500 text-white
+                              inline-flex items-center justify-center min-w-12 px-2 py-0.5 rounded-full text-xs font-bold
+                              bg-linear-to-br from-amber-400 to-orange-500 text-white
                               shadow-lg shadow-amber-500/25 ring-1 ring-amber-400/30
                             `}>
                               {fmtNumber(row.quantity)}
@@ -772,15 +772,15 @@ const [supplierValue, setSupplierValue] = useState(null);
 
                     {/* Footer with Totals */}
                     <tfoot className={`
-                      border-t-2 backdrop-blur-sm font-semibold
+                      border-t-2 backdrop-blur-xs font-semibold
                       ${isDark ? "border-slate-600 bg-slate-800/80" : "border-gray-300 bg-gray-50"}
                     `}>
                       <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>
                         <td colSpan={6} className="px-2 py-2 text-right text-gray-700 dark:text-gray-300">TOTALS</td>
                         <td className="px-2 py-2 text-right">
                           <span className={`
-                            inline-flex items-center justify-center min-w-[3rem] px-2 py-0.5 rounded-full text-xs font-bold
-                            bg-gradient-to-br from-amber-400 to-orange-500 text-white
+                            inline-flex items-center justify-center min-w-12 px-2 py-0.5 rounded-full text-xs font-bold
+                            bg-linear-to-br from-amber-400 to-orange-500 text-white
                             shadow-lg shadow-amber-500/25 ring-1 ring-amber-400/30
                           `}>
                             {fmtNumber(summary.total_quantity)}
@@ -849,7 +849,7 @@ function KpiCard({ label, value, icon: Icon, isDark, themeColors }) {
   return (
     <div
       className={[
-        "group rounded-xl px-4 py-3 backdrop-blur-sm bg-white/55 ring-1 ring-white/30 shadow-sm relative overflow-hidden",
+        "group rounded-xl px-4 py-3 backdrop-blur-xs bg-white/55 ring-1 ring-white/30 shadow-xs relative overflow-hidden",
         "transition-all duration-200",
         "hover:bg-white/80 hover:backdrop-blur-md hover:shadow-[0_10px_30px_-10px_rgba(6,182,212,0.35)]",
         "hover:ring-white/40",
@@ -857,13 +857,13 @@ function KpiCard({ label, value, icon: Icon, isDark, themeColors }) {
     >
       {/* Gradient accent bar */}
       <div 
-        className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r" 
+        className="absolute top-0 left-0 right-0 h-1 bg-linear-to-r" 
         style={{ background: `linear-gradient(to right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})` }}
       />
       
       <div className="flex items-center gap-2 mb-1 relative z-10">
         <div 
-          className="p-1.5 rounded-lg shadow-sm"
+          className="p-1.5 rounded-lg shadow-xs"
           style={{ background: `linear-gradient(to bottom right, ${cardColor}, ${themeColors.tertiaryHover})` }}
         >
           <Icon className="w-4 h-4 text-white" />

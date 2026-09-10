@@ -18,10 +18,10 @@ export default function ThemeToggle({ className = "" }) {
       onClick={handleClick}
       className={`
         relative inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors duration-200 ease-in-out
-        focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:ring-offset-2 cursor-pointer z-50
+        focus:outline-hidden focus:ring-2 focus:ring-blue-400/50 focus:ring-offset-2 cursor-pointer z-50
         ${isDark 
           ? "bg-slate-700 ring-1 ring-slate-600/50" 
-          : "bg-gradient-to-br from-amber-100 via-white to-amber-50 ring-1 ring-amber-200/50"
+          : "bg-linear-to-br from-amber-100 via-white to-amber-50 ring-1 ring-amber-200/50"
         }
         ${className}
       `}

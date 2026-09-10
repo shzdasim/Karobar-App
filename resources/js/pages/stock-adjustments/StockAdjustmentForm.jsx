@@ -73,12 +73,12 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -653,7 +653,7 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
   return (
     <form className={`flex flex-col ${isDark ? "bg-slate-900" : "bg-gray-50"}`} style={{ minHeight: '74vh', maxHeight: '80vh' }}>
       {/* Header */}
-      <div className={`sticky top-0 shadow p-2 z-10 ${isDark ? "bg-slate-800 border-b border-slate-700" : "bg-white border-b border-gray-200"}`}>
+      <div className={`sticky top-0 shadow-sm p-2 z-10 ${isDark ? "bg-slate-800 border-b border-slate-700" : "bg-white border-b border-gray-200"}`}>
         <h2 className={`text-sm font-bold mb-2 ${isDark ? "text-slate-200" : "text-gray-800"}`}>Stock Adjustment (Enter to move, Alt+S to save)</h2>
         <table className="w-full border-collapse text-xs">
           <tbody>
@@ -869,7 +869,7 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
       </div>
 
       {/* Footer */}
-      <div className={`sticky bottom-0 shadow p-2 z-10 ${isDark ? "bg-slate-800 border-t border-slate-700" : "bg-white border-t border-gray-200"}`}>
+      <div className={`sticky bottom-0 shadow-sm p-2 z-10 ${isDark ? "bg-slate-800 border-t border-slate-700" : "bg-white border-t border-gray-200"}`}>
         <table className="w-full border-collapse text-xs">
           <tbody>
             <tr>
@@ -894,7 +894,7 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                   title="Save (Alt+S)"
                 >
                   {adjustmentId ? 'Update Adjustment' : 'Create Adjustment'}
-                  <span className="ml-2 hidden sm:inline text-[10px] opacity-80 border rounded px-1 py-0.5">Alt+S</span>
+                  <span className="ml-2 hidden sm:inline text-[10px] opacity-80 border rounded-sm px-1 py-0.5">Alt+S</span>
                 </button>
               </td>
             </tr>

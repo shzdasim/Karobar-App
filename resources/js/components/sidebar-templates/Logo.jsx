@@ -11,7 +11,7 @@ export default function Logo({ className = "h-8 w-8", alt = "Karobar App" }) {
           key={src}
           src={src}
           alt={alt}
-          className={`${className} object-contain rounded hidden`}
+          className={`${className} object-contain rounded-sm hidden`}
           onLoad={(e) => {
             const imgs = e.currentTarget.parentElement.querySelectorAll("img");
             imgs.forEach((im) => (im.style.display = "none"));

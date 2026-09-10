@@ -107,22 +107,22 @@ const [customers, setCustomers] = useState([]);
 
   // 🎨 Modern button palette (will use dynamic theme colors)
   const tintPrimary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintSecondary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintTertiary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintGlass = useMemo(() => `
-    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-xs ring-1 ring-gray-200/60 dark:ring-white/10
     hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
@@ -132,7 +132,7 @@ const [customers, setCustomers] = useState([]);
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintIconBtn = useMemo(() => `
-    bg-white/60 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    bg-white/60 dark:bg-slate-700/60 backdrop-blur-xs ring-1 ring-gray-200/60 dark:ring-white/10
     hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-md hover:scale-[1.05] active:scale-[0.95] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
@@ -207,12 +207,12 @@ const [customers, setCustomers] = useState([]);
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -735,7 +735,7 @@ return (
                 className="flex-1 h-full px-3 text-left text-xs flex items-center gap-2 min-w-0"
                 title={customerId ? (customers.find(c => String(c.id) === String(customerId))?.name || "Selected customer") : "Click to search customer..."}
               >
-                <UserIcon className="w-4 h-4 flex-shrink-0" />
+                <UserIcon className="w-4 h-4 shrink-0" />
                 {customerId ? (
                   <span className="truncate font-medium">
                     {customers.find(c => String(c.id) === String(customerId))?.name || "Selected customer"}
@@ -748,7 +748,7 @@ return (
                 <button
                   type="button"
                   onClick={() => setCustomerId("")}
-                  className="h-full px-2 flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 transition-colors flex-shrink-0"
+                  className="h-full px-2 flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 transition-colors shrink-0"
                   title="Clear customer"
                   aria-label="Clear customer"
                 >
@@ -827,7 +827,7 @@ return (
                   <ArrowDownOnSquareIcon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Save</span>
                   {(newCount > 0 || updCount > 0) && customerId && (
-                    <span className="ml-0.5 px-1 py-0.5 rounded bg-white/30 text-[10px]">
+                    <span className="ml-0.5 px-1 py-0.5 rounded-sm bg-white/30 text-[10px]">
                       {newCount + updCount}
                     </span>
                   )}
@@ -839,7 +839,7 @@ return (
             <button
               onClick={() => handlePrint()}
               disabled={!customerId}
-              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
+              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
             >
               <PrinterIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Print</span>
@@ -859,7 +859,7 @@ return (
                 type="date"
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
               />
             </div>
             <div className="col-span-1 md:col-span-4 flex flex-col gap-1">
@@ -868,7 +868,7 @@ return (
                 type="date"
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
               />
             </div>
             <div className="col-span-2 md:col-span-4 flex flex-col gap-1">
@@ -877,7 +877,7 @@ return (
                 onClick={fetchData}
                 disabled={!customerId}
                 className={`h-9 px-4 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs font-bold text-white transition-all duration-200 ${
-                  customerId ? "bg-white/25 hover:bg-white/35 backdrop-blur-sm" : "opacity-40 cursor-not-allowed"
+                  customerId ? "bg-white/25 hover:bg-white/35 backdrop-blur-xs" : "opacity-40 cursor-not-allowed"
                 }`}
               >
                 <ArrowPathIcon className="w-3.5 h-3.5" />
@@ -899,11 +899,11 @@ return (
       )}
 
       {/* ===== Table Compact ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden">
         {/* Table Header */}
         <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2">
-            <div className={`p-1 rounded ${SECTION_CONFIG.core.bgDark}`}>
+            <div className={`p-1 rounded-sm ${SECTION_CONFIG.core.bgDark}`}>
               <Squares2X2Icon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             </div>
             <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Ledger Entries</span>
@@ -950,13 +950,13 @@ return (
                         type="date"
                         value={(r.entry_date || "").slice(0,10)}
                         onChange={(e) => handleField(r.__i, "entry_date", e.target.value)}
-                        className={`w-full text-xs border rounded px-1 py-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-300 bg-white text-gray-800"}`}
+                        className={`w-full text-xs border rounded-sm px-1 py-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-300 bg-white text-gray-800"}`}
                       />
                     </td>
 
                     <td className="px-2 py-2">
                       <span 
-                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold transition-all duration-200`}
+                        className={`inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-semibold transition-all duration-200`}
                         style={{
                           background: `linear-gradient(to bottom right, ${r.entry_type === 'invoice' ? themeColors.primary : r.entry_type === 'payment' ? themeColors.emerald : themeColors.tertiary}, ${r.entry_type === 'invoice' ? themeColors.primaryHover : r.entry_type === 'payment' ? themeColors.emeraldHover : themeColors.tertiaryHover})`,
                           color: 'white',
@@ -974,7 +974,7 @@ return (
                         onChange={(e) => handleField(r.__i, "posted_number", e.target.value)}
                         disabled={isInvoice}
                         placeholder={isInvoice ? "-" : "Ref"}
-                        className={`w-full text-xs border rounded px-1 py-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200 disabled:bg-slate-800" : "border-gray-300 bg-white text-gray-800 disabled:bg-gray-100"}`}
+                        className={`w-full text-xs border rounded-sm px-1 py-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200 disabled:bg-slate-800" : "border-gray-300 bg-white text-gray-800 disabled:bg-gray-100"}`}
                       />
                     </td>
 
@@ -986,7 +986,7 @@ return (
                           onChange={(e) => setInput(r.__i, "invoice_total", e.target.value)}
                           onBlur={() => commitNumber(r.__i, "invoice_total")}
                           disabled={isInvoice}
-                          className={`w-full text-xs text-right border rounded px-1 py-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200 disabled:bg-slate-800" : "border-gray-300 bg-white text-gray-800 disabled:bg-gray-100"}`}
+                          className={`w-full text-xs text-right border rounded-sm px-1 py-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200 disabled:bg-slate-800" : "border-gray-300 bg-white text-gray-800 disabled:bg-gray-100"}`}
                         />
                       ) : (
                         <span className={isDark ? "text-slate-500" : "text-gray-400"}>—</span>
@@ -1001,7 +1001,7 @@ return (
                           onChange={(e) => setInput(r.__i, "credited_amount", e.target.value)}
                           onBlur={() => commitNumber(r.__i, "credited_amount")}
                           placeholder="0.00"
-                          className={`w-full text-xs text-right border rounded px-1 py-1 font-medium ${isDark ? "border-slate-600 bg-slate-700 text-emerald-400" : "border-gray-300 bg-white text-emerald-600"}`}
+                          className={`w-full text-xs text-right border rounded-sm px-1 py-1 font-medium ${isDark ? "border-slate-600 bg-slate-700 text-emerald-400" : "border-gray-300 bg-white text-emerald-600"}`}
                         />
                       ) : (
                         <span className={isDark ? "text-slate-500" : "text-gray-400"}>—</span>
@@ -1034,7 +1034,7 @@ return (
                         value={r.description ?? ""}
                         onChange={(e) => handleField(r.__i, "description", e.target.value)}
                         placeholder="..."
-                        className={`w-full text-xs border rounded px-1 py-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-300 bg-white text-gray-800"}`}
+                        className={`w-full text-xs border rounded-sm px-1 py-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-300 bg-white text-gray-800"}`}
                       />
                     </td>
 
@@ -1074,7 +1074,7 @@ return (
       {/* ===== Add Row modal ===== */}
       {addModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={(e)=>{ if(e.target===e.currentTarget) closeAddModal(); }}>
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-xs" />
           <div className="relative w-full max-w-sm">
             <GlassCard>
               <GlassSectionHeader
@@ -1238,7 +1238,7 @@ return (
 
 function Stat({ isDark, label, value }) {
   return (
-    <div className={`${isDark ? "bg-slate-800/60 ring-slate-700" : "bg-white/60 ring-gray-200/60"} px-2 py-1.5 rounded shadow-sm`}>
+    <div className={`${isDark ? "bg-slate-800/60 ring-slate-700" : "bg-white/60 ring-gray-200/60"} px-2 py-1.5 rounded-sm shadow-xs`}>
       <div className={`text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>{label}</div>
       <div className={`text-sm font-semibold ${isDark ? "text-slate-200" : "text-gray-800"}`}>{value}</div>
     </div>

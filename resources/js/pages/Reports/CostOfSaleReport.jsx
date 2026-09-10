@@ -99,17 +99,17 @@ export default function CostOfSaleReport() {
 
   // 🎨 Modern button palette (will use dynamic theme colors)
   const tintPrimary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintSecondary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintGlass = useMemo(() => `
-    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-xs ring-1 ring-gray-200/60 dark:ring-white/10
     hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
@@ -176,12 +176,12 @@ export default function CostOfSaleReport() {
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -414,7 +414,7 @@ export default function CostOfSaleReport() {
                 setToDate(todayStr());
                 setRows([]);
               }}
-              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
+              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
             >
               <ArrowPathIcon className="w-4 h-4" />
               <span>Reset</span>
@@ -425,7 +425,7 @@ export default function CostOfSaleReport() {
                 onClick={fetchReport}
                 disabled={loading}
                 className={`h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 ${
-                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 shadow-lg"
+                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 shadow-lg"
                 }`}
               >
                 <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -448,7 +448,7 @@ export default function CostOfSaleReport() {
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
               />
             </div>
 
@@ -459,7 +459,7 @@ export default function CostOfSaleReport() {
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
               />
             </div>
 
@@ -470,7 +470,7 @@ export default function CostOfSaleReport() {
                 <select
                   value={invoiceType}
                   onChange={(e) => setInvoiceType(e.target.value)}
-                  className="w-full h-9 px-3 pr-8 rounded-lg text-xs appearance-none focus:outline-none focus:ring-2 focus:ring-white/50 cursor-pointer transition-all duration-200 text-white bg-slate-900/50 border border-white/30 backdrop-blur-sm"
+                  className="w-full h-9 px-3 pr-8 rounded-lg text-xs appearance-none focus:outline-hidden focus:ring-2 focus:ring-white/50 cursor-pointer transition-all duration-200 text-white bg-slate-900/50 border border-white/30 backdrop-blur-xs"
                 >
                   <option className="text-gray-900" value="all">All Sales</option>
                   <option className="text-gray-900" value="credit">Credit Sales</option>
@@ -494,7 +494,7 @@ export default function CostOfSaleReport() {
                   setFromDate(start.toISOString().slice(0, 10));
                   setToDate(end.toISOString().slice(0, 10));
                 }}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200"
               >
                 Today
               </button>
@@ -507,7 +507,7 @@ export default function CostOfSaleReport() {
                   setFromDate(start.toISOString().slice(0, 10));
                   setToDate(end.toISOString().slice(0, 10));
                 }}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200"
               >
                 3 Days
               </button>
@@ -520,7 +520,7 @@ export default function CostOfSaleReport() {
                   setFromDate(start.toISOString().slice(0, 10));
                   setToDate(end.toISOString().slice(0, 10));
                 }}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200"
               >
                 7 Days
               </button>
@@ -534,7 +534,7 @@ export default function CostOfSaleReport() {
       <GlassCard className="relative z-10">
         <div className="max-h-[65vh] overflow-auto rounded-b-2xl">
           <table className="min-w-[1200px] w-full text-sm">
-            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
+            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
               <tr className="text-left">
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Date</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right">Gross Sale</th>
@@ -585,7 +585,7 @@ export default function CostOfSaleReport() {
             </tbody>
 
             <tfoot className={`
-              border-t-2 backdrop-blur-sm font-semibold
+              border-t-2 backdrop-blur-xs font-semibold
               ${isDark ? "border-slate-600 bg-slate-800/80" : "border-gray-300 bg-gray-50"}
             `}>
               <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>
@@ -677,15 +677,15 @@ function KpiCard({ label, value, isDark, highlight = false, themeColors }) {
   return (
     <div
       className={[
-        "group rounded-xl px-4 py-3 backdrop-blur-sm bg-white/55 ring-1 ring-white/30 shadow-sm relative overflow-hidden",
+        "group rounded-xl px-4 py-3 backdrop-blur-xs bg-white/55 ring-1 ring-white/30 shadow-xs relative overflow-hidden",
         "transition-all duration-200",
         "hover:bg-white/80 hover:backdrop-blur-md hover:shadow-[0_10px_30px_-10px_rgba(59,130,246,0.35)]",
         "hover:ring-white/40",
-        highlight ? "outline outline-1 outline-emerald-200/50" : "",
+        highlight ? "outline-solid outline-1 outline-emerald-200/50" : "",
       ].join(" ")}
     >
       {/* Gradient accent bar */}
-      <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${cardGradient}`} />
+      <div className={`absolute top-0 left-0 right-0 h-1 bg-linear-to-r ${cardGradient}`} />
       
       <div className="flex items-center gap-2 mb-1 relative z-10">
         <span className={`text-xs uppercase tracking-wide ${isDark ? "text-slate-400" : "text-gray-600"}`}>{label}</span>

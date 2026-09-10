@@ -116,7 +116,7 @@ export default function UserDemandsIndex() {
         <div className="absolute -top-10 -right-8 w-64 h-64 rounded-full bg-white/15 blur-3xl pointer-events-none" />
         <div className="relative px-6 pt-5 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur shadow-inner flex items-center justify-center">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm shadow-inner flex items-center justify-center">
               <HandRaisedIcon className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -153,7 +153,7 @@ export default function UserDemandsIndex() {
 
         {/* Status filter */}
         <div className="relative px-6 pt-2 pb-5">
-          <div className="flex flex-wrap items-center gap-2 bg-white/15 backdrop-blur border border-white/20 rounded-xl p-2">
+          <div className="flex flex-wrap items-center gap-2 bg-white/15 backdrop-blur-sm border border-white/20 rounded-xl p-2">
             {["all", ...STATUS_ORDER].map((s) => (
               <button
                 key={s}
@@ -172,10 +172,10 @@ export default function UserDemandsIndex() {
       </div>
 
       {/* Table */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl shadow-sm" style={{ backgroundColor: themeColors.secondaryLight }}>
+            <div className="p-2 rounded-xl shadow-xs" style={{ backgroundColor: themeColors.secondaryLight }}>
               <HandRaisedIcon className="w-4 h-4" style={{ color: themeColors.secondary }} />
             </div>
             <div>
@@ -187,7 +187,7 @@ export default function UserDemandsIndex() {
 
         <div className="max-h-[65vh] overflow-auto">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
+            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
               <tr className="text-left text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">
                 <th className="px-3 py-2 font-semibold">Product</th>
                 <th className="px-3 py-2 font-semibold">Brand</th>

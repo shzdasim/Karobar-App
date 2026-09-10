@@ -134,7 +134,7 @@ export default function ProductsIndex() {
   }, [theme]);
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Calculate text colors based on background brightness
   const primaryTextColor = useMemo(() => 
@@ -155,7 +155,7 @@ export default function ProductsIndex() {
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -465,7 +465,7 @@ useEffect(() => {
         <div className="relative px-6 pt-5 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           {/* Title */}
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur shadow-inner flex items-center justify-center">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm shadow-inner flex items-center justify-center">
               <CubeIcon className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -480,7 +480,7 @@ useEffect(() => {
           {/* Actions */}
           <div className="flex items-center gap-2.5 flex-wrap">
             {/* Bulk actions pill group */}
-            <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-xl bg-white/15 backdrop-blur border border-white/20">
+            <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-xl bg-white/15 backdrop-blur-sm border border-white/20">
               <Guard when={can.update}>
                 <button
                   onClick={openBulkModal}
@@ -527,7 +527,7 @@ useEffect(() => {
             </div>
 
             {/* Import / Export pill group */}
-            <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-xl bg-white/15 backdrop-blur border border-white/20">
+            <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-xl bg-white/15 backdrop-blur-sm border border-white/20">
               <Guard when={can.import}>
                 <button
                   onClick={() => setImportOpen(true)}
@@ -569,9 +569,9 @@ useEffect(() => {
 
         {/* Filter bar integrated in hero */}
         <div className="relative px-6 pt-2 pb-5">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-white/15 backdrop-blur border border-white/20 rounded-xl p-3">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-white/15 backdrop-blur-sm border border-white/20 rounded-xl p-3">
             <div className="flex items-center gap-2">
-              <Squares2X2Icon className="w-4 h-4 text-white/80 flex-shrink-0" />
+              <Squares2X2Icon className="w-4 h-4 text-white/80 shrink-0" />
               <TextSearch
                 value={qName}
                 onChange={setQName}
@@ -580,7 +580,7 @@ useEffect(() => {
               />
             </div>
             <div className="flex items-center gap-2">
-              <TagIcon className="w-4 h-4 text-white/80 flex-shrink-0" />
+              <TagIcon className="w-4 h-4 text-white/80 shrink-0" />
               <TextSearch
                 value={qBrand}
                 onChange={setQBrand}
@@ -589,7 +589,7 @@ useEffect(() => {
               />
             </div>
             <div className="flex items-center gap-2">
-              <BuildingStorefrontIcon className="w-4 h-4 text-white/80 flex-shrink-0" />
+              <BuildingStorefrontIcon className="w-4 h-4 text-white/80 shrink-0" />
               <TextSearch
                 value={qSupplier}
                 onChange={setQSupplier}
@@ -638,12 +638,12 @@ useEffect(() => {
       </div>
 
       {/* ===== Product Table ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden hover:shadow-lg transition-shadow duration-300">
         {/* Table Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-2.5">
             <div
-              className="p-2 rounded-xl shadow-sm"
+              className="p-2 rounded-xl shadow-xs"
               style={{ backgroundColor: themeColors.secondaryLight }}
             >
               <Squares2X2Icon className="w-4 h-4" style={{ color: themeColors.secondary }} />
@@ -670,7 +670,7 @@ useEffect(() => {
             <select
               value={pageSize}
               onChange={(e) => setPageSize(Number(e.target.value))}
-              className="h-7 px-2 rounded border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:border-transparent cursor-pointer"
+              className="h-7 px-2 rounded-sm border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:border-transparent cursor-pointer"
               style={{
                 '--tw-ring-color': themeColors.primary,
                 outlineColor: themeColors.primary,
@@ -687,7 +687,7 @@ useEffect(() => {
 
         <div className="max-h-[65vh] overflow-auto">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
+            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
               <tr className="text-left">
                 <th className="px-2 py-2 w-8">
                   <input
@@ -698,7 +698,7 @@ useEffect(() => {
                       if (el) el.indeterminate = pageIndeterminate;
                     }}
                     onChange={(e) => togglePageAll(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded border-gray-300 cursor-pointer"
+                    className="w-3.5 h-3.5 rounded-sm border-gray-300 cursor-pointer"
                     style={{ 
                       accentColor: themeColors.primary 
                     }}
@@ -758,7 +758,7 @@ useEffect(() => {
                         checked={isSelected}
                         onChange={(e) => toggleOne(p.id, e.target.checked)}
                         aria-label={`Select ${p.name}`}
-                        className="w-3.5 h-3.5 rounded border-gray-300 cursor-pointer"
+                        className="w-3.5 h-3.5 rounded-sm border-gray-300 cursor-pointer"
                         style={{ 
                           accentColor: themeColors.primary 
                         }}
@@ -788,7 +788,7 @@ useEffect(() => {
                         <span>{p.name}</span>
                         <span 
                           className={`
-                            inline-flex items-center justify-center min-w-[2.5rem] px-2 py-0.5 rounded-full text-xs font-bold
+                            inline-flex items-center justify-center min-w-10 px-2 py-0.5 rounded-full text-xs font-bold
                           `}
                           style={{
                             background: qty > 0 
@@ -806,7 +806,7 @@ useEffect(() => {
 
                     <td className="px-2 py-2">
                       <span 
-                        className="px-2 py-0.5 rounded text-xs"
+                        className="px-2 py-0.5 rounded-sm text-xs"
                         style={{ 
                           backgroundColor: '#dcfce7',
                           color: '#16a34a'
@@ -817,7 +817,7 @@ useEffect(() => {
                     </td>
                     <td className="px-2 py-2">
                       <span 
-                        className="px-2 py-0.5 rounded text-xs"
+                        className="px-2 py-0.5 rounded-sm text-xs"
                         style={{ 
                           backgroundColor: '#fef3c7',
                           color: '#d97706'
@@ -828,7 +828,7 @@ useEffect(() => {
                     </td>
                     <td className="px-2 py-2">
                       <span 
-                        className="px-2 py-0.5 rounded text-xs"
+                        className="px-2 py-0.5 rounded-sm text-xs"
                         style={{ 
                           backgroundColor: '#ffe4e6',
                           color: '#e11d48'
@@ -897,14 +897,14 @@ useEffect(() => {
             <button 
               onClick={() => setPage(1)} 
               disabled={page === 1}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
             >
               ⏮
             </button>
             <button 
               onClick={() => setPage((p) => Math.max(1, p - 1))} 
               disabled={page === 1}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
             >
               ◀
             </button>
@@ -944,14 +944,14 @@ useEffect(() => {
             <button 
               onClick={() => setPage((p) => Math.min(lastPage, p + 1))} 
               disabled={page === lastPage}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
             >
               ▶
             </button>
             <button 
               onClick={() => setPage(lastPage)} 
               disabled={page === lastPage}
-              className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
+              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
             >
               ⏭
             </button>

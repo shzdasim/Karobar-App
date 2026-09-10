@@ -85,12 +85,12 @@ export default function LicenseSetting({
   const textColor = primaryTextColor || getContrastText(colors.primaryHover || colors.primary);
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -150,7 +150,7 @@ export default function LicenseSetting({
 
   // 🎨 Modern button palette
   const btnOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-all duration-200";
-  const btnAmber  = "bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] transition-all duration-200";
+  const btnAmber  = "bg-linear-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] transition-all duration-200";
 
   // Clear license details when license status changes
   useEffect(() => {
@@ -244,7 +244,7 @@ export default function LicenseSetting({
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-3">
             <div 
-              className="p-2 rounded-lg shadow-sm"
+              className="p-2 rounded-lg shadow-xs"
               style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
             >
               <KeyIcon className="w-5 h-5 text-white" />
@@ -312,7 +312,7 @@ export default function LicenseSetting({
                 Copy
               </button>
             </div>
-            <div className={`text-xs font-mono p-2 rounded break-all ${isDark ? "bg-slate-900 text-slate-400" : "bg-gray-50 text-gray-600"}`}>
+            <div className={`text-xs font-mono p-2 rounded-sm break-all ${isDark ? "bg-slate-900 text-slate-400" : "bg-gray-50 text-gray-600"}`}>
               {licenseStatus?.machine_id || "Unable to load"}
             </div>
           </div>
@@ -377,7 +377,7 @@ export default function LicenseSetting({
                         <div className={`text-xs ${isDark ? "text-slate-400" : "text-gray-500"}`}>
                           {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                         </div>
-                        <div className={`text-sm font-medium break-words ${isDark ? "text-slate-300" : "text-gray-700"}`}>
+                        <div className={`text-sm font-medium wrap-break-word ${isDark ? "text-slate-300" : "text-gray-700"}`}>
                           {formatPayloadValue(value)}
                         </div>
                       </div>
@@ -392,7 +392,7 @@ export default function LicenseSetting({
 
       {/* ===== Password Verification Modal ===== */}
       {showPasswordModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className={`w-full max-w-md rounded-2xl shadow-2xl ${isDark ? "bg-slate-800 border-slate-600" : "bg-white border-gray-200"} border`}>
             <div className={`p-6 border-b ${isDark ? "border-slate-600" : "border-gray-200"}`}>
               <div className="flex items-center gap-3">
@@ -413,7 +413,7 @@ export default function LicenseSetting({
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
-                className={`w-full px-4 py-3 rounded-xl border focus:ring-2 focus:ring-blue-400 outline-none ${
+                className={`w-full px-4 py-3 rounded-xl border focus:ring-2 focus:ring-blue-400 outline-hidden ${
                   isDark 
                     ? "bg-slate-700 border-slate-600 text-slate-100" 
                     : "bg-white border-gray-200 text-gray-900"

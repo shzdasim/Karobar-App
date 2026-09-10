@@ -416,7 +416,7 @@ const stopDrag = () => {
 
   // Render a resize handle element
   const renderResizeHandle = (direction) => {
-    const base = "absolute z-[10001]";
+    const base = "absolute z-10001";
     const positionMap = {
       n: "top-0 left-0 w-full h-2 cursor-ns-resize",
       s: "bottom-0 left-0 w-full h-2 cursor-ns-resize",
@@ -470,7 +470,7 @@ const stopDrag = () => {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center">
+    <div className="fixed inset-0 z-10000 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={handleClose} />
 
       {/* Draggable Dialog */}
@@ -500,7 +500,7 @@ style={{
             <button
               type="button"
               onClick={handleClose}
-              className="text-xs px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-slate-600 text-gray-900 dark:text-gray-100"
+              className="text-xs px-2 py-1 rounded-sm hover:bg-gray-100 dark:hover:bg-slate-600 text-gray-900 dark:text-gray-100"
             >
               ✕
             </button>
@@ -519,7 +519,7 @@ style={{
                   name="product_code"
                   value={form.product_code || ""}
                   disabled
-                  className="w-full h-8 px-2 text-xs border rounded bg-gray-100 dark:bg-slate-600 dark:text-slate-200"
+                  className="w-full h-8 px-2 text-xs border rounded-sm bg-gray-100 dark:bg-slate-600 dark:text-slate-200"
                 />
               </div>
               <div>
@@ -529,7 +529,7 @@ style={{
                   name="barcode"
                   value={form.barcode || ""}
                   disabled
-                  className="w-full h-8 px-2 text-xs border rounded bg-gray-100 dark:bg-slate-600 dark:text-slate-200"
+                  className="w-full h-8 px-2 text-xs border rounded-sm bg-gray-100 dark:bg-slate-600 dark:text-slate-200"
                 />
               </div>
 <div>
@@ -541,7 +541,7 @@ style={{
                   value={form.rack || ""}
                   onChange={handleChange}
                   onKeyDown={(e) => handleEnterNav(e, "name")}
-                  className="w-full h-8 px-2 text-xs border rounded dark:bg-slate-700 dark:text-slate-200"
+                  className="w-full h-8 px-2 text-xs border rounded-sm dark:bg-slate-700 dark:text-slate-200"
                 />
               </div>
             </div>
@@ -557,7 +557,7 @@ style={{
                   value={form.name || ""}
                   onChange={handleChange}
                   onKeyDown={(e) => handleEnterNav(e, isPharmacy ? "formulation" : "pack_size")}
-                  className="w-full h-8 px-2 text-xs border rounded dark:bg-slate-700 dark:text-slate-200"
+                  className="w-full h-8 px-2 text-xs border rounded-sm dark:bg-slate-700 dark:text-slate-200"
                   placeholder="Product name"
                 />
               </div>
@@ -571,7 +571,7 @@ style={{
                   value={form.formulation || ""}
                   onChange={handleChange}
                   onKeyDown={(e) => handleEnterNav(e, "pack_size")}
-                  className="w-full h-8 px-2 text-xs border rounded dark:bg-slate-700 dark:text-slate-200"
+                  className="w-full h-8 px-2 text-xs border rounded-sm dark:bg-slate-700 dark:text-slate-200"
                 />
               </div>
               )}
@@ -584,7 +584,7 @@ style={{
                   value={form.pack_size || ""}
                   onChange={handleChange}
                   onKeyDown={(e) => handleEnterNav(e, "category")}
-                  className="w-full h-8 px-2 text-xs border rounded dark:bg-slate-700 dark:text-slate-200"
+                  className="w-full h-8 px-2 text-xs border rounded-sm dark:bg-slate-700 dark:text-slate-200"
                 />
               </div>
             </div>
@@ -670,7 +670,7 @@ onKeyDown={(e) => {
                     focusNextField("save");
                   }
                 }}
-                className="w-full h-16 px-2 py-1 text-xs border rounded dark:bg-slate-700 dark:text-slate-200 resize-none"
+                className="w-full h-16 px-2 py-1 text-xs border rounded-sm dark:bg-slate-700 dark:text-slate-200 resize-none"
                 placeholder="Optional notes..."
               />
             </div>
@@ -684,7 +684,7 @@ onKeyDown={(e) => {
                   name="narcotic"
                   checked={form.narcotic === "yes"}
                   onChange={(e) => setForm(prev => ({ ...prev, narcotic: e.target.checked ? "yes" : "no" }))}
-                  className="h-4 w-4 rounded border-gray-300 dark:border-slate-500 dark:bg-slate-600"
+                  className="h-4 w-4 rounded-sm border-gray-300 dark:border-slate-500 dark:bg-slate-600"
                   style={{ accentColor: themeColors?.primary }}
                 />
                 <span>Narcotic</span>
@@ -703,7 +703,7 @@ onKeyDown={(e) => {
             <button
               type="button"
               onClick={handleClose}
-              className="px-3 py-1.5 text-xs rounded border dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-600"
+              className="px-3 py-1.5 text-xs rounded-sm border dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-600"
             >
               Cancel
             </button>
@@ -712,7 +712,7 @@ onKeyDown={(e) => {
               type="button"
               onClick={handleSubmit}
               disabled={saving}
-              className="px-4 py-1.5 text-xs rounded text-white transition-all duration-200"
+              className="px-4 py-1.5 text-xs rounded-sm text-white transition-all duration-200"
               style={{ 
                 background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
                 color: primaryTextColor,

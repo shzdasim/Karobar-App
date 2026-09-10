@@ -242,12 +242,12 @@ const [saleInvoices, setSaleInvoices] = useState([]);
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -1153,7 +1153,7 @@ const handleSelectChange = async (field, value) => {
                   }`}
                   title={selectedCustomer?.name || "Click to search customer..."}
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                     <circle cx="12" cy="7" r="4" />
                   </svg>
@@ -1178,7 +1178,7 @@ const handleSelectChange = async (field, value) => {
                   }`}
                   title={selectedInvoice?.posted_number || "Click to search invoice..."}
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                     <polyline points="14 2 14 8 20 8" />
                   </svg>
@@ -1222,7 +1222,7 @@ const handleSelectChange = async (field, value) => {
                       <button
                         type="button"
                         onClick={() => removeItem(i)}
-                        className={`px-1 rounded text-[10px] transition-all duration-200 ${btnDanger.className}`}
+                        className={`px-1 rounded-sm text-[10px] transition-all duration-200 ${btnDanger.className}`}
                         style={btnDanger.style}
                       >
                         X
@@ -1335,7 +1335,7 @@ const handleSelectChange = async (field, value) => {
                       <button
                         type="button"
                         onClick={addItem}
-                        className={`px-1 rounded text-[10px] transition-all duration-200 ${btnSecondary.className}`}
+                        className={`px-1 rounded-sm text-[10px] transition-all duration-200 ${btnSecondary.className}`}
                         style={btnSecondary.style}
                       >
                         +
@@ -1349,7 +1349,7 @@ const handleSelectChange = async (field, value) => {
         </div>
 
         {/* FOOTER */}
-        <div className={`sticky bottom-0 shadow p-2 z-10 ${isDark ? "bg-slate-800 border-t border-slate-700" : "bg-white border-t border-gray-200"}`}>
+        <div className={`sticky bottom-0 shadow-sm p-2 z-10 ${isDark ? "bg-slate-800 border-t border-slate-700" : "bg-white border-t border-gray-200"}`}>
           <table className="w-full border-collapse text-xs">
             <tbody>
               <tr>

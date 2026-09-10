@@ -69,7 +69,7 @@ export default function ActivateLicense() {
       <h1 className="text-2xl font-semibold mb-2">Activate License</h1>
       <p className="text-sm text-gray-600 mb-6">Paste the license string below.</p>
 
-      <div className="mb-6 border rounded p-4 bg-gray-50">
+      <div className="mb-6 border rounded-sm p-4 bg-gray-50">
         <div className="flex items-center justify-between">
           <div className="font-medium">
             Status: {status?.valid ? <span className="text-green-700">Licensed</span> : <span className="text-red-700">Not Licensed</span>}
@@ -79,7 +79,7 @@ export default function ActivateLicense() {
 
         <div className="mt-3 text-sm">
           <div><span className="font-medium">Machine ID:</span> {status?.machine_id || "—"}</div>
-          <button type="button" className="mt-2 px-3 py-1 rounded border text-sm" onClick={copyMachineId} disabled={!status?.machine_id}>
+          <button type="button" className="mt-2 px-3 py-1 rounded-sm border text-sm" onClick={copyMachineId} disabled={!status?.machine_id}>
             Copy Machine ID
           </button>
           {expiresText && <div className="mt-3"><span className="font-medium">Expires:</span> {expiresText}</div>}
@@ -88,7 +88,7 @@ export default function ActivateLicense() {
         {status?.payload && status?.valid && (
           <details className="mt-3">
             <summary className="cursor-pointer text-sm text-gray-700">Show license payload</summary>
-            <pre className="p-3 text-xs bg-white border rounded mt-2 overflow-x-auto">
+            <pre className="p-3 text-xs bg-white border rounded-sm mt-2 overflow-x-auto">
 {JSON.stringify(status.payload, null, 2)}
             </pre>
           </details>
@@ -98,24 +98,24 @@ export default function ActivateLicense() {
       <form onSubmit={onActivate}>
         <label className="block text-sm font-medium mb-1">License key</label>
         <textarea
-          className="w-full border rounded p-3 h-40"
+          className="w-full border rounded-sm p-3 h-40"
           placeholder="Paste <signature>.<payload> here"
           value={key}
           onChange={(e) => setKey(e.target.value)}
         />
         <div className="mt-3 flex items-center gap-2">
-          <button type="submit" className="px-4 py-2 rounded bg-black text-white disabled:opacity-60" disabled={busy || key.trim().length === 0}>
+          <button type="submit" className="px-4 py-2 rounded-sm bg-black text-white disabled:opacity-60" disabled={busy || key.trim().length === 0}>
             {busy ? "Activating…" : "Activate"}
           </button>
-          <button type="button" className="px-4 py-2 rounded border" onClick={loadStatus} disabled={busy}>
+          <button type="button" className="px-4 py-2 rounded-sm border" onClick={loadStatus} disabled={busy}>
             Refresh Status
           </button>
           <Link to="/" className="ml-auto text-sm underline">Back to Home</Link>
         </div>
       </form>
 
-      {msg && <div className="mt-4 p-2 rounded bg-green-50 text-green-700 text-sm">{msg}</div>}
-      {err && <div className="mt-4 p-2 rounded bg-red-50 text-red-700 text-sm">Error: {err}</div>}
+      {msg && <div className="mt-4 p-2 rounded-sm bg-green-50 text-green-700 text-sm">{msg}</div>}
+      {err && <div className="mt-4 p-2 rounded-sm bg-red-50 text-red-700 text-sm">Error: {err}</div>}
     </div>
   );
 }

@@ -409,7 +409,7 @@ const stopResize = () => {
     };
 
     const renderResizeHandle = (direction) => {
-      const base = "absolute z-[10001]";
+      const base = "absolute z-10001";
       const positionMap = {
         n: "top-0 left-0 w-full h-2 cursor-ns-resize",
         s: "bottom-0 left-0 w-full h-2 cursor-ns-resize",
@@ -443,7 +443,7 @@ className={`w-full h-6 text-sm px-1 rounded-md text-left cursor-pointer transiti
                 selectedProduct
                   ? "border-blue-400 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200 font-medium"
                   : "border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-500 dark:text-gray-400 placeholder-gray-400 dark:placeholder-gray-500"
-            } focus:outline-none focus:ring-2 focus:ring-blue-400/40`}
+            } focus:outline-hidden focus:ring-2 focus:ring-blue-400/40`}
             title={selectedProduct?.name || "Search product…"}
             onFocus={() => openModal()}
             onClick={() => openModal()}
@@ -462,7 +462,7 @@ className={`w-full h-6 text-sm px-1 rounded-md text-left cursor-pointer transiti
             }}
           />
           <CubeIcon
-            className="w-3.5 h-3.5 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none flex-shrink-0"
+            className="w-3.5 h-3.5 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none shrink-0"
           />
         </div>
 
@@ -470,7 +470,7 @@ className={`w-full h-6 text-sm px-1 rounded-md text-left cursor-pointer transiti
         {isOpen &&
           createPortal(
             <div
-              className="fixed inset-0 z-[10000] bg-black/50"
+              className="fixed inset-0 z-10000 bg-black/50"
               onKeyDown={handleModalKeyDown}
               onClick={(e) => {
                 if (e.target === e.currentTarget) closeModal();
@@ -499,19 +499,19 @@ className={`w-full h-6 text-sm px-1 rounded-md text-left cursor-pointer transiti
                   className="flex items-center gap-3 px-5 py-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 cursor-move select-none"
                   onMouseDown={startDrag}
                 >
-                  <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 flex-shrink-0" />
+                  <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 shrink-0" />
                   <input
                     ref={searchRef}
                     type="text"
                     value={search}
                     onChange={handleSearchChange}
                     placeholder="Search by product name, code, or barcode..."
-                    className={`flex-1 bg-transparent border-0 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 text-[1em] text-slate-900 dark:text-slate-100 ${
+                    className={`flex-1 bg-transparent border-0 outline-hidden placeholder:text-slate-400 dark:placeholder:text-slate-500 text-[1em] text-slate-900 dark:text-slate-100 ${
                       isInvalidInput ? "animate-shake" : ""
                     }`}
                     autoFocus
                   />
-                  <kbd className="text-[0.714em] border border-slate-200 dark:border-slate-600 rounded px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-mono flex-shrink-0">
+                  <kbd className="text-[0.714em] border border-slate-200 dark:border-slate-600 rounded-sm px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-mono shrink-0">
                     Esc
                   </kbd>
                 </div>
@@ -561,7 +561,7 @@ className={`w-full h-6 text-sm px-1 rounded-md text-left cursor-pointer transiti
                               ? null
                               : (qtyNum < packSizeNum ? "down" : "up");
 const rowCls = active
-                              ? "bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30"
+                              ? "bg-linear-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30"
                               : "hover:bg-slate-50 dark:hover:bg-slate-700/30";
                             return (
                               <tr
@@ -683,15 +683,15 @@ const rowCls = active
                     </div>
                     <div className="flex items-center gap-3 text-[0.714em] text-slate-400">
                       <span className="flex items-center gap-1">
-                        <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[0.643em]">↑↓</kbd>
+                        <kbd className="px-1.5 py-0.5 rounded-sm border border-slate-200 dark:border-slate-600 text-[0.643em]">↑↓</kbd>
                         <span>Navigate</span>
                       </span>
                       <span className="flex items-center gap-1">
-                        <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[0.643em]">↵</kbd>
+                        <kbd className="px-1.5 py-0.5 rounded-sm border border-slate-200 dark:border-slate-600 text-[0.643em]">↵</kbd>
                         <span>Select</span>
                       </span>
                       <span className="flex items-center gap-1">
-                        <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[0.643em]">Esc</kbd>
+                        <kbd className="px-1.5 py-0.5 rounded-sm border border-slate-200 dark:border-slate-600 text-[0.643em]">Esc</kbd>
                         <span>Close</span>
                       </span>
                     </div>

@@ -92,11 +92,11 @@ export default function Brands() {
     };
 
   // 🎨 Dynamic Button styles using theme colors
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -432,7 +432,7 @@ return (
         {/* Top row */}
         <div className="relative px-6 pt-5 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur shadow-inner flex items-center justify-center">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm shadow-inner flex items-center justify-center">
               <TagIcon className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -449,7 +449,7 @@ return (
             <Guard when={can.import}>
               <button
                 onClick={() => setImportOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur transition-all duration-200"
+                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm transition-all duration-200"
               >
                 <ArrowUpTrayIcon className="w-3.5 h-3.5" />
                 Import
@@ -459,7 +459,7 @@ return (
               <button
                 onClick={handleExport}
                 disabled={exporting}
-                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur transition-all duration-200"
+                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm transition-all duration-200"
               >
                 <ArrowDownTrayIcon className={`w-3.5 h-3.5 ${exporting ? "animate-spin" : ""}`} />
                 {exporting ? "..." : "Export"}
@@ -473,7 +473,7 @@ return (
                 fetchBrands(ctrl.signal);
               }}
               title="Refresh"
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur transition-all duration-200"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm transition-all duration-200"
             >
               <ArrowPathIcon className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Refresh</span>
@@ -483,8 +483,8 @@ return (
 
         {/* Filter bar integrated in hero */}
         <div className="relative px-6 pt-2 pb-5">
-          <div className="flex items-center gap-2 bg-white/15 backdrop-blur border border-white/20 rounded-xl px-3 py-2">
-            <MagnifyingGlassIcon className="w-4 h-4 text-white/80 flex-shrink-0" />
+          <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm border border-white/20 rounded-xl px-3 py-2">
+            <MagnifyingGlassIcon className="w-4 h-4 text-white/80 shrink-0" />
             <GlassInput
               value={qName}
               onChange={(e) => setQName(e.target.value)}
@@ -503,7 +503,7 @@ return (
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
               <div className="flex items-center gap-3">
                 <div 
-                  className="p-2 rounded-lg shadow-sm"
+                  className="p-2 rounded-lg shadow-xs"
                   style={{ background: `linear-gradient(to bottom right, ${editingId ? '#f59e0b' : themeColors.primary}, ${editingId ? '#d97706' : themeColors.primaryHover})` }}
                 >
                   {editingId ? (
@@ -608,7 +608,7 @@ return (
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
             <div className="flex items-center gap-2">
               <div 
-                className="p-1.5 rounded"
+                className="p-1.5 rounded-sm"
                 style={{ backgroundColor: SECTION_CONFIG.management.bgDark }}
               >
                 <TagIcon 
@@ -667,7 +667,7 @@ return (
                               <Guard when={can.update}>
                                 <button 
                                   onClick={() => handleEdit(b)} 
-                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${btnSecondary.className}`}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-sm text-xs font-medium ${btnSecondary.className}`}
                                   style={btnSecondary.style}
                                 >
                                   <PencilSquareIcon className="w-3.5 h-3.5" />
@@ -678,7 +678,7 @@ return (
                                 <button
                                   onClick={() => used ? toast.error("Cannot delete: brand is used by products.") : handleDelete(b)}
                                   disabled={used}
-                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all duration-200 ${used ? btnGlass.className : btnDanger.className}`}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-sm text-xs font-medium transition-all duration-200 ${used ? btnGlass.className : btnDanger.className}`}
                                   style={used ? btnGlass.style : btnDanger.style}
                                 >
                                   <TrashIcon className="w-3.5 h-3.5" />
@@ -699,11 +699,11 @@ return (
             <div className="mt-3 flex items-center justify-between text-xs">
               <span className="text-gray-500 dark:text-gray-400">Page {page} of {lastPage}</span>
               <div className="flex items-center gap-1">
-                <button onClick={() => setPage(1)} disabled={page === 1} className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}>⏮</button>
-                <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}>◀</button>
-                <span className="mx-1 px-2 py-0.5 rounded bg-gray-100 dark:bg-slate-700 font-medium">{page}</span>
-                <button onClick={() => setPage((p) => Math.min(lastPage, p + 1))} disabled={page === lastPage} className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}>▶</button>
-                <button onClick={() => setPage(lastPage)} disabled={page === lastPage} className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}>⏭</button>
+                <button onClick={() => setPage(1)} disabled={page === 1} className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}>⏮</button>
+                <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}>◀</button>
+                <span className="mx-1 px-2 py-0.5 rounded-sm bg-gray-100 dark:bg-slate-700 font-medium">{page}</span>
+                <button onClick={() => setPage((p) => Math.min(lastPage, p + 1))} disabled={page === lastPage} className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}>▶</button>
+                <button onClick={() => setPage(lastPage)} disabled={page === lastPage} className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}>⏭</button>
               </div>
             </div>
           </div>

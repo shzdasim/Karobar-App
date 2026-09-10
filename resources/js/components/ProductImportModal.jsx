@@ -122,7 +122,7 @@ export default function ProductImportModal({ open, onClose, onImported }) {
         <div className="px-6 py-4 border-b flex items-center justify-between dark:border-slate-600">
           <h2 className="text-xl font-semibold dark:text-white">Import Products (CSV)</h2>
           <button 
-            className="px-3 py-1 rounded border hover:bg-gray-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+            className="px-3 py-1 rounded-sm border hover:bg-gray-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
             onClick={() => { reset(); onClose?.(); }}
           >
             ✕
@@ -143,7 +143,7 @@ export default function ProductImportModal({ open, onClose, onImported }) {
                   type="file" 
                   accept=".csv,text/csv"
                   onChange={(e)=>setFile(e.target.files?.[0]||null)}
-                  className="block w-full border rounded p-2 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" 
+                  className="block w-full border rounded-sm p-2 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" 
                 />
               </div>
 
@@ -153,7 +153,7 @@ export default function ProductImportModal({ open, onClose, onImported }) {
                   <select 
                     value={delimiter} 
                     onChange={(e)=>setDelimiter(e.target.value)}
-                    className="border rounded h-9 px-2 text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200"
+                    className="border rounded-sm h-9 px-2 text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200"
                   >
                     <option value=",">Comma (,)</option>
                     <option value=";">Semicolon (;)</option>
@@ -167,7 +167,7 @@ export default function ProductImportModal({ open, onClose, onImported }) {
                     type="checkbox" 
                     checked={createRefs} 
                     onChange={(e)=>setCreateRefs(e.target.checked)}
-                    className="rounded border-gray-300"
+                    className="rounded-sm border-gray-300"
                   />
                   Create missing Category/Brand/Supplier
                 </label>
@@ -198,7 +198,7 @@ export default function ProductImportModal({ open, onClose, onImported }) {
               {res.invalid_samples?.length > 0 && (
                 <div>
                   <h3 className="font-medium mb-2 dark:text-slate-200">Invalid sample rows:</h3>
-                  <div className="max-h-64 overflow-auto border rounded dark:border-slate-600">
+                  <div className="max-h-64 overflow-auto border rounded-sm dark:border-slate-600">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 sticky top-0 dark:bg-slate-700">
                         <tr>
@@ -228,7 +228,7 @@ export default function ProductImportModal({ open, onClose, onImported }) {
               {res.valid_samples?.length > 0 && (
                 <div>
                   <h3 className="font-medium mb-2 dark:text-slate-200">Valid sample rows:</h3>
-                  <div className="max-h-56 overflow-auto border rounded dark:border-slate-600">
+                  <div className="max-h-56 overflow-auto border rounded-sm dark:border-slate-600">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 sticky top-0 dark:bg-slate-700">
                         <tr>
@@ -262,7 +262,7 @@ export default function ProductImportModal({ open, onClose, onImported }) {
               </div>
               <div className="flex items-center gap-2">
                 <button 
-                  className="px-4 h-10 rounded border dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                  className="px-4 h-10 rounded-sm border dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
                   onClick={()=>{reset(); onClose?.();}}
                 >
                   Cancel
@@ -270,7 +270,7 @@ export default function ProductImportModal({ open, onClose, onImported }) {
                 <button 
                   disabled={!canValidate} 
                   onClick={handleValidate}
-                  className="px-4 h-10 rounded text-white transition-all duration-200"
+                  className="px-4 h-10 rounded-sm text-white transition-all duration-200"
                   style={{ 
                     background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
                     color: primaryTextColor,
@@ -285,7 +285,7 @@ export default function ProductImportModal({ open, onClose, onImported }) {
           ) : (
             <>
               <button 
-                className="px-4 h-10 rounded border dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                className="px-4 h-10 rounded-sm border dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
                 onClick={reset}
               >
                 Start Over
@@ -294,7 +294,7 @@ export default function ProductImportModal({ open, onClose, onImported }) {
                 <button 
                   disabled={committing} 
                   onClick={()=>handleCommit(true)}
-                  className="px-4 h-10 rounded text-white transition-all duration-200"
+                  className="px-4 h-10 rounded-sm text-white transition-all duration-200"
                   style={{ 
                     background: `linear-gradient(to bottom right, ${themeColors.success}, ${themeColors.successHover})`,
                     color: successTextColor,
@@ -308,7 +308,7 @@ export default function ProductImportModal({ open, onClose, onImported }) {
                   <button 
                     disabled={committing} 
                     onClick={()=>handleCommit(false)}
-                    className="px-4 h-10 rounded border transition-all duration-200"
+                    className="px-4 h-10 rounded-sm border transition-all duration-200"
                     style={{ 
                       borderColor: themeColors.danger,
                       color: themeColors.danger,
@@ -339,7 +339,7 @@ function Badge({ label, variant="gray", themeColors }) {
   
   return (
     <span 
-      className="inline-flex items-center px-2 py-1 rounded text-sm"
+      className="inline-flex items-center px-2 py-1 rounded-sm text-sm"
       style={{ 
         backgroundColor: colors.bg, 
         color: colors.text 

@@ -17,7 +17,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
   const { theme } = useTheme();
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
 
   // Memoize theme colors for performance
   const themeColors = useMemo(() => {
@@ -50,7 +50,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -288,7 +288,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
         <h1 className="text-2xl font-bold dark:text-gray-100">{initial ? "Edit User" : "Create User"}</h1>
         <div className="text-sm text-gray-600 dark:text-gray-400">
           <span className="hidden sm:inline">Shortcut:&nbsp;</span>
-          <span className="border rounded px-1 py-0.5 text-xs dark:border-gray-600 dark:text-gray-400">Alt+S</span>&nbsp;to Save
+          <span className="border rounded-sm px-1 py-0.5 text-xs dark:border-gray-600 dark:text-gray-400">Alt+S</span>&nbsp;to Save
         </div>
       </div>
 
@@ -302,7 +302,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
               value={form.name}
               onChange={(e) => set("name", e.target.value)}
               required
-              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
+              className="w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
               style={{ '--tw-ring-color': themeColors.primary }}
               placeholder="Full name"
             />
@@ -316,7 +316,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
               value={form.email}
               onChange={(e) => set("email", e.target.value)}
               required
-              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
+              className="w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
               style={{ '--tw-ring-color': themeColors.primary }}
               placeholder="user@example.com"
             />
@@ -335,7 +335,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
               value={form.password}
               onChange={(e) => set("password", e.target.value)}
               placeholder={initial ? "••••••" : "Set a password"}
-              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
+              className="w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
               style={{ '--tw-ring-color': themeColors.primary }}
             />
           </div>
@@ -368,7 +368,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
             {roleOptions.map((r) => (
               <label
                 key={r}
-                className="inline-flex items-center gap-2 border px-2 py-1 rounded dark:border-slate-600 dark:bg-slate-700/70"
+                className="inline-flex items-center gap-2 border px-2 py-1 rounded-sm dark:border-slate-600 dark:bg-slate-700/70"
               >
                 <input
                   type="checkbox"
@@ -389,7 +389,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
               <button
                 type="button"
                 onClick={selectAllPermissions}
-                className="text-xs border rounded px-2 py-1 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700/70 dark:hover:bg-slate-600 dark:text-gray-300"
+                className="text-xs border rounded-sm px-2 py-1 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700/70 dark:hover:bg-slate-600 dark:text-gray-300"
                 title="Select all permissions"
               >
                 Select All
@@ -397,7 +397,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
               <button
                 type="button"
                 onClick={clearAllPermissions}
-                className="text-xs border rounded px-2 py-1 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700/70 dark:hover:bg-slate-600 dark:text-gray-300"
+                className="text-xs border rounded-sm px-2 py-1 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700/70 dark:hover:bg-slate-600 dark:text-gray-300"
                 title="Clear all permissions"
               >
                 Clear
@@ -405,9 +405,9 @@ export default function UserForm({ onSubmit, initial, submitting }) {
             </div>
           </div>
 
-          <div className="space-y-4 max-h-[32rem] overflow-auto pr-1">
+          <div className="space-y-4 max-h-128 overflow-auto pr-1">
             {groupedPerms.map((group) => (
-              <div key={group.module} className="border rounded dark:border-slate-600">
+              <div key={group.module} className="border rounded-sm dark:border-slate-600">
                 <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b dark:bg-slate-700/60 dark:border-slate-600">
                   <div className="font-medium dark:text-gray-200">{group.label} Permissions</div>
                   <label className="text-xs inline-flex items-center gap-2 dark:text-gray-300">
@@ -426,7 +426,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
                     {group.actions.map(({ action, perm }) => (
                       <label
                         key={perm}
-                        className="inline-flex items-center gap-2 border rounded px-2 py-1 dark:border-slate-600 dark:bg-slate-700/70"
+                        className="inline-flex items-center gap-2 border rounded-sm px-2 py-1 dark:border-slate-600 dark:bg-slate-700/70"
                         title={perm}
                       >
                         <input
@@ -459,7 +459,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
             type="submit"
             aria-keyshortcuts="Alt+S"
             title="Save (Alt+S)"
-            className={`px-6 py-2 rounded font-semibold transition-all duration-200 ${btnPrimary.className}`}
+            className={`px-6 py-2 rounded-sm font-semibold transition-all duration-200 ${btnPrimary.className}`}
             style={{
               ...btnPrimary.style,
               opacity: submitting ? 0.6 : 1,

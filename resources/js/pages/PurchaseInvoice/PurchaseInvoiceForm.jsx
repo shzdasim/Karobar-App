@@ -909,11 +909,11 @@ const contRect = container.getBoundingClientRect();
   );
 
   // 🎨 Dynamic Button styles using theme colors
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -1050,7 +1050,7 @@ const contRect = container.getBoundingClientRect();
                     type="button"
                     onClick={() => handleInvoiceTypeChange(type)}
                     className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-all duration-200 ${
-                      active ? "text-white shadow" : "text-white/80 hover:text-white"
+                      active ? "text-white shadow-sm" : "text-white/80 hover:text-white"
                     }`}
                     style={{
                       backgroundColor: active ? "rgba(255,255,255,0.22)" : "transparent",
@@ -1067,7 +1067,7 @@ const contRect = container.getBoundingClientRect();
             <button
               type="button"
               onClick={() => setShowProductModal(true)}
-              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all duration-200 bg-white/95 hover:bg-white shadow`}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all duration-200 bg-white/95 hover:bg-white shadow-sm`}
               style={{ color: themeColors.primaryHover }}
             >
               + Add Product
@@ -1121,7 +1121,7 @@ const contRect = container.getBoundingClientRect();
                 style={{ color: selectedSupplier ? undefined : (isDark ? "#94a3b8" : "#9ca3af") }}
                 {...antiFill}
               >
-                <BuildingStorefrontIcon className="w-4 h-4 flex-shrink-0" />
+                <BuildingStorefrontIcon className="w-4 h-4 shrink-0" />
                 {selectedSupplier ? (
                   <span className="truncate font-medium" style={{ color: isDark ? "#bfdbfe" : "#1d4ed8" }}>
                     {selectedSupplier.name}
@@ -1249,7 +1249,7 @@ const contRect = container.getBoundingClientRect();
                   <button
                     type="button"
                     onClick={() => removeItem(i)}
-                    className={`px-1 rounded text-[10px] transition-all duration-200 ${btnDanger.className}`}
+                    className={`px-1 rounded-sm text-[10px] transition-all duration-200 ${btnDanger.className}`}
                     style={btnDanger.style}
                   >
                     X
@@ -1610,7 +1610,7 @@ const contRect = container.getBoundingClientRect();
                   <button
                     type="button"
                     onClick={addItem}
-                    className={`px-1 rounded text-[10px] transition-all duration-200 ${btnSecondary.className}`}
+                    className={`px-1 rounded-sm text-[10px] transition-all duration-200 ${btnSecondary.className}`}
                     style={btnSecondary.style}
                   >
                     +
@@ -1648,7 +1648,7 @@ const contRect = container.getBoundingClientRect();
                           taxPercentageRef.current?.focus();
                         }
                       }}
-                      className="border border-gray-200 dark:border-slate-600 rounded-md w-16 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-400/40"
+                      className="border border-gray-200 dark:border-slate-600 rounded-md w-16 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
                       {...antiFill}
                     />
                   </div>
@@ -1659,7 +1659,7 @@ const contRect = container.getBoundingClientRect();
                       name="discount_amount"
                       value={form.discount_amount ?? ""}
                       onChange={handleChange}
-                      className="border border-gray-200 dark:border-slate-600 rounded-md w-24 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-400/40"
+                      className="border border-gray-200 dark:border-slate-600 rounded-md w-24 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
                       {...antiFill}
                     />
                   </div>
@@ -1677,7 +1677,7 @@ const contRect = container.getBoundingClientRect();
                           saveButtonRef.current?.focus();
                         }
                       }}
-                      className="border border-gray-200 dark:border-slate-600 rounded-md w-16 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-400/40"
+                      className="border border-gray-200 dark:border-slate-600 rounded-md w-16 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
                       {...antiFill}
                     />
                   </div>
@@ -1688,7 +1688,7 @@ const contRect = container.getBoundingClientRect();
                       name="tax_amount"
                       value={form.tax_amount ?? ""}
                       onChange={handleChange}
-                      className="border border-gray-200 dark:border-slate-600 rounded-md w-24 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-400/40"
+                      className="border border-gray-200 dark:border-slate-600 rounded-md w-24 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
                       {...antiFill}
                     />
                   </div>
@@ -1732,7 +1732,7 @@ const contRect = container.getBoundingClientRect();
             </div>
 
             {/* ---- Right: Payment + Action ---- */}
-            <div className="w-[250px] flex-shrink-0 flex flex-col justify-between">
+            <div className="w-[250px] shrink-0 flex flex-col justify-between">
               <div className="flex gap-2">
                 <div className="flex-1">
                   <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Total Paid</label>
@@ -1756,7 +1756,7 @@ const contRect = container.getBoundingClientRect();
                           return { ...prev, total_paid: normalized };
                         });
                       }}
-                      className="border border-gray-200 dark:border-slate-600 rounded-md w-full px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-400/40"
+                      className="border border-gray-200 dark:border-slate-600 rounded-md w-full px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
                       {...antiFill}
                     />
                     <button
@@ -1766,7 +1766,7 @@ const contRect = container.getBoundingClientRect();
                         setPaidTouched(false);
                         setForm((prev) => ({ ...prev, total_paid: prev.total_amount ?? "" }));
                       }}
-                      className="px-1.5 py-1 text-[10px] rounded-md transition-all duration-200 flex-shrink-0"
+                      className="px-1.5 py-1 text-[10px] rounded-md transition-all duration-200 shrink-0"
                       style={{
                         background: isDark ? 'rgba(71, 85, 105, 0.6)' : 'rgba(255, 255, 255, 0.8)',
                         backdropFilter: 'blur(4px)',

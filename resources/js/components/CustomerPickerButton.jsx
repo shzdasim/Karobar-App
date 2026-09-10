@@ -109,7 +109,7 @@ const CustomerPickerButton = forwardRef(
           }`}
           title={selected?.name || placeholder}
         >
-          <UserIcon className="w-5 h-5 flex-shrink-0" />
+          <UserIcon className="w-5 h-5 shrink-0" />
           {selected ? (
             <span className="truncate font-medium">{selected.name}</span>
           ) : (
@@ -121,13 +121,13 @@ const CustomerPickerButton = forwardRef(
         {open &&
           createPortal(
             <div
-              className="fixed max-h-64 overflow-hidden flex flex-col bg-white dark:bg-slate-800 shadow-xl z-[9999] rounded-lg border border-gray-200 dark:border-slate-600"
+              className="fixed max-h-64 overflow-hidden flex flex-col bg-white dark:bg-slate-800 shadow-xl react-select__menu-portal rounded-lg border border-gray-200 dark:border-slate-600"
               style={{ top: position.top, left: position.left, width: position.width }}
               onMouseDown={(e) => e.preventDefault()}
             >
               {/* Search bar */}
               <div className={`flex items-center gap-2 px-3 py-2 border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
-                <MagnifyingGlassIcon className={`w-4 h-4 flex-shrink-0 ${isDark ? "text-slate-500" : "text-gray-400"}`} />
+                <MagnifyingGlassIcon className={`w-4 h-4 shrink-0 ${isDark ? "text-slate-500" : "text-gray-400"}`} />
                 <input
                   ref={searchInputRef}
                   type="text"
@@ -138,7 +138,7 @@ const CustomerPickerButton = forwardRef(
                   }}
                   onKeyDown={handleKeyDown}
                   placeholder="Search customer..."
-                  className="flex-1 bg-transparent outline-none text-sm text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500"
+                  className="flex-1 bg-transparent outline-hidden text-sm text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500"
                 />
                 <button
                   type="button"
@@ -146,7 +146,7 @@ const CustomerPickerButton = forwardRef(
                     setQuery("");
                     setHighlightIndex(0);
                   }}
-                  className="p-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700"
+                  className="p-1 rounded-sm hover:bg-gray-100 dark:hover:bg-slate-700"
                 >
                   <XMarkIcon className={`w-4 h-4 ${isDark ? "text-slate-500" : "text-gray-400"}`} />
                 </button>
@@ -176,7 +176,7 @@ const CustomerPickerButton = forwardRef(
                         } ${isDark ? "border-slate-700/50" : "border-gray-100"}`}
                       >
                         <div className="flex items-center gap-2">
-                          <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-[11px] font-bold ${
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[11px] font-bold ${
                             isDark ? "bg-blue-900/40 text-blue-300" : "bg-blue-100 text-blue-700"
                           }`}>
                             {(c.name || "?").charAt(0).toUpperCase()}

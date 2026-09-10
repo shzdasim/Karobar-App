@@ -96,12 +96,12 @@ export default function BackupRestoreSetting({
   const emeraldColor = emeraldTextColor || getContrastText(colors.emeraldHover || colors.emerald);
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -186,9 +186,9 @@ export default function BackupRestoreSetting({
 
   // 🎨 Modern button palette
   const btnOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:shadow-md transition-all duration-200";
-  const btnBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] transition-all duration-200";
-  const btnGreen  = "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] transition-all duration-200";
-  const btnAmber  = "bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] transition-all duration-200";
+  const btnBlue   = "bg-linear-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] transition-all duration-200";
+  const btnGreen  = "bg-linear-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] transition-all duration-200";
+  const btnAmber  = "bg-linear-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02] transition-all duration-200";
 
   // Fetch backups list
   const fetchBackups = async () => {
@@ -400,7 +400,7 @@ export default function BackupRestoreSetting({
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-3">
             <div 
-              className="p-2 rounded-lg shadow-sm"
+              className="p-2 rounded-lg shadow-xs"
               style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
             >
               <CloudArrowDownIcon className="w-5 h-5 text-white" />
@@ -447,7 +447,7 @@ export default function BackupRestoreSetting({
       <GlassCard>
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
             <div 
-              className="p-2 rounded-lg shadow-sm"
+              className="p-2 rounded-lg shadow-xs"
               style={{ background: `linear-gradient(to bottom right, ${colors.secondary}, ${colors.secondaryHover})` }}
             >
               <CloudArrowUpIcon className="w-5 h-5 text-white" />
@@ -520,7 +520,7 @@ export default function BackupRestoreSetting({
       <GlassCard>
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
             <div 
-              className="p-2 rounded-lg shadow-sm"
+              className="p-2 rounded-lg shadow-xs"
               style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
             >
               <DocumentTextIcon className="w-5 h-5 text-white" />
@@ -544,7 +544,7 @@ export default function BackupRestoreSetting({
             </div>
           </div>
 
-          <div className={`rounded-xl bg-white/60 backdrop-blur-sm ring-1 p-4 ${isDark ? "ring-slate-600/60" : "ring-gray-200/60"}`}>
+          <div className={`rounded-xl bg-white/60 backdrop-blur-xs ring-1 p-4 ${isDark ? "ring-slate-600/60" : "ring-gray-200/60"}`}>
             <FilePond
               files={uploadFiles}
               onupdatefiles={(fl) => {
@@ -614,7 +614,7 @@ export default function BackupRestoreSetting({
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-3">
             <div 
-              className="p-2 rounded-lg shadow-sm"
+              className="p-2 rounded-lg shadow-xs"
               style={{ background: `linear-gradient(to bottom right, ${colors.secondary}, ${colors.secondaryHover})` }}
             >
               <ServerIcon className="w-5 h-5 text-white" />
@@ -717,7 +717,7 @@ export default function BackupRestoreSetting({
       {/* ===== Important Notice ===== */}
       <div className={`rounded-xl p-4 border ${isDark ? "bg-amber-900/20 border-amber-800" : "bg-amber-50 border-amber-200"}`}>
         <div className="flex items-start gap-3">
-          <ExclamationTriangleIcon className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isDark ? "text-amber-400" : "text-amber-600"}`} />
+          <ExclamationTriangleIcon className={`w-5 h-5 shrink-0 mt-0.5 ${isDark ? "text-amber-400" : "text-amber-600"}`} />
           <div>
             <h4 className={`font-medium ${isDark ? "text-amber-300" : "text-amber-800"}`}>Important: Backup & Recovery</h4>
             <ul className={`mt-2 text-sm space-y-1 ${isDark ? "text-amber-400" : "text-amber-700"}`}>
@@ -732,7 +732,7 @@ export default function BackupRestoreSetting({
 
       {/* ===== Restore Confirmation Modal ===== */}
       {showRestoreModal && backupToRestore && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className={`w-full max-w-md rounded-2xl shadow-2xl border ${isDark ? "bg-slate-800 border-slate-600" : "bg-white border-gray-200"}`}>
             <div className={`p-6 border-b ${isDark ? "border-slate-600" : "border-gray-200"}`}>
               <div className="flex items-center gap-3">
@@ -767,7 +767,7 @@ export default function BackupRestoreSetting({
                   value={restorePassword}
                   onChange={(e) => setRestorePassword(e.target.value)}
                   placeholder="Enter your password"
-                  className={`w-full px-4 py-3 rounded-xl border focus:ring-2 focus:ring-blue-400 outline-none ${
+                  className={`w-full px-4 py-3 rounded-xl border focus:ring-2 focus:ring-blue-400 outline-hidden ${
                     isDark 
                       ? "bg-slate-700 border-slate-600 text-slate-100" 
                       : "bg-white border-gray-200 text-gray-900"

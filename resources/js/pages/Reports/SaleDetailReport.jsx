@@ -232,17 +232,17 @@ export default function SaleDetailReport() {
 
   // 🎨 Modern button palette (will use dynamic theme colors)
   const tintPrimary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintSecondary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintGlass = useMemo(() => `
-    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-xs ring-1 ring-gray-200/60 dark:ring-white/10
     hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
@@ -305,12 +305,12 @@ export default function SaleDetailReport() {
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -612,7 +612,7 @@ export default function SaleDetailReport() {
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <button
               onClick={resetFilters}
-              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
+              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
             >
               <ArrowPathIcon className="w-4 h-4" />
               <span>Reset</span>
@@ -622,7 +622,7 @@ export default function SaleDetailReport() {
                 onClick={fetchReport}
                 disabled={loading}
                 className={`h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 ${
-                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 shadow-lg"
+                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 shadow-lg"
                 }`}
               >
                 <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -645,7 +645,7 @@ export default function SaleDetailReport() {
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
               />
             </div>
 
@@ -656,7 +656,7 @@ export default function SaleDetailReport() {
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
               />
             </div>
 
@@ -667,13 +667,13 @@ export default function SaleDetailReport() {
                 <button
                   type="button"
                   onClick={() => setCustomerSearchOpen(true)}
-                  className={`h-9 w-full px-3 rounded-lg text-xs text-left inline-flex items-center gap-2 transition-all duration-200 border border-white/30 bg-slate-900/50 backdrop-blur-sm ${
+                  className={`h-9 w-full px-3 rounded-lg text-xs text-left inline-flex items-center gap-2 transition-all duration-200 border border-white/30 bg-slate-900/50 backdrop-blur-xs ${
                     customerValue
                       ? "text-white font-medium"
                       : "text-white/70"
                   }`}
                 >
-                  <UserIcon className="w-4 h-4 flex-shrink-0 text-white/70" />
+                  <UserIcon className="w-4 h-4 shrink-0 text-white/70" />
                   <span className="truncate">
                     {customerValue?.name || "All Customers"}
                   </span>
@@ -685,7 +685,7 @@ export default function SaleDetailReport() {
                       setCustomerValue(null);
                       setCustomerId("");
                     }}
-                    className="h-9 w-8 flex-shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-sm transition-all duration-200"
+                    className="h-9 w-8 shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-xs transition-all duration-200"
                     title="Clear customer"
                   >
                     ×
@@ -718,7 +718,7 @@ export default function SaleDetailReport() {
                       setProductValue(null);
                       setProductId("");
                     }}
-                    className="h-9 w-8 flex-shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-sm transition-all duration-200"
+                    className="h-9 w-8 shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-xs transition-all duration-200"
                     title="Clear product"
                   >
                     ×
@@ -738,7 +738,7 @@ export default function SaleDetailReport() {
                   setToDate(end.toISOString().slice(0, 10));
                   fetchReport();
                 }}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200"
               >
                 Today
               </button>
@@ -752,7 +752,7 @@ export default function SaleDetailReport() {
                   setToDate(end.toISOString().slice(0, 10));
                   fetchReport();
                 }}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200"
               >
                 3 Days
               </button>
@@ -766,7 +766,7 @@ export default function SaleDetailReport() {
                   setToDate(end.toISOString().slice(0, 10));
                   fetchReport();
                 }}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200"
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200"
               >
                 7 Days
               </button>
@@ -776,7 +776,7 @@ export default function SaleDetailReport() {
                   onClick={exportPdf}
                   disabled={pdfLoading || data.length === 0}
                   className={`h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold text-white transition-all duration-200 ${
-                    pdfLoading || data.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20"
+                    pdfLoading || data.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20"
                   }`}
                 >
                   <ArrowDownOnSquareIcon className="w-4 h-4" />
@@ -802,13 +802,13 @@ export default function SaleDetailReport() {
         {data.map((inv, idxInv) => (
           <div
             key={idxInv + "-" + (inv.posted_number ?? "") + "-" + (inv.invoice_date ?? "")}
-            className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden"
+            className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden"
           >
             {/* Invoice Header (matching Products page table header style) */}
             <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
               <div className="flex items-center gap-2">
                 <div 
-                  className="p-1 rounded"
+                  className="p-1 rounded-sm"
                   style={{ backgroundColor: themeColors.primaryLight + '40' }}
                 >
                   <Squares2X2Icon 
@@ -897,7 +897,7 @@ export default function SaleDetailReport() {
             {/* Items Table */}
             <div className="relative max-w-full overflow-auto">
               <table className="w-full min-w-[900px] text-sm">
-                <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
+                <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
                   <tr className="text-left">
                     <Th isDark={isDark}>Product Name</Th>
                     <Th isDark={isDark} align="right">Pack Size</Th>
@@ -944,7 +944,7 @@ export default function SaleDetailReport() {
                 </tbody>
 
                 <tfoot className={`
-                  border-t-2 backdrop-blur-sm font-semibold
+                  border-t-2 backdrop-blur-xs font-semibold
                   ${isDark ? "border-slate-600 bg-slate-800/80" : "border-gray-300 bg-gray-50"}
                 `}>
                   <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>

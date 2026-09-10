@@ -153,12 +153,12 @@ export default function PurchaseOrder() {
   const managementStyles = useMemo(() => getSectionStyles(themeColors, 'secondary'), [themeColors]);
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -826,7 +826,7 @@ ${isA4 ? `
             {/* Refresh Button */}
             <button
               onClick={() => window.location.reload()}
-              className="h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
+              className="h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
               title="Refresh"
               aria-label="Refresh page"
             >
@@ -836,7 +836,7 @@ ${isA4 ? `
 
             {/* Printer Type Toggle */}
             <div
-              className="flex items-center rounded-xl p-0.5 backdrop-blur-sm border border-white/20 bg-white/15 overflow-hidden"
+              className="flex items-center rounded-xl p-0.5 backdrop-blur-xs border border-white/20 bg-white/15 overflow-hidden"
               title="Select print format"
             >
               {["a4", "thermal"].map((t) => (
@@ -846,7 +846,7 @@ ${isA4 ? `
                   onClick={() => setPrinterType(t)}
                   className={`h-8 px-3 text-[10px] font-bold uppercase tracking-wide rounded-lg transition-all duration-200 ${
                     printerType === t
-                      ? "text-white shadow"
+                      ? "text-white shadow-sm"
                       : "text-white/70 hover:text-white"
                   }`}
                   style={printerType === t ? { backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(4px)" } : {}}
@@ -860,7 +860,7 @@ ${isA4 ? `
             <button
               ref={printBtnRef}
               onClick={doPrint}
-              className="h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
+              className="h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
               title={`Print ${printerType === "thermal" ? "Thermal (80mm)" : "A4"} (Alt+P)${hasActiveResultFilters ? " — prints the filtered view" : ""}`}
             >
               <PrinterIcon className="w-4 h-4" />
@@ -881,7 +881,7 @@ ${isA4 ? `
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40 [color-scheme:dark]"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/40 scheme-dark"
               />
             </div>
             <div className="col-span-1 md:col-span-2 flex flex-col gap-1">
@@ -890,7 +890,7 @@ ${isA4 ? `
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40 [color-scheme:dark]"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/40 scheme-dark"
               />
             </div>
             <div className="col-span-1 md:col-span-1 flex flex-col gap-1">
@@ -900,7 +900,7 @@ ${isA4 ? `
                 min={1}
                 value={projectedDays}
                 onChange={(e) => setProjectedDays(parseInt(e.target.value || 0, 10))}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40 no-spinners"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/40 no-spinners"
               />
             </div>
 
@@ -911,7 +911,7 @@ ${isA4 ? `
                 min={0}
                 value={safetyPacks}
                 onChange={(e) => setSafetyPacks(parseInt(e.target.value || 0, 10))}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40 no-spinners"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/40 no-spinners"
               />
             </div>
 
@@ -922,13 +922,13 @@ ${isA4 ? `
                 min={0}
                 value={moqPacks}
                 onChange={(e) => setMoqPacks(parseInt(e.target.value || 0, 10))}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40 no-spinners"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/40 no-spinners"
               />
             </div>
 
 <div className="col-span-2 md:col-span-2 flex flex-col gap-1">
               <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Brand</label>
-              <div className={`w-full min-h-[2.25rem] rounded-lg border p-1 flex flex-wrap items-center gap-1 transition-all ${
+              <div className={`w-full min-h-9 rounded-lg border p-1 flex flex-wrap items-center gap-1 transition-all ${
                   brands.length
                     ? "border-white/60 bg-white/95 text-gray-800"
                     : "border-white/30 bg-white/15 text-white/80"
@@ -940,7 +940,7 @@ ${isA4 ? `
                     className="flex-1 h-7 px-2 text-left text-xs flex items-center gap-2 min-w-0"
                     title="Click to search brands..."
                   >
-                    <TagIcon className="w-4 h-4 flex-shrink-0" />
+                    <TagIcon className="w-4 h-4 shrink-0" />
                     <span className="truncate">Search brands...</span>
                   </button>
                 ) : (
@@ -955,7 +955,7 @@ ${isA4 ? `
                         <button
                           type="button"
                           onClick={() => setBrands((prev) => prev.filter((x) => x.value !== b.value))}
-                          className="p-0.5 rounded hover:bg-violet-200 transition-colors flex-shrink-0"
+                          className="p-0.5 rounded-sm hover:bg-violet-200 transition-colors shrink-0"
                           title={`Remove ${b.label}`}
                           aria-label={`Remove ${b.label}`}
                         >
@@ -968,7 +968,7 @@ ${isA4 ? `
                     <button
                       type="button"
                       onClick={() => setBrandSearchOpen(true)}
-                      className="h-7 min-w-[1.75rem] px-1 inline-flex items-center justify-center rounded-md text-violet-700 hover:bg-violet-100 transition-colors flex-shrink-0"
+                      className="h-7 min-w-7 px-1 inline-flex items-center justify-center rounded-md text-violet-700 hover:bg-violet-100 transition-colors shrink-0"
                       title="Add more brands"
                       aria-label="Add more brands"
                     >
@@ -979,7 +979,7 @@ ${isA4 ? `
                     <button
                       type="button"
                       onClick={() => setBrands([])}
-                      className="h-7 min-w-[1.75rem] px-1 inline-flex items-center justify-center rounded-md text-gray-500 hover:bg-black/10 dark:hover:bg-white/10 transition-colors flex-shrink-0"
+                      className="h-7 min-w-7 px-1 inline-flex items-center justify-center rounded-md text-gray-500 hover:bg-black/10 dark:hover:bg-white/10 transition-colors shrink-0"
                       title="Clear all brands"
                       aria-label="Clear all brands"
                     >
@@ -1005,7 +1005,7 @@ ${isA4 ? `
                   className="flex-1 h-full px-3 text-left text-xs flex items-center gap-2 min-w-0"
                   title={supplier?.label || "Click to search supplier..."}
                 >
-                  <BuildingStorefrontIcon className="w-4 h-4 flex-shrink-0" />
+                  <BuildingStorefrontIcon className="w-4 h-4 shrink-0" />
                   {supplier ? (
                     <span className="truncate font-medium">{supplier.label}</span>
                   ) : (
@@ -1016,7 +1016,7 @@ ${isA4 ? `
                   <button
                     type="button"
                     onClick={() => setSupplier(null)}
-                    className="h-full px-2 flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 transition-colors flex-shrink-0"
+                    className="h-full px-2 flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 transition-colors shrink-0"
                     title="Clear supplier"
                     aria-label="Clear supplier"
                   >
@@ -1032,11 +1032,11 @@ ${isA4 ? `
       </div>
 
 {/* ===== Table ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden hover:shadow-lg transition-shadow duration-300">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden hover:shadow-lg transition-shadow duration-300">
         {/* Table Header + Result Filters */}
         <div className="flex items-center justify-between gap-3 px-4 py-3 bg-gray-50/70 dark:bg-slate-800/70 border-b border-gray-200 dark:border-slate-700 flex-wrap">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg shadow-sm" style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}>
+            <div className="p-1.5 rounded-lg shadow-xs" style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}>
               <CubeIcon className="w-4 h-4 text-white" />
             </div>
             <div>
@@ -1053,12 +1053,12 @@ ${isA4 ? `
           <div className="flex items-center gap-2 flex-wrap">
             {/* Brand filter — only brands present in the current results */}
             <div className="flex items-center gap-1.5">
-              <TagIcon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+              <TagIcon className="w-3.5 h-3.5 text-gray-400 shrink-0" />
               <select
                 value={resultBrandId}
                 onChange={(e) => setResultBrandId(e.target.value)}
                 disabled={!rows.length}
-                className="h-8 px-2 rounded-lg text-xs font-medium bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed [color-scheme:light] dark:[color-scheme:dark]"
+                className="h-8 px-2 rounded-lg text-xs font-medium bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed scheme-light dark:scheme-dark"
                 title="Filter results by brand (only brands in the current results)"
                 aria-label="Filter results by brand"
               >
@@ -1076,7 +1076,7 @@ ${isA4 ? `
               value={stockFilter}
               onChange={(e) => setStockFilter(e.target.value)}
               disabled={!rows.length}
-              className="h-8 px-2 rounded-lg text-xs font-medium bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed [color-scheme:light] dark:[color-scheme:dark]"
+              className="h-8 px-2 rounded-lg text-xs font-medium bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed scheme-light dark:scheme-dark"
               title="Filter by current stock quantity (units)"
               aria-label="Filter by current stock quantity"
             >
@@ -1093,7 +1093,7 @@ ${isA4 ? `
                 value={lowStockThreshold}
                 onChange={(e) => setLowStockThreshold(parseInt(e.target.value || 0, 10))}
                 disabled={!rows.length}
-                className="h-8 w-16 px-2 rounded-lg text-xs text-right no-spinners bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
+                className="h-8 w-16 px-2 rounded-lg text-xs text-right no-spinners bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
                 title="Low stock threshold (units)"
                 aria-label="Low stock threshold (units)"
               />
@@ -1104,7 +1104,7 @@ ${isA4 ? `
               value={orderFilter}
               onChange={(e) => setOrderFilter(e.target.value)}
               disabled={!rows.length}
-              className="h-8 px-2 rounded-lg text-xs font-medium bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed [color-scheme:light] dark:[color-scheme:dark]"
+              className="h-8 px-2 rounded-lg text-xs font-medium bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed scheme-light dark:scheme-dark"
               title="Filter by order quantity (packs)"
               aria-label="Filter by order quantity"
             >
@@ -1137,11 +1137,11 @@ ${isA4 ? `
 
         <div
           ref={tableWrapRef}
-          className="max-h-[65vh] overflow-auto outline-none"
+          className="max-h-[65vh] overflow-auto outline-hidden"
           tabIndex={0}
         >
           <table className="min-w-[880px] w-full text-sm">
-            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
+            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
               <tr className="text-left">
                 {["#", "Product", "Pack Size", "Units Sold", "Stock (U)", "Pack Price", "Suggested (P)", "Order Packs", "Order Units", "Order Amount"]
                   .map((h, i) => (
@@ -1181,7 +1181,7 @@ ${isA4 ? `
                       <div className="flex items-start gap-1.5">
                         {Number(r.has_purchase_return) === 1 && (
                           <span
-                            className="flex-shrink-0 mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-100 dark:bg-red-900/40"
+                            className="shrink-0 mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-100 dark:bg-red-900/40"
                             title={`Returned via Purchase Return${r.purchase_return_units ? ` — ${r.purchase_return_units} unit(s)` : ""}${r.last_purchase_return_date ? ` on ${r.last_purchase_return_date}` : ""}`}
                             aria-label="Returned via purchase return"
                           >
@@ -1211,7 +1211,7 @@ ${isA4 ? `
                                   : "Originated from a user demand"
                               }
                             >
-                              <HandRaisedIcon className="w-3 h-3 flex-shrink-0" />
+                              <HandRaisedIcon className="w-3 h-3 shrink-0" />
                               <span className="truncate">
                                 User Demand{r.user_demand_customers ? `: ${r.user_demand_customers}` : ""}
                               </span>
@@ -1223,7 +1223,7 @@ ${isA4 ? `
                     <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-gray-600 dark:text-gray-300">{r.pack_size}</td>
                     <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap text-gray-600 dark:text-gray-300">{r.units_sold}</td>
                     <td className="px-3 py-3 text-center tabular-nums whitespace-nowrap">
-                      <span className="inline-flex items-center justify-center min-w-[3rem] px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300">
+                      <span className="inline-flex items-center justify-center min-w-12 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300">
                         {r.current_stock_units}
                       </span>
                     </td>

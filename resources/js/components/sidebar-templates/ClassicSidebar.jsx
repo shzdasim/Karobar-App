@@ -199,7 +199,7 @@ export default function ClassicSidebar() {
           <span style={{ color: config.baseColor }}>{React.cloneElement(section.icon, { className: "w-4 h-4" })}</span>
           <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">{section.name}</span>
         </div>
-        <div className="mt-1 h-px bg-gradient-to-r from-gray-200 to-transparent dark:from-slate-700" />
+        <div className="mt-1 h-px bg-linear-to-r from-gray-200 to-transparent dark:from-slate-700" />
       </div>
     );
   };
@@ -213,7 +213,7 @@ export default function ClassicSidebar() {
             <div className="flex items-center gap-3 overflow-hidden">
               <picture>
                 {logoCandidates.map((src) => (
-                  <img key={src} src={src} alt={brandName} className="h-8 w-8 object-contain rounded hidden"
+                  <img key={src} src={src} alt={brandName} className="h-8 w-8 object-contain rounded-sm hidden"
                     onLoad={(e) => {
                       const imgs = e.currentTarget.parentElement.querySelectorAll("img");
                       imgs.forEach((im) => (im.style.display = "none"));

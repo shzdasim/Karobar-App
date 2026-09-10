@@ -1,60 +1,274 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
 
-/* ---- Dark Mode Performance Optimizations ---- */
+@custom-variant dark (&:is(.dark *));
 
-/* CRITICAL: Remove global theme transitions that cause massive performance overhead */
-/* Only apply transitions to specific interactive elements when needed */
-html {
-  /* Remove the global transition that causes 300ms delay on ALL color changes */
-  /* Individual components will handle their own transitions if needed */
-  transition: none;
+/*
+ | Tailwind v4 changed the default border color from gray-200 (v3) to
+ | currentColor. This compatibility shim restores the v3 default so bare
+ | `border` utilities keep rendering with the same color as before.
+ | Explicit `border-{color}` utilities still override it (utilities layer).
+ */
+@layer base {
+  *, ::after, ::before, ::backdrop, ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
 }
 
-/* Optimize backdrop blur performance by using CSS containment */
-.g-card {
-  contain: paint layout style;
-  will-change: transform, background-color;
-  transform: translateZ(0); /* Force GPU acceleration */
+@theme {
+  --color-glass-dark-bg: rgba(30, 41, 59, 0.6);
+  --color-glass-dark-border: rgba(148, 163, 184, 0.2);
+  --color-glass-dark-text: rgb(203, 213, 225);
+
+  --transition-duration-400: 400ms;
+
+  --animate-spin-slow: spin 2s linear infinite;
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Use more performant blur values and reduce blur complexity */
-.g-card {
-  @apply rounded-2xl bg-white/60 backdrop-blur-sm ring-1 ring-gray-200/60 shadow-xl;
-  @apply dark:bg-slate-800/60 dark:ring-gray-700/60 dark:text-gray-100;
-  /* Add GPU acceleration */
-  transform: translateZ(0);
-  backface-visibility: hidden;
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
 }
 
-/* ---- Glass UI primitives live here and won't be purged ---- */
-@layer components {
-  .g-card table {
+@utility g-card {
+  & table {
     @apply text-gray-900;
     @apply dark:text-gray-100;
   }
-  .g-card table thead {
+  & table thead {
     @apply bg-white/85 text-gray-900;
     @apply dark:bg-slate-700/85 dark:text-gray-100;
   }
-  .g-card table tbody td {
+  & table tbody td {
     @apply text-gray-900;
     @apply dark:text-gray-100;
   }
   /* Table row backgrounds with dark mode support */
-  .g-card table tbody tr.odd {
+  & table tbody tr.odd {
     @apply bg-white/60;
     @apply dark:bg-slate-700/60;
   }
-  .g-card table tbody tr.even {
+  & table tbody tr.even {
     @apply bg-white/40;
     @apply dark:bg-slate-800/40;
   }
-  .g-card table tbody tr:hover {
+  & table tbody tr:hover {
     @apply bg-blue-50/70;
     @apply dark:bg-slate-600/70;
   }
+  /* Form labels and general text in glass components */
+  & label {
+    @apply text-gray-700;
+    @apply dark:text-gray-300;
+  }
+  & .g-label {
+    @apply text-gray-700;
+    @apply dark:text-gray-300;
+  }
+}
+
+@utility odd {
+  /* Table row backgrounds with dark mode support */
+  .g-card table tbody &tr {
+    @apply bg-white/60;
+    @apply dark:bg-slate-700/60;
+  }
+  table tbody &tr {
+    @apply bg-white/60 dark:bg-slate-700/60;
+  }
+}
+
+@utility even {
+  .g-card table tbody &tr {
+    @apply bg-white/40;
+    @apply dark:bg-slate-800/40;
+  }
+  table tbody &tr {
+    @apply bg-white/40 dark:bg-slate-800/40;
+  }
+}
+
+@utility sticky {
+  /* Sticky table header with dark mode */
+  table &thead {
+    @apply bg-white/85 dark:bg-slate-700/85;
+  }
+}
+
+@utility react-select__menu-portal {
+  /* React-Select dropdown portal fix for dark mode */
+  z-index: 9999;
+}
+
+@utility react-select__control {
+  /* React-Select dark mode styles */
+  @apply bg-white/70 border border-gray-200/70 rounded-xl min-h-[36px];
+  @apply dark:bg-slate-700/70 dark:border-slate-600/70;
+  @apply focus:outline-hidden focus:ring-2 focus:ring-blue-400/40 dark:focus:ring-indigo-400/40;
+}
+
+@utility react-select__control--is-focused {
+  @apply ring-2 ring-blue-400/40 dark:ring-indigo-400/40;
+}
+
+@utility react-select__value-container {
+  @apply text-gray-900 dark:text-gray-100;
+}
+
+@utility react-select__placeholder {
+  @apply text-gray-400 dark:text-gray-500;
+}
+
+@utility react-select__input {
+  @apply text-gray-900 dark:text-gray-100;
+}
+
+@utility react-select__single-value {
+  @apply text-gray-900 dark:text-gray-100;
+}
+
+@utility react-select__menu {
+  @apply bg-white/95 dark:bg-slate-800/95 backdrop-blur-xs border border-gray-200/70 dark:border-slate-600/70 rounded-xl shadow-lg;
+}
+
+@utility react-select__menu-list {
+  @apply text-gray-900 dark:text-gray-100;
+}
+
+@utility react-select__option {
+  @apply bg-white text-gray-900 dark:bg-slate-700 dark:text-gray-100;
+}
+
+@utility react-select__option--is-focused {
+  @apply bg-gray-100 dark:bg-slate-600;
+}
+
+@utility react-select__option--is-selected {
+  @apply bg-blue-100 dark:bg-indigo-600/50 text-gray-900 dark:text-gray-100;
+}
+
+@utility react-select__indicator-separator {
+  @apply bg-gray-200 dark:bg-slate-600;
+}
+
+@utility react-select__dropdown-indicator {
+  @apply text-gray-400 dark:text-slate-400;
+}
+
+@utility react-select__loading-indicator {
+  @apply text-gray-400 dark:text-slate-400;
+}
+
+@utility react-select__no-options-message {
+  @apply text-gray-500 dark:text-gray-400;
+}
+
+@utility g-section-header {
+  @apply sticky top-0 z-10 px-4 py-3 bg-white/70 backdrop-blur-xs border-b border-gray-200/60 rounded-t-2xl text-gray-900;
+  @apply dark:bg-slate-800/70 dark:border-slate-700/60 dark:text-gray-100;
+}
+
+@utility g-toolbar {
+  @apply flex flex-wrap items-end gap-2 px-4 pb-3 pt-2;
+}
+
+@utility g-label {
+  .g-card & {
+    @apply text-gray-700;
+    @apply dark:text-gray-300;
+  }
+}
+
+@utility g-input {
+  /* Note: For muted text colors in dark mode, use inline classes or style directly */
+  @apply h-9 px-3 rounded-xl bg-white/70 backdrop-blur-xs border border-gray-200/70 ring-1 ring-transparent
+           focus:ring-blue-400/40 shadow-xs focus:outline-hidden;
+  @apply dark:bg-slate-700/70 dark:border-slate-600/70 dark:text-gray-100 dark:placeholder-gray-400
+           dark:focus:ring-indigo-400/40;
+}
+
+@utility g-btn-base {
+  @apply h-9 px-3 rounded-xl text-sm font-medium transition focus:outline-hidden
+           ring-1 ring-transparent focus:ring-blue-400/40;
+}
+
+@utility g-btn-ghost {
+  @apply g-btn-base bg-white/70 backdrop-blur-xs border border-gray-200/70 hover:bg-white shadow-xs text-gray-900;
+  @apply dark:bg-slate-700/70 dark:border-slate-600/70 dark:hover:bg-slate-600/70 dark:text-gray-100;
+}
+
+@utility g-btn-primary {
+  @apply g-btn-base bg-blue-600 text-white hover:bg-blue-700 shadow-sm;
+  @apply dark:bg-indigo-600 dark:hover:bg-indigo-700;
+}
+
+@utility g-btn-chip {
+  @apply px-2 bg-white/70 backdrop-blur-xs border border-gray-200/70 hover:bg-white shadow-xs rounded-xl text-sm text-gray-900;
+  @apply dark:bg-slate-700/70 dark:border-slate-600/70 dark:hover:bg-slate-600/70 dark:text-gray-100;
+}
+
+@utility btn-rounded {
+  /* Button Style Variants */
+  @apply rounded-lg;
+}
+
+@utility btn-outlined {
+  @apply rounded-lg border-2;
+}
+
+@utility btn-soft {
+  @apply rounded-xl;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+@utility btn-style {
+  /* Dynamic button radius based on theme */
+  border-radius: var(--btn-radius, 0.5rem);
+}
+
+@layer utilities {
+  /* ---- Dark Mode Performance Optimizations ---- */
+
+  /* CRITICAL: Remove global theme transitions that cause massive performance overhead */
+  /* Only apply transitions to specific interactive elements when needed */
+  html {
+    /* Remove the global transition that causes 300ms delay on ALL color changes */
+    /* Individual components will handle their own transitions if needed */
+    transition: none;
+  }
+
+  /* Optimize backdrop blur performance by using CSS containment */
+  .g-card {
+    contain: paint layout style;
+    will-change: transform, background-color;
+    transform: translateZ(0); /* Force GPU acceleration */
+  }
+
+  /* Use more performant blur values and reduce blur complexity */
+  .g-card {
+    @apply rounded-2xl bg-white/60 backdrop-blur-xs ring-1 ring-gray-200/60 shadow-xl;
+    @apply dark:bg-slate-800/60 dark:ring-gray-700/60 dark:text-gray-100;
+    /* Add GPU acceleration */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+
+  /* ---- Glass UI primitives live here and won't be purged ---- */
+}
+@layer components {
   /* Generic table styles for all tables (not just inside g-card) */
   table {
     @apply text-gray-900 dark:text-gray-100;
@@ -65,132 +279,14 @@ html {
   table tbody td {
     @apply text-gray-900 dark:text-gray-100;
   }
-  table tbody tr.odd {
-    @apply bg-white/60 dark:bg-slate-700/60;
-  }
-  table tbody tr.even {
-    @apply bg-white/40 dark:bg-slate-800/40;
-  }
   table tbody tr:hover {
     @apply bg-blue-50/70 dark:bg-slate-600/70;
-  }
-  /* Sticky table header with dark mode */
-  table thead.sticky,
-  table thead[class*="sticky"] {
-    @apply bg-white/85 dark:bg-slate-700/85;
   }
   /* Native select dark mode styles */
   select {
     @apply bg-white text-gray-900 border border-gray-200 rounded-xl;
     @apply dark:bg-slate-700 dark:text-gray-100 dark:border-slate-600;
-    @apply focus:outline-none focus:ring-2 focus:ring-blue-400/40 dark:focus:ring-indigo-400/40;
-  }
-  /* React-Select dropdown portal fix for dark mode */
-  .react-select__menu-portal {
-    z-index: 9999;
-  }
-  /* React-Select dark mode styles */
-  .react-select__control {
-    @apply bg-white/70 border border-gray-200/70 rounded-xl min-h-[36px];
-    @apply dark:bg-slate-700/70 dark:border-slate-600/70;
-    @apply focus:outline-none focus:ring-2 focus:ring-blue-400/40 dark:focus:ring-indigo-400/40;
-  }
-  .react-select__control--is-focused {
-    @apply ring-2 ring-blue-400/40 dark:ring-indigo-400/40;
-  }
-  .react-select__value-container {
-    @apply text-gray-900 dark:text-gray-100;
-  }
-  .react-select__placeholder {
-    @apply text-gray-400 dark:text-gray-500;
-  }
-  .react-select__input {
-    @apply text-gray-900 dark:text-gray-100;
-  }
-  .react-select__single-value {
-    @apply text-gray-900 dark:text-gray-100;
-  }
-  .react-select__menu {
-    @apply bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm border border-gray-200/70 dark:border-slate-600/70 rounded-xl shadow-lg;
-  }
-  .react-select__menu-list {
-    @apply text-gray-900 dark:text-gray-100;
-  }
-  .react-select__option {
-    @apply bg-white text-gray-900 dark:bg-slate-700 dark:text-gray-100;
-  }
-  .react-select__option--is-focused {
-    @apply bg-gray-100 dark:bg-slate-600;
-  }
-  .react-select__option--is-selected {
-    @apply bg-blue-100 dark:bg-indigo-600/50 text-gray-900 dark:text-gray-100;
-  }
-  .react-select__indicator-separator {
-    @apply bg-gray-200 dark:bg-slate-600;
-  }
-  .react-select__dropdown-indicator {
-    @apply text-gray-400 dark:text-slate-400;
-  }
-  .react-select__loading-indicator {
-    @apply text-gray-400 dark:text-slate-400;
-  }
-  .react-select__no-options-message {
-    @apply text-gray-500 dark:text-gray-400;
-  }
-  .g-section-header {
-    @apply sticky top-0 z-10 px-4 py-3 bg-white/70 backdrop-blur-sm border-b border-gray-200/60 rounded-t-2xl text-gray-900;
-    @apply dark:bg-slate-800/70 dark:border-slate-700/60 dark:text-gray-100;
-  }
-  .g-toolbar {
-    @apply flex flex-wrap items-end gap-2 px-4 pb-3 pt-2;
-  }
-  /* Form labels and general text in glass components */
-  .g-card label,
-  .g-card .g-label {
-    @apply text-gray-700;
-    @apply dark:text-gray-300;
-  }
-  /* Note: For muted text colors in dark mode, use inline classes or style directly */
-  .g-input {
-    @apply h-9 px-3 rounded-xl bg-white/70 backdrop-blur-sm border border-gray-200/70 ring-1 ring-transparent
-           focus:ring-blue-400/40 shadow-sm focus:outline-none;
-    @apply dark:bg-slate-700/70 dark:border-slate-600/70 dark:text-gray-100 dark:placeholder-gray-400
-           dark:focus:ring-indigo-400/40;
-  }
-  .g-btn-base {
-    @apply h-9 px-3 rounded-xl text-sm font-medium transition focus:outline-none
-           ring-1 ring-transparent focus:ring-blue-400/40;
-  }
-  .g-btn-ghost { 
-    @apply g-btn-base bg-white/70 backdrop-blur-sm border border-gray-200/70 hover:bg-white shadow-sm text-gray-900; 
-    @apply dark:bg-slate-700/70 dark:border-slate-600/70 dark:hover:bg-slate-600/70 dark:text-gray-100;
-  }
-  .g-btn-primary { 
-    @apply g-btn-base bg-blue-600 text-white hover:bg-blue-700 shadow; 
-    @apply dark:bg-indigo-600 dark:hover:bg-indigo-700;
-  }
-  .g-btn-chip { 
-    @apply px-2 bg-white/70 backdrop-blur-sm border border-gray-200/70 hover:bg-white shadow-sm rounded-xl text-sm text-gray-900; 
-    @apply dark:bg-slate-700/70 dark:border-slate-600/70 dark:hover:bg-slate-600/70 dark:text-gray-100;
-  }
-  
-  /* Button Style Variants */
-  .btn-rounded {
-    @apply rounded-lg;
-  }
-  
-  .btn-outlined {
-    @apply rounded-lg border-2;
-  }
-  
-  .btn-soft {
-    @apply rounded-xl;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  }
-  
-  /* Dynamic button radius based on theme */
-  .btn-style {
-    border-radius: var(--btn-radius, 0.5rem);
+    @apply focus:outline-hidden focus:ring-2 focus:ring-blue-400/40 dark:focus:ring-indigo-400/40;
   }
 }
 

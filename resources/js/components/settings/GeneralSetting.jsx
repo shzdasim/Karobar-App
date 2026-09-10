@@ -94,7 +94,7 @@ export default function GeneralSetting({
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-2">
             <div 
-              className="p-1.5 rounded-lg shadow-sm"
+              className="p-1.5 rounded-lg shadow-xs"
               style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
             >
               <BuildingStorefrontIcon className="w-4 h-4 text-white" />
@@ -111,7 +111,7 @@ export default function GeneralSetting({
           {/* Logo - Left Side, Compact */}
           <div className="w-28 shrink-0">
             <label className={`block text-xs font-medium mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Logo</label>
-            <div className="rounded-xl bg-white/60 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-slate-600/60 p-1">
+            <div className="rounded-xl bg-white/60 dark:bg-slate-700/60 backdrop-blur-xs ring-1 ring-gray-200/60 dark:ring-slate-600/60 p-1">
               <FilePond
                 files={files}
                 onupdatefiles={(fl) => {

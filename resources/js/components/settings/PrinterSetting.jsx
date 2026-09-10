@@ -91,12 +91,12 @@ export default function PrinterSetting({
   const [previewingType, setPreviewingType] = useState('thermal'); // 'thermal' or 'a4'
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -165,8 +165,8 @@ export default function PrinterSetting({
 
   // 🎨 Modern button palette
   const btnOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-all duration-200";
-  const btnBlue   = "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] transition-all duration-200";
-  const btnGreen  = "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] transition-all duration-200";
+  const btnBlue   = "bg-linear-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] transition-all duration-200";
+  const btnGreen  = "bg-linear-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] transition-all duration-200";
 
   // Thermal templates data
   const thermalTemplates = [
@@ -293,7 +293,7 @@ export default function PrinterSetting({
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-3">
             <div 
-              className="p-2 rounded-lg shadow-sm"
+              className="p-2 rounded-lg shadow-xs"
               style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
             >
               <DocumentTextIcon className="w-5 h-5 text-white" />
@@ -317,7 +317,7 @@ export default function PrinterSetting({
                 if (!disableInputs) handleSave();
               }
             }}
-            className={`w-full h-24 rounded-xl bg-white/70 backdrop-blur-sm border focus:outline-none focus:ring-2 focus:ring-blue-400/40 shadow-sm px-3 py-2 ${
+            className={`w-full h-24 rounded-xl bg-white/70 backdrop-blur-xs border focus:outline-hidden focus:ring-2 focus:ring-blue-400/40 shadow-xs px-3 py-2 ${
               isDark 
                 ? "bg-slate-700/70 border-slate-600/70 text-gray-100" 
                 : "bg-white border-gray-200/70 text-gray-900"
@@ -335,7 +335,7 @@ export default function PrinterSetting({
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-3">
             <div 
-              className="p-2 rounded-lg shadow-sm"
+              className="p-2 rounded-lg shadow-xs"
               style={{ background: `linear-gradient(to bottom right, ${colors.secondary}, ${colors.secondaryHover})` }}
             >
               <PrinterIcon className="w-5 h-5 text-white" />
@@ -402,7 +402,7 @@ export default function PrinterSetting({
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
             <div className="flex items-center gap-3">
               <div 
-                className="p-2 rounded-lg shadow-sm"
+                className="p-2 rounded-lg shadow-xs"
                 style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
               >
                 <DocumentTextIcon className="w-5 h-5 text-white" />
@@ -448,7 +448,7 @@ export default function PrinterSetting({
                       setPreviewingTemplate(template);
                       setShowPreviewModal(true);
                     }}
-                    className="absolute top-2 left-2 z-10 p-1.5 rounded-lg bg-white/90 hover:bg-white shadow-sm transition-opacity dark:bg-slate-700/90 dark:hover:bg-slate-600"
+                    className="absolute top-2 left-2 z-10 p-1.5 rounded-lg bg-white/90 hover:bg-white shadow-xs transition-opacity dark:bg-slate-700/90 dark:hover:bg-slate-600"
                     title="Preview template"
                   >
                     <EyeIcon className={`w-4 h-4 ${isDark ? "text-slate-300" : "text-gray-600"}`} />
@@ -531,7 +531,7 @@ export default function PrinterSetting({
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
             <div className="flex items-center gap-3">
               <div 
-                className="p-2 rounded-lg shadow-sm"
+                className="p-2 rounded-lg shadow-xs"
                 style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
               >
                 <DocumentTextIcon className="w-5 h-5 text-white" />
@@ -578,7 +578,7 @@ export default function PrinterSetting({
                       setPreviewingType('a4');
                       setShowPreviewModal(true);
                     }}
-                    className="absolute top-2 left-2 z-10 p-1.5 rounded-lg bg-white/90 hover:bg-white shadow-sm transition-opacity dark:bg-slate-700/90 dark:hover:bg-slate-600"
+                    className="absolute top-2 left-2 z-10 p-1.5 rounded-lg bg-white/90 hover:bg-white shadow-xs transition-opacity dark:bg-slate-700/90 dark:hover:bg-slate-600"
                     title="Preview template"
                   >
                     <EyeIcon className={`w-4 h-4 ${isDark ? "text-slate-300" : "text-gray-600"}`} />
@@ -670,7 +670,7 @@ export default function PrinterSetting({
 
       {/* ===== Template Preview Modal ===== */}
       {showPreviewModal && previewingTemplate && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className={`w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col ${isDark ? "bg-slate-800 border-slate-600" : "bg-white border-gray-200"} border`}>
             {/* Header */}
             <div className={`flex items-center justify-between p-4 border-b ${isDark ? "border-slate-600" : "border-gray-200"}`}>

@@ -44,7 +44,7 @@ function ResultRow({ invoice, active, onHover, onOpen, rowRef }) {
       className={[
         "px-4 py-3 transition-all duration-150 cursor-pointer border-b border-slate-100 dark:border-slate-700/50 last:border-0",
         active 
-          ? "bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/20" 
+          ? "bg-linear-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/20" 
           : "hover:bg-slate-50 dark:hover:bg-slate-700/30",
       ].join(" ")}
       title="Open invoice"
@@ -53,7 +53,7 @@ function ResultRow({ invoice, active, onHover, onOpen, rowRef }) {
       <div className="flex items-start justify-between">
         {/* Left: Invoice Info */}
         <div className="flex items-start gap-3 flex-1 min-w-0">
-          <div className="flex-shrink-0">
+          <div className="shrink-0">
             <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
               <DocumentTextIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </div>
@@ -64,18 +64,18 @@ function ResultRow({ invoice, active, onHover, onOpen, rowRef }) {
                 {invoice.posted_number || "—"}
               </span>
               {isCredit && (
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400">
+                <span className="px-1.5 py-0.5 rounded-sm text-[10px] font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400">
                   Credit
                 </span>
               )}
               {invoice.sale_type === 'wholesale' && (
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-400">
+                <span className="px-1.5 py-0.5 rounded-sm text-[10px] font-medium bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-400">
                   WS
                 </span>
               )}
             </div>
             <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 mt-1">
-              <UserIcon className="w-3 h-3 flex-shrink-0" />
+              <UserIcon className="w-3 h-3 shrink-0" />
               <span className="truncate">{invoice.customer_name || "N/A"}</span>
             </div>
             {isPharmacy && (invoice.doctor_name || invoice.patient_name) && (
@@ -99,7 +99,7 @@ function ResultRow({ invoice, active, onHover, onOpen, rowRef }) {
         </div>
 
         {/* Right: Amounts */}
-        <div className="flex-shrink-0 text-right">
+        <div className="shrink-0 text-right">
           <div className="flex items-center gap-1 justify-end">
             <CurrencyDollarIcon className="w-4 h-4 text-emerald-500" />
             <span className="font-bold text-slate-800 dark:text-slate-100">
@@ -353,7 +353,7 @@ export default function SaleInvoiceSearch({ isOpen, onClose, onSelect }) {
 
   return (
     <div 
-      className="fixed inset-0 z-[100] flex items-start justify-center pt-[10vh] bg-black/50"
+      className="fixed inset-0 z-100 flex items-start justify-center pt-[10vh] bg-black/50"
       onClick={(e) => {
         if (e.target === e.currentTarget) handleClose();
       }}
@@ -365,7 +365,7 @@ export default function SaleInvoiceSearch({ isOpen, onClose, onSelect }) {
         <GlassCard className="overflow-hidden bg-white dark:bg-slate-800 shadow-2xl ring-1 ring-slate-200/50 dark:ring-slate-700/50">
           {/* Search Bar */}
           <div className="flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
-            <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 flex-shrink-0" />
+            <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 shrink-0" />
             <input
               ref={inputRef}
               type="text"
@@ -373,11 +373,11 @@ export default function SaleInvoiceSearch({ isOpen, onClose, onSelect }) {
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Search by invoice # or customer name..."
-              className="flex-1 bg-transparent border-0 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 text-sm text-slate-900 dark:text-slate-100"
+              className="flex-1 bg-transparent border-0 outline-hidden placeholder:text-slate-400 dark:placeholder:text-slate-500 text-sm text-slate-900 dark:text-slate-100"
               autoFocus
             />
             {loading ? (
-              <ArrowPathIcon className="w-5 h-5 animate-spin text-slate-400 flex-shrink-0" />
+              <ArrowPathIcon className="w-5 h-5 animate-spin text-slate-400 shrink-0" />
             ) : q ? (
               <button
                 onClick={() => {
@@ -387,7 +387,7 @@ export default function SaleInvoiceSearch({ isOpen, onClose, onSelect }) {
                   setPage(1);
                   setHasMore(true);
                 }}
-                className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex-shrink-0"
+                className="p-1 rounded-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shrink-0"
                 title="Clear search"
               >
                 <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -395,7 +395,7 @@ export default function SaleInvoiceSearch({ isOpen, onClose, onSelect }) {
                 </svg>
               </button>
             ) : null}
-            <kbd className="text-[10px] border border-slate-200 dark:border-slate-600 rounded px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-mono flex-shrink-0">
+            <kbd className="text-[10px] border border-slate-200 dark:border-slate-600 rounded-sm px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-mono shrink-0">
               Esc
             </kbd>
           </div>
@@ -467,15 +467,15 @@ export default function SaleInvoiceSearch({ isOpen, onClose, onSelect }) {
             </div>
             <div className="flex items-center gap-3 text-[10px] text-slate-400">
               <span className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">↑↓</kbd>
+                <kbd className="px-1.5 py-0.5 rounded-sm border border-slate-200 dark:border-slate-600 text-[9px]">↑↓</kbd>
                 <span>Navigate</span>
               </span>
               <span className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">↵</kbd>
+                <kbd className="px-1.5 py-0.5 rounded-sm border border-slate-200 dark:border-slate-600 text-[9px]">↵</kbd>
                 <span>Open</span>
               </span>
               <span className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px]">Esc</kbd>
+                <kbd className="px-1.5 py-0.5 rounded-sm border border-slate-200 dark:border-slate-600 text-[9px]">Esc</kbd>
                 <span>Close</span>
               </span>
             </div>

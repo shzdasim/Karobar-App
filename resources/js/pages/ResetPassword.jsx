@@ -60,7 +60,7 @@ export default function ResetPassword() {
 
   if (isValidating) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#2C5364] via-[#203A43] to-[#0F2027] p-4">
+      <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-[#2C5364] via-[#203A43] to-[#0F2027] p-4">
         <div className="relative bg-white/10 backdrop-blur-xl rounded-3xl shadow-2xl max-w-md w-full p-8 ring-1 ring-white/20">
           <div className="flex flex-col items-center justify-center space-y-4">
             <svg className="animate-spin h-10 w-10 text-[#639EA0]" fill="none" viewBox="0 0 24 24">
@@ -75,7 +75,7 @@ export default function ResetPassword() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#2C5364] via-[#203A43] to-[#0F2027] p-4 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-[#2C5364] via-[#203A43] to-[#0F2027] p-4 relative overflow-hidden">
       {/* Animated Background Shapes */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-[#639EA0] rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
@@ -98,7 +98,7 @@ export default function ResetPassword() {
       {/* Reset Password Card */}
       <div className="relative bg-white/10 backdrop-blur-xl rounded-3xl shadow-2xl max-w-md w-full p-8 ring-1 ring-white/20 animate-fade-in-up">
         {/* Decorative gradient border at top */}
-        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-24 h-1 bg-gradient-to-r from-[#639EA0] to-[#4A8082] rounded-full"></div>
+        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-24 h-1 bg-linear-to-r from-[#639EA0] to-[#4A8082] rounded-full"></div>
 
         <div className="text-center space-y-2 mb-8">
           {/* Logo with glow effect */}
@@ -113,7 +113,7 @@ export default function ResetPassword() {
           
           {/* Title */}
           <h1 className="text-2xl font-bold text-white tracking-tight">
-            <span className="bg-gradient-to-r from-[#639EA0] to-[#4A8082] bg-clip-text text-transparent">
+            <span className="bg-linear-to-r from-[#639EA0] to-[#4A8082] bg-clip-text text-transparent">
               Reset Password
             </span>
           </h1>
@@ -126,9 +126,9 @@ export default function ResetPassword() {
 
         {/* Success Message */}
         {success && (
-          <div className="mb-6 bg-green-500/10 border border-green-500/20 text-green-300 p-4 rounded-xl text-sm animate-fade-in-up backdrop-blur-sm">
+          <div className="mb-6 bg-green-500/10 border border-green-500/20 text-green-300 p-4 rounded-xl text-sm animate-fade-in-up backdrop-blur-xs">
             <div className="flex items-center gap-2 mb-2">
-              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
               </svg>
               <span>Password reset successful!</span>
@@ -141,9 +141,9 @@ export default function ResetPassword() {
 
         {/* Error Message */}
         {error && (
-          <div className="mb-6 bg-red-500/10 border border-red-500/20 text-red-300 p-4 rounded-xl text-sm animate-shake backdrop-blur-sm">
+          <div className="mb-6 bg-red-500/10 border border-red-500/20 text-red-300 p-4 rounded-xl text-sm animate-shake backdrop-blur-xs">
             <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <span>{error}</span>
@@ -168,7 +168,7 @@ export default function ResetPassword() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#639EA0]/50 focus:border-[#639EA0]/50 transition-all duration-300 backdrop-blur-sm"
+                  className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/40 focus:outline-hidden focus:ring-2 focus:ring-[#639EA0]/50 focus:border-[#639EA0]/50 transition-all duration-300 backdrop-blur-xs"
                   placeholder="admin@example.com"
                   required
                 />
@@ -190,7 +190,7 @@ export default function ResetPassword() {
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-11 pr-11 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#639EA0]/50 focus:border-[#639EA0]/50 transition-all duration-300 backdrop-blur-sm"
+                  className="w-full pl-11 pr-11 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/40 focus:outline-hidden focus:ring-2 focus:ring-[#639EA0]/50 focus:border-[#639EA0]/50 transition-all duration-300 backdrop-blur-xs"
                   placeholder="••••••••"
                   required
                   minLength={8}
@@ -231,7 +231,7 @@ export default function ResetPassword() {
                   type={showPassword ? "text" : "password"}
                   value={passwordConfirmation}
                   onChange={(e) => setPasswordConfirmation(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-[#639EA0]/50 focus:border-[#639EA0]/50 transition-all duration-300 backdrop-blur-sm"
+                  className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/40 focus:outline-hidden focus:ring-2 focus:ring-[#639EA0]/50 focus:border-[#639EA0]/50 transition-all duration-300 backdrop-blur-xs"
                   placeholder="••••••••"
                   required
                 />
@@ -245,7 +245,7 @@ export default function ResetPassword() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 bg-gradient-to-r from-[#639EA0] to-[#4A8082] text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 relative overflow-hidden group"
+              className="w-full py-3 px-4 bg-linear-to-r from-[#639EA0] to-[#4A8082] text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 relative overflow-hidden group"
             >
               <span className="relative z-10 flex items-center justify-center gap-2">
                 {loading ? (
@@ -266,7 +266,7 @@ export default function ResetPassword() {
                 )}
               </span>
               {/* Button glow effect */}
-              <div className="absolute inset-0 bg-gradient-to-r from-[#4A8082] to-[#639EA0] opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
+              <div className="absolute inset-0 bg-linear-to-r from-[#4A8082] to-[#639EA0] opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
             </button>
           </form>
         )}
@@ -276,7 +276,7 @@ export default function ResetPassword() {
           <div className="space-y-4">
             <button
               onClick={() => navigate("/")}
-              className="w-full py-3 px-4 bg-gradient-to-r from-[#639EA0] to-[#4A8082] text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 relative overflow-hidden group"
+              className="w-full py-3 px-4 bg-linear-to-r from-[#639EA0] to-[#4A8082] text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 relative overflow-hidden group"
             >
               <span className="relative z-10 flex items-center justify-center gap-2">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

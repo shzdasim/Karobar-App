@@ -152,12 +152,12 @@ const CustomerSearchInput = forwardRef(
           onFocus={handleFocus}
           onKeyDown={handleKeyDown}
           style={customStyles.control}
-          className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400/40 dark:focus:ring-indigo-400/40"
+          className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-hidden focus:ring-2 focus:ring-blue-400/40 dark:focus:ring-indigo-400/40"
           placeholder="Search customer..."
         />
         {showDropdown && filtered.length > 0 && createPortal(
           <div
-            className="fixed max-h-60 overflow-auto border bg-white dark:bg-slate-800 shadow-xl z-[9999] text-sm rounded-lg border-gray-200 dark:border-slate-600"
+            className="fixed max-h-60 overflow-auto border bg-white dark:bg-slate-800 shadow-xl react-select__menu-portal text-sm rounded-lg border-gray-200 dark:border-slate-600"
             style={{
               top: position.top,
               left: position.left,

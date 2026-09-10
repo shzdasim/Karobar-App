@@ -229,17 +229,17 @@ const [fromDate, setFromDate] = useState("");
 
   // 🎨 Modern button palette (will use dynamic theme colors)
   const tintPrimary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintSecondary = useMemo(() => `
-    bg-gradient-to-br shadow-lg ring-1 ring-white/20
+    bg-linear-to-br shadow-lg ring-1 ring-white/20
     hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
   const tintGlass = useMemo(() => `
-    bg-white/80 dark:bg-slate-700/60 backdrop-blur-sm ring-1 ring-gray-200/60 dark:ring-white/10
+    bg-white/80 dark:bg-slate-700/60 backdrop-blur-xs ring-1 ring-gray-200/60 dark:ring-white/10
     hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
   `.trim().replace(/\s+/g, ' '), []);
 
@@ -294,12 +294,12 @@ const [fromDate, setFromDate] = useState("");
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded';
+  const buttonStyle = theme?.button_style || 'rounded-sm';
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded': 'rounded-lg',
+      'rounded-sm': 'rounded-lg',
       'outlined': 'rounded-lg',
       'soft': 'rounded-xl',
     };
@@ -558,7 +558,7 @@ const [fromDate, setFromDate] = useState("");
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <button
               onClick={resetFilters}
-              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 transition-all duration-200 shadow-lg"
+              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
             >
               <ArrowPathIcon className="w-4 h-4" />
               <span>Reset</span>
@@ -568,7 +568,7 @@ const [fromDate, setFromDate] = useState("");
                 onClick={fetchReport}
                 disabled={loading}
                 className={`h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 ${
-                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20 shadow-lg"
+                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 shadow-lg"
                 }`}
               >
                 <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -591,7 +591,7 @@ const [fromDate, setFromDate] = useState("");
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
               />
             </div>
 
@@ -602,7 +602,7 @@ const [fromDate, setFromDate] = useState("");
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/50 [color-scheme:dark]"
+                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
               />
             </div>
 
@@ -630,7 +630,7 @@ products={products}
                       setProductValue(null);
                       setProductId("");
                     }}
-                    className="h-9 w-8 flex-shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-sm transition-all duration-200"
+                    className="h-9 w-8 shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-xs transition-all duration-200"
                     title="Clear product"
                   >
                     ×
@@ -646,7 +646,7 @@ products={products}
                   onClick={exportPdf}
                   disabled={pdfLoading || transactions.length === 0}
                   className={`h-9 px-3 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs font-semibold text-white transition-all duration-200 ${
-                    pdfLoading || transactions.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-sm border border-white/20"
+                    pdfLoading || transactions.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20"
                   }`}
                 >
                   <ArrowDownOnSquareIcon className="w-4 h-4" />
@@ -684,7 +684,7 @@ products={products}
                 {product.pack_size && <span>Pack Size: <strong>{product.pack_size}</strong></span>}
               </div>
             </div>
-            <div className={`text-center px-6 py-3 rounded-xl border shadow-sm ${
+            <div className={`text-center px-6 py-3 rounded-xl border shadow-xs ${
               isDark ? "bg-slate-800/80 border-blue-700/50" : "bg-white/80 border-blue-200"
             }`}>
               <div className={`text-xs uppercase tracking-wide ${isDark ? "text-blue-400" : "text-blue-600"}`}>Current Stock</div>
@@ -721,12 +721,12 @@ products={products}
           </div>
 
           {/* ===== Data Table ===== */}
-          <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm overflow-hidden">
+          <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden">
 {/* Table Header */}
             <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
               <div className="flex items-center gap-2">
                 <div 
-                  className="p-1 rounded"
+                  className="p-1 rounded-sm"
                   style={{ backgroundColor: themeColors.primaryLight + '40' }}
                 >
                   <Squares2X2Icon 
@@ -741,7 +741,7 @@ products={products}
 
             <div className="max-h-[70vh] overflow-auto">
               <table className="min-w-[1200px] w-full text-sm">
-                <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-sm">
+                <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
                   <tr className="text-left">
                     <Th isDark={isDark}>#</Th>
                     <Th isDark={isDark}>Date</Th>
@@ -797,7 +797,7 @@ products={products}
                 </tbody>
 
                 <tfoot className={`
-                  border-t-2 backdrop-blur-sm font-semibold
+                  border-t-2 backdrop-blur-xs font-semibold
                   ${isDark ? "border-slate-600 bg-slate-800/80" : "border-gray-300 bg-gray-50"}
                 `}>
                   <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>
@@ -835,12 +835,12 @@ products={products}
 function KpiCard({ isDark, label, value, highlight = false }) {
   return (
     <div className={`
-      rounded-xl px-3 py-2 backdrop-blur-sm ring-1 shadow-sm
+      rounded-xl px-3 py-2 backdrop-blur-xs ring-1 shadow-xs
       ${isDark 
         ? "bg-slate-800/60 ring-slate-700/50" 
         : "bg-white/60 ring-gray-200/60"
       }
-      ${highlight ? "outline outline-1 outline-emerald-200/50" : ""}
+      ${highlight ? "outline-solid outline-1 outline-emerald-200/50" : ""}
     `}>
       <div className={`text-[10px] uppercase tracking-wider ${isDark ? "text-slate-400" : "text-gray-500"}`}>{label}</div>
       <div className={`text-lg font-bold tabular-nums ${isDark ? "text-slate-200" : "text-gray-900"}`}>{value}</div>
