@@ -25,6 +25,21 @@ class SettingController extends Controller
         return response()->json($setting);
     }
 
+    // GET /api/sale-system
+    // Lightweight app-wide sale system mode. Accessible to any authenticated
+    // user (no settings.view permission / license gate) because the whole UI
+    // — not just the settings page — depends on it (e.g. hiding wholesale
+    // actions in retail-only mode). Returns only the two mode fields.
+    public function saleSystem()
+    {
+        $setting = Setting::first();
+
+        return response()->json([
+            'sale_system' => $setting?->sale_system ?? 'retail_wholesale',
+            'shop_type'   => $setting?->shop_type ?? 'pharmacy',
+        ]);
+    }
+
     // POST /api/settings  (multipart/form-data supported)
     public function update(Request $request)
     {

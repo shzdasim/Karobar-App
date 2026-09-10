@@ -17,6 +17,9 @@ class Setting extends Model
         'thermal_template',
         'a4_template',
         'logo_path',
+        'navigation_style',
+        'sale_system',
+        'shop_type',
     ];
     protected $appends = ['logo_url'];
 

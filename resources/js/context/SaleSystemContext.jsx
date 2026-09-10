@@ -23,15 +23,21 @@ export function SaleSystemProvider({ children }) {
     };
   }, []);
 
-  const fetchSaleSystem = async () => {
+  const fetchSaleSystem = async (isRetry = false) => {
     try {
-      const { data } = await axios.get("/api/settings");
+      const { data } = await axios.get("/api/sale-system");
       setSaleSystem(data?.sale_system || "retail_wholesale");
       setShopType(data?.shop_type || "pharmacy");
+      setLoading(false);
     } catch (error) {
       console.error("Failed to fetch sale system setting:", error);
-      setSaleSystem("retail_wholesale"); // default on error
-    } finally {
+      // Never reset the mode on failure — keep the last known value so a
+      // retail-only shop doesn't flip back to showing wholesale actions.
+      if (!isRetry) {
+        // One retry for transient failures (keeps `loading` true meanwhile)
+        setTimeout(() => fetchSaleSystem(true), 1500);
+        return;
+      }
       setLoading(false);
     }
   };

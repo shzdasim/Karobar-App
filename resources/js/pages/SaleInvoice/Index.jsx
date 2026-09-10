@@ -351,6 +351,7 @@ export default function SaleInvoicesIndex() {
         navigate("/sale-invoices/create/retail");
       } else if (key === "w") {
         // Alt+W -> wholesale sale - only if wholesale is enabled
+        if (saleSystemLoading) return; // sale system mode not known yet
         if (hasWholesale) {
           navigate("/sale-invoices/create/wholesale");
         } else {
@@ -360,7 +361,7 @@ export default function SaleInvoicesIndex() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [navigate, can.create, hasWholesale]);
+  }, [navigate, can.create, hasWholesale, saleSystemLoading]);
 
   // ===== search + pagination =====
   // Debounce on filter change only
@@ -560,7 +561,7 @@ export default function SaleInvoicesIndex() {
                 <span className="sm:hidden">Retail</span>
               </Link>
 
-              {hasWholesale && (
+              {!saleSystemLoading && hasWholesale && (
                 <Link
                   to="/sale-invoices/create/wholesale"
                   title="Add Wholesale Sale Invoice"

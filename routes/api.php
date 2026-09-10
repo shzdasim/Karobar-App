@@ -69,6 +69,11 @@ Route::middleware(['auth:sanctum', 'token.expiry'])->group(function () {
     // Theme Settings - available before license activation (for shell rendering)
     Route::get('/theme-settings/active',          [ThemeSettingController::class, 'getActive']);
     Route::put('/theme-settings/active',          [ThemeSettingController::class, 'updateActive']);
+
+    // Sale system mode — app-wide UI gating (retail vs wholesale).
+    // Any authenticated user needs this to render the correct UI, so it is
+    // intentionally NOT gated by license or the settings.view permission.
+    Route::get('/sale-system', [SettingController::class, 'saleSystem']);
 });
 
 /*
