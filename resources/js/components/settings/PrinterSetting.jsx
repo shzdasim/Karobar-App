@@ -446,6 +446,7 @@ export default function PrinterSetting({
                     onClick={(e) => {
                       e.stopPropagation();
                       setPreviewingTemplate(template);
+                      setPreviewingType('thermal');
                       setShowPreviewModal(true);
                     }}
                     className="absolute top-2 left-2 z-10 p-1.5 rounded-lg bg-white/90 hover:bg-white shadow-xs transition-opacity dark:bg-slate-700/90 dark:hover:bg-slate-600"
@@ -738,10 +739,14 @@ export default function PrinterSetting({
                 <GlassBtn
                   onClick={() => {
                     if (!disableInputs) {
-                      handleTemplateSelect(previewingTemplate.id);
+                      if (previewingType === 'a4') {
+                        handleA4TemplateSelect(previewingTemplate.id);
+                      } else {
+                        handleTemplateSelect(previewingTemplate.id);
+                      }
                       setShowPreviewModal(false);
                       setPreviewingTemplate(null);
-                      toast.success(`Selected ${previewingTemplate.name} template`);
+                      toast.success(`Selected ${previewingTemplate.name} ${previewingType === 'a4' ? 'A4' : 'thermal'} template`);
                     } else {
                       toast.error("You don't have permission to update settings.");
                     }
@@ -750,7 +755,7 @@ export default function PrinterSetting({
                   className={`h-9 px-4 ${btnPrimary.className}`}
                   style={btnPrimary.style}
                 >
-                  {form.thermal_template === previewingTemplate.id 
+                  {(previewingType === 'a4' ? form.a4_template : form.thermal_template) === previewingTemplate.id 
                     ? "Already Selected" 
                     : `Select ${previewingTemplate.name}`}
                 </GlassBtn>
