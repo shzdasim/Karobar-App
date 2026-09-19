@@ -311,6 +311,102 @@ class CustomerLedgerController extends Controller
     }
 
     /** ================================
+     * POST /api/customer-ledger/settle-invoice
+     * Mark a credit sale invoice as fully paid and sync the ledger in one shot:
+     *   1) sale_invoices.total_receive = invoice total (invoice side)
+     *   2) customer_ledgers invoice row: total_received = total, balance_remaining = 0
+     * ================================ */
+    public function settleInvoice(Request $request)
+    {
+        $this->authorize('updateAny', CustomerLedger::class);
+
+        $data = $request->validate([
+            'sale_invoice_id' => ['required','integer','exists:sale_invoices,id'],
+            'entry_date'      => ['nullable','date'],
+        ]);
+
+        $result = DB::transaction(function () use ($data) {
+            /** @var SaleInvoice $invoice */
+            $invoice = SaleInvoice::lockForUpdate()->findOrFail($data['sale_invoice_id']);
+
+            $invoiceTotal = $this->num(
+                $invoice->invoice_total ?? null,
+                $invoice->total ?? null,
+                $invoice->grand_total ?? null,
+                $invoice->net_total ?? null,
+                $invoice->gross_amount ?? null,
+                $invoice->sub_total ?? null
+            );
+
+            $received = $this->num(
+                $invoice->total_receive ?? null,
+                $invoice->total_recieve ?? null,
+                $invoice->received ?? null,
+                $invoice->amount_received ?? null
+            );
+
+            $balance = max($invoiceTotal - $received, 0);
+
+            if ($balance <= 0) {
+                return ['already_paid' => true, 'settled' => 0.0, 'invoice' => $invoice];
+            }
+
+            // ---- (1) Invoice side: received now covers the whole bill ----
+            $invoice->total_receive = $invoiceTotal;
+            $invoice->save();
+
+            // ---- (2) Ledger side: keep the invoice row consistent ----
+            $postedNumber = $this->str($invoice->posted_number ?? null, $invoice->invoice_no ?? null);
+
+            $ledgerRow = CustomerLedger::where('sale_invoice_id', $invoice->id)
+                ->where('entry_type', 'invoice')
+                ->lockForUpdate()
+                ->first();
+
+            if ($ledgerRow) {
+                $ledgerRow->total_received    = $invoiceTotal;
+                $ledgerRow->balance_remaining = 0;
+                $ledgerRow->save();
+            } else {
+                // Legacy credit invoice that never got a ledger row — create one so the
+                // customer ledger (and net balance) stays accurate.
+                $ledgerRow = new CustomerLedger();
+                $ledgerRow->customer_id       = (int)$invoice->customer_id;
+                $ledgerRow->sale_invoice_id   = $invoice->id;
+                $ledgerRow->entry_type        = 'invoice';
+                $ledgerRow->is_manual         = false;
+                $ledgerRow->entry_date        = $data['entry_date'] ?? ($invoice->date ?: now()->toDateString());
+                $ledgerRow->posted_number     = $postedNumber;
+                $ledgerRow->invoice_total     = $invoiceTotal;
+                $ledgerRow->total_received    = $invoiceTotal;
+                $ledgerRow->balance_remaining = 0;
+                $ledgerRow->credited_amount   = 0;
+                $ledgerRow->payment_ref       = null;
+                $ledgerRow->description       = 'Sale invoice ' . ($postedNumber ?? $invoice->id) . ' (marked paid)';
+                $ledgerRow->created_by        = Auth::id();
+                $ledgerRow->save();
+            }
+
+            return ['already_paid' => false, 'settled' => round($balance, 2), 'invoice' => $invoice];
+        });
+
+        if ($result['already_paid']) {
+            return response()->json([
+                'status'  => 'ok',
+                'settled' => 0,
+                'message' => 'Invoice is already fully paid',
+            ]);
+        }
+
+        return response()->json([
+            'status'          => 'ok',
+            'settled'         => $result['settled'],
+            'sale_invoice_id' => $result['invoice']->id,
+            'posted_number'   => $this->str($result['invoice']->posted_number ?? null, $result['invoice']->invoice_no ?? null),
+        ]);
+    }
+
+    /** ================================
      * POST /api/customer-ledger/rebuild { customer_id }
      * Upsert invoice rows with robust field reads
      * ================================ */

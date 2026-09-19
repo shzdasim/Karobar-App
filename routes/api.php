@@ -265,6 +265,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::put('/supplier-ledger/bulk',           [SupplierLedgerController::class, 'bulkUpdate']);
     Route::delete('/supplier-ledger/{id}',        [SupplierLedgerController::class, 'destroy']);
     Route::post('/supplier-ledger/rebuild',       [SupplierLedgerController::class, 'rebuild']);
+    Route::post('/supplier-ledger/settle-invoice',[SupplierLedgerController::class, 'settleInvoice']);
 
     // Customer Ledger
     Route::get('/customer-ledger',                [CustomerLedgerController::class, 'index']);
@@ -272,4 +273,5 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::put('/customer-ledger/bulk',           [CustomerLedgerController::class, 'bulkUpdate']);
     Route::delete('/customer-ledger/{customerLedger}', [CustomerLedgerController::class, 'destroy']);
     Route::post('/customer-ledger/rebuild',       [CustomerLedgerController::class, 'rebuild']);
+    Route::post('/customer-ledger/settle-invoice', [CustomerLedgerController::class, 'settleInvoice']);
 });
