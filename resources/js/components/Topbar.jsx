@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
-import { ClipboardDocumentListIcon, ShoppingCartIcon, ClockIcon, BellIcon } from "@heroicons/react/24/solid";
+import { ClipboardDocumentListIcon, ShoppingCartIcon, ClockIcon, BellIcon, Bars3Icon } from "@heroicons/react/24/solid";
 import { useLicense } from "@/context/LicenseContext.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import ProductSearch from "@/components/ProductSearch.jsx";
@@ -23,7 +23,7 @@ function formatRemaining(ms) {
   return `${sec}s`;
 }
 
-export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
+export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobileMenuClick }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
   const btnRef = useRef(null);
@@ -161,6 +161,27 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar" }) {
         ].join(" ")}
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Mobile menu button — visible on < lg */}
+          <div className="lg:hidden shrink-0">
+            <button
+              type="button"
+              onClick={onMobileMenuClick}
+              aria-label="Open sidebar"
+              className={[
+                "inline-flex items-center justify-center",
+                "w-9 h-9 rounded-xl",
+                "bg-white/70 dark:bg-slate-800/70",
+                "border border-gray-200/70 dark:border-slate-600/70",
+                "text-gray-700 dark:text-gray-200",
+                "hover:bg-gray-100 dark:hover:bg-slate-700",
+                "focus:outline-none focus:ring-2 focus:ring-blue-500/40",
+                "transition-all duration-200",
+              ].join(" ")}
+            >
+              <Bars3Icon className="w-5 h-5" />
+            </button>
+          </div>
+
           {/* Left: Search */}
           <div className={`flex-1 min-w-[200px] ${navigationStyle === 'topbar' ? 'max-w-3xl' : 'max-w-[480px]'}`}>
             <ProductSearch navigationStyle={navigationStyle} />

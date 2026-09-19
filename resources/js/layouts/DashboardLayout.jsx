@@ -13,6 +13,9 @@ export default function DashboardLayout({ children }) {
   const [appName, setAppName] = useState("ERP");
   const [logoUrl, setLogoUrl] = useState(null);
 
+  // Mobile sidebar state
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
   // Fetch settings from API and sync with localStorage
   useEffect(() => {
     (async () => {
@@ -67,35 +70,72 @@ export default function DashboardLayout({ children }) {
     document.title = `${pageTitle} - ${appName || "ERP"}`;
   }, [pageTitle, appName]);
 
-  // Single fixed layout: sidebar + topbar
+  // Close mobile sidebar on route change
+  useEffect(() => {
+    setMobileSidebarOpen(false);
+  }, [location.pathname]);
+
+  // Prevent body scroll when mobile sidebar is open
+  useEffect(() => {
+    if (mobileSidebarOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [mobileSidebarOpen]);
+
+  // --- Responsive layout ---
+  //  • Mobile (< lg):  sidebar becomes a slide-over overlay
+  //  • Desktop (≥ lg):  sidebar is always visible (fixed)
   return (
-    <div
-      className="
-        h-screen bg-gray-100 dark:bg-slate-900
-        grid grid-rows-[auto_1fr] grid-cols-[auto_1fr]
-        overflow-hidden
-        transform-gpu
-      "
-    >
-      {/* Sidebar: left column, spans both rows */}
-      <div className="row-span-2 col-start-1 relative">
-        <div className="sticky top-0 h-screen min-h-0">
+    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-900 text-gray-900 dark:text-gray-100 transition-colors">
+      {/* Desktop sidebar — always visible on lg+ */}
+      <div className="hidden lg:block lg:shrink-0">
+        <div className="sticky top-0 h-screen overflow-y-auto">
           <Sidebar appName={appName} logoUrl={logoUrl} />
         </div>
       </div>
 
-      {/* Topbar: top-right cell */}
-      <div className="row-start-1 col-start-2 relative z-40">
-        <Topbar pageTitle={pageTitle} />
-      </div>
+      {/* Mobile sidebar overlay — slide-in panel on < lg */}
+      {mobileSidebarOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 lg:hidden kd-mobile-backdrop"
+            onClick={() => setMobileSidebarOpen(false)}
+            aria-label="Close sidebar"
+          />
+          {/* Slide-in panel */}
+          <div
+            className="
+              fixed inset-y-0 left-0 z-50 w-64 max-w-[260px]
+              kd-mobile-panel
+              lg:hidden
+            "
+          >
+            <div className="h-full overflow-y-auto shadow-xl">
+              <Sidebar appName={appName} logoUrl={logoUrl} />
+            </div>
+          </div>
+        </>
+      )}
 
-      {/* Main content: bottom-right cell */}
-      <main className="row-start-2 col-start-2 min-h-0 overflow-y-auto">
-        <div className="p-4 md:p-6 h-full flex flex-col">
-          <Toaster position="top-right" reverseOrder={false} />
-          {children}
-        </div>
-      </main>
+      {/* Main content area — topbar + page */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Topbar
+          pageTitle={pageTitle}
+          onMobileMenuClick={() => setMobileSidebarOpen(true)}
+        />
+        <main className="flex-1 overflow-y-auto">
+          <div className="p-4 sm:p-5 lg:p-6">
+            <Toaster position="top-right" reverseOrder={false} />
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

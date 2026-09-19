@@ -4,7 +4,8 @@ import toast from "react-hot-toast";
 import AsyncSelect from "react-select/async";
 import { createFilter } from "react-select";
 import { useNavigate } from "react-router-dom";
-import { useTheme } from "@/context/ThemeContext";
+import { useTheme } from "@/context/ThemeContext.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 import {
   AreaChart,
   Area,
@@ -148,6 +149,14 @@ const pctChange = (cur, prev) => {
   return Math.round(((c - p) / Math.abs(p)) * 100 * 10) / 10;
 };
 
+const fmtDateLabel = (iso) => {
+  if (!iso) return "";
+  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
+  return Number.isNaN(d.getTime())
+    ? ""
+    : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+};
+
 /* ===================== Dark-mode aware tooltip + selects ===================== */
 const tooltipStyle = (isDark) => ({
   backgroundColor: isDark ? "rgba(30, 41, 59, 0.95)" : "rgba(255, 255, 255, 0.97)",
@@ -230,14 +239,14 @@ function SectionCard({ children, className = "" }) {
 
 function CardHeader({ icon: Icon, iconStyle, title, subtitle, right }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-slate-100 dark:border-slate-700/70">
+    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 sm:px-5 sm:py-4 border-b border-slate-100 dark:border-slate-700/70">
       <div className="flex items-center gap-3 min-w-0">
         <div className="p-2 rounded-xl shadow-xs shrink-0" style={{ backgroundColor: iconStyle?.bg || "transparent" }}>
           <Icon className="w-4 h-4" style={{ color: iconStyle?.color || "#64748b" }} />
         </div>
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{title}</h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{subtitle}</p>
+          <h3 className="text-[13px] font-semibold text-slate-800 dark:text-slate-100 truncate">{title}</h3>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{subtitle}</p>
         </div>
       </div>
       {right && <div className="flex items-center gap-2 shrink-0">{right}</div>}
@@ -264,7 +273,7 @@ function TrendPill({ value }) {
 
 function RankedRow({ rank, title, meta, amount, pct, color }) {
   return (
-    <li className="flex items-center gap-3 px-5 py-3">
+    <li className="flex items-center gap-3 px-4 py-3 sm:px-5">
       <span
         className="w-6 h-6 rounded-lg text-[11px] font-bold flex items-center justify-center shrink-0"
         style={
@@ -325,6 +334,8 @@ export default function Dashboard() {
   const [nearExpiryRows, setNearExpiryRows] = useState([]);
   const [loadingExpiry, setLoadingExpiry] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [booted, setBooted] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   const [cards, setCards] = useState({
     sales: 0,
@@ -391,6 +402,21 @@ const daysInPeriod = useMemo(() => {
     } catch {
       return 1;
     }
+  }, [from, to]);
+
+  const dateRangeLabel = useMemo(() => {
+    const f = fmtDateLabel(from);
+    const t = fmtDateLabel(to);
+    if (!f && !t) {
+      return new Date().toLocaleDateString(undefined, {
+        weekday: "short",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+    }
+    if (f === t) return f;
+    return `${f} — ${t}`;
   }, [from, to]);
 
   const netSales = useMemo(() => (cards.sales || 0) - (cards.saleReturns || 0), [cards]);
@@ -491,11 +517,13 @@ const daysInPeriod = useMemo(() => {
       if (invoiceRes.status === 'fulfilled') {
         setInvoiceCounts(invoiceRes.value.data || { total: 0, sale_invoices: 0, purchase_invoices: 0 });
       }
+      setLastUpdated(new Date());
     } catch (err) {
       console.error(err);
       toast.error("Failed to load dashboard.");
     } finally {
       setLoading(false);
+      setBooted(true);
     }
   }
 
@@ -756,103 +784,118 @@ const moduleTiles = [
     },
   ];
 
-return (
-    <div className="min-h-full p-4 md:p-6 space-y-5 bg-slate-50 dark:bg-slate-900/60">
-      {/* ===== Header ===== */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div
-            className="w-11 h-11 rounded-2xl flex items-center justify-center shadow-md ring-1 ring-white/40"
-            style={{ background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.secondary})` }}
-          >
-            <ChartPieIcon className="text-white" style={{ width: 22, height: 22 }} />
-          </div>
-          <div>
-            <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-              Dashboard
-            </h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5">
-              <CalendarDaysIcon className="w-3.5 h-3.5" />
-              {new Date().toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
-            </p>
-          </div>
-        </div>
+const heroStats = [
+    { label: "Net Sales", value: `Rs ${fmtCompact(netSales)}`, hint: "Total sales minus sale returns in this period" },
+    { label: "Daily Avg", value: `Rs ${fmtCompact(daysInPeriod > 0 ? netSales / daysInPeriod : 0)}`, hint: "Net sales ÷ days shown — what you average each day" },
+    { label: "Return Rate", value: `${returnRate}%`, hint: "Sale returns as a % of total sales in this period" },
+  ];
 
-        <div className="flex items-center gap-2.5">
-          <span className="hidden sm:inline-flex items-center gap-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 px-3.5 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 shadow-xs">
-            <SparklesIcon className="w-4 h-4" style={{ color: themeColors.primary }} />
-            {daysInPeriod > 1 ? `${daysInPeriod}-day view` : "Today's overview"}
-          </span>
-          <button
-            onClick={fetchAll}
-            disabled={loading}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-md hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-60"
-            style={{ background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})` }}
-          >
-            <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-            {loading ? "Loading…" : "Refresh"}
-          </button>
+  return (
+    <div className="min-h-full px-3 py-3.5 sm:px-4 sm:py-4 lg:px-5 lg:py-5 space-y-4 sm:space-y-5 bg-slate-50 dark:bg-slate-900/60">
+      {/* ===== Hero band ===== */}
+      <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 ring-1 ring-white/10 shadow-lg shadow-slate-900/20">
+        {/* Glow accents */}
+        <div aria-hidden="true" className="pointer-events-none absolute -top-24 -right-16 h-72 w-72 rounded-full blur-3xl opacity-25" style={{ background: themeColors.primary }} />
+        <div aria-hidden="true" className="pointer-events-none absolute -bottom-28 -left-12 h-72 w-72 rounded-full blur-3xl opacity-20" style={{ background: themeColors.secondary }} />
+        {/* Dot texture */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 opacity-[0.12]"
+          style={{ backgroundImage: "radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px)", backgroundSize: "18px 18px" }}
+        />
+
+        <div className="relative flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
+          {/* Identity */}
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-white/10 ring-1 ring-white/15 flex items-center justify-center shrink-0">
+              <ChartPieIcon className="text-white w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className="text-base sm:text-lg font-semibold tracking-tight text-white">Dashboard</h1>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/10 ring-1 ring-emerald-300/20 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-emerald-300">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  </span>
+                  Live
+                </span>
+              </div>
+              <p className="mt-0.5 text-[11px] sm:text-xs text-slate-400 flex items-center gap-1.5">
+                <CalendarDaysIcon className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{dateRangeLabel}</span>
+                <span className="hidden sm:inline text-slate-600">·</span>
+                <span className="hidden sm:inline whitespace-nowrap">{daysInPeriod > 1 ? `${daysInPeriod}-day view` : "Today"}</span>
+                {lastUpdated && (
+                  <>
+                    <span className="hidden md:inline text-slate-600">·</span>
+                    <span className="hidden md:inline whitespace-nowrap">
+                      Updated {lastUpdated.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+
+          {/* Headline stats */}
+          <div className="grid grid-cols-3 divide-x divide-white/10 lg:pr-4">
+            {heroStats.map((s, i) => (
+              <div key={s.label} title={s.hint} className={i === 0 ? "pl-0 pr-3 sm:pr-5" : "px-3 sm:px-5"}>
+                <div className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-slate-400 whitespace-nowrap">
+                  {s.label}
+                </div>
+                <div className="mt-0.5 text-[13px] sm:text-[15px] font-semibold text-white tabular-nums truncate">
+                  {s.value}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Refresh */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={fetchAll}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white ring-1 ring-white/15 backdrop-blur-sm hover:bg-white/15 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:pointer-events-none"
+            >
+              <ArrowPathIcon className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+              {loading ? "Loading…" : "Refresh"}
+            </button>
+            <kbd className="hidden xl:flex items-center rounded-md bg-white/5 ring-1 ring-white/10 px-1.5 py-1 text-[10px] font-medium text-slate-400 whitespace-nowrap">
+              Alt+R
+            </kbd>
+          </div>
         </div>
       </div>
 
-      {/* ===== Filters Toolbar ===== */}
-      <SectionCard>
-        <div className="flex flex-col lg:flex-row lg:items-center gap-3 px-5 py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-2 flex-1">
-            <div className="flex items-center gap-2 flex-1 min-w-[150px]">
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 whitespace-nowrap">From</label>
-              <input
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="w-full min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-700/60 px-3 py-1.5 text-sm text-slate-800 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-500/40 transition-shadow"
-              />
-            </div>
-            <div className="flex items-center gap-2 flex-1 min-w-[150px]">
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 whitespace-nowrap">To</label>
-              <input
-                type="date"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="w-full min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-700/60 px-3 py-1.5 text-sm text-slate-800 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-500/40 transition-shadow"
-              />
-            </div>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {quickPresets.map((p) => (
-                <button
-                  key={p.label}
-                  onClick={p.fn}
-                  className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200 active:scale-95 transition-all duration-150"
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
+      {/* ===== Filters ===== */}
+      <SectionCard className="p-3 sm:px-4 sm:py-3.5">
+        <div className="grid grid-cols-1 gap-2.5 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2 min-w-0">
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 sm:whitespace-nowrap">From</label>
+            <ModernDatePicker value={from} onChange={setFrom} placeholder="Start date" className="w-full min-w-0 sm:w-48" />
           </div>
-
-          <div className="flex items-center gap-1.5 overflow-x-auto">
-            {[
-              { label: "Net Sales", value: fmtCurrency(netSales), color: themeColors.primary, hint: "Total sales minus sale returns in this period" },
-              { label: "Daily Avg", value: fmtCurrency(daysInPeriod > 0 ? netSales / daysInPeriod : 0), color: themeColors.tertiary, hint: "Net sales ÷ days shown — what you average each day" },
-              { label: "Return Rate", value: `${returnRate}%`, color: themeColors.secondary, hint: "Sale returns as a % of total sales in this period" },
-            ].map((s) => (
-              <div
-                key={s.label}
-                title={s.hint}
-                className="flex flex-col items-start gap-0.5 rounded-lg px-3 py-1.5 bg-slate-100/70 dark:bg-slate-700/40 border border-slate-200/60 dark:border-slate-700/50"
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2 min-w-0">
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 sm:whitespace-nowrap">To</label>
+            <ModernDatePicker value={to} onChange={setTo} placeholder="End date" className="w-full min-w-0 sm:w-48" />
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 sm:ml-auto">
+            {quickPresets.map((p) => (
+              <button
+                key={p.label}
+                onClick={p.fn}
+                className="px-2 py-1 rounded-lg text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200 active:scale-95 transition-all duration-150"
               >
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{s.label}</span>
-                <span className="text-sm font-bold tabular-nums" style={{ color: s.color }}>
-                  {s.value}
-                </span>
-              </div>
+                {p.label}
+              </button>
             ))}
           </div>
         </div>
       </SectionCard>
 
 {/* ===== KPI Money Cards ===== */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         {kpiCards.map((k, idx) => (
           <div
             key={k.label}
@@ -869,20 +912,24 @@ return (
             className="group relative rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 shadow-xs hover:shadow-lg hover:-translate-y-0.5 hover:ring-2 hover:ring-blue-500/20 transition-all duration-300 overflow-hidden cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500/40"
           >
             <div className="h-1 w-full" style={{ background: `linear-gradient(to right, ${k.color}, ${k.color}B3)` }} />
-            <div className="p-5">
+            <div className="p-4 sm:p-5">
               <div className="flex items-center justify-between gap-3 mb-1">
-                <div className="p-2.5 rounded-xl shadow-xs" style={{ backgroundColor: k.bg }}>
+                <div className="p-2 sm:p-2.5 rounded-xl shadow-xs" style={{ backgroundColor: k.bg }}>
                   <k.icon className="w-5 h-5" style={{ color: k.color }} />
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 truncate">
                     {k.label}
                   </span>
-                  <TrendPill value={pctChange(k.value, k.prev)} />
+                  {booted && <TrendPill value={pctChange(k.value, k.prev)} />}
                 </div>
               </div>
-              <div className="mt-3 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white tabular-nums">
-                Rs {fmtCurrency(k.value)}
+              <div className="mt-2.5 text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-white tabular-nums">
+                {booted ? (
+                  `Rs ${fmtCurrency(k.value)}`
+                ) : (
+                  <span className="inline-block h-6 w-28 rounded-lg bg-slate-200/80 dark:bg-slate-700/60 animate-pulse align-middle" />
+                )}
               </div>
               <div className="mt-3 -mb-1">
                 <Sparkline data={k.spark} color={k.sparkColor} suffix={String(idx)} />
@@ -890,11 +937,11 @@ return (
               {k.sub && k.sub.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700/60 grid grid-cols-2 gap-3">
                   {k.sub.map((row) => (
-                    <div key={row.label} className="flex items-center gap-1.5">
+                    <div key={row.label} className="flex items-center gap-1.5 min-w-0">
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ background: row.color }} />
                       <div className="min-w-0 flex-1">
                         <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{row.label}</div>
-                        <div className="text-sm font-bold text-slate-800 dark:text-slate-100 tabular-nums truncate" title={`Rs ${fmtCurrency(row.value)}`}>
+                        <div className="text-xs sm:text-[13px] font-semibold text-slate-800 dark:text-slate-100 tabular-nums truncate" title={`Rs ${fmtCurrency(row.value)}`}>
                           Rs {fmtCurrency(row.value)}
                         </div>
                       </div>
@@ -903,12 +950,12 @@ return (
                 </div>
               )}
             </div>
-            <div className="flex items-center justify-between px-5 py-3 bg-slate-50/70 dark:bg-slate-700/30 border-t border-slate-100 dark:border-slate-700/60">
-              <span className="text-[11px] font-semibold" style={{ color: k.color }}>
+            <div className="flex items-center justify-between gap-2 px-4 sm:px-5 py-2 sm:py-2.5 bg-slate-50/70 dark:bg-slate-700/30 border-t border-slate-100 dark:border-slate-700/60">
+              <span className="text-[10px] sm:text-[11px] font-semibold truncate" style={{ color: k.color }}>
                 {k.footer}
               </span>
-              <span className="flex items-center gap-2">
-                <span className="text-[11px] text-slate-400 dark:text-slate-500">
+              <span className="flex items-center gap-2 shrink-0">
+                <span className="text-[10px] sm:text-[11px] text-slate-400 dark:text-slate-500 whitespace-nowrap">
                   vs prev {Math.max(daysInPeriod - 1, 1)}d
                 </span>
                 <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 group-hover:text-slate-500 dark:group-hover:text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200" />
@@ -919,7 +966,7 @@ return (
       </div>
 
       {/* ===== App Module Stats ===== */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2.5 sm:gap-3">
         {moduleTiles.map((chip) => (
           <div
             key={chip.label}
@@ -933,21 +980,21 @@ return (
               }
             }}
             title={chip.path ? `Open ${chip.label} page` : undefined}
-            className="group flex items-center gap-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 shadow-xs px-4 py-3.5 hover:shadow-md hover:-translate-y-0.5 hover:ring-2 hover:ring-blue-500/20 transition-all duration-200 cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500/40"
+            className="group flex items-center gap-2.5 sm:gap-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 shadow-xs px-3 py-3 sm:px-4 sm:py-3.5 hover:shadow-md hover:-translate-y-0.5 hover:ring-2 hover:ring-blue-500/20 transition-all duration-200 cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500/40"
           >
             <div className="p-2 rounded-xl shrink-0" style={{ backgroundColor: chip.bg }}>
               <chip.icon className="w-4 h-4" style={{ color: chip.color }} />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-lg font-extrabold leading-tight text-slate-900 dark:text-white tabular-nums">
+              <div className="text-[15px] sm:text-base font-bold leading-tight text-slate-900 dark:text-white tabular-nums truncate">
                 {typeof chip.value === "number" ? chip.value.toLocaleString() : chip.value}
               </div>
               <div className="text-[11px] font-medium text-slate-400 dark:text-slate-500 truncate">{chip.label}</div>
               {chip.hint && (
-                <div className="text-[10px] text-slate-400 dark:text-slate-600 truncate">{chip.hint}</div>
+                <div className="hidden sm:block text-[10px] text-slate-400 dark:text-slate-600 truncate">{chip.hint}</div>
               )}
             </div>
-            <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5 shrink-0 text-slate-200 dark:text-slate-700 group-hover:text-slate-500 dark:group-hover:text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200" />
+            <ArrowTopRightOnSquareIcon className="hidden sm:block w-3.5 h-3.5 shrink-0 text-slate-200 dark:text-slate-700 group-hover:text-slate-500 dark:group-hover:text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200" />
           </div>
         ))}
       </div>
@@ -972,8 +1019,8 @@ return (
             </div>
           }
         />
-        <div className="p-5">
-          <div className="h-64">
+        <div className="p-3.5 sm:p-5">
+          <div className="h-56 sm:h-64 lg:h-72">
             <ResponsiveContainer width="100%" height="100%" debounce={100}>
               <AreaChart data={revenueData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <defs>
@@ -1055,8 +1102,8 @@ return (
             title="Sales vs Purchases"
             subtitle="Total comparison for the period"
           />
-          <div className="p-5">
-            <div className="h-52">
+          <div className="p-3.5 sm:p-5">
+            <div className="h-44 sm:h-52">
               <ResponsiveContainer width="100%" height="100%" debounce={100}>
                 <BarChart data={[
                   { name: 'Sales', value: cards.sales },
@@ -1094,8 +1141,8 @@ return (
             title="Returns Trend"
             subtitle="Sale vs purchase returns"
           />
-          <div className="p-5">
-            <div className="h-52">
+          <div className="p-3.5 sm:p-5">
+            <div className="h-44 sm:h-52">
               <ResponsiveContainer width="100%" height="100%" debounce={100}>
                 <AreaChart
                   data={mergeTwo(series.saleReturns, series.purchaseReturns)}
@@ -1234,7 +1281,7 @@ return (
             title="Period Snapshot"
             subtitle="Quick summary of this period"
           />
-          <div className="p-5 space-y-4">
+          <div className="p-4 sm:p-5 space-y-3.5 sm:space-y-4">
             {[
               { label: "Total Sales", value: `Rs ${fmtCurrency(cards.sales)}`, icon: CurrencyDollarIcon, color: themeColors.primary, bg: themeColors.primaryLight },
               { label: "Total Purchases", value: `Rs ${fmtCurrency(cards.purchases)}`, icon: ShoppingCartIcon, color: themeColors.secondary, bg: themeColors.secondaryLight },
@@ -1254,12 +1301,12 @@ return (
             ))}
             <div className="pt-3 border-t border-slate-100 dark:border-slate-700/60 grid grid-cols-2 gap-3">
               <div className="rounded-xl bg-slate-50 dark:bg-slate-700/40 p-3 text-center">
-                <div className="text-base font-extrabold text-slate-900 dark:text-white tabular-nums">{invoiceCounts.total || 0}</div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Invoices</div>
+                <div className="text-base font-bold text-slate-900 dark:text-white tabular-nums">{invoiceCounts.total || 0}</div>
+                <div className="text-[9px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Invoices</div>
               </div>
               <div className="rounded-xl bg-slate-50 dark:bg-slate-700/40 p-3 text-center">
-                <div className="text-base font-extrabold text-slate-900 dark:text-white tabular-nums">{kpiMetrics.active_products || 0}</div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Products</div>
+                <div className="text-base font-bold text-slate-900 dark:text-white tabular-nums">{kpiMetrics.active_products || 0}</div>
+                <div className="text-[9px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Products</div>
               </div>
             </div>
           </div>
@@ -1299,10 +1346,10 @@ return (
           }
         />
 
-        <div className="flex flex-col lg:flex-row lg:items-center gap-3 px-5 py-3 border-b border-slate-100 dark:border-slate-700/60">
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Supplier</span>
-            <div className="w-44 relative z-50">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-3 px-4 py-3 sm:px-5 border-b border-slate-100 dark:border-slate-700/60">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 shrink-0">Supplier</span>
+            <div className="flex-1 sm:w-44 sm:flex-none relative z-50">
               <AsyncSelect
                 cacheOptions
                 defaultOptions={[{ value: "", label: "All Suppliers" }]}
@@ -1319,9 +1366,9 @@ return (
               />
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Brand</span>
-            <div className="w-44 relative z-50">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 shrink-0">Brand</span>
+            <div className="flex-1 sm:w-44 sm:flex-none relative z-50">
               <AsyncSelect
                 cacheOptions
                 defaultOptions={[{ value: "", label: "All Brands" }]}
@@ -1363,23 +1410,24 @@ return (
         </div>
 
 {/* Expiry table */}
-        <div className="overflow-auto max-h-96">
+        <div className="overflow-auto max-h-[24rem]">
+          <div className="min-w-[760px]">
           <table className="min-w-full text-sm">
             <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 z-10 border-b border-slate-200 dark:border-slate-700">
               <tr className="text-left">
-                <th className="px-5 py-3 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Product</th>
-                <th className="px-5 py-3 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Supplier</th>
-                <th className="hidden md:table-cell px-5 py-3 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Brand</th>
-                <th className="hidden sm:table-cell px-5 py-3 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Batch #</th>
-                <th className="px-5 py-3 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Expiry</th>
-                <th className="px-5 py-3 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Days Left</th>
-                <th className="px-5 py-3 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Qty</th>
+                <th className="px-4 py-3 sm:px-5 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Product</th>
+                <th className="px-4 py-3 sm:px-5 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Supplier</th>
+                <th className="hidden md:table-cell px-4 py-3 sm:px-5 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Brand</th>
+                <th className="hidden sm:table-cell px-4 py-3 sm:px-5 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Batch #</th>
+                <th className="px-4 py-3 sm:px-5 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Expiry</th>
+                <th className="px-4 py-3 sm:px-5 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Days Left</th>
+                <th className="px-4 py-3 sm:px-5 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Qty</th>
               </tr>
             </thead>
             <tbody>
               {nearExpiryRows.length === 0 ? (
                 <tr>
-                  <td className="px-5 py-10 text-center text-slate-400 dark:text-slate-500" colSpan={7}>
+                  <td className="px-4 py-10 sm:px-5 text-center text-slate-400 dark:text-slate-500" colSpan={7}>
                     {loadingExpiry ? (
                       <span className="inline-flex items-center gap-2">
                         <ArrowPathIcon className="w-4 h-4 animate-spin" />
@@ -1398,18 +1446,18 @@ return (
                       key={`b-${r.batch_id}`}
                       className="border-b border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors"
                     >
-                      <td className="px-5 py-3 text-slate-800 dark:text-slate-100">
+                      <td className="px-4 py-3 sm:px-5 text-slate-800 dark:text-slate-100">
                         <div className="max-w-[260px] truncate font-medium" title={r.product_name}>{r.product_name}</div>
                         <div className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">{r.product_code}</div>
                       </td>
-                      <td className="px-5 py-3 text-slate-600 dark:text-slate-300">{(r.supplier_name || "—")}</td>
-                      <td className="hidden md:table-cell px-5 py-3 text-slate-600 dark:text-slate-300">{(r.brand_name || "—")}</td>
-                      <td className="hidden sm:table-cell px-5 py-3 text-slate-600 dark:text-slate-300 font-mono text-xs">{r.batch_number}</td>
-                      <td className="px-5 py-3 text-slate-600 dark:text-slate-300">{String(r.expiry_date || "").slice(0, 10)}</td>
-                      <td className="px-5 py-3">
+                      <td className="px-4 py-3 sm:px-5 text-slate-600 dark:text-slate-300">{(r.supplier_name || "—")}</td>
+                      <td className="hidden md:table-cell px-4 py-3 sm:px-5 text-slate-600 dark:text-slate-300">{(r.brand_name || "—")}</td>
+                      <td className="hidden sm:table-cell px-4 py-3 sm:px-5 text-slate-600 dark:text-slate-300 font-mono text-xs">{r.batch_number}</td>
+                      <td className="px-4 py-3 sm:px-5 text-slate-600 dark:text-slate-300">{String(r.expiry_date || "").slice(0, 10)}</td>
+                      <td className="px-4 py-3 sm:px-5">
                         {daysLeft != null ? <ExpiryPill days={daysLeft} /> : <span className="text-slate-400">—</span>}
                       </td>
-                      <td className="px-5 py-3 text-right text-slate-800 dark:text-slate-100 font-semibold tabular-nums">
+                      <td className="px-4 py-3 sm:px-5 text-right text-slate-800 dark:text-slate-100 font-semibold tabular-nums">
                         {Number(r.quantity ?? 0).toLocaleString()}
                       </td>
                     </tr>
@@ -1418,6 +1466,7 @@ return (
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </SectionCard>
     </div>
