@@ -708,41 +708,31 @@ useEffect(() => {
           </div>
         </div>
 
-        <div className="max-h-[65vh] overflow-y-auto">
-          <table className="w-full table-fixed text-sm">
-            <thead className="sticky top-0 z-10 bg-gradient-to-r from-slate-50 via-white to-slate-50 backdrop-blur-md dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
-              <tr className="border-b border-gray-200 text-left dark:border-slate-700">
-                <th scope="col" className="w-10 px-3 py-3">
-                  <input
-                    type="checkbox"
-                    aria-label="Select all on this page"
-                    checked={pageAllChecked}
-                    ref={(el) => {
-                      if (el) el.indeterminate = pageIndeterminate;
-                    }}
-                    onChange={(e) => togglePageAll(e.target.checked)}
-                    className="h-4 w-4 cursor-pointer rounded border-gray-300"
-                    style={{ accentColor: themeColors.primary }}
-                  />
+        <div className="max-h-[65vh] overflow-y-auto px-2 py-2">
+          <table className="w-full table-fixed border-separate border-spacing-y-1.5 text-sm">
+            <thead>
+              <tr className="text-left">
+                <th scope="col" className="w-12 pb-2 pl-3">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-300 dark:text-slate-600">#</span>
                 </th>
-                <th scope="col" className="px-3 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  Product
+                <th scope="col" className="pb-2 pl-3">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 dark:text-slate-500">Product</span>
                 </th>
-                <th scope="col" className="hidden w-32 px-3 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 md:table-cell dark:text-gray-400">
-                  Category
+                <th scope="col" className="hidden w-32 pb-2 pl-3 md:table-cell">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 dark:text-slate-500">Category</span>
                 </th>
-                <th scope="col" className="hidden w-32 px-3 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 md:table-cell dark:text-gray-400">
-                  Brand
+                <th scope="col" className="hidden w-32 pb-2 pl-3 md:table-cell">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 dark:text-slate-500">Brand</span>
                 </th>
-                <th scope="col" className="hidden w-36 px-3 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 lg:table-cell dark:text-gray-400">
-                  Supplier
+                <th scope="col" className="hidden w-36 pb-2 pl-3 lg:table-cell">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 dark:text-slate-500">Supplier</span>
                 </th>
-                <th scope="col" className="w-16 px-3 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  Qty
+                <th scope="col" className="w-20 pb-2 pl-3">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 dark:text-slate-500">Stock</span>
                 </th>
                 {hasActions && (
-                  <th scope="col" className="w-24 px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Actions
+                  <th scope="col" className="w-24 pb-2 pr-3 text-right">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 dark:text-slate-500">Quick</span>
                   </th>
                 )}
               </tr>
@@ -776,55 +766,45 @@ useEffect(() => {
                   : "Delete";
                 const isSelected = selectedIds.has(p.id);
                 
-                // Stock tone drives the row rail + quantity chip
-                const stockTone = qty > 0
-                  ? {
-                      rail: "#10b981",
-                      chip:
-                        "bg-emerald-50 text-emerald-700 ring-emerald-200/70 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/30",
-                      dot: "bg-emerald-500",
-                    }
-                  : {
-                      rail: "#f59e0b",
-                      chip:
-                        "bg-amber-50 text-amber-700 ring-amber-200/70 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/30",
-                      dot: "bg-amber-500",
-                    };
+                // Stock state drives chip + avatar badge
+                const inStock = qty > 0;
+                const stockChip = inStock
+                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200/80 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/30"
+                  : "bg-amber-50 text-amber-700 ring-amber-200/80 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30";
+                const stockDot = inStock ? "bg-emerald-500" : "bg-amber-500";
+                const cellBg = "bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-200 group-hover:shadow-[0_4px_14px_rgba(0,0,0,0.07)] dark:bg-slate-800";
 
                 return (
-                  <tr
-                    key={p.id}
-                    className="group border-b border-gray-100 transition-colors last:border-0 even:bg-gray-50/40 dark:border-slate-700/40 dark:even:bg-slate-800/20"
-                    style={isSelected ? { backgroundColor: themeColors.primary + "0D" } : undefined}
-                  >
-                    {/* Select + stock rail */}
-                    <td className="relative rounded-l-xl px-3 py-3 transition-colors duration-150 group-hover:bg-gray-50 dark:group-hover:bg-slate-700/25">
-                      <span
-                        aria-hidden="true"
-                        className="absolute left-0 top-1/2 h-7 w-1 -translate-y-1/2 rounded-r-full"
-                        style={{ backgroundColor: stockTone.rail }}
-                      />
+                  <tr key={p.id} className="group align-middle">
+                    {/* Select — round check node */}
+                    <td className={`rounded-l-2xl pl-3 ${cellBg}`}>
                       <input
                         type="checkbox"
                         checked={isSelected}
                         onChange={(e) => toggleOne(p.id, e.target.checked)}
                         aria-label={`Select ${p.name}`}
-                        className="h-4 w-4 cursor-pointer rounded border-gray-300"
+                        className="h-4 w-4 cursor-pointer rounded-full border-gray-300"
                         style={{ accentColor: themeColors.primary }}
                       />
                     </td>
 
-                    {/* Product — monogram + name */}
-                    <td className="px-3 py-3 transition-colors duration-150 group-hover:bg-gray-50 dark:group-hover:bg-slate-700/25">
-                      <div className="flex items-center gap-3">
-                        <span
-                          aria-hidden="true"
-                          className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[11px] font-bold tracking-wide text-white shadow-sm ring-1 ring-black/5 sm:flex"
-                          style={{
-                            background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.secondary})`,
-                          }}
-                        >
-                          {getInitials(p.name)}
+                    {/* Product — avatar with orbiting stock dot */}
+                    <td className={cellBg}>
+                      <div className="flex items-center gap-3 pr-2">
+                        <span className="relative shrink-0">
+                          <span
+                            aria-hidden="true"
+                            className="flex h-9 w-9 items-center justify-center rounded-full text-[10px] font-black tracking-wider text-white ring-2 ring-white dark:ring-slate-700"
+                            style={{
+                              background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.secondary})`,
+                            }}
+                          >
+                            {getInitials(p.name)}
+                          </span>
+                          <span
+                            aria-hidden="true"
+                            className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-white dark:ring-slate-800 ${stockDot}`}
+                          />
                         </span>
 
                         <div className="min-w-0">
@@ -834,53 +814,48 @@ useEffect(() => {
                             title={p.name}
                             className={`
                               block w-full truncate text-left text-sm font-semibold transition-colors
-                              ${isSelected ? "" : "text-gray-800 group-hover:text-gray-950 dark:text-gray-100 dark:group-hover:text-white"}
+                              ${isSelected ? "" : "text-gray-800 dark:text-gray-100"}
                             `}
                             style={isSelected ? { color: themeColors.primary } : undefined}
                           >
                             {p.name}
                           </button>
-
-                          {/* Compact meta for narrow screens (columns hidden below md) */}
+                          {/* Mobile meta */}
                           <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-400 md:hidden dark:text-gray-500">
                             <span className="truncate">{p.category?.name || "—"}</span>
                             <span aria-hidden="true" className="text-gray-300 dark:text-slate-600">·</span>
                             <span className="truncate">{p.brand?.name || "—"}</span>
-                            <span aria-hidden="true" className="text-gray-300 dark:text-slate-600">·</span>
-                            <span className="truncate">{p.supplier?.name || "—"}</span>
                           </div>
                         </div>
                       </div>
                     </td>
 
                     {/* Category */}
-                    <td className="hidden truncate px-3 py-3 text-gray-600 transition-colors duration-150 group-hover:bg-gray-50 md:table-cell dark:text-gray-300 dark:group-hover:bg-slate-700/25">
+                    <td className={`hidden truncate pl-3 text-gray-500 md:table-cell dark:text-gray-400 ${cellBg}`}>
                       {p.category?.name || <span className="text-gray-300 dark:text-slate-600">—</span>}
                     </td>
 
                     {/* Brand */}
-                    <td className="hidden truncate px-3 py-3 text-gray-600 transition-colors duration-150 group-hover:bg-gray-50 md:table-cell dark:text-gray-300 dark:group-hover:bg-slate-700/25">
+                    <td className={`hidden truncate pl-3 text-gray-500 md:table-cell dark:text-gray-400 ${cellBg}`}>
                       {p.brand?.name || <span className="text-gray-300 dark:text-slate-600">—</span>}
                     </td>
 
                     {/* Supplier */}
-                    <td className="hidden truncate px-3 py-3 text-gray-600 transition-colors duration-150 group-hover:bg-gray-50 lg:table-cell dark:text-gray-300 dark:group-hover:bg-slate-700/25">
+                    <td className={`hidden truncate pl-3 text-gray-500 lg:table-cell dark:text-gray-400 ${cellBg}`}>
                       {p.supplier?.name || <span className="text-gray-300 dark:text-slate-600">—</span>}
                     </td>
 
-                    {/* Quantity — the single status indicator */}
-                    <td className="px-3 py-3 text-center transition-colors duration-150 group-hover:bg-gray-50 dark:group-hover:bg-slate-700/25">
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${stockTone.chip}`}
-                      >
-                        <span className={`h-1.5 w-1.5 rounded-full ${stockTone.dot}`} />
+                    {/* Stock — notched numberplate chip */}
+                    <td className={cellBg}>
+                      <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-xs font-bold ring-1 ${stockChip}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${stockDot}`} />
                         <span className="tabular-nums">{qty}</span>
                       </span>
                     </td>
 
                     {/* Actions */}
                     {hasActions && (
-                      <td className="rounded-r-xl px-3 py-3 transition-colors duration-150 group-hover:bg-gray-50 dark:group-hover:bg-slate-700/25">
+                      <td className={`rounded-r-2xl pr-3 ${cellBg}`}>
                         <div className="flex items-center justify-end gap-1">
                           {/* Edit */}
                           <Guard when={can.update}>
@@ -888,7 +863,7 @@ useEffect(() => {
                               to={`/products/${p.id}/edit`}
                               title="Edit"
                               aria-label={`Edit ${p.name}`}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 opacity-80 transition-all duration-150 group-hover:opacity-100 hover:text-white hover:shadow-sm dark:text-gray-400"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-300 opacity-70 transition-all duration-150 hover:text-white hover:opacity-100 group-hover:text-gray-500 group-hover:opacity-100 dark:text-slate-500 dark:group-hover:text-gray-300"
                               onMouseEnter={(e) => {
                                 e.currentTarget.style.backgroundColor = themeColors.primary;
                                 e.currentTarget.style.color = "#fff";
@@ -910,10 +885,10 @@ useEffect(() => {
                               title={deleteTitle}
                               aria-label={`Delete ${p.name}`}
                               className={`
-                                inline-flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-150
+                                inline-flex h-8 w-8 items-center justify-center rounded-full transition-all duration-150
                                 ${deleteDisabled
-                                  ? "cursor-not-allowed text-gray-300 dark:text-slate-600"
-                                  : "text-gray-400 opacity-80 hover:bg-rose-600 hover:text-white hover:opacity-100 hover:shadow-sm group-hover:opacity-100 dark:text-gray-400"}
+                                  ? "cursor-not-allowed text-gray-200 dark:text-slate-600"
+                                  : "text-gray-300 opacity-70 hover:bg-rose-500 hover:text-white hover:opacity-100 group-hover:text-gray-500 group-hover:opacity-100 dark:text-slate-500 dark:group-hover:text-gray-300"}
                               `}
                             >
                               <TrashIcon className="h-4 w-4" />
