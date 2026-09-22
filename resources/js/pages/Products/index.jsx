@@ -8,7 +8,6 @@ import {
   PencilSquareIcon,
   PlusCircleIcon,
   ArrowUpTrayIcon,
-  ArrowDownTrayIcon,
   TagIcon,
   BuildingStorefrontIcon,
   Squares2X2Icon,
@@ -30,13 +29,6 @@ import {
 import { useTheme } from "@/context/ThemeContext";
 
 /** ---- helpers ---- */
-const normalizeList = (payload) => {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(payload?.items)) return payload.items;
-  return [];
-};
-
 // Helper to determine text color based on background brightness
 // Returns dark text for light backgrounds, light text for dark backgrounds
 const getContrastText = (hexColor) => {
@@ -52,6 +44,17 @@ const getContrastText = (hexColor) => {
 const getButtonTextColor = (primaryColor, primaryHoverColor) => {
   return getContrastText(primaryHoverColor || primaryColor);
 };
+
+// Monogram initials for the product avatar (e.g. "Basmati Rice 5kg" -> "BR")
+const getInitials = (name = "") =>
+  name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase() || "?";
 
 export default function ProductsIndex() {
   const [rows, setRows] = useState([]);
@@ -103,11 +106,6 @@ export default function ProductsIndex() {
   );
 
   // 🎨 Dynamic button palette using theme colors
-  // Disabled state
-  const tintDisabled = useMemo(() => `
-    bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed
-  `.trim().replace(/\s+/g, ' '), []);
-
   // Get dark mode state and theme colors
   const { isDark, theme } = useTheme();
   
@@ -253,7 +251,6 @@ export default function ProductsIndex() {
 
   // Destructure button classes for easier use
   const btnPrimary = getButtonClasses.primary;
-  const btnSecondary = getButtonClasses.secondary;
   const btnDanger = getButtonClasses.danger;
   const btnGlass = getButtonClasses.glass;
 
@@ -445,119 +442,132 @@ useEffect(() => {
 
   // permissions-driven table layout
   const hasActions = can.update || can.delete;
-  const visibleColumns = 1 /*select*/ + 6 /*code,name,image,category,brand,supplier*/ + (hasActions ? 1 : 0);
+  const visibleColumns =
+    1 /*select*/ + 1 /*name*/ + 1 /*category*/ + 1 /*brand*/ + 1 /*supplier*/ + 1 /*quantity*/ + (hasActions ? 1 : 0);
 
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view products.</div>;
 
+  // Translucent, tinted input styling so the search fields sit on the dark hero
+  const heroInputStyle = {
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderColor: "rgba(255, 255, 255, 0.10)",
+    color: "#ffffff",
+    boxShadow: "none",
+  };
+  const heroInputClass = "focus:ring-white/20";
+
   return (
     <div className="p-4 space-y-4">
-      {/* ===== Premium Hero Header ===== */}
-      <div
-        className="relative rounded-2xl overflow-hidden shadow-lg"
-        style={{ background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})` }}
-      >
-        {/* Decorative blurred blobs */}
-        <div className="absolute -top-10 -right-8 w-64 h-64 rounded-full bg-white/15 blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-16 left-1/4 w-72 h-72 rounded-full bg-white/10 blur-3xl pointer-events-none" />
+      {/* ===== Hero band (matches Dashboard) ===== */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 ring-1 ring-white/10 shadow-lg shadow-slate-900/20">
+        {/* Glow accents */}
+        <div aria-hidden="true" className="pointer-events-none absolute -top-24 -right-16 h-72 w-72 rounded-full blur-3xl opacity-25" style={{ background: themeColors.primary }} />
+        <div aria-hidden="true" className="pointer-events-none absolute -bottom-28 -left-12 h-72 w-72 rounded-full blur-3xl opacity-20" style={{ background: themeColors.secondary }} />
+        {/* Dot texture */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 opacity-[0.12]"
+          style={{ backgroundImage: "radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px)", backgroundSize: "18px 18px" }}
+        />
 
         {/* Top row */}
-        <div className="relative px-6 pt-5 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          {/* Title */}
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm shadow-inner flex items-center justify-center">
-              <CubeIcon className="w-6 h-6 text-white" />
+        <div className="relative flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
+          {/* Identity */}
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-white/10 ring-1 ring-white/15 flex items-center justify-center shrink-0">
+              <CubeIcon className="text-white w-5 h-5" />
             </div>
-            <div>
-              <h1 className="text-2xl font-extrabold tracking-wide text-white leading-none">Products</h1>
-              <p className="text-xs text-white/85 mt-1.5 flex items-center gap-1.5">
-                <Squares2X2Icon className="w-3.5 h-3.5" />
-                {total} products in your inventory
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-semibold tracking-tight text-white">Products</h1>
+              <p className="mt-0.5 text-[11px] sm:text-xs text-slate-400 flex items-center gap-1.5">
+                <Squares2X2Icon className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{total} products in your inventory</span>
               </p>
             </div>
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-2.5 flex-wrap">
-            {/* Bulk actions pill group */}
-            <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-xl bg-white/15 backdrop-blur-sm border border-white/20">
-              <Guard when={can.update}>
-                <button
-                  onClick={openBulkModal}
-                  disabled={selectedIds.size === 0}
-                  className={`
-                    inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold
-                    transition-all duration-200
-                    ${selectedIds.size > 0 ? btnSecondary.className : tintDisabled}
-                  `}
-                  style={selectedIds.size > 0 ? btnSecondary.style : {}}
-                >
-                  <PencilSquareIcon className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Edit</span>
-                  {selectedIds.size > 0 && (
-                    <span className="ml-0.5 px-1 py-0.5 rounded-full bg-white/20 text-[10px]">
-                      {selectedIds.size}
-                    </span>
-                  )}
-                </button>
-              </Guard>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Bulk actions */}
+            <Guard when={can.update}>
+              <button
+                onClick={openBulkModal}
+                disabled={selectedIds.size === 0}
+                title="Bulk edit"
+                className={`
+                  inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold
+                  transition-all duration-200
+                  ${selectedIds.size > 0
+                    ? "bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/15"
+                    : "bg-white/5 text-slate-500 ring-1 ring-white/10 cursor-not-allowed"}
+                `}
+              >
+                <PencilSquareIcon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Edit</span>
+                {selectedIds.size > 0 && (
+                  <span className="ml-0.5 rounded-full bg-white/15 px-1 py-0.5 text-[10px] font-medium">
+                    {selectedIds.size}
+                  </span>
+                )}
+              </button>
+            </Guard>
 
-              <div className="w-px h-5 bg-white/30" />
+            <Guard when={can.delete}>
+              <button
+                onClick={() => setShowBulkDelete(true)}
+                disabled={selectedIds.size === 0}
+                title="Bulk delete"
+                className={`
+                  inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold
+                  transition-all duration-200
+                  ${selectedIds.size > 0
+                    ? "bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/15"
+                    : "bg-white/5 text-slate-500 ring-1 ring-white/10 cursor-not-allowed"}
+                `}
+              >
+                <TrashIcon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Delete</span>
+                {selectedIds.size > 0 && (
+                  <span className="ml-0.5 rounded-full bg-white/15 px-1 py-0.5 text-[10px] font-medium">
+                    {selectedIds.size}
+                  </span>
+                )}
+              </button>
+            </Guard>
 
-              <Guard when={can.delete}>
-                <button
-                  onClick={() => setShowBulkDelete(true)}
-                  disabled={selectedIds.size === 0}
-                  className={`
-                    inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold
-                    transition-all duration-200
-                    ${selectedIds.size > 0 ? btnDanger.className : tintDisabled}
-                  `}
-                  style={selectedIds.size > 0 ? btnDanger.style : {}}
-                >
-                  <TrashIcon className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Delete</span>
-                  {selectedIds.size > 0 && (
-                    <span className="ml-0.5 px-1 py-0.5 rounded-full bg-white/20 text-[10px]">
-                      {selectedIds.size}
-                    </span>
-                  )}
-                </button>
-              </Guard>
-            </div>
+            <span aria-hidden="true" className="mx-1 hidden h-5 w-px bg-white/10 sm:block" />
 
-            {/* Import / Export pill group */}
-            <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-xl bg-white/15 backdrop-blur-sm border border-white/20">
-              <Guard when={can.import}>
-                <button
-                  onClick={() => setImportOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 transition-all duration-200"
-                >
-                  <ArrowUpTrayIcon className="w-3.5 h-3.5" />
-                  Import
-                </button>
-              </Guard>
+            {/* Import / Export */}
+            <Guard when={can.import}>
+              <button
+                onClick={() => setImportOpen(true)}
+                title="Import products"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-white/90 ring-1 ring-white/10 transition-all duration-200 hover:bg-white/10"
+              >
+                <ArrowUpTrayIcon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Import</span>
+              </button>
+            </Guard>
 
-              <div className="w-px h-5 bg-white/30" />
+            <Guard when={can.export}>
+              <button
+                onClick={handleExport}
+                disabled={exporting}
+                title="Export products"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-white/90 ring-1 ring-white/10 transition-all duration-200 hover:bg-white/10 disabled:opacity-50"
+              >
+                <ArrowPathIcon className={`w-3.5 h-3.5 ${exporting ? "animate-spin" : ""}`} />
+                <span className="hidden sm:inline">{exporting ? "Exporting…" : "Export"}</span>
+              </button>
+            </Guard>
 
-              <Guard when={can.export}>
-                <button
-                  onClick={handleExport}
-                  disabled={exporting}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 transition-all duration-200"
-                >
-                  <ArrowPathIcon className={`w-3.5 h-3.5 ${exporting ? "animate-spin" : ""}`} />
-                  {exporting ? "..." : "Export"}
-                </button>
-              </Guard>
-            </div>
-
-            {/* Primary Add Button */}
+            {/* Primary action */}
             <Guard when={can.create}>
               <Link
                 to="/products/create"
-                className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-bold text-white bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
-                style={{ color: themeColors.primaryHover }}
+                title="Add product"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-sm font-semibold text-white ring-1 ring-white/15 backdrop-blur-sm transition-all duration-200 hover:bg-white/15 active:scale-[0.98]"
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 <span className="hidden sm:inline">Add Product</span>
@@ -567,34 +577,43 @@ useEffect(() => {
           </div>
         </div>
 
-        {/* Filter bar integrated in hero */}
-        <div className="relative px-6 pt-2 pb-5">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-white/15 backdrop-blur-sm border border-white/20 rounded-xl p-3">
-            <div className="flex items-center gap-2">
-              <Squares2X2Icon className="w-4 h-4 text-white/80 shrink-0" />
+        {/* Search controls - dark translucent panels */}
+        <div className="relative px-4 pb-4 sm:px-5">
+          <div className="grid grid-cols-1 gap-2 rounded-lg bg-black/25 p-2.5 backdrop-blur-sm md:grid-cols-4">
+            <div className="flex items-center gap-2 rounded-lg bg-white/[0.06] px-2.5 py-1.5 transition-colors duration-200 hover:bg-white/10">
+              <Squares2X2Icon className="w-4 h-4 text-slate-400 shrink-0" />
               <TextSearch
                 value={qName}
                 onChange={setQName}
                 placeholder="Search products..."
                 className="w-full"
+                iconClassName="text-slate-400"
+                inputClassName={heroInputClass}
+                inputStyle={heroInputStyle}
               />
             </div>
-            <div className="flex items-center gap-2">
-              <TagIcon className="w-4 h-4 text-white/80 shrink-0" />
+            <div className="flex items-center gap-2 rounded-lg bg-white/[0.06] px-2.5 py-1.5 transition-colors duration-200 hover:bg-white/10">
+              <TagIcon className="w-4 h-4 text-slate-400 shrink-0" />
               <TextSearch
                 value={qBrand}
                 onChange={setQBrand}
                 placeholder="Filter by brand..."
                 className="w-full"
+                iconClassName="text-slate-400"
+                inputClassName={heroInputClass}
+                inputStyle={heroInputStyle}
               />
             </div>
-            <div className="flex items-center gap-2">
-              <BuildingStorefrontIcon className="w-4 h-4 text-white/80 shrink-0" />
+            <div className="flex items-center gap-2 rounded-lg bg-white/[0.06] px-2.5 py-1.5 transition-colors duration-200 hover:bg-white/10">
+              <BuildingStorefrontIcon className="w-4 h-4 text-slate-400 shrink-0" />
               <TextSearch
                 value={qSupplier}
                 onChange={setQSupplier}
                 placeholder="Filter by supplier..."
                 className="w-full"
+                iconClassName="text-slate-400"
+                inputClassName={heroInputClass}
+                inputStyle={heroInputStyle}
               />
             </div>
             <button
@@ -613,24 +632,24 @@ useEffect(() => {
                   ? "Low-stock filter is ON — click to clear and show all products"
                   : "Show only products whose quantity is below pack size"
               }
-              className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+              className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-all duration-200 ${
                 lowStockOnly
-                  ? "bg-rose-500/90 text-white shadow-md hover:bg-rose-500"
-                  : "bg-white/15 text-white/85 hover:bg-white/25 border border-white/10"
+                  ? "bg-rose-500/25 text-rose-200 ring-1 ring-rose-400/30"
+                  : "bg-white/[0.06] text-slate-300 hover:bg-white/10"
               }`}
             >
               <ExclamationTriangleIcon className="w-4 h-4" />
               <span>Low stock only</span>
               {lowStockOnly && (
-                <XMarkIcon className="w-3.5 h-3.5 opacity-90" />
+                <XMarkIcon className="w-3.5 h-3.5 opacity-80" />
               )}
             </button>
           </div>
           {lowStockOnly && (
-            <div className="mt-2 flex items-center gap-2 text-xs text-white/80">
-              <span className="inline-flex items-center gap-1 rounded-md bg-rose-500/20 border border-rose-300/30 px-2.5 py-1">
-                <ExclamationTriangleIcon className="w-3.5 h-3.5 text-rose-200" />
-                Showing products whose quantity is below pack size (needs reorder)
+            <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-rose-500/15 px-2.5 py-1 text-rose-200">
+                <ExclamationTriangleIcon className="w-3.5 h-3.5" />
+                Showing only products below pack size (needs reorder)
               </span>
             </div>
           )}
@@ -638,42 +657,46 @@ useEffect(() => {
       </div>
 
       {/* ===== Product Table ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden hover:shadow-lg transition-shadow duration-300">
-        {/* Table Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          <div className="flex items-center gap-2.5">
+      <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        {/* Accent hairline */}
+        <span
+          aria-hidden="true"
+          className="absolute inset-x-0 top-0 h-[3px]"
+          style={{ background: `linear-gradient(90deg, ${themeColors.primary}, ${themeColors.secondary}, transparent)` }}
+        />
+        {/* Table header bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-4 dark:border-slate-700">
+          <div className="flex items-center gap-3">
             <div
-              className="p-2 rounded-xl shadow-xs"
-              style={{ backgroundColor: themeColors.secondaryLight }}
+              className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-700/60"
             >
-              <Squares2X2Icon className="w-4 h-4" style={{ color: themeColors.secondary }} />
+              <Squares2X2Icon className="h-4 w-4" style={{ color: themeColors.primary }} />
             </div>
             <div>
-              <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">Product List</span>
-              <p className="text-[11px] text-gray-400 dark:text-gray-500">
+              <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Product List</h2>
+              <p className="text-xs text-gray-400 dark:text-gray-500">
                 {loading ? (
-                  <span className="inline-flex items-center gap-1">
-                    <ArrowPathIcon className="w-3 h-3 animate-spin" />
-                    Loading...
+                  <span className="inline-flex items-center gap-1.5">
+                    <ArrowPathIcon className="h-3 w-3 animate-spin" />
+                    Loading…
                   </span>
                 ) : (
-                  `${rows.length === 0 ? 0 : start}-${end} of ${total}`
+                  `Showing ${rows.length === 0 ? 0 : start}–${end} of ${total}`
                 )}
                 {selectedIds.size > 0 && ` · ${selectedIds.size} selected`}
               </p>
             </div>
           </div>
 
-          {/* Page Size Selector */}
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-gray-50 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600">
+          {/* Page size */}
+          <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 dark:border-slate-600 dark:bg-slate-700/40">
             <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Show</label>
             <select
               value={pageSize}
               onChange={(e) => setPageSize(Number(e.target.value))}
-              className="h-7 px-2 rounded-sm border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:border-transparent cursor-pointer"
+              className="cursor-pointer rounded-md border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 focus:ring-2 focus:border-transparent dark:border-slate-600 dark:bg-slate-700 dark:text-gray-200"
               style={{
                 '--tw-ring-color': themeColors.primary,
-                outlineColor: themeColors.primary,
                 accentColor: themeColors.primary,
               }}
             >
@@ -685,11 +708,11 @@ useEffect(() => {
           </div>
         </div>
 
-        <div className="max-h-[65vh] overflow-auto">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
-              <tr className="text-left">
-                <th className="px-2 py-2 w-8">
+        <div className="max-h-[65vh] overflow-y-auto">
+          <table className="w-full table-fixed text-sm">
+            <thead className="sticky top-0 z-10 bg-gradient-to-r from-slate-50 via-white to-slate-50 backdrop-blur-md dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+              <tr className="border-b border-gray-200 text-left dark:border-slate-700">
+                <th scope="col" className="w-10 px-3 py-3">
                   <input
                     type="checkbox"
                     aria-label="Select all on this page"
@@ -698,18 +721,29 @@ useEffect(() => {
                       if (el) el.indeterminate = pageIndeterminate;
                     }}
                     onChange={(e) => togglePageAll(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded-sm border-gray-300 cursor-pointer"
-                    style={{ 
-                      accentColor: themeColors.primary 
-                    }}
+                    className="h-4 w-4 cursor-pointer rounded border-gray-300"
+                    style={{ accentColor: themeColors.primary }}
                   />
                 </th>
-                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Name</th>
-                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Category</th>
-                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Brand</th>
-                <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Supplier</th>
+                <th scope="col" className="px-3 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  Product
+                </th>
+                <th scope="col" className="hidden w-32 px-3 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 md:table-cell dark:text-gray-400">
+                  Category
+                </th>
+                <th scope="col" className="hidden w-32 px-3 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 md:table-cell dark:text-gray-400">
+                  Brand
+                </th>
+                <th scope="col" className="hidden w-36 px-3 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 lg:table-cell dark:text-gray-400">
+                  Supplier
+                </th>
+                <th scope="col" className="w-16 px-3 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  Qty
+                </th>
                 {hasActions && (
-                  <th className="px-2 py-2 font-semibold text-center text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-32">Actions</th>
+                  <th scope="col" className="w-24 px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    Actions
+                  </th>
                 )}
               </tr>
             </thead>
@@ -717,10 +751,15 @@ useEffect(() => {
             <tbody>
               {rows.length === 0 && !loading && (
                 <tr>
-                  <td className="px-2 py-12 text-center" colSpan={visibleColumns}>
-                    <div className="flex flex-col items-center gap-2">
-                      <CubeIcon className="w-8 h-8 text-gray-400" />
-                      <p className="text-sm text-gray-500 dark:text-gray-400">No products found</p>
+                  <td className="px-5 py-16 text-center" colSpan={visibleColumns}>
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-slate-700/60">
+                        <CubeIcon className="h-6 w-6 text-gray-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-600 dark:text-gray-300">No products found</p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500">Try adjusting your search or filters</p>
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -737,144 +776,147 @@ useEffect(() => {
                   : "Delete";
                 const isSelected = selectedIds.has(p.id);
                 
+                // Stock tone drives the row rail + quantity chip
+                const stockTone = qty > 0
+                  ? {
+                      rail: "#10b981",
+                      chip:
+                        "bg-emerald-50 text-emerald-700 ring-emerald-200/70 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/30",
+                      dot: "bg-emerald-500",
+                    }
+                  : {
+                      rail: "#f59e0b",
+                      chip:
+                        "bg-amber-50 text-amber-700 ring-amber-200/70 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/30",
+                      dot: "bg-amber-500",
+                    };
+
                 return (
                   <tr
                     key={p.id}
-                    className={`
-                      transition-colors
-                      ${isSelected 
-                        ? "" 
-                        : "odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/40 dark:even:bg-slate-800/40 hover:bg-blue-50 dark:hover:bg-slate-600/50"
-                      }
-                      border-b border-gray-100 dark:border-slate-600/30
-                    `}
-                    style={isSelected ? {
-                      backgroundColor: themeColors.primaryLight + '60'
-                    } : {}}
+                    className="group border-b border-gray-100 transition-colors last:border-0 even:bg-gray-50/40 dark:border-slate-700/40 dark:even:bg-slate-800/20"
+                    style={isSelected ? { backgroundColor: themeColors.primary + "0D" } : undefined}
                   >
-                    <td className="px-2 py-2">
-                    <input
+                    {/* Select + stock rail */}
+                    <td className="relative rounded-l-xl px-3 py-3 transition-colors duration-150 group-hover:bg-gray-50 dark:group-hover:bg-slate-700/25">
+                      <span
+                        aria-hidden="true"
+                        className="absolute left-0 top-1/2 h-7 w-1 -translate-y-1/2 rounded-r-full"
+                        style={{ backgroundColor: stockTone.rail }}
+                      />
+                      <input
                         type="checkbox"
                         checked={isSelected}
                         onChange={(e) => toggleOne(p.id, e.target.checked)}
                         aria-label={`Select ${p.name}`}
-                        className="w-3.5 h-3.5 rounded-sm border-gray-300 cursor-pointer"
-                        style={{ 
-                          accentColor: themeColors.primary 
-                        }}
+                        className="h-4 w-4 cursor-pointer rounded border-gray-300"
+                        style={{ accentColor: themeColors.primary }}
                       />
                     </td>
 
-                    {/* Name cell clickable for selection */}
-                    <td
-                      className={`
-                        px-2 py-2 cursor-pointer select-none
-                        ${isSelected ? "" : "text-gray-800 dark:text-gray-200"}
-                      `}
-                      style={isSelected ? {
-                        color: themeColors.primary
-                      } : {}}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => toggleById(p.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === " " || e.key === "Enter") {
-                          e.preventDefault();
-                          toggleById(p.id);
-                        }
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span>{p.name}</span>
-                        <span 
-                          className={`
-                            inline-flex items-center justify-center min-w-10 px-2 py-0.5 rounded-full text-xs font-bold
-                          `}
+                    {/* Product — monogram + name */}
+                    <td className="px-3 py-3 transition-colors duration-150 group-hover:bg-gray-50 dark:group-hover:bg-slate-700/25">
+                      <div className="flex items-center gap-3">
+                        <span
+                          aria-hidden="true"
+                          className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[11px] font-bold tracking-wide text-white shadow-sm ring-1 ring-black/5 sm:flex"
                           style={{
-                            background: qty > 0 
-                              ? `linear-gradient(to bottom right, #10b981, #059669)`
-                              : `linear-gradient(to bottom right, #f97316, #ea580c)`,
-                            boxShadow: qty > 0 
-                              ? '0 4px 12px 0 rgba(16, 185, 129, 0.4)'
-                              : '0 4px 12px 0 rgba(249, 115, 22, 0.4)'
+                            background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.secondary})`,
                           }}
                         >
-                          {qty}
+                          {getInitials(p.name)}
                         </span>
+
+                        <div className="min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => toggleById(p.id)}
+                            title={p.name}
+                            className={`
+                              block w-full truncate text-left text-sm font-semibold transition-colors
+                              ${isSelected ? "" : "text-gray-800 group-hover:text-gray-950 dark:text-gray-100 dark:group-hover:text-white"}
+                            `}
+                            style={isSelected ? { color: themeColors.primary } : undefined}
+                          >
+                            {p.name}
+                          </button>
+
+                          {/* Compact meta for narrow screens (columns hidden below md) */}
+                          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-400 md:hidden dark:text-gray-500">
+                            <span className="truncate">{p.category?.name || "—"}</span>
+                            <span aria-hidden="true" className="text-gray-300 dark:text-slate-600">·</span>
+                            <span className="truncate">{p.brand?.name || "—"}</span>
+                            <span aria-hidden="true" className="text-gray-300 dark:text-slate-600">·</span>
+                            <span className="truncate">{p.supplier?.name || "—"}</span>
+                          </div>
+                        </div>
                       </div>
                     </td>
 
-                    <td className="px-2 py-2">
-                      <span 
-                        className="px-2 py-0.5 rounded-sm text-xs"
-                        style={{ 
-                          backgroundColor: '#dcfce7',
-                          color: '#16a34a'
-                        }}
-                      >
-                        {p.category?.name || "—"}
-                      </span>
+                    {/* Category */}
+                    <td className="hidden truncate px-3 py-3 text-gray-600 transition-colors duration-150 group-hover:bg-gray-50 md:table-cell dark:text-gray-300 dark:group-hover:bg-slate-700/25">
+                      {p.category?.name || <span className="text-gray-300 dark:text-slate-600">—</span>}
                     </td>
-                    <td className="px-2 py-2">
-                      <span 
-                        className="px-2 py-0.5 rounded-sm text-xs"
-                        style={{ 
-                          backgroundColor: '#fef3c7',
-                          color: '#d97706'
-                        }}
-                      >
-                        {p.brand?.name || "—"}
-                      </span>
+
+                    {/* Brand */}
+                    <td className="hidden truncate px-3 py-3 text-gray-600 transition-colors duration-150 group-hover:bg-gray-50 md:table-cell dark:text-gray-300 dark:group-hover:bg-slate-700/25">
+                      {p.brand?.name || <span className="text-gray-300 dark:text-slate-600">—</span>}
                     </td>
-                    <td className="px-2 py-2">
-                      <span 
-                        className="px-2 py-0.5 rounded-sm text-xs"
-                        style={{ 
-                          backgroundColor: '#ffe4e6',
-                          color: '#e11d48'
-                        }}
+
+                    {/* Supplier */}
+                    <td className="hidden truncate px-3 py-3 text-gray-600 transition-colors duration-150 group-hover:bg-gray-50 lg:table-cell dark:text-gray-300 dark:group-hover:bg-slate-700/25">
+                      {p.supplier?.name || <span className="text-gray-300 dark:text-slate-600">—</span>}
+                    </td>
+
+                    {/* Quantity — the single status indicator */}
+                    <td className="px-3 py-3 text-center transition-colors duration-150 group-hover:bg-gray-50 dark:group-hover:bg-slate-700/25">
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${stockTone.chip}`}
                       >
-                        {p.supplier?.name || "—"}
+                        <span className={`h-1.5 w-1.5 rounded-full ${stockTone.dot}`} />
+                        <span className="tabular-nums">{qty}</span>
                       </span>
                     </td>
 
+                    {/* Actions */}
                     {hasActions && (
-                      <td className="px-2 py-2">
-                        <div className="flex items-center gap-1.5 justify-center">
-                          {/* Edit Action */}
+                      <td className="rounded-r-xl px-3 py-3 transition-colors duration-150 group-hover:bg-gray-50 dark:group-hover:bg-slate-700/25">
+                        <div className="flex items-center justify-end gap-1">
+                          {/* Edit */}
                           <Guard when={can.update}>
                             <Link
                               to={`/products/${p.id}/edit`}
-                              className={`
-                                group inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold
-                                transition-all duration-200 ${btnPrimary.className}
-                              `}
-                              style={{
-                                ...btnPrimary.style,
-                                boxShadow: `0 4px 12px 0 ${themeColors.primary}40`
-                              }}
                               title="Edit"
+                              aria-label={`Edit ${p.name}`}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 opacity-80 transition-all duration-150 group-hover:opacity-100 hover:text-white hover:shadow-sm dark:text-gray-400"
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = themeColors.primary;
+                                e.currentTarget.style.color = "#fff";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = "";
+                                e.currentTarget.style.color = "";
+                              }}
                             >
-                              <PencilSquareIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                              <span>Edit</span>
+                              <PencilSquareIcon className="h-4 w-4" />
                             </Link>
                           </Guard>
 
-                          {/* Delete Action */}
+                          {/* Delete */}
                           <Guard when={can.delete}>
                             <button
                               onClick={() => openDeleteModal(p)}
                               disabled={deleteDisabled}
                               title={deleteTitle}
+                              aria-label={`Delete ${p.name}`}
                               className={`
-                                group inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold
-                                transition-all duration-200
-                                ${deleteDisabled ? tintDisabled : btnDanger.className}
+                                inline-flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-150
+                                ${deleteDisabled
+                                  ? "cursor-not-allowed text-gray-300 dark:text-slate-600"
+                                  : "text-gray-400 opacity-80 hover:bg-rose-600 hover:text-white hover:opacity-100 hover:shadow-sm group-hover:opacity-100 dark:text-gray-400"}
                               `}
-                              style={!deleteDisabled ? btnDanger.style : {}}
                             >
-                              <TrashIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                              <span>Delete</span>
+                              <TrashIcon className="h-4 w-4" />
                             </button>
                           </Guard>
                         </div>
@@ -887,30 +929,37 @@ useEffect(() => {
           </table>
         </div>
 
-        {/* Compact Pagination */}
-        <div className="px-3 py-2 flex items-center justify-between border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50 text-xs">
-          <span className="text-gray-500 dark:text-gray-400">
-            Page {page} of {lastPage} ({total} total)
+        {/* Pagination */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-gray-50 px-5 py-3 dark:border-slate-700 dark:bg-slate-800/60">
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            Page <span className="font-medium text-gray-700 dark:text-gray-200">{page}</span> of{" "}
+            <span className="font-medium text-gray-700 dark:text-gray-200">{lastPage}</span> · {total} total
           </span>
-          
+
           <div className="flex items-center gap-1">
-            <button 
-              onClick={() => setPage(1)} 
+            <button
+              onClick={() => setPage(1)}
               disabled={page === 1}
-              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
+              title="First page"
+              className={`rounded-lg p-2 transition-colors ${page === 1 ? "cursor-not-allowed text-gray-300 dark:text-slate-600" : "text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-slate-700 dark:hover:text-gray-200"}`}
             >
-              ⏮
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+              </svg>
             </button>
-            <button 
-              onClick={() => setPage((p) => Math.max(1, p - 1))} 
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
+              title="Previous page"
+              className={`rounded-lg p-2 transition-colors ${page === 1 ? "cursor-not-allowed text-gray-300 dark:text-slate-600" : "text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-slate-700 dark:hover:text-gray-200"}`}
             >
-              ◀
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
             </button>
-            
+
             {/* Page numbers */}
-            <div className="flex items-center gap-0.5 mx-1">
+            <div className="mx-1 flex items-center gap-0.5">
               {Array.from({ length: Math.min(5, lastPage) }, (_, i) => {
                 let pageNum;
                 if (lastPage <= 5) {
@@ -927,33 +976,39 @@ useEffect(() => {
                     key={pageNum}
                     onClick={() => setPage(pageNum)}
                     className={`
-                      w-7 h-7 rounded text-xs font-medium transition-colors
+                      h-8 w-8 rounded-lg text-xs font-medium transition-colors
                       ${page === pageNum
-                        ? ''
-                        : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700"
+                        ? "text-white shadow-sm"
+                        : "text-gray-600 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-slate-700"
                       }
                     `}
-                    style={page === pageNum ? btnPrimary.style : {}}
+                    style={page === pageNum ? { backgroundColor: themeColors.primary } : undefined}
                   >
                     {pageNum}
                   </button>
                 );
               })}
             </div>
-            
-            <button 
-              onClick={() => setPage((p) => Math.min(lastPage, p + 1))} 
+
+            <button
+              onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
               disabled={page === lastPage}
-              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
+              title="Next page"
+              className={`rounded-lg p-2 transition-colors ${page === lastPage ? "cursor-not-allowed text-gray-300 dark:text-slate-600" : "text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-slate-700 dark:hover:text-gray-200"}`}
             >
-              ▶
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
             </button>
-            <button 
-              onClick={() => setPage(lastPage)} 
+            <button
+              onClick={() => setPage(lastPage)}
               disabled={page === lastPage}
-              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
+              title="Last page"
+              className={`rounded-lg p-2 transition-colors ${page === lastPage ? "cursor-not-allowed text-gray-300 dark:text-slate-600" : "text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-slate-700 dark:hover:text-gray-200"}`}
             >
-              ⏭
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+              </svg>
             </button>
           </div>
         </div>

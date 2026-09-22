@@ -9,7 +9,10 @@ import { GlassInput } from "./Glass.jsx";
  * @param {Function} props.onChange - Function to call when value changes
  * @param {string} props.placeholder - Placeholder text
  * @param {React.ReactNode} props.icon - Optional icon to show on the left
- * @param {string} props.className - Additional CSS classes
+ * @param {string} props.className - Additional CSS classes for the wrapper
+ * @param {string} props.inputClassName - Additional CSS classes for the input
+ * @param {Object} props.inputStyle - Inline styles for the input (use to tint on dark surfaces)
+ * @param {string} props.iconClassName - Optional classes for the default icon
  */
 export default function TextSearch({
   value,
@@ -17,19 +20,23 @@ export default function TextSearch({
   placeholder = "Search…",
   icon,
   className = "",
+  inputClassName = "",
+  inputStyle,
+  iconClassName = "text-gray-400",
 }) {
   return (
     <div className={`relative ${className}`}>
       {icon ? (
         <span className="absolute left-3 top-1/2 -translate-y-1/2">{icon}</span>
       ) : (
-        <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <MagnifyingGlassIcon className={`w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 ${iconClassName}`} />
       )}
       <GlassInput
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="pl-10 w-full"
+        className={`pl-10 w-full ${inputClassName}`}
+        style={inputStyle}
       />
     </div>
   );
