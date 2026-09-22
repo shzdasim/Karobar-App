@@ -9,7 +9,6 @@ import { Link, useNavigate } from "react-router-dom";
 // Icons (glassy header/buttons)
 import {
   ArrowLeftIcon,
-  PlusCircleIcon,
   PencilSquareIcon,
   CubeIcon,
 } from "@heroicons/react/24/solid";
@@ -662,68 +661,27 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
   // ===== Add Mode: Full Width Card =====
   if (!isEdit) {
     return (
-      <div className="p-3 md:p-4">
-        <GlassCard>
-          {/* Modern Card Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
-            <div className="flex items-center gap-3">
-              <div 
-                className={`p-2 rounded-lg bg-linear-to-br shadow-xs`}
-                style={{ background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}
-              >
-                <CubeIcon className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Add Product</h1>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Enter product details</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Link 
-                to="/products" 
-                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg ${btnGlass.className}`}
-                style={btnGlass.style}
-                title="Back (Alt+C)"
-              >
-                <ArrowLeftIcon className="w-4 h-4" />
-                <span className="text-sm">Back</span>
-              </Link>
-              <button
-                id="save-product-btn-top"
-                type="submit"
-                form="product-form"
-                className={`inline-flex items-center gap-1.5 h-8 px-4 rounded-lg ${btnPrimary.className}`}
-                style={{ ...btnPrimary.style, boxShadow: `0 4px 14px 0 ${themeColors.primary}40` }}
-                title="Save (Alt+S)"
-              >
-              <PlusCircleIcon className="w-4 h-4" />
-                <span className="text-sm font-medium">Save Product</span>
-              </button>
-            </div>
-          </div>
-
-          <form id="product-form" onSubmit={handleSubmit} className="p-3 space-y-3">
-            <ProductFormFields
-              ref={formFieldsRef}
-              form={form}
-              files={files}
-              batches={batches}
-              categories={categories}
-              suppliers={suppliers}
-              isEdit={isEdit}
-              handleChange={handleChange}
-              loadBrandOptions={loadBrandOptions}
-              getSmallSelectStyles={getSmallSelectStyles}
-              isDark={isDark}
-              onFilesChange={setFiles}
-              setFiles={setFiles}
-              themeColors={themeColors}
-              primaryTextColor={primaryTextColor}
-            />
-          </form>
-
-        </GlassCard>
-      </div>
+      <GlassCard>
+        <form id="product-form" onSubmit={handleSubmit} className="p-3 space-y-3">
+          <ProductFormFields
+            ref={formFieldsRef}
+            form={form}
+            files={files}
+            batches={batches}
+            categories={categories}
+            suppliers={suppliers}
+            isEdit={isEdit}
+            handleChange={handleChange}
+            loadBrandOptions={loadBrandOptions}
+            getSmallSelectStyles={getSmallSelectStyles}
+            isDark={isDark}
+            onFilesChange={setFiles}
+            setFiles={setFiles}
+            themeColors={themeColors}
+            primaryTextColor={primaryTextColor}
+          />
+        </form>
+      </GlassCard>
     );
   }
 
