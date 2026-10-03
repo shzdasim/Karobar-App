@@ -135,6 +135,8 @@ Use three materials, with stronger opacity as information density increases. Blu
 
 **Depth:** Limit visible glass layering to the app shell and one content layer. Avoid nested blur on every cell, field, or card child. Menus and dialogs should be more opaque than the surface beneath them.
 
+Workspace refinement: navigation uses 44% surface opacity in light mode and 56% in dark mode with 28px blur. Dashboard panels use 56% / 68% with 20px blur and a subtle diagonal highlight. Keep tables and calendars nearly opaque. Dashboard date pickers render in a body portal at overlay layer 40 so glass stacking contexts cannot hide them behind sibling cards.
+
 **Shape:** Suggest fluid glass through rounded edges and a restrained highlight gradient. Keep text undistorted. Complex refraction shaders, continuously moving highlights, and pointer-following effects are outside the baseline system.
 
 Proposed reusable material tokens and CSS recipe, to introduce during implementation:

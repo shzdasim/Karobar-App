@@ -159,6 +159,8 @@ const goToProducts = () => {
 
       {/* Side Panel */}
       <aside
+        hidden={!open}
+        inert={!open}
         role="dialog"
         aria-modal="true"
         aria-label="Notification Center"

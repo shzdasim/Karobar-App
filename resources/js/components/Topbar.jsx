@@ -94,13 +94,13 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
   }[buttonStyle] || 'rounded-lg';
 
   // Get button background based on style (outlined = transparent)
-  const getButtonBg = (color) => isOutlined ? 'transparent' : color;
-  const getButtonBorder = (color) => isOutlined ? `2px solid ${color}` : 'none';
-  const getButtonTextColor = (color) => isOutlined ? color : 'white';
+  const getButtonBg = (color) => isOutlined ? "transparent" : `color-mix(in srgb, ${color} 8%, var(--workspace-surface))`;
+  const getButtonBorder = (color) => `1px solid color-mix(in srgb, ${color} ${isOutlined ? "50%" : "18%"}, transparent)`;
+  const getButtonTextColor = () => "var(--workspace-ink)";
 
   // Dynamic button class generator
   const getButtonClass = (baseColor, hoverColor, shadowColor) => 
-    `inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-hidden focus:ring-2 focus:ring-${baseColor}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-lg'}`;
+    `inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-colors focus:outline-hidden focus:ring-2 focus:ring-${baseColor}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-xs'}`;
 
   const openInNewTab = (path) => window.open(path, "_blank", "noopener,noreferrer");
 
@@ -151,16 +151,12 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
   }, [open]);
 
   return (
-    <div className="w-full z-40">
+    <div className="workspace-topbar-slot">
       <header
         role="banner"
-        className={[
-          "w-full bg-white/55 backdrop-blur-xs ring-1 ring-white/30 dark:bg-slate-800/70 dark:ring-white/10 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.25)]",
-          "relative px-4 py-3",
-          "before:absolute before:inset-0 before:ring-1 before:ring-white/30 dark:before:ring-white/10",
-        ].join(" ")}
+        className="workspace-topbar"
       >
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="workspace-topbar-row">
           {/* Mobile menu button — visible on < lg */}
           <div className="lg:hidden shrink-0">
             <button
@@ -169,7 +165,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
               aria-label="Open sidebar"
               className={[
                 "inline-flex items-center justify-center",
-                "w-9 h-9 rounded-xl",
+                "w-11 h-11 rounded-xl",
                 "bg-white/70 dark:bg-slate-800/70",
                 "border border-gray-200/70 dark:border-slate-600/70",
                 "text-gray-700 dark:text-gray-200",
@@ -183,12 +179,12 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
           </div>
 
           {/* Left: Search */}
-          <div className={`flex-1 min-w-[200px] ${navigationStyle === 'topbar' ? 'max-w-3xl' : 'max-w-[480px]'}`}>
+          <div className="workspace-search">
             <ProductSearch navigationStyle={navigationStyle} />
           </div>
 
 {/* Right: License badge + Quick actions + Theme Toggle + User */}
-          <div className="flex items-center gap-2">
+          <div className="workspace-topbar-actions">
             {/* Theme Toggle */}
             <ThemeToggle />
 
@@ -197,7 +193,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
               onClick={() => setNotifOpen(true)}
               title="Open Notification Center"
               aria-label="Open notification center"
-              className={`relative inline-flex items-center justify-center ${buttonStyleClass} p-2 transition-all hover:scale-105 active:scale-95 focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}
+              className={`relative inline-flex items-center justify-center ${buttonStyleClass} p-2 transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 ${isOutlined ? 'border-2' : 'shadow-xs'}`}
               style={{
                 background: getButtonBg(themeColors.primary),
                 border: getButtonBorder(themeColors.primary),
@@ -222,7 +218,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
             {/* License badge */}
             <button
               onClick={() => navigate("/settings#license")}
-              className={`inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-hidden focus:ring-2 focus:ring-${themeColors.secondary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}
+              className={`inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.secondary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-xs'}`}
               style={{ 
                 background: getButtonBg(themeColors.secondary),
                 border: getButtonBorder(themeColors.secondary),
@@ -237,9 +233,10 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
 
             <button
               onClick={() => openInNewTab("/purchase-invoices/create")}
+              aria-label="Open purchase invoice"
               aria-keyshortcuts="Alt+1"
               title="Open Purchase Invoice (Alt+1) in a new tab"
-              className={`inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-hidden focus:ring-2 focus:ring-${themeColors.secondary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}
+              className={`inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.secondary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-xs'}`}
               style={{ 
                 background: getButtonBg(themeColors.secondary),
                 border: getButtonBorder(themeColors.secondary),
@@ -253,9 +250,10 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
 
             <button
               onClick={() => openInNewTab("/sale-invoices/create/retail")}
+              aria-label="Open sale invoice"
               aria-keyshortcuts="Alt+2"
               title="Open Sale Invoice (Alt+2) in a new tab"
-              className={`inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}
+              className={`inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-xs'}`}
               style={{ 
                 background: getButtonBg(themeColors.primary),
                 border: getButtonBorder(themeColors.primary),
@@ -274,7 +272,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
               <button
                 ref={btnRef}
                 onClick={() => setOpen((v) => !v)}
-                className={`flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-all hover:scale-105 active:scale-95 focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-lg'}`}
+                className={`flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-xs'}`}
                 style={{ 
                   background: getButtonBg(themeColors.primary),
                   border: getButtonBorder(themeColors.primary),
@@ -291,10 +289,10 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
                 >
                   {(user?.name || "U").slice(0, 1).toUpperCase()}
                 </span>
-                <span className={`hidden sm:inline text-xs font-semibold ${isOutlined ? '' : 'text-white'}`} style={{ color: isOutlined ? themeColors.primary : undefined }}>
+                <span className="hidden sm:inline text-sm font-medium workspace-user-name">
                   {user?.name || "User"}
                 </span>
-                <svg className={`w-3 h-3 ${isOutlined ? '' : 'text-white/90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: isOutlined ? themeColors.primary : undefined }}>
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: isOutlined ? themeColors.primary : undefined }}>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
@@ -306,7 +304,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
                   role="menu"
                   className={[
                     "absolute right-0 mt-2 w-48 rounded-xl overflow-hidden",
-                    "bg-white/95 backdrop-blur-sm ring-1 ring-gray-200/70 shadow-xl",
+                    "workspace-user-menu",
                     navigationStyle === 'topbar' ? 'z-1000000' : '',
                   ].join(" ")}
                 >
@@ -316,7 +314,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
                       setOpen(false);
                       navigate("/profile");
                     }}
-                    className="block w-full px-4 py-2 text-left text-sm hover:bg-white/80 focus:bg-white/80 focus:outline-hidden"
+                    className="workspace-user-menu-item"
                   >
                     Profile
                   </button>
@@ -332,7 +330,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
                         navigate("/");
                       });
                     }}
-                    className="block w-full px-4 py-2 text-left text-sm hover:bg-white/80 focus:bg-white/80 focus:outline-hidden"
+                    className="workspace-user-menu-item"
                   >
                     Logout
                   </button>

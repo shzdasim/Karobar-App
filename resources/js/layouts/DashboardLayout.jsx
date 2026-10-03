@@ -91,10 +91,10 @@ export default function DashboardLayout({ children }) {
   //  • Mobile (< lg):  sidebar becomes a slide-over overlay
   //  • Desktop (≥ lg):  sidebar is always visible (fixed)
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-900 text-gray-900 dark:text-gray-100 transition-colors">
+    <div className="workspace-shell">
       {/* Desktop sidebar — always visible on lg+ */}
-      <div className="hidden lg:block lg:shrink-0">
-        <div className="sticky top-0 h-screen overflow-y-auto">
+      <div className="workspace-sidebar-slot hidden lg:block lg:shrink-0">
+        <div className="workspace-sidebar-position">
           <Sidebar appName={appName} logoUrl={logoUrl} />
         </div>
       </div>
@@ -104,19 +104,19 @@ export default function DashboardLayout({ children }) {
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 lg:hidden kd-mobile-backdrop"
+            className="workspace-mobile-scrim fixed inset-0 lg:hidden kd-mobile-backdrop"
             onClick={() => setMobileSidebarOpen(false)}
             aria-label="Close sidebar"
           />
           {/* Slide-in panel */}
           <div
             className="
-              fixed inset-y-0 left-0 z-50 w-64 max-w-[260px]
+              workspace-mobile-drawer fixed inset-y-3 left-3 w-[248px] max-w-[calc(100vw-24px)]
               kd-mobile-panel
               lg:hidden
             "
           >
-            <div className="h-full overflow-y-auto shadow-xl">
+            <div className="h-full">
               <Sidebar appName={appName} logoUrl={logoUrl} />
             </div>
           </div>
@@ -124,13 +124,13 @@ export default function DashboardLayout({ children }) {
       )}
 
       {/* Main content area — topbar + page */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="workspace-main">
         <Topbar
           pageTitle={pageTitle}
           onMobileMenuClick={() => setMobileSidebarOpen(true)}
         />
-        <main className="flex-1 overflow-y-auto">
-          <div className="p-4 sm:p-5 lg:p-6">
+        <main className="workspace-content">
+          <div className="workspace-page">
             <Toaster position="top-right" reverseOrder={false} />
             {children}
           </div>

@@ -54,7 +54,7 @@ const getThemeColor = (theme, colorKey, variant = 'color') => {
   return theme[key] || '#3b82f6';
 };
 
-export default function ClassicSidebar() {
+export default function ClassicSidebar({ appName, logoUrl }) {
   const [collapsed, setCollapsed] = useState(false);
   const [hoveredSection, setHoveredSection] = useState(null);
   const { pathname } = useLocation();
@@ -62,8 +62,8 @@ export default function ClassicSidebar() {
   const { theme } = useTheme();
   const { loading: permsLoading, has } = usePermissions();
 
-  const brandName = "Karobar App";
-  const logoCandidates = ["/storage/logos/logo.png", "/logo.png"];
+  const brandName = appName && appName !== "ERP" ? appName : "Karobar App";
+  const logoCandidates = [...new Set([logoUrl, "/storage/logos/logo.png", "/logo.png"].filter(Boolean))];
 
   const rawMenu = useMemo(() => [
     { name: "Dashboard", path: "/dashboard", icon: <HomeIcon className="w-5 h-5" />, standalone: true },
@@ -153,7 +153,7 @@ export default function ClassicSidebar() {
   }
 
   const isActive = (path) => pathname === path || pathname.startsWith(path + "/");
-  const widthCls = collapsed ? "w-20" : "w-64";
+  const widthCls = collapsed ? "workspace-sidebar-collapsed" : "workspace-sidebar-expanded";
 
   const getSectionConfig = (item) => {
     if (item.standalone) {
@@ -173,18 +173,15 @@ export default function ClassicSidebar() {
     };
   };
 
-  // Classic styling - clean borders and traditional layout
-  const shell = "relative h-screen bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-700";
-  const card = `relative flex h-full flex-col ${widthCls} transition-[width] duration-300 overflow-hidden`;
-  
-  const scrollAreaCls = "flex-1 overflow-y-auto min-h-0 py-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600";
-
-  const itemBase = "group relative mx-2 flex items-center gap-3 rounded-lg px-3 py-2.5 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800 transition-all duration-200";
-  const itemActive = "bg-gray-100 dark:bg-slate-800 font-semibold";
+  const shell = "workspace-sidebar";
+  const card = `workspace-sidebar-inner ${widthCls}`;
+  const scrollAreaCls = "workspace-navigation";
+  const itemBase = "workspace-nav-item";
+  const itemActive = "workspace-nav-item-active";
 
   const renderSectionHeader = (section, index) => {
     const config = getSectionConfig(section);
-    
+
     if (collapsed) {
       return (
         <div key={`sec-${section.name}-${index}`} className="flex items-center justify-center py-3 mx-2 mt-2 border-b border-gray-200 dark:border-slate-700">
@@ -194,12 +191,12 @@ export default function ClassicSidebar() {
     }
 
     return (
-      <div key={`sec-${section.name}-${index}`} className="px-4 py-2 mx-2 mt-3">
+      <div key={`sec-${section.name}-${index}`} className="workspace-nav-section">
         <div className="flex items-center gap-2">
           <span style={{ color: config.baseColor }}>{React.cloneElement(section.icon, { className: "w-4 h-4" })}</span>
-          <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">{section.name}</span>
+          <span className="workspace-nav-section-label">{section.name}</span>
         </div>
-        <div className="mt-1 h-px bg-linear-to-r from-gray-200 to-transparent dark:from-slate-700" />
+
       </div>
     );
   };
@@ -208,12 +205,13 @@ export default function ClassicSidebar() {
     <aside className={shell}>
       <div className={card}>
         {/* Header */}
-        <div className="sticky top-0 z-10 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700 px-4 py-4">
+        <div className="workspace-sidebar-brand">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 overflow-hidden">
-              <picture>
+              <picture className="workspace-brand-mark">
+                <span aria-hidden="true">{brandName.slice(0, 1).toUpperCase()}</span>
                 {logoCandidates.map((src) => (
-                  <img key={src} src={src} alt={brandName} className="h-8 w-8 object-contain rounded-sm hidden"
+                  <img key={src} src={src} alt={brandName} className="absolute inset-0 h-full w-full object-contain rounded-xl hidden"
                     onLoad={(e) => {
                       const imgs = e.currentTarget.parentElement.querySelectorAll("img");
                       imgs.forEach((im) => (im.style.display = "none"));
@@ -224,7 +222,7 @@ export default function ClassicSidebar() {
               </picture>
               {!collapsed && (
                 <div className="flex flex-col min-w-0">
-                  <span className="text-sm font-bold text-gray-900 dark:text-white truncate">{brandName}</span>
+                  <span className="workspace-brand-name">{brandName}</span>
                 </div>
               )}
             </div>
@@ -245,11 +243,7 @@ export default function ClassicSidebar() {
                 to={item.path}
                 ref={(el) => (itemRefs.current[focusIdx] = el)}
                 className={`${itemBase} ${active ? itemActive : ''}`}
-                style={active ? { 
-                  backgroundColor: sectionConfig.lightColor,
-                  color: sectionConfig.baseColor,
-                  borderLeft: `3px solid ${sectionConfig.baseColor}`
-                } : { borderLeft: '3px solid transparent' }}
+                style={{ "--nav-accent": sectionConfig.baseColor }}
                 tabIndex={focusedIndex === focusIdx ? 0 : -1}
                 onFocus={() => setFocusedIndex(focusIdx)}
                 aria-current={active ? "page" : undefined}
@@ -270,10 +264,10 @@ export default function ClassicSidebar() {
         </nav>
 
         {/* Footer */}
-        <div className="sticky bottom-0 z-10 bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-700 px-2 py-3">
+        <div className="workspace-sidebar-footer">
           <button
             onClick={() => setCollapsed((v) => !v)}
-            className="w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 transition-all duration-200"
+            className="workspace-collapse"
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {collapsed ? <ChevronRightIcon className="w-5 h-5" /> : <ChevronLeftIcon className="w-5 h-5" />}

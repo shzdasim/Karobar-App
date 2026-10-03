@@ -171,15 +171,15 @@ const tooltipStyle = (isDark) => ({
 const getSmallSelectStyles = (isDark = false) => ({
   control: (base) => ({
     ...base,
-    minHeight: 32,
-    height: 32,
+    minHeight: 44,
+    height: 44,
     borderRadius: 10,
     borderColor: isDark ? "rgba(71,85,105,0.8)" : "rgba(203,213,225,0.9)",
     backgroundColor: isDark ? "rgba(51,65,85,0.7)" : "rgba(255,255,255,0.9)",
     boxShadow: "none",
   }),
-  valueContainer: (base) => ({ ...base, height: 32, padding: "0 8px" }),
-  indicatorsContainer: (base) => ({ ...base, height: 32 }),
+  valueContainer: (base) => ({ ...base, height: 44, padding: "0 8px" }),
+  indicatorsContainer: (base) => ({ ...base, height: 44 }),
   input: (base) => ({ ...base, margin: 0, padding: 0, color: isDark ? "#f1f5f9" : "#0f172a" }),
   menuPortal: (base) => ({ ...base, zIndex: 9999 }),
   menu: (base) => ({
@@ -231,7 +231,7 @@ function Sparkline({ data, color, suffix }) {
 
 function SectionCard({ children, className = "" }) {
   return (
-    <div className={`rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 shadow-xs ${className}`}>
+    <div className={`g-card dashboard-panel ${className}`}>
       {children}
     </div>
   );
@@ -239,14 +239,14 @@ function SectionCard({ children, className = "" }) {
 
 function CardHeader({ icon: Icon, iconStyle, title, subtitle, right }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 sm:px-5 sm:py-4 border-b border-slate-100 dark:border-slate-700/70">
+    <div className="dashboard-panel-heading flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-5">
       <div className="flex items-center gap-3 min-w-0">
         <div className="p-2 rounded-xl shadow-xs shrink-0" style={{ backgroundColor: iconStyle?.bg || "transparent" }}>
           <Icon className="w-4 h-4" style={{ color: iconStyle?.color || "#64748b" }} />
         </div>
         <div className="min-w-0">
-          <h3 className="text-[13px] font-semibold text-slate-800 dark:text-slate-100 truncate">{title}</h3>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{subtitle}</p>
+          <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 truncate">{title}</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{subtitle}</p>
         </div>
       </div>
       {right && <div className="flex items-center gap-2 shrink-0">{right}</div>}
@@ -259,7 +259,7 @@ function TrendPill({ value }) {
   const up = v >= 0;
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
         up
           ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
           : "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400"
@@ -275,7 +275,7 @@ function RankedRow({ rank, title, meta, amount, pct, color }) {
   return (
     <li className="flex items-center gap-3 px-4 py-3 sm:px-5">
       <span
-        className="w-6 h-6 rounded-lg text-[11px] font-bold flex items-center justify-center shrink-0"
+        className="w-6 h-6 rounded-lg text-xs font-bold flex items-center justify-center shrink-0"
         style={
           rank <= 3
             ? { background: color, color: "#fff", boxShadow: `0 2px 8px ${color}55` }
@@ -287,7 +287,7 @@ function RankedRow({ rank, title, meta, amount, pct, color }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{title}</p>
-          {meta && <p className="text-xs text-slate-400 dark:text-slate-500 shrink-0 tabular-nums">{meta}</p>}
+          {meta && <p className="text-xs dashboard-muted shrink-0 tabular-nums">{meta}</p>}
         </div>
         <div className="mt-1.5 flex items-center gap-2">
           <div className="h-1.5 flex-1 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
@@ -296,7 +296,7 @@ function RankedRow({ rank, title, meta, amount, pct, color }) {
               style={{ width: `${Math.max(2, Math.min(100, pct))}%`, background: `linear-gradient(90deg, ${color}, ${color}B3)` }}
             />
           </div>
-          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums shrink-0">{amount}</span>
+          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums shrink-0">{amount}</span>
         </div>
       </div>
     </li>
@@ -314,7 +314,7 @@ function ExpiryPill({ days }) {
     styles = "bg-emerald-50 text-emerald-600 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/25";
   }
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ring-1 whitespace-nowrap ${styles}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ring-1 whitespace-nowrap ${styles}`}>
       {d} days left
     </span>
   );
@@ -791,37 +791,26 @@ const heroStats = [
   ];
 
   return (
-    <div className="min-h-full px-3 py-3.5 sm:px-4 sm:py-4 lg:px-5 lg:py-5 space-y-4 sm:space-y-5 bg-slate-50 dark:bg-slate-900/60">
+    <div className="dashboard-page">
       {/* ===== Hero band ===== */}
-      <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 ring-1 ring-white/10 shadow-lg shadow-slate-900/20">
-        {/* Glow accents */}
-        <div aria-hidden="true" className="pointer-events-none absolute -top-24 -right-16 h-72 w-72 rounded-full blur-3xl opacity-25" style={{ background: themeColors.primary }} />
-        <div aria-hidden="true" className="pointer-events-none absolute -bottom-28 -left-12 h-72 w-72 rounded-full blur-3xl opacity-20" style={{ background: themeColors.secondary }} />
-        {/* Dot texture */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 opacity-[0.12]"
-          style={{ backgroundImage: "radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px)", backgroundSize: "18px 18px" }}
-        />
-
+      <div className="dashboard-overview">
         <div className="relative flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
           {/* Identity */}
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-white/10 ring-1 ring-white/15 flex items-center justify-center shrink-0">
-              <ChartPieIcon className="text-white w-5 h-5" />
+            <div className="dashboard-overview-icon">
+              <ChartPieIcon className="w-6 h-6" />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-semibold tracking-tight text-white">Dashboard</h1>
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/10 ring-1 ring-emerald-300/20 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-emerald-300">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="dashboard-title">Business overview</h1>
+                <span className="dashboard-live">
                   <span className="relative flex h-1.5 w-1.5">
-                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
                     <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
                   </span>
                   Live
                 </span>
               </div>
-              <p className="mt-0.5 text-[11px] sm:text-xs text-slate-400 flex items-center gap-1.5">
+              <p className="dashboard-date-line flex flex-wrap items-center gap-1.5">
                 <CalendarDaysIcon className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">{dateRangeLabel}</span>
                 <span className="hidden sm:inline text-slate-600">·</span>
@@ -839,13 +828,13 @@ const heroStats = [
           </div>
 
           {/* Headline stats */}
-          <div className="grid grid-cols-3 divide-x divide-white/10 lg:pr-4">
+          <div className="dashboard-headline-stats">
             {heroStats.map((s, i) => (
               <div key={s.label} title={s.hint} className={i === 0 ? "pl-0 pr-3 sm:pr-5" : "px-3 sm:px-5"}>
-                <div className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-slate-400 whitespace-nowrap">
+                <div className="text-xs font-semibold text-slate-400 whitespace-nowrap">
                   {s.label}
                 </div>
-                <div className="mt-0.5 text-[13px] sm:text-[15px] font-semibold text-white tabular-nums truncate">
+                <div className="dashboard-headline-value">
                   {s.value}
                 </div>
               </div>
@@ -857,12 +846,12 @@ const heroStats = [
             <button
               onClick={fetchAll}
               disabled={loading}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white ring-1 ring-white/15 backdrop-blur-sm hover:bg-white/15 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:pointer-events-none"
+              className="dashboard-refresh"
             >
               <ArrowPathIcon className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
               {loading ? "Loading…" : "Refresh"}
             </button>
-            <kbd className="hidden xl:flex items-center rounded-md bg-white/5 ring-1 ring-white/10 px-1.5 py-1 text-[10px] font-medium text-slate-400 whitespace-nowrap">
+            <kbd className="hidden xl:flex items-center rounded-md bg-white/5 ring-1 ring-white/10 px-1.5 py-1 text-xs font-medium text-slate-400 whitespace-nowrap">
               Alt+R
             </kbd>
           </div>
@@ -870,22 +859,22 @@ const heroStats = [
       </div>
 
       {/* ===== Filters ===== */}
-      <SectionCard className="p-3 sm:px-4 sm:py-3.5">
+      <SectionCard className="dashboard-filter-panel p-4 sm:p-5">
         <div className="grid grid-cols-1 gap-2.5 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2 min-w-0">
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 sm:whitespace-nowrap">From</label>
-            <ModernDatePicker value={from} onChange={setFrom} placeholder="Start date" className="w-full min-w-0 sm:w-48" />
+            <label className="text-xs font-semibold dashboard-muted sm:whitespace-nowrap">From</label>
+            <ModernDatePicker value={from} onChange={setFrom} placeholder="Start date" className="w-full min-w-0 sm:w-48" portalId="dashboard-calendar-portal" popperProps={{ strategy: "fixed" }} />
           </div>
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2 min-w-0">
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 sm:whitespace-nowrap">To</label>
-            <ModernDatePicker value={to} onChange={setTo} placeholder="End date" className="w-full min-w-0 sm:w-48" />
+            <label className="text-xs font-semibold dashboard-muted sm:whitespace-nowrap">To</label>
+            <ModernDatePicker value={to} onChange={setTo} placeholder="End date" className="w-full min-w-0 sm:w-48" portalId="dashboard-calendar-portal" popperProps={{ strategy: "fixed" }} />
           </div>
           <div className="flex flex-wrap items-center gap-1.5 sm:ml-auto">
             {quickPresets.map((p) => (
               <button
                 key={p.label}
                 onClick={p.fn}
-                className="px-2 py-1 rounded-lg text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200 active:scale-95 transition-all duration-150"
+                className="min-h-11 px-3 py-2 rounded-xl text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200 active:scale-95 transition-all duration-150"
               >
                 {p.label}
               </button>
@@ -909,22 +898,22 @@ const heroStats = [
               }
             }}
             title={k.path ? `Open ${k.label} page` : undefined}
-            className="group relative rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 shadow-xs hover:shadow-lg hover:-translate-y-0.5 hover:ring-2 hover:ring-blue-500/20 transition-all duration-300 overflow-hidden cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500/40"
+            className="g-card dashboard-panel dashboard-kpi group"
           >
-            <div className="h-1 w-full" style={{ background: `linear-gradient(to right, ${k.color}, ${k.color}B3)` }} />
+
             <div className="p-4 sm:p-5">
               <div className="flex items-center justify-between gap-3 mb-1">
                 <div className="p-2 sm:p-2.5 rounded-xl shadow-xs" style={{ backgroundColor: k.bg }}>
                   <k.icon className="w-5 h-5" style={{ color: k.color }} />
                 </div>
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 truncate">
+                  <span className="text-xs font-semibold dashboard-muted truncate">
                     {k.label}
                   </span>
                   {booted && <TrendPill value={pctChange(k.value, k.prev)} />}
                 </div>
               </div>
-              <div className="mt-2.5 text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-white tabular-nums">
+              <div className="dashboard-kpi-value">
                 {booted ? (
                   `Rs ${fmtCurrency(k.value)}`
                 ) : (
@@ -940,8 +929,8 @@ const heroStats = [
                     <div key={row.label} className="flex items-center gap-1.5 min-w-0">
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ background: row.color }} />
                       <div className="min-w-0 flex-1">
-                        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{row.label}</div>
-                        <div className="text-xs sm:text-[13px] font-semibold text-slate-800 dark:text-slate-100 tabular-nums truncate" title={`Rs ${fmtCurrency(row.value)}`}>
+                        <div className="text-xs font-semibold dashboard-muted">{row.label}</div>
+                        <div className="text-xs sm:text-base font-semibold text-slate-800 dark:text-slate-100 tabular-nums truncate" title={`Rs ${fmtCurrency(row.value)}`}>
                           Rs {fmtCurrency(row.value)}
                         </div>
                       </div>
@@ -951,11 +940,11 @@ const heroStats = [
               )}
             </div>
             <div className="flex items-center justify-between gap-2 px-4 sm:px-5 py-2 sm:py-2.5 bg-slate-50/70 dark:bg-slate-700/30 border-t border-slate-100 dark:border-slate-700/60">
-              <span className="text-[10px] sm:text-[11px] font-semibold truncate" style={{ color: k.color }}>
+              <span className="text-xs font-semibold truncate" style={{ color: k.color }}>
                 {k.footer}
               </span>
               <span className="flex items-center gap-2 shrink-0">
-                <span className="text-[10px] sm:text-[11px] text-slate-400 dark:text-slate-500 whitespace-nowrap">
+                <span className="text-xs dashboard-muted whitespace-nowrap">
                   vs prev {Math.max(daysInPeriod - 1, 1)}d
                 </span>
                 <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 group-hover:text-slate-500 dark:group-hover:text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200" />
@@ -980,7 +969,7 @@ const heroStats = [
               }
             }}
             title={chip.path ? `Open ${chip.label} page` : undefined}
-            className="group flex items-center gap-2.5 sm:gap-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/70 shadow-xs px-3 py-3 sm:px-4 sm:py-3.5 hover:shadow-md hover:-translate-y-0.5 hover:ring-2 hover:ring-blue-500/20 transition-all duration-200 cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500/40"
+            className="dashboard-module group flex items-center gap-3 px-4 py-4"
           >
             <div className="p-2 rounded-xl shrink-0" style={{ backgroundColor: chip.bg }}>
               <chip.icon className="w-4 h-4" style={{ color: chip.color }} />
@@ -989,9 +978,9 @@ const heroStats = [
               <div className="text-[15px] sm:text-base font-bold leading-tight text-slate-900 dark:text-white tabular-nums truncate">
                 {typeof chip.value === "number" ? chip.value.toLocaleString() : chip.value}
               </div>
-              <div className="text-[11px] font-medium text-slate-400 dark:text-slate-500 truncate">{chip.label}</div>
+              <div className="text-xs font-medium dashboard-muted truncate">{chip.label}</div>
               {chip.hint && (
-                <div className="hidden sm:block text-[10px] text-slate-400 dark:text-slate-600 truncate">{chip.hint}</div>
+                <div className="hidden sm:block text-xs text-slate-400 dark:text-slate-600 truncate">{chip.hint}</div>
               )}
             </div>
             <ArrowTopRightOnSquareIcon className="hidden sm:block w-3.5 h-3.5 shrink-0 text-slate-200 dark:text-slate-700 group-hover:text-slate-500 dark:group-hover:text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200" />
@@ -1232,7 +1221,7 @@ const heroStats = [
             ) : (
               <div className="flex flex-col items-center justify-center py-10 text-center gap-2">
                 <TrophyIcon className="w-8 h-8 text-slate-200 dark:text-slate-700" />
-                <p className="text-sm text-slate-400 dark:text-slate-500">No brand sales in this period</p>
+                <p className="text-sm dashboard-muted">No brand sales in this period</p>
               </div>
             )}
           </div>
@@ -1267,7 +1256,7 @@ const heroStats = [
             ) : (
               <div className="flex flex-col items-center justify-center py-12 text-center gap-2">
                 <FireIcon className="w-8 h-8 text-slate-200 dark:text-slate-700" />
-                <p className="text-sm text-slate-400 dark:text-slate-500">No sales in this period</p>
+                <p className="text-sm dashboard-muted">No sales in this period</p>
               </div>
             )}
           </div>
@@ -1302,11 +1291,11 @@ const heroStats = [
             <div className="pt-3 border-t border-slate-100 dark:border-slate-700/60 grid grid-cols-2 gap-3">
               <div className="rounded-xl bg-slate-50 dark:bg-slate-700/40 p-3 text-center">
                 <div className="text-base font-bold text-slate-900 dark:text-white tabular-nums">{invoiceCounts.total || 0}</div>
-                <div className="text-[9px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Invoices</div>
+                <div className="text-xs font-semibold dashboard-muted">Invoices</div>
               </div>
               <div className="rounded-xl bg-slate-50 dark:bg-slate-700/40 p-3 text-center">
                 <div className="text-base font-bold text-slate-900 dark:text-white tabular-nums">{kpiMetrics.active_products || 0}</div>
-                <div className="text-[9px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Products</div>
+                <div className="text-xs font-semibold dashboard-muted">Products</div>
               </div>
             </div>
           </div>
@@ -1415,19 +1404,19 @@ const heroStats = [
           <table className="min-w-full text-sm">
             <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 z-10 border-b border-slate-200 dark:border-slate-700">
               <tr className="text-left">
-                <th className="px-4 py-3 sm:px-5 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Product</th>
-                <th className="px-4 py-3 sm:px-5 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Supplier</th>
-                <th className="hidden md:table-cell px-4 py-3 sm:px-5 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Brand</th>
-                <th className="hidden sm:table-cell px-4 py-3 sm:px-5 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Batch #</th>
-                <th className="px-4 py-3 sm:px-5 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Expiry</th>
-                <th className="px-4 py-3 sm:px-5 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Days Left</th>
-                <th className="px-4 py-3 sm:px-5 font-semibold text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Qty</th>
+                <th className="px-4 py-3 sm:px-5 font-semibold text-xs text-slate-500 dark:text-slate-400">Product</th>
+                <th className="px-4 py-3 sm:px-5 font-semibold text-xs text-slate-500 dark:text-slate-400">Supplier</th>
+                <th className="hidden md:table-cell px-4 py-3 sm:px-5 font-semibold text-xs text-slate-500 dark:text-slate-400">Brand</th>
+                <th className="hidden sm:table-cell px-4 py-3 sm:px-5 font-semibold text-xs text-slate-500 dark:text-slate-400">Batch #</th>
+                <th className="px-4 py-3 sm:px-5 font-semibold text-xs text-slate-500 dark:text-slate-400">Expiry</th>
+                <th className="px-4 py-3 sm:px-5 font-semibold text-xs text-slate-500 dark:text-slate-400">Days Left</th>
+                <th className="px-4 py-3 sm:px-5 font-semibold text-xs text-slate-500 dark:text-slate-400 text-right">Qty</th>
               </tr>
             </thead>
             <tbody>
               {nearExpiryRows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-10 sm:px-5 text-center text-slate-400 dark:text-slate-500" colSpan={7}>
+                  <td className="px-4 py-10 sm:px-5 text-center dashboard-muted" colSpan={7}>
                     {loadingExpiry ? (
                       <span className="inline-flex items-center gap-2">
                         <ArrowPathIcon className="w-4 h-4 animate-spin" />
@@ -1448,7 +1437,7 @@ const heroStats = [
                     >
                       <td className="px-4 py-3 sm:px-5 text-slate-800 dark:text-slate-100">
                         <div className="max-w-[260px] truncate font-medium" title={r.product_name}>{r.product_name}</div>
-                        <div className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">{r.product_code}</div>
+                        <div className="text-xs dashboard-muted font-mono">{r.product_code}</div>
                       </td>
                       <td className="px-4 py-3 sm:px-5 text-slate-600 dark:text-slate-300">{(r.supplier_name || "—")}</td>
                       <td className="hidden md:table-cell px-4 py-3 sm:px-5 text-slate-600 dark:text-slate-300">{(r.brand_name || "—")}</td>
