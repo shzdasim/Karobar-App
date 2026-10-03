@@ -44,7 +44,8 @@ export default function Login() {
     // Clear expired data
     localStorage.removeItem("token");
     localStorage.removeItem("token_expires_at");
-    localStorage.removeItem("remembered_email");
+    localStorage.removeItem("user");
+    delete axios.defaults.headers.common["Authorization"];
     // Keep remember_me preference but clear token
   }, []);
 
@@ -72,6 +73,8 @@ export default function Login() {
       localStorage.setItem("token", data.token);
       if (data.expires_at) {
         localStorage.setItem("token_expires_at", data.expires_at);
+      } else {
+        localStorage.removeItem("token_expires_at");
       }
 
       axios.defaults.headers.common["Authorization"] = `Bearer ${data.token}`;
@@ -79,7 +82,7 @@ export default function Login() {
 
       if (!data.license_revoked) {
         // Validate license before redirecting to dashboard
-        validateLicenseAndRedirect();
+        await validateLicenseAndRedirect();
       }
 
       async function validateLicenseAndRedirect() {
@@ -95,6 +98,9 @@ export default function Login() {
             navigate("/activate");
           }
         } catch (licenseError) {
+          if (licenseError.response?.status === 401) {
+            throw licenseError;
+          }
           // If we can't check license status, redirect to dashboard anyway
           // The server-side middleware will handle invalid licenses
           console.warn("Could not validate license status:", licenseError);
@@ -119,7 +125,7 @@ export default function Login() {
         if (error.response?.status === 401 && error.response.data?.expired) {
           // Token expired, redirect to login
           handleExpiredSession();
-          navigate("/login", { 
+          navigate("/", {
             state: { from: location.pathname, message: "Session expired. Please login again." } 
           });
         }
@@ -360,4 +366,3 @@ export default function Login() {
     </div>
   );
 }
-

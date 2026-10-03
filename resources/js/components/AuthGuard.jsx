@@ -9,7 +9,8 @@ import { Navigate } from "react-router-dom";
  */
 export default function AuthGuard({ children, requireAuth = true }) {
   const token = localStorage.getItem("token");
-  const isAuthenticated = !!token;
+  const expiresAt = localStorage.getItem("token_expires_at");
+  const isAuthenticated = !!token && (!expiresAt || Date.parse(expiresAt) > Date.now());
 
   if (requireAuth) {
     // Protected route - require authentication
@@ -26,4 +27,3 @@ export default function AuthGuard({ children, requireAuth = true }) {
 
   return children;
 }
-

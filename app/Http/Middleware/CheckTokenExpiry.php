@@ -6,6 +6,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 use App\Models\User;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class CheckTokenExpiry
 {
@@ -26,8 +27,10 @@ class CheckTokenExpiry
         // Check if remember_token_expires_at is set and has passed
         if ($user->remember_token_expires_at && now()->isAfter($user->remember_token_expires_at)) {
             // Token has expired, delete it and return 401
-            $user->currentAccessToken()->delete();
-            $user->update(['remember_token_expires_at' => null]);
+            $token = $user->currentAccessToken();
+            if ($token instanceof PersonalAccessToken) {
+                $token->delete();
+            }
 
             return response()->json([
                 'message' => 'Session expired. Please login again.',
@@ -38,4 +41,3 @@ class CheckTokenExpiry
         return $next($request);
     }
 }
-

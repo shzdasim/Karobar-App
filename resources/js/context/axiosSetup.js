@@ -34,7 +34,7 @@ export function initAxiosAuth() {
       if (status === 402 && !isLicenseApi && !isLicenseStatusEndpoint && !isAuth) {
         // stop console spam & bounce to activate
         window.location.assign("/activate");
-        return; // don't rethrow
+        return Promise.reject(err);
       }
 
       // Handle token expiry from our custom middleware
@@ -42,18 +42,20 @@ export function initAxiosAuth() {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
         localStorage.removeItem("token_expires_at");
-        localStorage.removeItem("remembered_email");
+        delete axios.defaults.headers.common["Authorization"];
         window.location.href = "/";
-        return;
+        return Promise.reject(err);
       }
 
       // Optional: handle 401 globally for auth failures
-      if (status === 401 && !isAuth && !isLicenseStatusEndpoint) {
+      if (status === 401 && !url.includes("/login")) {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
         localStorage.removeItem("token_expires_at");
-        localStorage.removeItem("remembered_email");
-        // Don't redirect automatically - let components handle it
+        delete axios.defaults.headers.common["Authorization"];
+        if (window.location.pathname !== "/") {
+          window.location.assign("/");
+        }
       }
 
       return Promise.reject(err);

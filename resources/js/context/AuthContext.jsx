@@ -55,6 +55,7 @@ export function AuthProvider({ children }) {
   const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    localStorage.removeItem("token_expires_at");
     localStorage.removeItem("productModalPos");
     localStorage.removeItem("productModalSize");
 

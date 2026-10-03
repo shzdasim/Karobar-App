@@ -31,12 +31,13 @@ class AuthController extends Controller
      */
     public function login(Request $request): JsonResponse
     {
-        $credentials = $request->validate([
+        $request->validate([
             'email'    => 'required|email',
-            'password' => 'required',
+            'password' => 'required|string',
+            'remember' => 'sometimes|boolean',
         ]);
 
-        if (!Auth::attempt($credentials)) {
+        if (!Auth::attempt($request->only('email', 'password'))) {
             return response()->json(['message' => 'Invalid credentials'], 401);
         }
 
@@ -54,8 +55,8 @@ class AuthController extends Controller
         // Delete any existing personal access tokens first
         $user->tokens()->delete();
 
-        // Generate API token (Sanctum) with custom expiry via TTL
-        $token = $user->createToken('api_token', ['expires_at' => $expiresAt])->plainTextToken;
+        // Sanctum accepts expiry as the third argument, after token abilities.
+        $token = $user->createToken('api_token', ['*'], $expiresAt)->plainTextToken;
 
         // Store remember token expiry in database
         $user->update([
