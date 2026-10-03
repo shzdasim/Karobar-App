@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import axios from "axios";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { useTheme } from "@/context/ThemeContext.jsx";
 import {
   BellIcon,
   XMarkIcon,
@@ -9,7 +9,7 @@ import {
   CheckCircleIcon,
   ArrowPathIcon,
   ArrowRightIcon,
-BellSlashIcon,
+  BellSlashIcon,
   HandRaisedIcon,
   PlusCircleIcon,
 } from "@heroicons/react/24/outline";
@@ -18,23 +18,33 @@ const fmtNumber = (v) =>
   Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 export default function NotificationCenter({ open, onClose }) {
-  const { theme, isDark } = useTheme();
   const navigate = useNavigate();
+  const panelRef = useRef(null);
+  const [stockError, setStockError] = useState("");
+  const [demandError, setDemandError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [dismissBusy, setDismissBusy] = useState(false);
 
-  const themeColors = useMemo(() => ({
-    primary: theme?.primary_color || '#3b82f6',
-    primaryHover: theme?.primary_hover || '#2563eb',
-    primaryLight: theme?.primary_light || '#dbeafe',
-    secondary: theme?.secondary_color || '#8b5cf6',
-    secondaryHover: theme?.secondary_hover || '#7c3aed',
-    secondaryLight: theme?.secondary_light || '#ede9fe',
-    tertiary: theme?.tertiary_color || '#06b6d4',
-    tertiaryHover: theme?.tertiary_hover || '#0891b2',
-    tertiaryLight: theme?.tertiary_light || '#cffafe',
-    danger: theme?.danger_color || '#ef4444',
-  }), [theme]);
+  useEffect(() => {
+    if (!open) return;
+    const previousFocus = document.activeElement;
+    panelRef.current?.focus();
+    const trapFocus = (event) => {
+      if (event.key !== "Tab") return;
+      const items = [...panelRef.current.querySelectorAll('button:not(:disabled), [tabindex="0"]')];
+      const first = items[0], last = items[items.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === panelRef.current)) {
+        event.preventDefault(); last?.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === panelRef.current)) {
+        event.preventDefault(); first?.focus();
+      }
+    };
+    const panel = panelRef.current;
+    panel?.addEventListener("keydown", trapFocus);
+    return () => { panel?.removeEventListener("keydown", trapFocus); previousFocus?.focus(); };
+  }, [open]);
 
-const [rows, setRows] = useState([]);
+  const [rows, setRows] = useState([]);
   const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(false);
 
@@ -46,6 +56,7 @@ const [rows, setRows] = useState([]);
 
   const fetchLowStock = useCallback(async () => {
     setLoading(true);
+    setStockError("");
     try {
       const { data } = await axios.get("/api/notifications/low-stock", {
         params: { limit: 200 },
@@ -54,6 +65,7 @@ const [rows, setRows] = useState([]);
       setCount(Number(data?.count || 0));
     } catch (err) {
       console.error("Failed to fetch low stock notifications:", err);
+      setStockError("Stock alerts could not be loaded. Please try again.");
       setRows([]);
       setCount(0);
     } finally {
@@ -63,6 +75,7 @@ const [rows, setRows] = useState([]);
 
   const fetchDemands = useCallback(async () => {
     setDemandsLoading(true);
+    setDemandError("");
     try {
       const { data } = await axios.get("/api/user-demands", {
         params: { status: "pending", limit: 100 },
@@ -71,6 +84,7 @@ const [rows, setRows] = useState([]);
       setDemandCount(Number(data?.pending_count || 0));
     } catch (err) {
       console.error("Failed to fetch user demands:", err);
+      setDemandError("Product demands could not be loaded. Please try again.");
       setDemands([]);
       setDemandCount(0);
     } finally {
@@ -108,7 +122,7 @@ const [rows, setRows] = useState([]);
     };
   }, [open]);
 
-const goToProducts = () => {
+  const goToProducts = () => {
     onClose();
     navigate("/products");
   };
@@ -124,6 +138,8 @@ const goToProducts = () => {
   }, []);
 
   const dismissOne = async (productId) => {
+    setDismissBusy(true);
+    setActionError("");
     try {
       await axios.post("/api/notifications/dismiss", { product_id: productId });
       setRows((prev) => prev.filter((r) => Number(r.product_id) !== Number(productId)));
@@ -131,11 +147,16 @@ const goToProducts = () => {
       notifyCountChanged();
     } catch (err) {
       console.error("Failed to dismiss notification:", err);
+      setActionError("This alert could not be dismissed. Please try again.");
+    } finally {
+      setDismissBusy(false);
     }
   };
 
   const dismissAll = async () => {
     if (!rows.length) return;
+    setDismissBusy(true);
+    setActionError("");
     try {
       await axios.post("/api/notifications/dismiss-all");
       setRows([]);
@@ -143,319 +164,142 @@ const goToProducts = () => {
       notifyCountChanged();
     } catch (err) {
       console.error("Failed to dismiss all notifications:", err);
+      setActionError("Alerts could not be dismissed. Please try again.");
+    } finally {
+      setDismissBusy(false);
     }
   };
 
-  return (
-    <>
-      {/* Overlay */}
-      <div
-        className={`fixed inset-0 z-9998 bg-slate-900/50 backdrop-blur-xs transition-opacity duration-300 ${
-          open ? "opacity-100" : "opacity-0 pointer-events-none"
-        }`}
-        onClick={onClose}
-        aria-hidden="true"
-      />
+  const activeLoading = tab === "demands" ? demandsLoading : loading;
+  const activeError = tab === "demands" ? demandError : stockError;
+  const refresh = tab === "demands" ? fetchDemands : fetchLowStock;
+  const activeCount = tab === "demands" ? demandCount : count;
 
-      {/* Side Panel */}
-      <aside
-        hidden={!open}
-        inert={!open}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Notification Center"
-        className={[
-          "fixed top-0 right-0 h-full w-full sm:w-[400px] react-select__menu-portal",
-          "bg-white dark:bg-slate-800 shadow-2xl",
-          "transform transition-transform duration-300 ease-out",
-          open ? "translate-x-0" : "translate-x-full",
-        ].join(" ")}
-      >
-        {/* Header */}
-        <div
-          className="relative flex items-center justify-between px-4 py-4 text-white"
-          style={{
-            background: `linear-gradient(120deg, ${themeColors.secondary}, ${themeColors.primary})`,
-          }}
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-white/20 backdrop-blur-md">
-              <BellIcon className="w-5 h-5" />
-            </div>
-<div>
-              <h2 className="text-base font-bold leading-none">Notification Center</h2>
-              <p className="text-xs text-white/80 mt-1">
-                {tab === "low-stock"
-                  ? `${count} low stock alert${count === 1 ? "" : "s"}`
-                  : `${demandCount} pending product demand${demandCount === 1 ? "" : "s"}`}
-              </p>
-            </div>
-          </div>
-<div className="flex items-center gap-1">
-            {rows.length > 0 && (
-              <button
-                onClick={dismissAll}
-                title="Dismiss all notifications"
-                className="p-2 rounded-lg hover:bg-white/20 transition-all duration-200"
-              >
-                <BellSlashIcon className="w-5 h-5" />
+  return createPortal(
+    <div className="activity-center-layer" hidden={!open}>
+      <div className="activity-center-scrim" onClick={onClose} aria-hidden="true" />
+      <aside ref={panelRef} tabIndex={-1} role="dialog" aria-modal="true"
+        aria-label="Notification Center" aria-describedby="activity-center-description"
+        className="activity-center">
+        <header className="activity-center-header">
+          <div className="activity-center-heading-row">
+            <span className="activity-center-mark" aria-hidden="true"><BellIcon className="h-6 w-6" /></span>
+            <div className="activity-center-header-actions">
+              <button type="button" onClick={refresh} disabled={activeLoading} className="activity-icon-button"
+                aria-label={tab === "demands" ? "Refresh demands" : "Refresh stock alerts"} title="Refresh">
+                <ArrowPathIcon className={`h-5 w-5 ${activeLoading ? "motion-safe:animate-spin" : ""}`} aria-hidden="true" />
               </button>
-            )}
-            <button
-              onClick={fetchLowStock}
-              disabled={loading}
-              title="Refresh"
-              className="p-2 rounded-lg hover:bg-white/20 transition-all duration-200"
-            >
-              <ArrowPathIcon className={`w-5 h-5 ${loading ? "animate-spin" : ""}`} />
-            </button>
-            <button
-              onClick={onClose}
-              title="Close (Esc)"
-              className="p-2 rounded-lg hover:bg-white/20 transition-all duration-200"
-            >
-<XMarkIcon className="w-5 h-5" />
-            </button>
+              <button type="button" onClick={onClose} className="activity-icon-button" aria-label="Close notification center" title="Close (Esc)">
+                <XMarkIcon className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
           </div>
+          <p className="activity-eyebrow">Your workspace inbox</p>
+          <h2>Notification center</h2>
+          <p id="activity-center-description" className="activity-muted">Stock alerts and product requests, in one place.</p>
+        </header>
+
+        <div className="activity-tabs" role="tablist" aria-label="Notification category">
+          {[
+            { id: "low-stock", label: "Low stock", icon: ExclamationTriangleIcon, total: count },
+            { id: "demands", label: "Demands", icon: HandRaisedIcon, total: demandCount },
+          ].map(({ id, label, icon: Icon, total }) => (
+            <button key={id} id={`activity-tab-${id}`} type="button" role="tab"
+              aria-selected={tab === id} aria-controls="activity-tab-panel" tabIndex={tab === id ? 0 : -1}
+              onClick={() => setTab(id)} className={`activity-tab ${tab === id ? "activity-tab-active" : ""}`}
+              onKeyDown={(event) => {
+                if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+                  event.preventDefault();
+                  const next = event.key === "Home" ? "low-stock" : event.key === "End" ? "demands" : tab === "demands" ? "low-stock" : "demands";
+                  setTab(next); document.getElementById(`activity-tab-${next}`)?.focus();
+                }
+              }}>
+              <Icon className="h-4 w-4" aria-hidden="true" />
+              {label}<span className="activity-count">{total > 99 ? "99+" : total}</span>
+            </button>
+          ))}
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 pt-2 gap-1">
-          <button
-            onClick={() => setTab("low-stock")}
-            className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-t-lg text-xs font-semibold transition-all duration-200 ${
-              tab === "low-stock"
-                ? "text-white"
-                : "text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-700"
-            }`}
-            style={tab === "low-stock" ? { background: `linear-gradient(to right, ${themeColors.danger}, ${themeColors.secondary})` } : {}}
-          >
-            <ExclamationTriangleIcon className="w-3.5 h-3.5" />
-            Low Stock
-            {count > 0 && (
-              <span className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold inline-flex items-center justify-center"
-                style={{ backgroundColor: tab === "low-stock" ? "rgba(255,255,255,0.3)" : themeColors.danger, color: "#fff" }}>
-                {count > 99 ? "99+" : count}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setTab("demands")}
-            className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-t-lg text-xs font-semibold transition-all duration-200 ${
-              tab === "demands"
-                ? "text-white"
-                : "text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-700"
-            }`}
-            style={tab === "demands" ? { background: `linear-gradient(to right, ${themeColors.tertiary}, ${themeColors.primary})` } : {}}
-          >
-            <HandRaisedIcon className="w-3.5 h-3.5" />
-            Demands
-            {demandCount > 0 && (
-              <span className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold inline-flex items-center justify-center"
-                style={{ backgroundColor: tab === "demands" ? "rgba(255,255,255,0.3)" : themeColors.tertiary, color: "#fff" }}>
-                {demandCount > 99 ? "99+" : demandCount}
-              </span>
-            )}
-          </button>
+        <div className="activity-list-heading">
+          <span>{tab === "demands" ? "Awaiting attention" : "Inventory watch"}</span>
+          <span className="activity-muted" aria-live="polite">{activeLoading ? "Updating…" : `${activeCount} ${tab === "demands" ? "pending" : "alerts"}`}</span>
         </div>
-
-{/* Body */}
-        <div className="h-[calc(100%-64px)] overflow-y-auto">
-          {tab === "demands" ? (
-            demandsLoading && demands.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-500 dark:text-gray-400">
-                <ArrowPathIcon className="w-8 h-8 animate-spin" style={{ color: themeColors.tertiary }} />
-                <span className="text-sm">Loading demands…</span>
-              </div>
-            ) : demands.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full gap-3 p-6 text-center">
-                <div className="p-4 rounded-2xl" style={{ backgroundColor: themeColors.tertiaryLight }}>
-                  <HandRaisedIcon className="w-10 h-10" style={{ color: themeColors.tertiary }} />
-                </div>
-                <h3 className="text-base font-semibold text-gray-800 dark:text-gray-100">No pending demands</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 max-w-[260px]">
-                  Customers haven't requested any new products yet. Click below to add one.
-                </p>
-                <button
-                  onClick={() => { onClose(); navigate("/user-demands/create"); }}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white mt-2"
-                  style={{ background: `linear-gradient(to right, ${themeColors.tertiary}, ${themeColors.primary})` }}
-                >
-                  <PlusCircleIcon className="w-4 h-4" />
-                  Request Product
+        {actionError && <p role="alert" className="activity-error">{actionError}</p>}
+        <div id="activity-tab-panel" role="tabpanel" aria-labelledby={`activity-tab-${tab}`}
+          tabIndex={0} aria-busy={activeLoading} className="activity-center-body">
+          {activeError ? (
+            <div className="activity-empty" role="alert">
+              <ExclamationTriangleIcon className="h-10 w-10 activity-danger" aria-hidden="true" />
+              <h3>Unable to load updates</h3><p className="activity-muted">{activeError}</p>
+              <button type="button" onClick={refresh} className="activity-secondary-button">Try again</button>
+            </div>
+          ) : activeLoading && (tab === "demands" ? demands.length : rows.length) === 0 ? (
+            <div className="activity-empty" role="status">
+              <ArrowPathIcon className="h-8 w-8 motion-safe:animate-spin" aria-hidden="true" />
+              <p>{tab === "demands" ? "Loading product demands…" : "Checking stock levels…"}</p>
+            </div>
+          ) : tab === "demands" ? (
+            demands.length === 0 ? (
+              <div className="activity-empty">
+                <span className="activity-empty-mark"><HandRaisedIcon className="h-8 w-8" aria-hidden="true" /></span>
+                <h3>No pending demands</h3>
+                <p className="activity-muted">New product requests will appear here. You can also create a request for a customer.</p>
+                <button type="button" onClick={() => { onClose(); navigate("/user-demands/create"); }} className="activity-secondary-button">
+                  <PlusCircleIcon className="h-5 w-5" aria-hidden="true" />Request product
                 </button>
               </div>
             ) : (
-              <div className="divide-y divide-gray-100 dark:divide-slate-700">
+              <ul className="activity-list">
                 {demands.map((d) => (
-                  <div
-                    key={d.id}
-                    className="p-4 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer"
-                    onClick={goToDemands}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 rounded-xl shrink-0" style={{ backgroundColor: themeColors.tertiaryLight }}>
-                        <HandRaisedIcon className="w-5 h-5" style={{ color: themeColors.tertiary }} />
-                      </div>
-<div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                          {d.requested_name || d.product?.name || "Product demand"}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          {(d.customer?.name || d.customer_name || "Walk-in customer")} · {d.requested_quantity || d.quantity_requested || 0} unit(s)
-                        </p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                          Requested {d.created_at ? new Date(d.created_at).toLocaleDateString() : ""}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                  <li key={d.id}>
+                    <button type="button" onClick={goToDemands} className="activity-card activity-demand-card">
+                      <span className="activity-card-topline"><span className="activity-status"><HandRaisedIcon className="h-4 w-4" aria-hidden="true" />Product request</span><ArrowRightIcon className="h-4 w-4 activity-muted" aria-hidden="true" /></span>
+                      <h3>{d.requested_name || d.product?.name || "Product demand"}</h3>
+                      <p className="activity-muted">{d.customer?.name || d.customer_name || "Walk-in customer"}</p>
+                      <div className="activity-card-meta"><span>{d.requested_quantity || d.quantity_requested || 0} unit(s) requested</span><span className="activity-muted">{d.created_at ? new Date(d.created_at).toLocaleDateString() : ""}</span></div>
+                    </button>
+                  </li>
                 ))}
-                <div className="p-3">
-                  <button
-                    onClick={goToDemands}
-                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.01]"
-                    style={{ background: `linear-gradient(to right, ${themeColors.tertiary}, ${themeColors.primary})` }}
-                  >
-                    View All Demands
-                    <ArrowRightIcon className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+              </ul>
             )
-          ) : loading && rows.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-500 dark:text-gray-400">
-              <ArrowPathIcon className="w-8 h-8 animate-spin" style={{ color: themeColors.secondary }} />
-              <span className="text-sm">Checking stock levels…</span>
-            </div>
           ) : rows.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full gap-3 p-6 text-center">
-              <div
-                className="p-4 rounded-2xl"
-                style={{ backgroundColor: themeColors.successLight || themeColors.tertiaryLight }}
-              >
-                <CheckCircleIcon className="w-10 h-10" style={{ color: themeColors.success_color || themeColors.tertiary }} />
-              </div>
-              <h3 className="text-base font-semibold text-gray-800 dark:text-gray-100">
-                All caught up!
-              </h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 max-w-[260px]">
-                No running products have dropped below their pack size. You'll be notified here when stock gets low.
-              </p>
+            <div className="activity-empty">
+              <span className="activity-empty-mark"><CheckCircleIcon className="h-8 w-8" aria-hidden="true" /></span>
+              <h3>All caught up</h3><p className="activity-muted">No running products have dropped below their pack size. New stock alerts will appear here.</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100 dark:divide-slate-700">
+            <ul className="activity-list">
               {rows.map((r) => {
                 const short = Number(r.units_below_pack || 0);
-                const soldPct = Math.min(
-                  100,
-                  Math.round((short / Math.max(Number(r.pack_size) || 1, 1)) * 100)
-                );
-return (
-                  <div
-                    key={r.product_id}
-                    className="p-4 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer"
-                    onClick={goToProducts}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div
-                        className="p-2 rounded-xl shrink-0"
-                        style={{ backgroundColor: themeColors.dangerLight || "#fee2e2" }}
-                      >
-                        <ExclamationTriangleIcon
-                          className="w-5 h-5"
-                          style={{ color: themeColors.danger }}
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
-                              {r.product_name}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                              {r.product_code} · {r.brand_name || "No brand"}
-                            </p>
-                          </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              dismissOne(r.product_id);
-                            }}
-                            title="Dismiss this notification"
-                            aria-label={`Dismiss notification for ${r.product_name}`}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-red-500 transition-all duration-200 shrink-0"
-                          >
-                            <XMarkIcon className="w-4 h-4" />
-                          </button>
-                        </div>
-
-                        {/* Progress bar */}
-                        <div className="mt-3">
-                          <div className="flex items-center justify-between text-xs mb-1">
-                            <span className="text-gray-500 dark:text-gray-400">
-                              Stock: <span className="font-bold text-gray-800 dark:text-gray-100">{fmtNumber(r.quantity)}</span> / pack {fmtNumber(r.pack_size)}
-                            </span>
-                            <span className="font-semibold" style={{ color: themeColors.danger }}>
-                              {fmtNumber(short)} below pack
-                            </span>
-                          </div>
-                          <div className="h-2 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all duration-500"
-                              style={{
-                                width: `${Math.max(0, 100 - soldPct)}%`,
-                                background: `linear-gradient(to right, ${themeColors.danger}, ${themeColors.secondary})`,
-                              }}
-                            />
-                          </div>
-                        </div>
-
-                        {(r.supplier_name || "") && (
-                          <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                            Supplier: {r.supplier_name}
-                          </p>
-                        )}
-                      </div>
+                const soldPct = Math.min(100, Math.round((short / Math.max(Number(r.pack_size) || 1, 1)) * 100));
+                return (
+                  <li key={r.product_id} className="activity-card">
+                    <div className="activity-card-topline">
+                      <span className="activity-status activity-danger"><ExclamationTriangleIcon className="h-4 w-4" aria-hidden="true" />Low stock</span>
+                      <button type="button" disabled={dismissBusy} onClick={() => dismissOne(r.product_id)} className="activity-icon-button"
+                        aria-label={`Dismiss notification for ${r.product_name}`} title="Dismiss alert"><XMarkIcon className="h-4 w-4" aria-hidden="true" /></button>
                     </div>
-                  </div>
+                    <button type="button" onClick={goToProducts} className="activity-product-link">
+                      <h3>{r.product_name}</h3><p className="activity-muted">{r.product_code} · {r.brand_name || "No brand"}</p>
+                    </button>
+                    <div className="activity-stock-values"><span>In stock <strong>{fmtNumber(r.quantity)}</strong></span><span>Pack size <strong>{fmtNumber(r.pack_size)}</strong></span></div>
+                    <div className="activity-stock-track" aria-hidden="true"><div style={{ width: `${Math.max(0, 100 - soldPct)}%` }} /></div>
+                    <p className="activity-stock-caption"><span className="activity-danger">{fmtNumber(short)} below pack</span><button type="button" onClick={goToProducts}>View products <ArrowRightIcon className="h-4 w-4" aria-hidden="true" /></button></p>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           )}
         </div>
-
-{/* Footer */}
-        {tab === "demands" && demands.length > 0 ? (
-          <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <button
-              onClick={goToDemands}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99]"
-              style={{
-                background: `linear-gradient(to right, ${themeColors.tertiary}, ${themeColors.primary})`,
-                boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`,
-              }}
-            >
-              View All Demands
-              <ArrowRightIcon className="w-4 h-4" />
-            </button>
-          </div>
-        ) : tab === "low-stock" && rows.length > 0 ? (
-          <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <button
-              onClick={goToProducts}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99]"
-              style={{
-                background: `linear-gradient(to right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-              }}
-            >
-              View Products
-              <ArrowRightIcon className="w-4 h-4" />
-            </button>
-          </div>
-        ) : null}
+        <footer className="activity-center-footer">
+          {tab === "low-stock" && rows.length > 0 && !activeError && (
+            <button type="button" onClick={dismissAll} disabled={dismissBusy} className="activity-dismiss-all"><BellSlashIcon className="h-4 w-4" aria-hidden="true" />{dismissBusy ? "Dismissing…" : "Dismiss all alerts"}</button>
+          )}
+          <button type="button" onClick={tab === "demands" ? goToDemands : goToProducts} className="activity-primary-button">
+            {tab === "demands" ? "View all demands" : "View all products"}<ArrowRightIcon className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </footer>
       </aside>
-    </>
+    </div>, document.body
   );
 }

@@ -248,6 +248,8 @@ Portal React Select menus, date pickers, and tooltips where clipping would occur
 
 Success toasts may dismiss automatically; actionable errors should remain visible long enough to read and resolve. Use inline messages for field-specific failures.
 
+The notification/demand center is a floating right-side glass panel, inset 16px on desktop and 8px on mobile, with a 440px maximum width and a 28px desktop radius. Render it in a body portal at layer 60, with a tinted blurred scrim behind it. Use a segmented Low stock / Demands selector with counts, readable alert cards, a scrolling list, and a footer that stays visible. Keep dismissal controls separate from product navigation. Refresh updates the selected category; loading failures show a retry state. Support keyboard tabs, focus containment, Escape, and focus restoration when closed.
+
 ## Motion
 
 | Interaction | Duration | Treatment |
