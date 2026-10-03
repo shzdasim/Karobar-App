@@ -1,5 +1,117 @@
 @import 'tailwindcss';
 
+/* Login: first screen migrated to the modern glass system in Design.md.
+   Keep tokens scoped so the remaining screens retain their current styling. */
+.login-page {
+  --login-canvas: #f2f5fa;
+  --login-surface: #fff;
+  --login-glass: rgba(255, 255, 255, 0.38);
+  --login-ink: var(--color-text-primary, #172033);
+  --login-muted: var(--color-text-secondary, #536176);
+  --login-accent: var(--color-primary-hover, #2563eb);
+  --login-accent-hover: #1d4ed8;
+  --login-on-accent: #fff;
+  --login-border: #d8e1ee;
+  --login-edge: rgba(255, 255, 255, 0.9);
+  --login-shadow: 0 24px 64px -24px rgba(30, 41, 59, 0.22);
+  --login-danger: #b91c1c;
+  --login-danger-fill: #fef2f2;
+  --login-warning: #92400e;
+  --login-warning-fill: #fffbeb;
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  overflow: hidden;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  color: var(--login-ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background:
+    radial-gradient(ellipse at 25% 25%, rgba(96, 165, 250, 0.38), transparent 55%),
+    radial-gradient(ellipse at 78% 75%, rgba(45, 212, 191, 0.25), transparent 55%),
+    var(--login-canvas);
+}
+.dark .login-page {
+  --login-canvas: #0b1220;
+  --login-surface: #172234;
+  --login-glass: rgba(23, 34, 52, 0.48);
+  --login-accent: var(--color-primary, #60a5fa);
+  --login-accent-hover: var(--color-primary-hover, #93c5fd);
+  --login-on-accent: #0b1220;
+  --login-border: #344258;
+  --login-edge: rgba(255, 255, 255, 0.12);
+  --login-shadow: 0 24px 64px -24px rgba(0, 0, 0, 0.55);
+  --login-danger: #fca5a5;
+  --login-danger-fill: #3b202b;
+  --login-warning: #fde68a;
+  --login-warning-fill: #332a1c;
+}
+.login-workspace { width: 100%; max-width: 440px; max-height: 100%; min-height: 0; display: flex; }
+body:has(.login-page) { overflow: hidden; transform: none; }
+.login-page::before { content: ""; position: absolute; z-index: -1; width: min(80vw, 720px); height: min(80vw, 720px); border: 1px solid var(--login-edge); border-radius: 50%; background: linear-gradient(135deg, rgba(255,255,255,0.16), transparent); transform: translate(28%, -18%); pointer-events: none; }
+.login-brand { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 20px; font-size: 24px; font-weight: 600; letter-spacing: -0.04em; }
+.login-logo { height: 36px; width: 36px; object-fit: contain; }
+.login-logo-fallback { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 12px; background: var(--login-accent); color: var(--login-on-accent); font-size: 20px; letter-spacing: -0.02em; }
+.login-brand-dot { color: var(--login-accent); }
+.login-card { width: 100%; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 28px 32px; border: 1px solid var(--login-edge); border-radius: 28px; background: var(--login-surface); box-shadow: inset 0 1px 0 var(--login-edge), inset 0 -1px 0 rgba(255,255,255,0.16), var(--login-shadow); }
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .login-card { background: var(--login-glass); -webkit-backdrop-filter: blur(28px) saturate(145%); backdrop-filter: blur(28px) saturate(145%); }
+}
+.login-icon-well { display: grid; place-items: center; width: 48px; height: 48px; margin-bottom: 24px; border-radius: 16px; background: color-mix(in srgb, var(--login-accent) 10%, var(--login-surface)); color: var(--login-accent); border: 1px solid color-mix(in srgb, var(--login-accent) 15%, transparent); }
+.login-heading { margin-bottom: 24px; text-align: center; }
+.login-eyebrow { font-size: 12px; font-weight: 500; color: var(--login-muted); margin-bottom: 8px; }
+.login-heading h1 { font-size: 1.75rem; line-height: 1.2; font-weight: 600; letter-spacing: -0.035em; margin-bottom: 12px; }
+.login-heading > p:last-child { font-size: 15px; line-height: 1.5; color: var(--login-muted); }
+.login-form { display: grid; gap: 16px; }
+.login-field { display: grid; gap: 8px; }
+.login-field label { font-size: 14px; font-weight: 500; }
+.login-input-wrap { position: relative; }
+.login-field-icon { position: absolute; top: 16px; left: 16px; width: 20px; height: 20px; color: var(--login-muted); pointer-events: none; }
+.login-page .login-input { display: block; width: 100%; height: 52px; padding: 12px 16px 12px 48px; border-radius: 12px; border: 1px solid var(--login-border); background: color-mix(in srgb, var(--login-surface) 76%, transparent); color: var(--login-ink); font-size: 1rem; line-height: 1.5; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02); backdrop-filter: none; -webkit-backdrop-filter: none; }
+.login-page .login-input::placeholder { color: var(--login-muted); opacity: 0.85; }
+.login-page .login-password { padding-right: 52px; }
+.login-password-toggle { position: absolute; top: 4px; right: 4px; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 8px; color: var(--login-muted); }
+.login-password-toggle:hover { color: var(--login-accent); background: color-mix(in srgb, var(--login-accent) 8%, transparent); }
+.login-options { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; column-gap: 12px; row-gap: 4px; font-size: 14px; }
+.login-remember { min-height: 44px; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.login-remember input { width: 18px; height: 18px; accent-color: var(--login-accent); }
+.login-duration { color: var(--login-muted); font-size: 12px; }
+.login-link { min-height: 44px; display: inline-flex; align-items: center; color: var(--login-accent); font-weight: 500; text-underline-offset: 4px; }
+.login-link:hover { text-decoration: underline; }
+.login-page .login-submit { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 52px; padding: 12px 20px; border-radius: 12px; background: var(--login-accent); color: var(--login-on-accent); font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px color-mix(in srgb, var(--login-accent) 18%, transparent); transition: background-color 150ms ease-out, transform 100ms ease-out; }
+.login-page .login-submit:hover:not(:disabled) { background: var(--login-accent-hover); }
+.login-page .login-submit:active:not(:disabled) { transform: scale(0.98); }
+.login-submit:disabled { opacity: 0.65; cursor: wait; }
+.login-session-note { margin-top: -8px; text-align: center; color: var(--login-muted); font-size: 12px; line-height: 1.5; }
+.login-message { display: flex; align-items: flex-start; gap: 8px; padding: 12px; margin-bottom: 12px; border: 1px solid currentColor; border-radius: 12px; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.login-message-error { color: var(--login-danger); background: var(--login-danger-fill); }
+.login-message-warning { color: var(--login-warning); background: var(--login-warning-fill); }
+.login-footer { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--login-border); text-align: center; color: var(--login-muted); font-size: 12px; line-height: 1.5; }
+.login-footer p { margin-bottom: 8px; font-size: 14px; }
+.login-page :is(input, button, a):focus-visible { outline: 2px solid var(--login-accent); outline-offset: 3px; }
+@media (max-width: 480px) {
+  .login-page { padding: 12px; }
+  .login-card { padding: 24px; }
+  .login-heading h1 { font-size: 1.625rem; }
+}
+@media (max-height: 650px) {
+  .login-card { padding: 20px 24px; }
+  .login-brand { margin-bottom: 12px; }
+  .login-heading { margin-bottom: 16px; }
+  .login-heading h1 { font-size: 1.5rem; margin-bottom: 8px; }
+  .login-form { gap: 12px; }
+  .login-footer { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-page *, .login-page *::before, .login-page *::after { animation: none !important; transition: none !important; }
+  .login-page .login-submit:active:not(:disabled) { transform: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .login-card { background: var(--login-surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
 @custom-variant dark (&:is(.dark *));
 
 /*

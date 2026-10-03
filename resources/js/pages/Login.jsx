@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import axios from "axios";
+import { ArrowRightIcon, ArrowPathIcon, EnvelopeIcon, LockClosedIcon, EyeIcon, EyeSlashIcon, ExclamationCircleIcon } from "@heroicons/react/24/outline";
 import { useAuth } from "../context/AuthContext.jsx";
 
 export default function Login() {
@@ -14,6 +15,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [sessionExpiring, setSessionExpiring] = useState(false);
+  const [logoUnavailable, setLogoUnavailable] = useState(false);
 
   // Load remembered email and check session expiry on mount
   useEffect(() => {
@@ -139,230 +141,78 @@ export default function Login() {
   }, [navigate, location, handleExpiredSession]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-[#2C5364] via-[#203A43] to-[#0F2027] p-4 relative overflow-hidden">
-      {/* Animated Background Shapes */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-[#639EA0] rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
-        <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-[#4A8082] rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
-        <div className="absolute bottom-[-20%] left-[20%] w-96 h-96 bg-[#639EA0] rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-4000"></div>
-        <div className="absolute bottom-[-20%] right-[20%] w-96 h-96 bg-[#4A8082] rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-blob animation-delay-6000"></div>
-      </div>
-
-      {/* Session Expiring Warning Banner */}
-      {sessionExpiring && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 px-6 py-3 rounded-xl backdrop-blur-xs animate-pulse">
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="text-sm font-medium">Your session is about to expire. Stay active or check "Remember Me".</span>
+    <main className="login-page">
+      <div className="login-workspace">
+        <section className="login-card" aria-labelledby="login-heading">
+          <div className="login-brand">
+            {logoUnavailable ? (
+              <span className="login-logo-fallback" aria-hidden="true">K</span>
+            ) : (
+              <img src="/logo.png" alt="" className="login-logo" onError={() => setLogoUnavailable(true)} />
+            )}
+            <span>Karobar<span className="login-brand-dot">.</span></span>
           </div>
-        </div>
-      )}
+          <header className="login-heading">
+            <h1 id="login-heading">Your workspace awaits.</h1>
+            <p>Sign in. Get back to business.</p>
+          </header>
 
-      {/* Login Card */}
-      <div className="relative bg-white/10 backdrop-blur-xl rounded-3xl shadow-2xl max-w-md w-full p-8 ring-1 ring-white/20 animate-fade-in-up">
-        {/* Decorative gradient border at top */}
-        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-24 h-1 bg-linear-to-r from-[#639EA0] to-[#4A8082] rounded-full"></div>
-
-        <div className="text-center space-y-2 mb-8">
-          {/* Logo with glow effect */}
-          <div className="relative inline-block">
-            <img
-              src="/logo.png"
-              alt="Karobar App Logo"
-              className="mx-auto h-20 w-auto drop-shadow-lg"
-            />
-            <div className="absolute inset-0 h-20 w-auto mx-auto bg-[#639EA0] rounded-full filter blur-xl opacity-20 animate-pulse"></div>
-          </div>
-          
-          {/* App Name */}
-          <h1 className="text-3xl font-bold text-white tracking-tight">
-            <span className="bg-linear-to-r from-[#639EA0] to-[#4A8082] bg-clip-text text-transparent">
-              Karobar App
-            </span>
-          </h1>
-          <p className="text-white/60 text-sm">Manage your business with ease</p>
-        </div>
-
-        {/* Error Message */}
-        {error && (
-          <div className="mb-6 bg-red-500/10 border border-red-500/20 text-red-300 p-4 rounded-xl text-sm animate-shake backdrop-blur-xs">
-            <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+          {sessionExpiring && (
+            <div className="login-message login-message-warning" role="status">
+              <ExclamationCircleIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
+              <span>Your session is about to expire. Sign in again to continue.</span>
+            </div>
+          )}
+          {error && (
+            <div id="login-error" className="login-message login-message-error" role="alert">
+              <ExclamationCircleIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
               <span>{error}</span>
             </div>
-          </div>
-        )}
+          )}
 
-        <form className="space-y-5" onSubmit={handleSubmit}>
-          {/* Email Input */}
-          <div className="space-y-1">
-            <label className="block text-white/80 text-sm font-medium ml-1">
-              Email Address
-            </label>
-            <div className="relative group">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <svg className="h-5 w-5 text-white/40 group-focus-within:text-[#639EA0] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
-                </svg>
+          <form onSubmit={handleSubmit} className="login-form" aria-busy={loading} aria-describedby={error ? "login-error" : undefined}>
+            <div className="login-field">
+              <label htmlFor="login-email">Email address</label>
+              <div className="login-input-wrap">
+                <EnvelopeIcon className="login-field-icon" aria-hidden="true" />
+                <input id="login-email" name="email" type="email" autoComplete="username"
+                  value={email} onChange={(e) => setEmail(e.target.value)}
+                  className="g-input login-input" placeholder="you@example.com" required />
               </div>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/40 focus:outline-hidden focus:ring-2 focus:ring-[#639EA0]/50 focus:border-[#639EA0]/50 transition-all duration-300 backdrop-blur-xs"
-                placeholder="admin@example.com"
-                required
-              />
             </div>
-          </div>
-
-          {/* Password Input */}
-          <div className="space-y-1">
-            <label className="block text-white/80 text-sm font-medium ml-1">
-              Password
-            </label>
-            <div className="relative group">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <svg className="h-5 w-5 text-white/40 group-focus-within:text-[#639EA0] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
+            <div className="login-field">
+              <label htmlFor="login-password">Password</label>
+              <div className="login-input-wrap">
+                <LockClosedIcon className="login-field-icon" aria-hidden="true" />
+                <input id="login-password" name="password" type={showPassword ? "text" : "password"}
+                  autoComplete="current-password" value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="g-input login-input login-password" placeholder="Enter your password" required />
+                <button type="button" onClick={() => setShowPassword(!showPassword)}
+                  className="login-password-toggle" aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword} aria-controls="login-password">
+                  {showPassword ? <EyeSlashIcon className="h-5 w-5" aria-hidden="true" /> : <EyeIcon className="h-5 w-5" aria-hidden="true" />}
+                </button>
               </div>
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-11 pr-11 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/40 focus:outline-hidden focus:ring-2 focus:ring-[#639EA0]/50 focus:border-[#639EA0]/50 transition-all duration-300 backdrop-blur-xs"
-                placeholder="••••••••"
-                required
-              />
-              {/* Password Toggle */}
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/40 hover:text-white transition-colors"
-              >
-                {showPassword ? (
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                  </svg>
-                ) : (
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                  </svg>
-                )}
-              </button>
             </div>
-          </div>
-
-          {/* Remember Me & Forgot Password */}
-          <div className="flex items-center justify-between">
-            <label className="flex items-center gap-3 cursor-pointer group">
-              <div className="relative">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="peer sr-only"
-                />
-                <div className="w-5 h-5 border-2 border-white/30 rounded-md peer-checked:bg-[#639EA0] peer-checked:border-[#639EA0] transition-all duration-300"></div>
-                <svg className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 text-white opacity-0 peer-checked:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-              <span className="text-white/70 text-sm group-hover:text-white transition-colors">Remember me (24h)</span>
-            </label>
-            
-            <a href="/forgot-password" className="text-white/50 text-sm hover:text-[#639EA0] transition-colors duration-300">
-              Forgot Password?
-            </a>
-          </div>
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 px-4 bg-linear-to-r from-[#639EA0] to-[#4A8082] text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 relative overflow-hidden group"
-          >
-            <span className="relative z-10 flex items-center justify-center gap-2">
-              {loading ? (
-                <>
-                  <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Logging in...
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-                  </svg>
-                  Login
-                </>
-              )}
-            </span>
-            {/* Button glow effect */}
-            <div className="absolute inset-0 bg-linear-to-r from-[#4A8082] to-[#639EA0] opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
-          </button>
-        </form>
-
-        {/* Footer */}
-        <div className="mt-8 text-center">
-          <p className="text-white/40 text-xs">
-            {rememberMe ? 'Session lasts 24 hours' : 'Session lasts 20 minutes'} • Karobar App v2.0
-          </p>
-        </div>
+            <div className="login-options">
+              <label className="login-remember">
+                <input type="checkbox" name="remember" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
+                <span>Remember me <span className="login-duration">(24h)</span></span>
+              </label>
+              <a href="/forgot-password" className="login-link">Forgot password?</a>
+            </div>
+            <button type="submit" disabled={loading} className="g-btn-primary login-submit">
+              <span>{loading ? "Signing in…" : "Sign in"}</span>
+              {loading ? <ArrowPathIcon className="h-5 w-5 motion-safe:animate-spin" aria-hidden="true" /> : <ArrowRightIcon className="h-5 w-5" aria-hidden="true" />}
+            </button>
+            <p className="login-session-note" aria-live="polite">
+              {rememberMe ? "Stay signed in for 24 hours on this device." : "Your session lasts 20 minutes."}
+            </p>
+          </form>
+          <footer className="login-footer">Inventory · Sales · Insights</footer>
+        </section>
       </div>
-
-      {/* CSS Animations */}
-      <style>{`
-        @keyframes blob {
-          0% { transform: translate(0px, 0px) scale(1); }
-          33% { transform: translate(30px, -50px) scale(1.1); }
-          66% { transform: translate(-20px, 20px) scale(0.9); }
-          100% { transform: translate(0px, 0px) scale(1); }
-        }
-        .animate-blob {
-          animation: blob 7s infinite;
-        }
-        .animation-delay-2000 {
-          animation-delay: 2s;
-        }
-        .animation-delay-4000 {
-          animation-delay: 4s;
-        }
-        .animation-delay-6000 {
-          animation-delay: 6s;
-        }
-        @keyframes fade-in-up {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        .animate-fade-in-up {
-          animation: fade-in-up 0.6s ease-out forwards;
-        }
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          10%, 90% { transform: translateX(-2px); }
-          20%, 80% { transform: translateX(4px); }
-          30%, 50%, 70% { transform: translateX(-8px); }
-          40%, 60% { transform: translateX(8px); }
-        }
-        .animate-shake {
-          animation: shake 0.4s ease-in-out;
-        }
-      `}</style>
-    </div>
+    </main>
   );
 }
