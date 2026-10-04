@@ -1009,3 +1009,98 @@ body {
 @media (min-width: 1100px) { .directory-grid { grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); } .directory-grid > :only-child { grid-column: 1 / -1; } }
 @media (max-width: 640px) { .directory-page, .directory-grid { gap: 16px; } .directory-search { padding: 0 16px 16px; } .directory-page .products-heading > div:last-child { width: 100%; } }
 @media (prefers-reduced-transparency: reduce) { .directory-page .directory-panel { background: var(--workspace-surface); backdrop-filter: none; -webkit-backdrop-filter: none; } }
+
+/* Purchase invoice list: glass framing and stable financial reading surfaces. */
+.purchase-invoices-page { display: grid; gap: 20px; min-width: 0; color: var(--workspace-ink); }
+.purchase-invoice-filters { padding: 0 24px 24px; }
+.purchase-invoice-filter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.purchase-invoice-filter { display: grid; gap: 8px; min-width: 0; font-size: var(--type-label); }
+.purchase-invoices-page .g-input { min-height: 44px; height: auto; padding: 10px 12px; background: var(--workspace-reading-fill); color: var(--workspace-ink); border: 1px solid var(--workspace-border); border-radius: 12px; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.purchase-invoices-page .directory-search-field .g-input { padding-left: 44px; }
+.purchase-invoices-page select { min-height: 44px; background: var(--workspace-surface); color: var(--workspace-ink); border-color: var(--workspace-border); }
+.purchase-invoice-catalog { overflow: hidden; }
+.purchase-invoice-table-scroll { max-height: 65vh; overflow: auto; background: var(--workspace-reading-fill); border-block: 1px solid var(--workspace-border); }
+.purchase-invoice-table-scroll table { min-width: 64rem; }
+.purchase-invoice-table-scroll th { padding: 14px 12px; color: var(--workspace-muted); background: var(--workspace-surface); text-transform: none; letter-spacing: normal; }
+.purchase-invoice-table-scroll td { background: var(--workspace-reading-fill); border-bottom: 1px solid var(--workspace-border); padding-block: 12px; }
+.purchase-invoice-table-scroll td.text-right { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.purchase-invoice-table-scroll tr:hover td { background: color-mix(in srgb, var(--workspace-accent) 6%, var(--workspace-surface)); }
+.purchase-invoices-page .products-pagination { gap: 12px; }
+.purchase-invoices-page .products-pagination > div { flex-wrap: wrap; }
+.purchase-invoices-page :is(button, a, input, select, [tabindex]):focus-visible { outline: 2px solid var(--workspace-accent); outline-offset: 3px; }
+.purchase-invoices-page .purchase-invoice-delete-panel { background: var(--workspace-surface); border: 1px solid var(--workspace-edge); border-radius: 20px; contain: none; transform: none; will-change: auto; }
+.purchase-invoice-delete-panel button { min-height: 44px; }
+@media (max-width: 640px) { .purchase-invoice-filter-grid { grid-template-columns: minmax(0, 1fr); } .purchase-invoice-filters { padding: 0 16px 16px; } .purchase-invoices-page .products-heading > div:last-child { width: 100%; } }
+
+/* Purchase entry: material refresh only; original layout and dimensions stay in JSX. */
+.purchase-entry { color: var(--workspace-ink); background: var(--workspace-panel-fill); }
+.purchase-entry-header, .purchase-entry-footer { background: var(--workspace-surface); border-color: var(--workspace-border); }
+.purchase-entry-banner { background: var(--workspace-panel-fill); }
+.purchase-entry-icon { color: var(--workspace-accent); background: color-mix(in srgb, var(--workspace-accent) 12%, var(--workspace-surface)); }
+.purchase-entry-type { border: 1px solid var(--workspace-border); background: var(--workspace-reading-fill); }
+.purchase-entry-type-button { color: var(--workspace-muted); }
+.purchase-entry-type-button.is-active { color: var(--workspace-accent); background: color-mix(in srgb, var(--workspace-accent) 12%, var(--workspace-surface)); }
+.purchase-entry-add-product { color: var(--workspace-accent); background: var(--workspace-reading-fill); border: 1px solid var(--workspace-border); }
+.purchase-entry-details { background: var(--workspace-panel-fill); border-color: var(--workspace-border); }
+.purchase-entry label { color: var(--workspace-muted); }
+.purchase-entry input { background: var(--workspace-reading-fill); color: var(--workspace-ink); border-color: var(--workspace-border); font-variant-numeric: tabular-nums; }
+.purchase-entry input[readonly] { background: color-mix(in srgb, var(--workspace-surface) 75%, var(--workspace-canvas)); }
+.purchase-entry-items { background: var(--workspace-reading-fill); }
+.purchase-entry-items :is(th, td) { border-color: var(--workspace-border); background: var(--workspace-reading-fill); color: var(--workspace-ink); }
+.purchase-entry-items th { background: var(--workspace-surface); }
+.purchase-entry-items .products-row-action { width: 24px; height: 24px; border-radius: 6px; }
+.purchase-entry :is(button, input, a):focus-visible { outline: 2px solid var(--workspace-accent); outline-offset: 2px; }
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .purchase-entry-header, .purchase-entry-footer { background: var(--workspace-panel-fill); backdrop-filter: blur(24px) saturate(140%); -webkit-backdrop-filter: blur(24px) saturate(140%); } }
+@media (prefers-reduced-transparency: reduce) { .purchase-entry, .purchase-entry-header, .purchase-entry-footer { background: var(--workspace-surface); backdrop-filter: none; -webkit-backdrop-filter: none; } }
+
+/* Refined purchase material: keep the existing geometry, soften the spreadsheet chrome. */
+.purchase-entry { border-radius: 20px; background: var(--workspace-panel-fill); box-shadow: inset 0 0 0 1px var(--workspace-edge), var(--workspace-shadow); }
+.purchase-entry-header { border-radius: 20px 20px 0 0; box-shadow: inset 0 1px 0 var(--workspace-edge), 0 8px 20px -18px var(--workspace-ink); }
+.purchase-entry-banner { border-radius: 20px 20px 0 0; background: linear-gradient(110deg, color-mix(in srgb, var(--workspace-accent) 6%, transparent), transparent 70%); }
+.purchase-entry-icon { box-shadow: inset 0 1px 0 var(--workspace-edge); }
+.purchase-entry-type { box-shadow: inset 0 1px 0 var(--workspace-edge); background: color-mix(in srgb, var(--workspace-surface) 60%, transparent); }
+.purchase-entry-type-button.is-active { background: var(--workspace-surface); box-shadow: 0 2px 6px -3px color-mix(in srgb, var(--workspace-ink) 25%, transparent); }
+.purchase-entry-add-product { box-shadow: inset 0 1px 0 var(--workspace-edge); }
+.purchase-entry-add-product svg { display: inline-block; vertical-align: middle; }
+.purchase-entry-details { background: transparent; }
+.purchase-entry-details label, .purchase-entry-footer label { text-transform: none; letter-spacing: normal; }
+.purchase-entry input { border-radius: 6px; box-shadow: inset 0 1px 0 var(--workspace-edge); }
+.purchase-entry-details button { background: var(--workspace-reading-fill); border-color: var(--workspace-border); color: var(--workspace-ink) !important; }
+.purchase-entry-details button span { color: var(--workspace-ink) !important; }
+.purchase-entry-items { background: color-mix(in srgb, var(--workspace-surface) 92%, var(--workspace-canvas)); }
+.purchase-entry-items thead :is(th, td) { background: color-mix(in srgb, var(--workspace-accent) 6%, var(--workspace-surface)); border-inline-color: transparent; border-bottom-color: var(--workspace-border); color: var(--workspace-muted); }
+.purchase-entry-items tbody td { border-inline-color: transparent; border-block-color: color-mix(in srgb, var(--workspace-border) 55%, transparent); background: transparent; }
+.purchase-entry-items tbody tr:focus-within td, .purchase-entry-items tbody tr:hover td { background: color-mix(in srgb, var(--workspace-accent) 4%, var(--workspace-surface)); }
+.purchase-entry-items input:not([readonly]) { border-color: color-mix(in srgb, var(--workspace-border) 55%, transparent); background: var(--workspace-surface); box-shadow: none; }
+.purchase-entry-items input[readonly] { border-color: transparent; box-shadow: none; }
+.purchase-entry input.text-red-600 { color: var(--color-danger, #dc2626); }
+.purchase-entry-footer { border-radius: 0 0 20px 20px; box-shadow: inset 0 1px 0 var(--workspace-edge), 0 -8px 20px -18px var(--workspace-ink); }
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .purchase-entry-header { background: var(--workspace-navigation-fill); backdrop-filter: blur(28px) saturate(145%); -webkit-backdrop-filter: blur(28px) saturate(145%); }
+  .purchase-entry-footer { background: var(--workspace-panel-fill); }
+}
+@media (prefers-reduced-transparency: reduce) { .purchase-entry, .purchase-entry-header, .purchase-entry-footer { background: var(--workspace-surface); backdrop-filter: none; -webkit-backdrop-filter: none; } }
+
+/* Keep purchase entry within the workspace without changing its field layout. */
+.purchase-entry-page { width: 100%; min-width: 0; }
+.purchase-entry-page .purchase-entry { width: 100%; min-width: 0; }
+
+/* Purchase entry contrast: distinguish editable fields and accounting sections. */
+.purchase-entry { --purchase-field-border: color-mix(in srgb, var(--workspace-ink) 50%, var(--workspace-surface)); }
+.purchase-entry-banner { background: linear-gradient(110deg, color-mix(in srgb, var(--workspace-accent) 16%, transparent), color-mix(in srgb, var(--color-secondary, var(--workspace-accent)) 8%, transparent)); box-shadow: inset 0 -1px 0 var(--workspace-border); }
+.purchase-entry-details { background: color-mix(in srgb, var(--workspace-accent) 5%, transparent); }
+.purchase-entry-details label, .purchase-entry-footer label { color: var(--workspace-ink); }
+.purchase-entry input, .purchase-entry-items input:not([readonly]), .purchase-entry-items input[readonly] { border-color: var(--purchase-field-border); border-style: solid; box-shadow: inset 0 1px 0 var(--workspace-edge); }
+.purchase-entry input:not([readonly]) { background: var(--workspace-surface); }
+.purchase-entry input[readonly] { background: color-mix(in srgb, var(--workspace-accent) 9%, var(--workspace-surface)); }
+.purchase-entry input::placeholder { color: var(--workspace-muted); opacity: 1; }
+.purchase-entry-details button { border-color: var(--purchase-field-border); }
+.purchase-entry-type { border-color: var(--purchase-field-border); }
+.purchase-entry-type-button.is-active { background: color-mix(in srgb, var(--workspace-accent) 16%, var(--workspace-surface)); }
+.purchase-entry-items { background: color-mix(in srgb, var(--workspace-accent) 3%, var(--workspace-canvas)); }
+.purchase-entry-items > h2 { color: var(--workspace-accent); background: color-mix(in srgb, var(--workspace-accent) 9%, var(--workspace-surface)); box-shadow: inset 3px 0 0 var(--workspace-accent); }
+.purchase-entry-items thead th { color: var(--workspace-ink); border-inline-color: var(--workspace-border); background: color-mix(in srgb, var(--workspace-accent) 12%, var(--workspace-surface)); }
+.purchase-entry-items thead tr:first-child th:nth-child(3n) { background: color-mix(in srgb, var(--color-secondary, var(--workspace-accent)) 12%, var(--workspace-surface)); }
+.purchase-entry-items tbody td { border-inline-color: var(--workspace-border); border-block-color: var(--workspace-border); background: color-mix(in srgb, var(--workspace-surface) 96%, var(--workspace-canvas)); }
+.purchase-entry-items tbody tr:focus-within td { background: color-mix(in srgb, var(--workspace-accent) 9%, var(--workspace-surface)); }
+.purchase-entry-footer { background: color-mix(in srgb, var(--color-secondary, var(--workspace-accent)) 7%, var(--workspace-surface)); }

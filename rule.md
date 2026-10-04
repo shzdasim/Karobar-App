@@ -74,6 +74,8 @@ A related, confirmed defect may be fixed when the task authorizes fixes. Describ
 | Functional frontend/backend | Relevant regression tests and appropriate build checks; preserve API and business invariants |
 | Print/report presentation | Inspect the affected print/PDF output as well as the on-screen view |
 
+Browser review is required for every UI change before reporting it complete. Inspect the actual affected screen; build success alone is not visual validation. If the browser is unavailable, report that limitation explicitly.
+
 For visual changes, check a narrow mobile viewport, a desktop viewport, keyboard navigation, enlarged text, contrast, and overlay positioning. Check custom themes when touching theme integration. Do not claim browser or device testing that was not performed.
 
 Do not add tests that only repeat implementation details for a low-impact style or documentation edit. Add meaningful regression coverage for changed behavior, especially authentication, permissions, calculations, and persistence.

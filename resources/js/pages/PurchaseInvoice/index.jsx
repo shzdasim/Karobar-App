@@ -337,25 +337,17 @@ export default function PurchaseInvoicesIndex() {
   const hasActions = can.view || can.update || can.delete;
 
   return (
-    <div className="p-3 md:p-4 space-y-4">
-      {/* ===== Premium Hero Header ===== */}
-      <div
-        className="relative rounded-2xl overflow-hidden shadow-lg"
-        style={{ background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})` }}
-      >
-        {/* Decorative blurred blobs */}
-        <div className="absolute -top-10 -right-8 w-64 h-64 rounded-full bg-white/15 blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-16 left-1/4 w-72 h-72 rounded-full bg-white/10 blur-3xl pointer-events-none" />
-
+    <div className="purchase-invoices-page">
+      <div className="products-panel">
         {/* Top row */}
-        <div className="relative px-6 pt-5 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="products-heading">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm shadow-inner flex items-center justify-center">
-              <ClipboardDocumentListIcon className="w-6 h-6 text-white" />
+            <div className="products-identity-icon">
+              <ClipboardDocumentListIcon className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-2xl font-extrabold tracking-wide text-white leading-none">Purchase Invoices</h1>
-              <p className="text-xs text-white/85 mt-1.5 flex items-center gap-1.5">
+              <h1 className="products-title">Purchase Invoices</h1>
+              <p className="products-subtitle">
                 <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
                 {total} invoices
               </p>
@@ -372,55 +364,53 @@ export default function PurchaseInvoicesIndex() {
                 fetchInvoices(ctrl.signal);
               }}
               title="Refresh"
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm transition-all duration-200"
+              className="products-action"
             >
               <ArrowPathIcon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Refresh</span>
+              <span>Refresh</span>
             </button>
 
             <Guard when={can.create}>
               <Link
                 to="/purchase-invoices/create"
-                className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-bold text-white bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
-                style={{ color: themeColors.primaryHover }}
+                className="products-action products-action-primary"
               >
                 <PlusCircleIcon className="w-4 h-4" />
-                <span className="hidden sm:inline">Add Invoice</span>
-                <span className="sm:hidden">Add</span>
+                <span>Add Invoice</span>
               </Link>
             </Guard>
           </div>
         </div>
 
         {/* Filter bar integrated in hero */}
-        <div className="relative px-6 pt-2 pb-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-white/15 backdrop-blur-sm border border-white/20 rounded-xl p-3">
-            <div className="flex items-center gap-2">
-              <MagnifyingGlassIcon className="w-4 h-4 text-white/80 shrink-0" />
+        <div className="purchase-invoice-filters">
+          <div className="purchase-invoice-filter-grid">
+            <label className="purchase-invoice-filter"><span>Posted number</span><div className="directory-search-field">
+              <MagnifyingGlassIcon className="directory-search-icon" />
               <GlassInput
                 value={qPosted}
                 onChange={(e) => setQPosted(e.target.value)}
                 placeholder="Search by Posted No..."
                 className="w-full"
               />
-            </div>
-            <div className="flex items-center gap-2">
-              <MagnifyingGlassIcon className="w-4 h-4 text-white/80 shrink-0" />
+            </div></label>
+            <label className="purchase-invoice-filter"><span>Supplier</span><div className="directory-search-field">
+              <MagnifyingGlassIcon className="directory-search-icon" />
               <GlassInput
                 value={qSupplier}
                 onChange={(e) => setQSupplier(e.target.value)}
                 placeholder="Search by Supplier..."
                 className="w-full"
               />
-            </div>
+            </div></label>
           </div>
         </div>
       </div>
 
       {/* ===== Table Card ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden hover:shadow-lg transition-shadow duration-300">
+      <div className="products-panel purchase-invoice-catalog">
         {/* Table Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+        <div className="products-catalog-heading">
           <div className="flex items-center gap-2.5">
             <div 
               className="p-2 rounded-xl shadow-xs"
@@ -448,8 +438,9 @@ export default function PurchaseInvoicesIndex() {
 
           {/* Page Size Selector */}
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-gray-50 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Show</label>
+            <label htmlFor="purchase-invoice-page-size" className="text-xs font-medium">Show</label>
             <select
+              id="purchase-invoice-page-size"
               value={pageSize}
               onChange={(e) => setPageSize(Number(e.target.value))}
               className="h-7 px-2 rounded-sm border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:border-transparent cursor-pointer"
@@ -467,7 +458,7 @@ export default function PurchaseInvoicesIndex() {
           </div>
         </div>
 
-        <div className="max-h-[65vh] overflow-auto">
+        <div className="purchase-invoice-table-scroll" tabIndex={0} role="region" aria-label="Purchase invoice list" aria-busy={loading}>
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
               <tr className="text-left">
@@ -532,12 +523,11 @@ export default function PurchaseInvoicesIndex() {
                         <Guard when={can.view}>
                           <Link
                             to={`/purchase-invoices/${inv.id}`}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm text-xs font-medium ${btnPrimary.className}`}
-                            style={btnPrimary.style}
+                            className="products-row-action"
+                            aria-label={`View invoice ${inv.posted_number || inv.invoice_number}`}
                             title={`View ${inv.posted_number || inv.invoice_number}`}
                           >
-                            <EyeIcon className="w-3.5 h-3.5" />
-                            View
+                            <EyeIcon aria-hidden="true" className="w-4 h-4" />
                           </Link>
                         </Guard>
 
@@ -545,12 +535,11 @@ export default function PurchaseInvoicesIndex() {
                         <Guard when={can.update}>
                           <Link
                             to={`/purchase-invoices/${inv.id}/edit`}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm text-xs font-medium ${btnSecondary.className}`}
-                            style={btnSecondary.style}
+                            className="products-row-action"
+                            aria-label={`Edit invoice ${inv.posted_number || inv.invoice_number}`}
                             title={`Edit ${inv.posted_number || inv.invoice_number}`}
                           >
-                            <PencilSquareIcon className="w-3.5 h-3.5" />
-                            Edit
+                            <PencilSquareIcon aria-hidden="true" className="w-4 h-4" />
                           </Link>
                         </Guard>
 
@@ -558,12 +547,11 @@ export default function PurchaseInvoicesIndex() {
                         <Guard when={can.delete}>
                           <button
                             onClick={() => openDeleteModal(inv)}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm text-xs font-medium ${btnDanger.className}`}
-                            style={btnDanger.style}
+                            className="products-row-action products-row-delete"
+                            aria-label={`Delete invoice ${inv.posted_number || inv.invoice_number}`}
                             title="Delete invoice"
                           >
-                            <TrashIcon className="w-3.5 h-3.5" />
-                            Delete
+                            <TrashIcon aria-hidden="true" className="w-4 h-4" />
                           </button>
                         </Guard>
                       </div>
@@ -576,13 +564,14 @@ export default function PurchaseInvoicesIndex() {
         </div>
 
         {/* Compact Pagination */}
-        <div className="px-3 py-2 flex items-center justify-between border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50 text-xs">
+        <div className="products-pagination">
           <span className="text-gray-500 dark:text-gray-400">
             Page {page} of {lastPage} ({total} total)
           </span>
           
           <div className="flex items-center gap-1">
             <button 
+              aria-label="First page"
               onClick={() => setPage(1)} 
               disabled={page === 1}
               className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
@@ -590,6 +579,7 @@ export default function PurchaseInvoicesIndex() {
               ⏮
             </button>
             <button 
+              aria-label="Previous page"
               onClick={() => setPage((p) => Math.max(1, p - 1))} 
               disabled={page === 1}
               className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
@@ -630,6 +620,7 @@ export default function PurchaseInvoicesIndex() {
             </div>
             
             <button 
+              aria-label="Next page"
               onClick={() => setPage((p) => Math.min(lastPage, p + 1))} 
               disabled={page === lastPage}
               className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
@@ -637,6 +628,7 @@ export default function PurchaseInvoicesIndex() {
               ▶
             </button>
             <button 
+              aria-label="Last page"
               onClick={() => setPage(lastPage)} 
               disabled={page === lastPage}
               className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
@@ -657,7 +649,7 @@ export default function PurchaseInvoicesIndex() {
         >
           <div className="absolute inset-0 bg-black/40" />
           <div className="relative w-full max-w-md">
-            <GlassCard>
+            <GlassCard className="purchase-invoice-delete-panel">
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
                 <div className="flex items-center gap-2">
                   <div 
@@ -674,6 +666,7 @@ export default function PurchaseInvoicesIndex() {
                 <GlassBtn 
                   className={`h-8 px-2 ${btnGlass.className}`} 
                   onClick={closeDeleteModal}
+                  aria-label="Close delete confirmation"
                   style={btnGlass.style}
                 >
                   <XMarkIcon className="w-4 h-4" />

@@ -43,6 +43,10 @@ Product forms retain the original layout: image and identifiers first, name/form
 
 Category, supplier, customer, and brand directories share a glass overview with search and import/export/refresh actions. Place the add/edit form beside a wider readable list on desktop; stack them on mobile. Keep table scrolling contained and preserve permissions, validation, image upload, pagination, and deletion restrictions.
 
+The purchase invoice list uses a glass header with labeled posted-number and supplier filters. Keep financial data on a nearly opaque table with contained scrolling and shared view/edit/delete icons. Preserve invoice type badges, amount precision, pagination, and the password-confirmed deletion workflow.
+
+Purchase invoice entry must retain its original layout and sizing: the 12-column details row, compact item table, sticky header/footer, existing scroll region, and payment panel. Apply material and icon updates only; do not reorganize fields or resize controls. Use luminous frosted header/footer framing, a subtle accent wash, clearly visible input borders, shaded read-only values, tinted item-column groups, and distinct totals surfaces. Avoid heavy spreadsheet gridlines and saturated title bars. Keep readable inputs, contained item-table scrolling, and shared add/remove icons. Preserve all calculations, row keyboard navigation, wholesale field visibility, payment linking, supplier search, and product creation workflows.
+
 On mobile, replace the inset desktop sidebar with the existing drawer behavior. Keep a compact glass topbar, stack panels, and let filter controls wrap. Use no horizontal page overflow; only wide data regions may scroll horizontally.
 
 The login screen shares the pearl/midnight canvas and cobalt accent. Center a single 440px maximum-width glass panel with a 28px radius, store/app identity, a short heading, and clearly labeled fields. On wide screens, a quiet brand illustration area may sit beside the form only when it adds meaning; the baseline design needs no new image assets.

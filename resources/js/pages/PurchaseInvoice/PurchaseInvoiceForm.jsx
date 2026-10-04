@@ -8,7 +8,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 import ProductFormModal from "../../components/ProductFormModal.jsx";
 import SupplierSearch from "../../components/SupplierSearch.jsx";
-import { BuildingStorefrontIcon } from "@heroicons/react/24/solid";
+import { BuildingStorefrontIcon, TrashIcon, PlusCircleIcon } from "@heroicons/react/24/solid";
 
 // Helper to determine text color based on background brightness
 // Returns dark text for light backgrounds, light text for dark backgrounds
@@ -1000,26 +1000,22 @@ const contRect = container.getBoundingClientRect();
 
   return (
     <form
-      className="flex flex-col h-full"
+      className="purchase-entry flex flex-col h-full"
       style={{ minHeight: "calc(100vh - 130px)", maxHeight: "calc(100vh - 130px)" }}
       autoComplete="off" // disable browser suggestions globally
     >
 {/* ================= HEADER SECTION ================= */}
-      <div className="sticky top-0 z-10 shadow-lg" autoComplete="off">
+      <div className="purchase-entry-header sticky top-0 z-10 shadow-lg" autoComplete="off">
 {/* ---- Branded Title Banner ---- */}
         <div
-          className="px-4 py-3 flex items-center justify-between"
-          style={{
-            background: themeColors.primary,
-          }}
+          className="purchase-entry-banner px-4 py-3 flex items-center justify-between"
         >
           <div className="flex items-center gap-3">
             <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center shadow-inner"
-              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
+              className="purchase-entry-icon w-10 h-10 rounded-xl flex items-center justify-center shadow-inner"
             >
               {/* Document / invoice icon */}
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
                 <line x1="8" y1="13" x2="16" y2="13" />
@@ -1027,10 +1023,8 @@ const contRect = container.getBoundingClientRect();
               </svg>
             </div>
             <div>
-              <h2 className="text-xl font-extrabold tracking-wide text-white leading-none">
-                PURCHASE INVOICE
-              </h2>
-              <p className="text-[11px] text-white/80 mt-1">
+              <h2 className="purchase-entry-title text-xl font-semibold leading-none">Purchase Invoice</h2>
+              <p className="products-subtitle">
                 Enter to navigate · Alt+S to save
               </p>
             </div>
@@ -1039,8 +1033,7 @@ const contRect = container.getBoundingClientRect();
           <div className="flex items-center gap-3">
             {/* Invoice Type Segmented Control */}
             <div
-              className="flex items-center rounded-lg p-1 shadow-inner"
-              style={{ backgroundColor: "rgba(0,0,0,0.18)" }}
+              className="purchase-entry-type flex items-center rounded-lg p-1 shadow-inner"
             >
               {["debit", "credit"].map((type) => {
                 const active = form.invoice_type === type;
@@ -1049,15 +1042,10 @@ const contRect = container.getBoundingClientRect();
                     key={type}
                     type="button"
                     onClick={() => handleInvoiceTypeChange(type)}
-                    className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-all duration-200 ${
-                      active ? "text-white shadow-sm" : "text-white/80 hover:text-white"
-                    }`}
-                    style={{
-                      backgroundColor: active ? "rgba(255,255,255,0.22)" : "transparent",
-                      backdropFilter: active ? "blur(4px)" : "none",
-                    }}
+                    aria-pressed={active}
+                    className={`purchase-entry-type-button px-4 py-1.5 text-xs font-semibold rounded-md ${active ? "is-active" : ""}`}
                   >
-                    {type === "debit" ? "💳 Debit" : "🤝 Credit"}
+                    {type === "debit" ? "Debit" : "Credit"}
                   </button>
                 );
               })}
@@ -1067,16 +1055,15 @@ const contRect = container.getBoundingClientRect();
             <button
               type="button"
               onClick={() => setShowProductModal(true)}
-              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all duration-200 bg-white/95 hover:bg-white shadow-sm`}
-              style={{ color: themeColors.primaryHover }}
+              className="purchase-entry-add-product px-4 py-2 text-xs font-semibold rounded-lg"
             >
-              + Add Product
+              <PlusCircleIcon aria-hidden="true" className="w-4 h-4" /> Add Product
             </button>
           </div>
         </div>
 
         {/* ---- Fields Card ---- */}
-        <div className="bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 px-3 py-2.5">
+        <div className="purchase-entry-details px-3 py-2.5 border-b">
 <div className="grid grid-cols-12 gap-2 items-end">
             {/* Posted Number - first */}
             <div className="col-span-2">
@@ -1201,7 +1188,7 @@ const contRect = container.getBoundingClientRect();
       </div>
 
       {/* ================= ITEMS SECTION ================= */}
-      <div ref={itemsScrollRef} className="flex-1 min-h-0 overflow-auto pt-1 px-1 pb-16 bg-gray-50 dark:bg-slate-800/50" autoComplete="off">
+      <div ref={itemsScrollRef} className="purchase-entry-items flex-1 min-h-0 overflow-auto pt-1 px-1 pb-16" autoComplete="off">
         <h2 className="text-xs font-bold mb-1 text-gray-900 dark:text-gray-100">Items (↑↓ arrows to navigate rows)</h2>
 
         <table className="w-full border-collapse text-[11px]">
@@ -1249,10 +1236,11 @@ const contRect = container.getBoundingClientRect();
                   <button
                     type="button"
                     onClick={() => removeItem(i)}
-                    className={`px-1 rounded-sm text-[10px] transition-all duration-200 ${btnDanger.className}`}
-                    style={btnDanger.style}
+                    className="products-row-action products-row-delete"
+                    aria-label={`Remove item ${i + 1}`}
+                    title="Remove item"
                   >
-                    X
+                    <TrashIcon aria-hidden="true" className="w-4 h-4" />
                   </button>
                 </td>
 
@@ -1610,10 +1598,11 @@ const contRect = container.getBoundingClientRect();
                   <button
                     type="button"
                     onClick={addItem}
-                    className={`px-1 rounded-sm text-[10px] transition-all duration-200 ${btnSecondary.className}`}
-                    style={btnSecondary.style}
+                    className="products-row-action"
+                    aria-label="Add item"
+                    title="Add item"
                   >
-                    +
+                    <PlusCircleIcon aria-hidden="true" className="w-4 h-4" />
                   </button>
                 </td>
               </tr>
@@ -1623,7 +1612,7 @@ const contRect = container.getBoundingClientRect();
       </div>
 
       {/* ================= FOOTER SECTION ================= */}
-      <div className="sticky bottom-0 z-10 bg-white dark:bg-slate-800 shadow-[0_-4px_16px_-6px_rgba(0,0,0,0.18)] border-t border-gray-200 dark:border-slate-700" autoComplete="off">
+      <div className="purchase-entry-footer sticky bottom-0 z-10 border-t shadow-[0_-4px_16px_-6px_rgba(0,0,0,0.18)]" autoComplete="off">
         <div className="px-4 py-3">
           <div className="flex gap-5">
             {/* ---- Left: Invoice Summary Breakdown ---- */}
