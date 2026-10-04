@@ -344,13 +344,11 @@ export default function PurchaseReturnsIndex() {
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view purchase returns.</div>;
 
   return (
-    <div className="p-3 md:p-4 space-y-4">
+    <div className="purchase-return-list sale-invoice-list space-y-4">
       {/* ===== Premium Gradient Hero Header ===== */}
       <div
-        className="relative overflow-hidden rounded-2xl shadow-lg"
-        style={{
-          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
-        }}
+        className="sale-list-header relative overflow-hidden"
+
       >
         {/* Decorative blurred blobs */}
         <div
@@ -419,6 +417,7 @@ export default function PurchaseReturnsIndex() {
               </div>
               <input
                 type="text"
+                aria-label="Search by posted number"
                 value={qPosted}
                 onChange={(e) => setQPosted(e.target.value)}
                 placeholder="Search by Posted No (e.g., PRRET-0001)…"
@@ -432,6 +431,7 @@ export default function PurchaseReturnsIndex() {
               </div>
               <input
                 type="text"
+                aria-label="Search by supplier"
                 value={qSupplier}
                 onChange={(e) => setQSupplier(e.target.value)}
                 placeholder="Search by Supplier…"
@@ -444,7 +444,7 @@ export default function PurchaseReturnsIndex() {
       </div>
 
       {/* ===== Returns Table Card ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden hover:shadow-lg transition-shadow duration-300">
+      <div className="sale-list-table rounded-2xl overflow-hidden">
         {/* Table Header */}
         <div className="flex items-center justify-between px-4 py-3 bg-gray-50/70 dark:bg-slate-800/70 border-b border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2">
@@ -577,12 +577,11 @@ export default function PurchaseReturnsIndex() {
                           <Guard when={can.update}>
                             <Link
                               to={`/purchase-returns/${ret.id}/edit`}
-                              className={`group inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnPrimary.className}`}
-                              style={btnPrimary.style}
-                              title="Edit"
+                              className="products-row-action"
+                              title="Edit" aria-label="Edit purchase return"
                             >
                               <PencilSquareIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                              <span>Edit</span>
+                              
                             </Link>
                           </Guard>
 
@@ -590,12 +589,11 @@ export default function PurchaseReturnsIndex() {
                           <Guard when={can.delete}>
                             <button
                               onClick={() => openDeleteModal(ret)}
-                              className={`group inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnDanger.className}`}
-                              style={btnDanger.style}
-                              title="Delete"
+                              className="products-row-action products-row-action-danger"
+                              title="Delete" aria-label="Delete purchase return"
                             >
                               <TrashIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                              <span>Delete</span>
+                              
                             </button>
                           </Guard>
                         </div>
