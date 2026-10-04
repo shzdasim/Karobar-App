@@ -12,8 +12,9 @@ import {
   MagnifyingGlassIcon,
   CubeIcon,
   TagIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/solid";
-import { GlassCard, GlassToolbar } from "@/components/glass";
+import { GlassToolbar } from "@/components/glass";
 
 const ProductSearchInput = forwardRef(
   ({ value, onChange, products, onRefreshProducts, onKeyDown: onKeyDownProp, className = "" }, ref) => {
@@ -47,12 +48,6 @@ const MIN_WIDTH = 640;
       };
     });
     const [windowSize, setWindowSize] = useState({ width: 960, height: 600 });
-
-    // Scale text with modal size so it doesn't stay huge/bold on small screens
-    const scale = useMemo(() => {
-      const s = Math.min(windowSize.width / 960, windowSize.height / 600);
-      return Math.min(Math.max(s, 0.7), 1.3);
-    }, [windowSize]);
 
     // Load saved modal size & position from DB preferences on mount
     useEffect(() => {
@@ -432,7 +427,7 @@ const stopResize = () => {
     return (
       <>
 {/* Trigger Input — shows selected product like other selects */}
-        <div className="relative w-full">
+        <div className="product-search-trigger relative w-full">
           <input
             ref={triggerRef}
             type="text"
@@ -470,7 +465,7 @@ className={`w-full h-6 text-sm px-1 rounded-md text-left cursor-pointer transiti
         {isOpen &&
           createPortal(
             <div
-              className="fixed inset-0 z-10000 bg-black/50"
+              className="product-search-overlay fixed inset-0 z-10000"
               onKeyDown={handleModalKeyDown}
               onClick={(e) => {
                 if (e.target === e.currentTarget) closeModal();
@@ -479,7 +474,8 @@ className={`w-full h-6 text-sm px-1 rounded-md text-left cursor-pointer transiti
               {/* Draggable + Resizable Dialog */}
               <div
                 ref={modalRef}
-                className="absolute bg-white dark:bg-slate-800 rounded-xl shadow-2xl ring-1 ring-slate-200/50 dark:ring-slate-700/50 flex flex-col overflow-hidden"
+                className="product-search-dialog absolute flex flex-col overflow-hidden"
+                role="dialog" aria-modal="true" aria-label="Search products"
                 style={{
                   left: `${windowPos.x}px`,
                   top: `${windowPos.y}px`,
@@ -488,7 +484,6 @@ className={`w-full h-6 text-sm px-1 rounded-md text-left cursor-pointer transiti
                   minWidth: `${MIN_WIDTH}px`,
                   minHeight: `${MIN_HEIGHT}px`,
                   userSelect: isResizing ? "none" : undefined,
-                  fontSize: `${14 * scale}px`,
                 }}
               >
                 {/* Resize handles (all sides & corners) */}
@@ -496,12 +491,14 @@ className={`w-full h-6 text-sm px-1 rounded-md text-left cursor-pointer transiti
 
                 {/* Header (Draggable) */}
                 <div
-                  className="flex items-center gap-3 px-5 py-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 cursor-move select-none"
+                  className="product-search-header flex items-center gap-3 px-5 py-3 cursor-move select-none"
                   onMouseDown={startDrag}
                 >
                   <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 shrink-0" />
                   <input
                     ref={searchRef}
+                    aria-label="Search by product name, code, or barcode"
+                    onMouseDown={(e) => e.stopPropagation()}
                     type="text"
                     value={search}
                     onChange={handleSearchChange}
@@ -514,16 +511,17 @@ className={`w-full h-6 text-sm px-1 rounded-md text-left cursor-pointer transiti
                   <kbd className="text-[0.714em] border border-slate-200 dark:border-slate-600 rounded-sm px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-mono shrink-0">
                     Esc
                   </kbd>
+                  <button type="button" className="product-search-close" aria-label="Close product search" onMouseDown={(e) => e.stopPropagation()} onClick={closeModal}><XMarkIcon aria-hidden="true" /></button>
                 </div>
 
                   {/* Results table */}
                   {filtered.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-14 text-slate-400">
+                    <div className="product-search-empty flex flex-col items-center justify-center py-14">
                       <CubeIcon className="w-8 h-8 mb-2" />
                       <span className="text-[1em]">No products found</span>
                     </div>
                   ) : (
-                    <div ref={listRef} className="max-h-[58vh] overflow-y-auto">
+                    <div ref={listRef} className="product-search-results">
                       <table className="w-full border-collapse text-[0.857em]">
                         {/* Grouped header */}
 <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-600">
@@ -560,16 +558,14 @@ className={`w-full h-6 text-sm px-1 rounded-md text-left cursor-pointer transiti
                             const trend = qtyNum == null || packSizeNum == null
                               ? null
                               : (qtyNum < packSizeNum ? "down" : "up");
-const rowCls = active
-                              ? "bg-linear-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30"
-                              : "hover:bg-slate-50 dark:hover:bg-slate-700/30";
                             return (
                               <tr
                                 key={p.id}
                                 ref={(el) => (rowRefs.current[idx] = el)}
                                 onMouseEnter={() => setHighlightIndex(idx)}
                                 onClick={() => handleSelect(p)}
-                                className={`cursor-pointer border-b border-slate-100 dark:border-slate-700/50 ${rowCls}`}
+                                className={`product-search-row cursor-pointer ${active ? "is-active" : ""}`}
+                                aria-selected={active}
                                 title="Select product"
                                 aria-label="Select product"
                               >
@@ -670,7 +666,7 @@ const rowCls = active
                   )}
 
 {/* Footer */}
-                  <GlassToolbar className="items-center justify-between py-2 px-4 bg-slate-50/80 dark:bg-slate-800/80 border-t border-slate-100 dark:border-slate-700">
+                  <GlassToolbar className="product-search-footer items-center justify-between py-2 px-4">
                     <div className="text-[0.857em] text-slate-500 dark:text-slate-400">
                       {search ? (
                         <>

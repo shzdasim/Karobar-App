@@ -19,9 +19,10 @@ Read this file and [Design.md](Design.md) before changing the frontend. These ru
 5. Support both light and dark modes. Preserve saved custom theme values, branding, `theme_mode`, and existing theme field names. New defaults must not overwrite existing theme records.
 6. Keep glass strongest in navigation and more opaque behind forms, tables, menus, and financial data. Provide a solid fallback. Never reduce legibility to make the glass effect stronger.
 7. Keep essential text at least 12px, numeric data aligned and readable, touch controls usable, and keyboard focus visible. Include reduced-motion behavior for new motion.
-8. Prefer local component classes to global selectors. Review every shared style change for its effects on other screens, dialogs, dropdowns, sticky headers, and print views.
-9. Preserve layouts on mobile and at enlarged text sizes. Contain wide-table scrolling; do not hide essential data or actions solely to simplify a layout.
-10. If the user requests a lasting visual exception, implement it within scope and update `Design.md` to describe the decision. Do not silently rewrite these rules to justify a change.
+8. Keep regular form fields borderless, distinguished by their reading surface. Use visible resting borders only for small/compact fields or repeated table inputs; retain keyboard focus, validation, and forced-colors indicators.
+9. Prefer local component classes to global selectors. Review every shared style change for its effects on other screens, dialogs, dropdowns, sticky headers, and print views.
+10. Preserve layouts on mobile and at enlarged text sizes. Contain wide-table scrolling; do not hide essential data or actions solely to simplify a layout.
+11. If the user requests a lasting visual exception, implement it within scope and update `Design.md` to describe the decision. Do not silently rewrite these rules to justify a change.
 
 ## Protect business behavior
 

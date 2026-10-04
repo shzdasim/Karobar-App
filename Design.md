@@ -45,7 +45,9 @@ Category, supplier, customer, and brand directories share a glass overview with 
 
 The purchase invoice list uses a glass header with labeled posted-number and supplier filters. Keep financial data on a nearly opaque table with contained scrolling and shared view/edit/delete icons. Preserve invoice type badges, amount precision, pagination, and the password-confirmed deletion workflow.
 
-Purchase invoice entry must retain its original layout and sizing: the 12-column details row, compact item table, sticky header/footer, existing scroll region, and payment panel. Apply material and icon updates only; do not reorganize fields or resize controls. Use luminous frosted header/footer framing, a subtle accent wash, clearly visible input borders, shaded read-only values, tinted item-column groups, and distinct totals surfaces. Avoid heavy spreadsheet gridlines and saturated title bars. Keep readable inputs, contained item-table scrolling, and shared add/remove icons. Preserve all calculations, row keyboard navigation, wholesale field visibility, payment linking, supplier search, and product creation workflows.
+Purchase invoice entry must retain its original layout and sizing: the 12-column details row, compact item table, sticky header/footer, existing scroll region, and payment panel. Apply material and icon updates only; do not reorganize fields or resize controls. Use luminous frosted header/footer framing, a subtle accent wash, visible borders on compact and repeated table fields, borderless standard field surfaces, shaded read-only values, tinted item-column groups, and distinct totals surfaces. Avoid heavy spreadsheet gridlines and saturated title bars. Keep readable inputs, contained item-table scrolling, and shared add/remove icons. Preserve all calculations, row keyboard navigation, wholesale field visibility, payment linking, supplier search, and product creation workflows.
+
+Purchase invoice details use the same tinted glass frame, borderless read-only detail surfaces, grouped item headings, and a distinct totals band. Keep compact item values outlined and horizontally scrollable; stack details and totals on narrow screens. Use shared action icons and preserve displayed precision, permissions, invoice search, and password-confirmed deletion.
 
 On mobile, replace the inset desktop sidebar with the existing drawer behavior. Keep a compact glass topbar, stack panels, and let filter controls wrap. Use no horizontal page overflow; only wide data regions may scroll horizontally.
 
@@ -228,13 +230,15 @@ On mobile, use the existing sidebar as a drawer, stack form fields and filters, 
 
 The topbar and sidebar use floating glass with clear separation from content. Selected navigation uses an accent wash, a readable label, and a stable indicator. Preserve store branding and existing navigation structure. Keep breadcrumbs and page titles on content surfaces, with one clear primary action per page where possible.
 
+Product search dialogs use a frosted frame, borderless search surface, consistent table typography, tinted grouped headings, and an accent edge on the active result. Keep numerical values readable, low-stock warnings visible, and wide results scrolling inside the dialog. Preserve keyboard selection, search criteria, and saved desktop position/size. Compact invoice-table triggers retain their field borders.
+
 ### Buttons and controls
 
 Primary actions use an opaque accent fill; secondary actions use a reading surface and border; tertiary actions use a quiet text or icon treatment. Reserve red for destructive actions. Show hover, pressed, focus, loading, and disabled states consistently. During saving, retain the action label and prevent duplicate submission. Icon-only controls need accessible names and tooltips when useful.
 
 ### Forms and login
 
-Use persistent labels above fields, 8px label-to-field spacing, and 16–24px between field groups. Values remain readable over a nearly opaque fill. Show field errors beside the relevant input and preserve entered values after failures. Required and invalid states must have text or symbols as well as color.
+Use persistent labels above fields, 8px label-to-field spacing, and 16–24px between field groups. Values remain readable over a nearly opaque fill. Regular form inputs, textareas, and selects use borderless surfaces with clear contrast against their section. Reserve visible resting borders for small, compact controls and repeated inputs in tables. Preserve focus outlines, invalid-state indicators, and forced-colors boundaries. Show field errors beside the relevant input and preserve entered values after failures. Required and invalid states must have text or symbols as well as color.
 
 The login page may use a more expressive static background and a single glass card. Keep fields and the sign-in action prominent. Harmonize its existing teal variation with the selected brand palette during implementation. Give password visibility controls accessible labels and display authentication errors clearly.
 

@@ -1,6 +1,7 @@
 // src/components/ProductFormModal.jsx
 import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle, useMemo } from "react";
 import axios from "axios";
+import { CubeIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import Select from "react-select";
 import AsyncSelect from "react-select/async";
 import toast from "react-hot-toast";
@@ -436,47 +437,33 @@ const stopDrag = () => {
     );
   };
 
-  // Select styles
-  const getSmallSelectStyles = (isDarkMode = false) => ({
-    control: (base) => ({
-      ...base,
-      minHeight: "32px",
-      height: "32px",
-      fontSize: "12px",
-      borderRadius: 8,
-      borderColor: isDarkMode ? "rgba(71,85,105,0.8)" : "rgba(229,231,235,0.8)",
-      backgroundColor: isDarkMode ? "rgba(51,65,85,0.7)" : "rgba(255,255,255,0.7)",
-      backdropFilter: "blur(6px)",
-    }),
-    valueContainer: (base) => ({ ...base, height: "32px", padding: "0 8px" }),
-    input: (base) => ({ ...base, margin: 0, padding: 0 }),
-    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-    menu: (base) => ({
-      ...base,
-      fontSize: "12px",
-      borderRadius: 8,
-      backgroundColor: isDarkMode ? "rgba(30,41,59,0.95)" : "rgba(255,255,255,0.95)",
-      backdropFilter: "blur(10px)",
-    }),
-    option: (base, state) => ({
-      ...base,
-      backgroundColor: isDarkMode
-        ? state.isFocused ? "rgba(71,85,105,1)" : "rgba(51,65,85,1)"
-        : state.isFocused ? "rgba(241,245,249,1)" : "rgba(255,255,255,1)",
-      cursor: "pointer",
-    }),
+  // Use the same readable surfaces as the modal; menus portal above its overlay.
+  const getSmallSelectStyles = () => ({
+    control: (base, state) => ({ ...base, minHeight: 40, fontSize: "var(--type-input)", borderRadius: 10,
+      borderColor: state.isFocused ? "var(--color-primary, #2563eb)" : "transparent",
+      backgroundColor: "var(--color-surface, #fff)", boxShadow: state.isFocused ? "0 0 0 2px var(--color-border, #cbd5e1)" : "none" }),
+    valueContainer: (base) => ({ ...base, padding: "0 10px" }),
+    input: (base) => ({ ...base, color: "var(--color-text-primary, #172033)", margin: 0, padding: 0 }),
+    singleValue: (base) => ({ ...base, color: "var(--color-text-primary, #172033)" }),
+    placeholder: (base) => ({ ...base, color: "var(--color-text-secondary, #536176)" }),
+    menuPortal: (base) => ({ ...base, zIndex: 10002 }),
+    menu: (base) => ({ ...base, fontSize: "var(--type-body)", borderRadius: 10, overflow: "hidden",
+      color: "var(--color-text-primary, #172033)", backgroundColor: "var(--color-surface, #fff)", border: "1px solid var(--color-border, #cbd5e1)", boxShadow: "0 12px 32px -12px rgba(15,23,42,.3)" }),
+    option: (base, state) => ({ ...base, color: "var(--color-text-primary, #172033)",
+      backgroundColor: state.isFocused || state.isSelected ? "color-mix(in srgb, var(--color-primary, #2563eb) 16%, var(--color-surface, #fff))" : "var(--color-surface, #fff)", cursor: "pointer" }),
   });
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-10000 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={handleClose} />
+    <div className="product-modal-overlay fixed inset-0 z-10000 flex items-center justify-center">
+      <div className="product-modal-backdrop absolute inset-0" onClick={handleClose} />
 
       {/* Draggable Dialog */}
       <div
         ref={modalRef}
-        className="absolute bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-600 flex flex-col"
+        className="product-modal-dialog absolute flex flex-col"
+        role="dialog" aria-modal="true" aria-labelledby="product-modal-title"
 style={{
           left: `${windowPos.x}px`,
           top: `${windowPos.y}px`,
@@ -492,23 +479,25 @@ style={{
 
         {/* Header (Draggable) */}
         <div
-          className="px-4 py-3 border-b flex items-center justify-between cursor-move bg-gray-50 dark:bg-slate-700 rounded-t-xl border-gray-200 dark:border-slate-600"
+          className="product-modal-header px-4 py-3 flex items-center justify-between cursor-move"
           onMouseDown={startDrag}
         >
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Add New Product</h3>
+          <div className="product-modal-heading"><span className="product-modal-icon"><CubeIcon aria-hidden="true" /></span><div><h3 id="product-modal-title">Add New Product</h3><p>Product details and inventory classification</p></div></div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleClose}
-              className="text-xs px-2 py-1 rounded-sm hover:bg-gray-100 dark:hover:bg-slate-600 text-gray-900 dark:text-gray-100"
+              className="product-modal-close"
+              aria-label="Close product form"
+              onMouseDown={(e) => e.stopPropagation()}
             >
-              ✕
+              <XMarkIcon aria-hidden="true" />
             </button>
           </div>
         </div>
 
         {/* Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-auto p-4">
+        <form onSubmit={handleSubmit} className="product-modal-body flex-1 overflow-auto p-4">
           <div className="space-y-3">
             {/* Code / Barcode inline */}
             <div className="grid grid-cols-3 gap-3">
@@ -695,15 +684,15 @@ onKeyDown={(e) => {
         </form>
 
         {/* Footer */}
-        <div className="px-4 py-3 border-t flex items-center justify-between bg-gray-50 dark:bg-slate-700 rounded-b-xl border-gray-200 dark:border-slate-600">
-          <div className="text-[10px] text-gray-500 dark:text-gray-400">
+        <div className="product-modal-footer px-4 py-3 flex items-center justify-between">
+          <div className="product-modal-shortcuts">
             Alt+S to save • Esc to close
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleClose}
-              className="px-3 py-1.5 text-xs rounded-sm border dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-600"
+              className="product-modal-cancel"
             >
               Cancel
             </button>
@@ -712,7 +701,7 @@ onKeyDown={(e) => {
               type="button"
               onClick={handleSubmit}
               disabled={saving}
-              className="px-4 py-1.5 text-xs rounded-sm text-white transition-all duration-200"
+              className="product-modal-save transition-all duration-200"
               style={{ 
                 background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
                 color: primaryTextColor,

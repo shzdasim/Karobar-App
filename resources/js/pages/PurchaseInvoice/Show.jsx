@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
+import { DocumentTextIcon, MagnifyingGlassIcon, PencilSquareIcon, TrashIcon, PlusIcon, ArrowLeftIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext";
@@ -307,69 +308,31 @@ export default function PurchaseInvoiceShow() {
 
 return (
     <div
-      className="flex flex-col dark:bg-slate-800"
+      className="purchase-show flex flex-col"
       style={{ minHeight: "calc(100vh - 130px)", maxHeight: "calc(100vh - 130px)" }}
       autoComplete="off"
     >
       {/* ================= HEADER SECTION ================= */}
-      <div className="sticky top-0 z-10 shadow-lg" autoComplete="off">
+      <div className="purchase-show-header sticky top-0 z-10" autoComplete="off">
         {/* ---- Branded Title Banner ---- */}
-        <div
-          className="px-4 py-3 flex items-center justify-between"
-          style={{
-            background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          }}
-        >
+        <div className="purchase-show-banner px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center shadow-inner"
-              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
-            >
-              {/* Document / invoice icon */}
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="8" y1="13" x2="16" y2="13" />
-                <line x1="8" y1="17" x2="13" y2="17" />
-              </svg>
-            </div>
+            <div className="purchase-show-icon"><DocumentTextIcon aria-hidden="true" /></div>
             <div>
-              <h2 className="text-xl font-extrabold tracking-wide text-white leading-none">
-                PURCHASE INVOICE
+              <h2 className="purchase-show-title">
+                Purchase Invoice
               </h2>
-              <p className="text-[11px] text-white/80 mt-1">
+              <p className="purchase-show-shortcuts mt-1">
                 Alt+E Edit · Alt+D Delete · Alt+N New · Alt+B Back
               </p>
             </div>
           </div>
 
-          {/* Invoice Type Badge (read-only) */}
-          <div
-            className="flex items-center rounded-lg p-1 shadow-inner"
-            style={{ backgroundColor: "rgba(0,0,0,0.18)" }}
-          >
-            {["debit", "credit"].map((t) => {
-              const active = inv.invoice_type === t;
-              return (
-                <span
-                  key={t}
-                  className={`px-4 py-1.5 text-xs font-semibold rounded-md ${
-                    active ? "text-white shadow-sm" : "text-white/70"
-                  }`}
-                  style={{
-                    backgroundColor: active ? "rgba(255,255,255,0.22)" : "transparent",
-                    backdropFilter: active ? "blur(4px)" : "none",
-                  }}
-                >
-                  {t === "debit" ? "💳 Debit" : "🤝 Credit"}
-                </span>
-              );
-            })}
-          </div>
+          <span className="purchase-show-type">{inv.invoice_type === "credit" ? "Credit" : "Debit"}</span>
         </div>
 
         {/* ---- Fields Card ---- */}
-        <div className="bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 px-3 py-2.5">
+        <div className="purchase-show-details px-3 py-2.5">
           <div className="grid grid-cols-12 gap-2 items-end">
             {/* Posted Number */}
             <div className="col-span-2">
@@ -458,7 +421,7 @@ return (
           </div>
 
           {/* Remarks + Actions row */}
-          <div className="mt-2 flex items-end gap-3">
+          <div className="purchase-show-remarks mt-2 flex items-end gap-3">
             <div className="flex-1">
               <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Remarks</label>
               <input
@@ -480,7 +443,7 @@ return (
                 style={btnSecondary.style}
                 title="Alt+F"
               >
-                🔍 Search
+                <MagnifyingGlassIcon aria-hidden="true" /> Search
               </button>
               <Guard when={can.update}>
                 <button
@@ -490,7 +453,7 @@ return (
                   style={btnSecondary.style}
                   title="Alt+E"
                 >
-                  ✏️ Edit
+                  <PencilSquareIcon aria-hidden="true" /> Edit
                 </button>
               </Guard>
               <Guard when={can.delete}>
@@ -501,7 +464,7 @@ return (
                   style={btnDanger.style}
                   title="Alt+D"
                 >
-                  🗑 Delete
+                  <TrashIcon aria-hidden="true" /> Delete
                 </button>
               </Guard>
               <Guard when={can.create}>
@@ -512,7 +475,7 @@ return (
                   style={btnPrimary.style}
                   title="Alt+N"
                 >
-                  ➕ New
+                  <PlusIcon aria-hidden="true" /> New
                 </button>
               </Guard>
               <button
@@ -522,7 +485,7 @@ return (
                 style={btnGlass.style}
                 title="Alt+B"
               >
-                ← Back
+                <ArrowLeftIcon aria-hidden="true" /> Back
               </button>
             </div>
           </div>
@@ -530,7 +493,7 @@ return (
       </div>
 
 {/* ================= ITEMS SECTION ================= */}
-      <div className="flex-1 min-h-0 overflow-auto p-1 dark:bg-slate-800" autoComplete="off">
+      <div className="purchase-show-items flex-1 min-h-0 overflow-auto p-1" autoComplete="off">
         <h2 className="text-xs font-bold mb-1 dark:text-gray-200">Items</h2>
 
         <table className="w-full border-collapse text-[11px]">
@@ -782,7 +745,7 @@ return (
       </div>
 
       {/* ================= FOOTER SECTION ================= */}
-      <div className="sticky bottom-0 bg-white dark:bg-slate-800 shadow-sm p-2 z-10 dark:shadow-slate-700" autoComplete="off">
+      <div className="purchase-show-footer sticky bottom-0 p-2 z-10" autoComplete="off">
         <table className="w-full border-collapse text-xs">
           <tbody>
             <tr>
@@ -870,7 +833,7 @@ return (
                   className={`w-full px-3 py-2 rounded-sm text-xs font-semibold transition-all duration-200 mb-1 ${btnSecondary.className}`}
                   style={btnSecondary.style}
                 >
-                  ✏️ Edit
+                  <PencilSquareIcon aria-hidden="true" /> Edit
                 </button>
                 <button
                   type="button"
@@ -878,7 +841,7 @@ return (
                   className={`w-full px-3 py-2 rounded-sm text-xs font-semibold transition-all duration-200 ${btnPrimary.className}`}
                   style={btnPrimary.style}
                 >
-                  ➕ New Invoice
+                  <PlusIcon aria-hidden="true" /> New Invoice
                 </button>
               </td>
             </tr>
@@ -892,7 +855,7 @@ return (
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
           onClick={(e) => { if (e.target === e.currentTarget) closeDeleteModal(); }}
         >
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-5">
+          <div className="purchase-show-delete w-full max-w-md p-5" role="dialog" aria-modal="true" aria-label="Delete purchase invoice">
             {deleteStep === 1 && (
               <div>
                 <h2 className="text-lg font-semibold mb-2 dark:text-gray-200">Delete purchase invoice?</h2>
@@ -947,7 +910,7 @@ return (
                     onClick={() => setDeleteStep(1)}
                     disabled={deleting}
                   >
-                    ← Back
+                    <ArrowLeftIcon aria-hidden="true" /> Back
                   </button>
                   <div className="flex gap-2">
                     <button 
