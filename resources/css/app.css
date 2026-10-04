@@ -977,3 +977,35 @@ body {
   .product-form-page-heading > div:last-child { width: 100%; }
 }
 @media (prefers-reduced-transparency: reduce) { .product-form-panel { background: var(--workspace-surface); backdrop-filter: none; -webkit-backdrop-filter: none; } }
+
+/* Shared glass directories: categories, suppliers, customers, and brands. */
+.directory-page { display: grid; gap: 20px; min-width: 0; color: var(--workspace-ink); }
+.directory-grid { display: grid; gap: 20px; min-width: 0; align-items: start; }
+.directory-page .directory-panel { min-width: 0; background: var(--workspace-surface); border: 1px solid var(--workspace-edge); border-radius: 20px; box-shadow: inset 0 1px 0 var(--workspace-edge), var(--workspace-shadow); contain: none; transform: none; will-change: auto; }
+.directory-panel-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 18px; border-bottom: 1px solid var(--workspace-border); }
+.directory-form-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; color: var(--workspace-accent); background: color-mix(in srgb, var(--workspace-accent) 12%, var(--workspace-surface)); }
+.directory-form form { padding: 18px; }
+.directory-search { padding: 0 24px 20px; }
+.directory-search-field { position: relative; max-width: 720px; }
+.directory-search-icon { position: absolute; z-index: 1; left: 14px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; color: var(--workspace-muted); pointer-events: none; }
+.directory-page .directory-search-field .g-input { padding-left: 44px; }
+.directory-page .g-input, .directory-page textarea { height: auto; min-height: 44px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--workspace-border); color: var(--workspace-ink); background: var(--workspace-reading-fill); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: inset 0 1px 0 var(--workspace-edge); }
+.directory-page .g-input::placeholder, .directory-page textarea::placeholder { color: var(--workspace-muted); }
+.directory-page .g-input:disabled { opacity: .65; }
+.directory-page button { min-height: 44px; }
+.directory-page button:disabled { opacity: .5; cursor: not-allowed; }
+.directory-page :is(input, textarea, button, a, select):focus-visible { outline: 2px solid var(--workspace-accent); outline-offset: 3px; }
+.directory-table-scroll { overflow: auto; max-height: 60vh; border: 1px solid var(--workspace-border); border-radius: 14px; background: var(--workspace-reading-fill); }
+.directory-table-scroll table { width: 100%; min-width: 28rem; }
+.directory-table-scroll thead { z-index: 1; background: var(--workspace-surface); }
+.directory-table-scroll th { background: var(--workspace-surface); color: var(--workspace-muted); text-transform: none; letter-spacing: normal; padding: 14px 12px; }
+.directory-table-scroll td { border-bottom: 1px solid var(--workspace-border); background: var(--workspace-reading-fill); vertical-align: middle; }
+.directory-table-scroll tr:hover td { background: color-mix(in srgb, var(--workspace-accent) 6%, var(--workspace-surface)); }
+.directory-page .filepond--root { font-family: var(--font-ui); }
+.directory-page .filepond--panel-root { background: var(--workspace-reading-fill); }
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .directory-page .directory-panel { background: linear-gradient(135deg, color-mix(in srgb, var(--workspace-surface) 14%, transparent), transparent 65%), var(--workspace-panel-fill); backdrop-filter: blur(24px) saturate(140%); -webkit-backdrop-filter: blur(24px) saturate(140%); }
+}
+@media (min-width: 1100px) { .directory-grid { grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); } .directory-grid > :only-child { grid-column: 1 / -1; } }
+@media (max-width: 640px) { .directory-page, .directory-grid { gap: 16px; } .directory-search { padding: 0 16px 16px; } .directory-page .products-heading > div:last-child { width: 100%; } }
+@media (prefers-reduced-transparency: reduce) { .directory-page .directory-panel { background: var(--workspace-surface); backdrop-filter: none; -webkit-backdrop-filter: none; } }

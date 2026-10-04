@@ -41,6 +41,8 @@ Product listings use a frosted overview panel with a large title, visible action
 
 Product forms retain the original layout: image and identifiers first, name/formulation/pack size next, then category/brand/supplier, description, and the compact pricing row. Refresh materials with frosted framing and readable input surfaces while keeping shared typography. Keep batches beside the edit form on wide screens; contain horizontal pricing-table scrolling where needed. Do not replace this arrangement with side-by-side sections or a pricing card grid.
 
+Category, supplier, customer, and brand directories share a glass overview with search and import/export/refresh actions. Place the add/edit form beside a wider readable list on desktop; stack them on mobile. Keep table scrolling contained and preserve permissions, validation, image upload, pagination, and deletion restrictions.
+
 On mobile, replace the inset desktop sidebar with the existing drawer behavior. Keep a compact glass topbar, stack panels, and let filter controls wrap. Use no horizontal page overflow; only wide data regions may scroll horizontally.
 
 The login screen shares the pearl/midnight canvas and cobalt accent. Center a single 440px maximum-width glass panel with a 28px radius, store/app identity, a short heading, and clearly labeled fields. On wide screens, a quiet brand illustration area may sit beside the form only when it adds meaning; the baseline design needs no new image assets.
@@ -287,3 +289,5 @@ Use `cubic-bezier(0.2, 0.8, 0.2, 1)` for entrances. Avoid `transition: all`, ani
 5. Verify light/dark themes, custom theme colors, keyboard use, mobile layouts, reduced motion/transparency, dropdown layering, and print output.
 
 For each screen, confirm that the primary task is obvious, labels and amounts remain readable over glass, component styles come from shared tokens, all interaction states exist, and the UI stays responsive. Visual changes should preserve existing business behavior and user theme preferences.
+
+Row edit and delete actions use the shared 44px icon buttons (`PencilSquareIcon` and `TrashIcon`), with item-specific accessible labels and tooltips. Preserve disabled states and show the reason deletion is blocked.

@@ -357,25 +357,17 @@ export default function Customers() {
   };
 
 return (
-    <div className="p-3 md:p-4 space-y-4">
-      {/* ===== Premium Hero Header ===== */}
-      <div
-        className="relative rounded-2xl overflow-hidden shadow-lg"
-        style={{ background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})` }}
-      >
-        {/* Decorative blurred blobs */}
-        <div className="absolute -top-10 -right-8 w-64 h-64 rounded-full bg-white/15 blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-16 left-1/4 w-72 h-72 rounded-full bg-white/10 blur-3xl pointer-events-none" />
-
+    <div className="directory-page">
+      <div className="products-panel directory-overview">
         {/* Top row */}
-        <div className="relative px-6 pt-5 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="products-heading">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm shadow-inner flex items-center justify-center">
-              <UsersIcon className="w-6 h-6 text-white" />
+            <div className="products-identity-icon">
+              <UsersIcon className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-2xl font-extrabold tracking-wide text-white leading-none">Customers</h1>
-              <p className="text-xs text-white/85 mt-1.5 flex items-center gap-1.5">
+              <h1 className="products-title">Customers</h1>
+              <p className="products-subtitle">
                 <UsersIcon className="w-3.5 h-3.5" />
                 {customers.length} customers
               </p>
@@ -387,7 +379,7 @@ return (
             <Guard when={can.import}>
               <button
                 onClick={() => setImportOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm transition-all duration-200"
+                className="products-action"
               >
                 <ArrowUpTrayIcon className="w-3.5 h-3.5" />
                 Import
@@ -397,7 +389,7 @@ return (
               <button
                 onClick={handleExport}
                 disabled={exporting}
-                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm transition-all duration-200"
+                className="products-action"
               >
                 <ArrowDownTrayIcon className={`w-3.5 h-3.5 ${exporting ? "animate-spin" : ""}`} />
                 {exporting ? "..." : "Export"}
@@ -406,21 +398,22 @@ return (
             <button
               onClick={fetchCustomers}
               title="Refresh"
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm transition-all duration-200"
+              className="products-action"
             >
               <ArrowPathIcon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Refresh</span>
+              <span>Refresh</span>
             </button>
           </div>
         </div>
 
         {/* Filter bar integrated in hero */}
-        <div className="relative px-6 pt-2 pb-5">
-          <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm border border-white/20 rounded-xl px-3 py-2">
-            <MagnifyingGlassIcon className="w-4 h-4 text-white/80 shrink-0" />
+        <div className="directory-search">
+          <div className="directory-search-field">
+            <MagnifyingGlassIcon className="directory-search-icon" />
             <GlassInput
               value={q}
               onChange={(e) => setQ(e.target.value)}
+              aria-label="Search customers"
               placeholder="Search customers..."
               className="w-full"
             />
@@ -428,21 +421,20 @@ return (
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <div className="directory-grid">
         {/* Left: Form Card */}
         {(can.create || (can.update && editingId !== null)) && (
-          <GlassCard>
+          <GlassCard className="directory-panel directory-form">
             {/* Form Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
+            <div className="directory-panel-heading">
               <div className="flex items-center gap-3">
                 <div 
-                  className="p-2 rounded-lg shadow-xs"
-                  style={{ background: `linear-gradient(to bottom right, ${editingId ? '#f59e0b' : themeColors.primary}, ${editingId ? '#d97706' : themeColors.primaryHover})` }}
+                  className="directory-form-icon"
                 >
                   {editingId ? (
-                    <PencilSquareIcon className="w-5 h-5 text-white" />
+                    <PencilSquareIcon className="w-5 h-5" />
                   ) : (
-                    <PlusIcon className="w-5 h-5 text-white" />
+                    <PlusIcon className="w-5 h-5" />
                   )}
                 </div>
                 <div>
@@ -458,6 +450,7 @@ return (
                 <GlassBtn 
                   className={`h-8 px-3 ${btnGlass.className}`} 
                   onClick={resetForm}
+                  aria-label="Cancel editing"
                   style={btnGlass.style}
                 >
                   <XMarkIcon className="w-4 h-4" />
@@ -550,9 +543,9 @@ return (
         )}
 
         {/* Right: List Card */}
-        <GlassCard className={can.create || can.update ? "lg:col-span-2" : "lg:col-span-3"}>
+        <GlassCard className="directory-panel directory-list">
           {/* List Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
+          <div className="directory-panel-heading">
             <div className="flex items-center gap-2">
               <div 
                 className="p-1.5 rounded-sm"
@@ -569,7 +562,7 @@ return (
           </div>
 
           <div className="p-3">
-            <div className="rounded-xl overflow-hidden ring-1 ring-gray-200/70 bg-white/60 dark:bg-slate-800/60">
+            <div className="directory-table-scroll">
               <table className="w-full text-sm">
                 <thead className="bg-white/80 dark:bg-slate-700/80 sticky top-0">
                   <tr className="border-b border-gray-200/70 dark:border-slate-600/70 text-left">
@@ -608,22 +601,22 @@ return (
                               <Guard when={can.update}>
                                 <button 
                                   onClick={() => handleEdit(c)} 
-                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-sm text-xs font-medium ${btnSecondary.className}`}
-                                  style={btnSecondary.style}
+                                  className="products-row-action"
+                                  aria-label={`Edit ${c.name}`}
+                                  title="Edit"
                                 >
-                                  <PencilSquareIcon className="w-3.5 h-3.5" />
-                                  Edit
+                                  <PencilSquareIcon aria-hidden="true" className="w-4 h-4" />
                                 </button>
                               </Guard>
                               <Guard when={can.delete}>
                                 <button
                                   onClick={() => inUse ? toast.error("Cannot delete: customer has transactions.") : handleDelete(c)}
                                   disabled={inUse}
-                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-sm text-xs font-medium transition-all duration-200 ${inUse ? btnGlass.className : btnDanger.className}`}
-                                  style={inUse ? btnGlass.style : btnDanger.style}
+                                  className="products-row-action products-row-delete"
+                                  aria-label={`Delete ${c.name}`}
+                                  title={inUse ? "Cannot delete: customer has transactions." : "Delete"}
                                 >
-                                  <TrashIcon className="w-3.5 h-3.5" />
-                                  Delete
+                                  <TrashIcon aria-hidden="true" className="w-4 h-4" />
                                 </button>
                               </Guard>
                             </div>
