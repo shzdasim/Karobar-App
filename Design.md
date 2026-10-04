@@ -37,6 +37,10 @@ At desktop widths, inset the shell 16px from the viewport. Use a 248px floating 
 
 The dashboard begins with a plain title and date-range controls, followed by four consistent KPI panels. Place the main sales/purchases chart beside a smaller summary panel, then put stock alerts and near-expiry data on full-width reading surfaces. Preserve the current dashboard's metrics and calculations; these are presentation directions.
 
+Product listings use a frosted overview panel with a large title, visible action labels, and one labeled inventory search field. Frame the inventory in glass while keeping table rows nearly opaque. Show selected rows clearly, preserve stock and deletion restrictions, and allow the table region to scroll horizontally on mobile so category, brand, and supplier remain accessible.
+
+Product forms retain the original layout: image and identifiers first, name/formulation/pack size next, then category/brand/supplier, description, and the compact pricing row. Refresh materials with frosted framing and readable input surfaces while keeping shared typography. Keep batches beside the edit form on wide screens; contain horizontal pricing-table scrolling where needed. Do not replace this arrangement with side-by-side sections or a pricing card grid.
+
 On mobile, replace the inset desktop sidebar with the existing drawer behavior. Keep a compact glass topbar, stack panels, and let filter controls wrap. Use no horizontal page overflow; only wide data regions may scroll horizontally.
 
 The login screen shares the pearl/midnight canvas and cobalt accent. Center a single 440px maximum-width glass panel with a 28px radius, store/app identity, a short heading, and clearly labeled fields. On wide screens, a quiet brand illustration area may sit beside the form only when it adds meaning; the baseline design needs no new image assets.
@@ -57,7 +61,7 @@ Login refinement: keep branding inside the card and fit the normal layout within
 | Charts | Recharts |
 | Form widgets | React Select and React Datepicker |
 | Notifications | React Hot Toast |
-| Typography | Tailwind's default sans-serif stack; no dedicated app web font configured |
+| Typography | Shared OS font stack and role-based screen typography in `resources/css/app.css`; no bundled web font |
 | Branding | Store name and logo from `/api/settings`; login uses the Karobar identity |
 
 The dashboard already uses translucent controls, accent gradients, rounded cards, and tabular numbers. Some labels currently use 9–11px text; the target scale below increases readability. The login page uses a separate teal palette (`#639EA0`, `#4A8082`) over a dark gradient (`#2C5364`, `#203A43`, `#0F2027`). Treat that as an existing variation to harmonize during future UI work.
@@ -80,11 +84,13 @@ Use the operating system's UI font for a familiar appearance and fast rendering.
 | Card heading | 16px / 1rem | 600 | 1.4 | Charts, tables, and panels |
 | Body | 15px / 0.9375rem | 400 | 1.5 | Standard interface copy |
 | Input value | 16px / 1rem | 400 | 1.5 | Form fields, including mobile |
-| Label / button | 14px / 0.875rem | 500–600 | 1.4 | Actions and field labels |
+| Label / button | 14px / 0.875rem | 500 | 1.4 | Actions and field labels |
 | Supporting text | 12px / 0.75rem | 400–500 | 1.5 | Helper text and secondary metadata |
 | Table text | 14px / 0.875rem | 400–500 | 1.45 | Rows and values |
 | Table heading | 12px / 0.75rem | 600 | 1.4 | Column labels |
-| KPI value | 32–36px / 2–2.25rem | 600–700 | 1.15 | Primary dashboard amounts; 28px on mobile |
+| KPI value | 32–36px / 2–2.25rem | 600 | 1.15 | Primary dashboard amounts; 28px on mobile |
+
+All screens share the same font family and role-based sizes and weights. Page titles use 600, body uses 400, and labels/actions use 500; avoid page-specific typography overrides. The shared screen rules in `resources/css/app.css` apply this scale without changing print typography. Product search uses one term and matches any product name, brand name, or supplier name, including partial matches; low-stock filtering still applies to the complete result set.
 
 Use `rem` for implementation so text respects user settings. Keep body text at normal letter spacing; headings may use `-0.02em`. Use uppercase sparingly, with `0.04em` tracking for short category labels. Do not use essential text below 12px.
 

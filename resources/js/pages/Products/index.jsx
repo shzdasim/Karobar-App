@@ -8,8 +8,6 @@ import {
   PencilSquareIcon,
   PlusCircleIcon,
   ArrowUpTrayIcon,
-  TagIcon,
-  BuildingStorefrontIcon,
   Squares2X2Icon,
   ArrowPathIcon,
   CubeIcon,
@@ -65,9 +63,7 @@ export default function ProductsIndex() {
   const [exporting, setExporting] = useState(false);
 
   // search filters
-  const [qName, setQName] = useState("");
-  const [qBrand, setQBrand] = useState("");
-  const [qSupplier, setQSupplier] = useState("");
+  const [search, setSearch] = useState("");
 
   // Low-stock filter (enabled via /products?low_stock=1)
   const [searchParams] = useSearchParams();
@@ -108,7 +104,7 @@ export default function ProductsIndex() {
   // 🎨 Dynamic button palette using theme colors
   // Get dark mode state and theme colors
   const { isDark, theme } = useTheme();
-  
+
   // Memoize theme colors for performance
   const themeColors = useMemo(() => {
     if (!theme) {
@@ -133,20 +129,20 @@ export default function ProductsIndex() {
 
   // Get button style from theme
   const buttonStyle = theme?.button_style || 'rounded-sm';
-  
+
   // Calculate text colors based on background brightness
-  const primaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
+  const primaryTextColor = useMemo(() =>
+    getButtonTextColor(themeColors.primary, themeColors.primaryHover),
     [themeColors.primary, themeColors.primaryHover]
   );
-  
-  const secondaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
+
+  const secondaryTextColor = useMemo(() =>
+    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover),
     [themeColors.secondary, themeColors.secondaryHover]
   );
-  
-  const dangerTextColor = useMemo(() => 
-    getButtonTextColor('#ef4444', '#dc2626'), 
+
+  const dangerTextColor = useMemo(() =>
+    getButtonTextColor('#ef4444', '#dc2626'),
     []
   );
 
@@ -158,7 +154,7 @@ export default function ProductsIndex() {
       'soft': 'rounded-xl',
     };
     const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
-    
+
     if (buttonStyle === 'outlined') {
       return {
         primary: {
@@ -202,7 +198,7 @@ export default function ProductsIndex() {
         },
       };
     }
-    
+
     // Filled styles for rounded and soft
     return {
       primary: {
@@ -294,16 +290,14 @@ export default function ProductsIndex() {
 
   // keep fetchProducts but pass filters as args
   const fetchProducts = useCallback(async (signal, opts = {}) => {
-    const { pageArg = page, pageSizeArg = pageSize, qNameArg = qName, qBrandArg = qBrand, qSupplierArg = qSupplier } = opts;
+    const { pageArg = page, pageSizeArg = pageSize, searchArg = search } = opts;
     try {
       setLoading(true);
       const { data } = await axios.get("/api/products", {
         params: {
           page: pageArg,
           per_page: pageSizeArg,
-          q_name: qNameArg.trim(),
-          q_brand: qBrandArg.trim(),
-          q_supplier: qSupplierArg.trim(),
+          q: searchArg.trim(),
           low_stock: lowStockOnly ? 1 : '',
         },
         signal,
@@ -323,7 +317,7 @@ export default function ProductsIndex() {
   } finally {
     setLoading(false);
   }
-}, [page, pageSize, qName, qBrand, qSupplier, lowStockOnly]);
+}, [page, pageSize, search, lowStockOnly]);
 
 
 // Fetch when page or pageSize changes
@@ -349,7 +343,7 @@ useEffect(() => {
     clearTimeout(debounceRef.current);
     ctrl.abort();
   };
-}, [qName, qBrand, qSupplier, lowStockOnly, permsLoading, can.view]);
+}, [search, lowStockOnly, permsLoading, can.view]);
 
 
   const start = rows.length ? (page - 1) * pageSize + 1 : 0;
@@ -378,7 +372,7 @@ useEffect(() => {
   const handleConfirmDelete = async (password) => {
     if (!deletingProduct?.id) return;
     if (!can.delete) return toast.error("You don't have permission to delete products.");
-    
+
     try {
       await axios.post("/api/auth/confirm-password", { password });
       await axios.delete(`/api/products/${deletingProduct.id}`);
@@ -448,41 +442,21 @@ useEffect(() => {
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view products.</div>;
 
-  // Translucent, tinted input styling so the search fields sit on the dark hero
-  const heroInputStyle = {
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
-    borderColor: "rgba(255, 255, 255, 0.10)",
-    color: "#ffffff",
-    boxShadow: "none",
-  };
-  const heroInputClass = "focus:ring-white/20";
-
   return (
-    <div className="p-4 space-y-4">
-      {/* ===== Hero band (matches Dashboard) ===== */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 ring-1 ring-white/10 shadow-lg shadow-slate-900/20">
-        {/* Glow accents */}
-        <div aria-hidden="true" className="pointer-events-none absolute -top-24 -right-16 h-72 w-72 rounded-full blur-3xl opacity-25" style={{ background: themeColors.primary }} />
-        <div aria-hidden="true" className="pointer-events-none absolute -bottom-28 -left-12 h-72 w-72 rounded-full blur-3xl opacity-20" style={{ background: themeColors.secondary }} />
-        {/* Dot texture */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 opacity-[0.12]"
-          style={{ backgroundImage: "radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px)", backgroundSize: "18px 18px" }}
-        />
-
+    <div className="products-page">
+      <div className="products-panel products-overview">
         {/* Top row */}
-        <div className="relative flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
+        <div className="products-heading">
           {/* Identity */}
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-white/10 ring-1 ring-white/15 flex items-center justify-center shrink-0">
-              <CubeIcon className="text-white w-5 h-5" />
+            <div className="products-identity-icon">
+              <CubeIcon className="w-6 h-6" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-base sm:text-lg font-semibold tracking-tight text-white">Products</h1>
-              <p className="mt-0.5 text-[11px] sm:text-xs text-slate-400 flex items-center gap-1.5">
+              <h1 className="products-title">Products</h1>
+              <p className="products-subtitle">
                 <Squares2X2Icon className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">{total} products in your inventory</span>
+                <span className="truncate">{total} products in this view</span>
               </p>
             </div>
           </div>
@@ -495,18 +469,12 @@ useEffect(() => {
                 onClick={openBulkModal}
                 disabled={selectedIds.size === 0}
                 title="Bulk edit"
-                className={`
-                  inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold
-                  transition-all duration-200
-                  ${selectedIds.size > 0
-                    ? "bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/15"
-                    : "bg-white/5 text-slate-500 ring-1 ring-white/10 cursor-not-allowed"}
-                `}
+                className="products-action"
               >
                 <PencilSquareIcon className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Edit</span>
+                <span>Bulk edit</span>
                 {selectedIds.size > 0 && (
-                  <span className="ml-0.5 rounded-full bg-white/15 px-1 py-0.5 text-[10px] font-medium">
+                  <span className="products-selection-count">
                     {selectedIds.size}
                   </span>
                 )}
@@ -518,35 +486,28 @@ useEffect(() => {
                 onClick={() => setShowBulkDelete(true)}
                 disabled={selectedIds.size === 0}
                 title="Bulk delete"
-                className={`
-                  inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold
-                  transition-all duration-200
-                  ${selectedIds.size > 0
-                    ? "bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/15"
-                    : "bg-white/5 text-slate-500 ring-1 ring-white/10 cursor-not-allowed"}
-                `}
+                className="products-action"
               >
                 <TrashIcon className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Delete</span>
+                <span>Bulk delete</span>
                 {selectedIds.size > 0 && (
-                  <span className="ml-0.5 rounded-full bg-white/15 px-1 py-0.5 text-[10px] font-medium">
+                  <span className="products-selection-count">
                     {selectedIds.size}
                   </span>
                 )}
               </button>
             </Guard>
 
-            <span aria-hidden="true" className="mx-1 hidden h-5 w-px bg-white/10 sm:block" />
 
             {/* Import / Export */}
             <Guard when={can.import}>
               <button
                 onClick={() => setImportOpen(true)}
                 title="Import products"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-white/90 ring-1 ring-white/10 transition-all duration-200 hover:bg-white/10"
+                className="products-action"
               >
                 <ArrowUpTrayIcon className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Import</span>
+                <span>Import</span>
               </button>
             </Guard>
 
@@ -555,10 +516,10 @@ useEffect(() => {
                 onClick={handleExport}
                 disabled={exporting}
                 title="Export products"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-white/90 ring-1 ring-white/10 transition-all duration-200 hover:bg-white/10 disabled:opacity-50"
+                className="products-action"
               >
                 <ArrowPathIcon className={`w-3.5 h-3.5 ${exporting ? "animate-spin" : ""}`} />
-                <span className="hidden sm:inline">{exporting ? "Exporting…" : "Export"}</span>
+                <span>{exporting ? "Exporting…" : "Export"}</span>
               </button>
             </Guard>
 
@@ -567,55 +528,30 @@ useEffect(() => {
               <Link
                 to="/products/create"
                 title="Add product"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-sm font-semibold text-white ring-1 ring-white/15 backdrop-blur-sm transition-all duration-200 hover:bg-white/15 active:scale-[0.98]"
+                className="products-action products-action-primary"
+                style={{ color: getContrastText(themeColors.primary) }}
               >
                 <PlusCircleIcon className="w-4 h-4" />
-                <span className="hidden sm:inline">Add Product</span>
-                <span className="sm:hidden">Add</span>
+                <span>Add Product</span>
+
               </Link>
             </Guard>
           </div>
         </div>
 
-        {/* Search controls - dark translucent panels */}
-        <div className="relative px-4 pb-4 sm:px-5">
-          <div className="grid grid-cols-1 gap-2 rounded-lg bg-black/25 p-2.5 backdrop-blur-sm md:grid-cols-4">
-            <div className="flex items-center gap-2 rounded-lg bg-white/[0.06] px-2.5 py-1.5 transition-colors duration-200 hover:bg-white/10">
-              <Squares2X2Icon className="w-4 h-4 text-slate-400 shrink-0" />
+        {/* Labeled inventory filters */}
+        <div className="products-filter-panel">
+          <div className="products-filters">
+            <label className="products-filter"><span className="products-filter-label">Search inventory</span>
               <TextSearch
-                value={qName}
-                onChange={setQName}
-                placeholder="Search products..."
+                value={search}
+                onChange={setSearch}
+                placeholder="Search product name, brand, or supplier…"
                 className="w-full"
-                iconClassName="text-slate-400"
-                inputClassName={heroInputClass}
-                inputStyle={heroInputStyle}
+                iconClassName="products-search-icon"
+                inputClassName="products-search-input"
               />
-            </div>
-            <div className="flex items-center gap-2 rounded-lg bg-white/[0.06] px-2.5 py-1.5 transition-colors duration-200 hover:bg-white/10">
-              <TagIcon className="w-4 h-4 text-slate-400 shrink-0" />
-              <TextSearch
-                value={qBrand}
-                onChange={setQBrand}
-                placeholder="Filter by brand..."
-                className="w-full"
-                iconClassName="text-slate-400"
-                inputClassName={heroInputClass}
-                inputStyle={heroInputStyle}
-              />
-            </div>
-            <div className="flex items-center gap-2 rounded-lg bg-white/[0.06] px-2.5 py-1.5 transition-colors duration-200 hover:bg-white/10">
-              <BuildingStorefrontIcon className="w-4 h-4 text-slate-400 shrink-0" />
-              <TextSearch
-                value={qSupplier}
-                onChange={setQSupplier}
-                placeholder="Filter by supplier..."
-                className="w-full"
-                iconClassName="text-slate-400"
-                inputClassName={heroInputClass}
-                inputStyle={heroInputStyle}
-              />
-            </div>
+            </label>
             <button
               type="button"
               onClick={() => {
@@ -632,11 +568,8 @@ useEffect(() => {
                   ? "Low-stock filter is ON — click to clear and show all products"
                   : "Show only products whose quantity is below pack size"
               }
-              className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-all duration-200 ${
-                lowStockOnly
-                  ? "bg-rose-500/25 text-rose-200 ring-1 ring-rose-400/30"
-                  : "bg-white/[0.06] text-slate-300 hover:bg-white/10"
-              }`}
+              aria-pressed={lowStockOnly}
+              className={`products-action products-low-stock ${lowStockOnly ? "is-active" : ""}`}
             >
               <ExclamationTriangleIcon className="w-4 h-4" />
               <span>Low stock only</span>
@@ -646,8 +579,8 @@ useEffect(() => {
             </button>
           </div>
           {lowStockOnly && (
-            <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
-              <span className="inline-flex items-center gap-1.5 rounded-md bg-rose-500/15 px-2.5 py-1 text-rose-200">
+            <div className="products-filter-note">
+              <span className="inline-flex items-center gap-1.5">
                 <ExclamationTriangleIcon className="w-3.5 h-3.5" />
                 Showing only products below pack size (needs reorder)
               </span>
@@ -657,15 +590,9 @@ useEffect(() => {
       </div>
 
       {/* ===== Product Table ===== */}
-      <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        {/* Accent hairline */}
-        <span
-          aria-hidden="true"
-          className="absolute inset-x-0 top-0 h-[3px]"
-          style={{ background: `linear-gradient(90deg, ${themeColors.primary}, ${themeColors.secondary}, transparent)` }}
-        />
+      <div className="products-panel products-catalog">
         {/* Table header bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-4 dark:border-slate-700">
+        <div className="products-catalog-heading">
           <div className="flex items-center gap-3">
             <div
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-700/60"
@@ -673,8 +600,8 @@ useEffect(() => {
               <Squares2X2Icon className="h-4 w-4" style={{ color: themeColors.primary }} />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Product List</h2>
-              <p className="text-xs text-gray-400 dark:text-gray-500">
+              <h2 className="products-section-title">Inventory</h2>
+              <p className="products-subtitle">
                 {loading ? (
                   <span className="inline-flex items-center gap-1.5">
                     <ArrowPathIcon className="h-3 w-3 animate-spin" />
@@ -690,8 +617,9 @@ useEffect(() => {
 
           {/* Page size */}
           <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 dark:border-slate-600 dark:bg-slate-700/40">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Show</label>
+            <label htmlFor="products-page-size" className="text-xs font-medium">Show</label>
             <select
+              id="products-page-size"
               value={pageSize}
               onChange={(e) => setPageSize(Number(e.target.value))}
               className="cursor-pointer rounded-md border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 focus:ring-2 focus:border-transparent dark:border-slate-600 dark:bg-slate-700 dark:text-gray-200"
@@ -708,31 +636,31 @@ useEffect(() => {
           </div>
         </div>
 
-        <div className="max-h-[65vh] overflow-y-auto px-2 py-2">
-          <table className="w-full table-fixed border-separate border-spacing-y-1.5 text-sm">
+        <div className="products-table-scroll" tabIndex={0} role="region" aria-label="Product inventory" aria-busy={loading}>
+          <table className="products-table">
             <thead>
               <tr className="text-left">
                 <th scope="col" className="w-12 pb-2 pl-3">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-300 dark:text-slate-600">#</span>
+                  <span className="products-column-label">#</span>
                 </th>
                 <th scope="col" className="pb-2 pl-3">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 dark:text-slate-500">Product</span>
+                  <span className="products-column-label">Product</span>
                 </th>
-                <th scope="col" className="hidden w-32 pb-2 pl-3 md:table-cell">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 dark:text-slate-500">Category</span>
+                <th scope="col" className="w-32 pb-2 pl-3">
+                  <span className="products-column-label">Category</span>
                 </th>
-                <th scope="col" className="hidden w-32 pb-2 pl-3 md:table-cell">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 dark:text-slate-500">Brand</span>
+                <th scope="col" className="w-32 pb-2 pl-3">
+                  <span className="products-column-label">Brand</span>
                 </th>
-                <th scope="col" className="hidden w-36 pb-2 pl-3 lg:table-cell">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 dark:text-slate-500">Supplier</span>
+                <th scope="col" className="w-36 pb-2 pl-3">
+                  <span className="products-column-label">Supplier</span>
                 </th>
                 <th scope="col" className="w-20 pb-2 pl-3">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 dark:text-slate-500">Stock</span>
+                  <span className="products-column-label">Stock</span>
                 </th>
                 {hasActions && (
                   <th scope="col" className="w-24 pb-2 pr-3 text-right">
-                    <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 dark:text-slate-500">Quick</span>
+                    <span className="products-column-label">Actions</span>
                   </th>
                 )}
               </tr>
@@ -748,7 +676,7 @@ useEffect(() => {
                       </div>
                       <div>
                         <p className="text-sm font-medium text-gray-600 dark:text-gray-300">No products found</p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500">Try adjusting your search or filters</p>
+                        <p className="products-subtitle">Try adjusting your search or filters</p>
                       </div>
                     </div>
                   </td>
@@ -765,17 +693,17 @@ useEffect(() => {
                     : "Cannot delete: has batches."
                   : "Delete";
                 const isSelected = selectedIds.has(p.id);
-                
+
                 // Stock state drives chip + avatar badge
                 const inStock = qty > 0;
                 const stockChip = inStock
                   ? "bg-emerald-50 text-emerald-700 ring-emerald-200/80 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/30"
                   : "bg-amber-50 text-amber-700 ring-amber-200/80 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30";
                 const stockDot = inStock ? "bg-emerald-500" : "bg-amber-500";
-                const cellBg = "bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-200 group-hover:shadow-[0_4px_14px_rgba(0,0,0,0.07)] dark:bg-slate-800";
+                const cellBg = "products-cell";
 
                 return (
-                  <tr key={p.id} className="group align-middle">
+                  <tr key={p.id} className={`group align-middle ${isSelected ? "is-selected" : ""}`}>
                     {/* Select — round check node */}
                     <td className={`rounded-l-2xl pl-3 ${cellBg}`}>
                       <input
@@ -820,34 +748,28 @@ useEffect(() => {
                           >
                             {p.name}
                           </button>
-                          {/* Mobile meta */}
-                          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-400 md:hidden dark:text-gray-500">
-                            <span className="truncate">{p.category?.name || "—"}</span>
-                            <span aria-hidden="true" className="text-gray-300 dark:text-slate-600">·</span>
-                            <span className="truncate">{p.brand?.name || "—"}</span>
-                          </div>
                         </div>
                       </div>
                     </td>
 
                     {/* Category */}
-                    <td className={`hidden truncate pl-3 text-gray-500 md:table-cell dark:text-gray-400 ${cellBg}`}>
+                    <td className={`truncate pl-3 products-meta ${cellBg}`}>
                       {p.category?.name || <span className="text-gray-300 dark:text-slate-600">—</span>}
                     </td>
 
                     {/* Brand */}
-                    <td className={`hidden truncate pl-3 text-gray-500 md:table-cell dark:text-gray-400 ${cellBg}`}>
+                    <td className={`truncate pl-3 products-meta ${cellBg}`}>
                       {p.brand?.name || <span className="text-gray-300 dark:text-slate-600">—</span>}
                     </td>
 
                     {/* Supplier */}
-                    <td className={`hidden truncate pl-3 text-gray-500 lg:table-cell dark:text-gray-400 ${cellBg}`}>
+                    <td className={`truncate pl-3 products-meta ${cellBg}`}>
                       {p.supplier?.name || <span className="text-gray-300 dark:text-slate-600">—</span>}
                     </td>
 
                     {/* Stock — notched numberplate chip */}
                     <td className={cellBg}>
-                      <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-xs font-bold ring-1 ${stockChip}`}>
+                      <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-bold ring-1 ${stockChip}`}>
                         <span className={`h-1.5 w-1.5 rounded-full ${stockDot}`} />
                         <span className="tabular-nums">{qty}</span>
                       </span>
@@ -863,15 +785,7 @@ useEffect(() => {
                               to={`/products/${p.id}/edit`}
                               title="Edit"
                               aria-label={`Edit ${p.name}`}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-300 opacity-70 transition-all duration-150 hover:text-white hover:opacity-100 group-hover:text-gray-500 group-hover:opacity-100 dark:text-slate-500 dark:group-hover:text-gray-300"
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.backgroundColor = themeColors.primary;
-                                e.currentTarget.style.color = "#fff";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.backgroundColor = "";
-                                e.currentTarget.style.color = "";
-                              }}
+                              className="products-row-action"
                             >
                               <PencilSquareIcon className="h-4 w-4" />
                             </Link>
@@ -884,12 +798,7 @@ useEffect(() => {
                               disabled={deleteDisabled}
                               title={deleteTitle}
                               aria-label={`Delete ${p.name}`}
-                              className={`
-                                inline-flex h-8 w-8 items-center justify-center rounded-full transition-all duration-150
-                                ${deleteDisabled
-                                  ? "cursor-not-allowed text-gray-200 dark:text-slate-600"
-                                  : "text-gray-300 opacity-70 hover:bg-rose-500 hover:text-white hover:opacity-100 group-hover:text-gray-500 group-hover:opacity-100 dark:text-slate-500 dark:group-hover:text-gray-300"}
-                              `}
+                              className="products-row-action products-row-delete"
                             >
                               <TrashIcon className="h-4 w-4" />
                             </button>
@@ -905,7 +814,7 @@ useEffect(() => {
         </div>
 
         {/* Pagination */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-gray-50 px-5 py-3 dark:border-slate-700 dark:bg-slate-800/60">
+        <div className="products-pagination">
           <span className="text-xs text-gray-500 dark:text-gray-400">
             Page <span className="font-medium text-gray-700 dark:text-gray-200">{page}</span> of{" "}
             <span className="font-medium text-gray-700 dark:text-gray-200">{lastPage}</span> · {total} total
@@ -1004,9 +913,9 @@ useEffect(() => {
             setShowBulkModal(false);
             setSelectedIds(new Set());
           }}
-          tintClasses={{ 
-            primary: btnPrimary, 
-            glass: btnGlass 
+          tintClasses={{
+            primary: btnPrimary,
+            glass: btnGlass
           }}
         />
       )}
@@ -1023,10 +932,10 @@ useEffect(() => {
         title="Delete product"
         isDeleting={deleting}
         setIsDeleting={setDeleting}
-        tintClasses={{ 
+        tintClasses={{
           primary: btnPrimary,
           danger: btnDanger,
-          glass: btnGlass 
+          glass: btnGlass
         }}
       />
 
@@ -1053,10 +962,10 @@ useEffect(() => {
             setShowBulkDelete(false);
           }}
           itemType="product(s)"
-          tintClasses={{ 
+          tintClasses={{
             primary: btnPrimary,
             danger: btnDanger,
-            glass: btnGlass 
+            glass: btnGlass
           }}
         />
       )}

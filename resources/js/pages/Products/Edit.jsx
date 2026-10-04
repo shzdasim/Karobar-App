@@ -65,7 +65,7 @@ export default function EditProduct() {
   if (fetchErr) return <div className="p-6 text-red-600">{fetchErr}</div>;
 
   return (
-    <div className="p-3 md:p-4">
+    <div className="product-form-page">
       <Guard when={can.update}>
         <ProductForm initialData={initialData} onSubmit={handleUpdate} />
       </Guard>

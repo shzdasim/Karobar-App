@@ -111,6 +111,7 @@ class ProductController extends Controller
         $this->authorize('viewAny', Product::class);
         $perPage = max(1, min((int)$req->input('per_page', 25), 100));
 
+        $search    = trim((string)$req->input('q', ''));
         $qName     = trim((string)$req->input('q_name', ''));
         $qBrand    = trim((string)$req->input('q_brand', ''));
         $qSupplier = trim((string)$req->input('q_supplier', ''));
@@ -128,6 +129,16 @@ class ProductController extends Controller
                 'supplier:id,name',
             ])
             ->withCount('batches');
+
+        // Group OR matches so stock and legacy filters still constrain the results.
+        if ($search !== '') {
+            $pattern = '%'.$search.'%';
+            $q->where(function (Builder $matches) use ($pattern) {
+                $matches->where('name', 'like', $pattern)
+                    ->orWhereHas('brand', fn(Builder $brand) => $brand->where('name', 'like', $pattern))
+                    ->orWhereHas('supplier', fn(Builder $supplier) => $supplier->where('name', 'like', $pattern));
+            });
+        }
 
         // 🔍 Prefix-only matching for name, brand, and supplier
         if ($qName !== '') {

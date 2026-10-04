@@ -15,7 +15,7 @@ Read this file and [Design.md](Design.md) before changing the frontend. These ru
 1. Use the modern glass direction in `Design.md`: pearl/midnight canvas, floating frosted navigation, cobalt actions, teal supporting accents, readable interiors, and restrained depth.
 2. Reuse shared components and the existing `g-*` primitives before introducing another styling system. Centralize reusable tokens in `resources/css/app.css` and integrate them with `resources/js/context/ThemeContext.jsx`.
 3. Use semantic color tokens in components. Hardcoded palette values belong in centralized presets or material definitions, not repeated page-specific styles. Dynamic chart colors may come from the active theme.
-4. Use the documented font scale, 4px spacing grid, radii, and layer scale. Do not invent a new palette, font, card style, or animation for each page.
+4. Use the documented font scale, 4px spacing grid, radii, and layer scale. Do not invent a new palette, font, card style, or animation for each page. Use the shared screen typography: the same role must have the same font family, size, and weight across pages. Keep print typography independent.
 5. Support both light and dark modes. Preserve saved custom theme values, branding, `theme_mode`, and existing theme field names. New defaults must not overwrite existing theme records.
 6. Keep glass strongest in navigation and more opaque behind forms, tables, menus, and financial data. Provide a solid fallback. Never reduce legibility to make the glass effect stronger.
 7. Keep essential text at least 12px, numeric data aligned and readable, touch controls usable, and keyboard focus visible. Include reduced-motion behavior for new motion.

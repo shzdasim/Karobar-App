@@ -95,7 +95,7 @@ const ProductFormFields = forwardRef(({
   }));
 
   return (
-    <>
+    <div className="product-form-fields">
       {/* Image - moved to top, compact */}
       <div className="flex gap-3 items-start">
         <div className="w-32 shrink-0">
@@ -106,7 +106,7 @@ const ProductFormFields = forwardRef(({
               onupdatefiles={onFilesChange}
               allowMultiple={false}
               acceptedFileTypes={["image/*"]}
-              labelIdle='<span class="text-xs dark:text-slate-300">Drop or Browse</span>'
+              labelIdle='Drop or <span class="filepond--label-action">browse</span>'
               credits={false}
               stylePanelLayout="compact"
               styleLoadPlaceholder="Loading..."
@@ -117,16 +117,16 @@ const ProductFormFields = forwardRef(({
         {/* Code / Barcode inline */}
         <div className="flex-1 grid grid-cols-2 gap-2">
           <div>
-            <label className="block text-xs font-medium mb-1 dark:text-slate-300">Product Code</label>
-            <GlassInput type="text" name="product_code" value={form.product_code || ""} disabled className="w-full bg-white/70 dark:bg-slate-700/70 text-sm h-8 dark:text-slate-200" />
+            <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-product_code">Product Code</label>
+            <GlassInput type="text" id="product-product_code" name="product_code" value={form.product_code || ""} disabled className="w-full bg-white/70 dark:bg-slate-700/70 text-sm h-8 dark:text-slate-200" />
           </div>
           <div>
-            <label className="block text-xs font-medium mb-1 dark:text-slate-300">Barcode</label>
-            <GlassInput type="text" name="barcode" value={form.barcode || ""} disabled className="w-full bg-white/70 dark:bg-slate-700/70 text-sm h-8 dark:text-slate-200" />
+            <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-barcode">Barcode</label>
+            <GlassInput type="text" id="product-barcode" name="barcode" value={form.barcode || ""} disabled className="w-full bg-white/70 dark:bg-slate-700/70 text-sm h-8 dark:text-slate-200" />
           </div>
           <div className={isPharmacy ? "" : "col-span-2"}>
-            <label className="block text-xs font-medium mb-1 dark:text-slate-300">Rack</label>
-            <GlassInput type="text" name="rack" value={form.rack || ""} onChange={handleChange} className="w-full text-sm h-8 dark:bg-slate-700/70 dark:text-slate-200" />
+            <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-rack">Rack</label>
+            <GlassInput type="text" id="product-rack" name="rack" value={form.rack || ""} onChange={handleChange} className="w-full text-sm h-8 dark:bg-slate-700/70 dark:text-slate-200" />
           </div>
           {isPharmacy && (
           <div className="flex items-end">
@@ -149,11 +149,11 @@ const ProductFormFields = forwardRef(({
       {/* Name / Formulation / Pack Size (Formulation only for pharmacy shops) */}
       <div className={`grid grid-cols-1 ${isPharmacy ? "md:grid-cols-3" : "md:grid-cols-2"} gap-3`}>
         <div>
-          <label className="block text-xs font-medium mb-1 dark:text-slate-300">Name *</label>
+          <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-name">Name *</label>
           <GlassInput
             ref={nameRef}
             type="text"
-            name="name"
+            id="product-name" name="name"
             value={form.name || ""}
             onChange={handleChange}
             onKeyDown={(e) => {
@@ -168,11 +168,11 @@ const ProductFormFields = forwardRef(({
         </div>
         {isPharmacy && (
         <div>
-          <label className="block text-xs font-medium mb-1 dark:text-slate-300">Formulation</label>
+          <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-formulation">Formulation</label>
           <GlassInput
             ref={formulationRef}
             type="text"
-            name="formulation"
+            id="product-formulation" name="formulation"
             value={form.formulation || ""}
             onChange={handleChange}
             onKeyDown={(e) => {
@@ -186,11 +186,11 @@ const ProductFormFields = forwardRef(({
         </div>
         )}
         <div>
-          <label className="block text-xs font-medium mb-1 dark:text-slate-300">Pack Size</label>
+          <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-pack_size">Pack Size</label>
           <GlassInput
             ref={packSizeRef}
             type="text"
-            name="pack_size"
+            id="product-pack_size" name="pack_size"
             value={form.pack_size || ""}
             onChange={handleChange}
             onKeyDown={(e) => {
@@ -207,9 +207,9 @@ const ProductFormFields = forwardRef(({
       {/* Category / Brand / Supplier */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
-          <label className="block text-xs font-medium mb-1 dark:text-slate-300">Category</label>
+          <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-category">Category</label>
           <Select
-            ref={categorySelectRef}
+            inputId="product-category" ref={categorySelectRef}
             options={asList(categories).map((c) => ({ value: c.id, label: c.name }))}
             value={asList(categories).map((c) => ({ value: c.id, label: c.name })).find((opt) => opt.value === Number(form.category_id)) || null}
             onChange={(opt) => {
@@ -223,9 +223,9 @@ const ProductFormFields = forwardRef(({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium mb-1 dark:text-slate-300">Brand</label>
+          <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-brand">Brand</label>
             <AsyncSelect
-            ref={brandSelectRef}
+            inputId="product-brand" ref={brandSelectRef}
             cacheOptions
             defaultOptions
             loadOptions={loadBrandOptions}
@@ -245,9 +245,9 @@ const ProductFormFields = forwardRef(({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium mb-1 dark:text-slate-300">Supplier</label>
+          <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-supplier">Supplier</label>
           <Select
-            ref={supplierSelectRef}
+            inputId="product-supplier" ref={supplierSelectRef}
             options={asList(suppliers).map((s) => ({ value: s.id, label: s.name }))}
             value={asList(suppliers).map((s) => ({ value: s.id, label: s.name })).find((opt) => opt.value === Number(form.supplier_id)) || null}
             onChange={(opt) => {
@@ -265,9 +265,9 @@ const ProductFormFields = forwardRef(({
 
       {/* Description - compact */}
       <div>
-        <label className="block text-xs font-medium mb-1 dark:text-slate-300">Description</label>
+        <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-description">Description</label>
         <textarea
-          name="description"
+          id="product-description" name="description"
           value={form.description || ""}
           onChange={handleChange}
           className="w-full h-16 px-3 py-2 rounded-xl bg-white/70 dark:bg-slate-700/70 backdrop-blur-xs border border-gray-200/70 dark:border-slate-600/70 ring-1 ring-transparent focus:ring-blue-400/40 shadow-xs focus:outline-hidden text-sm resize-none dark:text-slate-200"
@@ -277,7 +277,7 @@ const ProductFormFields = forwardRef(({
 
       {/* Compact pricing table */}
       <div>
-        <div className="rounded-xl overflow-hidden ring-1 ring-gray-200/70 dark:ring-slate-600/70 bg-white/70 dark:bg-slate-700/70 backdrop-blur-xs">
+        <div className="product-form-pricing-scroll rounded-xl overflow-hidden ring-1 ring-gray-200/70 dark:ring-slate-600/70 bg-white/70 dark:bg-slate-700/70 backdrop-blur-xs">
           <table className="w-full text-[11px] text-gray-900 dark:text-slate-200">
             <thead className="bg-white/80 dark:bg-slate-600/80 backdrop-blur-xs border-b border-gray-200/70 dark:border-slate-500/70">
               <tr className="text-left">
@@ -333,7 +333,7 @@ const ProductFormFields = forwardRef(({
           </table>
         </div>
       </div>
-    </>
+    </div>
   );
 });
 ProductFormFields.displayName = "ProductFormFields";
@@ -533,57 +533,15 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
   };
 
   // ===== Helper for react-select styles =====
-  const getSmallSelectStyles = (isDarkMode = false) => ({
-    control: (base) => ({
-      ...base,
-      minHeight: "36px",
-      height: "36px",
-      fontSize: "13px",
-      borderRadius: 12,
-      borderColor: isDarkMode ? "rgba(71,85,105,0.8)" : "rgba(229,231,235,0.8)",
-      backgroundColor: isDarkMode ? "rgba(51,65,85,0.7)" : "rgba(255,255,255,0.7)",
-      backdropFilter: "blur(6px)",
-      boxShadow: isDarkMode ? "0 1px 2px rgba(0,0,0,0.2)" : "0 1px 2px rgba(15,23,42,0.06)",
-    }),
-    valueContainer: (base) => ({ ...base, height: "36px", padding: "0 10px" }),
-    indicatorsContainer: (base) => ({ ...base, height: "36px" }),
-    input: (base) => ({
-      ...base,
-      margin: 0,
-      padding: 0,
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-    }),
-    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-    menu: (base) => ({
-      ...base,
-      fontSize: "13px",
-      borderRadius: 12,
-      overflow: "hidden",
-      backgroundColor: isDarkMode ? "rgba(30,41,59,0.95)" : "rgba(255,255,255,0.95)",
-      backdropFilter: "blur(10px)",
-      boxShadow: isDarkMode ? "0 10px 30px -10px rgba(0,0,0,0.4)" : "0 10px 30px -10px rgba(30,64,175,0.18)",
-      border: isDarkMode ? "1px solid rgba(71,85,105,0.5)" : "none",
-    }),
-    option: (base, state) => ({
-      ...base,
-      backgroundColor: isDarkMode
-        ? state.isFocused
-          ? "rgba(71,85,105,1)"
-          : "rgba(51,65,85,1)"
-        : state.isFocused
-          ? "rgba(241,245,249,1)"
-          : "rgba(255,255,255,1)",
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-      cursor: "pointer",
-    }),
-    singleValue: (base) => ({
-      ...base,
-      color: isDarkMode ? "#f1f5f9" : "#111827",
-    }),
-    placeholder: (base) => ({
-      ...base,
-      color: isDarkMode ? "#64748b" : "#9ca3af",
-    }),
+  const getSmallSelectStyles = () => ({
+    control: (base, state) => ({ ...base, minHeight: "40px", borderRadius: 12, backgroundColor: "var(--color-surface)", borderColor: state.isFocused ? "var(--color-primary)" : "var(--color-border)", boxShadow: state.isFocused ? "0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent)" : "none", fontSize: "var(--type-input)" }),
+    valueContainer: (base) => ({ ...base, padding: "4px 10px" }),
+    input: (base) => ({ ...base, color: "var(--color-text-primary)", margin: 0, padding: 0 }),
+    singleValue: (base) => ({ ...base, color: "var(--color-text-primary)" }),
+    placeholder: (base) => ({ ...base, color: "var(--color-text-secondary)" }),
+    menuPortal: (base) => ({ ...base, zIndex: 50 }),
+    menu: (base) => ({ ...base, backgroundColor: "var(--color-surface)", borderRadius: 14, border: "1px solid var(--color-border)", overflow: "hidden" }),
+    option: (base, state) => ({ ...base, minHeight: 44, backgroundColor: state.isSelected || state.isFocused ? "color-mix(in srgb, var(--color-primary) 15%, var(--color-surface))" : "var(--color-surface)", color: "var(--color-text-primary)", cursor: "pointer" }),
   });
 
   // ===== Dynamic Button styles using theme colors =====
@@ -649,7 +607,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
   if (!isLoaded) {
     return (
       <div className="p-3 md:p-4">
-        <GlassCard>
+        <GlassCard className="product-form-panel">
           <div className="flex items-center justify-center py-12">
             <span className="text-gray-500 dark:text-slate-400">Loading...</span>
           </div>
@@ -661,8 +619,8 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
   // ===== Add Mode: Full Width Card =====
   if (!isEdit) {
     return (
-      <GlassCard>
-        <form id="product-form" onSubmit={handleSubmit} className="p-3 space-y-3">
+      <GlassCard className="product-form-panel">
+        <form id="product-form" onSubmit={handleSubmit} className="product-form-body">
           <ProductFormFields
             ref={formFieldsRef}
             form={form}
@@ -687,18 +645,15 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
 
   // ===== Edit Mode: 2-Column Grid with Batches Panel =====
   return (
-    <div className="p-3 md:p-4 space-y-3">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+    <div className="product-form-page">
+      <div className="product-form-edit-grid">
         {/* Left: Form */}
-        <GlassCard className="lg:col-span-2">
+        <GlassCard className="product-form-panel product-form-edit-main">
           {/* Modern Card Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
+          <div className="product-form-page-heading">
             <div className="flex items-center gap-3">
-              <div 
-                className={`p-2 rounded-lg bg-linear-to-br shadow-xs`}
-                style={{ background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})` }}
-              >
-                <CubeIcon className="w-5 h-5 text-white" />
+              <div className="products-identity-icon">
+                <CubeIcon className="w-6 h-6" />
               </div>
               <div>
                 <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Product</h1>
@@ -708,7 +663,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
             <div className="flex items-center gap-2">
               <Link 
                 to="/products" 
-                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg ${btnGlass.className}`}
+                className={`products-action ${btnGlass.className}`}
                 style={btnGlass.style}
                 title="Back (Alt+C)"
               >
@@ -719,7 +674,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                 id="save-product-btn-top"
                 type="submit"
                 form="product-form"
-                className={`inline-flex items-center gap-1.5 h-8 px-4 rounded-lg ${btnPrimary.className}`}
+                className={`products-action ${btnPrimary.className}`}
                 style={{ ...btnPrimary.style, boxShadow: `0 4px 14px 0 ${themeColors.primary}40` }}
                 title="Save (Alt+S)"
               >
@@ -729,7 +684,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
             </div>
           </div>
 
-          <form id="product-form" onSubmit={handleSubmit} className="p-3 space-y-3">
+          <form id="product-form" onSubmit={handleSubmit} className="product-form-body">
             <ProductFormFields
               ref={formFieldsRef}
               form={form}
@@ -752,16 +707,16 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
         </GlassCard>
 
         {/* Right: Batches Panel */}
-        <GlassCard className="lg:col-span-1">
-          <div className="px-3 py-2 border-b border-gray-200/60 dark:border-gray-700/60">
+        <GlassCard className="product-form-panel product-form-batches">
+          <div className="product-form-batches-heading">
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-sm dark:text-slate-200">Batches</span>
+              <h2>Batches</h2>
               <span className="text-xs text-gray-500 dark:text-slate-400">{batches.length} items</span>
             </div>
           </div>
           <div className="p-3">
             {batches.length > 0 ? (
-              <div className="rounded-xl overflow-hidden ring-1 ring-gray-200/70 dark:ring-slate-600/70 bg-white/60 dark:bg-slate-700/60">
+              <div className="product-form-batch-scroll">
                 <table className="w-full text-xs">
                   <thead className="bg-white/80 dark:bg-slate-600/80 backdrop-blur-xs border-b border-gray-200/70 dark:border-slate-500/70 text-left">
                     <tr>
