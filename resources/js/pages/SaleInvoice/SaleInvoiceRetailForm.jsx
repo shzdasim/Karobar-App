@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { TrashIcon, PlusIcon, CubeIcon, HashtagIcon, CheckIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
@@ -1044,17 +1045,15 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
 
   return (
     <form
-      className={`h-[calc(100vh-110px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`}
+      className={`sale-entry sale-entry-form h-[calc(100vh-130px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`}
       autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
     >
       {/* Header */}
-      <div className={`shrink-0 sticky top-0 z-20 shadow-lg border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+      <div className={`sale-entry-header shrink-0 sticky top-0 z-20 border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
         {/* Branded Banner */}
         <div
-          className="px-3 sm:px-4 py-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2"
-          style={{
-            background: `linear-gradient(135deg, ${themeColors.tertiary || themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          }}
+          className="sale-entry-banner px-3 sm:px-4 py-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2"
+
         >
           <div className="flex items-center gap-3">
             <div
@@ -1071,7 +1070,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-extrabold tracking-wide text-white leading-none">SALE INVOICE</h2>
+                <h2 className="text-base sm:text-lg font-extrabold tracking-wide text-white leading-none">Sale Invoice</h2>
                 <span
                   className="px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest text-white"
                   style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(4px)" }}
@@ -1096,8 +1095,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
           <div className="flex items-center ml-auto gap-2.5">
             {/* Invoice Type Segmented Control */}
             <div
-              className="flex items-center rounded-lg p-0.5 shadow-inner"
-              style={{ backgroundColor: "rgba(0,0,0,0.18)" }}
+              className="sale-type-toggle flex items-center"
             >
               {["debit", "credit"].map((type) => {
                 const active = form.invoice_type === type;
@@ -1106,15 +1104,11 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                     key={type}
                     type="button"
                     onClick={() => handleInvoiceTypeChange(type)}
-                    className={`px-3.5 py-1.5 text-[11px] font-semibold rounded-md transition-all duration-200 ${
-                      active ? "text-white shadow-sm" : "text-white/80 hover:text-white"
-                    }`}
-                    style={{
-                      backgroundColor: active ? "rgba(255,255,255,0.22)" : "transparent",
-                      backdropFilter: active ? "blur(4px)" : "none",
-                    }}
+                    className={`sale-type-option ${active ? "is-active" : ""}`}
+                    aria-pressed={active}
                   >
-                    {type === "debit" ? "💳 Debit" : "🤝 Credit"}
+                    {active && <CheckIcon aria-hidden="true" />}
+                    {type === "debit" ? "Debit" : "Credit"}
                   </button>
                 );
               })}
@@ -1132,7 +1126,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         </div>
 
         {/* Fields Card */}
-        <div className="bg-white dark:bg-slate-800 px-3 py-2">
+        <div className="sale-entry-details px-3 py-2">
           <div className="grid grid-cols-2 md:grid-cols-12 gap-2 items-end">
             <div className="col-span-1 md:col-span-2">
               <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Posted #</label>
@@ -1238,11 +1232,11 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       </div>
 
       {/* Main workspace: Items + Summary */}
-      <div className={`flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_280px] gap-2 px-2 py-2 overflow-hidden ${isDark ? "bg-slate-900" : "bg-white"}`}>
+      <div className={`sale-entry-workspace flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_280px] gap-2 px-2 py-2 overflow-hidden ${isDark ? "bg-slate-900" : "bg-white"}`}>
         {/* LEFT: Items */}
         <div className="flex flex-col min-h-0 flex-1 lg:flex-none">
           <div className={`text-[11px] font-semibold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Items</div>
-          <div ref={itemsScrollRef} className={`flex-1 overflow-auto border-2 rounded-sm relative ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
+          <div ref={itemsScrollRef} className={`sale-entry-items flex-1 overflow-auto border-2 rounded-sm relative ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
             <table className="w-full min-w-[560px] text-[11px] table-fixed border-collapse" autoComplete="off">
               <thead className={`sticky top-0 z-20 ${isDark ? "bg-slate-800/90 backdrop-blur-xs border-slate-700" : "bg-white/80 backdrop-blur-xs border-gray-200/70"} border-b`}>
                 <tr className="[&>th]:py-1 [&>th]:px-1 [&>th]:text-left">
@@ -1267,10 +1261,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                       <button
                         type="button"
                         onClick={() => removeRow(i)}
-                        className={`px-2 rounded-sm text-white text-[10px] font-semibold transition-all duration-200 ${btnDanger.className}`}
-                        style={btnDanger.style}
+                        aria-label="Remove item" title="Remove item"
+                        className="sale-item-action sale-item-remove"
                       >
-                        X
+                        <TrashIcon aria-hidden="true" />
                       </button>
                     </td>
                     <td className={`text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>{i + 1}</td>
@@ -1440,10 +1434,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                       <button
                         type="button"
                         onClick={addRow}
-                        className={`px-2 rounded-sm text-white text-[10px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
-                        style={btnSecondary.style}
+                        aria-label="Add item" title="Add item"
+                        className="sale-item-action sale-item-add"
                       >
-                        +
+                        <PlusIcon aria-hidden="true" />
                       </button>
                     </td>
                   </tr>
@@ -1455,10 +1449,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
 
         {/* RIGHT: Summary */}
         <div className="min-h-0 w-full shrink-0 max-h-[45%] lg:max-h-none lg:w-auto">
-          <div className={`h-full flex flex-col rounded-2xl overflow-hidden shadow-lg ${isDark ? "bg-slate-800" : "bg-white"}`}>
+          <div className={`sale-entry-summary h-full flex flex-col rounded-2xl overflow-hidden ${isDark ? "bg-slate-800" : "bg-white"}`}>
             {/* Panel Header */}
             <div
-              className="px-4 py-3 flex items-center justify-between shrink-0"
+              className="sale-entry-summary-heading px-4 py-3 flex items-center justify-between shrink-0"
               style={{ background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})` }}
             >
               <span className="text-white font-bold text-sm tracking-wide">Invoice Summary</span>
@@ -1470,7 +1464,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
             </div>
 
 {/* Non-scrollable content */}
-            <div className="flex-1 flex flex-col min-h-0 px-4 py-3 text-[12px] overflow-y-auto">
+            <div className="sale-summary-body flex-1 flex flex-col min-h-0 px-4 py-3 text-[12px] overflow-y-auto">
               {/* Equal-width inputs */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">

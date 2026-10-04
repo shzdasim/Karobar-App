@@ -72,7 +72,7 @@ export default function EditSaleInvoice() {
   const isWholesale = saleType === "wholesale";
 
   return (
-    <div className="-mx-4 md:-mx-6 -mt-2 md:-mt-2">
+    <div className="sale-entry-page">
       <Guard when={can.update}>
         {isWholesale ? (
           <SaleInvoiceWholesaleForm

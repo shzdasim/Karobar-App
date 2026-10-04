@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
+import { MagnifyingGlassIcon, PrinterIcon, PencilSquareIcon, TrashIcon, PlusIcon, ArrowLeftIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 // 🔒 permissions
 import { usePermissions, Guard } from "@/api/usePermissions.js";
@@ -448,7 +449,7 @@ export default function SaleInvoiceShow() {
   const fmt = (v) => ((v ?? "") === "" ? "" : String(v));
 
   return (
-    <div className={`h-[calc(100vh-110px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`}>
+    <div className={`sale-entry h-[calc(100vh-130px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`}>
       <style>{`
         @media print {
           .no-print { display: none !important; }
@@ -457,13 +458,11 @@ export default function SaleInvoiceShow() {
       `}</style>
 
       {/* === Header (branded banner, matches Sale Invoice form) === */}
-      <div className={`shrink-0 sticky top-0 z-20 shadow-lg border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+      <div className={`sale-entry-header shrink-0 sticky top-0 z-20 border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
         {/* Branded Banner */}
         <div
-          className="px-4 py-2.5 flex items-center justify-between gap-3"
-          style={{
-            background: `linear-gradient(135deg, ${themeColors.tertiary || themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          }}
+          className="sale-entry-banner px-4 py-2.5 flex items-center justify-between gap-3"
+
         >
           <div className="flex items-center gap-3">
             <div
@@ -480,7 +479,7 @@ export default function SaleInvoiceShow() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-extrabold tracking-wide text-white leading-none">SALE INVOICE</h2>
+                <h2 className="text-lg font-extrabold tracking-wide text-white leading-none">Sale Invoice</h2>
                 <span
                   className="px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest text-white"
                   style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(4px)" }}
@@ -519,7 +518,7 @@ export default function SaleInvoiceShow() {
                       backdropFilter: active ? "blur(4px)" : "none",
                     }}
                   >
-                    {type === "debit" ? "💳 Debit" : "🤝 Credit"}
+                    {type === "debit" ? "Debit" : "Credit"}
                   </span>
                 );
               })}
@@ -532,7 +531,7 @@ export default function SaleInvoiceShow() {
               className="px-3 py-2 rounded-lg text-[11px] font-bold bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
               style={{ color: themeColors.primaryHover }}
             >
-              🔍 Search
+              <MagnifyingGlassIcon aria-hidden="true" /> Search
             </button>
             <button
               type="button"
@@ -540,7 +539,7 @@ export default function SaleInvoiceShow() {
               className="px-3 py-2 rounded-lg text-[11px] font-bold bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
               style={{ color: themeColors.primaryHover }}
             >
-              🖨️ Print
+              <PrinterIcon aria-hidden="true" /> Print
             </button>
             <Guard when={can.update}>
               <button
@@ -549,7 +548,7 @@ export default function SaleInvoiceShow() {
                 className="px-3 py-2 rounded-lg text-[11px] font-bold bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
                 style={{ color: themeColors.primaryHover }}
               >
-                ✏️ Edit
+                <PencilSquareIcon aria-hidden="true" /> Edit
               </button>
             </Guard>
             <Guard when={can.delete}>
@@ -558,7 +557,7 @@ export default function SaleInvoiceShow() {
                 onClick={openDeleteModal}
                 className="px-3 py-2 rounded-lg text-[11px] font-bold bg-red-500/90 hover:bg-red-500 shadow-lg transition-all duration-200"
               >
-                🗑 Delete
+                <TrashIcon aria-hidden="true" /> Delete
               </button>
             </Guard>
             <Guard when={can.create}>
@@ -572,7 +571,7 @@ export default function SaleInvoiceShow() {
                 className="px-3 py-2 rounded-lg text-[11px] font-bold bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
                 style={{ color: themeColors.primaryHover }}
               >
-                ➕ New
+                <PlusIcon aria-hidden="true" /> New
               </button>
             </Guard>
             <button
@@ -580,13 +579,13 @@ export default function SaleInvoiceShow() {
               onClick={() => navigate(-1)}
               className="px-3 py-2 rounded-lg text-[11px] font-bold bg-black/25 hover:bg-black/30 shadow-lg transition-all duration-200 text-white"
             >
-              ← Back
+              <ArrowLeftIcon aria-hidden="true" /> Back
             </button>
           </div>
         </div>
 
         {/* Fields Card */}
-        <div className="bg-white dark:bg-slate-800 px-3 py-2">
+        <div className="sale-entry-details px-3 py-2">
           <div className="grid grid-cols-12 gap-2 items-end">
             <div className="col-span-2">
               <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Posted #</label>
@@ -668,11 +667,11 @@ export default function SaleInvoiceShow() {
       </div>
 
       {/* === Main workspace: Items (fluid) + Summary (280px) === */}
-      <div className={`flex-1 grid grid-cols-[1fr_280px] gap-2 px-2 py-2 overflow-hidden ${isDark ? "bg-slate-900" : "bg-white"}`}>
+      <div className={`sale-entry-workspace flex-1 grid grid-cols-[1fr_280px] gap-2 px-2 py-2 overflow-hidden ${isDark ? "bg-slate-900" : "bg-white"}`}>
         {/* LEFT: Items */}
         <div className="flex flex-col min-h-0">
           <div className={`text-[11px] font-semibold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Items</div>
-          <div ref={itemsScrollRef} className={`flex-1 overflow-auto border-2 rounded-sm relative ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
+          <div ref={itemsScrollRef} className={`sale-entry-items flex-1 overflow-auto border-2 rounded-sm relative ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
             <table className="w-full text-[11px] table-fixed border-collapse print-table">
               <thead className={`sticky top-0 z-20 ${isDark ? "bg-slate-800/90 backdrop-blur-xs" : "bg-white/80 backdrop-blur-xs"} border-b ${isDark ? "border-slate-700" : "border-gray-200/70"}`}>
                 <tr className="[&>th]:py-1 [&>th]:px-1 [&>th]:text-left">
@@ -710,10 +709,10 @@ export default function SaleInvoiceShow() {
 
         {/* RIGHT: Summary panel (mirrors form layout) */}
         <div className="min-h-0">
-          <div className={`h-full flex flex-col rounded-2xl overflow-hidden shadow-lg ${isDark ? "bg-slate-800" : "bg-white"}`}>
+          <div className={`sale-entry-summary h-full flex flex-col rounded-2xl overflow-hidden ${isDark ? "bg-slate-800" : "bg-white"}`}>
             {/* Panel Header */}
             <div
-              className="px-4 py-3 flex items-center justify-between shrink-0"
+              className="sale-entry-summary-heading px-4 py-3 flex items-center justify-between shrink-0"
               style={{ background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})` }}
             >
               <span className="text-white font-bold text-sm tracking-wide">Invoice Summary</span>
@@ -814,7 +813,7 @@ export default function SaleInvoiceShow() {
                   style={btnSuccess.style}
                   title="Alt+P"
                 >
-                  🖨️ Print
+                  <PrinterIcon aria-hidden="true" /> Print
                 </button>
                 <Guard when={can.update}>
                   <button
@@ -824,7 +823,7 @@ export default function SaleInvoiceShow() {
                     style={btnPrimary.style}
                     title="Alt+E"
                   >
-                    ✏️ Edit
+                    <PencilSquareIcon aria-hidden="true" /> Edit
                   </button>
                 </Guard>
               </div>
@@ -840,7 +839,7 @@ export default function SaleInvoiceShow() {
                     className={`flex-1 h-8 rounded-lg text-[11px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
                     style={btnSecondary.style}
                   >
-                    ➕ New
+                    <PlusIcon aria-hidden="true" /> New
                   </button>
                 </Guard>
                 <Guard when={can.delete}>
@@ -850,7 +849,7 @@ export default function SaleInvoiceShow() {
                     className={`flex-1 h-8 rounded-lg text-[11px] font-semibold transition-all duration-200 ${btnDanger.className}`}
                     style={btnDanger.style}
                   >
-                    🗑 Delete
+                    <TrashIcon aria-hidden="true" /> Delete
                   </button>
                 </Guard>
                 <button
@@ -859,7 +858,7 @@ export default function SaleInvoiceShow() {
                   className={`flex-1 h-8 rounded-lg text-[11px] font-semibold transition-all duration-200 ${btnGlass.className}`}
                   style={btnGlass.style}
                 >
-                  ← Back
+                  <ArrowLeftIcon aria-hidden="true" /> Back
                 </button>
               </div>
             </div>
@@ -935,7 +934,7 @@ export default function SaleInvoiceShow() {
                 </div>
                 <div className="mt-4 flex justify-between">
                   <button className="px-3 py-1 rounded-sm border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700" onClick={() => setDeleteStep(1)}>
-                    ← Back
+                    <ArrowLeftIcon aria-hidden="true" /> Back
                   </button>
                   <button
                     className={`px-3 py-1 rounded-sm text-white font-semibold transition-all duration-200 ${btnPrimary.className}`}
@@ -973,7 +972,7 @@ export default function SaleInvoiceShow() {
                     onClick={() => setDeleteStep(needsChoice ? 2 : 1)}
                     disabled={deleting}
                   >
-                    ← Back
+                    <ArrowLeftIcon aria-hidden="true" /> Back
                   </button>
                   <div className="flex gap-2">
                     <button className="px-3 py-1 rounded-sm border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700" onClick={closeDeleteModal} disabled={deleting}>

@@ -145,12 +145,12 @@ export default function SaleInvoicesIndex() {
     getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
     [themeColors.primary, themeColors.primaryHover]
   );
-  
+
   const secondaryTextColor = useMemo(() => 
     getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
     [themeColors.secondary, themeColors.secondaryHover]
   );
-  
+
   const dangerTextColor = useMemo(() => 
     getButtonTextColor(themeColors.danger, themeColors.dangerHover), 
     [themeColors.danger, themeColors.dangerHover]
@@ -161,13 +161,13 @@ export default function SaleInvoicesIndex() {
 
   // Get dark mode state
   const { isDark } = useTheme();
-  
+
   // Get sale system setting
   const { hasWholesale, loading: saleSystemLoading } = useSaleSystem();
 
   // 🎨 Dynamic Button styles using theme colors
   const buttonStyle = theme?.button_style || 'rounded-sm';
-  
+
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
       'rounded-sm': 'rounded-lg',
@@ -175,7 +175,7 @@ export default function SaleInvoicesIndex() {
       'soft': 'rounded-xl',
     };
     const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
-    
+
     if (buttonStyle === 'outlined') {
       return {
         primary: {
@@ -219,7 +219,7 @@ export default function SaleInvoicesIndex() {
         },
       };
     }
-    
+
     // Filled styles for rounded and soft
     return {
       primary: {
@@ -502,11 +502,11 @@ export default function SaleInvoicesIndex() {
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view sale invoices.</div>;
 
   return (
-    <div className="p-3 md:p-4 space-y-4">
+    <div className="sale-invoice-list space-y-4">
       {/* ===== Premium Hero Header ===== */}
       <div
-        className="relative rounded-2xl overflow-hidden shadow-lg"
-        style={{ background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+        className="sale-list-header relative rounded-2xl overflow-hidden"
+
       >
         {/* Decorative blurred blobs */}
         <div className="absolute -top-10 -right-8 w-64 h-64 rounded-full bg-white/15 blur-3xl pointer-events-none" />
@@ -582,6 +582,7 @@ export default function SaleInvoicesIndex() {
             <div className="flex items-center gap-2">
               <DocumentTextIcon className="w-4 h-4 text-white/80 shrink-0" />
               <TextSearch
+                aria-label="Search by posted number"
                 value={qPosted}
                 onChange={setQPosted}
                 placeholder="Search by Posted No (e.g., SI-000001)…"
@@ -591,6 +592,7 @@ export default function SaleInvoicesIndex() {
             <div className="flex items-center gap-2">
               <UserIcon className="w-4 h-4 text-white/80 shrink-0" />
               <TextSearch
+                aria-label="Search by customer"
                 value={qCustomer}
                 onChange={setQCustomer}
                 placeholder="Search by Customer…"
@@ -602,7 +604,7 @@ export default function SaleInvoicesIndex() {
       </div>
 
       {/* ===== Invoices Table ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden hover:shadow-lg transition-shadow duration-300">
+      <div className="sale-list-table rounded-2xl overflow-hidden">
         {/* Table Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-2.5">
@@ -751,48 +753,44 @@ export default function SaleInvoicesIndex() {
                         {/* View Action */}
                         <Link
                           to={`/sale-invoices/${invoice.id}`}
-                          className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnPrimary.className}`}
-                          style={btnPrimary.style}
-                          title="View"
+                          className="products-row-action"
+                          title="View" aria-label="View sale invoice"
                         >
                           <EyeIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                          <span>View</span>
+
                         </Link>
 
                         {/* Edit Action */}
                         <Guard when={can.update}>
                           <Link
                             to={`/sale-invoices/${invoice.id}/edit`}
-                            className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnSecondary.className}`}
-                            style={btnSecondary.style}
-                            title="Edit"
+                            className="products-row-action"
+                              title="Edit" aria-label="Edit sale invoice"
                           >
                             <PencilSquareIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                            <span>Edit</span>
+
                           </Link>
                         </Guard>
 
                         {/* Print Action */}
                         <button
                           onClick={() => handlePrint(invoice.id)}
-                          className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnTertiary.className}`}
-                          style={btnTertiary.style}
-                          title="Print"
+                          className="products-row-action"
+                          title="Print" aria-label="Print sale invoice"
                         >
                           <PrinterIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                          <span>Print</span>
+
                         </button>
 
                         {/* Delete Action */}
                         <Guard when={can.delete}>
                           <button
                             onClick={() => openDeleteModal(invoice)}
-                            className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnDanger.className}`}
-                            style={btnDanger.style}
-                            title="Delete"
+                            className="products-row-action products-row-action-danger"
+                              title="Delete" aria-label="Delete sale invoice"
                           >
                             <TrashIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                            <span>Delete</span>
+
                           </button>
                         </Guard>
                       </div>
