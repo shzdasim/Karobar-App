@@ -17,10 +17,10 @@ import { useTheme } from "@/context/ThemeContext.jsx";
 import { DeleteConfirmationModal } from "@/components";
 
 const STATUS_STYLES = {
-  pending: { label: "Pending", bg: "#fef3c7", text: "#d97706" },
-  ordered: { label: "Ordered", bg: "#dbeafe", text: "#2563eb" },
-  fulfilled: { label: "Fulfilled", bg: "#dcfce7", text: "#16a34a" },
-  cancelled: { label: "Cancelled", bg: "#fee2e2", text: "#dc2626" },
+  pending: { label: "Pending" },
+  ordered: { label: "Ordered" },
+  fulfilled: { label: "Fulfilled" },
+  cancelled: { label: "Cancelled" },
 };
 
 const STATUS_ORDER = ["pending", "ordered", "fulfilled", "cancelled"];
@@ -107,21 +107,19 @@ export default function UserDemandsIndex() {
   if (!canView) return <div className="p-6 text-sm text-gray-700">You don't have permission to view User Demands.</div>;
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="user-demands-page space-y-4">
       {/* Hero */}
       <div
-        className="relative overflow-hidden rounded-2xl shadow-lg"
-        style={{ background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+        className="user-demands-header products-panel"
       >
-        <div className="absolute -top-10 -right-8 w-64 h-64 rounded-full bg-white/15 blur-3xl pointer-events-none" />
         <div className="relative px-6 pt-5 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm shadow-inner flex items-center justify-center">
+            <div className="products-identity-icon">
               <HandRaisedIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-extrabold tracking-wide text-white leading-none">User Demands</h1>
-              <p className="text-xs text-white/85 mt-1.5 flex items-center gap-1.5">
+              <h1 className="products-title">User Demands</h1>
+              <p className="products-subtitle">
                 <CubeIcon className="w-3.5 h-3.5" />
                 {stats.pending_count} pending · {stats.count} total
               </p>
@@ -132,7 +130,7 @@ export default function UserDemandsIndex() {
             <button
               onClick={fetchDemands}
               disabled={loading}
-              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 transition-all duration-200"
+              className="products-action"
             >
               <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
               {loading ? "Loading…" : "Refresh"}
@@ -140,12 +138,10 @@ export default function UserDemandsIndex() {
             {canCreate && (
               <Link
                 to="/user-demands/create"
-                className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-bold text-white bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
-                style={{ color: themeColors.primaryHover }}
+                className="products-action products-action-primary"
               >
                 <PlusCircleIcon className="w-4 h-4" />
-                <span className="hidden sm:inline">Request Product</span>
-                <span className="sm:hidden">Add</span>
+                <span>Request product</span>
               </Link>
             )}
           </div>
@@ -153,16 +149,13 @@ export default function UserDemandsIndex() {
 
         {/* Status filter */}
         <div className="relative px-6 pt-2 pb-5">
-          <div className="flex flex-wrap items-center gap-2 bg-white/15 backdrop-blur-sm border border-white/20 rounded-xl p-2">
+          <div className="user-demand-status-filters" role="group" aria-label="Filter demands by status">
             {["all", ...STATUS_ORDER].map((s) => (
               <button
                 key={s}
                 onClick={() => setStatusFilter(s === "all" ? "" : s)}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200"
-                style={{
-                  background: statusFilter === s ? "rgba(255,255,255,0.95)" : "transparent",
-                  color: statusFilter === s ? themeColors.primaryHover : "white",
-                }}
+                aria-pressed={statusFilter === (s === "all" ? "" : s)}
+                className="user-demand-status-option"
               >
                 {s === "all" ? "All" : STATUS_STYLES[s]?.label}
               </button>
@@ -172,7 +165,7 @@ export default function UserDemandsIndex() {
       </div>
 
       {/* Table */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden">
+      <div className="user-demands-table products-panel overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl shadow-xs" style={{ backgroundColor: themeColors.secondaryLight }}>
@@ -185,7 +178,7 @@ export default function UserDemandsIndex() {
           </div>
         </div>
 
-        <div className="max-h-[65vh] overflow-auto">
+        <div className="max-h-[65vh] overflow-auto" role="region" aria-label="User demand list" tabIndex={0}>
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
               <tr className="text-left text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">
@@ -200,6 +193,9 @@ export default function UserDemandsIndex() {
               </tr>
             </thead>
             <tbody>
+              {loading && rows.length === 0 && (
+                <tr><td colSpan={8} className="px-3 py-12 text-center" role="status">Loading demands…</td></tr>
+              )}
               {rows.length === 0 && !loading && (
                 <tr>
 <td colSpan={8} className="px-3 py-12 text-center text-gray-500 dark:text-gray-400">
@@ -245,7 +241,7 @@ export default function UserDemandsIndex() {
                     </td>
                     <td className="px-3 py-2.5 text-gray-700 dark:text-gray-300">{d.customer?.name || "—"}</td>
                     <td className="px-3 py-2.5">
-                      <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-bold" style={{ backgroundColor: st.bg, color: st.text }}>
+                      <span className={`user-demand-badge user-demand-badge-${d.status || "pending"}`}>
                         {st.label}
                       </span>
                     </td>
@@ -256,21 +252,24 @@ export default function UserDemandsIndex() {
                             <button
                               onClick={() => changeStatus(d, "ordered")}
                               title="Mark as Ordered"
-                              className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                              aria-label={`Mark as Ordered: ${d.requested_name || d.product?.name || "demand"}`}
+                              className="products-row-action "
                             >
                               <ShoppingCartIcon className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => changeStatus(d, "fulfilled")}
                               title="Mark as Fulfilled"
-                              className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors"
+                              aria-label={`Mark as Fulfilled: ${d.requested_name || d.product?.name || "demand"}`}
+                              className="products-row-action "
                             >
                               <CheckCircleIcon className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => changeStatus(d, "cancelled")}
                               title="Cancel demand"
-                              className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                              aria-label={`Cancel demand: ${d.requested_name || d.product?.name || "demand"}`}
+                              className="products-row-action products-row-action-danger"
                             >
                               <XCircleIcon className="w-4 h-4" />
                             </button>
@@ -280,7 +279,8 @@ export default function UserDemandsIndex() {
                           <button
                             onClick={() => openDelete(d)}
                             title="Delete"
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                              aria-label={`Delete: ${d.requested_name || d.product?.name || "demand"}`}
+                              className="products-row-action products-row-action-danger"
                           >
                             <TrashIcon className="w-4 h-4" />
                           </button>

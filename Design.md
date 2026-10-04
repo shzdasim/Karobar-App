@@ -53,6 +53,8 @@ Sale invoice lists, retail/wholesale forms, edit screens, and details share tint
 
 Purchase and sale return lists use the shared glass list framing and centered icon actions. Create/edit return forms share tinted headers, bordered dense fields, grouped item tables, and a distinct totals band. Stack detail fields and totals on mobile, contain horizontal item scrolling, and preserve invoice linking, return eligibility, batches, stock limits, calculations, permissions, and save/delete flows.
 
+User demand lists and request forms use glass overview panels, readable table interiors, persistent field labels, and shared centered icon actions. Status filters show their selected state including All; request form fields use visible borders as a user-requested exception to the borderless default. Preserve product linking, new-product creation requirements, customer selection, status updates, permissions, and deletion confirmation.
+
 Purchase order forecasting uses a glass overview with labeled forecast controls, a clearly selected print-format toggle, and a readable result table. Keep numeric forecast settings and editable table quantities outlined, preserve supplier/brand selection and stock/order filters, and contain table scrolling. Forecast formulas, manual overrides, permissions, and A4/thermal output remain unchanged.
 
 On mobile, replace the inset desktop sidebar with the existing drawer behavior. Keep a compact glass topbar, stack panels, and let filter controls wrap. Use no horizontal page overflow; only wide data regions may scroll horizontally.

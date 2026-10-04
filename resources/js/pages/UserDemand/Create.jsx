@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -13,8 +13,6 @@ import {
   UserIcon,
 } from "@heroicons/react/24/solid";
 import { usePermissions } from "@/api/usePermissions.js";
-import { useTheme } from "@/context/ThemeContext.jsx";
-import { GlassCard } from "@/components";
 import BrandSearch from "@/components/BrandSearch.jsx";
 import SupplierSearch from "@/components/SupplierSearch.jsx";
 import CategorySearch from "@/components/CategorySearch.jsx";
@@ -26,17 +24,6 @@ const asList = (payload) =>
 export default function CreateUserDemand() {
   const navigate = useNavigate();
   const { has } = usePermissions();
-  const { theme } = useTheme();
-
-  const themeColors = useMemo(() => ({
-    primary: theme?.primary_color || '#3b82f6',
-    primaryHover: theme?.primary_hover || '#2563eb',
-    primaryLight: theme?.primary_light || '#dbeafe',
-    secondary: theme?.secondary_color || '#8b5cf6',
-    secondaryHover: theme?.secondary_hover || '#7c3aed',
-    success: theme?.success_color || '#10b981',
-  }), [theme]);
-
   const canCreate = has("user-demands.create");
 
 const [name, setName] = useState("");
@@ -176,36 +163,35 @@ if (selectedProduct) {
   };
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="user-demands-page space-y-4">
       {/* Hero */}
       <div
-        className="relative overflow-hidden rounded-2xl shadow-lg"
-        style={{ background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+        className="user-demands-header products-panel"
       >
-        <div className="absolute -top-10 -right-8 w-64 h-64 rounded-full bg-white/15 blur-3xl pointer-events-none" />
         <div className="relative px-6 py-5 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm shadow-inner flex items-center justify-center">
+          <div className="products-identity-icon">
             <HandRaisedIcon className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-extrabold tracking-wide text-white leading-none">Request Product</h1>
-            <p className="text-xs text-white/85 mt-1.5">
-              Create a user demand for a product we don't have yet
+            <h1 className="products-title">Request Product</h1>
+            <p className="products-subtitle">
+              Request an existing product or add a new product demand.
             </p>
           </div>
         </div>
       </div>
 
-      <GlassCard className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden">
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+      <div className="user-demand-form-panel products-panel">
+        <form onSubmit={handleSubmit} className="user-demand-form p-6 space-y-5">
           {/* Product name / existing product picker */}
           <div>
             <label className="block text-sm font-medium mb-1.5 dark:text-slate-200">Product Name</label>
             <div className="relative">
-              <div className="flex items-center gap-2 px-3 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 focus-within:ring-2 focus-within:ring-blue-400">
+              <div className="user-demand-product-search flex items-center gap-2 px-3">
                 <MagnifyingGlassIcon className="w-4 h-4 text-gray-400" />
 <input
                   ref={nameRef}
+                  aria-label="Product name"
                   type="text"
                   value={name}
                   onChange={(e) => handleNameChange(e.target.value)}
@@ -216,7 +202,7 @@ if (selectedProduct) {
                     }
                   }}
                   placeholder="Type a product name..."
-                  className="flex-1 h-10 bg-transparent outline-hidden text-sm dark:text-slate-100"
+                  className="flex-1 min-w-0 h-10 bg-transparent outline-hidden text-sm dark:text-slate-100"
                 />
                 {searching && <ArrowPathIcon className="w-4 h-4 animate-spin text-gray-400" />}
               </div>
@@ -278,6 +264,7 @@ onClick={() => {
                   <label className="block text-sm font-medium mb-1.5 dark:text-slate-200">Brand *</label>
                   <button
                     ref={brandRef}
+                  aria-label="Select brand"
                     type="button"
                     onClick={() => setBrandSearchOpen(true)}
                     onKeyDown={(e) => {
@@ -299,6 +286,7 @@ onClick={() => {
                   <label className="block text-sm font-medium mb-1.5 dark:text-slate-200">Category *</label>
                   <button
                     ref={categoryRef}
+                  aria-label="Select category"
                     type="button"
                     onClick={() => setCategorySearchOpen(true)}
                     onKeyDown={(e) => {
@@ -320,6 +308,7 @@ onClick={() => {
                   <label className="block text-sm font-medium mb-1.5 dark:text-slate-200">Supplier (optional)</label>
                   <button
                     ref={supplierRef}
+                  aria-label="Select supplier"
                     type="button"
                     onClick={() => setSupplierSearchOpen(true)}
                     onKeyDown={(e) => {
@@ -346,6 +335,7 @@ onClick={() => {
               <label className="block text-sm font-medium mb-1.5 dark:text-slate-200">Requested Quantity</label>
               <input
                 ref={qtyRef}
+                  aria-label="Requested quantity"
                 type="number"
                 min={1}
                 value={requestedQuantity}
@@ -365,6 +355,7 @@ onClick={() => {
                 <label className="block text-sm font-medium mb-1.5 dark:text-slate-200">Pack Size</label>
                 <input
                   ref={packSizeRef}
+                  aria-label="Pack size"
                   type="number"
                   min={1}
                   value={packSize}
@@ -383,6 +374,7 @@ onClick={() => {
               <label className="block text-sm font-medium mb-1.5 dark:text-slate-200">Notes</label>
               <input
                 ref={notesRef}
+                  aria-label="Notes"
                 type="text"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
@@ -403,6 +395,7 @@ onClick={() => {
 <label className="block text-sm font-medium mb-1.5 dark:text-slate-200">Customer (optional)</label>
             <div
               ref={customerRef}
+                  aria-label="Select customer"
               role="button"
               tabIndex={0}
               onClick={() => setCustomerSearchOpen(true)}
@@ -434,12 +427,12 @@ onClick={() => {
           </div>
 
           {/* Actions */}
-          <div className="flex items-center justify-end gap-2 pt-2">
+          <div className="user-demand-form-actions flex items-center justify-end gap-3 pt-4">
 <button
               type="button"
               onClick={() => navigate("/user-demands")}
               title="Cancel (Alt+C)"
-              className="px-4 h-10 rounded-lg border border-gray-200 dark:border-slate-600 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+              className="products-action"
             >
               Cancel
             </button>
@@ -448,19 +441,14 @@ onClick={() => {
               type="submit"
               disabled={saving}
               title="Save (Alt+S)"
-              className="px-5 h-10 rounded-lg text-sm font-bold text-white transition-all duration-200 inline-flex items-center gap-2"
-              style={{
-                background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                opacity: saving ? 0.6 : 1,
-                cursor: saving ? "not-allowed" : "pointer",
-              }}
+              className="products-action products-action-primary"
             >
               {saving ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <HandRaisedIcon className="w-4 h-4" />}
               {saving ? "Creating…" : "Create Demand"}
             </button>
           </div>
         </form>
-      </GlassCard>
+      </div>
 
 <BrandSearch
         isOpen={brandSearchOpen}
