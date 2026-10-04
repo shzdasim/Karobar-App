@@ -14,6 +14,7 @@ import {
   BuildingStorefrontIcon,
   ArrowUturnLeftIcon,
   HandRaisedIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/solid";
 import { usePermissions } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext.jsx";
@@ -745,13 +746,10 @@ ${isA4 ? `
   if (!canView) return <div className="p-6 text-sm text-gray-700">You don't have permission to view Purchase Order (Forecast).</div>;
 
   return (
-    <div className="p-4 space-y-3 print:p-0" onKeyDown={onKeyDownTable}>
-{/* ===== Premium Gradient Hero Header ===== */}
+    <div className="purchase-order-page space-y-4 print:p-0" onKeyDown={onKeyDownTable}>
+{/* Forecast overview */}
       <div
-        className="relative overflow-hidden rounded-2xl shadow-lg"
-        style={{
-          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
-        }}
+        className="purchase-order-header products-panel relative overflow-hidden"
       >
         {/* Decorative blurred blobs */}
         <div
@@ -764,7 +762,7 @@ ${isA4 ? `
         />
 
         {/* Hero Top */}
-        <div className="relative flex items-center justify-between px-5 py-4">
+        <div className="purchase-order-heading relative flex items-center justify-between px-5 py-4">
           <div className="flex items-center gap-3">
             <div
               className="p-2.5 rounded-xl shadow-inner"
@@ -787,90 +785,72 @@ ${isA4 ? `
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            {/* Generate Button */}
+        </div>
+
+        <div className="purchase-order-actions">
+          <div className="purchase-order-workflow-actions" role="group" aria-label="Forecast actions">
             <button
+              type="button"
               onClick={handleFetch}
               disabled={loading || !canGenerate}
-              className={`h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-bold shadow-lg transition-all duration-200 ${
-                canGenerate
-                  ? "text-white bg-white/95 hover:bg-white"
-                  : "bg-white/20 text-white/60 cursor-not-allowed"
-              }`}
-              style={canGenerate ? { color: themeColors.primaryHover } : {}}
+              className="purchase-order-action purchase-order-action-primary"
               title={!canGenerate ? "Not permitted" : "Generate forecast (Alt+G)"}
             >
-              <PlayCircleIcon className="w-4 h-4" />
-              {loading ? "Loading…" : "Generate"}
+              <PlayCircleIcon aria-hidden="true" />
+              {loading ? "Generating…" : "Generate forecast"}
             </button>
-
-            {/* Remove Zero Button */}
             <button
+              type="button"
               onClick={pruneNoPackPrice}
               disabled={!rows.length}
-              className={`h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-bold shadow-lg transition-all duration-200 ${
-                rows.length
-                  ? "text-white bg-white/95 hover:bg-white"
-                  : "bg-white/20 text-white/60 cursor-not-allowed"
-              }`}
-              style={rows.length ? { color: themeColors.primaryHover } : {}}
+              className="purchase-order-action"
               title="Remove products with no Pack Purchase Price"
             >
-              <span className="text-base leading-none">×</span>
-              Remove Zero
+              <XMarkIcon aria-hidden="true" />
+              Exclude zero-price items
             </button>
-
-            <div className="w-px h-8 bg-white/30 mx-1" />
-
-            {/* Refresh Button */}
             <button
+              type="button"
               onClick={() => window.location.reload()}
-              className="h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
-              title="Refresh"
+              className="purchase-order-action purchase-order-action-refresh"
+              title="Refresh page"
               aria-label="Refresh page"
             >
-              <ArrowPathIcon className="w-4 h-4" />
-              <span className="hidden sm:inline">Refresh</span>
+              <ArrowPathIcon aria-hidden="true" />
             </button>
+          </div>
 
-            {/* Printer Type Toggle */}
-            <div
-              className="flex items-center rounded-xl p-0.5 backdrop-blur-xs border border-white/20 bg-white/15 overflow-hidden"
-              title="Select print format"
-            >
+          <div className="purchase-order-print-actions" role="group" aria-label="Print forecast">
+            <span className="purchase-order-format-label">Format</span>
+            <div className="purchase-order-print-formats" role="group" aria-label="Print format">
               {["a4", "thermal"].map((t) => (
                 <button
                   key={t}
                   type="button"
                   onClick={() => setPrinterType(t)}
-                  className={`h-8 px-3 text-[10px] font-bold uppercase tracking-wide rounded-lg transition-all duration-200 ${
-                    printerType === t
-                      ? "text-white shadow-sm"
-                      : "text-white/70 hover:text-white"
-                  }`}
-                  style={printerType === t ? { backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(4px)" } : {}}
+                  aria-pressed={printerType === t}
+                  className="purchase-order-print-option"
+                  title={t === "a4" ? "A4 paper" : "Thermal receipt (80mm)"}
                 >
-                  {t}
+                  {t === "a4" ? "A4" : "Thermal"}
                 </button>
               ))}
             </div>
-
-            {/* Print Button */}
             <button
+              type="button"
               ref={printBtnRef}
               onClick={doPrint}
-              className="h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
+              className="purchase-order-action"
               title={`Print ${printerType === "thermal" ? "Thermal (80mm)" : "A4"} (Alt+P)${hasActiveResultFilters ? " — prints the filtered view" : ""}`}
             >
-              <PrinterIcon className="w-4 h-4" />
-              <span className="hidden sm:inline">Print</span>
+              <PrinterIcon aria-hidden="true" />
+              Print
             </button>
           </div>
         </div>
 
         {/* Integrated Filters */}
-        <div className="relative px-5 pb-4">
+        <div className="purchase-order-filters relative px-5 pb-4">
           <div
             className="grid grid-cols-2 md:grid-cols-12 gap-3 rounded-xl p-3"
             style={{ backgroundColor: "rgba(255,255,255,0.12)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)" }}
@@ -879,6 +859,7 @@ ${isA4 ? `
               <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">From</label>
               <input
                 type="date"
+                aria-label="Forecast from date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
                 className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/40 scheme-dark"
@@ -888,6 +869,7 @@ ${isA4 ? `
               <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">To</label>
               <input
                 type="date"
+                aria-label="Forecast to date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
                 className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/40 scheme-dark"
@@ -898,6 +880,7 @@ ${isA4 ? `
               <input
                 type="number"
                 min={1}
+                aria-label="Projected days"
                 value={projectedDays}
                 onChange={(e) => setProjectedDays(parseInt(e.target.value || 0, 10))}
                 className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/40 no-spinners"
@@ -909,6 +892,7 @@ ${isA4 ? `
               <input
                 type="number"
                 min={0}
+                aria-label="Safety packs"
                 value={safetyPacks}
                 onChange={(e) => setSafetyPacks(parseInt(e.target.value || 0, 10))}
                 className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/40 no-spinners"
@@ -920,6 +904,7 @@ ${isA4 ? `
               <input
                 type="number"
                 min={0}
+                aria-label="Minimum order packs"
                 value={moqPacks}
                 onChange={(e) => setMoqPacks(parseInt(e.target.value || 0, 10))}
                 className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/40 no-spinners"
@@ -1032,7 +1017,7 @@ ${isA4 ? `
       </div>
 
 {/* ===== Table ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden hover:shadow-lg transition-shadow duration-300">
+      <div className="purchase-order-results products-panel overflow-hidden">
         {/* Table Header + Result Filters */}
         <div className="flex items-center justify-between gap-3 px-4 py-3 bg-gray-50/70 dark:bg-slate-800/70 border-b border-gray-200 dark:border-slate-700 flex-wrap">
           <div className="flex items-center gap-2">
@@ -1168,7 +1153,7 @@ ${isA4 ? `
                     ref={(el) => (rowRefs.current[r._rowId] = el)}
                     onClick={() => setSelectedIndex(idx)}
                     className={`
-                      transition-colors
+                      purchase-order-row ${isActive ? "is-active" : ""} transition-colors
                       ${isActive 
                         ? "bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500/30" 
                         : "odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/40 dark:even:bg-slate-800/40 hover:bg-blue-50 dark:hover:bg-slate-600/50"
