@@ -1489,7 +1489,7 @@ const handleSelectChange = async (field, value) => {
 // ===== render =====
   return (
     <div className="relative w-full h-full">
-      <form className={`purchase-return-form h-[calc(100vh-130px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}>
+      <form className={`return-entry-form purchase-return-form h-[calc(100vh-130px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}>
 {/* ================= HEADER ================= */}
         <div className="return-header sticky top-0 z-20">
           {/* Branded Banner */}

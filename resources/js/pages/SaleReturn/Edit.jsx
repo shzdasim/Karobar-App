@@ -51,8 +51,7 @@ export default function EditSaleReturn() {
   if (fetchErr) return <div className="p-6 text-red-600">{fetchErr}</div>;
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Edit Sale Return</h1>
+    <div className="sale-return-page">
       <Guard when={can.update}>
         <SaleReturnForm returnId={id} initialData={initialData} onSuccess={handleSuccess} />
       </Guard>

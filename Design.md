@@ -51,6 +51,8 @@ Purchase invoice details use the same tinted glass frame, borderless read-only d
 
 Sale invoice lists, retail/wholesale forms, edit screens, and details share tinted glass framing and readable tables. Retain the item table beside the 280px summary on desktop, stack them on mobile, and contain item scrolling. Sale entry is an exception to borderless standard forms: its many fields use visible borders throughout. Keep the desktop summary compact so routine items and totals fit the viewport; retain overflow for long invoices, short windows, and enlarged text. Preserve sale modes, batches, stock validation, customer pricing, calculations, permissions, and existing print/receipt output.
 
+Purchase and sale return lists use the shared glass list framing and centered icon actions. Create/edit return forms share tinted headers, bordered dense fields, grouped item tables, and a distinct totals band. Stack detail fields and totals on mobile, contain horizontal item scrolling, and preserve invoice linking, return eligibility, batches, stock limits, calculations, permissions, and save/delete flows.
+
 On mobile, replace the inset desktop sidebar with the existing drawer behavior. Keep a compact glass topbar, stack panels, and let filter controls wrap. Use no horizontal page overflow; only wide data regions may scroll horizontally.
 
 The login screen shares the pearl/midnight canvas and cobalt accent. Center a single 440px maximum-width glass panel with a 28px radius, store/app identity, a short heading, and clearly labeled fields. On wide screens, a quiet brand illustration area may sit beside the form only when it adds meaning; the baseline design needs no new image assets.

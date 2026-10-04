@@ -23,8 +23,7 @@ export default function CreateSaleReturn() {
   if (!can.create) return <div className="p-6 text-sm text-gray-700">You don’t have permission to create sale returns.</div>; // 🔒
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Create Sale Return</h1>
+    <div className="sale-return-page">
       <SaleReturnForm onSuccess={handleSuccess} />
     </div>
   );

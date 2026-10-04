@@ -112,7 +112,7 @@ export default function SaleReturnsIndex() {
 
   // Get button style from theme
   const buttonStyle = theme?.button_style || 'rounded-sm';
-  
+
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
       'rounded-sm': 'rounded-lg',
@@ -120,7 +120,7 @@ export default function SaleReturnsIndex() {
       'soft': 'rounded-xl',
     };
     const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
-    
+
     if (buttonStyle === 'outlined') {
       return {
         primary: {
@@ -157,12 +157,12 @@ export default function SaleReturnsIndex() {
         },
       };
     }
-    
+
     // Filled styles for rounded and soft
     const primaryTextColor = getButtonTextColor(themeColors.primary, themeColors.primaryHover);
     const secondaryTextColor = getButtonTextColor(themeColors.secondary, themeColors.secondaryHover);
     const dangerTextColor = getButtonTextColor(themeColors.danger, themeColors.dangerHover);
-    
+
     return {
       primary: {
         className: radiusClass,
@@ -333,10 +333,8 @@ export default function SaleReturnsIndex() {
     <div className="p-4 space-y-3">
       {/* ===== Premium Gradient Hero Header ===== */}
       <div
-        className="relative overflow-hidden rounded-2xl shadow-lg border border-white/10"
-        style={{
-          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
-        }}
+        className="sale-list-header relative overflow-hidden"
+
       >
         {/* Decorative blurred blobs */}
         <div
@@ -405,6 +403,7 @@ export default function SaleReturnsIndex() {
               </div>
               <input
                 type="text"
+                aria-label="Search by posted number"
                 value={qPosted}
                 onChange={(e) => setQPosted(e.target.value)}
                 placeholder="Search by Posted No (e.g., SR-000001 or SRRET-0001)…"
@@ -418,6 +417,7 @@ export default function SaleReturnsIndex() {
               </div>
               <input
                 type="text"
+                aria-label="Search by customer"
                 value={qCustomer}
                 onChange={(e) => setQCustomer(e.target.value)}
                 placeholder="Search by Customer…"
@@ -430,7 +430,7 @@ export default function SaleReturnsIndex() {
       </div>
 
       {/* ===== Returns Table Card ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden">
+      <div className="sale-list-table rounded-2xl overflow-hidden">
         {/* Table Header */}
         <div className="flex items-center justify-between px-4 py-3 bg-gray-50/70 dark:bg-slate-800/70 border-b border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2">
@@ -563,12 +563,11 @@ export default function SaleReturnsIndex() {
                           <Guard when={can.update}>
                             <Link
                               to={`/sale-returns/${ret.id}/edit`}
-                              className={`group inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnPrimary.className}`}
-                              style={btnPrimary.style}
-                              title="Edit"
+                              className="products-row-action"
+                              title="Edit" aria-label="Edit sale return"
                             >
                               <PencilSquareIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                              <span>Edit</span>
+
                             </Link>
                           </Guard>
 
@@ -576,12 +575,11 @@ export default function SaleReturnsIndex() {
                           <Guard when={can.delete}>
                             <button
                               onClick={() => openDeleteModal(ret)}
-                              className={`group inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnDanger.className}`}
-                              style={btnDanger.style}
-                              title="Delete"
+                              className="products-row-action products-row-action-danger"
+                              title="Delete" aria-label="Delete sale return"
                             >
                               <TrashIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                              <span>Delete</span>
+
                             </button>
                           </Guard>
                         </div>

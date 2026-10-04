@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { TrashIcon, PlusIcon, ArrowUturnLeftIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
@@ -1054,30 +1055,24 @@ const handleSelectChange = async (field, value) => {
 
   return (
     <div className="relative">
-      <form className={`h-[calc(100vh-110px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}>
+      <form className={`return-entry-form sale-return-form h-[calc(100vh-130px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}>
         {/* ===== HEADER ===== */}
-        <div className={`shrink-0 sticky top-0 z-20 shadow-lg border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+        <div className={`return-header shrink-0 sticky top-0 z-20 border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
           {/* Branded Banner */}
           <div
-            className="px-4 py-2.5 flex items-center justify-between gap-3"
-            style={{
-              background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
-            }}
+            className="return-banner px-4 py-2.5 flex items-center justify-between gap-3"
+
           >
             <div className="flex items-center gap-3">
               <div
                 className="w-9 h-9 rounded-xl flex items-center justify-center shadow-inner"
                 style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
               >
-                {/* Return / revert icon */}
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="1 4 1 10 7 10" />
-                  <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-                </svg>
+                <ArrowUturnLeftIcon aria-hidden="true" className="w-5 h-5" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-extrabold tracking-wide text-white leading-none">SALE RETURN</h2>
+                  <h2 className="text-lg font-extrabold tracking-wide text-white leading-none">Sale Return</h2>
                   <span
                     className="px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest text-white"
                     style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(4px)" }}
@@ -1110,7 +1105,7 @@ const handleSelectChange = async (field, value) => {
           </div>
 
           {/* Fields Card */}
-          <div className={`bg-white dark:bg-slate-800 px-3 py-2`}>
+          <div className="return-details px-3 py-2">
             <div className="grid grid-cols-12 gap-2 items-end">
               {/* Posted Number */}
               <div className="col-span-2">
@@ -1194,7 +1189,7 @@ const handleSelectChange = async (field, value) => {
         </div>
 
         {/* ITEMS */}
-        <div className={`flex-1 overflow-auto p-1 ${isDark ? "bg-slate-900" : "bg-gray-50"}`}>
+        <div className={`return-items flex-1 min-h-0 overflow-auto p-1 ${isDark ? "bg-slate-900" : "bg-gray-50"}`}>
           <h2 className={`text-xs font-bold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Items</h2>
           <table className={`w-full border-collapse text-[11px] ${isDark ? "bg-slate-800" : "bg-white"}`}>
             <thead className={`sticky top-0 z-5 ${isDark ? "bg-slate-700" : "bg-gray-100"}`}>
@@ -1221,11 +1216,10 @@ const handleSelectChange = async (field, value) => {
                     <td className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
                       <button
                         type="button"
-                        onClick={() => removeItem(i)}
-                        className={`px-1 rounded-sm text-[10px] transition-all duration-200 ${btnDanger.className}`}
-                        style={btnDanger.style}
+                        onClick={() => removeItem(i)} aria-label="Remove item" title="Remove item"
+                        className="return-item-action return-item-remove"
                       >
-                        X
+                        <TrashIcon aria-hidden="true" />
                       </button>
                     </td>
                     <td className={`border text-left w-[260px] ${isDark ? "border-slate-600" : "border-gray-200"}`}>
@@ -1334,11 +1328,10 @@ const handleSelectChange = async (field, value) => {
                     <td className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
                       <button
                         type="button"
-                        onClick={addItem}
-                        className={`px-1 rounded-sm text-[10px] transition-all duration-200 ${btnSecondary.className}`}
-                        style={btnSecondary.style}
+                        onClick={addItem} aria-label="Add item" title="Add item"
+                        className="return-item-action return-item-add"
                       >
-                        +
+                        <PlusIcon aria-hidden="true" />
                       </button>
                     </td>
                   </tr>
@@ -1349,7 +1342,7 @@ const handleSelectChange = async (field, value) => {
         </div>
 
         {/* FOOTER */}
-        <div className={`sticky bottom-0 shadow-sm p-2 z-10 ${isDark ? "bg-slate-800 border-t border-slate-700" : "bg-white border-t border-gray-200"}`}>
+        <div className={`return-footer sticky bottom-0 p-2 z-10 ${isDark ? "bg-slate-800 border-t border-slate-700" : "bg-white border-t border-gray-200"}`}>
           <table className="w-full border-collapse text-xs">
             <tbody>
               <tr>
