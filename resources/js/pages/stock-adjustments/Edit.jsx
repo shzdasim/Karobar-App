@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
+import { ArrowLeftIcon } from "@heroicons/react/24/solid";
 import StockAdjustmentForm from "./StockAdjustmentForm";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 
@@ -64,10 +65,9 @@ export default function EditStockAdjustment(){
   if (fetchErr) return <div className="p-6 text-red-600">{fetchErr}</div>;
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Edit Stock Adjustment</h1>
-        <Link to="/stock-adjustments" className="text-blue-600 hover:underline">← Back</Link>
+    <div className="stock-adjustment-page stock-adjustment-edit space-y-4">
+      <div className="flex justify-end">
+        <Link to="/stock-adjustments" className="products-action"><ArrowLeftIcon className="w-5 h-5" aria-hidden="true" />Back</Link>
       </div>
 
       <Guard when={can.update}>

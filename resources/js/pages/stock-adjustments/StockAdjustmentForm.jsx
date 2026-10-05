@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import axios from "axios";
+import { PlusIcon, XMarkIcon, ClipboardDocumentListIcon } from "@heroicons/react/24/solid";
 import toast from "react-hot-toast";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
@@ -651,10 +652,16 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
 
   // ---------- Render ----------
   return (
-    <form className={`flex flex-col ${isDark ? "bg-slate-900" : "bg-gray-50"}`} style={{ minHeight: '74vh', maxHeight: '80vh' }}>
+    <form className="stock-adjustment-form products-panel">
       {/* Header */}
-      <div className={`sticky top-0 shadow-sm p-2 z-10 ${isDark ? "bg-slate-800 border-b border-slate-700" : "bg-white border-b border-gray-200"}`}>
-        <h2 className={`text-sm font-bold mb-2 ${isDark ? "text-slate-200" : "text-gray-800"}`}>Stock Adjustment (Enter to move, Alt+S to save)</h2>
+      <div className="stock-adjustment-header">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="products-identity-icon"><ClipboardDocumentListIcon className="w-6 h-6" /></div>
+          <div>
+            <h1 className="products-title">{adjustmentId ? "Edit stock adjustment" : "Stock adjustment"}</h1>
+            <p className="products-subtitle">Record actual stock and review the quantity and worth differences.</p>
+          </div>
+        </div>
         <table className="w-full border-collapse text-xs">
           <tbody>
             <tr>
@@ -663,6 +670,7 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                 <input 
                   type="text" 
                   readOnly 
+                  aria-label="Posted number"
                   value={form.posted_number||""} 
                   className={`border rounded w-full p-1 h-7 text-xs ${
                     isDark 
@@ -675,6 +683,7 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                 <label className={`block text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Posted Date</label>
                 <input 
                   type="date" 
+                  aria-label="Posted date"
                   value={form.posted_date} 
                   onChange={e=>setForm(prev=>({ ...prev, posted_date: e.target.value }))} 
                   className={`border rounded w-full p-1 h-7 text-xs ${
@@ -688,6 +697,7 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                 <label className={`block text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Note (Reason) *</label>
                 <input
                   ref={noteRef}
+                  aria-label="Adjustment reason"
                   type="text"
                   value={form.note}
                   onChange={e=>setForm(prev=>({ ...prev, note: e.target.value }))}
@@ -705,7 +715,7 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
       </div>
 
       {/* Items */}
-      <div className={`flex-1 overflow-auto p-1 ${isDark ? "bg-slate-900" : "bg-gray-50"}`}>
+      <div className="stock-adjustment-items" role="region" aria-label="Adjustment items" tabIndex={0}>
         <h2 className={`text-xs font-bold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Items</h2>
         <table className={`w-full border-collapse text-[11px] ${isDark ? "bg-slate-800" : "bg-white"}`}>
           <thead className={`sticky top-0 z-5 ${isDark ? "bg-slate-700" : "bg-gray-100"}`}>
@@ -734,17 +744,17 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
 
               return (
               <tr key={i} className={`text-center ${isDark ? "hover:bg-slate-700/50" : "hover:bg-gray-50"}`}>
-                <td className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                <td data-label="Remove" className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
                   <button 
                     type="button" 
                     onClick={()=>removeRow(i)} 
-                    className={`px-1 text-[10px] transition-all duration-200 ${btnDanger.className}`}
-                    style={btnDanger.style}
-                  >X</button>
+                    className="products-row-action stock-adjustment-remove"
+                    aria-label={`Remove item ${i + 1}`} title="Remove item"
+                  ><XMarkIcon className="w-5 h-5" aria-hidden="true" /></button>
                 </td>
 
                 {/* PRODUCT */}
-                <td
+                <td data-label="Product"
                   className={`border text-left ${productCellError ? "ring-2 ring-red-500" : ""} ${isDark ? "border-slate-600" : "border-gray-200"}`}
                   ref={el => (productCellRefs.current[i] = el)}
                   title={productCellError ? "Duplicate product not allowed" : ""}
@@ -758,7 +768,7 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                 </td>
 
                 {/* BATCH */}
-                <td
+                <td data-label="Batch"
                   className={`border ${batchCellError ? "ring-2 ring-red-500" : ""} ${isDark ? "border-slate-600" : "border-gray-200"}`}
                   title={batchCellError ? "Duplicate batch for this product not allowed" : ""}
                 >
@@ -771,9 +781,10 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                   />
                 </td>
 
-                <td className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                <td data-label="Expiry" className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
                   <input
                     type="date"
+                    aria-label={`Expiry for item ${i + 1}`}
                     value={it.expiry ?? ''}
                     onChange={e=>onItemChange(i,'expiry',e.target.value)}
                     className={`border w-full h-6 text-[11px] px-1 ${
@@ -783,8 +794,9 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                     }`}
                   />
                 </td>
-                <td className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                <td data-label="Pack size" className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
                   <input
+                    aria-label={`Pack size for item ${i + 1}`}
                     value={it.pack_size ?? ''}
                     readOnly
                     className={`border w-full h-6 text-[11px] px-1 ${
@@ -794,9 +806,10 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                     }`}
                   />
                 </td>
-                <td className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                <td data-label="Available quantity" className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
                   <input
                     readOnly
+                    aria-label={`Available quantity for item ${i + 1}`}
                     value={it.available_qty ?? ''}
                     className={`border w-full h-6 text-[11px] px-1 ${
                       isDark 
@@ -805,10 +818,11 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                     }`}
                   />
                 </td>
-                <td className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                <td data-label="Actual quantity" className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
                   <input
                     id={`actual-${i}`}
                     ref={el => (actualRefs.current[i] = el)}
+                    aria-label={`Actual quantity for item ${i + 1}`}
                     value={it.actual_qty ?? ''}
                     onChange={e=>onItemChange(i,'actual_qty', e.target.value)}
                     onKeyDown={onActualKeyDown(i)}
@@ -819,9 +833,10 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                     }`}
                   />
                 </td>
-                <td className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                <td data-label="Difference" className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
                   <input
                     readOnly
+                    aria-label={`Quantity difference for item ${i + 1}`}
                     value={it.diff_qty ?? ''}
                     className={`border w-full h-6 text-[11px] px-1 ${
                       isDark 
@@ -830,8 +845,9 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                     }`}
                   />
                 </td>
-                <td className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                <td data-label="Unit cost" className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
                   <input
+                    aria-label={`Unit cost for item ${i + 1}`}
                     value={to2(it.unit_purchase_price ?? '')}
                     readOnly
                     onChange={e=>onItemChange(i,'unit_purchase_price', e.target.value)}
@@ -843,9 +859,10 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                     }`}
                   />
                 </td>
-                <td className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                <td data-label="Worth adjusted" className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
                   <input
                     readOnly
+                    aria-label={`Worth adjusted for item ${i + 1}`}
                     value={to2(it.worth_adjusted)}
                     className={`border w-full h-6 text-[11px] px-1 ${
                       isDark 
@@ -854,13 +871,13 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                     }`}
                   />
                 </td>
-                <td className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                <td data-label="Add item" className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
                   <button 
                     type="button" 
                     onClick={()=>{ addRow(); setTimeout(()=>focusProduct(i+1),0); }} 
-                    className={`px-1 text-[10px] transition-all duration-200 ${btnSecondary.className}`}
-                    style={btnSecondary.style}
-                  >+</button>
+                    className="products-row-action stock-adjustment-add"
+                    aria-label={`Add item after row ${i + 1}`} title="Add item"
+                  ><PlusIcon className="w-5 h-5" aria-hidden="true" /></button>
                 </td>
               </tr>
             )})}
@@ -869,7 +886,7 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
       </div>
 
       {/* Footer */}
-      <div className={`sticky bottom-0 shadow-sm p-2 z-10 ${isDark ? "bg-slate-800 border-t border-slate-700" : "bg-white border-t border-gray-200"}`}>
+      <div className="stock-adjustment-footer">
         <table className="w-full border-collapse text-xs">
           <tbody>
             <tr>
@@ -877,6 +894,7 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                 <label className={`block text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Total Worth Adjusted</label>
                 <input 
                   readOnly 
+                  aria-label="Total worth adjusted"
                   value={to2(form.total_worth)} 
                   className={`border rounded w-full p-1 h-7 text-xs ${
                     isDark 
@@ -889,8 +907,7 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  className={`px-8 py-3 text-sm font-semibold transition inline-flex items-center justify-center ${btnPrimary.className}`}
-                  style={btnPrimary.style}
+                  className="products-action products-action-primary"
                   title="Save (Alt+S)"
                 >
                   {adjustmentId ? 'Update Adjustment' : 'Create Adjustment'}

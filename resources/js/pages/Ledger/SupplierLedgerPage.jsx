@@ -763,54 +763,39 @@ const [suppliers, setSuppliers] = useState([]);
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don’t have permission to view supplier ledger.</div>;
 
 return (
-    <div className="p-4 space-y-3">
+    <div className="ledger-page supplier-ledger-page space-y-4">
       {/* ===== Premium Gradient Hero Header ===== */}
       <div
-        className="relative overflow-hidden rounded-2xl shadow-lg"
-        style={{
-          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
-        }}
+        className="ledger-header products-panel"
       >
         {/* Decorative blurred blobs */}
-        <div
-          className="absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-30 blur-3xl pointer-events-none"
-          style={{ backgroundColor: "#ffffff" }}
-        />
-        <div
-          className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full opacity-20 blur-3xl pointer-events-none"
-          style={{ backgroundColor: themeColors.tertiary }}
-        />
 
         {/* Hero Top */}
-        <div className="relative flex items-center justify-between px-5 py-4">
+        <div className="ledger-heading px-5 py-5">
           <div className="flex items-center gap-3">
             <div
-              className="p-2.5 rounded-xl shadow-inner"
-              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
+              className="products-identity-icon"
             >
               <CubeIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-extrabold tracking-wide text-white leading-none">Supplier Ledger</h1>
-              <p className="text-xs text-white/80 mt-1">
+              <h1 className="products-title">Supplier Ledger</h1>
+              <p className="products-subtitle">
                 {supplierId ? "Managing ledger for selected supplier" : "Select a supplier to view ledger"}
               </p>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="ledger-actions">
             {/* Supplier Select (new modal search) */}
             <div
-              className={`w-64 h-10 rounded-xl border flex items-center gap-1 overflow-hidden transition-all ${
-                supplierId
-                  ? "border-white/60 bg-white/95 text-gray-800"
-                  : "border-white/30 bg-white/15 text-white/80"
-              }`}
+              className="ledger-party-selector"
             >
               <button
                 type="button"
                 onClick={() => setSupplierSearchOpen(true)}
+                aria-label="Select supplier"
                 className="flex-1 h-full px-3 text-left text-xs flex items-center gap-2 min-w-0"
                 title={supplierId ? (suppliers.find(c => String(c.id) === String(supplierId))?.name || "Selected supplier") : "Click to search supplier..."}
               >
@@ -838,77 +823,71 @@ return (
               )}
             </div>
 
-            <div className="w-px h-8 bg-white/30 mx-1" />
 
             {/* Shared action group */}
             <div
-              className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-xl"
-              style={{ backgroundColor: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.2)" }}
+              className="ledger-workflow-actions" role="group" aria-label="Ledger actions"
             >
               <Guard when={can.update}>
                 <button
                   onClick={rebuild}
                   disabled={!supplierId}
                   title="Rebuild ledger from purchase invoices"
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg text-white transition-all duration-200 ${supplierId ? "hover:bg-white/20" : "opacity-40 cursor-not-allowed"}`}
+                  className="products-action"
                 >
                   <ArrowPathIcon className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Rebuild</span>
+                  <span>Rebuild</span>
                 </button>
               </Guard>
 
-              <div className="w-px h-5 bg-white/30" />
 
               <Guard when={can.update}>
                 <button
                   onClick={fetchData}
                   disabled={!supplierId}
                   title="Reload ledger entries"
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg text-white transition-all duration-200 ${supplierId ? "hover:bg-white/20" : "opacity-40 cursor-not-allowed"}`}
+                  className="products-action"
                 >
                   <ArrowPathIcon className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Load</span>
+                  <span>Load entries</span>
                 </button>
               </Guard>
 
-              <div className="w-px h-5 bg-white/30" />
 
               <Guard when={can.create}>
                 <button
                   onClick={openAddPayment}
                   disabled={!supplierId}
                   title="Add a payment row (new entries are added at the top)"
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg text-white transition-all duration-200 ${supplierId ? "hover:bg-white/20" : "opacity-40 cursor-not-allowed"}`}
+                  className="products-action"
                 >
                   <PlusCircleIcon className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Payment</span>
+                  <span>Add payment</span>
                 </button>
               </Guard>
 
-              <div className="w-px h-5 bg-white/30" />
 
               <Guard when={can.create}>
                 <button
                   onClick={openAddManual}
                   disabled={!supplierId}
                   title="Add a manual ledger row (new entries are added at the top)"
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg text-white transition-all duration-200 ${supplierId ? "hover:bg-white/20" : "opacity-40 cursor-not-allowed"}`}
+                  className="products-action"
                 >
                   <WrenchScrewdriverIcon className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Manual</span>
+                  <span>Add manual row</span>
                 </button>
               </Guard>
 
-              <div className="w-px h-5 bg-white/30" />
 
               <Guard when={can.update}>
                 <button
                   onClick={openSaveModal}
                   disabled={!supplierId || (newCount === 0 && updCount === 0)}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg text-white transition-all duration-200 ${supplierId && (newCount > 0 || updCount > 0) ? "hover:bg-white/20" : "opacity-40 cursor-not-allowed"}`}
+                  className="products-action products-action-primary"
                 >
                   <ArrowDownOnSquareIcon className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Save</span>
+                  <span>Save changes</span>
                   {(newCount > 0 || updCount > 0) && supplierId && (
                     <span className="ml-0.5 px-1 py-0.5 rounded-sm bg-white/30 text-[10px]">
                       {newCount + updCount}
@@ -922,10 +901,10 @@ return (
             <button
               onClick={() => handlePrint()}
               disabled={!supplierId}
-              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
+              className="products-action"
             >
               <PrinterIcon className="w-4 h-4" />
-              <span className="hidden sm:inline">Print</span>
+              <span>Print</span>
             </button>
           </div>
         </div>
@@ -948,9 +927,9 @@ return (
       </div>
 
 {/* ===== Ledger table ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden">
+      <div className="ledger-table-panel products-panel overflow-hidden">
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
+        <div className="ledger-table-toolbar flex flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-2">
             <div className="p-1 rounded-md" style={{ backgroundColor: `${themeColors.primary}1a` }}>
               <Squares2X2Icon className="w-4 h-4" style={{ color: themeColors.primary }} />
@@ -973,6 +952,7 @@ return (
                 value={sortField}
                 onChange={(e) => setSortField(e.target.value)}
                 title="Sort ledger rows"
+                aria-label="Sort ledger rows"
                 className={`appearance-none h-8 pl-2 pr-6 text-xs rounded-lg border focus:outline-hidden focus:ring-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200 focus:ring-slate-500" : "border-gray-200 bg-white text-gray-700 focus:ring-gray-300"}`}
               >
                 <option value="entry_date">Sort: Date</option>
@@ -994,7 +974,7 @@ return (
           </div>
         </div>
 
-        <div className={`max-h-[calc(100vh-260px)] overflow-auto ${isDark ? "bg-slate-800" : "bg-white"}`}>
+        <div className="ledger-table-scroll" role="region" aria-label="Supplier ledger entries" tabIndex={0}>
           <table className="w-full text-xs tabular-nums border-collapse">
             <thead className={`sticky top-0 z-10 border-b ${isDark ? "bg-slate-700" : "bg-gray-100"}`}>
               <tr className="text-left text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -1065,6 +1045,7 @@ return (
                     return (
                       <tr
                         key={r.id ?? `new-${r.__i}`}
+                        data-pending={pending}
                         className={`border-b transition-colors ${
                           isDark ? "border-slate-700/50 hover:bg-slate-700/40" : "border-gray-100 hover:bg-blue-50/70"
                         } ${pending ? (isDark ? "bg-amber-500/10" : "bg-amber-50/70") : ""}`}
@@ -1080,7 +1061,7 @@ return (
                                   ? `${r.posted_number || "Invoice"} is fully paid`
                                   : `Mark ${r.posted_number || "invoice"} as fully paid`
                               }
-                              className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-200 ${
+                              className={`products-row-action ledger-row-action inline-flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-200 ${
                                 Number(r.credit_remaining || 0) <= 0
                                   ? "text-green-500 dark:text-green-400 bg-green-500/10 cursor-default"
                                   : isDark
@@ -1106,17 +1087,15 @@ return (
                         <td className="px-2 py-1.5">
                           <div className="flex flex-col gap-0.5">
                             <span
-                              className="inline-flex w-fit items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide"
+                              className="ledger-type-badge"
                               style={{
-                                background: `linear-gradient(to bottom right, ${accent}, ${accentHover})`,
-                                color: "#fff",
-                                boxShadow: `0 2px 8px 0 ${accent}40`,
+                                "--ledger-type-accent": accent,
                               }}
                             >
                               {isPayment && <BanknotesIcon className="w-3 h-3" />}
                               {isInvoice && <DocumentTextIcon className="w-3 h-3" />}
                               {isManual && <WrenchScrewdriverIcon className="w-3 h-3" />}
-                              {r.entry_type?.slice(0, 6)}
+                              {r.entry_type}
                             </span>
                             <span className="text-[10px] text-gray-400">{fmtDate(r.entry_date)}</span>
                             {pending && (
@@ -1240,7 +1219,7 @@ return (
                             onClick={() => openDeleteModal(r.__i)}
                             disabled={locked}
                             title={locked ? "Locked — invoice rows come from purchases" : "Delete this row"}
-                            className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-200 ${
+                            className={`products-row-action ledger-row-action inline-flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-200 ${
                               locked
                                 ? "text-gray-300 dark:text-slate-600 cursor-not-allowed"
                                 : isDark
@@ -1323,7 +1302,7 @@ return (
 
       {/* ===== Mark invoice as paid (settle) modal ===== */}
       {settleTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={(e) => { if (e.target === e.currentTarget) closeSettle(); }}>
+        <div className="ledger-modal fixed inset-0 z-50 flex items-center justify-center" onClick={(e) => { if (e.target === e.currentTarget) closeSettle(); }}>
           <div className="absolute inset-0 bg-black/40 backdrop-blur-xs" />
           <div className="relative w-full max-w-md">
             <GlassCard>
@@ -1332,7 +1311,7 @@ return (
                   <CheckCircleIcon className="w-5 h-5" style={{ color: themeColors.emerald }} />
                   <span>Mark invoice as paid?</span>
                 </span>}
-                right={<button className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeSettle}><XMarkIcon className="w-5 h-5" /></button>}
+                right={<button aria-label="Close dialog" className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeSettle}><XMarkIcon className="w-5 h-5" /></button>}
               />
               <div className="px-4 py-4 space-y-3">
                 <p className={`text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>
@@ -1385,13 +1364,13 @@ return (
 
       {/* ===== Add Row modal ===== */}
       {addModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={(e)=>{ if(e.target===e.currentTarget) closeAddModal(); }}>
+        <div className="ledger-modal fixed inset-0 z-50 flex items-center justify-center" onClick={(e)=>{ if(e.target===e.currentTarget) closeAddModal(); }}>
           <div className="absolute inset-0 bg-black/40 backdrop-blur-xs" />
           <div className="relative w-full max-w-sm">
             <GlassCard>
               <GlassSectionHeader
                 title={<span className="font-semibold text-lg">{addModal.type === "payment" ? "Add Payment row?" : "Add Manual row?"}</span>}
-                right={<button className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeAddModal}><XMarkIcon className="w-5 h-5" /></button>}
+                right={<button aria-label="Close dialog" className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeAddModal}><XMarkIcon className="w-5 h-5" /></button>}
               />
               <div className="px-4 py-4">
                 <p className={`text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>
@@ -1415,7 +1394,7 @@ return (
 
       {/* ===== Save confirm modal ===== */}
       {saveModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={(e)=>{ if(e.target===e.currentTarget) closeSaveModal(); }}>
+        <div className="ledger-modal fixed inset-0 z-50 flex items-center justify-center" onClick={(e)=>{ if(e.target===e.currentTarget) closeSaveModal(); }}>
           <div className="absolute inset-0 bg-black/40" />
           <div className="relative w-full max-w-md">
             <GlassCard>
@@ -1427,7 +1406,7 @@ return (
                   />
                   <span>Save changes?</span>
                 </span>}
-                right={<button className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeSaveModal}><XMarkIcon className="w-5 h-5" /></button>}
+                right={<button aria-label="Close dialog" className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeSaveModal}><XMarkIcon className="w-5 h-5" /></button>}
               />
               <div className="px-4 py-4">
                 <p className="text-sm text-gray-700">
@@ -1452,7 +1431,7 @@ return (
 
       {/* ===== Delete (2-step) modal ===== */}
       {deleteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={(e)=>{ if(e.target===e.currentTarget) closeDeleteModal(); }}>
+        <div className="ledger-modal fixed inset-0 z-50 flex items-center justify-center" onClick={(e)=>{ if(e.target===e.currentTarget) closeDeleteModal(); }}>
           <div className="absolute inset-0 bg-black/40" />
           <div className="relative w-full max-w-md">
             <GlassCard>
@@ -1464,7 +1443,7 @@ return (
                   />
                   <span>Delete ledger row</span>
                 </span>}
-                right={<button className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeDeleteModal}><XMarkIcon className="w-5 h-5" /></button>}
+                right={<button aria-label="Close dialog" className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeDeleteModal}><XMarkIcon className="w-5 h-5" /></button>}
               />
                 <div className="px-4 py-4 space-y-4">
                 {deleteStep === 1 ? (
@@ -1550,22 +1529,10 @@ return (
 
 /* Compact, glassy metric tile used in the hero header strip */
 function HeroStat({ label, value, tone = "neutral" }) {
-  const accent =
-    tone === "warn" ? "#fbbf24" : tone === "ok" ? "#6ee7b7" : "#ffffff";
-
   return (
-    <div
-      className="rounded-xl px-3 py-2"
-      style={{
-        backgroundColor: "rgba(255,255,255,0.14)",
-        backdropFilter: "blur(8px)",
-        border: "1px solid rgba(255,255,255,0.2)",
-      }}
-    >
-      <div className="text-[10px] font-medium uppercase tracking-wide text-white/75">{label}</div>
-      <div className="text-sm font-bold text-white tabular-nums" style={{ color: accent }}>
-        {value}
-      </div>
+    <div className={`ledger-stat ledger-stat-${tone}`}>
+      <div className="ledger-stat-label">{label}</div>
+      <div className="ledger-stat-value">{value}</div>
     </div>
   );
 }
@@ -1576,7 +1543,8 @@ function PageBtn({ isDark, onClick, disabled, title, children }) {
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`inline-flex items-center justify-center w-7 h-7 rounded-md border transition-all duration-200 ${
+      aria-label={title}
+      className={`ledger-page-button inline-flex items-center justify-center w-7 h-7 rounded-md border transition-all duration-200 ${
         disabled
           ? "opacity-40 cursor-not-allowed"
           : isDark

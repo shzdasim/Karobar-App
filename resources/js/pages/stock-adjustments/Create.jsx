@@ -36,8 +36,7 @@ export default function CreateStockAdjustment(){
   if (!can.create) return <div className="p-6 text-sm text-gray-700">You don’t have permission to create stock adjustments.</div>;
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Create Stock Adjustment</h1>
+    <div className="stock-adjustment-page space-y-4">
       <StockAdjustmentForm onSubmit={onSubmit} onSuccess={()=>navigate('/stock-adjustments')} />
     </div>
   );

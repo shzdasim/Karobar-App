@@ -13,6 +13,10 @@ import {
   CalendarIcon,
   ClipboardDocumentListIcon,
   CurrencyDollarIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronDoubleLeftIcon,
+  ChevronDoubleRightIcon,
 } from "@heroicons/react/24/solid";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 
@@ -355,25 +359,22 @@ export default function StockAdjustmentsIndex() {
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view stock adjustments.</div>;
 
   return (
-    <div className="p-3 md:p-4 space-y-4">
+    <div className="stock-adjustments-page space-y-4">
       {/* ===== Premium Hero Header ===== */}
       <div
-        className="relative rounded-2xl overflow-hidden shadow-lg"
-        style={{ background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})` }}
+        className="stock-adjustments-header products-panel"
       >
         {/* Decorative blurred blobs */}
-        <div className="absolute -top-10 -right-8 w-64 h-64 rounded-full bg-white/15 blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-16 left-1/4 w-72 h-72 rounded-full bg-white/10 blur-3xl pointer-events-none" />
 
         {/* Top row */}
         <div className="relative px-6 pt-5 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm shadow-inner flex items-center justify-center">
+            <div className="products-identity-icon">
               <ClipboardDocumentListIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-extrabold tracking-wide text-white leading-none">Stock Adjustments</h1>
-              <p className="text-xs text-white/85 mt-1.5 flex items-center gap-1.5">
+              <h1 className="products-title">Stock Adjustments</h1>
+              <p className="products-subtitle">
                 <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
                 {total} adjustments
               </p>
@@ -390,10 +391,12 @@ export default function StockAdjustmentsIndex() {
                 fetchAdjustments(ctrl.signal);
               }}
               title="Refresh"
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm transition-all duration-200"
+              className="products-action"
+              disabled={loading}
+              aria-label="Refresh adjustments"
             >
               <ArrowPathIcon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Refresh</span>
+              <span>Refresh</span>
             </button>
 
             <Guard when={can.create}>
@@ -401,12 +404,10 @@ export default function StockAdjustmentsIndex() {
                 to="/stock-adjustments/create"
                 title="Add (Alt+N)"
                 aria-keyshortcuts="Alt+N"
-                className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-bold text-white bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
-                style={{ color: themeColors.primaryHover }}
+                className="products-action products-action-primary"
               >
                 <PlusCircleIcon className="w-4 h-4" />
-                <span className="hidden sm:inline">Add Adjustment</span>
-                <span className="sm:hidden">Add</span>
+                <span>Add adjustment</span>
               </Link>
             </Guard>
           </div>
@@ -414,13 +415,14 @@ export default function StockAdjustmentsIndex() {
 
         {/* Filter bar integrated in hero */}
         <div className="relative px-6 pt-2 pb-5">
-          <div className="flex items-center gap-3 bg-white/15 backdrop-blur-sm border border-white/20 rounded-xl p-3">
+          <div className="stock-adjustments-filters flex items-center gap-3 rounded-xl p-3">
             <div className="flex-1 flex items-center gap-2">
               <MagnifyingGlassIcon className="w-4 h-4 text-white/80 shrink-0" />
               <GlassInput
                 value={q}
                 onChange={(e) => { setQ(e.target.value); setPage(1); }}
-                placeholder="Search by Posted No or Note…"
+                placeholder="Search by posted number or note…"
+                aria-label="Search stock adjustments"
                 className="w-full"
               />
             </div>
@@ -442,6 +444,7 @@ export default function StockAdjustmentsIndex() {
                 <label className="text-xs font-medium text-white/85">Show</label>
                 <select
                   value={pageSize}
+                  aria-label="Adjustments per page"
                   onChange={(e) => setPageSize(Number(e.target.value))}
                   className="h-7 px-2 rounded-sm bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-white/50 focus:border-transparent cursor-pointer"
                 >
@@ -457,7 +460,7 @@ export default function StockAdjustmentsIndex() {
       </div>
 
 {/* ===== Stock Adjustments Table ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden hover:shadow-lg transition-shadow duration-300">
+      <div className="stock-adjustments-table sale-list-table products-panel overflow-hidden">
         {/* Table Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-2.5">
@@ -477,7 +480,7 @@ export default function StockAdjustmentsIndex() {
           </div>
         </div>
 
-        <div className="max-h-[65vh] overflow-auto">
+        <div className="max-h-[65vh] overflow-auto" role="region" aria-label="Stock adjustment list" tabIndex={0}>
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
               <tr className="text-left">
@@ -569,12 +572,11 @@ export default function StockAdjustmentsIndex() {
                           <Guard when={can.update}>
                             <Link
                               to={`/stock-adjustments/${r.id}/edit`}
-                              className={`group inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnPrimary.className}`}
-                              style={btnPrimary.style}
+                              className="products-row-action"
+                              aria-label={`Edit adjustment ${r.posted_number}`}
                               title="Edit"
                             >
                               <PencilSquareIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                              <span>Edit</span>
                             </Link>
                           </Guard>
 
@@ -582,12 +584,11 @@ export default function StockAdjustmentsIndex() {
                           <Guard when={can.delete}>
                             <button
                               onClick={() => openDeleteModal(r)}
-                              className={`group inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnDanger.className}`}
-                              style={btnDanger.style}
+                              className="products-row-action products-row-action-danger"
+                              aria-label={`Delete adjustment ${r.posted_number}`}
                               title="Delete"
                             >
                               <TrashIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                              <span>Delete</span>
                             </button>
                           </Guard>
                         </div>
@@ -601,25 +602,25 @@ export default function StockAdjustmentsIndex() {
         </div>
 
         {/* Compact Pagination */}
-        <div className="px-3 py-2 flex items-center justify-between border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50 text-xs">
+        <div className="stock-adjustments-pagination px-3 py-2 flex items-center justify-between border-t text-xs">
           <span className="text-gray-500 dark:text-gray-400">
             Page {page} of {pageCount} ({filtered.length} total)
           </span>
 
           <div className="flex items-center gap-1">
-            <button
+            <button aria-label="First page"
               onClick={() => setPage(1)}
               disabled={page === 1}
               className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
             >
-              ⏮
+              <ChevronDoubleLeftIcon className="w-4 h-4" aria-hidden="true" />
             </button>
-            <button
+            <button aria-label="Previous page"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
               className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
             >
-              ◀
+              <ChevronLeftIcon className="w-4 h-4" aria-hidden="true" />
             </button>
 
             {/* Page numbers */}
@@ -654,19 +655,19 @@ export default function StockAdjustmentsIndex() {
               })}
             </div>
 
-            <button
+            <button aria-label="Next page"
               onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
               disabled={page === pageCount}
               className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === pageCount ? 'opacity-40' : ''}`}
             >
-              ▶
+              <ChevronRightIcon className="w-4 h-4" aria-hidden="true" />
             </button>
-            <button
+            <button aria-label="Last page"
               onClick={() => setPage(pageCount)}
               disabled={page === pageCount}
               className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === pageCount ? 'opacity-40' : ''}`}
             >
-              ⏭
+              <ChevronDoubleRightIcon className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
         </div>
