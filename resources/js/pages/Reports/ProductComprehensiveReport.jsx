@@ -3,23 +3,18 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { usePermissions, Guard } from "@/api/usePermissions";
-
-// 🧊 glass primitives
-import {
-  GlassCard,
-  GlassSectionHeader,
-  GlassToolbar,
-  GlassInput,
-  GlassBtn,
-} from "@/components/glass.jsx";
 import { useTheme } from "@/context/ThemeContext";
 
-import { 
-  ArrowDownOnSquareIcon, 
+import {
+  ArrowDownOnSquareIcon,
   ArrowPathIcon,
+  ArrowTrendingDownIcon,
+  ArrowTrendingUpIcon,
   CubeIcon,
+  CurrencyDollarIcon,
   DocumentTextIcon,
   Squares2X2Icon,
+  XMarkIcon,
 } from "@heroicons/react/24/solid";
 import ProductSearchInput from "@/components/ProductSearchInput.jsx";
 
@@ -31,43 +26,6 @@ const getContrastText = (hexColor) => {
   const b = parseInt(hexColor.substring(4, 6), 16);
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luminance > 0.5 ? '#1f2937' : '#ffffff';
-};
-
-const getButtonTextColor = (primaryColor, primaryHoverColor) => {
-  return getContrastText(primaryHoverColor || primaryColor);
-};
-
-// Section configuration with color schemes - will use dynamic theme colors
-const SECTION_CONFIG = {
-  core: {
-    key: 'primary',
-  },
-  management: {
-    key: 'secondary',
-  },
-};
-
-// Helper to get color value from theme
-const getThemeColor = (theme, colorKey, variant = 'color') => {
-  if (!theme) return '#3b82f6';
-  const key = `${colorKey}_${variant}`;
-  return theme[key] || '#3b82f6';
-};
-
-// Helper to generate section styles from theme
-const getSectionStyles = (theme, colorKey) => {
-  const baseColor = getThemeColor(theme, colorKey, 'color');
-  const hoverColor = getThemeColor(theme, colorKey, 'hover');
-  const lightColor = getThemeColor(theme, colorKey, 'light');
-  
-  return {
-    gradient: `from-[${baseColor}] to-[${hoverColor}]`,
-    bgLight: `bg-[${lightColor}]`,
-    bgDark: `dark:bg-[${lightColor}]`,
-    borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
-    iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
-    ringColor: `ring-[${baseColor}]/30`,
-  };
 };
 
 /* ======================
@@ -92,117 +50,9 @@ const fmtDate = (v) => {
   return v;
 };
 
-// Helper for react-select controls on the dark gradient hero background
-const getSelectStylesOnDark = (isDark = false) => ({
-  control: (base) => ({
-    ...base,
-    minHeight: 36,
-    height: 36,
-    borderRadius: 10,
-    borderColor: "rgba(255,255,255,0.3)",
-    backgroundColor: "rgba(15,23,42,0.5)",
-    backdropFilter: "blur(6px)",
-    boxShadow: "none",
-    cursor: "pointer",
-    "&:hover": {
-      borderColor: "rgba(255,255,255,0.5)",
-    },
-  }),
-  valueContainer: (base) => ({ ...base, height: 36, padding: "0 8px" }),
-  indicatorsContainer: (base) => ({ ...base, height: 36, color: "rgba(255,255,255,0.8)" }),
-  input: (base) => ({ ...base, margin: 0, padding: 0, color: "#ffffff" }),
-  singleValue: (base) => ({ ...base, color: "#ffffff" }),
-  placeholder: (base) => ({ ...base, color: "rgba(255,255,255,0.7)" }),
-  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-  menu: (base) => ({
-    ...base,
-    borderRadius: 10,
-    overflow: "hidden",
-    backgroundColor: isDark ? "rgba(30,41,59,0.98)" : "rgba(255,255,255,0.98)",
-    backdropFilter: "blur(10px)",
-    boxShadow: "0 10px 30px -10px rgba(0,0,0,0.4)",
-    border: isDark ? "1px solid rgba(71,85,105,0.5)" : "none",
-  }),
-  option: (base, state) => ({
-    ...base,
-    backgroundColor: isDark
-      ? state.isFocused ? "rgba(71,85,105,1)" : "rgba(51,65,85,1)"
-      : state.isFocused ? "rgba(241,245,249,1)" : "rgba(255,255,255,1)",
-    color: isDark ? "#f1f5f9" : "#111827",
-    cursor: "pointer",
-  }),
-});
-
-// Helper to merge dark mode styles - returns function-based styles for react-select
-const getSelectStyles = (isDarkMode = false) => ({
-  control: (base) => ({
-    ...base,
-    minHeight: 36,
-    height: 36,
-    borderColor: isDarkMode ? "rgba(71,85,105,0.8)" : "rgba(229,231,235,0.8)",
-    backgroundColor: isDarkMode ? "rgba(51,65,85,0.7)" : "rgba(255,255,255,0.7)",
-    backdropFilter: "blur(6px)",
-    boxShadow: isDarkMode ? "0 1px 2px rgba(0,0,0,0.2)" : "0 1px 2px rgba(15,23,42,0.06)",
-    borderRadius: 12,
-    transition: "all .2s ease",
-  }),
-  valueContainer: (base) => ({ ...base, height: 36, padding: "0 10px" }),
-  indicatorsContainer: (base) => ({ ...base, height: 36 }),
-  input: (base) => ({
-    ...base,
-    margin: 0,
-    padding: 0,
-    color: isDarkMode ? "#f1f5f9" : "#111827",
-  }),
-  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-  menu: (base) => ({
-    ...base,
-    borderRadius: 12,
-    overflow: "hidden",
-    backgroundColor: isDarkMode ? "rgba(30,41,59,0.95)" : "rgba(255,255,255,0.9)",
-    backdropFilter: "blur(10px)",
-    boxShadow: isDarkMode ? "0 10px 30px -10px rgba(0,0,0,0.4)" : "0 10px 30px -10px rgba(30,64,175,0.18)",
-    border: isDarkMode ? "1px solid rgba(71,85,105,0.5)" : "none",
-  }),
-  option: (base, state) => ({
-    ...base,
-    backgroundColor: isDarkMode
-      ? state.isFocused
-        ? "rgba(71,85,105,1)"
-        : "rgba(51,65,85,1)"
-      : state.isFocused
-        ? "rgba(241,245,249,1)"
-        : "rgba(255,255,255,1)",
-    color: isDarkMode ? "#f1f5f9" : "#111827",
-    cursor: "pointer",
-  }),
-  singleValue: (base) => ({
-    ...base,
-    color: isDarkMode ? "#f1f5f9" : "#111827",
-  }),
-  placeholder: (base) => ({
-    ...base,
-    color: isDarkMode ? "#64748b" : "#9ca3af",
-  }),
-});
-
-// helper to try /api/... then /...
-async function tryEndpoints(paths, params) {
-  let lastErr;
-  for (const path of paths) {
-    try {
-      const res = await axios.get(path, { params, withCredentials: true });
-      return res;
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-  throw lastErr;
-}
-
 export default function ProductComprehensiveReport() {
   // Filters
-const [fromDate, setFromDate] = useState("");
+  const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [productValue, setProductValue] = useState(null);
   const [productId, setProductId] = useState("");
@@ -224,135 +74,32 @@ const [fromDate, setFromDate] = useState("");
     [canFor]
   );
 
-  // Get dark mode state and theme colors
-  const { isDark, theme } = useTheme();
+  // Active theme colors
+  const { theme } = useTheme();
 
-  // 🎨 Modern button palette (will use dynamic theme colors)
-  const tintPrimary = useMemo(() => `
-    bg-linear-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  const tintSecondary = useMemo(() => `
-    bg-linear-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  const tintGlass = useMemo(() => `
-    bg-white/80 dark:bg-slate-700/60 backdrop-blur-xs ring-1 ring-gray-200/60 dark:ring-white/10
-    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  const tintOutline = useMemo(() => `
-    bg-transparent ring-1 ring-gray-300 dark:ring-slate-600
-    hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  // Memoize theme colors for performance
   const themeColors = useMemo(() => {
     if (!theme) {
       return {
-        primary: '#3b82f6',
-        primaryHover: '#2563eb',
-        primaryLight: '#dbeafe',
-        secondary: '#8b5cf6',
-        secondaryHover: '#7c3aed',
-        secondaryLight: '#ede9fe',
-        tertiary: '#06b6d4',
-        tertiaryHover: '#0891b2',
-        tertiaryLight: '#cffafe',
-        emerald: '#10b981',
-        emeraldHover: '#059669',
-        emeraldLight: '#d1fae5',
+        primary: '#2563eb',
+        secondary: '#0f766e',
+        success: '#15803d',
+        warning: '#b45309',
+        danger: '#dc2626',
       };
     }
     return {
-      primary: theme.primary_color || '#3b82f6',
-      primaryHover: theme.primary_hover || '#2563eb',
-      primaryLight: theme.primary_light || '#dbeafe',
-      secondary: theme.secondary_color || '#8b5cf6',
-      secondaryHover: theme.secondary_hover || '#7c3aed',
-      secondaryLight: theme.secondary_light || '#ede9fe',
-      tertiary: theme.tertiary_color || '#06b6d4',
-      tertiaryHover: theme.tertiary_hover || '#0891b2',
-      tertiaryLight: theme.tertiary_light || '#cffafe',
-      emerald: theme.success_color || '#10b981',
-      emeraldHover: '#059669',
-      emeraldLight: '#d1fae5',
+      primary: theme.primary_color || '#2563eb',
+      secondary: theme.secondary_color || '#0f766e',
+      success: theme.success_color || '#15803d',
+      warning: theme.warning_color || '#b45309',
+      danger: theme.danger_color || '#dc2626',
     };
   }, [theme]);
 
-  // Calculate text colors based on background brightness
-  const primaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
-    [themeColors.primary, themeColors.primaryHover]
+  const primaryTextColor = useMemo(
+    () => getContrastText(themeColors.primary),
+    [themeColors.primary]
   );
-  
-  const secondaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
-    [themeColors.secondary, themeColors.secondaryHover]
-  );
-
-  // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded-sm';
-  
-  // Get button style classes and styles based on theme button_style
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'rounded-sm': 'rounded-lg',
-      'outlined': 'rounded-lg',
-      'soft': 'rounded-xl',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
-    
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.secondary,
-            color: themeColors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-      };
-    }
-    
-    // Filled styles for rounded and soft
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: primaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-          color: secondaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
-        }
-      },
-    };
-  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor]);
-
-  const btnPrimary = getButtonClasses.primary;
-  const btnSecondary = getButtonClasses.secondary;
-
-  // Get section styles
-  const coreStyles = useMemo(() => getSectionStyles(themeColors, 'primary'), [themeColors]);
-  const managementStyles = useMemo(() => getSectionStyles(themeColors, 'secondary'), [themeColors]);
 
   /* ============ Set default date range on mount ============ */
   useEffect(() => {
@@ -366,7 +113,7 @@ const [fromDate, setFromDate] = useState("");
     if (!toDate) setToDate(formatYMD(lastDay));
   }, []);
 
-/* ============ Product fetch (for ProductSearchInput) ============ */
+  /* ============ Product fetch (for ProductSearchInput) ============ */
   const fetchProducts = async (q = "") => {
     try {
       const { data } = await axios.get("/api/products/search", { params: { q, limit: 30 } });
@@ -458,40 +205,16 @@ const [fromDate, setFromDate] = useState("");
   // Computed values
   const { product, transactions, summary } = data;
 
-  // Row type classes
-  const getRowClass = (type) => {
-    switch (type) {
-      case "purchase":
-        return isDark ? "bg-green-900/30" : "bg-green-50/80";
-      case "sale":
-        return isDark ? "bg-red-900/30" : "bg-red-50/80";
-      case "purchase_return":
-        return isDark ? "bg-amber-900/30" : "bg-amber-50/80";
-      case "sale_return":
-        return isDark ? "bg-purple-900/30" : "bg-purple-50/80";
-      default:
-        return "";
-    }
-  };
-
   const getTypeBadge = (type) => {
     switch (type) {
       case "purchase":
-        return <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
-          isDark ? "bg-green-800 text-green-200" : "bg-green-200 text-green-800"
-        }`}>PURCHASE</span>;
+        return <span className="report-type report-type-in">PURCHASE</span>;
       case "sale":
-        return <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
-          isDark ? "bg-red-800 text-red-200" : "bg-red-200 text-red-800"
-        }`}>SALE</span>;
+        return <span className="report-type report-type-out">SALE</span>;
       case "purchase_return":
-        return <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
-          isDark ? "bg-amber-800 text-amber-200" : "bg-amber-200 text-amber-800"
-        }`}>P.RETURN</span>;
+        return <span className="report-type report-status-warning">P.RETURN</span>;
       case "sale_return":
-        return <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
-          isDark ? "bg-purple-800 text-purple-200" : "bg-purple-200 text-purple-800"
-        }`}>S.RETURN</span>;
+        return <span className="report-type report-badge">S.RETURN</span>;
       default:
         return null;
     }
@@ -500,117 +223,114 @@ const [fromDate, setFromDate] = useState("");
   // Permission gating
   if (permsLoading) {
     return (
-      <div className="p-6">
-        <GlassCard>
-          <div className={`px-4 py-3 text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>Checking permissions…</div>
-        </GlassCard>
+      <div className="report-page">
+        <section className="products-panel">
+          <p className="report-state">Checking permissions…</p>
+        </section>
       </div>
     );
   }
 
   if (!can.view) {
     return (
-      <div className="p-6">
-        <GlassCard>
-          <div className={`px-4 py-3 text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>
-            You don't have permission to view this report.
-          </div>
-        </GlassCard>
+      <div className="report-page">
+        <section className="products-panel">
+          <p className="report-state">You don't have permission to view this report.</p>
+        </section>
       </div>
     );
   }
 
   return (
-    <div className="p-4 space-y-3">
-{/* ===== Premium Gradient Hero Header ===== */}
-      <div
-        className="relative overflow-hidden rounded-2xl shadow-lg"
-        style={{
-          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
-        }}
-      >
-        {/* Decorative blurred blobs */}
-        <div
-          className="absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-30 blur-3xl pointer-events-none"
-          style={{ backgroundColor: "#ffffff" }}
-        />
-        <div
-          className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full opacity-20 blur-3xl pointer-events-none"
-          style={{ backgroundColor: themeColors.tertiary }}
-        />
-
-        {/* Hero Top */}
-        <div className="relative flex items-center justify-between px-5 py-4 flex-wrap gap-2">
-          <div className="flex items-center gap-3">
-            <div
-              className="p-2.5 rounded-xl shadow-inner"
-              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
-            >
-              <DocumentTextIcon className="w-6 h-6 text-white" />
+    <div className="report-page">
+      {/* ===== Glass overview: title, actions, filters ===== */}
+      <section className="products-panel">
+        <div className="products-heading">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="products-identity-icon">
+              <DocumentTextIcon className="w-6 h-6" />
             </div>
-            <div>
-              <h1 className="text-xl font-extrabold tracking-wide text-white leading-none">Product Comprehensive Report</h1>
-              <p className="text-xs text-white/80 mt-1">{transactions.length} transactions</p>
+            <div className="min-w-0">
+              <h1 className="products-title">Product Comprehensive Report</h1>
+              <p className="products-subtitle">
+                <Squares2X2Icon className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{transactions.length} transactions</span>
+              </p>
             </div>
           </div>
 
-          {/* Header Actions */}
-          <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="flex flex-wrap items-center gap-2">
+            <Guard when={can.export}>
+              <button
+                type="button"
+                onClick={exportPdf}
+                disabled={pdfLoading || transactions.length === 0}
+                title={
+                  transactions.length === 0
+                    ? "Load the report before exporting"
+                    : pdfLoading
+                    ? "Generating PDF…"
+                    : "Export report as PDF"
+                }
+                className="products-action"
+              >
+                <ArrowDownOnSquareIcon className="w-4 h-4" />
+                <span>{pdfLoading ? "Generating…" : "Export PDF"}</span>
+              </button>
+            </Guard>
+
             <button
+              type="button"
               onClick={resetFilters}
-              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
+              title="Reset the filters and results"
+              className="products-action"
             >
               <ArrowPathIcon className="w-4 h-4" />
               <span>Reset</span>
             </button>
+
             <Guard when={can.view}>
               <button
+                type="button"
                 onClick={fetchReport}
                 disabled={loading}
-                className={`h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 ${
-                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 shadow-lg"
-                }`}
+                title="Load the product comprehensive report"
+                className="products-action products-action-primary"
+                style={{ color: primaryTextColor }}
               >
                 <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-                {loading ? "Loading…" : "Load"}
+                <span>{loading ? "Loading…" : "Load Report"}</span>
               </button>
             </Guard>
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="relative px-5 pb-4">
-          <div
-            className="grid grid-cols-1 md:grid-cols-12 gap-3 rounded-xl p-3"
-            style={{ backgroundColor: "rgba(255,255,255,0.12)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)" }}
-          >
-            {/* From Date */}
-            <div className="md:col-span-3 flex flex-col gap-1">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">From Date</label>
+        <div className="products-filter-panel">
+          <div className="report-filters">
+            <label className="products-filter">
+              <span className="products-filter-label">From Date</span>
               <input
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
+                className="report-input"
               />
-            </div>
+            </label>
 
-            {/* To Date */}
-            <div className="md:col-span-3 flex flex-col gap-1">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">To Date</label>
+            <label className="products-filter">
+              <span className="products-filter-label">To Date</span>
               <input
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
+                className="report-input"
               />
-            </div>
+            </label>
 
-{/* Product Selector */}
-            <div className="md:col-span-4 flex flex-col gap-1">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Product</label>
-              <div className="flex items-center gap-1">
-                <div className="flex-1">
+            <div className="products-filter">
+              <span className="products-filter-label">Product</span>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 min-w-0">
                   <ProductSearchInput
                     className="h-9 text-xs px-3 rounded-lg"
                     value={productValue || productId}
@@ -619,7 +339,7 @@ const [fromDate, setFromDate] = useState("");
                       setProductValue(selected);
                       setProductId(selected?.id ? String(selected.id) : "");
                     }}
-products={products}
+                    products={products}
                     onRefreshProducts={fetchProducts}
                   />
                 </div>
@@ -630,251 +350,234 @@ products={products}
                       setProductValue(null);
                       setProductId("");
                     }}
-                    className="h-9 w-8 shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-xs transition-all duration-200"
+                    className="report-icon-btn"
+                    aria-label="Clear product"
                     title="Clear product"
                   >
-                    ×
+                    <XMarkIcon />
                   </button>
                 )}
               </div>
             </div>
-
-            {/* Export PDF */}
-            <div className="md:col-span-2 flex flex-col gap-1 justify-end">
-              <Guard when={can.export}>
-                <button
-                  onClick={exportPdf}
-                  disabled={pdfLoading || transactions.length === 0}
-                  className={`h-9 px-3 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs font-semibold text-white transition-all duration-200 ${
-                    pdfLoading || transactions.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20"
-                  }`}
-                >
-                  <ArrowDownOnSquareIcon className="w-4 h-4" />
-                  {pdfLoading ? "..." : "Export PDF"}
-                </button>
-              </Guard>
-            </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* ===== Results ===== */}
+      {/* ===== Empty state ===== */}
       {transactions.length === 0 && !loading && (
-        <GlassCard>
-          <div className={`px-4 py-4 text-sm ${isDark ? "text-slate-400" : "text-gray-600"}`}>
-            {product ? "No transactions found for this product in the selected date range." : "Select a product and click Load to view the report."}
-          </div>
-        </GlassCard>
+        <section className="products-panel">
+          <p className="report-state">
+            {product
+              ? "No transactions found for this product in the selected date range."
+              : "Select a product and click \"Load Report\" to view the report."}
+          </p>
+        </section>
       )}
 
-      {/* Product Info Card */}
+      {/* ===== Product summary ===== */}
       {product && (
-        <GlassCard>
-          <div className={`flex flex-wrap items-center gap-4 p-4 rounded-xl border ${
-            isDark
-              ? "bg-blue-900/30 border-blue-700/50"
-              : "bg-blue-50/80 border-blue-200/60"
-          }`}>
-            <div className="flex-1">
-              <h3 className={`text-lg font-semibold ${isDark ? "text-blue-300" : "text-blue-900"}`}>{product.name}</h3>
-              <div className={`flex flex-wrap gap-4 mt-1 text-sm ${isDark ? "text-blue-200" : "text-blue-800"}`}>
-                {product.product_code && <span>Code: <strong>{product.product_code}</strong></span>}
-                {product.category_name && <span>Category: <strong>{product.category_name}</strong></span>}
-                {product.brand_name && <span>Brand: <strong>{product.brand_name}</strong></span>}
-                {product.pack_size && <span>Pack Size: <strong>{product.pack_size}</strong></span>}
-              </div>
-            </div>
-            <div className={`text-center px-6 py-3 rounded-xl border shadow-xs ${
-              isDark ? "bg-slate-800/80 border-blue-700/50" : "bg-white/80 border-blue-200"
-            }`}>
-              <div className={`text-xs uppercase tracking-wide ${isDark ? "text-blue-400" : "text-blue-600"}`}>Current Stock</div>
-              <div className={`text-2xl font-bold ${isDark ? "text-blue-200" : "text-blue-900"}`}>{fmtNumber(product.current_quantity)}</div>
+        <div className="report-product-summary">
+          <div className="min-w-0">
+            <h2 className="report-product-title">{product.name}</h2>
+            <div className="report-product-meta">
+              {product.product_code && (
+                <span>Code: <strong>{product.product_code}</strong></span>
+              )}
+              {product.category_name && (
+                <span>Category: <strong>{product.category_name}</strong></span>
+              )}
+              {product.brand_name && (
+                <span>Brand: <strong>{product.brand_name}</strong></span>
+              )}
+              {product.pack_size && (
+                <span>Pack Size: <strong>{product.pack_size}</strong></span>
+              )}
             </div>
           </div>
-        </GlassCard>
+          <div className="report-stock-tile">
+            <div className="report-stock-label">Current Stock</div>
+            <div className="report-stock-value">{fmtNumber(product.current_quantity)}</div>
+          </div>
+        </div>
       )}
 
       {transactions.length > 0 && (
         <>
-          {/* ===== Summary KPI Cards ===== */}
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
-            <KpiCard isDark={isDark} label="Total Purchase" value={fmtCurrency(summary.total_purchases)} />
-            <KpiCard isDark={isDark} label="Purchase Returns" value={fmtCurrency(summary.total_purchase_returns)} />
-            <KpiCard isDark={isDark} label="Net Purchase" value={fmtCurrency(summary.net_purchases)} highlight />
-            <KpiCard isDark={isDark} label="Total Sale" value={fmtCurrency(summary.total_sales)} />
-            <KpiCard isDark={isDark} label="Sale Returns" value={fmtCurrency(summary.total_sale_returns)} />
-            <KpiCard isDark={isDark} label="Net Sale" value={fmtCurrency(summary.net_sales)} highlight />
+          {/* ===== Summary KPIs ===== */}
+          <div className="report-kpis report-kpis-6">
+            <KpiCard
+              label="Total Purchase"
+              value={fmtCurrency(summary.total_purchases)}
+              note="Purchases in range"
+              icon={ArrowDownOnSquareIcon}
+              accent={themeColors.secondary}
+            />
+            <KpiCard
+              label="Purchase Returns"
+              value={fmtCurrency(summary.total_purchase_returns)}
+              note="Returned to supplier"
+              icon={ArrowPathIcon}
+              accent={themeColors.warning}
+            />
+            <KpiCard
+              label="Net Purchase"
+              value={fmtCurrency(summary.net_purchases)}
+              note="Purchases − returns"
+              icon={CubeIcon}
+              accent={themeColors.primary}
+            />
+            <KpiCard
+              label="Total Sale"
+              value={fmtCurrency(summary.total_sales)}
+              note="Sales in range"
+              icon={CurrencyDollarIcon}
+              accent={themeColors.primary}
+            />
+            <KpiCard
+              label="Sale Returns"
+              value={fmtCurrency(summary.total_sale_returns)}
+              note="Returned by customer"
+              icon={ArrowPathIcon}
+              accent={themeColors.warning}
+            />
+            <KpiCard
+              label="Net Sale"
+              value={fmtCurrency(summary.net_sales)}
+              note="Sales − returns"
+              icon={ArrowTrendingUpIcon}
+              accent={themeColors.success}
+            />
           </div>
 
-          {/* ===== Quantity Summary ===== */}
-          <div className={`grid grid-cols-2 gap-4 p-4 rounded-xl border ${
-            isDark ? "bg-slate-800/60 border-slate-700" : "bg-white/60 border-gray-200"
-          }`}>
-            <div className="text-center">
-              <div className={`text-xs uppercase tracking-wider ${isDark ? "text-slate-400" : "text-gray-500"}`}>Total In</div>
-              <div className={`text-xl font-bold ${isDark ? "text-green-400" : "text-green-600"}`}>{fmtNumber(summary.total_quantity_in)}</div>
-            </div>
-            <div className="text-center">
-              <div className={`text-xs uppercase tracking-wider ${isDark ? "text-slate-400" : "text-gray-500"}`}>Total Out</div>
-              <div className={`text-xl font-bold ${isDark ? "text-red-400" : "text-red-600"}`}>{fmtNumber(summary.total_quantity_out)}</div>
-            </div>
+          {/* ===== Quantity summary ===== */}
+          <div className="report-kpis report-kpis-2">
+            <KpiCard
+              label="Total In"
+              value={fmtNumber(summary.total_quantity_in)}
+              note="Units received"
+              icon={ArrowTrendingUpIcon}
+              accent={themeColors.success}
+            />
+            <KpiCard
+              label="Total Out"
+              value={fmtNumber(summary.total_quantity_out)}
+              note="Units issued"
+              icon={ArrowTrendingDownIcon}
+              accent={themeColors.danger}
+            />
           </div>
 
-          {/* ===== Data Table ===== */}
-          <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden">
-{/* Table Header */}
-            <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
-              <div className="flex items-center gap-2">
-                <div 
-                  className="p-1 rounded-sm"
-                  style={{ backgroundColor: themeColors.primaryLight + '40' }}
-                >
-                  <Squares2X2Icon 
-                    className="w-4 h-4" 
-                    style={{ color: themeColors.primary }} 
-                  />
+          {/* ===== Transactions table ===== */}
+          <section className="products-panel products-catalog">
+            <div className="products-catalog-heading">
+              <div className="flex items-center gap-3">
+                <div className="report-section-icon">
+                  <Squares2X2Icon />
                 </div>
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Transactions</span>
+                <div>
+                  <h2 className="products-section-title">Transactions</h2>
+                  <p className="products-subtitle">
+                    {loading ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <ArrowPathIcon className="h-3 w-3 animate-spin" />
+                        Loading…
+                      </span>
+                    ) : (
+                      `${transactions.length} entries`
+                    )}
+                  </p>
+                </div>
               </div>
-              <span className="text-xs text-gray-400">{transactions.length} entries</span>
             </div>
 
-            <div className="max-h-[70vh] overflow-auto">
-              <table className="min-w-[1200px] w-full text-sm">
-                <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
-                  <tr className="text-left">
-                    <Th isDark={isDark}>#</Th>
-                    <Th isDark={isDark}>Date</Th>
-                    <Th isDark={isDark}>Type</Th>
-                    <Th isDark={isDark}>Ref #</Th>
-                    <Th isDark={isDark}>Supplier/Customer</Th>
-                    <Th isDark={isDark}>Batch</Th>
-                    <Th isDark={isDark}>Expiry</Th>
-                    <Th align="right" isDark={isDark}>Qty In</Th>
-                    <Th align="right" isDark={isDark}>Qty Out</Th>
-                    <Th align="right" isDark={isDark}>Unit Price</Th>
-                    <Th align="right" isDark={isDark}>Subtotal</Th>
+            <div
+              className="report-table-scroll"
+              tabIndex={0}
+              role="region"
+              aria-label="Product transactions"
+              aria-busy={loading}
+            >
+              <table className="report-table report-table-medium">
+                <thead>
+                  <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">Date</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Ref #</th>
+                    <th scope="col">Supplier/Customer</th>
+                    <th scope="col">Batch</th>
+                    <th scope="col">Expiry</th>
+                    <th scope="col" className="report-num">Qty In</th>
+                    <th scope="col" className="report-num">Qty Out</th>
+                    <th scope="col" className="report-num">Unit Price</th>
+                    <th scope="col" className="report-num">Subtotal</th>
                   </tr>
                 </thead>
 
-                <tbody className="tabular-nums">
+                <tbody>
                   {transactions.map((txn, idx) => (
-                    <tr
-                      key={idx}
-                      className={`
-                        transition-colors
-                        border-b border-gray-100 dark:border-slate-600/30
-                        odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/40 dark:even:bg-slate-800/40
-                        hover:bg-blue-50 dark:hover:bg-slate-600/50
-                        ${getRowClass(txn.type)}
-                      `}
-                    >
-                      <Td isDark={isDark}>{idx + 1}</Td>
-                      <Td isDark={isDark}>{fmtDate(txn.date)}</Td>
-                      <Td isDark={isDark}>{getTypeBadge(txn.type)}</Td>
-                      <Td isDark={isDark} className="font-medium">{txn.reference_number || "-"}</Td>
-                      <Td isDark={isDark}>{txn.counter_party || "-"}</Td>
-                      <Td isDark={isDark}>{txn.batch || "-"}</Td>
-                      <Td isDark={isDark}>{fmtDate(txn.expiry)}</Td>
-                      <Td align="right" isDark={isDark} className={isDark ? "text-green-400 font-medium" : "text-green-700 font-medium"}>
+                    <tr key={idx}>
+                      <td className="report-muted">{idx + 1}</td>
+                      <td>{fmtDate(txn.date)}</td>
+                      <td>{getTypeBadge(txn.type)}</td>
+                      <td className="report-strong">{txn.reference_number || "-"}</td>
+                      <td>{txn.counter_party || "-"}</td>
+                      <td className="report-mono">{txn.batch || "-"}</td>
+                      <td>{fmtDate(txn.expiry)}</td>
+                      <td className="report-num report-amount-up">
                         {txn.quantity_in > 0 ? fmtNumber(txn.quantity_in) : "-"}
-                      </Td>
-                      <Td align="right" isDark={isDark} className={isDark ? "text-red-400 font-medium" : "text-red-700 font-medium"}>
+                      </td>
+                      <td className="report-num report-amount-down">
                         {txn.quantity_out > 0 ? fmtNumber(txn.quantity_out) : "-"}
-                      </Td>
-                      <Td align="right" isDark={isDark}>{fmtCurrency(txn.unit_price)}</Td>
-                      <Td align="right" isDark={isDark} className="font-medium">{fmtCurrency(txn.sub_total)}</Td>
+                      </td>
+                      <td className="report-num">{fmtCurrency(txn.unit_price)}</td>
+                      <td className="report-num report-strong">{fmtCurrency(txn.sub_total)}</td>
                     </tr>
                   ))}
 
                   {transactions.length === 0 && (
                     <tr>
-                      <td colSpan={11} className={`px-3 py-6 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+                      <td colSpan={11} className="report-muted">
                         No transactions found.
                       </td>
                     </tr>
                   )}
                 </tbody>
 
-                <tfoot className={`
-                  border-t-2 backdrop-blur-xs font-semibold
-                  ${isDark ? "border-slate-600 bg-slate-800/80" : "border-gray-300 bg-gray-50"}
-                `}>
-                  <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>
-                    <Td isDark={isDark} colSpan={7} align="right" strong>TOTALS</Td>
-                    <Td align="right" isDark={isDark} className={isDark ? "text-green-400" : "text-green-800"}>
+                <tfoot>
+                  <tr className="report-total-row">
+                    <td colSpan={7} className="report-num">Totals</td>
+                    <td className="report-num report-amount-up">
                       {fmtNumber(summary.total_quantity_in)}
-                    </Td>
-                    <Td align="right" isDark={isDark} className={isDark ? "text-red-400" : "text-red-800"}>
+                    </td>
+                    <td className="report-num report-amount-down">
                       {fmtNumber(summary.total_quantity_out)}
-                    </Td>
-                    <Td align="right" isDark={isDark}>-</Td>
-                    <Td align="right" isDark={isDark}>-</Td>
+                    </td>
+                    <td className="report-num report-muted">—</td>
+                    <td className="report-num report-muted">—</td>
                   </tr>
                 </tfoot>
               </table>
             </div>
-          </div>
+          </section>
         </>
       )}
-
-      {/* Print styles */}
-      <style>{`
-        .tabular-nums { font-variant-numeric: tabular-nums; }
-        @media print {
-          input, button, select, [role="button"], .rs__control { display: none !important; }
-          table { font-size: 10px; }
-          thead { position: sticky; top: 0; }
-        }
-      `}</style>
     </div>
   );
 }
 
 /* ===== KPI Card Component ===== */
-function KpiCard({ isDark, label, value, highlight = false }) {
+function KpiCard({ label, value, note, icon: Icon, accent }) {
   return (
-    <div className={`
-      rounded-xl px-3 py-2 backdrop-blur-xs ring-1 shadow-xs
-      ${isDark 
-        ? "bg-slate-800/60 ring-slate-700/50" 
-        : "bg-white/60 ring-gray-200/60"
-      }
-      ${highlight ? "outline-solid outline-1 outline-emerald-200/50" : ""}
-    `}>
-      <div className={`text-[10px] uppercase tracking-wider ${isDark ? "text-slate-400" : "text-gray-500"}`}>{label}</div>
-      <div className={`text-lg font-bold tabular-nums ${isDark ? "text-slate-200" : "text-gray-900"}`}>{value}</div>
+    <div className="report-kpi" style={accent ? { "--report-accent": accent } : undefined}>
+      <div className="report-kpi-head">
+        <span className="report-kpi-icon">
+          <Icon />
+        </span>
+        <span>{label}</span>
+      </div>
+      <div className="report-kpi-value">{value}</div>
+      {note && <div className="report-kpi-note">{note}</div>}
     </div>
-  );
-}
-
-/* ===== Table Helpers ===== */
-function Th({ children, align = "left", isDark = false }) {
-  return (
-    <th className={`
-      px-3 py-2 font-semibold text-xs uppercase tracking-wider
-      ${align === "right" ? "text-right" : "text-left"}
-      ${isDark ? "bg-slate-700 text-slate-200" : "bg-gray-100 text-gray-600"}
-    `}>
-      {children}
-    </th>
-  );
-}
-
-function Td({ children, align = "left", colSpan, strong = false, className = "", isDark = false }) {
-  return (
-    <td
-      colSpan={colSpan}
-      className={[
-        "px-3 py-2 border-t",
-        isDark ? "border-slate-600/30" : "border-gray-200/70",
-        align === "right" ? "text-right" : "text-left",
-        strong ? `font-semibold ${isDark ? "text-slate-200" : "text-gray-800"}` : "",
-        isDark ? "text-slate-300" : "text-gray-700",
-        className,
-      ].join(" ")}
-    >
-      {children}
-    </td>
   );
 }

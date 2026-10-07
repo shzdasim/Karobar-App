@@ -14,15 +14,6 @@ import { useLicense } from "@/context/LicenseContext.jsx"; // 🔒 license conte
 import { useTheme } from "@/context/ThemeContext.jsx"; // 🎨 theme context
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx"; // Sale system context
 
-// 🧊 glass primitives
-import {
-  GlassCard,
-  GlassSectionHeader,
-  GlassToolbar,
-  GlassInput,
-  GlassBtn,
-} from "@/components/glass.jsx";
-
 import {
   ArrowDownOnSquareIcon,
   CogIcon,
@@ -30,7 +21,6 @@ import {
   DocumentTextIcon,
   ServerIcon,
   Bars3Icon,
-  ViewColumnsIcon,
   ShoppingCartIcon,
 } from "@heroicons/react/24/solid";
 
@@ -53,6 +43,16 @@ const getContrastText = (hexColor) => {
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luminance > 0.5 ? '#1f2937' : '#ffffff';
 };
+
+// Settings sections shown as tabs. Ids and labels match the previous markup.
+const SETTINGS_TABS = [
+  { id: "general", label: "General", icon: CogIcon },
+  { id: "sale", label: "Sale System", icon: ShoppingCartIcon },
+  { id: "navigation", label: "Theme Setting", icon: Bars3Icon },
+  { id: "printer", label: "Printer Setting", icon: PrinterIcon },
+  { id: "backup", label: "Backup and restore", icon: ServerIcon },
+  { id: "license", label: "License", icon: DocumentTextIcon },
+];
 
 export default function Setting() {
   const [loading, setLoading] = useState(true);
@@ -77,10 +77,10 @@ export default function Setting() {
 
   // FilePond files (supports remote preload)
   const [files, setFiles] = useState([]);
-  
+
   // Tab state
   const [activeTab, setActiveTab] = useState("general");
-  
+
   // Check for hash in URL on mount to open specific tab
   useEffect(() => {
     if (window.location.hash === "#license") {
@@ -112,22 +112,6 @@ export default function Setting() {
     [canFor]
   );
 
-  // 🎨 Dynamic button styles using theme colors
-  const tintPrimary = useMemo(() => `
-    bg-linear-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  const tintSecondary = useMemo(() => `
-    bg-linear-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  const tintGlass = useMemo(() => `
-    bg-white/80 dark:bg-slate-700/60 backdrop-blur-xs ring-1 ring-gray-200/60 dark:ring-white/10
-    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
   // Memoize theme colors for performance
   const themeColors = useMemo(() => {
     if (!theme) {
@@ -157,87 +141,15 @@ export default function Setting() {
   }, [theme]);
 
   // Calculate text colors based on background brightness
-  const primaryTextColor = useMemo(() => 
-    getContrastText(themeColors.primaryHover || themeColors.primary), 
+  const primaryTextColor = useMemo(() =>
+    getContrastText(themeColors.primaryHover || themeColors.primary),
     [themeColors.primary, themeColors.primaryHover]
   );
-  
-  const emeraldTextColor = useMemo(() => 
-    getContrastText(themeColors.emeraldHover || themeColors.emerald), 
+
+  const emeraldTextColor = useMemo(() =>
+    getContrastText(themeColors.emeraldHover || themeColors.emerald),
     [themeColors.emerald, themeColors.emeraldHover]
   );
-
-  // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded-sm';
-  
-  // Get button style classes and styles based on theme button_style
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'rounded-sm': 'rounded-lg',
-      'outlined': 'rounded-lg',
-      'soft': 'rounded-xl',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
-    
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.secondary,
-            color: themeColors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-        emerald: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.emerald,
-            color: themeColors.emerald,
-            backgroundColor: 'transparent',
-          }
-        },
-      };
-    }
-    
-    // Filled styles for rounded and soft
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: primaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-          color: '#ffffff',
-          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
-        }
-      },
-      emerald: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
-          color: emeraldTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.emerald}40`,
-        }
-      },
-    };
-  }, [buttonStyle, themeColors, primaryTextColor, emeraldTextColor]);
-
-  const btnEmerald = getButtonClasses.emerald;
 
   useEffect(() => {
     if (permsLoading) return;
@@ -348,10 +260,10 @@ export default function Setting() {
 
       // Dispatch custom event so other contexts (e.g. sale system) refresh immediately
       window.dispatchEvent(new CustomEvent('settingsChanged'));
-      
+
       // Refresh sale system context to reflect changes immediately
       refreshSaleSystem();
-      
+
       // Refresh FilePond with the latest stored logo
       if (data.logo_url) {
         setFiles([{ source: data.logo_url, options: { type: "remote" } }]);
@@ -390,264 +302,183 @@ export default function Setting() {
     }
   };
 
+  const saveDisabled = !can.update || saving;
+
   if (permsLoading) {
-    return <div className="p-6"><div className="animate-pulse text-gray-500 dark:text-gray-400">Loading…</div></div>;
+    return (
+      <div className="settings-page">
+        <p className="settings-hint">Loading…</p>
+      </div>
+    );
   }
   if (!can.view) {
-    return <div className="p-6 text-sm text-gray-700 dark:text-gray-300">You don't have permission to view settings.</div>;
+    return (
+      <div className="settings-page">
+        <p className="settings-hint">You don't have permission to view settings.</p>
+      </div>
+    );
   }
   if (loading) {
-    return <div className="p-6"><div className="animate-pulse text-gray-500 dark:text-gray-400">Loading settings…</div></div>;
+    return (
+      <div className="settings-page">
+        <p className="settings-hint">Loading settings…</p>
+      </div>
+    );
   }
 
   const disableInputs = !can.update || saving;
 
   return (
-    <div className="p-4 md:p-6 space-y-4 max-w-5xl mx-auto">
+    <div className="settings-page">
       {/* ===== Header / Save ===== */}
-      <GlassCard className="relative z-30">
-        <GlassSectionHeader
-          title={<span className="inline-flex items-center gap-2">
-            <div 
-              className="w-2 h-2 rounded-full"
-              style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
-            />
-            <span>Application Settings</span>
-          </span>}
-          right={
-            <GlassBtn
+      <div className="settings-panel">
+        <div className="settings-heading">
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="settings-identity-icon">
+              <CogIcon className="w-6 h-6" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="settings-title">Application Settings</h1>
+              <p className="settings-subtitle">
+                <CogIcon className="w-3.5 h-3.5 shrink-0" />
+                Store identity, default printer, and invoice footer — applied across invoices and print templates.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
               ref={saveBtnRef}
+              type="button"
               onClick={handleSave}
-              disabled={!can.update || saving}
-              className={`h-9 px-4 ${btnEmerald.className}`}
-              style={{
-                ...btnEmerald.style,
-                opacity: (!can.update || saving) ? 0.6 : 1,
-                cursor: (!can.update || saving) ? 'not-allowed' : 'pointer'
-              }}
-              title={can.update ? "Alt+S" : "You lack update permission"}
+              disabled={saveDisabled}
+              className="products-action products-action-primary"
+              style={{ color: getContrastText(themeColors.primary) }}
+              title={can.update ? "Save (Alt+S)" : "You lack update permission"}
             >
-              <span className="inline-flex items-center gap-2">
-                <ArrowDownOnSquareIcon className="w-5 h-5" />
-                {saving ? "Saving…" : (can.update ? "Save (Alt+S)" : "Save Disabled")}
+              <ArrowDownOnSquareIcon className="w-4 h-4" />
+              <span>
+                {saving ? "Saving…" : can.update ? "Save settings" : "Save disabled"}
               </span>
-            </GlassBtn>
-          }
-        />
-
-        {/* Top toolbar — optional quick info */}
-        <GlassToolbar className="justify-between pt-1">
-          <div className="text-xs text-gray-600 dark:text-gray-400">
-            Configure store identity, default printer, and invoice footer.
+            </button>
           </div>
-          <div className="text-[11px] text-gray-500 dark:text-gray-400">
-            Changes apply across invoices and print templates.
-          </div>
-        </GlassToolbar>
-      </GlassCard>
-
-      {/* ===== Tab Navigation ===== */}
-      <GlassCard className="py-0! px-0! overflow-hidden">
-        <div className="flex border-b border-gray-200/60 bg-gray-50/50 dark:bg-slate-800/40 dark:border-slate-700/60">
-          {/* General Tab */}
-          <button
-            onClick={() => setActiveTab("general")}
-            className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
-              activeTab === "general"
-                ? ""
-                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
-            }`}
-            style={activeTab === "general" ? {
-              borderColor: themeColors.primary,
-              color: themeColors.primary,
-              backgroundColor: `${themeColors.primaryLight}70`,
-            } : {}}
-          >
-            <CogIcon className="w-5 h-5" />
-            <span>General</span>
-          </button>
-          
-          {/* Sale System Settings Tab */}
-          <button
-            onClick={() => setActiveTab("sale")}
-            className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
-              activeTab === "sale"
-                ? ""
-                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
-            }`}
-            style={activeTab === "sale" ? {
-              borderColor: themeColors.primary,
-              color: themeColors.primary,
-              backgroundColor: `${themeColors.primaryLight}70`,
-            } : {}}
-          >
-            <ShoppingCartIcon className="w-5 h-5" />
-            <span>Sale System</span>
-          </button>
-
-          {/* Theme Settings Tab */}
-          <button
-            onClick={() => setActiveTab("navigation")}
-            className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
-              activeTab === "navigation"
-                ? ""
-                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
-            }`}
-            style={activeTab === "navigation" ? {
-              borderColor: themeColors.primary,
-              color: themeColors.primary,
-              backgroundColor: `${themeColors.primaryLight}70`,
-            } : {}}
-          >
-            <Bars3Icon className="w-5 h-5" />
-            <span>Theme Setting</span>
-          </button>
-
-          {/* Printer Settings Tab */}
-          <button
-            onClick={() => setActiveTab("printer")}
-            className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
-              activeTab === "printer"
-                ? ""
-                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
-            }`}
-            style={activeTab === "printer" ? {
-              borderColor: themeColors.primary,
-              color: themeColors.primary,
-              backgroundColor: `${themeColors.primaryLight}70`,
-            } : {}}
-          >
-            <PrinterIcon className="w-5 h-5" />
-            <span>Printer Setting</span>
-          </button>
-          
-          {/* Backup & Restore Tab */}
-          <button
-            onClick={() => setActiveTab("backup")}
-            className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
-              activeTab === "backup"
-                ? ""
-                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
-            }`}
-            style={activeTab === "backup" ? {
-              borderColor: themeColors.primary,
-              color: themeColors.primary,
-              backgroundColor: `${themeColors.primaryLight}70`,
-            } : {}}
-          >
-            <ServerIcon className="w-5 h-5" />
-            <span>Backup and restore</span>
-          </button>
-
-          {/* License Settings Tab */}
-          <button
-            onClick={() => setActiveTab("license")}
-            className={`flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
-              activeTab === "license"
-                ? ""
-                : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-slate-700/50"
-            }`}
-            style={activeTab === "license" ? {
-              borderColor: themeColors.primary,
-              color: themeColors.primary,
-              backgroundColor: `${themeColors.primaryLight}70`,
-            } : {}}
-          >
-            <DocumentTextIcon className="w-5 h-5" />
-            <span>License</span>
-          </button>
         </div>
-      </GlassCard>
-
-      {/* ===== Tab Content ===== */}
-{activeTab === "general" && (
-        <GeneralSetting
-          form={form}
-          handleChange={handleChange}
-          disableInputs={disableInputs}
-          files={files}
-          setFiles={setFiles}
-          storeNameRef={storeNameRef}
-          phoneRef={phoneRef}
-          addressRef={addressRef}
-          licenseRef={licenseRef}
-          themeColors={themeColors}
-          primaryTextColor={primaryTextColor}
-        />
-      )}
-
-      {activeTab === "sale" && (
-        <SaleSystemSetting
-          form={form}
-          handleSaleSystemChange={handleSaleSystemChange}
-          handleShopTypeChange={handleShopTypeChange}
-          disableInputs={disableInputs}
-          themeColors={themeColors}
-        />
-      )}
-
-      {activeTab === "navigation" && (
-        <ThemeSetting
-          form={form}
-          setForm={setForm}
-          disableInputs={disableInputs}
-        />
-      )}
-
-      {activeTab === "printer" && (
-        <PrinterSetting
-          form={form}
-          handleChange={handleChange}
-          disableInputs={disableInputs}
-          saving={saving}
-          handleSave={handleSave}
-          themeColors={themeColors}
-          emeraldTextColor={emeraldTextColor}
-        />
-      )}
-
-      {activeTab === "license" && (
-        <LicenseSetting
-          licenseStatus={licenseStatus}
-          licenseLoading={licenseLoading}
-          fetchLicenseStatus={fetchLicenseStatus}
-          themeColors={themeColors}
-          primaryTextColor={primaryTextColor}
-        />
-      )}
-
-      {activeTab === "backup" && (
-        <BackupRestoreSetting
-          themeColors={themeColors}
-          primaryTextColor={primaryTextColor}
-          emeraldTextColor={emeraldTextColor}
-        />
-      )}
-
-      {/* ===== Bottom Save ===== */}
-      <div className="flex justify-end">
-        <GlassBtn
-          ref={saveBtnRef}
-          onClick={handleSave}
-          disabled={!can.update || saving}
-          className={`h-10 px-5 ${btnEmerald.className}`}
-          style={{
-            ...btnEmerald.style,
-            opacity: (!can.update || saving) ? 0.6 : 1,
-            cursor: (!can.update || saving) ? 'not-allowed' : 'pointer'
-          }}
-          title={can.update ? "Alt+S" : "You lack update permission"}
-        >
-          {saving ? "Saving…" : "Save (Alt+S)"}
-        </GlassBtn>
       </div>
 
-      {/* subtle helper styles (optional) */}
-      <style>{`
-        .filepond--panel-root { background: rgba(255,255,255,0.7); backdrop-filter: blur(6px); border: 1px solid rgba(226,232,240,0.7); }
-        .filepond--drop-label { color: #334155; }
-      `}</style>
+      {/* ===== Section tabs ===== */}
+      <div className="settings-panel">
+        <div className="settings-tabs" role="tablist" aria-label="Settings sections">
+          {SETTINGS_TABS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={`settings-tab-${id}`}
+              aria-selected={activeTab === id}
+              aria-controls={`settings-panel-${id}`}
+              onClick={() => setActiveTab(id)}
+              className="settings-tab"
+            >
+              <Icon aria-hidden="true" />
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ===== Tab content ===== */}
+      <div
+        id={`settings-panel-${activeTab}`}
+        role="tabpanel"
+        aria-labelledby={`settings-tab-${activeTab}`}
+        className="settings-page"
+      >
+        {activeTab === "general" && (
+          <GeneralSetting
+            form={form}
+            handleChange={handleChange}
+            disableInputs={disableInputs}
+            files={files}
+            setFiles={setFiles}
+            storeNameRef={storeNameRef}
+            phoneRef={phoneRef}
+            addressRef={addressRef}
+            licenseRef={licenseRef}
+            themeColors={themeColors}
+            primaryTextColor={primaryTextColor}
+          />
+        )}
+
+        {activeTab === "sale" && (
+          <SaleSystemSetting
+            form={form}
+            handleSaleSystemChange={handleSaleSystemChange}
+            handleShopTypeChange={handleShopTypeChange}
+            disableInputs={disableInputs}
+            themeColors={themeColors}
+          />
+        )}
+
+        {activeTab === "navigation" && (
+          <ThemeSetting
+            form={form}
+            setForm={setForm}
+            disableInputs={disableInputs}
+          />
+        )}
+
+        {activeTab === "printer" && (
+          <PrinterSetting
+            form={form}
+            handleChange={handleChange}
+            disableInputs={disableInputs}
+            saving={saving}
+            handleSave={handleSave}
+            themeColors={themeColors}
+            emeraldTextColor={emeraldTextColor}
+          />
+        )}
+
+        {activeTab === "license" && (
+          <LicenseSetting
+            licenseStatus={licenseStatus}
+            licenseLoading={licenseLoading}
+            fetchLicenseStatus={fetchLicenseStatus}
+            themeColors={themeColors}
+            primaryTextColor={primaryTextColor}
+          />
+        )}
+
+        {activeTab === "backup" && (
+          <BackupRestoreSetting
+            themeColors={themeColors}
+            primaryTextColor={primaryTextColor}
+            emeraldTextColor={emeraldTextColor}
+          />
+        )}
+      </div>
+
+      {/* ===== Bottom save ===== */}
+      <div className="settings-panel">
+        <div className="settings-body">
+          <div className="settings-actions settings-actions-between">
+            <span className="settings-hint">
+              Shortcut: <span className="people-shortcut">Alt+S</span> to save
+            </span>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saveDisabled}
+              className="products-action products-action-primary"
+              style={{ color: getContrastText(themeColors.primary) }}
+              title={can.update ? "Save (Alt+S)" : "You lack update permission"}
+            >
+              <ArrowDownOnSquareIcon className="w-4 h-4" />
+              <span>{saving ? "Saving…" : "Save settings"}</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
-

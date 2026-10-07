@@ -5,23 +5,15 @@ import toast from "react-hot-toast";
 import { usePermissions, Guard } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext.jsx";
 
-// 🧊 glass primitives
 import {
-  GlassCard,
-  GlassSectionHeader,
-  GlassToolbar,
-  GlassInput,
-  GlassBtn,
-} from "@/components/glass.jsx";
-
-import { 
-  ArrowDownOnSquareIcon, 
+  ArrowDownOnSquareIcon,
   ArrowPathIcon,
   BuildingStorefrontIcon,
-  TagIcon,
-  ClockIcon,
   CalendarIcon,
   ClipboardDocumentListIcon,
+  ClockIcon,
+  TagIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/solid";
 import SupplierSearch from "@/components/SupplierSearch.jsx";
 import BrandSearch from "@/components/BrandSearch.jsx";
@@ -35,10 +27,6 @@ const getContrastText = (hexColor) => {
   const b = parseInt(hexColor.substring(4, 6), 16);
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luminance > 0.5 ? '#1f2937' : '#ffffff';
-};
-
-const getButtonTextColor = (primaryColor, primaryHoverColor) => {
-  return getContrastText(primaryHoverColor || primaryColor);
 };
 
 /* ======================
@@ -56,127 +44,15 @@ const localISODate = (d = new Date()) => {
   return new Date(d.getTime() - tzOffsetMs).toISOString().slice(0, 10);
 };
 
-/* react-select → control on the dark gradient hero background */
-const getSelectStylesOnDark = (isDark = false) => ({
-  control: (base) => ({
-    ...base,
-    minHeight: 36,
-    height: 36,
-    borderRadius: 10,
-    borderColor: "rgba(255,255,255,0.3)",
-    backgroundColor: "rgba(15,23,42,0.5)",
-    backdropFilter: "blur(6px)",
-    boxShadow: "none",
-    cursor: "pointer",
-    "&:hover": {
-      borderColor: "rgba(255,255,255,0.5)",
-    },
-  }),
-  valueContainer: (base) => ({ ...base, height: 36, padding: "0 8px" }),
-  indicatorsContainer: (base) => ({ ...base, height: 36, color: "rgba(255,255,255,0.8)" }),
-  input: (base) => ({ ...base, margin: 0, padding: 0, color: "#ffffff" }),
-  singleValue: (base) => ({ ...base, color: "#ffffff" }),
-  placeholder: (base) => ({ ...base, color: "rgba(255,255,255,0.7)" }),
-  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-  menu: (base) => ({
-    ...base,
-    borderRadius: 10,
-    overflow: "hidden",
-    backgroundColor: isDark ? "rgba(30,41,59,0.98)" : "rgba(255,255,255,0.98)",
-    backdropFilter: "blur(10px)",
-    boxShadow: "0 10px 30px -10px rgba(0,0,0,0.4)",
-    border: isDark ? "1px solid rgba(71,85,105,0.5)" : "none",
-  }),
-  option: (base, state) => ({
-    ...base,
-    backgroundColor: isDark
-      ? state.isFocused ? "rgba(71,85,105,1)" : "rgba(51,65,85,1)"
-      : state.isFocused ? "rgba(241,245,249,1)" : "rgba(255,255,255,1)",
-    color: isDark ? "#f1f5f9" : "#111827",
-    cursor: "pointer",
-  }),
-});
-
-/* react-select → glassy control */
-const getSelectStyles = (isDarkMode = false) => ({
-  control: (base) => ({
-    ...base,
-    minHeight: 36,
-    height: 36,
-    borderColor: isDarkMode ? "rgba(71,85,105,0.8)" : "rgba(229,231,235,0.8)",
-    backgroundColor: isDarkMode ? "rgba(51,65,85,0.7)" : "rgba(255,255,255,0.7)",
-    backdropFilter: "blur(6px)",
-    boxShadow: isDarkMode ? "0 1px 2px rgba(0,0,0,0.2)" : "0 1px 2px rgba(15,23,42,0.06)",
-    borderRadius: 12,
-    transition: "all .2s ease",
-    "&:hover": {
-      borderColor: isDarkMode ? "rgba(100,116,139,0.9)" : "rgba(148,163,184,0.9)",
-      backgroundColor: isDarkMode ? "rgba(51,65,85,0.85)" : "rgba(255,255,255,0.85)",
-    },
-  }),
-  valueContainer: (base) => ({ ...base, height: 36, padding: "0 10px" }),
-  indicatorsContainer: (base) => ({ ...base, height: 36 }),
-  input: (base) => ({
-    ...base,
-    margin: 0,
-    padding: 0,
-    color: isDarkMode ? "#f1f5f9" : "#111827",
-  }),
-  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-  menu: (base) => ({
-    ...base,
-    borderRadius: 12,
-    overflow: "hidden",
-    backgroundColor: isDarkMode ? "rgba(30,41,59,0.95)" : "rgba(255,255,255,0.9)",
-    backdropFilter: "blur(10px)",
-    boxShadow: isDarkMode ? "0 10px 30px -10px rgba(0,0,0,0.4)" : "0 10px 30px -10px rgba(30,64,175,0.18)",
-    border: isDarkMode ? "1px solid rgba(71,85,105,0.5)" : "none",
-  }),
-  option: (base, state) => ({
-    ...base,
-    backgroundColor: isDarkMode
-      ? state.isFocused
-        ? "rgba(71,85,105,1)"
-        : "rgba(51,65,85,1)"
-      : state.isFocused
-        ? "rgba(241,245,249,1)"
-        : "rgba(255,255,255,1)",
-    color: isDarkMode ? "#f1f5f9" : "#111827",
-    cursor: "pointer",
-  }),
-  singleValue: (base) => ({
-    ...base,
-    color: isDarkMode ? "#f1f5f9" : "#111827",
-  }),
-  placeholder: (base) => ({
-    ...base,
-    color: isDarkMode ? "#64748b" : "#9ca3af",
-  }),
-});
-
-// helper to try /api/... then /...
-async function tryEndpoints(paths, params) {
-  let lastErr;
-  for (const path of paths) {
-    try {
-      const res = await axios.get(path, { params, withCredentials: true });
-      return res;
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-  throw lastErr;
-}
-
 export default function NearExpiryProductReport() {
   // Filters - Date range (from/to for expiry date)
   const today = localISODate();
   const defaultToDate = localISODate(new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)); // 3 months ahead
-  
+
   const [fromDate, setFromDate] = useState(today);
   const [toDate, setToDate] = useState(defaultToDate);
-  
-const [supplierValue, setSupplierValue] = useState(null);
+
+  const [supplierValue, setSupplierValue] = useState(null);
   const [supplierId, setSupplierId] = useState("");
   const [brandValue, setBrandValue] = useState(null);
   const [brandId, setBrandId] = useState("");
@@ -202,106 +78,32 @@ const [supplierValue, setSupplierValue] = useState(null);
     [canFor]
   );
 
-  // Get dark mode state and theme colors
-  const { isDark, theme } = useTheme();
+  // Active theme colors
+  const { theme } = useTheme();
 
-  // Memoize theme colors for performance
   const themeColors = useMemo(() => {
     if (!theme) {
       return {
-        primary: '#3b82f6',
-        primaryHover: '#2563eb',
-        primaryLight: '#dbeafe',
-        secondary: '#8b5cf6',
-        secondaryHover: '#7c3aed',
-        secondaryLight: '#ede9fe',
-        tertiary: '#06b6d4',
-        tertiaryHover: '#0891b2',
-        tertiaryLight: '#cffafe',
+        primary: '#2563eb',
+        secondary: '#0f766e',
+        warning: '#b45309',
+        danger: '#dc2626',
       };
     }
     return {
-      primary: theme.primary_color || '#3b82f6',
-      primaryHover: theme.primary_hover || '#2563eb',
-      primaryLight: theme.primary_light || '#dbeafe',
-      secondary: theme.secondary_color || '#8b5cf6',
-      secondaryHover: theme.secondary_hover || '#7c3aed',
-      secondaryLight: theme.secondary_light || '#ede9fe',
-      tertiary: theme.tertiary_color || '#06b6d4',
-      tertiaryHover: theme.tertiary_hover || '#0891b2',
-      tertiaryLight: theme.tertiary_light || '#cffafe',
+      primary: theme.primary_color || '#2563eb',
+      secondary: theme.secondary_color || '#0f766e',
+      warning: theme.warning_color || '#b45309',
+      danger: theme.danger_color || '#dc2626',
     };
   }, [theme]);
 
-  // Calculate text colors based on background brightness
-  const primaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
-    [themeColors.primary, themeColors.primaryHover]
-  );
-  
-  const secondaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
-    [themeColors.secondary, themeColors.secondaryHover]
+  const primaryTextColor = useMemo(
+    () => getContrastText(themeColors.primary),
+    [themeColors.primary]
   );
 
-  // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded-sm';
-  
-  // Get button style classes and styles based on theme button_style
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'rounded-sm': 'rounded-lg',
-      'outlined': 'rounded-lg',
-      'soft': 'rounded-xl',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
-    
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.secondary,
-            color: themeColors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-      };
-    }
-    
-    // Filled styles for rounded and soft
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: primaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-          color: secondaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
-        }
-      },
-    };
-  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor]);
-
-  const btnPrimary = getButtonClasses.primary;
-  const btnSecondary = getButtonClasses.secondary;
-
-/* ============ Product fetch (for ProductSearchInput) ============ */
+  /* ============ Product fetch (for ProductSearchInput) ============ */
   const fetchProducts = async (q = "") => {
     try {
       const { data } = await axios.get("/api/products/search", { params: { q, limit: 30 } });
@@ -345,7 +147,7 @@ const [supplierValue, setSupplierValue] = useState(null);
       const responseData = res.data || {};
       const rows = Array.isArray(responseData.rows) ? responseData.rows : [];
       const summary = responseData.summary || {};
-      
+
       setData({ rows, summary });
       if (!rows.length) toast("No near expiry products found.", { icon: "ℹ️" });
     } catch (err) {
@@ -401,109 +203,112 @@ const [supplierValue, setSupplierValue] = useState(null);
   const { rows, summary } = data;
 
   return (
-    <div className="p-4 space-y-3">
-      {/* ===== Premium Gradient Hero Header ===== */}
-      <div
-        className="relative overflow-hidden rounded-2xl shadow-lg"
-        style={{
-          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
-        }}
-      >
-        {/* Decorative blurred blobs */}
-        <div
-          className="absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-30 blur-3xl pointer-events-none"
-          style={{ backgroundColor: "#fff7ed" }}
-        />
-        <div
-          className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full opacity-20 blur-3xl pointer-events-none"
-          style={{ backgroundColor: themeColors.primary }}
-        />
-
-        {/* Hero Top */}
-        <div className="relative flex items-center justify-between px-5 py-4 flex-wrap gap-2">
-          <div className="flex items-center gap-3">
-            <div
-              className="p-2.5 rounded-xl shadow-inner"
-              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
-            >
-              <ClockIcon className="w-6 h-6 text-white" />
+    <div className="report-page">
+      {/* ===== Glass overview: title, actions, filters ===== */}
+      <section className="products-panel">
+        <div className="products-heading">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="products-identity-icon">
+              <ClockIcon className="w-6 h-6" />
             </div>
-            <div>
-              <h1 className="text-xl font-extrabold tracking-wide text-white leading-none">Near Expiry Product Report</h1>
-              <p className="text-xs text-white/80 mt-1">{rows.length} items expiring</p>
+            <div className="min-w-0">
+              <h1 className="products-title">Near Expiry Product Report</h1>
+              <p className="products-subtitle">
+                <ClockIcon className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{rows.length} items expiring</span>
+              </p>
             </div>
           </div>
 
-          {/* Header Actions */}
-          <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="flex flex-wrap items-center gap-2">
+            <Guard when={can.export}>
+              <button
+                type="button"
+                onClick={exportPdf}
+                disabled={pdfLoading || rows.length === 0}
+                title={
+                  rows.length === 0
+                    ? "Load the report before exporting"
+                    : pdfLoading
+                    ? "Generating PDF…"
+                    : "Export report as PDF"
+                }
+                className="products-action"
+              >
+                <ArrowDownOnSquareIcon className="w-4 h-4" />
+                <span>{pdfLoading ? "Generating…" : "Export PDF"}</span>
+              </button>
+            </Guard>
+
             <button
-              title="Reset Filters"
+              type="button"
               onClick={resetFilters}
-              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
+              title="Reset filters"
+              className="products-action"
             >
               <ArrowPathIcon className="w-4 h-4" />
               <span>Reset</span>
             </button>
+
             <Guard when={can.view}>
               <button
+                type="button"
                 onClick={fetchReport}
                 disabled={loading}
-                className={`h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 ${
-                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 shadow-lg"
-                }`}
+                title="Load the near expiry product report"
+                className="products-action products-action-primary"
+                style={{ color: primaryTextColor }}
               >
-                <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-                {loading ? "Loading…" : "Load Report"}
+                {loading ? (
+                  <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ClockIcon className="w-4 h-4" />
+                )}
+                <span>{loading ? "Loading…" : "Load Report"}</span>
               </button>
             </Guard>
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="relative px-5 pb-4">
-          <div
-            className="grid grid-cols-1 md:grid-cols-12 gap-3 rounded-xl p-3"
-            style={{ backgroundColor: "rgba(255,255,255,0.12)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)" }}
-          >
-            {/* From Date */}
-            <div className="md:col-span-2 flex flex-col gap-1">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">
+        <div className="products-filter-panel">
+          <div className="report-filters">
+            <label className="products-filter">
+              <span className="products-filter-label">
                 <CalendarIcon className="w-3.5 h-3.5 inline mr-1" /> From (Expiry)
-              </label>
+              </span>
               <input
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
+                className="report-input"
               />
-            </div>
+            </label>
 
-            {/* To Date */}
-            <div className="md:col-span-2 flex flex-col gap-1">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">
+            <label className="products-filter">
+              <span className="products-filter-label">
                 <CalendarIcon className="w-3.5 h-3.5 inline mr-1" /> To (Expiry)
-              </label>
+              </span>
               <input
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
+                className="report-input"
               />
-            </div>
+            </label>
 
-{/* Supplier */}
-            <div className="md:col-span-3 flex flex-col gap-1">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Supplier</label>
-              <div className="flex items-center gap-1">
+            <div className="products-filter">
+              <span className="products-filter-label">Supplier</span>
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setSupplierSearchOpen(true)}
-                  className={`h-9 w-full px-3 rounded-lg text-xs text-left inline-flex items-center gap-2 transition-all duration-200 border border-white/30 bg-slate-900/50 backdrop-blur-xs ${
-                    supplierValue ? "text-white font-medium" : "text-white/70"
-                  }`}
+                  title="Search and select a supplier"
+                  className="report-input flex items-center gap-2 text-left cursor-pointer"
                 >
-                  <BuildingStorefrontIcon className="w-4 h-4 shrink-0 text-white/70" />
-                  <span className="truncate">{supplierValue?.name || "All Suppliers"}</span>
+                  <BuildingStorefrontIcon className="w-4 h-4 shrink-0 text-[var(--workspace-muted)]" />
+                  <span className={`truncate ${supplierValue ? "" : "text-[var(--workspace-muted)]"}`}>
+                    {supplierValue?.name || "All Suppliers"}
+                  </span>
                 </button>
                 {supplierValue && (
                   <button
@@ -512,28 +317,29 @@ const [supplierValue, setSupplierValue] = useState(null);
                       setSupplierValue(null);
                       setSupplierId("");
                     }}
-                    className="h-9 w-8 shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-xs transition-all duration-200"
+                    className="report-icon-btn"
+                    aria-label="Clear supplier"
                     title="Clear supplier"
                   >
-                    ×
+                    <XMarkIcon />
                   </button>
                 )}
               </div>
             </div>
 
-{/* Brand */}
-            <div className="md:col-span-3 flex flex-col gap-1">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Brand</label>
-              <div className="flex items-center gap-1">
+            <div className="products-filter">
+              <span className="products-filter-label">Brand</span>
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setBrandSearchOpen(true)}
-                  className={`h-9 w-full px-3 rounded-lg text-xs text-left inline-flex items-center gap-2 transition-all duration-200 border border-white/30 bg-slate-900/50 backdrop-blur-xs ${
-                    brandValue ? "text-white font-medium" : "text-white/70"
-                  }`}
+                  title="Search and select a brand"
+                  className="report-input flex items-center gap-2 text-left cursor-pointer"
                 >
-                  <TagIcon className="w-4 h-4 shrink-0 text-white/70" />
-                  <span className="truncate">{brandValue?.name || "All Brands"}</span>
+                  <TagIcon className="w-4 h-4 shrink-0 text-[var(--workspace-muted)]" />
+                  <span className={`truncate ${brandValue ? "" : "text-[var(--workspace-muted)]"}`}>
+                    {brandValue?.name || "All Brands"}
+                  </span>
                 </button>
                 {brandValue && (
                   <button
@@ -542,20 +348,20 @@ const [supplierValue, setSupplierValue] = useState(null);
                       setBrandValue(null);
                       setBrandId("");
                     }}
-                    className="h-9 w-8 shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-xs transition-all duration-200"
+                    className="report-icon-btn"
+                    aria-label="Clear brand"
                     title="Clear brand"
                   >
-                    ×
+                    <XMarkIcon />
                   </button>
                 )}
               </div>
             </div>
 
-{/* Product */}
-            <div className="md:col-span-2 flex flex-col gap-1">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Product</label>
-              <div className="flex items-center gap-1">
-                <div className="flex-1">
+            <div className="products-filter">
+              <span className="products-filter-label">Product</span>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 min-w-0">
                   <ProductSearchInput
                     className="h-9 text-xs px-3 rounded-lg"
                     value={productValue || productId}
@@ -575,235 +381,149 @@ const [supplierValue, setSupplierValue] = useState(null);
                       setProductValue(null);
                       setProductId("");
                     }}
-                    className="h-9 w-8 shrink-0 rounded-lg text-white/70 hover:text-white hover:bg-white/15 border border-white/30 bg-slate-900/50 backdrop-blur-xs transition-all duration-200"
+                    className="report-icon-btn"
+                    aria-label="Clear product"
                     title="Clear product"
                   >
-                    ×
+                    <XMarkIcon />
                   </button>
                 )}
               </div>
             </div>
-
-            {/* Buttons */}
-            <div className="md:col-span-12 flex flex-wrap gap-2 pt-1">
-              <Guard when={can.view}>
-                <button
-                  onClick={fetchReport}
-                  disabled={loading}
-                  className={`h-9 min-w-[130px] px-4 inline-flex items-center justify-center gap-2 rounded-lg text-xs font-bold text-white transition-all duration-200 ${
-                    loading ? "opacity-50 cursor-not-allowed" : "bg-white/25 hover:bg-white/35 backdrop-blur-xs"
-                  }`}
-                >
-                  {loading ? (
-                    <>
-                      <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                      Loading…
-                    </>
-                  ) : (
-                    <>
-                      <ClockIcon className="w-4 h-4" />
-                      Load Report
-                    </>
-                  )}
-                </button>
-              </Guard>
-
-              <Guard when={can.export}>
-                <button
-                  onClick={exportPdf}
-                  disabled={pdfLoading || rows.length === 0}
-                  className={`h-9 min-w-[130px] px-4 inline-flex items-center justify-center gap-2 rounded-lg text-xs font-bold text-white transition-all duration-200 ${
-                    pdfLoading || rows.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/25 hover:bg-white/35 backdrop-blur-xs"
-                  }`}
-                >
-                  <ArrowDownOnSquareIcon className="w-4 h-4" />
-                  {pdfLoading ? "Generating…" : "Export PDF"}
-                </button>
-              </Guard>
-            </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* ===== Permission / Loading states ===== */}
+      {/* ===== Permission states ===== */}
       {permsLoading && (
-        <GlassCard>
-          <div className={`px-4 py-3 text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>Checking permissions…</div>
-        </GlassCard>
+        <section className="products-panel">
+          <p className="report-state">Checking permissions…</p>
+        </section>
       )}
       {!permsLoading && !can.view && (
-        <GlassCard>
-          <div className={`px-4 py-3 text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>You don't have permission to view this report.</div>
-        </GlassCard>
+        <section className="products-panel">
+          <p className="report-state">You don't have permission to view this report.</p>
+        </section>
       )}
 
       {/* ===== Results ===== */}
       {!permsLoading && can.view && (
         <>
           {rows.length === 0 && !loading && (
-            <GlassCard>
-              <div className={`px-4 py-4 text-sm ${isDark ? "text-slate-400" : "text-gray-600"}`}>
+            <section className="products-panel">
+              <p className="report-state">
                 No near expiry products found. Apply filters and click "Load Report".
-              </div>
-            </GlassCard>
+              </p>
+            </section>
           )}
 
           {rows.length > 0 && (
             <>
-              {/* ===== Summary KPI Cards ===== */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {/* ===== Summary KPIs ===== */}
+              <div className="report-kpis report-kpis-2">
                 <KpiCard
                   label="Total Batches"
                   value={fmtNumber(summary.total_batches)}
+                  note="Batches nearing expiry"
                   icon={ClipboardDocumentListIcon}
-                  isDark={isDark}
-                  themeColors={themeColors}
+                  accent={themeColors.warning}
                 />
                 <KpiCard
                   label="Total Quantity"
                   value={fmtNumber(summary.total_quantity)}
+                  note="Units expiring"
                   icon={ClockIcon}
-                  isDark={isDark}
-                  themeColors={themeColors}
+                  accent={themeColors.secondary}
                 />
               </div>
 
-              {/* ===== Data Table ===== */}
-              <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden">
-                {/* Table Header */}
-                <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
-                  <div className="flex items-center gap-2">
-                    <div 
-                      className="p-1 rounded-sm"
-                      style={{ backgroundColor: themeColors.tertiaryLight + '40' }}
-                    >
-                      <ClockIcon 
-                        className="w-4 h-4" 
-                        style={{ color: themeColors.tertiary }} 
-                      />
+              {/* ===== Data table ===== */}
+              <section className="products-panel products-catalog">
+                <div className="products-catalog-heading">
+                  <div className="flex items-center gap-3">
+                    <div className="report-section-icon">
+                      <ClockIcon />
                     </div>
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Near Expiry Products</span>
+                    <div>
+                      <h2 className="products-section-title">Near Expiry Products</h2>
+                      <p className="products-subtitle">{rows.length} items</p>
+                    </div>
                   </div>
-                  <span className="text-xs text-gray-400">{rows.length} items</span>
                 </div>
 
-                <div className="max-h-[65vh] overflow-auto">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
-                      <tr className="text-left">
-                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-8">#</th>
-                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Product</th>
-                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Supplier</th>
-                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Brand</th>
-                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Batch #</th>
-                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Expiry Date</th>
-                        <th className="px-2 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right">Quantity</th>
+                <div
+                  className="report-table-scroll"
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Near expiry products"
+                  aria-busy={loading}
+                >
+                  <table className="report-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">#</th>
+                        <th scope="col">Product</th>
+                        <th scope="col">Supplier</th>
+                        <th scope="col">Brand</th>
+                        <th scope="col">Batch #</th>
+                        <th scope="col">Expiry Date</th>
+                        <th scope="col" className="report-num">Quantity</th>
                       </tr>
                     </thead>
 
                     <tbody>
-                      {rows.length === 0 && !loading && (
-                        <tr>
-                          <td colSpan={7} className="px-2 py-12 text-center">
-                            <div className="flex flex-col items-center gap-2">
-                              <ClockIcon className="w-8 h-8 text-gray-400" />
-                              <p className="text-sm text-gray-500 dark:text-gray-400">No near expiry products found</p>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
+                      {rows.map((row, idx) => {
+                        const close = isExpiryClose(row.expiry_date);
+                        return (
+                          <tr key={row.batch_id ?? idx}>
+                            <td className="report-muted">{idx + 1}</td>
 
-                      {rows.map((row, idx) => (
-                        <tr
-                          key={row.batch_id ?? idx}
-                          className={`
-                            transition-colors
-                            border-b border-gray-100 dark:border-slate-600/30
-                            odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/40 dark:even:bg-slate-800/40
-                            hover:bg-blue-50 dark:hover:bg-slate-600/50
-                          `}
-                        >
-                          <td className="px-2 py-2 text-gray-500 dark:text-gray-400">{idx + 1}</td>
-                          
-                          <td className="px-2 py-2">
-                            <span className="font-medium text-gray-800 dark:text-gray-200">{row.product_name || "-"}</span>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">{row.product_code || ""}</div>
-                          </td>
-                          
-                          <td className="px-2 py-2">
-                            <span className="px-2 py-0.5 rounded-sm bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 text-xs">
-                              {row.supplier_name || "—"}
-                            </span>
-                          </td>
-                          
-                          <td className="px-2 py-2">
-                            <span className="px-2 py-0.5 rounded-sm bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs">
-                              {row.brand_name || "—"}
-                            </span>
-                          </td>
-                          
-                          <td className="px-2 py-2 text-gray-700 dark:text-gray-300 font-mono text-xs">
-                            {row.batch_number || "—"}
-                          </td>
-                          
-                          <td className="px-2 py-2">
-                            <span className={`
-                              inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
-                              ${isExpiryClose(row.expiry_date) 
-                                ? 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300' 
-                                : 'bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-300'}
-                            `}>
-                              {formatDate(row.expiry_date)}
-                            </span>
-                          </td>
-                          
-                          <td className="px-2 py-2 text-right">
-                            <span className={`
-                              inline-flex items-center justify-center min-w-12 px-2 py-0.5 rounded-full text-xs font-bold
-                              bg-linear-to-br from-amber-400 to-orange-500 text-white
-                              shadow-lg shadow-amber-500/25 ring-1 ring-amber-400/30
-                            `}>
-                              {fmtNumber(row.quantity)}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
+                            <td className="report-product">
+                              {row.product_name || "-"}
+                              <div className="report-meta">{row.product_code || ""}</div>
+                            </td>
+
+                            <td>
+                              <span className="report-badge">{row.supplier_name || "—"}</span>
+                            </td>
+
+                            <td>
+                              <span className="report-badge">{row.brand_name || "—"}</span>
+                            </td>
+
+                            <td className="report-mono">{row.batch_number || "—"}</td>
+
+                            <td>
+                              <span
+                                className={`report-status ${close ? "report-status-danger" : "report-status-warning"}`}
+                              >
+                                {close ? "Expiring soon" : "Upcoming"} · {formatDate(row.expiry_date)}
+                              </span>
+                            </td>
+
+                            <td className="report-num">
+                              <span className="report-badge report-strong">
+                                {fmtNumber(row.quantity)}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
 
-                    {/* Footer with Totals */}
-                    <tfoot className={`
-                      border-t-2 backdrop-blur-xs font-semibold
-                      ${isDark ? "border-slate-600 bg-slate-800/80" : "border-gray-300 bg-gray-50"}
-                    `}>
-                      <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>
-                        <td colSpan={6} className="px-2 py-2 text-right text-gray-700 dark:text-gray-300">TOTALS</td>
-                        <td className="px-2 py-2 text-right">
-                          <span className={`
-                            inline-flex items-center justify-center min-w-12 px-2 py-0.5 rounded-full text-xs font-bold
-                            bg-linear-to-br from-amber-400 to-orange-500 text-white
-                            shadow-lg shadow-amber-500/25 ring-1 ring-amber-400/30
-                          `}>
-                            {fmtNumber(summary.total_quantity)}
-                          </span>
-                        </td>
+                    <tfoot>
+                      <tr className="report-total-row">
+                        <td colSpan={6} className="report-num">Totals</td>
+                        <td className="report-num report-strong">{fmtNumber(summary.total_quantity)}</td>
                       </tr>
                     </tfoot>
                   </table>
                 </div>
-              </div>
+              </section>
             </>
           )}
         </>
       )}
-
-<style>{`
-        .tabular-nums { font-variant-numeric: tabular-nums; }
-        @media print {
-          input, button, select, [role="button"], .rs__control { display: none !important; }
-          table { font-size: 10px; }
-          thead { position: sticky; top: 0; }
-        }
-      `}</style>
 
       {/* Search modals */}
       <SupplierSearch
@@ -843,35 +563,17 @@ function isExpiryClose(dateStr) {
 }
 
 /* ===== KPI Card Component ===== */
-function KpiCard({ label, value, icon: Icon, isDark, themeColors }) {
-  const cardColor = themeColors.tertiary;
-
+function KpiCard({ label, value, note, icon: Icon, accent }) {
   return (
-    <div
-      className={[
-        "group rounded-xl px-4 py-3 backdrop-blur-xs bg-white/55 ring-1 ring-white/30 shadow-xs relative overflow-hidden",
-        "transition-all duration-200",
-        "hover:bg-white/80 hover:backdrop-blur-md hover:shadow-[0_10px_30px_-10px_rgba(6,182,212,0.35)]",
-        "hover:ring-white/40",
-      ].join(" ")}
-    >
-      {/* Gradient accent bar */}
-      <div 
-        className="absolute top-0 left-0 right-0 h-1 bg-linear-to-r" 
-        style={{ background: `linear-gradient(to right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})` }}
-      />
-      
-      <div className="flex items-center gap-2 mb-1 relative z-10">
-        <div 
-          className="p-1.5 rounded-lg shadow-xs"
-          style={{ background: `linear-gradient(to bottom right, ${cardColor}, ${themeColors.tertiaryHover})` }}
-        >
-          <Icon className="w-4 h-4 text-white" />
-        </div>
-        <span className={`text-xs uppercase tracking-wide ${isDark ? "text-slate-400" : "text-gray-600"}`}>{label}</span>
+    <div className="report-kpi" style={accent ? { "--report-accent": accent } : undefined}>
+      <div className="report-kpi-head">
+        <span className="report-kpi-icon">
+          <Icon />
+        </span>
+        <span>{label}</span>
       </div>
-      <div className="text-xl font-bold tabular-nums text-gray-900 relative z-10">{value}</div>
+      <div className="report-kpi-value">{value}</div>
+      {note && <div className="report-kpi-note">{note}</div>}
     </div>
   );
 }
-

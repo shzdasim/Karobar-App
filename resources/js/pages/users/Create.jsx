@@ -16,12 +16,5 @@ export default function CreateUser() {
     }
   };
 
-  return (
-    <div className="page">
-      <div className="page-header">
-        <h1 className="title">Create User</h1>
-      </div>
-      <UserForm onSubmit={onSubmit} submitting={submitting} />
-    </div>
-  );
+  return <UserForm onSubmit={onSubmit} submitting={submitting} />;
 }

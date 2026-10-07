@@ -26,12 +26,13 @@ export default function EditUser() {
     }
   };
 
-  return (
-    <div className="page">
-      <div className="page-header">
-        <h1 className="title">Edit User</h1>
+  if (!initial) {
+    return (
+      <div className="people-form-page">
+        <p className="people-hint">Loading user…</p>
       </div>
-      {initial && <UserForm onSubmit={onSubmit} initial={initial} submitting={submitting} />}
-    </div>
-  );
+    );
+  }
+
+  return <UserForm onSubmit={onSubmit} initial={initial} submitting={submitting} />;
 }

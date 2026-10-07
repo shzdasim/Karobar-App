@@ -1,7 +1,11 @@
-
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useTheme } from "@/context/ThemeContext";
+import {
+  UserCircleIcon,
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+} from "@heroicons/react/24/solid";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -22,31 +26,13 @@ export default function Profile() {
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  
+  const [messageTone, setMessageTone] = useState("success");
+
   const { theme } = useTheme();
   const token = localStorage.getItem("token");
 
-  // Memoize theme colors for performance
-  const themeColors = useMemo(() => {
-    if (!theme) {
-      return {
-        primary: '#3b82f6',
-        primaryHover: '#2563eb',
-        primaryLight: '#dbeafe',
-      };
-    }
-    return {
-      primary: theme.primary_color || '#3b82f6',
-      primaryHover: theme.primary_hover || '#2563eb',
-      primaryLight: theme.primary_light || '#dbeafe',
-    };
-  }, [theme]);
-
-  // Calculate text color for primary button
-  const primaryTextColor = useMemo(() => 
-    getContrastText(themeColors.primaryHover || themeColors.primary), 
-    [themeColors.primary, themeColors.primaryHover]
-  );
+  const primaryColor = theme?.primary_color || '#3b82f6';
+  const primaryTextColor = getContrastText(primaryColor);
 
   // Load user data
   useEffect(() => {
@@ -79,80 +65,116 @@ export default function Profile() {
       })
       .then((res) => {
         setMessage("Profile updated successfully!");
+        setMessageTone("success");
         localStorage.setItem("user", JSON.stringify(res.data));
       })
       .catch((err) => {
         setMessage("Failed to update profile.");
+        setMessageTone("error");
         console.error(err);
       })
       .finally(() => setLoading(false));
   };
 
   return (
-    <div className="max-w-xl mx-auto bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm">
-      <h2 className="text-2xl font-bold mb-4 dark:text-gray-100">My Profile</h2>
-      {message && <p className="mb-4 text-green-600 dark:text-green-400">{message}</p>}
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block font-medium dark:text-gray-300">Name</label>
-          <input
-            type="text"
-            name="name"
-            value={form.name}
-            onChange={handleChange}
-            className="w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
-            style={{ '--tw-ring-color': themeColors.primary }}
-          />
+    <div className="people-form-page people-form-narrow">
+      <div className="products-panel">
+        {/* Header */}
+        <div className="people-form-heading">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="products-identity-icon">
+              <UserCircleIcon className="w-6 h-6" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="products-title">My Profile</h1>
+              <p className="products-subtitle">
+                Update your sign-in name, email, and password.
+              </p>
+            </div>
+          </div>
         </div>
-        <div>
-          <label className="block font-medium dark:text-gray-300">Email</label>
-          <input
-            type="email"
-            name="email"
-            value={form.email}
-            onChange={handleChange}
-            className="w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
-            style={{ '--tw-ring-color': themeColors.primary }}
-          />
-        </div>
-        <div>
-          <label className="block font-medium dark:text-gray-300">Password (optional)</label>
-          <input
-            type="password"
-            name="password"
-            value={form.password}
-            onChange={handleChange}
-            className="w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
-            style={{ '--tw-ring-color': themeColors.primary }}
-          />
-        </div>
-        <div>
-          <label className="block font-medium dark:text-gray-300">Confirm Password</label>
-          <input
-            type="password"
-            name="password_confirmation"
-            value={form.password_confirmation}
-            onChange={handleChange}
-            className="w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
-            style={{ '--tw-ring-color': themeColors.primary }}
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={loading}
-          className="px-6 py-2 rounded-sm font-semibold transition-all duration-200"
-          style={{
-            background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-            color: primaryTextColor,
-            boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-            opacity: loading ? 0.6 : 1,
-            cursor: loading ? 'not-allowed' : 'pointer'
-          }}
-        >
-          {loading ? "Updating..." : "Update Profile"}
-        </button>
-      </form>
+
+        <form onSubmit={handleSubmit} className="people-form">
+          {message && (
+            <p
+              className={`people-message ${
+                messageTone === "success" ? "people-message-success" : "people-message-error"
+              }`}
+              role="status"
+            >
+              {messageTone === "success" ? (
+                <CheckCircleIcon className="w-5 h-5 shrink-0" aria-hidden="true" />
+              ) : (
+                <ExclamationTriangleIcon className="w-5 h-5 shrink-0" aria-hidden="true" />
+              )}
+              <span>{message}</span>
+            </p>
+          )}
+
+          <div className="people-fields">
+            <div className="people-field people-field-wide">
+              <label className="people-label" htmlFor="profile-name">Name</label>
+              <input
+                id="profile-name"
+                type="text"
+                name="name"
+                value={form.name}
+                onChange={handleChange}
+                placeholder="Your full name"
+              />
+            </div>
+
+            <div className="people-field people-field-wide">
+              <label className="people-label" htmlFor="profile-email">Email</label>
+              <input
+                id="profile-email"
+                type="email"
+                name="email"
+                value={form.email}
+                onChange={handleChange}
+                placeholder="you@example.com"
+              />
+            </div>
+
+            <div className="people-field">
+              <label className="people-label" htmlFor="profile-password">New password</label>
+              <input
+                id="profile-password"
+                type="password"
+                name="password"
+                value={form.password}
+                onChange={handleChange}
+                placeholder="Leave blank to keep current"
+              />
+            </div>
+
+            <div className="people-field">
+              <label className="people-label" htmlFor="profile-password-confirmation">
+                Confirm new password
+              </label>
+              <input
+                id="profile-password-confirmation"
+                type="password"
+                name="password_confirmation"
+                value={form.password_confirmation}
+                onChange={handleChange}
+                placeholder="Repeat the new password"
+              />
+            </div>
+          </div>
+
+          <div className="people-actions">
+            <button
+              type="submit"
+              disabled={loading}
+              className="products-action products-action-primary"
+              style={{ color: primaryTextColor }}
+            >
+              {loading ? "Updating…" : "Update Profile"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
-

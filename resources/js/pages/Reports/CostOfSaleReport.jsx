@@ -5,15 +5,14 @@ import toast from "react-hot-toast";
 import { usePermissions, Guard } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
 import {
-  GlassCard,
-  GlassSectionHeader,
-  GlassToolbar,
-  GlassInput,
-  GlassBtn,
-} from "@/components/glass.jsx";
-import { 
   ArrowPathIcon,
+  ArrowTrendingDownIcon,
+  ArrowTrendingUpIcon,
+  ChartBarIcon,
+  ChartPieIcon,
+  CurrencyDollarIcon,
   DocumentChartBarIcon,
+  TagIcon,
 } from "@heroicons/react/24/solid";
 
 // Helper to determine text color based on background brightness
@@ -24,43 +23,6 @@ const getContrastText = (hexColor) => {
   const b = parseInt(hexColor.substring(4, 6), 16);
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luminance > 0.5 ? '#1f2937' : '#ffffff';
-};
-
-const getButtonTextColor = (primaryColor, primaryHoverColor) => {
-  return getContrastText(primaryHoverColor || primaryColor);
-};
-
-// Section configuration with color schemes - will use dynamic theme colors
-const SECTION_CONFIG = {
-  core: {
-    key: 'primary',
-  },
-  management: {
-    key: 'secondary',
-  },
-};
-
-// Helper to get color value from theme
-const getThemeColor = (theme, colorKey, variant = 'color') => {
-  if (!theme) return '#3b82f6';
-  const key = `${colorKey}_${variant}`;
-  return theme[key] || '#3b82f6';
-};
-
-// Helper to generate section styles from theme
-const getSectionStyles = (theme, colorKey) => {
-  const baseColor = getThemeColor(theme, colorKey, 'color');
-  const hoverColor = getThemeColor(theme, colorKey, 'hover');
-  const lightColor = getThemeColor(theme, colorKey, 'light');
-  
-  return {
-    gradient: `from-[${baseColor}] to-[${hoverColor}]`,
-    bgLight: `bg-[${lightColor}]`,
-    bgDark: `dark:bg-[${lightColor}]`,
-    borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
-    iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
-    ringColor: `ring-[${baseColor}]/30`,
-  };
 };
 
 /* ========== Helpers ========== */
@@ -94,181 +56,32 @@ export default function CostOfSaleReport() {
     [canFor]
   );
 
-  // Get dark mode state and theme colors
-  const { isDark, theme } = useTheme();
+  // Active theme colors
+  const { theme } = useTheme();
 
-  // 🎨 Modern button palette (will use dynamic theme colors)
-  const tintPrimary = useMemo(() => `
-    bg-linear-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  const tintSecondary = useMemo(() => `
-    bg-linear-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  const tintGlass = useMemo(() => `
-    bg-white/80 dark:bg-slate-700/60 backdrop-blur-xs ring-1 ring-gray-200/60 dark:ring-white/10
-    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  const tintOutline = useMemo(() => `
-    bg-transparent ring-1 ring-gray-300 dark:ring-slate-600
-    hover:bg-gray-100 dark:hover:bg-slate-700/50 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  // Memoize theme colors for performance
   const themeColors = useMemo(() => {
     if (!theme) {
       return {
-        primary: '#3b82f6',
-        primaryHover: '#2563eb',
-        primaryLight: '#dbeafe',
-        secondary: '#8b5cf6',
-        secondaryHover: '#7c3aed',
-        secondaryLight: '#ede9fe',
-        tertiary: '#06b6d4',
-        tertiaryHover: '#0891b2',
-        tertiaryLight: '#cffafe',
-        emerald: '#10b981',
-        emeraldHover: '#059669',
-        emeraldLight: '#d1fae5',
-        amber: '#f59e0b',
-        amberHover: '#d97706',
-        amberLight: '#fef3c7',
-        rose: '#f43f5e',
-        roseHover: '#e11d48',
-        roseLight: '#ffe4e6',
+        primary: '#2563eb',
+        secondary: '#0f766e',
+        success: '#15803d',
+        warning: '#b45309',
+        danger: '#dc2626',
       };
     }
     return {
-      primary: theme.primary_color || '#3b82f6',
-      primaryHover: theme.primary_hover || '#2563eb',
-      primaryLight: theme.primary_light || '#dbeafe',
-      secondary: theme.secondary_color || '#8b5cf6',
-      secondaryHover: theme.secondary_hover || '#7c3aed',
-      secondaryLight: theme.secondary_light || '#ede9fe',
-      tertiary: theme.tertiary_color || '#06b6d4',
-      tertiaryHover: theme.tertiary_hover || '#0891b2',
-      tertiaryLight: theme.tertiary_light || '#cffafe',
-      emerald: theme.success_color || '#10b981',
-      emeraldHover: '#059669',
-      emeraldLight: '#d1fae5',
-      amber: theme.warning_color || '#f59e0b',
-      amberHover: '#d97706',
-      amberLight: '#fef3c7',
-      rose: '#f43f5e',
-      roseHover: '#e11d48',
-      roseLight: '#ffe4e6',
+      primary: theme.primary_color || '#2563eb',
+      secondary: theme.secondary_color || '#0f766e',
+      success: theme.success_color || '#15803d',
+      warning: theme.warning_color || '#b45309',
+      danger: theme.danger_color || '#dc2626',
     };
   }, [theme]);
 
-  // Calculate text colors based on background brightness
-  const primaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
-    [themeColors.primary, themeColors.primaryHover]
+  const primaryTextColor = useMemo(
+    () => getContrastText(themeColors.primary),
+    [themeColors.primary]
   );
-  
-  const secondaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
-    [themeColors.secondary, themeColors.secondaryHover]
-  );
-
-  // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded-sm';
-  
-  // Get button style classes and styles based on theme button_style
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'rounded-sm': 'rounded-lg',
-      'outlined': 'rounded-lg',
-      'soft': 'rounded-xl',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
-    
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.secondary,
-            color: themeColors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-        tertiary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.tertiary,
-            color: themeColors.tertiary,
-            backgroundColor: 'transparent',
-          }
-        },
-        emerald: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.emerald,
-            color: themeColors.emerald,
-            backgroundColor: 'transparent',
-          }
-        },
-      };
-    }
-    
-    // Filled styles for rounded and soft
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: primaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-          color: secondaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
-        }
-      },
-      tertiary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
-          color: '#ffffff',
-          boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`,
-        }
-      },
-      emerald: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
-          color: '#ffffff',
-          boxShadow: `0 4px 14px 0 ${themeColors.emerald}40`,
-        }
-      },
-    };
-  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor]);
-
-  const btnPrimary = getButtonClasses.primary;
-  const btnSecondary = getButtonClasses.secondary;
-  const btnTertiary = getButtonClasses.tertiary;
-  const btnEmerald = getButtonClasses.emerald;
-
-  // Get section styles
-  const coreStyles = useMemo(() => getSectionStyles(themeColors, 'primary'), [themeColors]);
-  const managementStyles = useMemo(() => getSectionStyles(themeColors, 'secondary'), [themeColors]);
 
   // === Fetch report only when user clicks Apply/Load ===
   const fetchReport = async () => {
@@ -351,347 +164,313 @@ export default function CostOfSaleReport() {
   // Permission gating
   if (permsLoading) {
     return (
-      <div className="p-6">
-        <GlassCard>
-          <div className={`px-4 py-3 text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>Checking permissions…</div>
-        </GlassCard>
+      <div className="report-page">
+        <section className="products-panel">
+          <p className="report-state">Checking permissions…</p>
+        </section>
       </div>
     );
   }
 
   if (!can.view) {
     return (
-      <div className="p-6">
-        <GlassCard>
-          <div className={`px-4 py-3 text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>
-            You don't have permission to view this report.
-          </div>
-        </GlassCard>
+      <div className="report-page">
+        <section className="products-panel">
+          <p className="report-state">You don't have permission to view this report.</p>
+        </section>
       </div>
     );
   }
 
   return (
-    <div className="p-4 space-y-3">
-      {/* ===== Premium Gradient Hero Header ===== */}
-      <div
-        className="relative overflow-hidden rounded-2xl shadow-lg"
-        style={{
-          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
-        }}
-      >
-        {/* Decorative blurred blobs */}
-        <div
-          className="absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-30 blur-3xl pointer-events-none"
-          style={{ backgroundColor: "#ffffff" }}
-        />
-        <div
-          className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full opacity-20 blur-3xl pointer-events-none"
-          style={{ backgroundColor: themeColors.tertiary }}
-        />
-
-        {/* Hero Top */}
-        <div className="relative flex items-center justify-between px-5 py-4 flex-wrap gap-2">
-          <div className="flex items-center gap-3">
-            <div
-              className="p-2.5 rounded-xl shadow-inner"
-              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
-            >
-              <DocumentChartBarIcon className="w-6 h-6 text-white" />
+    <div className="report-page">
+      {/* ===== Glass overview: title, actions, filters ===== */}
+      <section className="products-panel">
+        <div className="products-heading">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="products-identity-icon">
+              <DocumentChartBarIcon className="w-6 h-6" />
             </div>
-            <div>
-              <h1 className="text-xl font-extrabold tracking-wide text-white leading-none">Cost of Sale Report</h1>
-              <p className="text-xs text-white/80 mt-1">{computed.withDerived.length} entries</p>
+            <div className="min-w-0">
+              <h1 className="products-title">Cost of Sale Report</h1>
+              <p className="products-subtitle">
+                <DocumentChartBarIcon className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{computed.withDerived.length} entries</span>
+              </p>
             </div>
           </div>
 
-          {/* Header Actions */}
-          <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="flex flex-wrap items-center gap-2">
             <button
-              title="Reset to Default (Yesterday → Today)"
+              type="button"
+              title="Reset to default (yesterday → today)"
               onClick={() => {
                 setFromDate(yesterdayStr());
                 setToDate(todayStr());
                 setRows([]);
               }}
-              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
+              className="products-action"
             >
               <ArrowPathIcon className="w-4 h-4" />
               <span>Reset</span>
             </button>
+
             <Guard when={can.view}>
               <button
-                title="Load / Refresh"
+                type="button"
+                title="Load / refresh the report"
                 onClick={fetchReport}
                 disabled={loading}
-                className={`h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 ${
-                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 shadow-lg"
-                }`}
+                className="products-action products-action-primary"
+                style={{ color: primaryTextColor }}
               >
                 <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-                {loading ? "Loading…" : "Load"}
+                <span>{loading ? "Loading…" : "Load Report"}</span>
               </button>
             </Guard>
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="relative px-5 pb-4">
-          <div
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 rounded-xl p-3"
-            style={{ backgroundColor: "rgba(255,255,255,0.12)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)" }}
-          >
-            {/* From Date */}
-            <div className="lg:col-span-2 flex flex-col gap-1">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">From</label>
+        <div className="products-filter-panel">
+          <div className="report-filters">
+            <label className="products-filter">
+              <span className="products-filter-label">From Date</span>
               <input
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
+                className="report-input"
               />
-            </div>
+            </label>
 
-            {/* To Date */}
-            <div className="lg:col-span-2 flex flex-col gap-1">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">To</label>
+            <label className="products-filter">
+              <span className="products-filter-label">To Date</span>
               <input
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
+                className="report-input"
               />
-            </div>
+            </label>
 
-            {/* Sale Type Filter */}
-            <div className="lg:col-span-3 flex flex-col gap-1">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Sale Type</label>
-              <div className="relative">
-                <select
-                  value={invoiceType}
-                  onChange={(e) => setInvoiceType(e.target.value)}
-                  className="w-full h-9 px-3 pr-8 rounded-lg text-xs appearance-none focus:outline-hidden focus:ring-2 focus:ring-white/50 cursor-pointer transition-all duration-200 text-white bg-slate-900/50 border border-white/30 backdrop-blur-xs"
+            <label className="products-filter">
+              <span className="products-filter-label">Sale Type</span>
+              <select
+                value={invoiceType}
+                onChange={(e) => setInvoiceType(e.target.value)}
+                className="report-input cursor-pointer"
+              >
+                <option value="all">All Sales</option>
+                <option value="credit">Credit Sales</option>
+                <option value="debit">Debit Sales</option>
+              </select>
+            </label>
+
+            <div className="products-filter report-span-all">
+              <span className="products-filter-label">Quick range</span>
+              <div className="report-quick">
+                <button
+                  type="button"
+                  className="products-action"
+                  onClick={() => {
+                    const end = new Date();
+                    const start = new Date();
+                    start.setDate(end.getDate() - 1);
+                    setFromDate(start.toISOString().slice(0, 10));
+                    setToDate(end.toISOString().slice(0, 10));
+                  }}
                 >
-                  <option className="text-gray-900" value="all">All Sales</option>
-                  <option className="text-gray-900" value="credit">Credit Sales</option>
-                  <option className="text-gray-900" value="debit">Debit Sales</option>
-                </select>
-                <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-white/80">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
+                  Today
+                </button>
+
+                <button
+                  type="button"
+                  className="products-action"
+                  onClick={() => {
+                    const end = new Date();
+                    const start = new Date();
+                    start.setDate(end.getDate() - 3);
+                    setFromDate(start.toISOString().slice(0, 10));
+                    setToDate(end.toISOString().slice(0, 10));
+                  }}
+                >
+                  3 Days
+                </button>
+
+                <button
+                  type="button"
+                  className="products-action"
+                  onClick={() => {
+                    const end = new Date();
+                    const start = new Date();
+                    start.setDate(end.getDate() - 7);
+                    setFromDate(start.toISOString().slice(0, 10));
+                    setToDate(end.toISOString().slice(0, 10));
+                  }}
+                >
+                  7 Days
+                </button>
               </div>
-            </div>
-
-            {/* Quick date filters */}
-            <div className="lg:col-span-5 flex flex-wrap items-end gap-2">
-              <button
-                onClick={() => {
-                  const end = new Date();
-                  const start = new Date();
-                  start.setDate(end.getDate() - 1);
-                  setFromDate(start.toISOString().slice(0, 10));
-                  setToDate(end.toISOString().slice(0, 10));
-                }}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200"
-              >
-                Today
-              </button>
-
-              <button
-                onClick={() => {
-                  const end = new Date();
-                  const start = new Date();
-                  start.setDate(end.getDate() - 3);
-                  setFromDate(start.toISOString().slice(0, 10));
-                  setToDate(end.toISOString().slice(0, 10));
-                }}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200"
-              >
-                3 Days
-              </button>
-
-              <button
-                onClick={() => {
-                  const end = new Date();
-                  const start = new Date();
-                  start.setDate(end.getDate() - 7);
-                  setFromDate(start.toISOString().slice(0, 10));
-                  setToDate(end.toISOString().slice(0, 10));
-                }}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200"
-              >
-                7 Days
-              </button>
             </div>
           </div>
         </div>
+      </section>
+
+      {/* ===== Summary KPIs ===== */}
+      <div className="report-kpis report-kpis-6">
+        <KpiCard
+          label="Net Sale"
+          value={fmtCurrency(computed.totals.net_sale)}
+          note="Total sales − returns"
+          icon={CurrencyDollarIcon}
+          accent={themeColors.primary}
+        />
+        <KpiCard
+          label="Cost of Sales"
+          value={fmtCurrency(computed.totals.cost_of_sales)}
+          note="Cost of goods sold"
+          icon={ArrowTrendingDownIcon}
+          accent={themeColors.danger}
+        />
+        <KpiCard
+          label="Gross Profit"
+          value={fmtCurrency(computed.totals.gp_amount)}
+          note="Net sale − cost"
+          icon={ArrowTrendingUpIcon}
+          accent={themeColors.success}
+        />
+        <KpiCard
+          label="GP %"
+          value={fmtPct(computed.totals_gp_pct)}
+          note="Gross margin"
+          icon={ChartPieIcon}
+          accent={themeColors.secondary}
+        />
+        <KpiCard
+          label="Gross Sale"
+          value={fmtCurrency(computed.totals.gross_sale)}
+          note="Before discounts"
+          icon={TagIcon}
+          accent={themeColors.warning}
+        />
+        <KpiCard
+          label="Total Sales"
+          value={fmtCurrency(computed.totals.total_sales)}
+          note="After discounts & tax"
+          icon={ChartBarIcon}
+          accent={themeColors.secondary}
+        />
       </div>
 
+      {/* ===== Data table ===== */}
+      <section className="products-panel products-catalog">
+        <div className="products-catalog-heading">
+          <div className="flex items-center gap-3">
+            <div className="report-section-icon">
+              <DocumentChartBarIcon />
+            </div>
+            <div>
+              <h2 className="products-section-title">Daily Cost of Sale</h2>
+              <p className="products-subtitle">
+                {loading ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <ArrowPathIcon className="h-3 w-3 animate-spin" />
+                    Loading…
+                  </span>
+                ) : (
+                  `${computed.withDerived.length} entries`
+                )}
+              </p>
+            </div>
+          </div>
+        </div>
 
-      {/* ===== Data Table ===== */}
-      <GlassCard className="relative z-10">
-        <div className="max-h-[65vh] overflow-auto rounded-b-2xl">
-          <table className="min-w-[1200px] w-full text-sm">
-            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
-              <tr className="text-left">
-                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Date</th>
-                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right">Gross Sale</th>
-                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right">Item Disc.</th>
-                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right">Flat Disc.</th>
-                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right">Tax</th>
-                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right">Total Sales</th>
-                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right">Sale Return</th>
-                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right">Net Sale</th>
-                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right">Cost of Sales</th>
-                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right">GP (Amt)</th>
-                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right">GP %</th>
+        <div
+          className="report-table-scroll"
+          tabIndex={0}
+          role="region"
+          aria-label="Cost of sale by day"
+          aria-busy={loading}
+        >
+          <table className="report-table report-table-medium">
+            <thead>
+              <tr>
+                <th scope="col">Date</th>
+                <th scope="col" className="report-num">Gross Sale</th>
+                <th scope="col" className="report-num">Item Disc.</th>
+                <th scope="col" className="report-num">Flat Disc.</th>
+                <th scope="col" className="report-num">Tax</th>
+                <th scope="col" className="report-num">Total Sales</th>
+                <th scope="col" className="report-num">Sale Return</th>
+                <th scope="col" className="report-num">Net Sale</th>
+                <th scope="col" className="report-num">Cost of Sales</th>
+                <th scope="col" className="report-num">GP (Amt)</th>
+                <th scope="col" className="report-num">GP %</th>
               </tr>
             </thead>
 
             <tbody>
               {computed.withDerived.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={11} className={`px-3 py-10 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>
+                  <td colSpan={11} className="report-muted">
                     No data for the selected date range.
                   </td>
                 </tr>
               )}
 
               {computed.withDerived.map((r, idx) => (
-                <tr
-                  key={r.sale_date + "_" + idx}
-                  className={`
-                    transition-colors
-                    border-b border-gray-100 dark:border-slate-600/30
-                    odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/40 dark:even:bg-slate-800/40
-                    hover:bg-blue-50 dark:hover:bg-slate-600/50
-                  `}
-                >
-                  <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{r.sale_date}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtCurrency(r.gross_sale)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtCurrency(r.item_discount)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtCurrency(r.discount_amount)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtCurrency(r.tax_amount)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtCurrency(r.total_sales)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtCurrency(r.sale_return)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums font-medium text-gray-800 dark:text-gray-200">{fmtCurrency(r.net_sale)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtCurrency(r.cost_of_sales)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{fmtCurrency(r.gp_amount)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtPct(r.gp_pct)}</td>
+                <tr key={r.sale_date + "_" + idx}>
+                  <td>{r.sale_date}</td>
+                  <td className="report-num">{fmtCurrency(r.gross_sale)}</td>
+                  <td className="report-num">{fmtCurrency(r.item_discount)}</td>
+                  <td className="report-num">{fmtCurrency(r.discount_amount)}</td>
+                  <td className="report-num">{fmtCurrency(r.tax_amount)}</td>
+                  <td className="report-num">{fmtCurrency(r.total_sales)}</td>
+                  <td className="report-num">{fmtCurrency(r.sale_return)}</td>
+                  <td className="report-num report-strong">{fmtCurrency(r.net_sale)}</td>
+                  <td className="report-num">{fmtCurrency(r.cost_of_sales)}</td>
+                  <td className="report-num report-amount-up">{fmtCurrency(r.gp_amount)}</td>
+                  <td className="report-num">{fmtPct(r.gp_pct)}</td>
                 </tr>
               ))}
             </tbody>
 
-            <tfoot className={`
-              border-t-2 backdrop-blur-xs font-semibold
-              ${isDark ? "border-slate-600 bg-slate-800/80" : "border-gray-300 bg-gray-50"}
-            `}>
-              <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>
-                <td className="px-3 py-2 text-right text-gray-700 dark:text-gray-300">TOTALS</td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtCurrency(computed.totals.gross_sale)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtCurrency(computed.totals.item_discount)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtCurrency(computed.totals.discount_amount)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtCurrency(computed.totals.tax_amount)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtCurrency(computed.totals.total_sales)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtCurrency(computed.totals.sale_return)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-800 dark:text-gray-200">{fmtCurrency(computed.totals.net_sale)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtCurrency(computed.totals.cost_of_sales)}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-bold text-emerald-700 dark:text-emerald-400">{fmtCurrency(computed.totals.gp_amount)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{fmtPct(computed.totals_gp_pct)}</td>
+            <tfoot>
+              <tr className="report-total-row">
+                <td className="report-num">Totals</td>
+                <td className="report-num">{fmtCurrency(computed.totals.gross_sale)}</td>
+                <td className="report-num">{fmtCurrency(computed.totals.item_discount)}</td>
+                <td className="report-num">{fmtCurrency(computed.totals.discount_amount)}</td>
+                <td className="report-num">{fmtCurrency(computed.totals.tax_amount)}</td>
+                <td className="report-num">{fmtCurrency(computed.totals.total_sales)}</td>
+                <td className="report-num">{fmtCurrency(computed.totals.sale_return)}</td>
+                <td className="report-num report-strong">{fmtCurrency(computed.totals.net_sale)}</td>
+                <td className="report-num">{fmtCurrency(computed.totals.cost_of_sales)}</td>
+                <td className="report-num report-amount-up report-strong">
+                  {fmtCurrency(computed.totals.gp_amount)}
+                </td>
+                <td className="report-num">{fmtPct(computed.totals_gp_pct)}</td>
               </tr>
             </tfoot>
           </table>
         </div>
-      </GlassCard>
-
-      {/* ===== KPI Summary ===== */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KpiCard
-          label="Net Sale"
-          value={fmtCurrency(computed.totals.net_sale)}
-          isDark={isDark}
-          themeColors={themeColors}
-          highlight
-        />
-        <KpiCard
-          label="Cost of Sales"
-          value={fmtCurrency(computed.totals.cost_of_sales)}
-          isDark={isDark}
-          themeColors={themeColors}
-        />
-        <KpiCard
-          label="Gross Profit"
-          value={fmtCurrency(computed.totals.gp_amount)}
-          isDark={isDark}
-          themeColors={themeColors}
-        />
-        <KpiCard
-          label="GP %"
-          value={fmtPct(computed.totals_gp_pct)}
-          isDark={isDark}
-          themeColors={themeColors}
-        />
-        <KpiCard
-          label="Gross Sale"
-          value={fmtCurrency(computed.totals.gross_sale)}
-          isDark={isDark}
-          themeColors={themeColors}
-        />
-        <KpiCard
-          label="Total Sales"
-          value={fmtCurrency(computed.totals.total_sales)}
-          isDark={isDark}
-          themeColors={themeColors}
-        />
-      </div>
-
-      <style>{`
-        .tabular-nums { font-variant-numeric: tabular-nums; }
-        @media print {
-          input, button, select, [role="button"], .rs__control { display: none !important; }
-          table { font-size: 11px; }
-          thead { position: sticky; top: 0; }
-        }
-      `}</style>
+      </section>
     </div>
   );
 }
 
 /* ===== KPI Card Component ===== */
-function KpiCard({ label, value, isDark, highlight = false, themeColors }) {
-  // Determine gradient based on label
-  const getGradient = () => {
-    if (label === "Net Sale") return `from-[${themeColors.primary}] to-[${themeColors.primaryHover}]`;
-    if (label === "Cost of Sales") return `from-[${themeColors.rose}] to-[${themeColors.roseHover}]`;
-    if (label === "Gross Profit") return `from-[${themeColors.emerald}] to-[${themeColors.emeraldHover}]`;
-    if (label === "GP %") return `from-[${themeColors.secondary}] to-[${themeColors.secondaryHover}]`;
-    if (label === "Gross Sale") return `from-[${themeColors.amber}] to-[${themeColors.amberHover}]`;
-    if (label === "Total Sales") return `from-[${themeColors.secondary}] to-[${themeColors.secondaryHover}]`;
-    return `from-[${themeColors.primary}] to-[${themeColors.primaryHover}]`;
-  };
-
-  const cardGradient = getGradient();
-
+function KpiCard({ label, value, note, icon: Icon, accent }) {
   return (
-    <div
-      className={[
-        "group rounded-xl px-4 py-3 backdrop-blur-xs bg-white/55 ring-1 ring-white/30 shadow-xs relative overflow-hidden",
-        "transition-all duration-200",
-        "hover:bg-white/80 hover:backdrop-blur-md hover:shadow-[0_10px_30px_-10px_rgba(59,130,246,0.35)]",
-        "hover:ring-white/40",
-        highlight ? "outline-solid outline-1 outline-emerald-200/50" : "",
-      ].join(" ")}
-    >
-      {/* Gradient accent bar */}
-      <div className={`absolute top-0 left-0 right-0 h-1 bg-linear-to-r ${cardGradient}`} />
-      
-      <div className="flex items-center gap-2 mb-1 relative z-10">
-        <span className={`text-xs uppercase tracking-wide ${isDark ? "text-slate-400" : "text-gray-600"}`}>{label}</span>
+    <div className="report-kpi" style={accent ? { "--report-accent": accent } : undefined}>
+      <div className="report-kpi-head">
+        <span className="report-kpi-icon">
+          <Icon />
+        </span>
+        <span>{label}</span>
       </div>
-      <div className="text-lg font-bold tabular-nums text-gray-900 relative z-10">{value}</div>
+      <div className="report-kpi-value">{value}</div>
+      {note && <div className="report-kpi-note">{note}</div>}
     </div>
   );
 }
-

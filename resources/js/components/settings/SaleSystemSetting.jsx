@@ -1,17 +1,13 @@
 // resources/js/components/settings/SaleSystemSetting.jsx
-import { useTheme } from "@/context/ThemeContext";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
-import { GlassCard } from "@/components/glass.jsx";
 import {
   ShoppingCartIcon,
   BanknotesIcon,
   ScaleIcon,
   CheckIcon,
   CheckBadgeIcon,
-  DocumentCurrencyDollarIcon,
   ArrowTrendingUpIcon,
   InformationCircleIcon,
-  SparklesIcon,
   BeakerIcon,
   BuildingStorefrontIcon,
 } from "@heroicons/react/24/solid";
@@ -20,7 +16,6 @@ import {
 const FEATURES = {
   retail: {
     icon: BanknotesIcon,
-    accent: 'blue',
     title: 'Retail Only',
     tagline: 'Simple counter sales — one price per product',
     description:
@@ -35,7 +30,6 @@ const FEATURES = {
   },
   retail_wholesale: {
     icon: ScaleIcon,
-    accent: 'purple',
     title: 'Retail + Wholesale',
     tagline: 'Full functionality — retail and bulk sales together',
     description:
@@ -54,7 +48,6 @@ const FEATURES = {
 const SHOP_TYPES = {
   pharmacy: {
     icon: BeakerIcon,
-    accent: 'teal',
     title: 'Pharmacy',
     tagline: 'Medicine, controlled items & prescription sales',
     description:
@@ -68,7 +61,6 @@ const SHOP_TYPES = {
   },
   general_store: {
     icon: BuildingStorefrontIcon,
-    accent: 'amber',
     title: 'General Store',
     tagline: 'Everyday retail goods — no pharmacy-specific fields',
     description:
@@ -82,14 +74,62 @@ const SHOP_TYPES = {
   },
 };
 
+function ChoiceGroup({ name, legend, options, selectedKey, onSelect, disableInputs }) {
+  return (
+    <div className="settings-field">
+      <span className="settings-label">{legend}</span>
+      <div className="settings-options settings-options-2">
+        {Object.entries(options).map(([key, option]) => {
+          const Icon = option.icon;
+          const isActive = selectedKey === key;
+          return (
+            <label key={key} className={`settings-option ${isActive ? "is-active" : ""}`}>
+              <input
+                type="radio"
+                name={name}
+                value={key}
+                checked={isActive}
+                onChange={onSelect}
+                disabled={disableInputs}
+                className="sr-only"
+              />
+
+              <span className="settings-option-head">
+                <Icon aria-hidden="true" />
+                <span className="settings-option-title">{option.title}</span>
+                {isActive && (
+                  <CheckIcon
+                    aria-hidden="true"
+                    style={{ color: "var(--workspace-accent)", marginLeft: "auto" }}
+                  />
+                )}
+              </span>
+
+              <span className="settings-option-tagline">{option.tagline}</span>
+              <span className="settings-option-note">{option.description}</span>
+
+              <ul className="settings-bullets">
+                {option.bullets.map((bullet, i) => (
+                  <li key={i}>
+                    <CheckIcon aria-hidden="true" />
+                    <span>{bullet}</span>
+                  </li>
+                ))}
+              </ul>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function SaleSystemSetting({
   form,
   handleSaleSystemChange,
   handleShopTypeChange,
   disableInputs,
-  themeColors,
 }) {
-  const { isDark } = useTheme();
   const {
     saleSystem: activeSaleSystem,
     hasWholesale,
@@ -97,16 +137,6 @@ export default function SaleSystemSetting({
     isPharmacy,
     loading: saleSystemLoading,
   } = useSaleSystem();
-
-  // Use passed themeColors if available, otherwise use defaults
-  const colors = themeColors || {
-    primary: '#3b82f6',
-    primaryHover: '#2563eb',
-    primaryLight: '#dbeafe',
-    secondary: '#8b5cf6',
-    secondaryHover: '#7c3aed',
-    secondaryLight: '#ede9fe',
-  };
 
   // Pending selection (from the settings form) falls back to the saved system
   const selected = form?.sale_system || activeSaleSystem || 'retail_wholesale';
@@ -121,281 +151,176 @@ export default function SaleSystemSetting({
     : 'Retail only — wholesale columns and bulk sale actions are hidden.';
 
   return (
-    <div className="p-4 space-y-3">
-      {/* ===== Header ===== */}
-      <GlassCard>
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-slate-700">
-          <div
-            className="p-1.5 rounded-lg shadow-xs"
-            style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
-          >
-            <ShoppingCartIcon className="w-4 h-4 text-white" />
+    <>
+      {/* ===== Header + currently active ===== */}
+      <div className="settings-block">
+        <div className="settings-block-heading">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="settings-block-icon">
+              <ShoppingCartIcon />
+            </div>
+            <div className="min-w-0">
+              <h2 className="settings-block-title">Sale System Configuration</h2>
+              <p className="settings-block-note">
+                Choose your sale mode (retail / wholesale) and shop type (pharmacy / general store).
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Sale System Configuration</h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Choose your sale mode (retail / wholesale) and shop type (pharmacy / general store).
-            </p>
+        </div>
+
+        <div className="settings-body">
+          <div className="settings-field">
+            <span className="settings-label">Currently active</span>
+            <div className="flex flex-wrap items-center gap-3">
+              {saleSystemLoading ? (
+                <span className="settings-hint">Loading…</span>
+              ) : (
+                <>
+                  <span
+                    className="settings-chip"
+                    style={{ "--settings-chip": "var(--color-primary)" }}
+                  >
+                    <CheckBadgeIcon aria-hidden="true" />
+                    {activeLabel}
+                  </span>
+                  <span
+                    className="settings-chip"
+                    style={{ "--settings-chip": "var(--color-secondary)" }}
+                  >
+                    <CheckBadgeIcon aria-hidden="true" />
+                    {activeShopTypeLabel}
+                  </span>
+                  <span className="settings-hint">{activeNote}</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ===== Mode selection ===== */}
+      <div className="settings-block">
+        <div className="settings-block-heading">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="settings-block-icon">
+              <ScaleIcon />
+            </div>
+            <div className="min-w-0">
+              <h2 className="settings-block-title">Sale System Mode</h2>
+              <p className="settings-block-note">
+                Changes below apply instantly across the app once saved.
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* Currently active mode (from live context) */}
-        <div className="p-3 flex items-center gap-3 flex-wrap rounded-xl bg-gray-50/60 dark:bg-slate-800/40 ring-1 ring-gray-200/60 dark:ring-slate-600/60">
-          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Currently active:</span>
-          {saleSystemLoading ? (
-            <span className="text-xs text-gray-500 dark:text-gray-400 animate-pulse">Loading…</span>
-          ) : (
-            <span
-              className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full ${
-                hasWholesale
-                  ? "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 ring-1 ring-purple-200 dark:ring-purple-700"
-                  : "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 ring-1 ring-blue-200 dark:ring-blue-700"
-              }`}
-            >
-              <CheckBadgeIcon className="w-3.5 h-3.5" />
-              {activeLabel}
-            </span>
-          )}
-          <span
-            className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full ${
-              isPharmacy
-                ? "bg-teal-50 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300 ring-1 ring-teal-200 dark:ring-teal-700"
-                : "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-700"
-            }`}
-          >
-            <CheckBadgeIcon className="w-3.5 h-3.5" />
-            {activeShopTypeLabel}
-          </span>
-          <span className={`text-xs ${isDark ? "text-slate-400" : "text-gray-500"}`}>{activeNote}</span>
-          {!saleSystemLoading && (
-            <span className="ml-auto text-[11px] text-gray-400 dark:text-gray-500">
-              Changes below apply instantly across the app once saved.
-            </span>
-          )}
+        <div className="settings-body">
+          <ChoiceGroup
+            name="sale_system"
+            legend="Choose a sale system mode"
+            options={FEATURES}
+            selectedKey={selected}
+            onSelect={handleSaleSystemChange}
+            disableInputs={disableInputs}
+          />
         </div>
-      </GlassCard>
+      </div>
 
-      {/* ===== Mode Selection ===== */}
-      <GlassCard>
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-slate-700">
-          <SparklesIcon className="w-4 h-4 text-violet-500" />
-          <h2 className="text-sm font-medium text-gray-900 dark:text-white">Choose a Sale System Mode</h2>
+      {/* ===== Shop type selection ===== */}
+      <div className="settings-block">
+        <div className="settings-block-heading">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="settings-block-icon">
+              <BeakerIcon />
+            </div>
+            <div className="min-w-0">
+              <h2 className="settings-block-title">Shop Type</h2>
+              <p className="settings-block-note">
+                Pharmacy fields stay available only for medical stores.
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-          {Object.entries(FEATURES).map(([key, feature]) => {
-            const Icon = feature.icon;
-            const isActive = selected === key;
-            const accent = feature.accent; // 'blue' | 'purple'
-            const activeBorder = accent === 'purple'
-              ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 ring-2 ring-purple-200 dark:ring-purple-800'
-              : 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-200 dark:ring-blue-800';
-            const textAccent = accent === 'purple'
-              ? 'text-purple-700 dark:text-purple-400'
-              : 'text-blue-700 dark:text-blue-400';
-
-            return (
-              <label
-                key={key}
-                className={`relative flex flex-col p-3 rounded-xl border-2 cursor-pointer transition-all duration-200 ${
-                  isActive ? activeBorder : 'border-gray-200 dark:border-slate-600 hover:border-gray-300 dark:hover:border-slate-500'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="sale_system"
-                  value={key}
-                  checked={isActive}
-                  onChange={handleSaleSystemChange}
-                  disabled={disableInputs}
-                  className="sr-only"
-                />
-
-                {/* Title + radio indicator */}
-                <div className="flex items-center gap-2 mb-1">
-                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                    isActive
-                      ? (accent === 'purple' ? 'border-purple-500 bg-purple-500' : 'border-blue-500 bg-blue-500')
-                      : 'border-gray-300 dark:border-slate-500'
-                  }`}>
-                    {isActive && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                  </div>
-                  <Icon className={`w-5 h-5 ${isActive ? textAccent : "text-gray-400"}`} />
-                  <span className={`font-semibold text-sm ${isDark ? "text-slate-200" : "text-gray-800"}`}>
-                    {feature.title}
-                  </span>
-                  {isActive && <CheckIcon className={`w-4 h-4 ml-auto ${textAccent}`} />}
-                </div>
-
-                <p className={`text-[11px] ${isDark ? "text-slate-400" : "text-gray-500"}`}>{feature.tagline}</p>
-                <p className={`text-xs mt-1 leading-relaxed ${isDark ? "text-slate-300" : "text-gray-700"}`}>
-                  {feature.description}
-                </p>
-
-                {/* Feature bullets */}
-                <div className="mt-2 space-y-1">
-                  {feature.bullets.map((bullet, i) => (
-                    <div key={i} className="flex items-start gap-1.5">
-                      <CheckIcon className={`w-3.5 h-3.5 shrink-0 ${isActive ? textAccent : "text-gray-400"}`} />
-                      <span className={`text-[11px] leading-snug ${isDark ? "text-slate-400" : "text-gray-600"}`}>
-                        {bullet}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </label>
-            );
-          })}
+        <div className="settings-body">
+          <ChoiceGroup
+            name="shop_type"
+            legend="Choose a shop type"
+            options={SHOP_TYPES}
+            selectedKey={selectedShopType}
+            onSelect={handleShopTypeChange}
+            disableInputs={disableInputs}
+          />
         </div>
-      </GlassCard>
+      </div>
 
-      {/* ===== Shop Type Selection ===== */}
-      <GlassCard>
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-slate-700">
-          <BuildingStorefrontIcon className="w-4 h-4 text-teal-500" />
-          <h2 className="text-sm font-medium text-gray-900 dark:text-white">Choose a Shop Type</h2>
+      {/* ===== What changes when you switch ===== */}
+      <div className="settings-block">
+        <div className="settings-block-heading">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="settings-block-icon">
+              <ArrowTrendingUpIcon />
+            </div>
+            <div className="min-w-0">
+              <h2 className="settings-block-title">What changes when you switch</h2>
+            </div>
+          </div>
         </div>
 
-        <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-          {Object.entries(SHOP_TYPES).map(([key, shopTypeFeature]) => {
-            const Icon = shopTypeFeature.icon;
-            const isActive = selectedShopType === key;
-            const accent = shopTypeFeature.accent; // 'teal' | 'amber'
-            const accentMap = {
-              teal: {
-                activeBorder: 'border-teal-500 bg-teal-50 dark:bg-teal-900/20 ring-2 ring-teal-200 dark:ring-teal-800',
-                textAccent: 'text-teal-700 dark:text-teal-400',
-                radioActive: 'border-teal-500 bg-teal-500',
-              },
-              amber: {
-                activeBorder: 'border-amber-500 bg-amber-50 dark:bg-amber-900/20 ring-2 ring-amber-200 dark:ring-amber-800',
-                textAccent: 'text-amber-700 dark:text-amber-400',
-                radioActive: 'border-amber-500 bg-amber-500',
-              },
-            }[accent] || {
-              activeBorder: 'border-teal-500 bg-teal-50 dark:bg-teal-900/20 ring-2 ring-teal-200 dark:ring-teal-800',
-              textAccent: 'text-teal-700 dark:text-teal-400',
-              radioActive: 'border-teal-500 bg-teal-500',
-            };
-
-            return (
-              <label
-                key={key}
-                className={`relative flex flex-col p-3 rounded-xl border-2 cursor-pointer transition-all duration-200 ${
-                  isActive ? accentMap.activeBorder : 'border-gray-200 dark:border-slate-600 hover:border-gray-300 dark:hover:border-slate-500'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="shop_type"
-                  value={key}
-                  checked={isActive}
-                  onChange={handleShopTypeChange}
-                  disabled={disableInputs}
-                  className="sr-only"
-                />
-
-                {/* Title + radio indicator */}
-                <div className="flex items-center gap-2 mb-1">
-                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                    isActive ? accentMap.radioActive : 'border-gray-300 dark:border-slate-500'
-                  }`}>
-                    {isActive && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                  </div>
-                  <Icon className={`w-5 h-5 ${isActive ? accentMap.textAccent : "text-gray-400"}`} />
-                  <span className={`font-semibold text-sm ${isDark ? "text-slate-200" : "text-gray-800"}`}>
-                    {shopTypeFeature.title}
-                  </span>
-                  {isActive && <CheckIcon className={`w-4 h-4 ml-auto ${accentMap.textAccent}`} />}
-                </div>
-
-                <p className={`text-[11px] ${isDark ? "text-slate-400" : "text-gray-500"}`}>{shopTypeFeature.tagline}</p>
-                <p className={`text-xs mt-1 leading-relaxed ${isDark ? "text-slate-300" : "text-gray-700"}`}>
-                  {shopTypeFeature.description}
-                </p>
-
-                {/* Feature bullets */}
-                <div className="mt-2 space-y-1">
-                  {shopTypeFeature.bullets.map((bullet, i) => (
-                    <div key={i} className="flex items-start gap-1.5">
-                      <CheckIcon className={`w-3.5 h-3.5 shrink-0 ${isActive ? accentMap.textAccent : "text-gray-400"}`} />
-                      <span className={`text-[11px] leading-snug ${isDark ? "text-slate-400" : "text-gray-600"}`}>
-                        {bullet}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </label>
-            );
-          })}
-        </div>
-      </GlassCard>
-
-      {/* ===== What changes when you switch? ===== */}
-      <GlassCard>
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-slate-700">
-          <DocumentCurrencyDollarIcon className="w-4 h-4 text-emerald-500" />
-          <h2 className="text-sm font-medium text-gray-900 dark:text-white">What changes when you switch</h2>
-        </div>
-        <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="rounded-lg bg-gray-50/60 dark:bg-slate-800/40 ring-1 ring-gray-200/60 dark:ring-slate-600/60 p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <BanknotesIcon className="w-4 h-4 text-blue-500" />
-              <span className={`text-xs font-semibold ${isDark ? "text-slate-300" : "text-gray-800"}`}>
+        <div className="settings-body">
+          <div className="settings-tiles">
+            <div className="settings-tile">
+              <div className="settings-tile-title">
+                <BanknotesIcon aria-hidden="true" />
                 Retail Only mode shows you
-              </span>
+              </div>
+              <ul className="settings-bullets">
+                {[
+                  'Single selling price per product',
+                  'Clean sale invoice — no wholesale unit / pack / margin columns',
+                  'Only retail actions on the sale invoice list',
+                  'Wholesale-only routes stay hidden / blocked',
+                ].map((item, i) => (
+                  <li key={i}>
+                    <CheckIcon aria-hidden="true" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <ul className="space-y-1">
-              {[
-                'Single selling price per product',
-                'Clean sale invoice — no wholesale unit / pack / margin columns',
-                'Only retail actions on the sale invoice list',
-                'Wholesale-only routes stay hidden / blocked',
-              ].map((item, i) => (
-                <li key={i} className="flex items-start gap-1.5">
-                  <CheckIcon className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
-                  <span className={`text-[11px] leading-snug ${isDark ? "text-slate-400" : "text-gray-600"}`}>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="rounded-lg bg-gray-50/60 dark:bg-slate-800/40 ring-1 ring-gray-200/60 dark:ring-slate-600/60 p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <ArrowTrendingUpIcon className="w-4 h-4 text-purple-500" />
-              <span className={`text-xs font-semibold ${isDark ? "text-slate-300" : "text-gray-800"}`}>
+
+            <div className="settings-tile">
+              <div className="settings-tile-title">
+                <ScaleIcon aria-hidden="true" />
                 Retail + Wholesale mode adds
-              </span>
+              </div>
+              <ul className="settings-bullets">
+                {[
+                  'Wholesale price per product — pack, unit & margin %',
+                  'Wholesale columns inside purchase invoice entry',
+                  'Wholesale / bulk sale invoices and extra list actions',
+                  'Full wholesale customer workflow with ledgers',
+                ].map((item, i) => (
+                  <li key={i}>
+                    <CheckIcon aria-hidden="true" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <ul className="space-y-1">
-              {[
-                'Wholesale price per product — pack, unit & margin %',
-                'Wholesale columns inside purchase invoice entry',
-                'Wholesale / bulk sale invoices and extra list actions',
-                'Full wholesale customer workflow with ledgers',
-              ].map((item, i) => (
-                <li key={i} className="flex items-start gap-1.5">
-                  <CheckIcon className="w-3.5 h-3.5 shrink-0 text-violet-500" />
-                  <span className={`text-[11px] leading-snug ${isDark ? "text-slate-400" : "text-gray-600"}`}>{item}</span>
-                </li>
-              ))}
-            </ul>
+          </div>
+
+          <div className="settings-note">
+            <InformationCircleIcon aria-hidden="true" />
+            <div>
+              <span className="settings-note-title">How this works</span>
+              Your selection is saved together with the rest of your settings. It takes effect immediately across
+              the whole app — forms, invoice lists and pages adapt to the mode you choose. Use Retail + Wholesale
+              if you sell in bulk; switch to Retail Only for a simpler, counter-only workflow.
+            </div>
           </div>
         </div>
-      </GlassCard>
-{/* ===== Info note ===== */}
-      <GlassCard>
-        <div className="p-3 flex items-start gap-2 rounded-lg bg-blue-50/40 dark:bg-blue-900/15 ring-1 ring-blue-200/50 dark:ring-blue-800/30">
-          <InformationCircleIcon className="w-5 h-5 shrink-0 text-blue-500" />
-          <div>
-            <p className={`text-xs font-medium ${isDark ? "text-slate-200" : "text-gray-800"}`}>How this works</p>
-            <p className={`text-[11px] leading-relaxed ${isDark ? "text-slate-400" : "text-gray-600"}`}>
-              Your selection is saved together with the rest of your settings. It takes effect immediately across the
-              whole app — forms, invoice lists and pages adapt to the mode you choose. Use Retail + Wholesale if you
-              sell in bulk; switch to Retail Only for a simpler, counter-only workflow.
-            </p>
-          </div>
-        </div>
-      </GlassCard>
-    </div>
+      </div>
+    </>
   );
 }

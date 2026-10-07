@@ -1,213 +1,70 @@
 // resources/js/components/settings/PrinterSetting.jsx
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import toast from "react-hot-toast";
-import { useTheme } from "@/context/ThemeContext";
-import { GlassCard, GlassSectionHeader, GlassToolbar, GlassInput, GlassBtn } from "@/components/glass.jsx";
-import { 
-  PrinterIcon, 
+import {
+  PrinterIcon,
   DocumentTextIcon,
   EyeIcon,
   DocumentIcon,
   ClipboardDocumentListIcon,
   ScaleIcon,
   BoltIcon,
-  QrCodeIcon
+  QrCodeIcon,
 } from "@heroicons/react/24/solid";
 
-// Helper to determine text color based on background brightness
-const getContrastText = (hexColor) => {
-  hexColor = hexColor.replace('#', '');
-  const r = parseInt(hexColor.substring(0, 2), 16);
-  const g = parseInt(hexColor.substring(2, 4), 16);
-  const b = parseInt(hexColor.substring(4, 6), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.5 ? '#1f2937' : '#ffffff';
-};
-
-// Section configuration with color schemes - will use dynamic theme colors
-const SECTION_CONFIG = {
-  core: {
-    key: 'primary',
-  },
-  management: {
-    key: 'secondary',
-  },
-};
-
-// Helper to get color value from theme
-const getThemeColor = (theme, colorKey, variant = 'color') => {
-  if (!theme) return '#3b82f6';
-  const key = `${colorKey}_${variant}`;
-  return theme[key] || '#3b82f6';
-};
-
-// Helper to generate section styles from theme
-const getSectionStyles = (theme, colorKey) => {
-  const baseColor = getThemeColor(theme, colorKey, 'color');
-  const hoverColor = getThemeColor(theme, colorKey, 'hover');
-  const lightColor = getThemeColor(theme, colorKey, 'light');
-  
-  return {
-    gradient: `from-[${baseColor}] to-[${hoverColor}]`,
-    bgLight: `bg-[${lightColor}]`,
-    bgDark: `dark:bg-[${lightColor}]`,
-    borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
-    iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
-    ringColor: `ring-[${baseColor}]/30`,
-  };
-};
-
-export default function PrinterSetting({ 
-  form, 
-  handleChange, 
-  disableInputs, 
+export default function PrinterSetting({
+  form,
+  handleChange,
+  disableInputs,
   saving,
   handleSave,
-  themeColors,
-  emeraldTextColor
 }) {
-  const { isDark, theme } = useTheme();
-  
-  // Use passed themeColors if available, otherwise use default
-  const colors = themeColors || {
-    primary: '#3b82f6',
-    primaryHover: '#2563eb',
-    primaryLight: '#dbeafe',
-    secondary: '#8b5cf6',
-    secondaryHover: '#7c3aed',
-    secondaryLight: '#ede9fe',
-    emerald: '#10b981',
-    emeraldHover: '#059669',
-    emeraldLight: '#d1fae5',
-  };
-  
-  // Use passed emeraldTextColor if available, otherwise calculate
-  const textColor = emeraldTextColor || getContrastText(colors.emeraldHover || colors.emerald);
-  
   const [selectedThermalTemplate, setSelectedThermalTemplate] = useState(form.thermal_template || "standard");
   const [selectedA4Template, setSelectedA4Template] = useState(form.a4_template || "standard");
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewingTemplate, setPreviewingTemplate] = useState(null);
   const [previewingType, setPreviewingType] = useState('thermal'); // 'thermal' or 'a4'
 
-  // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded-sm';
-  
-  // Get button style classes and styles based on theme button_style
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'rounded-sm': 'rounded-lg',
-      'outlined': 'rounded-lg',
-      'soft': 'rounded-xl',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
-    
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: colors.primary,
-            color: colors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: colors.secondary,
-            color: colors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-        emerald: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: colors.emerald,
-            color: colors.emerald,
-            backgroundColor: 'transparent',
-          }
-        },
-      };
-    }
-    
-    // Filled styles for rounded and soft
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})`,
-          color: '#ffffff',
-          boxShadow: `0 4px 14px 0 ${colors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${colors.secondary}, ${colors.secondaryHover})`,
-          color: '#ffffff',
-          boxShadow: `0 4px 14px 0 ${colors.secondary}40`,
-        }
-      },
-      emerald: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${colors.emerald}, ${colors.emeraldHover})`,
-          color: textColor,
-          boxShadow: `0 4px 14px 0 ${colors.emerald}40`,
-        }
-      },
-    };
-  }, [buttonStyle, colors, textColor]);
-
-  const btnEmerald = getButtonClasses.emerald;
-  const btnPrimary = getButtonClasses.primary;
-
-  // 🎨 Modern button palette
-  const btnOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-all duration-200";
-  const btnBlue   = "bg-linear-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] transition-all duration-200";
-  const btnGreen  = "bg-linear-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-[1.02] transition-all duration-200";
-
   // Thermal templates data
   const thermalTemplates = [
-    { 
-      id: 'standard', 
-      name: 'Standard', 
+    {
+      id: 'standard',
+      name: 'Standard',
       description: 'Classic layout with logo support',
       icon: 'DocumentTextIcon',
       preview: 'Standard thermal layout with store branding'
     },
-    { 
-      id: 'minimal', 
-      name: 'Minimal', 
+    {
+      id: 'minimal',
+      name: 'Minimal',
       description: 'No logo, basic info only',
       icon: 'DocumentIcon',
       preview: 'Compact receipt without logo'
     },
-    { 
-      id: 'detailed', 
-      name: 'Detailed', 
+    {
+      id: 'detailed',
+      name: 'Detailed',
       description: 'Extended customer & payment info',
       icon: 'ClipboardDocumentListIcon',
       preview: 'Complete with customer balance details'
     },
-    { 
-      id: 'compact', 
-      name: 'Compact', 
+    {
+      id: 'compact',
+      name: 'Compact',
       description: 'Small fonts, more items per page',
       icon: 'ScaleIcon',
       preview: 'Maximum items on single receipt'
     },
-    { 
-      id: 'bold', 
-      name: 'Bold', 
+    {
+      id: 'bold',
+      name: 'Bold',
       description: 'Large fonts, high emphasis',
       icon: 'BoltIcon',
       preview: 'Large fonts with black/white contrast'
     },
-    { 
-      id: 'barcode', 
-      name: 'Barcode', 
+    {
+      id: 'barcode',
+      name: 'Barcode',
       description: 'With product barcodes & QR code',
       icon: 'QrCodeIcon',
       preview: 'Includes barcodes and verification QR'
@@ -216,44 +73,44 @@ export default function PrinterSetting({
 
   // A4 templates data - same as thermal templates
   const a4Templates = [
-    { 
-      id: 'standard', 
-      name: 'Standard', 
+    {
+      id: 'standard',
+      name: 'Standard',
       description: 'Classic layout with logo support',
       icon: 'DocumentTextIcon',
       preview: 'Standard A4 layout with store branding'
     },
-    { 
-      id: 'minimal', 
-      name: 'Minimal', 
+    {
+      id: 'minimal',
+      name: 'Minimal',
       description: 'Clean and simple design',
       icon: 'DocumentIcon',
       preview: 'Minimal A4 receipt'
     },
-    { 
-      id: 'detailed', 
-      name: 'Detailed', 
+    {
+      id: 'detailed',
+      name: 'Detailed',
       description: 'Extended customer & payment info',
       icon: 'ClipboardDocumentListIcon',
       preview: 'Complete with customer balance details'
     },
-    { 
-      id: 'compact', 
-      name: 'Compact', 
+    {
+      id: 'compact',
+      name: 'Compact',
       description: 'Space-efficient layout',
       icon: 'ScaleIcon',
       preview: 'Compact A4 format'
     },
-    { 
-      id: 'bold', 
-      name: 'Bold', 
+    {
+      id: 'bold',
+      name: 'Bold',
       description: 'Large fonts, high emphasis',
       icon: 'BoltIcon',
       preview: 'Bold fonts with high contrast'
     },
-    { 
-      id: 'barcode', 
-      name: 'Barcode', 
+    {
+      id: 'barcode',
+      name: 'Barcode',
       description: 'With barcodes & QR code',
       icon: 'QrCodeIcon',
       preview: 'Includes barcodes and verification QR'
@@ -286,457 +143,355 @@ export default function PrinterSetting({
     return icons[iconName] || DocumentTextIcon;
   };
 
-  return (
-    <div className="p-4 space-y-3">
-{/* ===== Invoice Footer Note ===== */}
-      <GlassCard>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          <div className="flex items-center gap-3">
-            <div 
-              className="p-2 rounded-lg shadow-xs"
-              style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
-            >
-              <DocumentTextIcon className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Invoice Footer Note</h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Custom message at bottom of invoices</p>
-            </div>
-          </div>
-        </div>
-        <div className="p-4">
-          <textarea
-            name="note"
-            value={form.note}
-            onChange={handleChange}
-            disabled={disableInputs}
-            rows={3}
+  const isThermal = form.printer_type === "thermal";
+
+  const renderTemplateGrid = ({ templates, selectedId, onSelect, type }) => (
+    <div className="settings-template-grid">
+      {templates.map((template) => {
+        const IconComponent = getIconComponent(template.icon);
+        const isSelected = selectedId === template.id;
+
+        return (
+          <div
+            key={template.id}
+            role="button"
+            tabIndex={0}
+            aria-pressed={isSelected}
+            className={`settings-template ${isSelected ? "is-active" : ""}`}
+            onClick={() => onSelect(template.id)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                if (!disableInputs) handleSave();
+                onSelect(template.id);
               }
             }}
-            className={`w-full h-24 rounded-xl bg-white/70 backdrop-blur-xs border focus:outline-hidden focus:ring-2 focus:ring-blue-400/40 shadow-xs px-3 py-2 ${
-              isDark 
-                ? "bg-slate-700/70 border-slate-600/70 text-gray-100" 
-                : "bg-white border-gray-200/70 text-gray-900"
-            }`}
-            placeholder="This note will be printed at the bottom of the invoice..."
-          />
-          <p className={`text-xs mt-2 ${isDark ? "text-slate-400" : "text-gray-500"}`}>
-            This note will appear at the bottom of all printed invoices and receipts.
-          </p>
-        </div>
-      </GlassCard>
+          >
+            {/* Selection indicator */}
+            {isSelected && (
+              <span className="settings-template-badge" aria-hidden="true">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                </svg>
+              </span>
+            )}
 
-{/* ===== Printer Type Selection ===== */}
-      <GlassCard>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          <div className="flex items-center gap-3">
-            <div 
-              className="p-2 rounded-lg shadow-xs"
-              style={{ background: `linear-gradient(to bottom right, ${colors.secondary}, ${colors.secondaryHover})` }}
+            {/* Preview trigger */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setPreviewingTemplate(template);
+                setPreviewingType(type);
+                setShowPreviewModal(true);
+              }}
+              className="settings-template-preview-btn"
+              title="Preview template"
+              aria-label={`Preview ${template.name} template`}
             >
-              <PrinterIcon className="w-5 h-5 text-white" />
+              <EyeIcon aria-hidden="true" />
+            </button>
+
+            {/* Thumbnail */}
+            <span className="settings-template-preview">
+              <iframe
+                src={`/print/${type}-preview/${template.id}`}
+                className="border-0"
+                title={`${template.name} Thumbnail`}
+              />
+            </span>
+
+            {/* Name + description */}
+            <span className="settings-template-head">
+              <span className="settings-template-icon">
+                <IconComponent aria-hidden="true" />
+              </span>
+              <span className="min-w-0">
+                <span className="settings-option-title block">{template.name}</span>
+                <span className="settings-option-tagline block">{template.description}</span>
+              </span>
+            </span>
+
+            <span className="settings-template-note">{template.preview}</span>
+
+            {/* Select action */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!disableInputs) {
+                  onSelect(template.id);
+                } else {
+                  toast.error("You don't have permission to update settings.");
+                }
+              }}
+              disabled={disableInputs}
+              className={`products-action w-full ${isSelected ? "products-action-primary" : ""}`}
+            >
+              {isSelected ? "Selected" : "Select template"}
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  return (
+    <>
+      {/* ===== Invoice footer note ===== */}
+      <div className="settings-block">
+        <div className="settings-block-heading">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="settings-block-icon">
+              <DocumentTextIcon />
             </div>
-            <div>
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Printer Type</h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Select your printer type</p>
+            <div className="min-w-0">
+              <h2 className="settings-block-title">Invoice Footer Note</h2>
+              <p className="settings-block-note">Custom message at the bottom of invoices</p>
             </div>
           </div>
         </div>
-        <GlassToolbar className="flex flex-wrap gap-3 p-4">
-          <label className={`inline-flex items-center gap-3 px-4 py-3 rounded-xl ring-1 cursor-pointer transition-all ${
-            form.printer_type === "thermal" 
-              ? isDark ? "bg-blue-900/30 ring-blue-700" : "bg-blue-50 ring-blue-300"
-              : isDark ? "bg-slate-700/60 ring-slate-600" : "bg-white/70 ring-gray-200"
-          }`}>
-            <input
-              type="radio"
-              name="printer_type"
-              value="thermal"
-              checked={form.printer_type === "thermal"}
+
+        <div className="settings-body">
+          <div className="settings-field">
+            <label className="settings-label" htmlFor="setting-invoice-note">Footer note</label>
+            <textarea
+              id="setting-invoice-note"
+              name="note"
+              value={form.note}
               onChange={handleChange}
               disabled={disableInputs}
-              className="w-4 h-4 text-blue-600"
+              rows={3}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  if (!disableInputs) handleSave();
+                }
+              }}
+              placeholder="This note will be printed at the bottom of the invoice..."
             />
-            <div className="flex items-center gap-2">
-              <PrinterIcon className={`w-5 h-5 ${isDark ? "text-slate-300" : "text-gray-600"}`} />
-              <span className={`text-sm font-medium ${isDark ? "text-slate-200" : "text-gray-700"}`}>Thermal Printer</span>
-            </div>
-          </label>
-          
-          <label className={`inline-flex items-center gap-3 px-4 py-3 rounded-xl ring-1 cursor-pointer transition-all ${
-            form.printer_type === "a4" 
-              ? isDark ? "bg-blue-900/30 ring-blue-700" : "bg-blue-50 ring-blue-300"
-              : isDark ? "bg-slate-700/60 ring-slate-600" : "bg-white/70 ring-gray-200"
-          }`}>
-            <input
-              type="radio"
-              name="printer_type"
-              value="a4"
-              checked={form.printer_type === "a4"}
-              onChange={handleChange}
-              disabled={disableInputs}
-              className="w-4 h-4 text-blue-600"
-            />
-            <div className="flex items-center gap-2">
-              <DocumentTextIcon className={`w-5 h-5 ${isDark ? "text-slate-300" : "text-gray-600"}`} />
-              <span className={`text-sm font-medium ${isDark ? "text-slate-200" : "text-gray-700"}`}>A4 Printer</span>
-            </div>
-          </label>
-        </GlassToolbar>
-        <div className="px-4 pb-4">
-          <p className={`text-xs ${isDark ? "text-slate-400" : "text-gray-500"}`}>
-            {form.printer_type === "thermal" 
-              ? "Select a thermal receipt template below. Thermal printers use 58mm-80mm width paper."
-              : "Select an A4 invoice template below. A4 printers use standard letter-size paper."}
-          </p>
+            <p className="settings-hint">
+              This note will appear at the bottom of all printed invoices and receipts. Ctrl/⌘ + Enter saves.
+            </p>
+          </div>
         </div>
-      </GlassCard>
-
-      {/* ===== Thermal Template Selection ===== */}
-      {form.printer_type === "thermal" && (
-        <GlassCard>
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-            <div className="flex items-center gap-3">
-              <div 
-                className="p-2 rounded-lg shadow-xs"
-                style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
-              >
-                <DocumentTextIcon className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h2 className="text-base font-semibold text-gray-900 dark:text-white">Thermal Receipt Template</h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Choose your receipt layout</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 p-4">
-            {thermalTemplates.map((template) => {
-              const IconComponent = getIconComponent(template.icon);
-              const isSelected = selectedThermalTemplate === template.id;
-              
-              return (
-                <div
-                  key={template.id}
-                  className={`relative rounded-xl border-2 cursor-pointer overflow-hidden transition-all ${
-                    isSelected
-                      ? "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800"
-                      : "border-gray-200 hover:border-gray-300 hover:shadow-md dark:border-slate-600 dark:hover:border-slate-500"
-                  }`}
-                  onClick={() => handleTemplateSelect(template.id)}
-                >
-                  {/* Selection Indicator */}
-                  {isSelected && (
-                    <div className="absolute top-2 right-2 z-10">
-                      <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center">
-                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Preview Button */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPreviewingTemplate(template);
-                      setPreviewingType('thermal');
-                      setShowPreviewModal(true);
-                    }}
-                    className="absolute top-2 left-2 z-10 p-1.5 rounded-lg bg-white/90 hover:bg-white shadow-xs transition-opacity dark:bg-slate-700/90 dark:hover:bg-slate-600"
-                    title="Preview template"
-                  >
-                    <EyeIcon className={`w-4 h-4 ${isDark ? "text-slate-300" : "text-gray-600"}`} />
-                  </button>
-                  
-                  {/* Template Content */}
-                  <div className="p-4">
-                    {/* Small Thumbnail Preview */}
-                    <div className={`mb-3 rounded-lg border overflow-hidden ${isDark ? "bg-slate-800 border-slate-600" : "bg-white border-gray-200"}`}>
-                      <iframe
-                        src={`/print/thermal-preview/${template.id}`}
-                        className="w-full h-24 border-0"
-                        style={{ transform: 'scale(0.5)', transformOrigin: 'top left', width: '200%', height: '200%' }}
-                        title={`${template.name} Thumbnail`}
-                      />
-                    </div>
-                    
-                    {/* Icon and Name */}
-                    <div className="flex items-start gap-3 mb-3">
-                      <div className={`p-2 rounded-lg ${isSelected ? "bg-blue-100 dark:bg-blue-900/50" : "bg-gray-100 dark:bg-slate-700"}`}>
-                        <IconComponent className={`w-6 h-6 ${isSelected ? "text-blue-600" : isDark ? "text-slate-300" : "text-gray-600"}`} />
-                      </div>
-                      <div className="flex-1">
-                        <h4 className={`font-semibold ${isDark ? "text-slate-100" : "text-gray-800"}`}>{template.name}</h4>
-                        <p className={`text-xs mt-1 ${isDark ? "text-slate-400" : "text-gray-500"}`}>{template.description}</p>
-                      </div>
-                    </div>
-                    
-                    {/* Preview Info */}
-                    <div className={`rounded-lg p-2 mb-3 ${isDark ? "bg-slate-700/50" : "bg-gray-50"}`}>
-                      <p className={`text-xs ${isDark ? "text-slate-300" : "text-gray-600"}`}>{template.preview}</p>
-                    </div>
-                    
-                    {/* Select Button */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!disableInputs) {
-                          handleTemplateSelect(template.id);
-                        } else {
-                          toast.error("You don't have permission to update settings.");
-                        }
-                      }}
-                      disabled={disableInputs}
-                      className={`w-full py-2 px-3 rounded-lg text-sm font-medium transition-all ${
-                        isSelected
-                          ? "bg-blue-500 text-white"
-                          : `${isDark ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`
-                      } ${disableInputs && !isSelected ? "opacity-50 cursor-not-allowed" : ""}`}
-                    >
-                      {isSelected ? "Selected" : "Select Template"}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          
-          {/* Selected Template Info */}
-          <div className="px-4 pb-4">
-            <div className={`rounded-xl p-4 border ${isDark ? "bg-blue-900/20 border-blue-800" : "bg-blue-50 border-blue-200"}`}>
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                <span className={`font-medium ${isDark ? "text-blue-300" : "text-blue-800"}`}>
-                  Selected: {thermalTemplates.find(t => t.id === form.thermal_template)?.name} Template
-                </span>
-              </div>
-              <p className={`text-sm ${isDark ? "text-blue-400" : "text-blue-700"}`}>
-                This template will be used for all thermal printer sales invoices.
-              </p>
-            </div>
-          </div>
-        </GlassCard>
-      )}
-
-{/* ===== A4 Template Selection ===== */}
-      {form.printer_type === "a4" && (
-        <GlassCard>
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-            <div className="flex items-center gap-3">
-              <div 
-                className="p-2 rounded-lg shadow-xs"
-                style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
-              >
-                <DocumentTextIcon className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h2 className="text-base font-semibold text-gray-900 dark:text-white">A4 Invoice Template</h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Choose your invoice layout</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 p-4">
-            {a4Templates.map((template) => {
-              const IconComponent = getIconComponent(template.icon);
-              const isSelected = selectedA4Template === template.id;
-              
-              return (
-                <div
-                  key={template.id}
-                  className={`relative rounded-xl border-2 cursor-pointer overflow-hidden transition-all ${
-                    isSelected
-                      ? "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800"
-                      : "border-gray-200 hover:border-gray-300 hover:shadow-md dark:border-slate-600 dark:hover:border-slate-500"
-                  }`}
-                  onClick={() => handleA4TemplateSelect(template.id)}
-                >
-                  {/* Selection Indicator */}
-                  {isSelected && (
-                    <div className="absolute top-2 right-2 z-10">
-                      <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center">
-                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Preview Button */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPreviewingTemplate(template);
-                      setPreviewingType('a4');
-                      setShowPreviewModal(true);
-                    }}
-                    className="absolute top-2 left-2 z-10 p-1.5 rounded-lg bg-white/90 hover:bg-white shadow-xs transition-opacity dark:bg-slate-700/90 dark:hover:bg-slate-600"
-                    title="Preview template"
-                  >
-                    <EyeIcon className={`w-4 h-4 ${isDark ? "text-slate-300" : "text-gray-600"}`} />
-                  </button>
-                  
-                  {/* Template Content */}
-                  <div className="p-4">
-                    {/* Small Thumbnail Preview */}
-                    <div className={`mb-3 rounded-lg border overflow-hidden ${isDark ? "bg-slate-800 border-slate-600" : "bg-white border-gray-200"}`}>
-                      <iframe
-                        src={`/print/a4-preview/${template.id}`}
-                        className="w-full h-24 border-0"
-                        style={{ transform: 'scale(0.5)', transformOrigin: 'top left', width: '200%', height: '200%' }}
-                        title={`${template.name} Thumbnail`}
-                      />
-                    </div>
-                    
-                    {/* Icon and Name */}
-                    <div className="flex items-start gap-3 mb-3">
-                      <div className={`p-2 rounded-lg ${isSelected ? "bg-blue-100 dark:bg-blue-900/50" : "bg-gray-100 dark:bg-slate-700"}`}>
-                        <IconComponent className={`w-6 h-6 ${isSelected ? "text-blue-600" : isDark ? "text-slate-300" : "text-gray-600"}`} />
-                      </div>
-                      <div className="flex-1">
-                        <h4 className={`font-semibold ${isDark ? "text-slate-100" : "text-gray-800"}`}>{template.name}</h4>
-                        <p className={`text-xs mt-1 ${isDark ? "text-slate-400" : "text-gray-500"}`}>{template.description}</p>
-                      </div>
-                    </div>
-                    
-                    {/* Preview Info */}
-                    <div className={`rounded-lg p-2 mb-3 ${isDark ? "bg-slate-700/50" : "bg-gray-50"}`}>
-                      <p className={`text-xs ${isDark ? "text-slate-300" : "text-gray-600"}`}>{template.preview}</p>
-                    </div>
-                    
-                    {/* Select Button */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!disableInputs) {
-                          handleA4TemplateSelect(template.id);
-                        } else {
-                          toast.error("You don't have permission to update settings.");
-                        }
-                      }}
-                      disabled={disableInputs}
-                      className={`w-full py-2 px-3 rounded-lg text-sm font-medium transition-all ${
-                        isSelected
-                          ? "bg-blue-500 text-white"
-                          : `${isDark ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`
-                      } ${disableInputs && !isSelected ? "opacity-50 cursor-not-allowed" : ""}`}
-                    >
-                      {isSelected ? "Selected" : "Select Template"}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          
-          {/* Selected Template Info */}
-          <div className="px-4 pb-4">
-            <div className={`rounded-xl p-4 border ${isDark ? "bg-blue-900/20 border-blue-800" : "bg-blue-50 border-blue-200"}`}>
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                <span className={`font-medium ${isDark ? "text-blue-300" : "text-blue-800"}`}>
-                  Selected: {a4Templates.find(t => t.id === form.a4_template)?.name} Template
-                </span>
-              </div>
-              <p className={`text-sm ${isDark ? "text-blue-400" : "text-blue-700"}`}>
-                This template will be used for all A4 printer sales invoices.
-              </p>
-            </div>
-          </div>
-        </GlassCard>
-      )}
-
-{/* ===== Save Button ===== */}
-      <div className="flex justify-end">
-        <GlassBtn
-          onClick={handleSave}
-          disabled={disableInputs || saving}
-          className={`h-10 px-6 ${btnEmerald.className}`}
-          title={!disableInputs ? "Alt+S" : "You lack update permission"}
-          style={btnEmerald.style}
-        >
-          {saving ? "Saving…" : "Save Settings"}
-        </GlassBtn>
       </div>
 
-      {/* ===== Template Preview Modal ===== */}
+      {/* ===== Printer type ===== */}
+      <div className="settings-block">
+        <div className="settings-block-heading">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="settings-block-icon">
+              <PrinterIcon />
+            </div>
+            <div className="min-w-0">
+              <h2 className="settings-block-title">Printer Type</h2>
+              <p className="settings-block-note">Select your printer type</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-body">
+          <div className="settings-options settings-options-2">
+            <label className={`settings-option ${isThermal ? "is-active" : ""}`}>
+              <input
+                type="radio"
+                name="printer_type"
+                value="thermal"
+                checked={isThermal}
+                onChange={handleChange}
+                disabled={disableInputs}
+                className="sr-only"
+              />
+              <span className="settings-option-head">
+                <PrinterIcon aria-hidden="true" />
+                <span className="settings-option-title">Thermal Printer</span>
+              </span>
+              <span className="settings-option-tagline">
+                58mm–80mm receipt paper with a compact thermal template.
+              </span>
+            </label>
+
+            <label className={`settings-option ${!isThermal ? "is-active" : ""}`}>
+              <input
+                type="radio"
+                name="printer_type"
+                value="a4"
+                checked={!isThermal}
+                onChange={handleChange}
+                disabled={disableInputs}
+                className="sr-only"
+              />
+              <span className="settings-option-head">
+                <DocumentTextIcon aria-hidden="true" />
+                <span className="settings-option-title">A4 Printer</span>
+              </span>
+              <span className="settings-option-tagline">
+                Standard letter-size paper with a full invoice template.
+              </span>
+            </label>
+          </div>
+
+          <p className="settings-hint">
+            {isThermal
+              ? "A thermal receipt template is used for every thermal invoice."
+              : "An A4 invoice template is used for every A4 invoice."}
+          </p>
+        </div>
+      </div>
+
+      {/* ===== Template selection ===== */}
+      <div className="settings-block">
+        <div className="settings-block-heading">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="settings-block-icon">
+              <DocumentTextIcon />
+            </div>
+            <div className="min-w-0">
+              <h2 className="settings-block-title">
+                {isThermal ? "Thermal Receipt Template" : "A4 Invoice Template"}
+              </h2>
+              <p className="settings-block-note">
+                {isThermal ? "Choose your receipt layout" : "Choose your invoice layout"}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-body">
+          {isThermal
+            ? renderTemplateGrid({
+                templates: thermalTemplates,
+                selectedId: selectedThermalTemplate,
+                onSelect: handleTemplateSelect,
+                type: 'thermal',
+              })
+            : renderTemplateGrid({
+                templates: a4Templates,
+                selectedId: selectedA4Template,
+                onSelect: handleA4TemplateSelect,
+                type: 'a4',
+              })}
+
+          <div className="settings-note">
+            <DocumentTextIcon aria-hidden="true" />
+            <div>
+              <span className="settings-note-title">
+                Selected: {isThermal
+                  ? thermalTemplates.find(t => t.id === form.thermal_template)?.name
+                  : a4Templates.find(t => t.id === form.a4_template)?.name} Template
+              </span>
+              This template will be used for all {isThermal ? "thermal printer" : "A4 printer"} sales invoices.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ===== Save ===== */}
+      <div className="settings-block">
+        <div className="settings-body">
+          <div className="settings-actions settings-actions-between">
+            <span className="settings-hint">
+              Shortcut: <span className="people-shortcut">Alt+S</span> to save
+            </span>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={disableInputs || saving}
+              className="products-action products-action-primary"
+              title={!disableInputs ? "Alt+S" : "You lack update permission"}
+            >
+              {saving ? "Saving…" : "Save settings"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ===== Template preview modal ===== */}
       {showPreviewModal && previewingTemplate && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className={`w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col ${isDark ? "bg-slate-800 border-slate-600" : "bg-white border-gray-200"} border`}>
+        <div
+          className="settings-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="template-preview-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowPreviewModal(false);
+              setPreviewingTemplate(null);
+            }
+          }}
+        >
+          <div className="settings-modal-card settings-modal-card-lg">
             {/* Header */}
-            <div className={`flex items-center justify-between p-4 border-b ${isDark ? "border-slate-600" : "border-gray-200"}`}>
-              <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${isDark ? "bg-blue-900/50" : "bg-blue-100"}`}>
-                  <EyeIcon className={`w-5 h-5 ${isDark ? "text-blue-400" : "text-blue-600"}`} />
-                </div>
-                <div>
-                  <h3 className={`font-semibold ${isDark ? "text-slate-100" : "text-gray-800"}`}>{previewingTemplate.name} Template Preview</h3>
-                  <p className={`text-sm ${isDark ? "text-slate-400" : "text-gray-500"}`}>{previewingTemplate.description}</p>
-                </div>
+            <div className="settings-modal-heading">
+              <div className="settings-block-icon">
+                <EyeIcon />
+              </div>
+              <div className="min-w-0">
+                <h3 id="template-preview-title" className="settings-block-title">
+                  {previewingTemplate.name} Template Preview
+                </h3>
+                <p className="settings-block-note">{previewingTemplate.description}</p>
               </div>
               <button
+                type="button"
                 onClick={() => {
                   setShowPreviewModal(false);
                   setPreviewingTemplate(null);
                 }}
-                className={`p-2 rounded-lg transition-colors ${isDark ? "hover:bg-slate-700" : "hover:bg-gray-100"}`}
+                className="products-action"
+                style={{ marginLeft: "auto" }}
+                aria-label="Close preview"
               >
-                <svg className={`w-5 h-5 ${isDark ? "text-slate-400" : "text-gray-500"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-            
-            {/* Preview Content */}
-            <div className={`flex-1 overflow-auto p-4 ${isDark ? "bg-slate-900" : "bg-gray-100"}`}>
-              <div className={`mx-auto rounded-lg shadow-lg ${isDark ? "bg-slate-800" : "bg-white"}`} style={{ 
-                maxWidth: previewingTemplate.id === 'minimal' || previewingTemplate.id === 'compact' ? '300px' : '400px',
-                minHeight: '400px'
-              }}>
+
+            {/* Preview */}
+            <div className="settings-modal-body-flush">
+              <div
+                className="settings-template-frame"
+                style={{
+                  maxWidth: previewingTemplate.id === 'minimal' || previewingTemplate.id === 'compact' ? '300px' : '400px',
+                }}
+              >
                 <iframe
                   src={`/print/${previewingType}-preview/${previewingTemplate.id}`}
-                  className="w-full h-full border-0"
-                  style={{ minHeight: '400px', width: previewingTemplate.id === 'minimal' || previewingTemplate.id === 'compact' ? '280px' : '380px' }}
+                  className="border-0"
+                  style={{ minHeight: '400px', width: '100%' }}
                   title={`${previewingTemplate.name} Template Preview`}
                 />
               </div>
             </div>
-            
+
             {/* Footer */}
-            <div className={`flex items-center justify-between p-4 border-t ${isDark ? "border-slate-600 bg-slate-800" : "border-gray-200 bg-gray-50"}`}>
+            <div className="settings-modal-footer">
               <a
                 href={`/print/${previewingType}-preview/${previewingTemplate.id}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${isDark ? "hover:bg-slate-700 text-slate-300" : "hover:bg-gray-200 text-gray-600"}`}
+                className="products-action"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                 </svg>
-                Open in New Tab
+                <span>Open in new tab</span>
               </a>
-            <div className="flex gap-2">
-                <GlassBtn
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
                   onClick={() => {
                     setShowPreviewModal(false);
                     setPreviewingTemplate(null);
                   }}
-                  className={`h-9 px-4 ${btnPrimary.className}`}
-                  style={btnPrimary.style}
+                  className="products-action"
                 >
                   Close
-                </GlassBtn>
-                <GlassBtn
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     if (!disableInputs) {
                       if (previewingType === 'a4') {
@@ -752,19 +507,17 @@ export default function PrinterSetting({
                     }
                   }}
                   disabled={disableInputs}
-                  className={`h-9 px-4 ${btnPrimary.className}`}
-                  style={btnPrimary.style}
+                  className="products-action products-action-primary"
                 >
-                  {(previewingType === 'a4' ? form.a4_template : form.thermal_template) === previewingTemplate.id 
-                    ? "Already Selected" 
+                  {(previewingType === 'a4' ? form.a4_template : form.thermal_template) === previewingTemplate.id
+                    ? "Already selected"
                     : `Select ${previewingTemplate.name}`}
-                </GlassBtn>
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
-

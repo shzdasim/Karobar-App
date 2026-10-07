@@ -5,113 +5,42 @@ import FilePondPluginImagePreview from "filepond-plugin-image-preview";
 import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
 import "filepond/dist/filepond.min.css";
 import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
-import { useTheme } from "@/context/ThemeContext";
-import { GlassCard, GlassInput } from "@/components/glass.jsx";
+import { GlassInput } from "@/components/glass.jsx";
 import { BuildingStorefrontIcon } from "@heroicons/react/24/solid";
 
 registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);
 
-// Helper to determine text color based on background brightness
-const getContrastText = (hexColor) => {
-  hexColor = hexColor.replace('#', '');
-  const r = parseInt(hexColor.substring(0, 2), 16);
-  const g = parseInt(hexColor.substring(2, 4), 16);
-  const b = parseInt(hexColor.substring(4, 6), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.5 ? '#1f2937' : '#ffffff';
-};
-
-// Section configuration with color schemes - will use dynamic theme colors
-const SECTION_CONFIG = {
-  core: {
-    key: 'primary',
-  },
-  management: {
-    key: 'secondary',
-  },
-};
-
-// Helper to get color value from theme
-const getThemeColor = (theme, colorKey, variant = 'color') => {
-  if (!theme) return '#3b82f6';
-  const key = `${colorKey}_${variant}`;
-  return theme[key] || '#3b82f6';
-};
-
-// Helper to generate section styles from theme
-const getSectionStyles = (theme, colorKey) => {
-  const baseColor = getThemeColor(theme, colorKey, 'color');
-  const hoverColor = getThemeColor(theme, colorKey, 'hover');
-  const lightColor = getThemeColor(theme, colorKey, 'light');
-  
-  return {
-    gradient: `from-[${baseColor}] to-[${hoverColor}]`,
-    bgLight: `bg-[${lightColor}]`,
-    bgDark: `dark:bg-[${lightColor}]`,
-    borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
-    iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
-    ringColor: `ring-[${baseColor}]/30`,
-  };
-};
-
-export default function GeneralSetting({ 
-  form, 
-  handleChange, 
-  disableInputs, 
-  files, 
+export default function GeneralSetting({
+  form,
+  handleChange,
+  disableInputs,
+  files,
   setFiles,
   storeNameRef,
   phoneRef,
   addressRef,
   licenseRef,
-  themeColors,
-  primaryTextColor
 }) {
-  const { isDark } = useTheme();
-
-  // Use passed themeColors if available, otherwise use default
-  const colors = themeColors || {
-    primary: '#3b82f6',
-    primaryHover: '#2563eb',
-    primaryLight: '#dbeafe',
-    secondary: '#8b5cf6',
-    secondaryHover: '#7c3aed',
-    secondaryLight: '#ede9fe',
-  };
-  
-  // Use passed text color if available, otherwise calculate
-  const textColor = primaryTextColor || getContrastText(colors.primaryHover || colors.primary);
-  const secondaryColor = getContrastText(colors.secondaryHover || colors.secondary);
-
-  // 🎨 Modern button palette (matching other settings components)
-  const btnOutline = "bg-transparent text-slate-600 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-all duration-200";
-
   return (
-    <div className="space-y-3">
-{/* ===== Identity + Contact + Logo ===== */}
-      <GlassCard>
-        {/* Header - Compact */}
-        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 dark:border-slate-700">
-          <div className="flex items-center gap-2">
-            <div 
-              className="p-1.5 rounded-lg shadow-xs"
-              style={{ background: `linear-gradient(to bottom right, ${colors.primary}, ${colors.primaryHover})` }}
-            >
-              <BuildingStorefrontIcon className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Store Identity & Contact</h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Basic information and logo</p>
-            </div>
+    <div className="settings-block">
+      <div className="settings-block-heading">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="settings-block-icon">
+            <BuildingStorefrontIcon />
+          </div>
+          <div className="min-w-0">
+            <h2 className="settings-block-title">Store Identity &amp; Contact</h2>
+            <p className="settings-block-note">Basic information and logo</p>
           </div>
         </div>
+      </div>
 
-        {/* Logo + Form Fields - Match ProductForm Style */}
-        <div className="flex gap-3 p-3 items-start">
-          {/* Logo - Left Side, Compact */}
-          <div className="w-28 shrink-0">
-            <label className={`block text-xs font-medium mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Logo</label>
-            <div className="rounded-xl bg-white/60 dark:bg-slate-700/60 backdrop-blur-xs ring-1 ring-gray-200/60 dark:ring-slate-600/60 p-1">
+      <div className="settings-body">
+        <div className="flex flex-col gap-5 md:flex-row md:items-start">
+          {/* Logo */}
+          <div className="w-full shrink-0 md:w-40">
+            <label className="settings-label">Logo</label>
+            <div className="mt-2">
               <FilePond
                 files={files}
                 onupdatefiles={(fl) => {
@@ -124,20 +53,20 @@ export default function GeneralSetting({
                 allowMultiple={false}
                 acceptedFileTypes={['image/png', 'image/jpeg', 'image/jpg', 'image/webp']}
                 disabled={disableInputs}
-                labelIdle='<span class="text-xs dark:text-slate-300">Drop</span>'
+                labelIdle='Drop logo or <span class="filepond--label-action">browse</span>'
                 credits={false}
                 stylePanelLayout="compact"
               />
             </div>
-            <p className={`text-xs mt-1 ${isDark ? "text-slate-400" : "text-gray-500"}`}>PNG/JPG</p>
+            <p className="settings-hint mt-2">PNG, JPG or WebP</p>
           </div>
 
-          {/* Form Fields - Right Side */}
-          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2">
-            {/* Store Name */}
-            <div className="w-full">
-              <label className={`block text-xs mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Store Name</label>
+          {/* Store details */}
+          <div className="settings-fields flex-1">
+            <div className="settings-field">
+              <label className="settings-label" htmlFor="setting-store-name">Store Name</label>
               <GlassInput
+                id="setting-store-name"
                 ref={storeNameRef}
                 type="text"
                 name="store_name"
@@ -152,10 +81,10 @@ export default function GeneralSetting({
               />
             </div>
 
-            {/* Phone */}
-            <div className="w-full">
-              <label className={`block text-xs mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Phone Number</label>
+            <div className="settings-field">
+              <label className="settings-label" htmlFor="setting-phone">Phone Number</label>
               <GlassInput
+                id="setting-phone"
                 ref={phoneRef}
                 type="text"
                 name="phone_number"
@@ -170,10 +99,10 @@ export default function GeneralSetting({
               />
             </div>
 
-            {/* Address */}
-            <div className="md:col-span-2">
-              <label className={`block text-xs mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Address</label>
+            <div className="settings-field settings-field-wide">
+              <label className="settings-label" htmlFor="setting-address">Address</label>
               <GlassInput
+                id="setting-address"
                 ref={addressRef}
                 type="text"
                 name="address"
@@ -185,10 +114,10 @@ export default function GeneralSetting({
               />
             </div>
 
-            {/* Licence Number */}
-            <div className="w-full">
-              <label className={`block text-xs mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Licence Number</label>
+            <div className="settings-field settings-field-wide">
+              <label className="settings-label" htmlFor="setting-licence">Licence Number</label>
               <GlassInput
+                id="setting-licence"
                 ref={licenseRef}
                 type="text"
                 name="license_number"
@@ -201,8 +130,7 @@ export default function GeneralSetting({
             </div>
           </div>
         </div>
-      </GlassCard>
-
-</div>
+      </div>
+    </div>
   );
 }

@@ -3,20 +3,18 @@ import { useMemo, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { usePermissions, Guard } from "@/api/usePermissions";
-
-import {
-  GlassCard,
-  GlassToolbar,
-  GlassBtn,
-} from "@/components/glass.jsx";
 import { useTheme } from "@/context/ThemeContext";
 
 // Search modal
 import SaleInvoiceSearch from "@/components/SaleInvoiceSearch.jsx";
 
-import { 
-  ArrowDownOnSquareIcon, 
+import {
+  ArrowDownOnSquareIcon,
   ArrowPathIcon,
+  ArrowTrendingDownIcon,
+  ArrowTrendingUpIcon,
+  ChartPieIcon,
+  CurrencyDollarIcon,
   DocumentTextIcon,
 } from "@heroicons/react/24/solid";
 
@@ -28,10 +26,6 @@ const getContrastText = (hexColor) => {
   const b = parseInt(hexColor.substring(4, 6), 16);
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luminance > 0.5 ? '#1f2937' : '#ffffff';
-};
-
-const getButtonTextColor = (primaryColor, primaryHoverColor) => {
-  return getContrastText(primaryHoverColor || primaryColor);
 };
 
 /* ======================
@@ -71,119 +65,32 @@ export default function CostOfSaleDetailReport() {
     [canFor]
   );
 
-  // Get dark mode state and theme colors
-  const { isDark, theme } = useTheme();
+  // Active theme colors
+  const { theme } = useTheme();
 
-  // Memoize theme colors for performance
   const themeColors = useMemo(() => {
     if (!theme) {
       return {
-        primary: '#3b82f6',
-        primaryHover: '#2563eb',
-        primaryLight: '#dbeafe',
-        secondary: '#8b5cf6',
-        secondaryHover: '#7c3aed',
-        tertiary: '#06b6d4',
-        emerald: '#10b981',
-        emeraldHover: '#059669',
+        primary: '#2563eb',
+        secondary: '#0f766e',
+        success: '#15803d',
+        warning: '#b45309',
+        danger: '#dc2626',
       };
     }
     return {
-      primary: theme.primary_color || '#3b82f6',
-      primaryHover: theme.primary_hover || '#2563eb',
-      primaryLight: theme.primary_light || '#dbeafe',
-      secondary: theme.secondary_color || '#8b5cf6',
-      secondaryHover: theme.secondary_hover || '#7c3aed',
-      tertiary: theme.tertiary_color || '#06b6d4',
-      emerald: theme.success_color || '#10b981',
-      emeraldHover: '#059669',
+      primary: theme.primary_color || '#2563eb',
+      secondary: theme.secondary_color || '#0f766e',
+      success: theme.success_color || '#15803d',
+      warning: theme.warning_color || '#b45309',
+      danger: theme.danger_color || '#dc2626',
     };
   }, [theme]);
 
-  // Calculate text colors based on background brightness
-  const primaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
-    [themeColors.primary, themeColors.primaryHover]
+  const primaryTextColor = useMemo(
+    () => getContrastText(themeColors.primary),
+    [themeColors.primary]
   );
-  
-  const secondaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
-    [themeColors.secondary, themeColors.secondaryHover]
-  );
-
-  // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded-sm';
-  
-  // Get button style classes and styles based on theme button_style
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'rounded-sm': 'rounded-lg',
-      'outlined': 'rounded-lg',
-      'soft': 'rounded-xl',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
-    
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.secondary,
-            color: themeColors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-        emerald: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.emerald,
-            color: themeColors.emerald,
-            backgroundColor: 'transparent',
-          }
-        },
-      };
-    }
-    
-    // Filled styles for rounded and soft
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: primaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-          color: secondaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
-        }
-      },
-      emerald: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
-          color: '#ffffff',
-          boxShadow: `0 4px 14px 0 ${themeColors.emerald}40`,
-        }
-      },
-    };
-  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor]);
-
-  const btnPrimary = getButtonClasses.primary;
-  const btnSecondary = getButtonClasses.secondary;
-  const btnEmerald = getButtonClasses.emerald;
 
   // Handle invoice selection from search modal
   const handleInvoiceSelect = (invoice) => {
@@ -205,10 +112,10 @@ export default function CostOfSaleDetailReport() {
           to: toDate || undefined,
         },
       });
-      
+
       const responseData = res.data || { invoices: [], summary: {} };
       setData(responseData);
-      
+
       if (!responseData.invoices?.length) {
         toast("No data found for selected filters.", { icon: "ℹ️" });
       }
@@ -225,7 +132,7 @@ export default function CostOfSaleDetailReport() {
   const exportPdf = async () => {
     if (!can.export) return toast.error("You don't have permission to export PDF.");
     if (!data.invoices?.length) return toast.error("No data to export.");
-    
+
     setPdfLoading(true);
     try {
       const res = await axios.get("/api/reports/cost-of-sale-detail/pdf", {
@@ -262,22 +169,20 @@ export default function CostOfSaleDetailReport() {
   // Permission gating
   if (permsLoading) {
     return (
-      <div className="p-6">
-        <GlassCard>
-          <div className={`px-4 py-3 text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>Checking permissions…</div>
-        </GlassCard>
+      <div className="report-page">
+        <section className="products-panel">
+          <p className="report-state">Checking permissions…</p>
+        </section>
       </div>
     );
   }
 
   if (!can.view) {
     return (
-      <div className="p-6">
-        <GlassCard>
-          <div className={`px-4 py-3 text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>
-            You don't have permission to view this report.
-          </div>
-        </GlassCard>
+      <div className="report-page">
+        <section className="products-panel">
+          <p className="report-state">You don't have permission to view this report.</p>
+        </section>
       </div>
     );
   }
@@ -285,383 +190,356 @@ export default function CostOfSaleDetailReport() {
   const { invoices, summary } = data;
 
   return (
-    <div className="p-4 space-y-3">
-{/* ===== Premium Gradient Hero Header ===== */}
-      <div
-        className="relative overflow-hidden rounded-2xl shadow-lg"
-        style={{
-          background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.primary}, ${themeColors.primaryHover})`,
-        }}
-      >
-        {/* Decorative blurred blobs */}
-        <div
-          className="absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-30 blur-3xl pointer-events-none"
-          style={{ backgroundColor: "#ffffff" }}
-        />
-        <div
-          className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full opacity-20 blur-3xl pointer-events-none"
-          style={{ backgroundColor: themeColors.tertiary }}
-        />
-
-        {/* Hero Top */}
-        <div className="relative flex items-center justify-between px-5 py-4 flex-wrap gap-2">
-          <div className="flex items-center gap-3">
-            <div
-              className="p-2.5 rounded-xl shadow-inner"
-              style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
-            >
-              <DocumentTextIcon className="w-6 h-6 text-white" />
+    <div className="report-page">
+      {/* ===== Glass overview: title, actions, filters ===== */}
+      <section className="products-panel">
+        <div className="products-heading">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="products-identity-icon">
+              <DocumentTextIcon className="w-6 h-6" />
             </div>
-            <div>
-              <h1 className="text-xl font-extrabold tracking-wide text-white leading-none">Cost of Sale Detail Report</h1>
-              <p className="text-xs text-white/80 mt-1">
-                {invoices.length} invoice(s) • {summary.total_items || 0} items
+            <div className="min-w-0">
+              <h1 className="products-title">Cost of Sale Detail Report</h1>
+              <p className="products-subtitle">
+                <DocumentTextIcon className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">
+                  {invoices.length} invoice(s) • {summary.total_items || 0} items
+                </span>
               </p>
             </div>
           </div>
 
-          {/* Header Actions */}
-          <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="flex flex-wrap items-center gap-2">
+            <Guard when={can.export}>
+              <button
+                type="button"
+                onClick={exportPdf}
+                disabled={pdfLoading || invoices.length === 0}
+                title={
+                  invoices.length === 0
+                    ? "Load the report before exporting"
+                    : pdfLoading
+                    ? "Generating PDF…"
+                    : "Export report as PDF"
+                }
+                className="products-action"
+              >
+                <ArrowDownOnSquareIcon className="w-4 h-4" />
+                <span>{pdfLoading ? "Generating…" : "Export PDF"}</span>
+              </button>
+            </Guard>
+
             <button
+              type="button"
               onClick={resetFilters}
-              className="h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
+              title="Reset the filters and results"
+              className="products-action"
             >
               <ArrowPathIcon className="w-4 h-4" />
               <span>Reset</span>
             </button>
+
             <Guard when={can.view}>
               <button
+                type="button"
                 onClick={fetchReport}
                 disabled={loading}
-                className={`h-10 px-3.5 inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 ${
-                  loading ? "opacity-50 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 shadow-lg"
-                }`}
+                title="Load the cost of sale detail report"
+                className="products-action products-action-primary"
+                style={{ color: primaryTextColor }}
               >
                 <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-                {loading ? "Loading…" : "Load"}
+                <span>{loading ? "Loading…" : "Load Report"}</span>
               </button>
             </Guard>
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="relative px-5 pb-4">
-          <div
-            className="grid grid-cols-1 md:grid-cols-12 gap-3 rounded-xl p-3"
-            style={{ backgroundColor: "rgba(255,255,255,0.12)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.15)" }}
-          >
-            {/* From Date */}
-            <div className="md:col-span-2 flex flex-col gap-1">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">From</label>
+        <div className="products-filter-panel">
+          <div className="report-filters">
+            <label className="products-filter">
+              <span className="products-filter-label">From Date</span>
               <input
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
+                className="report-input"
               />
-            </div>
+            </label>
 
-            {/* To Date */}
-            <div className="md:col-span-2 flex flex-col gap-1">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">To</label>
+            <label className="products-filter">
+              <span className="products-filter-label">To Date</span>
               <input
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/70 bg-slate-900/50 border border-white/30 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/50 scheme-dark"
+                className="report-input"
               />
-            </div>
+            </label>
 
-            {/* Invoice Selector Button */}
-            <div className="md:col-span-4 flex flex-col gap-1">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">Select Invoice</label>
+            <div className="products-filter">
+              <span className="products-filter-label">Invoice</span>
               <button
+                type="button"
                 onClick={() => setSearchOpen(true)}
-                className={`w-full h-9 px-3 rounded-lg border text-left text-xs flex items-center gap-2 transition-all
-                  ${selectedInvoice 
-                    ? 'border-white/40 bg-white/20 text-white' 
-                    : 'border-white/30 bg-slate-900/50 text-white/70 hover:border-white/50'
-                  }`}
+                title="Search and select an invoice"
+                className="report-input flex items-center gap-2 text-left cursor-pointer"
               >
-                <DocumentTextIcon className="w-5 h-5 shrink-0" />
+                <DocumentTextIcon className="w-5 h-5 shrink-0 text-[var(--workspace-muted)]" />
                 {selectedInvoice ? (
                   <span className="truncate">
                     {selectedInvoice.posted_number || `#${selectedInvoice.id}`} - {selectedInvoice.customer_name || 'Walk-in'}
                   </span>
                 ) : (
-                  <span>Click to search invoice...</span>
+                  <span className="truncate text-[var(--workspace-muted)]">All invoices — click to select…</span>
                 )}
               </button>
             </div>
 
-            {/* Quick Filters & Export */}
-            <div className="md:col-span-4 flex flex-wrap items-end gap-2">
-              <button
-                onClick={() => {
-                  const end = new Date();
-                  const start = new Date();
-                  start.setDate(1);
-                  setFromDate(start.toISOString().slice(0, 10));
-                  setToDate(end.toISOString().slice(0, 10));
-                  fetchReport();
-                }}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200"
-              >
-                This Month
-              </button>
-
-              <button
-                onClick={() => {
-                  const end = new Date();
-                  const start = new Date();
-                  start.setMonth(start.getMonth() - 1);
-                  start.setDate(1);
-                  setFromDate(start.toISOString().slice(0, 10));
-                  setToDate(end.toISOString().slice(0, 10));
-                  fetchReport();
-                }}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200"
-              >
-                Last Month
-              </button>
-
-              <Guard when={can.export}>
+            <div className="products-filter report-span-all">
+              <span className="products-filter-label">Quick range</span>
+              <div className="report-quick">
                 <button
-                  onClick={exportPdf}
-                  disabled={pdfLoading || invoices.length === 0}
-                  className={`h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold text-white transition-all duration-200 ${
-                    pdfLoading || invoices.length === 0 ? "opacity-40 cursor-not-allowed" : "bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20"
-                  }`}
+                  type="button"
+                  className="products-action"
+                  onClick={() => {
+                    const end = new Date();
+                    const start = new Date();
+                    start.setDate(1);
+                    setFromDate(start.toISOString().slice(0, 10));
+                    setToDate(end.toISOString().slice(0, 10));
+                    fetchReport();
+                  }}
                 >
-                  <ArrowDownOnSquareIcon className="w-4 h-4" />
-                  {pdfLoading ? "Generating…" : "Export PDF"}
+                  This Month
                 </button>
-              </Guard>
+
+                <button
+                  type="button"
+                  className="products-action"
+                  onClick={() => {
+                    const end = new Date();
+                    const start = new Date();
+                    start.setMonth(start.getMonth() - 1);
+                    start.setDate(1);
+                    setFromDate(start.toISOString().slice(0, 10));
+                    setToDate(end.toISOString().slice(0, 10));
+                    fetchReport();
+                  }}
+                >
+                  Last Month
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* ===== Summary Section ===== */}
+      {/* ===== Summary KPIs ===== */}
       {invoices.length > 0 && (
-        <GlassCard>
-          <div className="px-4 py-3">
-            <h3 className={`text-sm font-semibold mb-3 ${isDark ? "text-slate-200" : "text-gray-700"}`}>
-              📊 Financial Summary
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <div className={`p-3 rounded-lg ${isDark ? "bg-slate-700" : "bg-blue-50"}`}>
-                <div className={`text-xs ${isDark ? "text-slate-400" : "text-gray-500"}`}>Total Invoices</div>
-                <div className={`text-lg font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
-                  {summary.total_invoices || 0}
-                </div>
-              </div>
-              <div className={`p-3 rounded-lg ${isDark ? "bg-slate-700" : "bg-emerald-50"}`}>
-                <div className={`text-xs ${isDark ? "text-slate-400" : "text-gray-500"}`}>Total Sales</div>
-                <div className={`text-lg font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
-                  Rs. {fmtCurrency(summary.total_sales || 0)}
-                </div>
-              </div>
-              <div className={`p-3 rounded-lg ${isDark ? "bg-slate-700" : "bg-red-50"}`}>
-                <div className={`text-xs ${isDark ? "text-slate-400" : "text-gray-500"}`}>Total Cost</div>
-                <div className={`text-lg font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
-                  Rs. {fmtCurrency(summary.total_cost || 0)}
-                </div>
-              </div>
-              <div className={`p-3 rounded-lg ${isDark ? "bg-slate-700" : "bg-green-50"}`}>
-                <div className={`text-xs ${isDark ? "text-slate-400" : "text-gray-500"}`}>Total Profit</div>
-                <div className={`text-lg font-bold ${(summary.total_profit || 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
-                  Rs. {fmtCurrency(summary.total_profit || 0)}
-                </div>
-              </div>
-              <div className={`p-3 rounded-lg ${isDark ? "bg-slate-700" : "bg-purple-50"}`}>
-                <div className={`text-xs ${isDark ? "text-slate-400" : "text-gray-500"}`}>Profit Margin</div>
-                <div className={`text-lg font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
-                  {summary.profit_margin || 0}%
-                </div>
-              </div>
-            </div>
-          </div>
-        </GlassCard>
+        <div className="report-kpis">
+          <KpiCard
+            label="Total Invoices"
+            value={summary.total_invoices || 0}
+            note="Invoices in range"
+            icon={DocumentTextIcon}
+            accent={themeColors.primary}
+          />
+          <KpiCard
+            label="Total Sales"
+            value={`Rs. ${fmtCurrency(summary.total_sales || 0)}`}
+            note="Invoice sales value"
+            icon={CurrencyDollarIcon}
+            accent={themeColors.secondary}
+          />
+          <KpiCard
+            label="Total Cost"
+            value={`Rs. ${fmtCurrency(summary.total_cost || 0)}`}
+            note="Cost of goods sold"
+            icon={ArrowTrendingDownIcon}
+            accent={themeColors.warning}
+          />
+          <KpiCard
+            label="Total Profit"
+            value={`Rs. ${fmtCurrency(summary.total_profit || 0)}`}
+            note="Sales − cost"
+            icon={ArrowTrendingUpIcon}
+            accent={themeColors.success}
+          />
+          <KpiCard
+            label="Profit Margin"
+            value={`${summary.profit_margin || 0}%`}
+            note="Profit / sales"
+            icon={ChartPieIcon}
+            accent={themeColors.secondary}
+          />
+        </div>
       )}
 
-      {/* ===== No Data ===== */}
+      {/* ===== No data ===== */}
       {invoices.length === 0 && !loading && (
-        <GlassCard>
-          <div className={`px-4 py-8 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>
-            <DocumentTextIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
-            <p>No data found. Select an invoice or date range and click Load.</p>
-          </div>
-        </GlassCard>
+        <section className="products-panel">
+          <p className="report-state">
+            No data found. Select an invoice or date range and click "Load Report".
+          </p>
+        </section>
       )}
 
-      {/* ===== Invoice Cards ===== */}
-      <div className="flex flex-col gap-4">
-        {invoices.map((inv, idxInv) => (
-          <div
-            key={idxInv + "-" + (inv.invoice_id ?? inv.posted_number ?? "")}
-            className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden"
-          >
-            {/* Invoice Header */}
-            <div className="flex items-center justify-between px-4 py-3 bg-linear-to-r from-blue-50 to-indigo-50 dark:from-slate-700 dark:to-slate-600 border-b border-gray-200 dark:border-slate-600">
-              <div className="flex items-center gap-4">
-                <div 
-                  className="px-3 py-1 rounded-full text-white text-sm font-bold"
-                  style={{ background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})` }}
-                >
-                  {inv.posted_number || `INV-${inv.invoice_id}`}
+      {/* ===== Invoice detail cards ===== */}
+      {invoices.length > 0 && (
+        <div className="report-detail-list">
+          {invoices.map((inv, idxInv) => (
+            <section
+              key={idxInv + "-" + (inv.invoice_id ?? inv.posted_number ?? "")}
+              className="products-panel report-invoice"
+            >
+              {/* Invoice header */}
+              <div className="report-invoice-head">
+                <div className="min-w-0">
+                  <span className="report-invoice-number">
+                    {inv.posted_number || `INV-${inv.invoice_id}`}
+                  </span>
+                  <div className="report-invoice-meta">
+                    <span>{inv.date || '-'}</span>
+                    <span>
+                      Customer: <strong>{inv.customer_name || 'WALK-IN-CUSTOMER'}</strong>
+                    </span>
+                  </div>
                 </div>
-                <div className={`text-sm ${isDark ? "text-slate-300" : "text-gray-600"}`}>
-                  <span className="font-medium">{inv.date || '-'}</span>
-                </div>
-                <div className={`text-sm ${isDark ? "text-slate-300" : "text-gray-600"}`}>
-                  Customer: <span className="font-medium">{inv.customer_name || 'WALK-IN-CUSTOMER'}</span>
+                <div className="report-invoice-chips">
+                  <span className="report-badge">{inv.invoice_type?.toUpperCase() || 'DEBIT'}</span>
+                  <span className="report-badge">{inv.sale_type?.toUpperCase() || 'RETAIL'}</span>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <span className={`px-2 py-1 rounded text-xs font-medium ${
-                  inv.invoice_type === 'credit' 
-                    ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
-                    : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-                }`}>
-                  {inv.invoice_type?.toUpperCase() || 'DEBIT'}
-                </span>
-                <span className={`px-2 py-1 rounded text-xs font-medium ${
-                  inv.sale_type === 'wholesale'
-                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
-                    : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                }`}>
-                  {inv.sale_type?.toUpperCase() || 'RETAIL'}
-                </span>
-              </div>
-            </div>
 
-            {/* Items Table */}
-            <div className="relative max-w-full overflow-auto">
-              <table className="w-full min-w-[900px] text-sm">
-                <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
-                  <tr className="text-left bg-gray-50 dark:bg-slate-700">
-                    <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"}`}>#</th>
-                    <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"}`}>Product Name</th>
-                    <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"}`}>Code</th>
-                    <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"} text-right`}>Pack Size</th>
-                    <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"} text-right`}>Qty</th>
-                    <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"} text-right`}>Cost Price</th>
-                    <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"} text-right`}>Sale Price</th>
-                    <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"} text-right`}>Disc %</th>
-                    <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"} text-right`}>Total Cost</th>
-                    <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"} text-right`}>Total Sale</th>
-                    <th className={`px-3 py-2 font-semibold text-xs uppercase ${isDark ? "text-slate-200" : "text-gray-600"} text-right`}>Profit</th>
-                  </tr>
-                </thead>
-
-                <tbody className="tabular-nums">
-                  {(inv.items || []).map((it, idx) => (
-                    <tr
-                      key={(it.id ?? idx) + "-" + (it.product_id ?? "p") + "-" + idx}
-                      className={`
-                        transition-colors
-                        border-b border-gray-100 dark:border-slate-600/30
-                        odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/40 dark:even:bg-slate-800/40
-                        hover:bg-blue-50 dark:hover:bg-slate-600/50
-                      `}
-                    >
-                      <td className={`px-3 py-2 ${isDark ? "text-slate-300" : "text-gray-700"}`}>{idx + 1}</td>
-                      <td className={`px-3 py-2 font-medium ${isDark ? "text-slate-200" : "text-gray-800"}`}>{it.product_name || "-"}</td>
-                      <td className={`px-3 py-2 ${isDark ? "text-slate-400" : "text-gray-500"}`}>{it.product_code || "-"}</td>
-                      <td className={`px-3 py-2 text-right ${isDark ? "text-slate-300" : "text-gray-700"}`}>{it.pack_size ?? 0}</td>
-                      <td className={`px-3 py-2 text-right ${isDark ? "text-slate-300" : "text-gray-700"}`}>{it.quantity ?? 0}</td>
-                      <td className={`px-3 py-2 text-right ${isDark ? "text-slate-300" : "text-gray-700"}`}>Rs. {fmtCurrency(it.cost_price)}</td>
-                      <td className={`px-3 py-2 text-right ${isDark ? "text-slate-300" : "text-gray-700"}`}>Rs. {fmtCurrency(it.sale_price)}</td>
-                      <td className={`px-3 py-2 text-right ${(it.item_discount_percentage ?? 0) > 0 ? "text-red-500 font-medium" : isDark ? "text-slate-300" : "text-gray-700"}`}>
-                        {(it.item_discount_percentage ?? 0) > 0 ? `${it.item_discount_percentage}%` : '-'}
-                      </td>
-                      <td className={`px-3 py-2 text-right ${isDark ? "text-slate-300" : "text-gray-700"}`}>Rs. {fmtCurrency(it.total_cost)}</td>
-                      <td className={`px-3 py-2 text-right ${isDark ? "text-slate-300" : "text-gray-700"}`}>Rs. {fmtCurrency(it.total_sale)}</td>
-                      <td className={`px-3 py-2 text-right font-bold ${(it.profit ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
-                        Rs. {fmtCurrency(it.profit)}
-                      </td>
-                    </tr>
-                  ))}
-
-                  {(!inv.items || !inv.items.length) && (
+              {/* Items table */}
+              <div className="report-invoice-table-scroll">
+                <table className="report-table">
+                  <thead>
                     <tr>
-                      <td colSpan={11} className={`px-3 py-6 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>
-                        No items in this invoice.
+                      <th scope="col">#</th>
+                      <th scope="col">Product Name</th>
+                      <th scope="col">Code</th>
+                      <th scope="col" className="report-num">Pack Size</th>
+                      <th scope="col" className="report-num">Qty</th>
+                      <th scope="col" className="report-num">Cost Price</th>
+                      <th scope="col" className="report-num">Sale Price</th>
+                      <th scope="col" className="report-num">Disc %</th>
+                      <th scope="col" className="report-num">Total Cost</th>
+                      <th scope="col" className="report-num">Total Sale</th>
+                      <th scope="col" className="report-num">Profit</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {(inv.items || []).map((it, idx) => (
+                      <tr key={(it.id ?? idx) + "-" + (it.product_id ?? "p") + "-" + idx}>
+                        <td className="report-muted">{idx + 1}</td>
+                        <td className="report-product">{it.product_name || "-"}</td>
+                        <td className="report-meta">{it.product_code || "-"}</td>
+                        <td className="report-num">{it.pack_size ?? 0}</td>
+                        <td className="report-num">{it.quantity ?? 0}</td>
+                        <td className="report-num">Rs. {fmtCurrency(it.cost_price)}</td>
+                        <td className="report-num">Rs. {fmtCurrency(it.sale_price)}</td>
+                        <td className={`report-num ${(it.item_discount_percentage ?? 0) > 0 ? "report-amount-down" : ""}`}>
+                          {(it.item_discount_percentage ?? 0) > 0 ? `${it.item_discount_percentage}%` : '-'}
+                        </td>
+                        <td className="report-num">Rs. {fmtCurrency(it.total_cost)}</td>
+                        <td className="report-num">Rs. {fmtCurrency(it.total_sale)}</td>
+                        <td className={`report-num report-strong ${(it.profit ?? 0) >= 0 ? "report-amount-up" : "report-amount-down"}`}>
+                          Rs. {fmtCurrency(it.profit)}
+                        </td>
+                      </tr>
+                    ))}
+
+                    {(!inv.items || !inv.items.length) && (
+                      <tr>
+                        <td colSpan={11} className="report-muted">
+                          No items in this invoice.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+
+                  <tfoot>
+                    <tr className="report-total-row">
+                      <td colSpan={8} className="report-num">Total</td>
+                      <td className="report-num">Rs. {fmtCurrency(inv.total_cost)}</td>
+                      <td className="report-num">Rs. {fmtCurrency(inv.total_sale)}</td>
+                      <td className={`report-num ${(inv.profit ?? 0) >= 0 ? "report-amount-up" : "report-amount-down"}`}>
+                        Rs. {fmtCurrency(inv.profit)}
                       </td>
                     </tr>
-                  )}
-                </tbody>
+                  </tfoot>
+                </table>
+              </div>
 
-                <tfoot className={`
-                  border-t-2 backdrop-blur-xs font-semibold
-                  ${isDark ? "border-slate-600 bg-slate-800/80" : "border-gray-300 bg-gray-50"}
-                `}>
-                  <tr className={isDark ? "bg-slate-700" : "bg-gray-100"}>
-                    <td colSpan={8} className={`px-3 py-2 text-right ${isDark ? "text-slate-200" : "text-gray-800"}`}><strong>TOTAL</strong></td>
-                    <td className={`px-3 py-2 text-right ${isDark ? "text-slate-200" : "text-gray-800"}`}><strong>Rs. {fmtCurrency(inv.total_cost)}</strong></td>
-                    <td className={`px-3 py-2 text-right ${isDark ? "text-slate-200" : "text-gray-800"}`}><strong>Rs. {fmtCurrency(inv.total_sale)}</strong></td>
-                    <td className={`px-3 py-2 text-right ${(inv.profit ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}><strong>Rs. {fmtCurrency(inv.profit)}</strong></td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-
-            {/* Invoice Footer Summary */}
-            <div className={`px-4 py-3 border-t ${isDark ? "border-slate-600 bg-slate-700/50" : "border-gray-200 bg-gray-50"}`}>
-              <div className="flex flex-wrap justify-end gap-x-6 gap-y-1 text-sm">
+              {/* Invoice footer totals */}
+              <div className="report-invoice-footer">
                 <div>
-                  <span className={`${isDark ? "text-slate-400" : "text-gray-500"}`}>Gross Amount: </span>
-                  <span className={`font-medium ${isDark ? "text-slate-200" : "text-gray-800"}`}>Rs. {fmtCurrency(inv.gross_amount)}</span>
+                  <span>Gross Amount:</span>
+                  <strong>Rs. {fmtCurrency(inv.gross_amount)}</strong>
                 </div>
+
                 {(inv.discount_percentage > 0 || inv.discount_amount > 0) && (
                   <div>
-                    <span className={`${isDark ? "text-slate-400" : "text-gray-500"}`}>Disc {inv.discount_percentage ? `(${inv.discount_percentage}%)` : ''}: </span>
-                    <span className={`font-medium text-red-500`}>-Rs. {fmtCurrency(inv.discount_amount)}</span>
+                    <span>Disc {inv.discount_percentage ? `(${inv.discount_percentage}%)` : ''}:</span>
+                    <strong className="report-amount-down">-Rs. {fmtCurrency(inv.discount_amount)}</strong>
                   </div>
                 )}
+
                 {(inv.tax_percentage > 0 || inv.tax_amount > 0) && (
                   <div>
-                    <span className={`${isDark ? "text-slate-400" : "text-gray-500"}`}>Tax {inv.tax_percentage ? `(${inv.tax_percentage}%)` : ''}: </span>
-                    <span className={`font-medium ${isDark ? "text-slate-200" : "text-gray-800"}`}>+Rs. {fmtCurrency(inv.tax_amount)}</span>
+                    <span>Tax {inv.tax_percentage ? `(${inv.tax_percentage}%)` : ''}:</span>
+                    <strong>+Rs. {fmtCurrency(inv.tax_amount)}</strong>
                   </div>
                 )}
+
                 <div>
-                  <span className={`${isDark ? "text-slate-400" : "text-gray-500"}`}>Invoice Total: </span>
-                  <span className={`font-bold text-lg ${isDark ? "text-white" : "text-gray-900"}`}>Rs. {fmtCurrency(inv.total)}</span>
+                  <span>Invoice Total:</span>
+                  <strong className="report-strong">Rs. {fmtCurrency(inv.total)}</strong>
                 </div>
+
                 <div>
-                  <span className={`${isDark ? "text-slate-400" : "text-gray-500"}`}>Cost: </span>
-                  <span className={`font-bold ${isDark ? "text-slate-200" : "text-gray-800"}`}>Rs. {fmtCurrency(inv.total_cost)}</span>
+                  <span>Cost:</span>
+                  <strong>Rs. {fmtCurrency(inv.total_cost)}</strong>
                 </div>
+
                 <div>
-                  <span className={`${isDark ? "text-slate-400" : "text-gray-500"}`}>Profit: </span>
-                  <span className={`font-bold ${(inv.profit ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}>Rs. {fmtCurrency(inv.profit)}</span>
-                  <span className={`ml-2 text-xs ${isDark ? "text-slate-400" : "text-gray-500"}`}>({inv.profit_margin || 0}%)</span>
+                  <span>Profit:</span>
+                  <strong className={(inv.profit ?? 0) >= 0 ? "report-amount-up" : "report-amount-down"}>
+                    Rs. {fmtCurrency(inv.profit)}
+                  </strong>
+                  <span>({inv.profit_margin || 0}%)</span>
                 </div>
               </div>
-            </div>
-          </div>
-        ))}
-      </div>
+            </section>
+          ))}
+        </div>
+      )}
 
-      {/* ===== Search Invoice Modal ===== */}
-      <SaleInvoiceSearch 
-        isOpen={searchOpen} 
-        onClose={() => setSearchOpen(false)} 
+      {/* ===== Search invoice modal ===== */}
+      <SaleInvoiceSearch
+        isOpen={searchOpen}
+        onClose={() => setSearchOpen(false)}
         onSelect={handleInvoiceSelect}
       />
-
-      {/* Print styles */}
-      <style>{`
-        .tabular-nums { font-variant-numeric: tabular-nums; }
-        @media print {
-          input, button, select, [role="button"], .rs__control { display: none !important; }
-          table { font-size: 11px; }
-          thead { position: sticky; top: 0; }
-        }
-      `}</style>
     </div>
   );
 }
 
+/* ===== KPI Card Component ===== */
+function KpiCard({ label, value, note, icon: Icon, accent }) {
+  return (
+    <div className="report-kpi" style={accent ? { "--report-accent": accent } : undefined}>
+      <div className="report-kpi-head">
+        <span className="report-kpi-icon">
+          <Icon />
+        </span>
+        <span>{label}</span>
+      </div>
+      <div className="report-kpi-value">{value}</div>
+      {note && <div className="report-kpi-note">{note}</div>}
+    </div>
+  );
+}

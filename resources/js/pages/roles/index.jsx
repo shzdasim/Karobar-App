@@ -8,7 +8,6 @@ import {
   PlusCircleIcon,
   PencilSquareIcon,
   TrashIcon,
-  MagnifyingGlassIcon,
   ArrowPathIcon,
   UserGroupIcon,
   ShieldCheckIcon,
@@ -18,15 +17,7 @@ import {
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 
 // Reusable components
-import {
-  GlassCard,
-  GlassSectionHeader,
-  GlassToolbar,
-  GlassInput,
-  GlassBtn,
-  TextSearch,
-  DeleteConfirmationModal,
-} from "@/components";
+import { TextSearch, DeleteConfirmationModal } from "@/components";
 import { useTheme } from "@/context/ThemeContext";
 
 // Helper to determine text color based on background brightness
@@ -37,43 +28,6 @@ const getContrastText = (hexColor) => {
   const b = parseInt(hexColor.substring(4, 6), 16);
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luminance > 0.5 ? '#1f2937' : '#ffffff';
-};
-
-const getButtonTextColor = (primaryColor, primaryHoverColor) => {
-  return getContrastText(primaryHoverColor || primaryColor);
-};
-
-// Section configuration with color schemes - will use dynamic theme colors
-const SECTION_CONFIG = {
-  core: {
-    key: 'primary',
-  },
-  management: {
-    key: 'secondary',
-  },
-};
-
-// Helper to get color value from theme
-const getThemeColor = (theme, colorKey, variant = 'color') => {
-  if (!theme) return '#3b82f6';
-  const key = `${colorKey}_${variant}`;
-  return theme[key] || '#3b82f6';
-};
-
-// Helper to generate section styles from theme
-const getSectionStyles = (theme, colorKey) => {
-  const baseColor = getThemeColor(theme, colorKey, 'color');
-  const hoverColor = getThemeColor(theme, colorKey, 'hover');
-  const lightColor = getThemeColor(theme, colorKey, 'light');
-  
-  return {
-    gradient: `from-[${baseColor}] to-[${hoverColor}]`,
-    bgLight: `bg-[${lightColor}]`,
-    bgDark: `dark:bg-[${lightColor}]`,
-    borderColor: `border-[${baseColor}]/30 dark:border-[${baseColor}]/30`,
-    iconColor: `text-[${baseColor}] dark:text-[${baseColor}]`,
-    ringColor: `ring-[${baseColor}]/30`,
-  };
 };
 
 export default function RolesIndex() {
@@ -106,162 +60,10 @@ export default function RolesIndex() {
     [canFor]
   );
 
-  // Get dark mode state and theme colors
-  const { isDark, theme } = useTheme();
-
-  // 🎨 Modern button palette (will use dynamic theme colors)
-  const tintPrimary = useMemo(() => `
-    bg-linear-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  const tintSecondary = useMemo(() => `
-    bg-linear-to-br shadow-lg ring-1 ring-white/20
-    hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  const tintGlass = useMemo(() => `
-    bg-white/80 dark:bg-slate-700/60 backdrop-blur-xs ring-1 ring-gray-200/60 dark:ring-white/10
-    hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
-
-  const tintDisabled = useMemo(() => `
-    bg-gray-200/50 dark:bg-slate-600/50 text-gray-400 dark:text-gray-500 cursor-not-allowed
-  `.trim().replace(/\s+/g, ' '), []);
-
-  // Memoize theme colors for performance
-  const themeColors = useMemo(() => {
-    if (!theme) {
-      return {
-        primary: '#3b82f6',
-        primaryHover: '#2563eb',
-        primaryLight: '#dbeafe',
-        secondary: '#8b5cf6',
-        secondaryHover: '#7c3aed',
-        secondaryLight: '#ede9fe',
-        tertiary: '#06b6d4',
-        tertiaryHover: '#0891b2',
-        tertiaryLight: '#cffafe',
-        danger: '#ef4444',
-        dangerHover: '#dc2626',
-        dangerLight: '#fee2e2',
-        amber: '#f59e0b',
-        amberHover: '#d97706',
-        amberLight: '#fef3c7',
-      };
-    }
-    return {
-      primary: theme.primary_color || '#3b82f6',
-      primaryHover: theme.primary_hover || '#2563eb',
-      primaryLight: theme.primary_light || '#dbeafe',
-      secondary: theme.secondary_color || '#8b5cf6',
-      secondaryHover: theme.secondary_hover || '#7c3aed',
-      secondaryLight: theme.secondary_light || '#ede9fe',
-      tertiary: theme.tertiary_color || '#06b6d4',
-      tertiaryHover: theme.tertiary_hover || '#0891b2',
-      tertiaryLight: theme.tertiary_light || '#cffafe',
-      danger: theme.danger_color || '#ef4444',
-      dangerHover: '#dc2626',
-      dangerLight: '#fee2e2',
-      amber: '#f59e0b',
-      amberHover: '#d97706',
-      amberLight: '#fef3c7',
-    };
-  }, [theme]);
-
-  // Calculate text colors based on background brightness
-  const primaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
-    [themeColors.primary, themeColors.primaryHover]
-  );
-  
-  const secondaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
-    [themeColors.secondary, themeColors.secondaryHover]
-  );
-  
-  const dangerTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.danger, themeColors.dangerHover), 
-    [themeColors.danger, themeColors.dangerHover]
-  );
-
-  // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded-sm';
-  
-  // Get button style classes and styles based on theme button_style
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'rounded-sm': 'rounded-lg',
-      'outlined': 'rounded-lg',
-      'soft': 'rounded-xl',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
-    
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.secondary,
-            color: themeColors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-        danger: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.danger,
-            color: themeColors.danger,
-            backgroundColor: 'transparent',
-          }
-        },
-      };
-    }
-    
-    // Filled styles for rounded and soft
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: primaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-          color: secondaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
-        }
-      },
-      danger: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-          color: dangerTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.danger}40`,
-        }
-      },
-    };
-  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor, dangerTextColor]);
-
-  const btnPrimary = getButtonClasses.primary;
-  const btnSecondary = getButtonClasses.secondary;
-  const btnDanger = getButtonClasses.danger;
-
-  // Get section styles
-  const managementStyles = useMemo(() => getSectionStyles(themeColors, 'secondary'), [themeColors]);
-  const coreStyles = useMemo(() => getSectionStyles(themeColors, 'primary'), [themeColors]);
+  // 🎨 theme accent used for the primary action and the active page chip
+  const { theme } = useTheme();
+  const primaryColor = theme?.primary_color || '#3b82f6';
+  const primaryTextColor = getContrastText(primaryColor);
 
   // === Alt+N => /roles/create (gated by can.create) ===
   useEffect(() => {
@@ -365,135 +167,140 @@ export default function RolesIndex() {
     }
   };
 
+  const refresh = () => {
+    if (controllerRef.current) controllerRef.current.abort();
+    const ctrl = new AbortController();
+    controllerRef.current = ctrl;
+    fetchRoles(ctrl.signal);
+  };
+
   // Check if has actions
   const hasActions = can.update || can.delete;
+  const columnCount = 3 + (hasActions ? 1 : 0);
 
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view roles.</div>;
 
   return (
-    <div className="p-4 space-y-3">
-      {/* ===== Professional Header ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xs">
-        {/* Header Top */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          {/* Title */}
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-linear-to-br ${SECTION_CONFIG.management.gradient} shadow-xs`}>
-              <UserGroupIcon className="w-5 h-5 text-white" />
+    <div className="products-page people-page people-list-page">
+      {/* ===== Overview ===== */}
+      <div className="products-panel">
+        <div className="products-heading">
+          {/* Identity */}
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="products-identity-icon">
+              <UserGroupIcon className="w-6 h-6" />
             </div>
-            <div>
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Roles</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{total} items</p>
+            <div className="min-w-0">
+              <h1 className="products-title">Roles</h1>
+              <p className="products-subtitle">
+                <ShieldCheckIcon className="w-3.5 h-3.5 shrink-0" />
+                <span>{total} roles in this view</span>
+              </p>
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            {/* Refresh Button */}
-            <GlassBtn
-              onClick={() => {
-                if (controllerRef.current) controllerRef.current.abort();
-                const ctrl = new AbortController();
-                controllerRef.current = ctrl;
-                fetchRoles(ctrl.signal);
-              }}
-              className={`h-10 min-w-[120px] ${btnPrimary.className}`}
-              title="Refresh"
+          {/* Actions */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={refresh}
+              title="Refresh roles"
               aria-label="Refresh roles"
-              style={btnPrimary.style}
+              className="products-action"
             >
-              <span className="inline-flex items-center gap-2">
-                <ArrowPathIcon className="w-5 h-5" />
-                Refresh
-              </span>
-            </GlassBtn>
+              <ArrowPathIcon className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+              <span>Refresh</span>
+            </button>
 
             <Guard when={can.create}>
               <Link
                 to="/roles/create"
                 title="Add Role (Alt+N)"
                 aria-keyshortcuts="Alt+N"
-                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold ${btnPrimary.className}`}
-                style={btnPrimary.style}
+                className="products-action products-action-primary"
+                style={{ color: primaryTextColor }}
               >
                 <PlusCircleIcon className="w-4 h-4" />
-                Add Role
+                <span>Add Role</span>
               </Link>
             </Guard>
           </div>
         </div>
 
-        {/* Search Bar */}
-        <div className="px-4 py-3 bg-gray-50/50 dark:bg-slate-800/50">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <TextSearch
-              value={qSearch}
-              onChange={setQSearch}
-              placeholder="Search roles…"
-              icon={<MagnifyingGlassIcon className="w-4 h-4 text-gray-400" />}
-            />
-          </div>
-        </div>
-
-        {/* Header Bottom */}
-        <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 dark:border-slate-700">
-          {/* Stats */}
-          <div className="flex items-center gap-4">
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              {loading ? (
-                <span className="inline-flex items-center gap-1">
-                  <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
-                  Loading...
-                </span>
-              ) : (
-                `${rows.length === 0 ? 0 : start}-${end} of ${total}`
-              )}
-            </span>
-          </div>
-
-          {/* Right Actions */}
-          <div className="flex items-center gap-2">
-            {/* Page Size Selector */}
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/60 dark:bg-slate-800/60 border border-gray-200/60 dark:border-slate-600/40">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Show</label>
-              <select
-                value={pageSize}
-                onChange={(e) => setPageSize(Number(e.target.value))}
-                className="h-7 px-2 rounded-sm border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-violet-500 focus:border-transparent cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            </div>
+        {/* Search */}
+        <div className="products-filter-panel">
+          <div className="products-filters">
+            <label className="products-filter">
+              <span className="products-filter-label">Search roles</span>
+              <TextSearch
+                value={qSearch}
+                onChange={setQSearch}
+                placeholder="Search roles by name…"
+                className="w-full"
+                iconClassName="products-search-icon"
+                inputClassName="products-search-input"
+              />
+            </label>
           </div>
         </div>
       </div>
 
-      {/* ===== Roles Table ===== */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xs overflow-hidden">
-        {/* Table Header */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
-          <div className="flex items-center gap-2">
-            <div className={`p-1 rounded-sm ${SECTION_CONFIG.management.bgDark}`}>
-              <UserGroupIcon className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+      {/* ===== Role table ===== */}
+      <div className="products-panel products-catalog">
+        <div className="products-catalog-heading">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="people-section-icon">
+              <UserGroupIcon />
             </div>
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Role List</span>
+            <div className="min-w-0">
+              <h2 className="products-section-title">Role list</h2>
+              <p className="products-subtitle">
+                {loading ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <ArrowPathIcon className="h-3 w-3 animate-spin" />
+                    Loading…
+                  </span>
+                ) : (
+                  `Showing ${rows.length === 0 ? 0 : start}–${end} of ${total}`
+                )}
+              </p>
+            </div>
           </div>
-          <span className="text-xs text-gray-400">{rows.length} items</span>
+
+          {/* Page size */}
+          <div className="flex items-center gap-2">
+            <label htmlFor="roles-page-size" className="products-filter-label">Show</label>
+            <select
+              id="roles-page-size"
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="cursor-pointer"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
         </div>
 
-        <div className="max-h-[65vh] overflow-auto">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10 shadow-xs">
+        <div className="products-table-scroll" tabIndex={0} role="region" aria-label="Role list" aria-busy={loading}>
+          <table className="products-table people-table">
+            <thead>
               <tr className="text-left">
-                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">ID</th>
-                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Name</th>
-                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Permissions</th>
+                <th scope="col" className="w-16 pb-2 pl-3">
+                  <span className="products-column-label">ID</span>
+                </th>
+                <th scope="col" className="pb-2 pl-3">
+                  <span className="products-column-label">Role</span>
+                </th>
+                <th scope="col" className="w-48 pb-2 pl-3">
+                  <span className="products-column-label">Permissions</span>
+                </th>
                 {hasActions && (
-                  <th className="px-3 py-2 font-semibold text-center text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-32">Actions</th>
+                  <th scope="col" className="w-28 pb-2 pr-3 text-right">
+                    <span className="products-column-label">Actions</span>
+                  </th>
                 )}
               </tr>
             </thead>
@@ -501,21 +308,13 @@ export default function RolesIndex() {
             <tbody>
               {rows.length === 0 && !loading && (
                 <tr>
-                  <td className="px-3 py-12 text-center" colSpan={hasActions ? 4 : 3}>
-                    <div className="flex flex-col items-center gap-2">
-                      <UserGroupIcon className="w-8 h-8 text-gray-400" />
-                      <p className="text-sm text-gray-500 dark:text-gray-400">No roles found</p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-
-              {loading && (
-                <tr>
-                  <td className="px-3 py-12 text-center" colSpan={hasActions ? 4 : 3}>
-                    <div className="flex flex-col items-center gap-2">
-                      <ArrowPathIcon className="w-6 h-6 text-gray-400 animate-spin" />
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
+                  <td colSpan={columnCount}>
+                    <div className="people-empty">
+                      <UserGroupIcon aria-hidden="true" />
+                      <div>
+                        <p className="people-cell-strong">No roles found</p>
+                        <p className="products-subtitle">Try a different search term.</p>
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -525,55 +324,48 @@ export default function RolesIndex() {
                 const permissionsCount = r.permissions_count ?? 0;
 
                 return (
-                  <tr
-                    key={r.id}
-                    className={`
-                      transition-colors
-                      odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/40 dark:even:bg-slate-800/40 hover:bg-blue-50 dark:hover:bg-slate-600/50
-                      border-b border-gray-100 dark:border-slate-600/30
-                    `}
-                  >
-                    <td className="px-3 py-3 text-gray-600 dark:text-gray-300">
+                  <tr key={r.id} className="group align-middle">
+                    <td className="rounded-l-2xl pl-3 products-cell products-meta">
                       {r.id}
                     </td>
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-2">
-                        <UserGroupIcon className="w-5 h-5 text-gray-400" />
-                        <span className="font-medium text-gray-800 dark:text-gray-200">{r.name}</span>
-                      </div>
+                    <td className="products-cell">
+                      <span className="flex items-center gap-3 min-w-0">
+                        <span className="people-section-icon">
+                          <UserGroupIcon aria-hidden="true" />
+                        </span>
+                        <span className="people-cell-strong truncate">{r.name}</span>
+                      </span>
                     </td>
-                    <td className="px-3 py-3">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 ring-1 ring-violet-200/60 dark:ring-violet-700/40">
-                        <ShieldCheckIcon className="w-3.5 h-3.5" />
-                        {permissionsCount}
+                    <td className="products-cell">
+                      <span className="people-badge people-badge-role">
+                        <ShieldCheckIcon aria-hidden="true" />
+                        {permissionsCount} permissions
                       </span>
                     </td>
                     {hasActions && (
-                      <td className="px-3 py-3">
-                        <div className="flex items-center gap-1.5 justify-center">
-                          {/* Edit Action */}
+                      <td className="rounded-r-2xl pr-3 products-cell">
+                        <div className="flex items-center justify-end gap-1">
+                          {/* Edit */}
                           <Guard when={can.update}>
                             <Link
                               to={`/roles/${r.id}/edit`}
-                              className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnSecondary.className}`}
-                              style={btnSecondary.style}
                               title="Edit"
+                              aria-label={`Edit ${r.name}`}
+                              className="products-row-action"
                             >
-                              <PencilSquareIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                              <span>Edit</span>
+                              <PencilSquareIcon className="h-4 w-4" />
                             </Link>
                           </Guard>
 
-                          {/* Delete Action */}
+                          {/* Delete */}
                           <Guard when={can.delete}>
                             <button
                               onClick={() => openDeleteModal(r)}
-                              className={`group inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnDanger.className}`}
-                              style={btnDanger.style}
                               title="Delete"
+                              aria-label={`Delete ${r.name}`}
+                              className="products-row-action products-row-delete"
                             >
-                              <TrashIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                              <span>Delete</span>
+                              <TrashIcon className="h-4 w-4" />
                             </button>
                           </Guard>
                         </div>
@@ -586,30 +378,38 @@ export default function RolesIndex() {
           </table>
         </div>
 
-        {/* Compact Pagination */}
-        <div className="px-3 py-2 flex items-center justify-between border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50 text-xs">
-          <span className="text-gray-500 dark:text-gray-400">
-            Page {page} of {lastPage} ({total} total)
+        {/* Pagination */}
+        <div className="products-pagination">
+          <span className="products-subtitle">
+            Page {page} of {lastPage} · {total} total
           </span>
 
           <div className="flex items-center gap-1">
             <button
               onClick={() => setPage(1)}
               disabled={page === 1}
-              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
+              title="First page"
+              aria-label="First page"
+              className="products-row-action"
             >
-              ⏮
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+              </svg>
             </button>
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === 1 ? 'opacity-40' : ''}`}
+              title="Previous page"
+              aria-label="Previous page"
+              className="products-row-action"
             >
-              ◀
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
             </button>
 
             {/* Page numbers */}
-            <div className="flex items-center gap-0.5 mx-1">
+            <div className="mx-1 flex items-center gap-0.5">
               {Array.from({ length: Math.min(5, lastPage) }, (_, i) => {
                 let pageNum;
                 if (lastPage <= 5) {
@@ -625,13 +425,9 @@ export default function RolesIndex() {
                   <button
                     key={pageNum}
                     onClick={() => setPage(pageNum)}
-                    className={`
-                      w-7 h-7 rounded text-xs font-medium transition-colors
-                      ${page === pageNum
-                        ? `bg-linear-to-br ${SECTION_CONFIG.management.gradient} text-white`
-                        : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700"
-                      }
-                    `}
+                    aria-label={`Page ${pageNum}`}
+                    aria-current={page === pageNum ? "page" : undefined}
+                    style={page === pageNum ? { backgroundColor: primaryColor, color: primaryTextColor } : undefined}
                   >
                     {pageNum}
                   </button>
@@ -642,16 +438,24 @@ export default function RolesIndex() {
             <button
               onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
               disabled={page === lastPage}
-              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
+              title="Next page"
+              aria-label="Next page"
+              className="products-row-action"
             >
-              ▶
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
             </button>
             <button
               onClick={() => setPage(lastPage)}
               disabled={page === lastPage}
-              className={`p-1.5 rounded-sm hover:bg-gray-200 dark:hover:bg-slate-700 ${page === lastPage ? 'opacity-40' : ''}`}
+              title="Last page"
+              aria-label="Last page"
+              className="products-row-action"
             >
-              ⏭
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+              </svg>
             </button>
           </div>
         </div>
@@ -666,16 +470,7 @@ export default function RolesIndex() {
         title="Delete role"
         isDeleting={deleting}
         setIsDeleting={setDeleting}
-        tintClasses={{ 
-          red: tintSecondary,
-          redStyle: {
-            background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-            boxShadow: `0 4px 14px 0 ${themeColors.danger}40`
-          },
-          glass: tintGlass 
-        }}
       />
     </div>
   );
 }
-

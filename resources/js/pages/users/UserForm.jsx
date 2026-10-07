@@ -2,6 +2,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { useTheme } from "@/context/ThemeContext";
+import {
+  UserCircleIcon,
+  ShieldCheckIcon,
+  CheckCircleIcon,
+} from "@heroicons/react/24/solid";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -15,74 +20,8 @@ const getContrastText = (hexColor) => {
 
 export default function UserForm({ onSubmit, initial, submitting }) {
   const { theme } = useTheme();
-
-  // Get button style from theme
-  const buttonStyle = theme?.button_style || 'rounded-sm';
-
-  // Memoize theme colors for performance
-  const themeColors = useMemo(() => {
-    if (!theme) {
-      return {
-        primary: '#3b82f6',
-        primaryHover: '#2563eb',
-        primaryLight: '#dbeafe',
-        secondary: '#8b5cf6',
-        secondaryHover: '#7c3aed',
-        secondaryLight: '#ede9fe',
-      };
-    }
-    return {
-      primary: theme.primary_color || '#3b82f6',
-      primaryHover: theme.primary_hover || '#2563eb',
-      primaryLight: theme.primary_light || '#dbeafe',
-      secondary: theme.secondary_color || '#8b5cf6',
-      secondaryHover: theme.secondary_hover || '#7c3aed',
-      secondaryLight: theme.secondary_light || '#ede9fe',
-    };
-  }, [theme]);
-
-  // Calculate text color for primary button
-  const primaryTextColor = useMemo(() => 
-    getContrastText(themeColors.primaryHover || themeColors.primary), 
-    [themeColors.primary, themeColors.primaryHover]
-  );
-
-  // Get button style classes and styles based on theme button_style
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'rounded-sm': 'rounded-lg',
-      'outlined': 'rounded-lg',
-      'soft': 'rounded-xl',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
-    
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-      };
-    }
-    
-    // Filled styles for rounded and soft
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: primaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-    };
-  }, [buttonStyle, themeColors, primaryTextColor]);
-
-  const btnPrimary = getButtonClasses.primary;
+  const primaryColor = theme?.primary_color || '#3b82f6';
+  const primaryTextColor = getContrastText(primaryColor);
 
   const [form, setForm] = useState({
     name: "",
@@ -283,150 +222,156 @@ export default function UserForm({ onSubmit, initial, submitting }) {
   const clearAllPermissions = () => setForm((s) => ({ ...s, permissions: [] }));
 
   return (
-    <div className="p-6">
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-4">
-        <h1 className="text-2xl font-bold dark:text-gray-100">{initial ? "Edit User" : "Create User"}</h1>
-        <div className="text-sm text-gray-600 dark:text-gray-400">
-          <span className="hidden sm:inline">Shortcut:&nbsp;</span>
-          <span className="border rounded-sm px-1 py-0.5 text-xs dark:border-gray-600 dark:text-gray-400">Alt+S</span>&nbsp;to Save
-        </div>
-      </div>
-
-      <form ref={formRef} onSubmit={submit} className="space-y-6">
-        {/* Top row: Name, Email, Password */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Name */}
-          <div>
-            <label className="block text-sm font-medium mb-1 dark:text-gray-300">Name</label>
-            <input
-              value={form.name}
-              onChange={(e) => set("name", e.target.value)}
-              required
-              className="w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
-              style={{ '--tw-ring-color': themeColors.primary }}
-              placeholder="Full name"
-            />
-          </div>
-
-          {/* Email */}
-          <div>
-            <label className="block text-sm font-medium mb-1 dark:text-gray-300">Email</label>
-            <input
-              type="email"
-              value={form.email}
-              onChange={(e) => set("email", e.target.value)}
-              required
-              className="w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
-              style={{ '--tw-ring-color': themeColors.primary }}
-              placeholder="user@example.com"
-            />
-          </div>
-
-          {/* Password */}
-          <div>
-            <label className="block text-sm font-medium mb-1 dark:text-gray-300">
-              Password{" "}
-              {initial ? (
-                <span className="text-xs text-gray-500 dark:text-gray-400">(leave blank to keep)</span>
-              ) : null}
-            </label>
-            <input
-              type="password"
-              value={form.password}
-              onChange={(e) => set("password", e.target.value)}
-              placeholder={initial ? "••••••" : "Set a password"}
-              className="w-full border rounded-sm px-3 py-2 focus:outline-hidden focus:ring-2 dark:bg-slate-700/70 dark:border-slate-600 dark:text-gray-100 dark:placeholder-gray-400"
-              style={{ '--tw-ring-color': themeColors.primary }}
-            />
-          </div>
-        </div>
-
-        {/* Status */}
-        <div>
-          <span className="block text-sm font-medium mb-1 dark:text-gray-300">Status</span>
-          <div className="flex items-center gap-6">
-            {["active", "inactive"].map((s) => (
-              <label key={s} className="inline-flex items-center gap-2 dark:text-gray-300">
-                <input
-                  type="radio"
-                  name="status"
-                  value={s}
-                  checked={form.status === s}
-                  onChange={() => set("status", s)}
-                  className="h-4 w-4"
-                />
-                <span className="capitalize">{s}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        {/* Roles */}
-        <div>
-          <label className="block text-sm font-medium mb-1 dark:text-gray-300">Roles</label>
-          <div className="flex flex-wrap gap-3">
-            {roleOptions.map((r) => (
-              <label
-                key={r}
-                className="inline-flex items-center gap-2 border px-2 py-1 rounded-sm dark:border-slate-600 dark:bg-slate-700/70"
-              >
-                <input
-                  type="checkbox"
-                  checked={form.roles.includes(r)}
-                  onChange={() => toggleStrInArray("roles", r)}
-                />
-                <span className="dark:text-gray-300">{r}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        {/* Direct Permissions (Grouped) */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="block text-sm font-medium dark:text-gray-300">Direct Permissions</label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={selectAllPermissions}
-                className="text-xs border rounded-sm px-2 py-1 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700/70 dark:hover:bg-slate-600 dark:text-gray-300"
-                title="Select all permissions"
-              >
-                Select All
-              </button>
-              <button
-                type="button"
-                onClick={clearAllPermissions}
-                className="text-xs border rounded-sm px-2 py-1 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700/70 dark:hover:bg-slate-600 dark:text-gray-300"
-                title="Clear all permissions"
-              >
-                Clear
-              </button>
+    <div className="people-form-page">
+      <div className="products-panel">
+        {/* Header */}
+        <div className="people-form-heading">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="products-identity-icon">
+              <UserCircleIcon className="w-6 h-6" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="products-title">{initial ? "Edit User" : "Create User"}</h1>
+              <p className="products-subtitle">
+                <ShieldCheckIcon className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  {form.roles.length} roles · {form.permissions.length} direct permissions
+                </span>
+              </p>
             </div>
           </div>
 
-          <div className="space-y-4 max-h-128 overflow-auto pr-1">
-            {groupedPerms.map((group) => (
-              <div key={group.module} className="border rounded-sm dark:border-slate-600">
-                <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b dark:bg-slate-700/60 dark:border-slate-600">
-                  <div className="font-medium dark:text-gray-200">{group.label} Permissions</div>
-                  <label className="text-xs inline-flex items-center gap-2 dark:text-gray-300">
+          <span className="people-shortcut">Alt+S to save</span>
+        </div>
+
+        <form ref={formRef} onSubmit={submit} className="people-form">
+          {/* Identity */}
+          <div className="people-fields people-fields-3">
+            <div className="people-field">
+              <label className="people-label" htmlFor="user-name">Name</label>
+              <input
+                id="user-name"
+                value={form.name}
+                onChange={(e) => set("name", e.target.value)}
+                required
+                placeholder="Full name"
+              />
+            </div>
+
+            <div className="people-field">
+              <label className="people-label" htmlFor="user-email">Email</label>
+              <input
+                id="user-email"
+                type="email"
+                value={form.email}
+                onChange={(e) => set("email", e.target.value)}
+                required
+                placeholder="user@example.com"
+              />
+            </div>
+
+            <div className="people-field">
+              <label className="people-label" htmlFor="user-password">
+                Password
+              </label>
+              <input
+                id="user-password"
+                type="password"
+                value={form.password}
+                onChange={(e) => set("password", e.target.value)}
+                placeholder={initial ? "••••••" : "Set a password"}
+              />
+              {initial && (
+                <span className="people-hint">Leave blank to keep the current password.</span>
+              )}
+            </div>
+          </div>
+
+          {/* Status */}
+          <div className="people-field">
+            <span className="people-label">Status</span>
+            <div className="people-check-group">
+              {["active", "inactive"].map((s) => (
+                <label key={s} className="people-check">
+                  <input
+                    type="radio"
+                    name="status"
+                    value={s}
+                    checked={form.status === s}
+                    onChange={() => set("status", s)}
+                  />
+                  <span className="capitalize">{s}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Roles */}
+          <div className="people-field">
+            <span className="people-label">Roles</span>
+            {roleOptions.length === 0 ? (
+              <p className="people-hint">No roles available.</p>
+            ) : (
+              <div className="people-check-group">
+                {roleOptions.map((r) => (
+                  <label key={r} className="people-check">
                     <input
                       type="checkbox"
-                      checked={moduleAllSelected(group.module)}
-                      onChange={(e) => toggleModuleAll(group.module, e.target.checked)}
+                      checked={form.roles.includes(r)}
+                      onChange={() => toggleStrInArray("roles", r)}
                     />
-                    <span>{moduleAllSelected(group.module) ? "Clear All" : "Select All"}</span>
+                    <span>{r}</span>
                   </label>
-                </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-                {/* Actions row, consistently ordered */}
-                <div className="px-3 py-2">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+          {/* Direct Permissions (Grouped) */}
+          <div className="people-permissions">
+            <div className="people-permissions-head">
+              <span className="people-label">Direct Permissions</span>
+              <div className="people-permissions-tools">
+                <button
+                  type="button"
+                  onClick={selectAllPermissions}
+                  className="products-action"
+                  title="Select all permissions"
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  onClick={clearAllPermissions}
+                  className="products-action"
+                  title="Clear all permissions"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            <div className="people-permission-scroll">
+              {groupedPerms.map((group) => (
+                <div key={group.module} className="people-permission-group">
+                  <div className="people-permission-head">
+                    <span className="people-permission-title">{group.label} Permissions</span>
+                    <label className="people-check">
+                      <input
+                        type="checkbox"
+                        checked={moduleAllSelected(group.module)}
+                        onChange={(e) => toggleModuleAll(group.module, e.target.checked)}
+                      />
+                      <span>{moduleAllSelected(group.module) ? "Clear All" : "Select All"}</span>
+                    </label>
+                  </div>
+
+                  {/* Actions row, consistently ordered */}
+                  <div className="people-permission-grid">
                     {group.actions.map(({ action, perm }) => (
                       <label
                         key={perm}
-                        className="inline-flex items-center gap-2 border rounded-sm px-2 py-1 dark:border-slate-600 dark:bg-slate-700/70"
+                        className="people-permission-option"
                         title={perm}
                       >
                         <input
@@ -434,43 +379,39 @@ export default function UserForm({ onSubmit, initial, submitting }) {
                           checked={form.permissions.includes(perm)}
                           onChange={() => toggleStrInArray("permissions", perm)}
                         />
-                        <span className="capitalize dark:text-gray-300">
-                          {action
-                            ? action.replace(/\./g, " ") // e.g., sync.permissions
-                            : perm}
-                        </span>
+                        <span>{action ? action.replace(/\./g, " ") : perm}</span>
                       </label>
                     ))}
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
 
-            {/* Fallback when there are no permissions (still loading or empty) */}
-            {groupedPerms.length === 0 && (
-              <div className="text-sm text-gray-500 dark:text-gray-400">No permissions found.</div>
-            )}
+              {/* Fallback when there are no permissions (still loading or empty) */}
+              {groupedPerms.length === 0 && (
+                <p className="people-hint">No permissions found.</p>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Actions */}
-        <div className="pt-2">
-          <button
-            type="submit"
-            aria-keyshortcuts="Alt+S"
-            title="Save (Alt+S)"
-            className={`px-6 py-2 rounded-sm font-semibold transition-all duration-200 ${btnPrimary.className}`}
-            style={{
-              ...btnPrimary.style,
-              opacity: submitting ? 0.6 : 1,
-              cursor: submitting ? 'not-allowed' : 'pointer'
-            }}
-            disabled={submitting}
-          >
-            {submitting ? "Saving…" : "Save"}
-          </button>
-        </div>
-      </form>
+          {/* Actions */}
+          <div className="people-actions">
+            <span className="people-hint">
+              Shortcut: <span className="people-shortcut">Alt+S</span> to save
+            </span>
+            <button
+              type="submit"
+              aria-keyshortcuts="Alt+S"
+              title="Save (Alt+S)"
+              className="products-action products-action-primary"
+              style={{ color: primaryTextColor }}
+              disabled={submitting}
+            >
+              <CheckCircleIcon className="w-4 h-4" />
+              <span>{submitting ? "Saving…" : "Save"}</span>
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
