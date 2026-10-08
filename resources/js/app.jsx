@@ -7,6 +7,7 @@ import { LicenseProvider } from "./context/LicenseContext.jsx";
 import { ThemeProvider } from "./context/ThemeContext.jsx";
 import { SaleSystemProvider } from "./context/SaleSystemContext.jsx";
 import Routing from "./routes/index.jsx";
+import Mascot from "./components/Mascot.jsx";
 
 import { initAxiosAuth } from "./context/axiosSetup.js";
 initAxiosAuth();
@@ -18,6 +19,7 @@ ReactDOM.createRoot(document.getElementById("app")).render(
         <ThemeProvider>
           <SaleSystemProvider>
             <Routing />
+            <Mascot />
           </SaleSystemProvider>
         </ThemeProvider>
       </LicenseProvider>
