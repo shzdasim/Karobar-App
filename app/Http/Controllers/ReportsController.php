@@ -45,6 +45,12 @@ class ReportsController extends Controller
                 [$fromDate, $toDate] = [$toDate->copy()->startOfDay(), $fromDate->copy()->endOfDay()];
             }
 
+            // Bind date-only strings: `date` columns store YYYY-MM-DD, and a
+            // datetime bound (e.g. '2026-10-08 00:00:00') sorts AFTER '2026-10-08'
+            // on SQLite, which silently drops the first day of the range.
+            $fromDateStr = $fromDate->toDateString();
+            $toDateStr   = $toDate->toDateString();
+
             // Validate invoice_type
             $validInvoiceTypes = ['all', 'credit', 'debit'];
             if (!in_array($invoiceType, $validInvoiceTypes)) {
@@ -53,7 +59,7 @@ class ReportsController extends Controller
 
             // Build base query for sale_invoices
             $saleQuery = DB::table('sale_invoices as si')
-                ->whereBetween('si.date', [$fromDate, $toDate]);
+                ->whereBetween('si.date', [$fromDateStr, $toDateStr]);
 
             // Apply invoice_type filter if not 'all'
             if ($invoiceType !== 'all') {
@@ -77,7 +83,7 @@ class ReportsController extends Controller
             // sale_returns has: date, total (also gross_total but we need total for NetSale)
             // Note: Sale returns are not filtered by invoice_type as they are always linked to original invoices
             $returns = DB::table('sale_returns as sr')
-                ->whereBetween('sr.date', [$fromDate, $toDate])
+                ->whereBetween('sr.date', [$fromDateStr, $toDateStr])
                 ->selectRaw('DATE(sr.date) as sale_date')
                 ->selectRaw('SUM(COALESCE(sr.total, 0)) as sale_return')
                 ->groupBy('sale_date')
@@ -88,7 +94,7 @@ class ReportsController extends Controller
             $cogsQuery = DB::table('sale_invoice_items as sii')
                 ->join('sale_invoices as si', 'si.id', '=', 'sii.sale_invoice_id')
                 ->join('products as p', 'p.id', '=', 'sii.product_id')
-                ->whereBetween('si.date', [$fromDate, $toDate]);
+                ->whereBetween('si.date', [$fromDateStr, $toDateStr]);
 
             // Apply invoice_type filter if not 'all'
             if ($invoiceType !== 'all') {
@@ -111,7 +117,7 @@ class ReportsController extends Controller
             $cogsReturns = DB::table('sale_return_items as sri')
                 ->join('sale_returns as sr', 'sr.id', '=', 'sri.sale_return_id')
                 ->join('products as p', 'p.id', '=', 'sri.product_id')
-                ->whereBetween('sr.date', [$fromDate, $toDate])
+                ->whereBetween('sr.date', [$fromDateStr, $toDateStr])
                 ->selectRaw('DATE(sr.date) as sale_date')
                 ->selectRaw('SUM(COALESCE(sri.unit_return_quantity, 0) * CASE WHEN p.avg_price IS NULL OR p.avg_price = 0 THEN COALESCE(p.unit_purchase_price, 0) ELSE p.avg_price END) as cogs_returns')
                 ->groupBy('sale_date')
