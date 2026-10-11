@@ -6,6 +6,7 @@ use App\Models\Batch;
 use App\Models\Product;
 use App\Models\PurchaseInvoice;
 use App\Models\SupplierLedger;
+use App\Models\UserDemand;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -309,6 +310,14 @@ if ($invoiceType === 'credit') {
                 $purchaseInvoice->items()->delete();
                 $this->persistInvoiceItems($purchaseInvoice, $data['items']);
 
+                // Mark pending user demands for these products as ordered
+                $productIds = collect($data['items'])->pluck('product_id')->filter()->unique()->all();
+                if (!empty($productIds)) {
+                    UserDemand::whereIn('product_id', $productIds)
+                        ->whereIn('status', ['pending'])
+                        ->update(['status' => 'ordered']);
+                }
+
                 // Handle supplier ledger entries
                 // If invoice was previously credit but is now debit, delete the ledger entry
                 if ($oldInvoiceType === 'credit' && $newInvoiceType !== 'credit') {
@@ -431,6 +440,13 @@ if ($invoiceType === 'credit') {
             $product = Product::find($item['product_id']);
             if ($product) {
                 $product->applyPurchaseFromItem($item); 
+            }
+
+            // Mark pending user demands for this product as ordered
+            if (!empty($item['product_id'])) {
+                UserDemand::where('product_id', $item['product_id'])
+                    ->whereIn('status', ['pending'])
+                    ->update(['status' => 'ordered']);
             }
 
             if (!empty($item['batch']) && !empty($item['expiry'])) {
