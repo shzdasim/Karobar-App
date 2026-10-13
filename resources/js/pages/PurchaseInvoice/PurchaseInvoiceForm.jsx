@@ -60,7 +60,7 @@ function showAxiosError(err) {
   toast.error(data?.message || "Unable to save invoice");
 }
 
-export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) {
+export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, initialData }) {
   const [form, setForm] = useState({
     invoice_type: "debit", // "debit" = pay now, "credit" = pay later
     supplier_id: "",
@@ -103,6 +103,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
 
   // Track if user has manually edited total_paid
   const [paidTouched, setPaidTouched] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   // Product modal state
   const [showProductModal, setShowProductModal] = useState(false);
@@ -157,8 +159,16 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit }) 
   const wholeSaleUnitPriceRefs = useRef([]);
 
   useEffect(() => {
-    fetchSuppliers();
-    fetchProducts();
+    fetchSuppliers().catch(showAxiosError);
+    if (initialData) {
+      const items = initialData.items.map(item => recalcItem(item));
+      const next = recalcFooter({ ...form, ...initialData, items }, "init");
+      next.invoice_amount = next.total_amount;
+      next.total_paid = next.total_amount;
+      setForm(next);
+      setSelectedSupplier(initialData.supplier);
+      setProducts(initialData.items.map(item => item.product));
+    } else fetchProducts().catch(showAxiosError);
     if (invoiceId) {
       fetchInvoice();
     }
@@ -170,7 +180,7 @@ useEffect(() => {
     // On load, auto-open the supplier search modal ONLY for a new (create) form
     // so its search field is focused. In edit mode we keep the modal closed and
     // just show the existing supplier.
-    if (invoiceId) return; // skip in edit mode
+    if (invoiceId || initialData) return; // skip source orders and edit mode
     const t = setTimeout(() => {
       setSupplierSearchOpen(true);
     }, 150);
@@ -261,7 +271,7 @@ useEffect(() => {
 
   // Called when a supplier is chosen from the SupplierSearch modal
   const handleSupplierSelect = (supplier) => {
-    if (!supplier?.id) return;
+    if (!supplier?.id || form.purchase_order_id) return;
     setSelectedSupplier(supplier);
     setForm((prev) => ({ ...prev, supplier_id: supplier.id }));
     setSupplierSearchOpen(false);
@@ -743,6 +753,7 @@ const contRect = container.getBoundingClientRect();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (savingRef.current) return;
 
     // Validate supplier selection for credit invoices
     if (form.invoice_type === "credit" && !form.supplier_id) {
@@ -793,6 +804,8 @@ const contRect = container.getBoundingClientRect();
       return;
     }
 
+    savingRef.current = true;
+    setSaving(true);
     try {
       // 3) Duplicate invoice number check per supplier
       const checkRes = await axios.get("/api/purchase-invoices/check-unique", {
@@ -824,7 +837,6 @@ const contRect = container.getBoundingClientRect();
       // If onSubmit prop is provided, use it for API calls
       if (onSubmit) {
         const result = await onSubmit(payloadToSend);
-        toast.success("Invoice saved successfully");
         onSuccess && onSuccess();
         return result;
       }
@@ -842,6 +854,7 @@ const contRect = container.getBoundingClientRect();
         onSuccess && onSuccess();
       }
     } catch (err) { showAxiosError(err); }
+    finally { savingRef.current = false; setSaving(false); }
   };
 
   // Common anti-autofill props to spread on inputs
@@ -1004,6 +1017,7 @@ const contRect = container.getBoundingClientRect();
       style={{ minHeight: "calc(100vh - 130px)", maxHeight: "calc(100vh - 130px)" }}
       autoComplete="off" // disable browser suggestions globally
     >
+{(initialData?.purchase_order || form.purchase_order) && <div className="g-toolbar p-3">This invoice was generated from Purchase Order <a className="underline" href={`/purchase-orders/${(initialData?.purchase_order || form.purchase_order).id}`}>{(initialData?.purchase_order || form.purchase_order).number}</a>. Review quantities, prices, batches and expiry before saving.</div>}
 {/* ================= HEADER SECTION ================= */}
       <div className="purchase-entry-header sticky top-0 z-10 shadow-lg" autoComplete="off">
 {/* ---- Branded Title Banner ---- */}
@@ -1099,6 +1113,8 @@ const contRect = container.getBoundingClientRect();
               <button
                 type="button"
                 ref={supplierRef}
+                disabled={Boolean(form.purchase_order_id)}
+                title={form.purchase_order_id ? "Supplier finalized by the source Purchase Order" : undefined}
                 onClick={() => setSupplierSearchOpen(true)}
                 className={`w-full h-8 px-2 rounded-md border text-left text-xs flex items-center gap-2 transition-all duration-200
                   ${selectedSupplier
@@ -1781,12 +1797,13 @@ const contRect = container.getBoundingClientRect();
 
               <button
                 ref={saveButtonRef}
+                disabled={saving}
                 type="button"
                 onClick={handleSubmit}
                 className={`w-full mt-2 py-2 rounded-lg text-sm font-bold tracking-wide transition-all duration-200 ${btnPrimary.className}`}
                 style={btnPrimary.style}
               >
-                {invoiceId ? "Update Invoice" : "Save Invoice"}
+                {saving ? "Saving Purchase Invoice…" : invoiceId ? "Update Invoice" : "Save Invoice"}
               </button>
             </div>
           </div>

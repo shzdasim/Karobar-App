@@ -62,8 +62,10 @@ function ResultRow({ supplier, active, onHover, onOpen, rowRef }) {
 }
 
 /* ─────────────── Main Component ─────────────── */
-export default function SupplierSearch({ isOpen, onClose, onSelect }) {
+export default function SupplierSearch({ isOpen, onClose, onSelect, title, confirmLabel }) {
   const [q, setQ] = useState("");
+  const [selection, setSelection] = useState(null);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [results, setResults] = useState([]);
@@ -94,6 +96,8 @@ export default function SupplierSearch({ isOpen, onClose, onSelect }) {
   // Reset state when modal opens
   useEffect(() => {
     if (!isOpen) return;
+    setSelection(null);
+    setError("");
     
     // Reset state
     setPage(1);
@@ -116,6 +120,7 @@ export default function SupplierSearch({ isOpen, onClose, onSelect }) {
       setLoading(true);
     }
 
+    setError("");
     try {
       const res = await axios.get("/api/suppliers/search", {
         params: { 
@@ -144,7 +149,7 @@ export default function SupplierSearch({ isOpen, onClose, onSelect }) {
       setHasMore(hasMoreData);
       setPage(pageNum);
     } catch (err) {
-      if (!axios.isCancel(err)) console.error(err);
+      if (!axios.isCancel(err)) setError(err.response?.data?.message || "Unable to load suppliers. Please try again.");
     } finally {
       if (isLoadMore) {
         setLoadingMore(false);
@@ -242,7 +247,7 @@ export default function SupplierSearch({ isOpen, onClose, onSelect }) {
   const handleKeyDown = (e) => {
     if (!isOpen) return;
     
-    if (["ArrowDown", "ArrowUp", "Enter", "Escape", "Tab"].includes(e.key)) {
+    if (["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(e.key)) {
       e.preventDefault();
     }
 
@@ -267,6 +272,7 @@ export default function SupplierSearch({ isOpen, onClose, onSelect }) {
   };
 
   const handleSelect = (supplier) => {
+    if (confirmLabel) { setSelection(supplier); return; }
     if (onSelect) {
       onSelect(supplier);
     }
@@ -292,11 +298,16 @@ export default function SupplierSearch({ isOpen, onClose, onSelect }) {
         if (e.target === e.currentTarget) handleClose();
       }}
     >
-      <div 
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title || "Select Supplier"}
         ref={boxRef}
         className="w-full max-w-2xl mx-4"
       >
         <GlassCard className="overflow-hidden bg-white dark:bg-slate-800 shadow-2xl ring-1 ring-slate-200/50 dark:ring-slate-700/50">
+          {title && <h2 className="px-4 py-3 font-semibold">{title}</h2>}
+          {error && <p role="alert" className="px-4 py-2 text-red-600">{error}</p>}
           {/* Search Bar */}
           <div className="flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
             <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 shrink-0" />
@@ -387,6 +398,7 @@ export default function SupplierSearch({ isOpen, onClose, onSelect }) {
             )}
           </div>
 
+          {confirmLabel && <div className="flex items-center justify-between gap-3 px-4 py-3"><span>{selection?.name || "Select a supplier above"}</span><button className="g-btn-ghost inline-flex items-center justify-center" onClick={handleClose}>Cancel</button><button className="g-btn-primary inline-flex items-center justify-center disabled:opacity-50" disabled={!selection} onClick={() => { onSelect?.(selection); handleClose(); }}>{confirmLabel}</button></div>}
           {/* Footer */}
           <GlassToolbar className="items-center justify-between py-2 px-4 bg-slate-50/80 dark:bg-slate-800/80 border-t border-slate-100 dark:border-slate-700">
             <div className="text-xs text-slate-500 dark:text-slate-400">

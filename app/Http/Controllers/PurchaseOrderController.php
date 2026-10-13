@@ -9,6 +9,159 @@ use Carbon\Carbon;
 
 class PurchaseOrderController extends Controller
 {
+    public function index(Request $request)
+    {
+        $this->authorize('viewAny', \App\Models\PurchaseOrder::class);
+        return \App\Models\PurchaseOrder::with('supplier', 'invoice')->withCount('items')
+            ->withSum('items', 'ordered_quantity')->orderByDesc('id')->paginate(20);
+    }
+
+    public function show(\App\Models\PurchaseOrder $purchaseOrder)
+    {
+        $this->authorize('view', $purchaseOrder);
+        $purchaseOrder->load('supplier', 'items.product.brand', 'items.invoiceItems', 'invoice');
+        foreach ($purchaseOrder->items as $item) {
+            $item->received_quantity = $item->invoiceItems->sum('unit_quantity');
+            $item->remaining_quantity = max(0, $item->ordered_quantity - $item->received_quantity);
+            $item->unsetRelation('invoiceItems');
+        }
+        return $purchaseOrder;
+    }
+
+    private function validateOrder(Request $request): array
+    {
+        $data = $request->validate([
+            'supplier_id' => 'required|integer|exists:suppliers,id',
+            'date' => 'required|date',
+            'reference' => 'nullable|string|max:255',
+            'notes' => 'nullable|string|max:10000',
+            'items' => 'required|array|min:1',
+            'items.*.product_id' => 'required|integer|distinct|exists:products,id',
+            'items.*.ordered_packs' => 'nullable|integer|min:1|max:2147483647',
+            'items.*.pack_purchase_price' => 'nullable|numeric|min:0|max:99999999',
+            'items.*.unit_bonus' => 'nullable|integer|min:0|max:2147483647',
+            'items.*.ordered_quantity' => 'required_without:items.*.ordered_packs|integer|min:1|max:2147483647',
+            'items.*.pack_size' => 'required|integer|min:1|max:2147483647',
+            'items.*.unit_purchase_price' => 'required_without:items.*.pack_purchase_price|numeric|min:0|max:99999999',
+            'items.*.item_discount_percentage' => 'nullable|numeric|min:0|max:100',
+        ], ['supplier_id.required' => 'Please select a supplier before saving the Purchase Order.']);
+        $products = \App\Models\Product::whereIn('id', array_column($data['items'], 'product_id'))->get()->keyBy('id');
+        foreach ($data['items'] as $index => &$item) {
+            $packSize = max(1, (int) $products[$item['product_id']]->pack_size);
+            if ((int) $item['pack_size'] !== $packSize) {
+                throw \Illuminate\Validation\ValidationException::withMessages(["items.$index.pack_size" => 'Pack size must match the selected product.']);
+            }
+            $quantity = isset($item['ordered_packs']) ? $item['ordered_packs'] * $packSize : $item['ordered_quantity'];
+            if ($quantity > 2147483647 || $quantity % $packSize !== 0) {
+                throw \Illuminate\Validation\ValidationException::withMessages(["items.$index.ordered_packs" => 'Order a positive whole number of packs.']);
+            }
+            $item['ordered_quantity'] = $quantity;
+            if (isset($item['pack_purchase_price'])) {
+                $item['unit_purchase_price'] = $item['pack_purchase_price'] / $packSize;
+            }
+            $item['unit_bonus'] = $item['unit_bonus'] ?? 0;
+            unset($item['ordered_packs'], $item['pack_purchase_price']);
+        }
+        unset($item);
+        return $data;
+    }
+
+    public function store(Request $request)
+    {
+        $this->authorize('create', \App\Models\PurchaseOrder::class);
+        $data = $this->validateOrder($request);
+        return DB::transaction(function () use ($data) {
+            $order = \App\Models\PurchaseOrder::create(array_merge($data, [
+                'status' => 'ordered', 'created_by' => auth()->id(), 'updated_by' => auth()->id(),
+            ]));
+            // The database ID provides a race-safe sequence, including the first order.
+            $order->number = 'PO-' . str_pad($order->id, 5, '0', STR_PAD_LEFT);
+            $order->save();
+            $order->items()->createMany($data['items']);
+            return response()->json($order->load('supplier', 'items.product.brand'), 201);
+        });
+    }
+
+    public function update(Request $request, \App\Models\PurchaseOrder $purchaseOrder)
+    {
+        $this->authorize('update', $purchaseOrder);
+        $data = $this->validateOrder($request);
+        return DB::transaction(function () use ($purchaseOrder, $data) {
+            $order = \App\Models\PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
+            if ($order->status !== 'ordered' || $order->invoice()->exists()) {
+                abort(409, 'Only unreceived orders can be edited.');
+            }
+            if ((int) $order->supplier_id !== (int) $data['supplier_id']) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['supplier_id' => 'The submitted Purchase Order supplier is finalized.']);
+            }
+            $order->update(array_merge($data, ['updated_by' => auth()->id()]));
+            $order->items()->delete();
+            $order->items()->createMany($data['items']);
+            return $order->load('supplier', 'items.product.brand');
+        });
+    }
+
+    public function cancel(\App\Models\PurchaseOrder $purchaseOrder)
+    {
+        $this->authorize('cancel', $purchaseOrder);
+        return DB::transaction(function () use ($purchaseOrder) {
+            $order = \App\Models\PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
+            if ($order->status !== 'ordered' || $order->invoice()->exists()) abort(409, 'Only unreceived orders can be cancelled.');
+            $order->update(['status' => 'cancelled', 'updated_by' => auth()->id()]);
+            return $order;
+        });
+    }
+
+    public function destroy(\App\Models\PurchaseOrder $purchaseOrder)
+    {
+        $this->authorize('delete', $purchaseOrder);
+        return DB::transaction(function () use ($purchaseOrder) {
+            $order = \App\Models\PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
+            if (!in_array($order->status, ['ordered', 'cancelled'], true) || $order->invoice()->exists()) {
+                abort(409, 'Received Purchase Orders cannot be deleted.');
+            }
+            $order->delete();
+            return response()->noContent();
+        });
+    }
+
+    public function receive(\App\Models\PurchaseOrder $purchaseOrder)
+    {
+        $this->authorize('view', $purchaseOrder);
+        $this->authorize('create', \App\Models\PurchaseInvoice::class);
+        return DB::transaction(function () use ($purchaseOrder) {
+            $order = \App\Models\PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
+            if ($order->status !== 'ordered' || $order->invoice()->exists()) abort(409, 'This order already has a receipt or cannot be received.');
+            $order->load('supplier', 'items.product');
+            return response()->json([
+                'purchase_order_id' => $order->id,
+                'purchase_order' => ['id' => $order->id, 'number' => $order->number],
+                'supplier_id' => $order->supplier_id,
+                'supplier' => $order->supplier,
+                'posted_date' => now()->toDateString(),
+                'remarks' => $order->notes,
+                'items' => $order->items->map(function ($line) {
+                    $p = $line->product;
+                    return [
+                        'purchase_order_item_id' => $line->id, 'product_id' => $p->id,
+                        'pack_size' => $line->pack_size,
+                        'unit_quantity' => $line->ordered_quantity,
+                        'pack_quantity' => $line->ordered_quantity / $line->pack_size,
+                        'unit_purchase_price' => $line->unit_purchase_price,
+                        'pack_purchase_price' => $line->unit_purchase_price * $line->pack_size,
+                        'unit_sale_price' => $p->unit_sale_price ?? 0,
+                        'pack_sale_price' => ($p->unit_sale_price ?? 0) * $line->pack_size,
+                        'whole_sale_unit_price' => $p->whole_sale_unit_price ?? 0,
+                        'whole_sale_pack_price' => ($p->whole_sale_unit_price ?? 0) * $line->pack_size,
+                        'item_discount_percentage' => $line->item_discount_percentage,
+                        'unit_bonus' => $line->unit_bonus, 'pack_bonus' => $line->unit_bonus / $line->pack_size, 'batch' => '', 'expiry' => '',
+                        'product' => $p,
+                    ];
+                }),
+            ]);
+        });
+    }
+
     public function forecast(Request $request)
     {
         $this->authorize('generate', PurchaseOrderForecast::class);

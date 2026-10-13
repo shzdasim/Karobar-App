@@ -8,6 +8,7 @@ class PurchaseInvoiceItem extends Model
 {
     protected $fillable = [
         'purchase_invoice_id',
+        'purchase_order_item_id',
         'product_id',
         'batch',
         'expiry',
@@ -29,7 +30,12 @@ class PurchaseInvoiceItem extends Model
         'avg_price',
         'quantity',
     ];
-     public function purchaseInvoice()
+    public function purchaseOrderItem()
+    {
+        return $this->belongsTo(PurchaseOrderItem::class);
+    }
+
+    public function purchaseInvoice()
     {
         return $this->belongsTo(PurchaseInvoice::class);
     }

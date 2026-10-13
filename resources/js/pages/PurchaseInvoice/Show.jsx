@@ -312,6 +312,7 @@ return (
       style={{ minHeight: "calc(100vh - 130px)", maxHeight: "calc(100vh - 130px)" }}
       autoComplete="off"
     >
+      {inv.purchase_order && <div className="g-toolbar p-3">Source Purchase Order: <a className="underline" href={`/purchase-orders/${inv.purchase_order.id}`}>{inv.purchase_order.number}</a></div>}
       {/* ================= HEADER SECTION ================= */}
       <div className="purchase-show-header sticky top-0 z-10" autoComplete="off">
         {/* ---- Branded Title Banner ---- */}

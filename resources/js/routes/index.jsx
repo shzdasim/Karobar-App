@@ -30,6 +30,7 @@ import ShowSaleInvoice from "../pages/SaleInvoice/Show.jsx";
 import IndexSaleReturn from "../pages/SaleReturn/Index.jsx";
 import CreateSaleReturn from "../pages/SaleReturn/Create.jsx";
 import EditSaleReturn from "../pages/SaleReturn/Edit.jsx";
+import PurchaseOrders from "../pages/PurchaseOrders.jsx";
 import PurchaseOrder from "../pages/PurchaseOrder.jsx";
 import UserDemandsIndex from "../pages/UserDemand/index.jsx";
 import CreateUserDemand from "../pages/UserDemand/Create.jsx";
@@ -341,7 +342,7 @@ export default function AppRoutes() {
       />
 {/* Purchase Orders */}
       <Route
-      path="purchase-orders"
+      path="purchase-orders/forecast"
       element= {
         <ProtectedRoute>
           <DashboardLayout>
@@ -350,6 +351,9 @@ export default function AppRoutes() {
         </ProtectedRoute>
       }
       />
+      {['/purchase-orders', '/purchase-orders/create', '/purchase-orders/:id', '/purchase-orders/:id/edit'].map(path => (
+        <Route key={path} path={path} element={<ProtectedRoute><DashboardLayout><PurchaseOrders /></DashboardLayout></ProtectedRoute>} />
+      ))}
       {/* User Demands */}
       <Route
       path="user-demands"

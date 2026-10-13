@@ -1,5 +1,6 @@
 // src/pages/purchase-orders/forecast.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import {
@@ -20,6 +21,8 @@ import { usePermissions } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import BrandSearch from "../components/BrandSearch.jsx";
 import SupplierSearch from "../components/SupplierSearch.jsx";
+
+import { arrangePurchaseOrderRows, purchaseOrderArrangements } from "@/utils/purchaseOrderArrangement";
 
 // Reusable components
 import {
@@ -79,6 +82,7 @@ const getSectionStyles = (theme, colorKey) => {
 };
 
 export default function PurchaseOrder() {
+  const navigate = useNavigate();
   const today = new Date().toISOString().split("T")[0];
 
   // 🔒 permissions (support both has() and canFor())
@@ -267,6 +271,18 @@ const [rows, setRows] = useState([]);
   const [lowStockThreshold, setLowStockThreshold] = useState(10);
   const [orderFilter, setOrderFilter] = useState("all"); // all | to_order | no_order
 
+  const [arrangement, setArrangement] = useState(() => {
+    try {
+      const saved = localStorage.getItem('purchase-order-forecast-arrangement');
+      return purchaseOrderArrangements.some(option => option.id === saved) ? saved : 'original';
+    } catch { return 'original'; }
+  });
+  const changeArrangement = (value) => {
+    setArrangement(value);
+    setSelectedIndex(-1);
+    try { localStorage.setItem('purchase-order-forecast-arrangement', value); } catch { /* Storage may be unavailable. */ }
+  };
+
   // === printer type (a4 | thermal) — respects saved setting ===
   const [printerType, setPrinterType] = useState("a4");
 
@@ -306,7 +322,7 @@ const [rows, setRows] = useState([]);
 
   // Rows visible in the table after applying the result filters
   const visibleRows = useMemo(() => {
-    return rows.filter((r) => {
+    return arrangePurchaseOrderRows(rows.filter((r) => {
       if (resultBrandId !== "all" && String(r.brand_id ?? "none") !== String(resultBrandId)) return false;
 
       const stock = Number(r.current_stock_units || 0);
@@ -319,8 +335,8 @@ const [rows, setRows] = useState([]);
       if (orderFilter === "no_order" && packs > 0) return false;
 
       return true;
-    });
-  }, [rows, resultBrandId, stockFilter, lowStockThreshold, orderFilter]);
+    }), arrangement);
+  }, [rows, resultBrandId, stockFilter, lowStockThreshold, orderFilter, arrangement]);
 
   const hasActiveResultFilters =
     resultBrandId !== "all" || stockFilter !== "all" || orderFilter !== "all";
@@ -747,6 +763,10 @@ ${isA4 ? `
 
   return (
     <div className="purchase-order-page space-y-4 print:p-0" onKeyDown={onKeyDownTable}>
+<div className="flex flex-wrap gap-2 print:hidden">
+        <Link className="g-btn-secondary" to="/purchase-orders">Saved Purchase Orders</Link>
+        {has('purchase-order.create') && <button className="g-btn-primary" disabled={!printRows.length} onClick={() => navigate('/purchase-orders/create', { state: { items: printRows.map(r => ({ product_id: r.product_id, product: { id: r.product_id, name: r.product_name, brand_name: r.brand_name }, ordered_quantity: r.order_units, pack_size: r.pack_size, unit_purchase_price: r.pack_price / r.pack_size, item_discount_percentage: 0 })) } })}>Create Order from Forecast</button>}
+      </div>
 {/* Forecast overview */}
       <div
         className="purchase-order-header products-panel relative overflow-hidden"
@@ -1033,6 +1053,23 @@ ${isA4 ? `
               </p>
             </div>
           </div>
+
+          <label className="flex items-center gap-2 min-w-0 text-xs font-medium text-gray-700 dark:text-gray-200">
+            Arrange by
+            <select
+              value={arrangement}
+              onChange={(e) => changeArrangement(e.target.value)}
+              aria-label="Arrange forecast products"
+              title="Applies to displayed items, printing and orders created from this forecast"
+              className="h-8 max-w-full sm:max-w-72 px-2 rounded-lg text-xs font-medium bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500/30 scheme-light dark:scheme-dark"
+            >
+              {[...new Set(purchaseOrderArrangements.map(option => option.group))].map(group => (
+                <optgroup key={group} label={group}>
+                  {purchaseOrderArrangements.filter(option => option.group === group).map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          </label>
 
           {/* Result filters (client-side over the fetched rows) */}
           <div className="flex items-center gap-2 flex-wrap">

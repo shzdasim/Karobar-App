@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Batch;
+use App\Models\PurchaseOrder;
+use App\Services\PurchaseOrderReceiving;
+use Illuminate\Validation\ValidationException;
 use App\Models\Product;
 use App\Models\PurchaseInvoice;
 use App\Models\SupplierLedger;
@@ -69,7 +72,7 @@ class PurchaseInvoiceController extends Controller
     public function show(PurchaseInvoice $purchaseInvoice)
     {
         $this->authorize('view', $purchaseInvoice);
-        return $purchaseInvoice->load('supplier', 'items.product');
+        return $purchaseInvoice->load('supplier', 'items.product', 'purchaseOrder');
     }
 
     // Store new invoice — posted_number is assigned HERE (atomic, race-safe)
@@ -77,8 +80,9 @@ class PurchaseInvoiceController extends Controller
     {
         $this->authorize('create', PurchaseInvoice::class);
         $data = $request->validate([
+            'purchase_order_id'    => 'nullable|integer|exists:purchase_orders,id',
             'supplier_id'          => 'required|exists:suppliers,id',
-            'invoice_type'         => 'nullable|string|in:credit,debit,default:debit',
+            'invoice_type'         => 'nullable|string|in:credit,debit',
             // 'posted_number'      => now generated server-side
             'posted_date'          => 'required|date',
             'remarks'              => 'nullable|string',
@@ -91,7 +95,8 @@ class PurchaseInvoiceController extends Controller
             'total_amount'         => 'required|numeric|min:0',
             'total_paid'           => 'nullable|numeric|min:0',
 
-            'items'                                => 'required|array',
+            'items'                                => 'required|array|min:1',
+            'items.*.purchase_order_item_id'        => 'nullable|integer|exists:purchase_order_items,id',
             'items.*.product_id'                   => 'required|exists:products,id',
             'items.*.pack_size'                    => 'nullable|integer',
             'items.*.batch'                        => 'nullable|string',
@@ -120,6 +125,18 @@ class PurchaseInvoiceController extends Controller
 
         try {
             return DB::transaction(function () use ($data) {
+                $order = null;
+                if (!empty($data['purchase_order_id'])) {
+                    $order = PurchaseOrder::lockForUpdate()->findOrFail($data['purchase_order_id']);
+                    $this->authorize('view', $order);
+                    if ($order->status !== 'ordered' || $order->invoice()->exists()) {
+                        throw ValidationException::withMessages(['purchase_order_id' => 'This Purchase Order already has a receipt or cannot be received.']);
+                    }
+                    app(PurchaseOrderReceiving::class)->validateReceipt($order, $data);
+                } else {
+                    foreach ($data['items'] as &$row) unset($row['purchase_order_item_id']);
+                    unset($row);
+                }
                 // Lock the sequence by selecting last row FOR UPDATE to avoid two requests
                 // generating the same posted_number when saving concurrently.
                 $prefix = 'PRINV-';
@@ -168,14 +185,17 @@ if ($invoiceType === 'credit') {
                     $ledger->save();
                 }
 
+                if ($order) app(PurchaseOrderReceiving::class)->sync($order);
                 // Return the created invoice including items and supplier for the client
-                return response()->json($invoice->load('items.product', 'supplier'), 201);
+                return response()->json($invoice->load('items.product', 'supplier', 'purchaseOrder'), 201);
             });
         } catch (\Illuminate\Database\QueryException $e) {
             // Likely unique-constraint violation (invoice_number / posted_number)
             return $this->respondDuplicateError($e);
-        } catch (\Illuminate\Database\QueryException $e) {
-            return $this->respondDuplicateError($e);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Error creating purchase invoice',
@@ -203,7 +223,8 @@ if ($invoiceType === 'credit') {
             'total_amount'         => 'required|numeric|min:0',
             'total_paid'           => 'nullable|numeric|min:0',
 
-            'items'                                => 'required|array',
+            'items'                                => 'required|array|min:1',
+            'items.*.purchase_order_item_id'        => 'nullable|integer|exists:purchase_order_items,id',
             'items.*.product_id'                   => 'required|exists:products,id',
             'items.*.pack_size'                    => 'nullable|integer',
             'items.*.batch'                        => 'nullable|string',
@@ -228,6 +249,16 @@ if ($invoiceType === 'credit') {
 
         try {
             return DB::transaction(function () use ($purchaseInvoice, $data) {
+                $order = $purchaseInvoice->purchase_order_id
+                    ? PurchaseOrder::lockForUpdate()->findOrFail($purchaseInvoice->purchase_order_id) : null;
+                if ($order) {
+                    $purchaseInvoice->refresh();
+                    app(PurchaseOrderReceiving::class)->validateReceipt($order, $data);
+                }
+                else {
+                    foreach ($data['items'] as &$row) unset($row['purchase_order_item_id']);
+                    unset($row);
+                }
                 // Keep existing posted_number intact
                 $data['posted_number'] = $purchaseInvoice->posted_number;
 
@@ -360,11 +391,16 @@ if ($invoiceType === 'credit') {
                     }
                 }
 
-                return response()->json($purchaseInvoice->load('items.product', 'supplier'));
+                if ($order) app(PurchaseOrderReceiving::class)->sync($order);
+                return response()->json($purchaseInvoice->load('items.product', 'supplier', 'purchaseOrder'));
             });
         } catch (\Illuminate\Database\QueryException $e) {
             // Likely unique-constraint violation (invoice_number / posted_number)
             return $this->respondDuplicateError($e);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to update purchase invoice',
@@ -379,6 +415,8 @@ if ($invoiceType === 'credit') {
         $this->authorize('delete', $purchaseInvoice);
         try {
             return DB::transaction(function () use ($purchaseInvoice) {
+                $order = $purchaseInvoice->purchase_order_id ? PurchaseOrder::lockForUpdate()->findOrFail($purchaseInvoice->purchase_order_id) : null;
+                if ($order) $purchaseInvoice->refresh();
                 $purchaseInvoice->load('items');
 
                 $affectedIds = $purchaseInvoice->items->pluck('product_id')->unique()->all();
@@ -389,6 +427,7 @@ if ($invoiceType === 'credit') {
 
                 $purchaseInvoice->items()->delete();
                 $purchaseInvoice->delete();
+                if ($order) app(PurchaseOrderReceiving::class)->sync($order);
 
                 $this->recalcProductsByIds($affectedIds);
 
@@ -397,6 +436,10 @@ if ($invoiceType === 'credit') {
         } catch (\Illuminate\Database\QueryException $e) {
             // Likely unique-constraint violation (invoice_number / posted_number)
             return $this->respondDuplicateError($e);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to delete invoice',
@@ -415,6 +458,9 @@ if ($invoiceType === 'credit') {
 
         $errors = [];
 
+        if (str_contains($mLower, 'purchase_order_id')) {
+            $errors['purchase_order_id'][] = 'This Purchase Order already has a Purchase Invoice.';
+        }
         if (str_contains($mLower, 'invoice_number')) {
             $errors['invoice_number'][] = 'Invoice number has already been taken for this supplier or globally.';
         }

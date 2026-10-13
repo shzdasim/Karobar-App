@@ -33,6 +33,7 @@ class RolesAndPermissionsSeeder extends Seeder
 
 // Purchase Order Forecast
             'purchase-order.view','purchase-order.generate',
+            'purchase-order.create','purchase-order.update','purchase-order.cancel','purchase-order.delete',
 
             // User Demands
             'user-demands.view','user-demands.create','user-demands.update','user-demands.delete',

@@ -8,6 +8,7 @@ class PurchaseInvoice extends Model
 {
     protected $fillable = [
         'supplier_id',
+        'purchase_order_id',
         'invoice_type',
         'posted_number',
         'posted_date',
@@ -21,6 +22,8 @@ class PurchaseInvoice extends Model
         'total_amount',
         'total_paid',
     ];
+    public function purchaseOrder() { return $this->belongsTo(PurchaseOrder::class); }
+
     public function supplier()
     {
         return $this->belongsTo(Supplier::class);
