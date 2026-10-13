@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class PurchaseOrder extends Model
 {
-    protected $fillable = ['date', 'supplier_id', 'status', 'reference', 'notes', 'created_by', 'updated_by', 'received_by', 'received_at'];
+    protected $fillable = ['date', 'expected_received_date', 'supplier_id', 'status', 'reference', 'notes', 'created_by', 'updated_by', 'received_by', 'received_at'];
 
     protected $casts = ['received_at' => 'datetime'];
 
@@ -23,5 +23,16 @@ class PurchaseOrder extends Model
     public function invoice()
     {
         return $this->hasOne(PurchaseInvoice::class);
+    }
+
+    public static function expectedAmountBetween(string $from, string $to): float
+    {
+        return (float) static::query()
+            ->where('status', 'ordered')
+            ->whereDoesntHave('invoice')
+            ->whereBetween('expected_received_date', [$from, $to])
+            ->join('purchase_order_items as lines', 'lines.purchase_order_id', '=', 'purchase_orders.id')
+            ->selectRaw('COALESCE(SUM(lines.ordered_quantity * lines.unit_purchase_price * (1 - COALESCE(lines.item_discount_percentage, 0) / 100.0)), 0) as amount')
+            ->value('amount');
     }
 }

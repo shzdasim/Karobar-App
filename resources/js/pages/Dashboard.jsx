@@ -382,6 +382,7 @@ export default function Dashboard() {
     pending_demands: 0,
     stock_units: 0,
     stock_value: 0,
+    expected_orders_amount: null,
   });
 
   const themeColors = useMemo(() => ({
@@ -647,6 +648,17 @@ const loadBrands = useMemo(
         { label: "Credit", value: cards.purchasesCredit, color: "#f59e0b" },
       ],
     },
+    ...(kpiMetrics.expected_orders_amount != null ? [{
+      label: "Expected Orders",
+      value: Number(kpiMetrics.expected_orders_amount),
+      icon: ClipboardDocumentListIcon,
+      color: themeColors.secondary,
+      bg: themeColors.secondaryLight,
+      footer: from === to ? `Expected receiving: ${from}` : `Expected receiving: ${from} to ${to}`,
+      path: "/purchase-orders",
+      hideTrend: true,
+      hideSpark: true,
+    }] : []),
     {
       label: "Net Sales",
       value: netSales,
@@ -884,7 +896,7 @@ const heroStats = [
       </SectionCard>
 
 {/* ===== KPI Money Cards ===== */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-6 gap-3 sm:gap-4">
         {kpiCards.map((k, idx) => (
           <div
             key={k.label}
@@ -898,7 +910,7 @@ const heroStats = [
               }
             }}
             title={k.path ? `Open ${k.label} page` : undefined}
-            className="g-card dashboard-panel dashboard-kpi group"
+            className={`g-card dashboard-panel dashboard-kpi group min-w-0 ${idx < 2 || kpiCards.length === 4 ? "sm:col-span-3" : "sm:col-span-2"}`}
           >
 
             <div className="p-4 sm:p-5">
@@ -910,7 +922,7 @@ const heroStats = [
                   <span className="text-xs font-semibold dashboard-muted truncate">
                     {k.label}
                   </span>
-                  {booted && <TrendPill value={pctChange(k.value, k.prev)} />}
+                  {booted && !k.hideTrend && <TrendPill value={pctChange(k.value, k.prev)} />}
                 </div>
               </div>
               <div className="dashboard-kpi-value">
@@ -920,9 +932,9 @@ const heroStats = [
                   <span className="inline-block h-6 w-28 rounded-lg bg-slate-200/80 dark:bg-slate-700/60 animate-pulse align-middle" />
                 )}
               </div>
-              <div className="mt-3 -mb-1">
+              {!k.hideSpark && <div className="mt-3 -mb-1">
                 <Sparkline data={k.spark} color={k.sparkColor} suffix={String(idx)} />
-              </div>
+              </div>}
               {k.sub && k.sub.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700/60 grid grid-cols-2 gap-3">
                   {k.sub.map((row) => (

@@ -215,6 +215,10 @@ public function nearExpiryFilters()
      */
     public function kpiMetrics(Request $request)
     {
+        $request->validate([
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+        ]);
         $today = now()->toDateString();
         $from = $request->query('date_from', $today);
         $to = $request->query('date_to', $today);
@@ -284,6 +288,11 @@ public function nearExpiryFilters()
             'pending_demands'    => $pendingDemandsCount,
             'stock_units'        => $stockUnits,
             'stock_value'        => $stockValue,
+            'expected_orders_amount' => $request->user()->can('viewAny', \App\Models\PurchaseOrder::class)
+                ? \App\Models\PurchaseOrder::expectedAmountBetween(
+                    $request->query('date_from', now('Asia/Karachi')->toDateString()),
+                    $request->query('date_to', now('Asia/Karachi')->toDateString())
+                ) : null,
         ]);
     }
 

@@ -132,3 +132,13 @@ Tests use an isolated in-memory SQLite database with real purchasing migrations.
 The form now displays read-only product Pack Size, Order Packs (whole packs only), Pack Purchase Price, Pack Bonus, Unit Bonus, Discount %, and line total. Pack and unit bonus inputs synchronize like the purchase invoice. `purchase_order_items.unit_bonus` stores the canonical free-unit quantity with default zero for existing documents. Paid quantities/prices retain the existing unit storage, with backend conversion from pack inputs. Both bonus representations carry into the editable invoice.
 
 The PO pages reuse purchase-entry header, table and footer styling, workspace theme colors and existing glass button utilities. Undefined `g-btn-secondary` classes were replaced with the defined `g-btn-ghost` style; links/actions use proper inline-flex layout, disabled states and product action icons. Scoped table/field styling is in `resources/css/app.css`.
+
+## Expected receiving date and dashboard KPI
+
+PO create/update requires `expected_received_date`, on or after the order date. The form leaves it empty until selected and blocks saving without it. Details display the scheduled date. Migration `2026_10_13_000004_add_expected_received_date_to_purchase_orders.php` adds a nullable indexed date for historical compatibility and has been applied locally. Historical records remain unscheduled until edited.
+
+`PurchaseOrder::expectedAmountBetween` totals ordered paid-unit quantities multiplied by purchase price after item discounts. It includes only Ordered POs without a receiving invoice in the expected-date range. Cancelled, fully received and partially invoiced orders are excluded. Bonuses do not add payable value.
+
+The dashboard KPI metrics response includes `expected_orders_amount` only for users allowed to view POs. The Expected Orders money card uses existing KPI styling and links to the PO list. It defaults to today's selected dashboard range and follows the dashboard date filters. Backend fallback dates use Asia/Karachi. The card has no fabricated historical trend or sparkline. Changes are in `app/Http/Controllers/DashboardController.php` and `resources/js/pages/Dashboard.jsx`.
+
+Validation: 20 PO tests passed (106 assertions), including date requirement, discounted expected value, date exclusion and cancelled/received exclusion. Production build passed.

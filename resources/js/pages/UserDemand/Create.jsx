@@ -67,9 +67,9 @@ const [saving, setSaving] = useState(false);
   // Keyboard shortcuts: Alt+S save, Alt+C cancel
   useEffect(() => {
     const onKey = (e) => {
-      if (e.altKey && e.key.toLowerCase() === "s") {
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        submitRef.current?.click();
+        if (!e.repeat) submitRef.current?.click();
       }
       if (e.altKey && e.key.toLowerCase() === "c") {
         e.preventDefault();
@@ -121,6 +121,7 @@ window.addEventListener("keydown", onKey);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (saving) return;
     if (!selectedProduct && !name.trim()) {
       toast.error("Please enter a product name or select an existing product.");
       return;
@@ -175,7 +176,7 @@ if (selectedProduct) {
           <div>
             <h1 className="products-title">Request Product</h1>
             <p className="products-subtitle">
-              Request an existing product or add a new product demand.
+              Request an existing product or add a new product demand. Enter to move to the next field · Alt+S to save.
             </p>
           </div>
         </div>
@@ -199,6 +200,7 @@ if (selectedProduct) {
                     if (e.key === "Enter") {
                       e.preventDefault();
                       if (!selectedProduct) brandRef.current?.click();
+                      else qtyRef.current?.focus();
                     }
                   }}
                   placeholder="Type a product name..."
@@ -236,6 +238,7 @@ onClick={() => {
                           setBrand(null);
                           setSupplier(null);
                           setCategory(null);
+                          qtyRef.current?.focus();
                         }}
                         className="w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-slate-600 transition-colors"
                       >
@@ -270,7 +273,8 @@ onClick={() => {
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
-                        setBrandSearchOpen(true);
+                        if (brand) categoryRef.current?.focus();
+                        else setBrandSearchOpen(true);
                       }
                     }}
                     className="w-full h-10 flex items-center gap-2 px-3 border border-gray-200 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-left"
@@ -292,7 +296,8 @@ onClick={() => {
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
-                        setCategorySearchOpen(true);
+                        if (category) supplierRef.current?.focus();
+                        else setCategorySearchOpen(true);
                       }
                     }}
                     className="w-full h-10 flex items-center gap-2 px-3 border border-gray-200 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-left"
@@ -314,7 +319,7 @@ onClick={() => {
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
-                        setSupplierSearchOpen(true);
+                        qtyRef.current?.focus();
                       }
                     }}
                     className="w-full h-10 flex items-center gap-2 px-3 border border-gray-200 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-left"
@@ -402,7 +407,7 @@ onClick={() => {
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  setCustomerSearchOpen(true);
+                  submitRef.current?.focus();
                 }
               }}
               className="w-full h-10 flex items-center gap-2 px-3 border border-gray-200 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-left cursor-pointer"
@@ -441,6 +446,7 @@ onClick={() => {
               type="submit"
               disabled={saving}
               title="Save (Alt+S)"
+              aria-keyshortcuts="Alt+S"
               className="products-action products-action-primary"
             >
               {saving ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <HandRaisedIcon className="w-4 h-4" />}
@@ -482,11 +488,11 @@ onClick={() => {
         onClose={() => setCustomerSearchOpen(false)}
         onSelect={(cust) => {
           setCustomer(cust ? cust : null);
+          setTimeout(() => submitRef.current?.focus(), 50);
         }}
         onCreate={(cust) => {
           setCustomer(cust ? cust : null);
-          // After creating a customer, move focus to requested quantity
-          setTimeout(() => qtyRef.current?.focus(), 50);
+          setTimeout(() => submitRef.current?.focus(), 50);
         }}
       />
     </div>

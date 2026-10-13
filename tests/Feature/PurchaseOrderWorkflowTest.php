@@ -49,6 +49,7 @@ class PurchaseOrderWorkflowTest extends TestCase
             '2026_10_12_000001_create_purchase_orders.php',
             '2026_10_12_000002_add_purchase_order_permissions.php',
             '2026_10_13_000002_add_bonus_to_purchase_order_items.php',
+            '2026_10_13_000004_add_expected_received_date_to_purchase_orders.php',
         ] as $file) {
             (require database_path('migrations/'.$file))->up();
         }
@@ -73,7 +74,7 @@ class PurchaseOrderWorkflowTest extends TestCase
 
     private function order(): PurchaseOrder
     {
-        $data = ['supplier_id' => 1, 'date' => '2026-10-12', 'notes' => 'Mixed brands', 'items' => []];
+        $data = ['supplier_id' => 1, 'date' => '2026-10-12', 'expected_received_date' => '2026-10-13', 'notes' => 'Mixed brands', 'items' => []];
         foreach ([1, 2, 3] as $id) {
             $data['items'][] = ['product_id' => $id, 'ordered_quantity' => 100, 'pack_size' => 10, 'unit_purchase_price' => 2, 'item_discount_percentage' => 0];
         }
@@ -155,7 +156,7 @@ class PurchaseOrderWorkflowTest extends TestCase
 
     public function test_invalid_order_headers_and_items_are_rejected(): void
     {
-        foreach ([['date' => '2026-10-12', 'items' => []], ['date' => '2026-10-12', 'supplier_id' => 1, 'items' => []]] as $payload) {
+        foreach ([['date' => '2026-10-12', 'expected_received_date' => '2026-10-13', 'items' => []], ['date' => '2026-10-12', 'expected_received_date' => '2026-10-13', 'supplier_id' => 1, 'items' => []]] as $payload) {
             try {
                 app(PurchaseOrderController::class)->store($this->request($payload));
                 $this->fail('Invalid order accepted');
@@ -365,7 +366,7 @@ class PurchaseOrderWorkflowTest extends TestCase
 
     public function test_pack_order_pricing_and_bonus_are_saved_and_prepared_without_stock_changes(): void
     {
-        $payload = ['supplier_id' => 1, 'date' => '2026-10-13', 'items' => [[
+        $payload = ['supplier_id' => 1, 'date' => '2026-10-13', 'expected_received_date' => '2026-10-13', 'items' => [[
             'product_id' => 1, 'pack_size' => 10, 'ordered_packs' => 3,
             'pack_purchase_price' => 25, 'unit_bonus' => 15, 'item_discount_percentage' => 5,
         ]]];
@@ -398,7 +399,7 @@ class PurchaseOrderWorkflowTest extends TestCase
                 $item['ordered_quantity'] = 15;
             }
             try {
-                app(PurchaseOrderController::class)->store($this->request(['supplier_id' => 1, 'date' => '2026-10-13', 'items' => [$item]]));
+                app(PurchaseOrderController::class)->store($this->request(['supplier_id' => 1, 'date' => '2026-10-13', 'expected_received_date' => '2026-10-13', 'items' => [$item]]));
                 $this->fail('Invalid pack order accepted');
             } catch (ValidationException $e) {
                 $this->assertNotEmpty($e->errors());
@@ -435,5 +436,27 @@ class PurchaseOrderWorkflowTest extends TestCase
         auth()->user()->givePermissionTo('purchase-order.view');
         $this->deleteJson('/api/purchase-orders/'.$order->id)->assertForbidden();
         $this->assertNotNull($order->fresh());
+    }
+
+    public function test_expected_date_is_required_and_expected_amount_excludes_received_cancelled_and_other_dates(): void
+    {
+        $order = $this->order();
+        $this->assertEquals(600, PurchaseOrder::expectedAmountBetween('2026-10-13', '2026-10-13'));
+        $this->assertEquals(0, PurchaseOrder::expectedAmountBetween('2026-10-14', '2026-10-14'));
+        $order->items()->update(['item_discount_percentage' => 10]);
+        $this->assertEquals(540, PurchaseOrder::expectedAmountBetween('2026-10-13', '2026-10-13'));
+        $payload = $order->load('items')->toArray();
+        unset($payload['expected_received_date']);
+        try {
+            app(PurchaseOrderController::class)->store($this->request($payload));
+            $this->fail('Missing expected date accepted');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('expected_received_date', $e->errors());
+        }
+        $order->update(['status' => 'cancelled']);
+        $this->assertEquals(0, PurchaseOrder::expectedAmountBetween('2026-10-13', '2026-10-13'));
+        $order->update(['status' => 'ordered']);
+        app(PurchaseInvoiceController::class)->store($this->request($this->invoiceData($order)));
+        $this->assertEquals(0, PurchaseOrder::expectedAmountBetween('2026-10-13', '2026-10-13'));
     }
 }

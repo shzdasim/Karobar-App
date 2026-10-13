@@ -7,7 +7,7 @@ import ProductSearchInput from "../components/ProductSearchInput";
 import { ClipboardDocumentListIcon, PlusIcon, TrashIcon, EyeIcon, PencilSquareIcon, ArrowDownTrayIcon, DocumentTextIcon, BuildingStorefrontIcon } from "@heroicons/react/24/outline";
 import SupplierSearch from "../components/SupplierSearch";
 
-const blank = () => ({ date: new Date().toLocaleDateString('en-CA'), notes: '', reference: '', supplier_id: '', items: [] });
+const blank = () => ({ date: new Date().toLocaleDateString('en-CA'), expected_received_date: '', notes: '', reference: '', supplier_id: '', items: [] });
 const orderRow = (row) => ({ ...row,
   ordered_packs: Number(row.ordered_quantity || row.pack_size || 1) / Math.max(1, Number(row.pack_size || 1)),
   pack_purchase_price: Number(row.unit_purchase_price || 0) * Math.max(1, Number(row.pack_size || 1)),
@@ -160,6 +160,9 @@ export default function PurchaseOrders() {
   }) }));
   const save = async (chosen = supplier) => {
     if (inFlight.current) return;
+    if (!form.expected_received_date || form.expected_received_date < form.date) {
+      setError('Please select an expected receiving date on or after the order date.'); return;
+    }
     if (!form.items.length || form.items.some(i => !i.product_id || (!Number.isInteger(Number(i.ordered_packs)) || Number(i.ordered_packs) <= 0))) {
       setError('Add at least one product and enter a positive whole-pack quantity for every item.'); return;
     }
@@ -225,8 +228,9 @@ export default function PurchaseOrders() {
       </div>
       {error && <p role="alert" className="text-red-600 dark:text-red-400">{error}</p>}
       {loading ? <p>Loading Purchase Orders…</p> : creating || editing ? <>
-        <div className="purchase-entry-details grid gap-3 sm:grid-cols-4 px-3 py-2.5">
+        <div className="purchase-entry-details grid gap-3 sm:grid-cols-5 px-3 py-2.5">
           <label>Date<input className="w-full h-8 border rounded-md px-2 text-xs" type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></label>
+          <label>Expected Receiving Date *<input required className="w-full h-8 border rounded-md px-2 text-xs" type="date" min={form.date} value={form.expected_received_date || ''} onChange={e => setForm({ ...form, expected_received_date: e.target.value })} /></label>
           <label>Reference<input className="w-full h-8 border rounded-md px-2 text-xs" value={form.reference || ''} onChange={e => setForm({ ...form, reference: e.target.value })} /></label>
           <label>Supplier *
             <button type="button" disabled={editing || busy} onClick={() => setSupplierOpen(true)}
@@ -258,7 +262,7 @@ export default function PurchaseOrders() {
         <div className="purchase-entry-footer flex flex-wrap items-center justify-between gap-3 px-5 py-4"><button className="g-btn-ghost inline-flex items-center justify-center gap-2 disabled:opacity-50" onClick={addItem}><PlusIcon className="h-4 w-4" /> Add Product</button><div className="text-right text-xs"><p>{rows.length} items · {rows.reduce((sum, row) => sum + Number(row.ordered_packs || 0), 0)} packs</p><p className="font-semibold text-lg">Total: {total.toFixed(2)}</p></div><button className="g-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={() => save()}>{busy ? 'Saving Purchase Order…' : 'Save Purchase Order (Alt+S)'}</button></div>
         <SupplierSearch title="Select Supplier" isOpen={supplierOpen} onClose={() => setSupplierOpen(false)} onSelect={chosen => { setSupplier(chosen); setSupplierOpen(false); setError(''); }} />
       </> : order ? <>
-        <div className="purchase-entry-details grid gap-2 sm:grid-cols-4 px-3 py-2 text-xs"><p>Date: {order.date}</p><p>Supplier: {order.supplier?.name}</p><p>Status: {statusLabel(order.status)}</p><p>Reference: {order.reference || '—'}</p></div>
+        <div className="purchase-entry-details grid gap-2 sm:grid-cols-4 px-3 py-2 text-xs"><p>Date: {order.date}</p><p>Expected Receiving: {order.expected_received_date || "Not scheduled"}</p><p>Supplier: {order.supplier?.name}</p><p>Status: {statusLabel(order.status)}</p><p>Reference: {order.reference || '—'}</p></div>
         {order.notes && <p>{order.notes}</p>}
         <div className="purchase-entry-items purchase-order-form-items px-1 py-1"><table className="purchase-order-form-table purchase-order-detail-table w-full border-collapse text-[11px]"><colgroup>{[23, 12, 5, 7, 8, 8, 10, 6, 6, 6, 9].map((width, index) => <col key={index} style={{ width: `${width}%` }} />)}</colgroup><thead><tr>{detailLabels.map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map(row => <tr key={row.id}>{[row.product?.name, row.product?.brand?.name || '—', row.pack_size, row.ordered_quantity / row.pack_size, row.received_quantity, row.remaining_quantity, Number(row.unit_purchase_price * row.pack_size).toFixed(2), Number(row.unit_bonus || 0) / row.pack_size, row.unit_bonus || 0, row.item_discount_percentage, (row.ordered_quantity * row.unit_purchase_price * (1-row.item_discount_percentage/100)).toFixed(2)].map((v, i) => <td data-label={detailLabels[i]} className={i < 2 ? "text-left" : "text-right tabular-nums"} key={i}>{v}</td>)}</tr>)}</tbody></table></div>
         <p className="text-xs font-medium">{rows.length} items · {rows.reduce((s, r) => s + Number(r.ordered_quantity), 0)} ordered units · Total: {total.toFixed(2)}</p>

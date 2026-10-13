@@ -33,6 +33,7 @@ class PurchaseOrderController extends Controller
         $data = $request->validate([
             'supplier_id' => 'required|integer|exists:suppliers,id',
             'date' => 'required|date',
+            'expected_received_date' => 'required|date|after_or_equal:date',
             'reference' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:10000',
             'items' => 'required|array|min:1',
