@@ -2,18 +2,23 @@
 
 namespace App\Services;
 
+use App\Models\PurchaseInvoiceItem;
 use App\Models\PurchaseOrder;
 use Illuminate\Validation\ValidationException;
 
 class PurchaseOrderReceiving
 {
     // Must run inside the invoice transaction. Serializes competing receipts/edits.
-    public function validateReceipt(PurchaseOrder $order, array &$data): void
+    public function validateReceipt(PurchaseOrder $order, array &$data, ?int $excludeInvoiceId = null): void
     {
         if ((int) $data['supplier_id'] !== (int) $order->supplier_id) {
             throw ValidationException::withMessages(['supplier_id' => 'The supplier must match the source Purchase Order.']);
         }
         $items = $order->items()->get()->keyBy('product_id');
+        $existing = PurchaseInvoiceItem::whereIn('purchase_order_item_id', $items->pluck('id'))
+            ->when($excludeInvoiceId, fn ($query) => $query->where('purchase_invoice_id', '!=', $excludeInvoiceId))
+            ->selectRaw('purchase_order_item_id, SUM(unit_quantity) as paid_units')->groupBy('purchase_order_item_id')
+            ->pluck('paid_units', 'purchase_order_item_id');
         $received = [];
         foreach ($data['items'] as $i => &$row) {
             $line = $items->get($row['product_id']);
@@ -45,7 +50,7 @@ class PurchaseOrderReceiving
             throw ValidationException::withMessages(['items' => 'Receive at least one ordered unit.']);
         }
         foreach ($items as $line) {
-            if (($received[$line->id] ?? 0) > $line->ordered_quantity) {
+            if (($received[$line->id] ?? 0) + ($existing[$line->id] ?? 0) > $line->ordered_quantity) {
                 throw ValidationException::withMessages(['items' => 'Received paid quantity cannot exceed the ordered quantity.']);
             }
         }
@@ -53,13 +58,13 @@ class PurchaseOrderReceiving
 
     public function sync(PurchaseOrder $order): void
     {
-        $order->load('items.invoiceItems', 'invoice');
+        $order->load('items.invoiceItems', 'invoices');
         $complete = $order->items->every(fn ($line) => $line->invoiceItems->sum('unit_quantity') >= $line->ordered_quantity);
         $order->update([
-            'status' => $order->invoice ? ($complete ? 'received' : 'partially_received') : 'ordered',
-            'received_by' => $order->invoice ? ($order->received_by ?? auth()->id()) : null,
+            'status' => $order->invoices->isNotEmpty() ? ($complete ? 'received' : 'partially_received') : 'ordered',
+            'received_by' => $order->invoices->isNotEmpty() ? ($order->received_by ?? auth()->id()) : null,
             'updated_by' => auth()->id(),
-            'received_at' => $order->invoice ? ($order->received_at ?? now()) : null,
+            'received_at' => $order->invoices->isNotEmpty() ? ($order->received_at ?? now()) : null,
         ]);
     }
 }

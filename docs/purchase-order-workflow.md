@@ -1,5 +1,7 @@
 # Purchase Order implementation report
 
+Current update: multiple receiving invoices per PO are implemented. See [Multiple receipt update](#multiple-receipt-update-13-october-2026). Earlier sections below describe the original release and are superseded where they refer to a single invoice or PO invoice uniqueness.
+
 ## Result
 
 Create PO → Select Supplier on Form → Save PO → Receive Order → Review/edit Purchase Invoice → Save Invoice → Existing invoice stock update.
@@ -142,3 +144,20 @@ PO create/update requires `expected_received_date`, on or after the order date. 
 The dashboard KPI metrics response includes `expected_orders_amount` only for users allowed to view POs. The Expected Orders money card uses existing KPI styling and links to the PO list. It defaults to today's selected dashboard range and follows the dashboard date filters. Backend fallback dates use Asia/Karachi. The card has no fabricated historical trend or sparkline. Changes are in `app/Http/Controllers/DashboardController.php` and `resources/js/pages/Dashboard.jsx`.
 
 Validation: 20 PO tests passed (106 assertions), including date requirement, discounted expected value, date exclusion and cancelled/received exclusion. Production build passed.
+
+
+## Multiple receipt update — 13 October 2026
+
+Purchase orders now have an `invoices` collection. Ordered and Partially Received orders can prepare another invoice; fully received and cancelled orders cannot. Preparation suggests remaining paid units, omits completed lines and suggests only bonuses not already received. Bonus quantities remain editable and do not count toward paid-unit fulfillment.
+
+Saving a receipt locks the PO and validates quantities against cumulative receipts, including split batches. Editing an invoice excludes its previous lines from the cumulative check, then replaces them; deletion reverses that invoice's stock and recomputes the PO from surviving invoices. Deleting the last receipt reopens the order and clears the receipt actor/time. While any receipts remain, the existing first-receipt audit fields are retained. Purchase returns remain separate and do not reopen PO fulfillment.
+
+The PO details show Receipt History with invoice numbers, dates, supplier references, amounts and permitted invoice links. Details and the listing offer receiving for partially received orders. Orders with invoices cannot be edited, cancelled or deleted.
+
+Migration `2026_10_13_000005_allow_multiple_purchase_order_receipts.php` replaces the unique PO link with a normal index and adds a nullable unique `receipt_key`. Legacy invoice links are preserved. New PO invoice creation requires the UUID returned by receipt preparation; the frontend carries it through the editable form. Reusing that key is rejected, including by a database constraint. Preparing a genuinely new delivery generates a new key; cumulative quantity validation still rejects stale over-receipts. Standalone invoices do not require a receipt key. The PO API now returns `invoices` instead of `invoice`; external API clients need to adopt that collection and preparation key.
+
+Rollback refuses to restore one-invoice uniqueness if any PO already has multiple invoices. The migration has been applied to the local development database. Apply it to other deployments with `php artisan migrate` before using the new code.
+
+The Expected Orders dashboard KPI keeps its original scope: only uninvoiced Ordered POs scheduled in the selected range. Remaining value for partially received POs is a separate reporting enhancement.
+
+Verification: all 35 backend tests pass (175 assertions), including 24 purchasing tests. New coverage includes successive deliveries, stale over-receipts, duplicate keys, cumulative edit/delete behavior, split-batch receipts, remaining bonus suggestions and migration preservation/rollback safety. Frontend production build passes with existing CSS selector and bundle-size warnings. No browser was connected; interactive UI/printing and concurrent production MySQL execution were not verified.

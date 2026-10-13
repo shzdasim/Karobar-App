@@ -50,6 +50,7 @@ class PurchaseOrderWorkflowTest extends TestCase
             '2026_10_12_000002_add_purchase_order_permissions.php',
             '2026_10_13_000002_add_bonus_to_purchase_order_items.php',
             '2026_10_13_000004_add_expected_received_date_to_purchase_orders.php',
+            '2026_10_13_000005_allow_multiple_purchase_order_receipts.php',
         ] as $file) {
             (require database_path('migrations/'.$file))->up();
         }
@@ -133,7 +134,7 @@ class PurchaseOrderWorkflowTest extends TestCase
             app(PurchaseInvoiceController::class)->store($this->request($data));
             $this->fail('Duplicate accepted');
         } catch (ValidationException $e) {
-            $this->assertArrayHasKey('purchase_order_id', $e->errors());
+            $this->assertArrayHasKey('receipt_key', $e->errors());
         }
         $this->assertSame(1, PurchaseInvoice::count());
         $this->assertSame([85, 85, 85], Product::orderBy('id')->pluck('quantity')->all());
@@ -231,13 +232,133 @@ class PurchaseOrderWorkflowTest extends TestCase
         $this->assertSame([5, 5, 5], Product::orderBy('id')->pluck('quantity')->all());
     }
 
-    public function test_database_rejects_a_second_invoice_link(): void
+    public function test_multiple_deliveries_complete_order_and_reject_stale_over_receipt(): void
+    {
+        $this->withoutMiddleware(EnsureLicensed::class);
+        $order = $this->order();
+        $first = $this->invoiceData($order, 80);
+        $stale = $this->invoiceData($order, 30);
+        $stale['invoice_number'] = 'STALE';
+        $this->postJson('/api/purchase-invoices', $first)->assertCreated();
+        $this->postJson('/api/purchase-invoices', $stale)->assertUnprocessable()->assertJsonValidationErrors('items');
+        $prepared = $this->postJson('/api/purchase-orders/'.$order->id.'/receive')->assertOk();
+        $this->assertSame([20, 20, 20], array_column($prepared->json('items'), 'unit_quantity'));
+        $second = $this->invoiceData($order, 20);
+        $second['invoice_number'] = 'SUP-2';
+        $this->postJson('/api/purchase-invoices', $second)->assertCreated();
+        $this->assertSame('received', $order->fresh()->status);
+        $details = $this->getJson('/api/purchase-orders/'.$order->id)->assertOk()->assertJsonCount(2, 'invoices');
+        $this->assertSame([0, 0, 0], array_column($details->json('items'), 'remaining_quantity'));
+        $this->assertSame([105, 105, 105], Product::orderBy('id')->pluck('quantity')->all());
+        $this->assertSame([100, 100, 100], DB::table('batches')->pluck('quantity')->all());
+        $this->postJson('/api/purchase-orders/'.$order->id.'/receive')->assertStatus(409);
+    }
+
+    public function test_edit_and_delete_multiple_receipts_recompute_cumulative_fulfillment(): void
+    {
+        $order = $this->order();
+        app(PurchaseInvoiceController::class)->store($this->request($this->invoiceData($order, 60)));
+        $second = $this->invoiceData($order, 40);
+        $second['invoice_number'] = 'SUP-2';
+        app(PurchaseInvoiceController::class)->store($this->request($second));
+        $invoice = PurchaseInvoice::latest('id')->first();
+        $data = $invoice->load('items')->toArray();
+        foreach ($data['items'] as &$line) {
+            $line['unit_quantity'] = $line['quantity'] = 50;
+            $line['pack_quantity'] = 5;
+        }
+        unset($line);
+        try {
+            app(PurchaseInvoiceController::class)->update($this->request($data), $invoice);
+            $this->fail('Edit exceeded cumulative ordered quantity');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('items', $e->errors());
+        }
+        $this->assertSame([105, 105, 105], Product::orderBy('id')->pluck('quantity')->all());
+        foreach ($data['items'] as &$line) {
+            $line['unit_quantity'] = $line['quantity'] = 20;
+            $line['pack_quantity'] = 2;
+            $line['sub_total'] = 40;
+        }
+        unset($line);
+        app(PurchaseInvoiceController::class)->update($this->request($data), $invoice);
+        $this->assertSame('partially_received', $order->fresh()->status);
+        $this->assertSame([85, 85, 85], Product::orderBy('id')->pluck('quantity')->all());
+        app(PurchaseInvoiceController::class)->destroy($invoice->fresh());
+        $this->assertSame('partially_received', $order->fresh()->status);
+        $this->assertSame([65, 65, 65], Product::orderBy('id')->pluck('quantity')->all());
+        app(PurchaseInvoiceController::class)->destroy(PurchaseInvoice::first());
+        $this->assertSame('ordered', $order->fresh()->status);
+        $this->assertNull($order->fresh()->received_at);
+        $this->assertSame([5, 5, 5], Product::orderBy('id')->pluck('quantity')->all());
+    }
+
+    public function test_preparation_omits_completed_lines_and_only_suggests_remaining_bonus(): void
+    {
+        $order = $this->order();
+        $order->items()->update(['unit_bonus' => 10]);
+        $first = $this->invoiceData($order, 40);
+        $first['items'][0]['unit_quantity'] = 100;
+        $first['items'][0]['pack_quantity'] = 10;
+        foreach ($first['items'] as &$line) {
+            $line['unit_bonus'] = 4;
+            $line['pack_bonus'] = 0.4;
+            $line['quantity'] = $line['unit_quantity'] + 4;
+        }
+        unset($line);
+        app(PurchaseInvoiceController::class)->store($this->request($first));
+        $prepared = app(PurchaseOrderController::class)->receive($order)->getData(true);
+        $this->assertSame([2, 3], array_column($prepared['items'], 'product_id'));
+        $this->assertSame([60, 60], array_column($prepared['items'], 'unit_quantity'));
+        $this->assertSame([6, 6], array_column($prepared['items'], 'unit_bonus'));
+        $second = $this->invoiceData($order, 60);
+        $second['invoice_number'] = 'SPLIT';
+        foreach ($second['items'] as &$line) {
+            $line['unit_quantity'] = 30;
+            $line['pack_quantity'] = 3;
+            $line['unit_bonus'] = $line['pack_bonus'] = 0;
+            $line['quantity'] = 30;
+        }
+        unset($line);
+        $second['items'] = array_merge($second['items'], $second['items']);
+        app(PurchaseInvoiceController::class)->store($this->request($second));
+        $this->assertSame('received', $order->fresh()->status);
+        $this->assertSame([109, 109, 109], Product::orderBy('id')->pluck('quantity')->all());
+    }
+
+    public function test_migration_preserves_legacy_receipts_and_refuses_lossy_rollback(): void
+    {
+        $migration = require database_path('migrations/2026_10_13_000005_allow_multiple_purchase_order_receipts.php');
+        $migration->down();
+        $order = $this->order();
+        $legacy = PurchaseInvoice::forceCreate(['purchase_order_id' => $order->id, 'supplier_id' => 1,
+            'posted_number' => 'LEGACY', 'posted_date' => '2026-10-13', 'invoice_number' => 'LEGACY',
+            'invoice_amount' => 0, 'total_amount' => 0]);
+        $migration->up();
+        $this->assertSame($order->id, $legacy->fresh()->purchase_order_id);
+        $this->assertNull($legacy->fresh()->receipt_key);
+        $copy = $legacy->replicate();
+        $copy->posted_number = $copy->invoice_number = 'SECOND';
+        $copy->save();
+        try {
+            $migration->down();
+            $this->fail('Rollback accepted multiple receipts');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('multiple receipts', $e->getMessage());
+        }
+        $this->assertSame(2, PurchaseInvoice::count());
+    }
+
+    public function test_database_rejects_reused_receipt_key(): void
     {
         $order = $this->order();
         $data = $this->invoiceData($order);
         app(PurchaseInvoiceController::class)->store($this->request($data));
         $this->expectException(QueryException::class);
-        PurchaseInvoice::first()->replicate()->save();
+        $duplicate = PurchaseInvoice::first()->replicate();
+        $duplicate->posted_number = 'PRINV-DUP';
+        $duplicate->invoice_number = 'SUP-DUP';
+        $duplicate->save();
     }
 
     public function test_real_policy_prevents_receipt_preparation_and_invoice_creation(): void
@@ -350,7 +471,7 @@ class PurchaseOrderWorkflowTest extends TestCase
         $this->getJson('/api/purchase-invoices/'.$response->json('id'))->assertOk()->assertJsonPath('purchase_order.number', $order->number);
         $this->postJson('/api/purchase-orders/'.$order->id.'/receive')->assertStatus(409);
         $data['invoice_number'] = 'SECOND-ATTEMPT';
-        $this->postJson('/api/purchase-invoices', $data)->assertUnprocessable()->assertJsonValidationErrors('purchase_order_id');
+        $this->postJson('/api/purchase-invoices', $data)->assertUnprocessable()->assertJsonValidationErrors('receipt_key');
         $this->assertSame([105, 105, 105], Product::orderBy('id')->pluck('quantity')->all());
     }
 

@@ -764,7 +764,7 @@ ${isA4 ? `
   return (
     <div className="purchase-order-page space-y-4 print:p-0" onKeyDown={onKeyDownTable}>
 <div className="flex flex-wrap gap-2 print:hidden">
-        <Link className="g-btn-secondary" to="/purchase-orders">Saved Purchase Orders</Link>
+        <Link className="g-btn-ghost inline-flex items-center justify-center gap-2" to="/purchase-orders">Orders & Receipt History</Link>
         {has('purchase-order.create') && <button className="g-btn-primary" disabled={!printRows.length} onClick={() => navigate('/purchase-orders/create', { state: { items: printRows.map(r => ({ product_id: r.product_id, product: { id: r.product_id, name: r.product_name, brand_name: r.brand_name }, ordered_quantity: r.order_units, pack_size: r.pack_size, unit_purchase_price: r.pack_price / r.pack_size, item_discount_percentage: 0 })) } })}>Create Order from Forecast</button>}
       </div>
 {/* Forecast overview */}

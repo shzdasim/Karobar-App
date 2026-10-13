@@ -12,14 +12,14 @@ class PurchaseOrderController extends Controller
     public function index(Request $request)
     {
         $this->authorize('viewAny', \App\Models\PurchaseOrder::class);
-        return \App\Models\PurchaseOrder::with('supplier', 'invoice')->withCount('items')
+        return \App\Models\PurchaseOrder::with('supplier', 'invoices')->withCount('items')
             ->withSum('items', 'ordered_quantity')->orderByDesc('id')->paginate(20);
     }
 
     public function show(\App\Models\PurchaseOrder $purchaseOrder)
     {
         $this->authorize('view', $purchaseOrder);
-        $purchaseOrder->load('supplier', 'items.product.brand', 'items.invoiceItems', 'invoice');
+        $purchaseOrder->load('supplier', 'items.product.brand', 'items.invoiceItems', 'invoices');
         foreach ($purchaseOrder->items as $item) {
             $item->received_quantity = $item->invoiceItems->sum('unit_quantity');
             $item->remaining_quantity = max(0, $item->ordered_quantity - $item->received_quantity);
@@ -89,7 +89,7 @@ class PurchaseOrderController extends Controller
         $data = $this->validateOrder($request);
         return DB::transaction(function () use ($purchaseOrder, $data) {
             $order = \App\Models\PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
-            if ($order->status !== 'ordered' || $order->invoice()->exists()) {
+            if ($order->status !== 'ordered' || $order->invoices()->exists()) {
                 abort(409, 'Only unreceived orders can be edited.');
             }
             if ((int) $order->supplier_id !== (int) $data['supplier_id']) {
@@ -107,7 +107,7 @@ class PurchaseOrderController extends Controller
         $this->authorize('cancel', $purchaseOrder);
         return DB::transaction(function () use ($purchaseOrder) {
             $order = \App\Models\PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
-            if ($order->status !== 'ordered' || $order->invoice()->exists()) abort(409, 'Only unreceived orders can be cancelled.');
+            if ($order->status !== 'ordered' || $order->invoices()->exists()) abort(409, 'Only unreceived orders can be cancelled.');
             $order->update(['status' => 'cancelled', 'updated_by' => auth()->id()]);
             return $order;
         });
@@ -118,7 +118,7 @@ class PurchaseOrderController extends Controller
         $this->authorize('delete', $purchaseOrder);
         return DB::transaction(function () use ($purchaseOrder) {
             $order = \App\Models\PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
-            if (!in_array($order->status, ['ordered', 'cancelled'], true) || $order->invoice()->exists()) {
+            if (!in_array($order->status, ['ordered', 'cancelled'], true) || $order->invoices()->exists()) {
                 abort(409, 'Received Purchase Orders cannot be deleted.');
             }
             $order->delete();
@@ -132,22 +132,27 @@ class PurchaseOrderController extends Controller
         $this->authorize('create', \App\Models\PurchaseInvoice::class);
         return DB::transaction(function () use ($purchaseOrder) {
             $order = \App\Models\PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
-            if ($order->status !== 'ordered' || $order->invoice()->exists()) abort(409, 'This order already has a receipt or cannot be received.');
-            $order->load('supplier', 'items.product');
+            if (!in_array($order->status, ['ordered', 'partially_received'], true)) abort(409, 'This order cannot be received.');
+            $order->load('supplier', 'items.product', 'items.invoiceItems');
             return response()->json([
                 'purchase_order_id' => $order->id,
-                'purchase_order' => ['id' => $order->id, 'number' => $order->number],
+                'receipt_key' => (string) \Illuminate\Support\Str::uuid(),
+                'purchase_order' => ['id' => $order->id, 'number' => $order->number,
+                    'previous_receipts' => $order->invoices()->count(),
+                    'remaining_units' => $order->items->sum(fn ($line) => max(0, $line->ordered_quantity - $line->invoiceItems->sum('unit_quantity')))],
                 'supplier_id' => $order->supplier_id,
                 'supplier' => $order->supplier,
                 'posted_date' => now()->toDateString(),
                 'remarks' => $order->notes,
-                'items' => $order->items->map(function ($line) {
+                'items' => $order->items->filter(fn ($line) => $line->invoiceItems->sum('unit_quantity') < $line->ordered_quantity)->values()->map(function ($line) {
                     $p = $line->product;
+                    $remaining = max(0, $line->ordered_quantity - $line->invoiceItems->sum('unit_quantity'));
+                    $bonus = max(0, $line->unit_bonus - $line->invoiceItems->sum('unit_bonus'));
                     return [
                         'purchase_order_item_id' => $line->id, 'product_id' => $p->id,
                         'pack_size' => $line->pack_size,
-                        'unit_quantity' => $line->ordered_quantity,
-                        'pack_quantity' => $line->ordered_quantity / $line->pack_size,
+                        'unit_quantity' => $remaining,
+                        'pack_quantity' => $remaining / $line->pack_size,
                         'unit_purchase_price' => $line->unit_purchase_price,
                         'pack_purchase_price' => $line->unit_purchase_price * $line->pack_size,
                         'unit_sale_price' => $p->unit_sale_price ?? 0,
@@ -155,7 +160,7 @@ class PurchaseOrderController extends Controller
                         'whole_sale_unit_price' => $p->whole_sale_unit_price ?? 0,
                         'whole_sale_pack_price' => ($p->whole_sale_unit_price ?? 0) * $line->pack_size,
                         'item_discount_percentage' => $line->item_discount_percentage,
-                        'unit_bonus' => $line->unit_bonus, 'pack_bonus' => $line->unit_bonus / $line->pack_size, 'batch' => '', 'expiry' => '',
+                        'unit_bonus' => $bonus, 'pack_bonus' => $bonus / $line->pack_size, 'batch' => '', 'expiry' => '',
                         'product' => $p,
                     ];
                 }),

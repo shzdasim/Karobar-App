@@ -1017,7 +1017,7 @@ const contRect = container.getBoundingClientRect();
       style={{ minHeight: "calc(100vh - 130px)", maxHeight: "calc(100vh - 130px)" }}
       autoComplete="off" // disable browser suggestions globally
     >
-{(initialData?.purchase_order || form.purchase_order) && <div className="g-toolbar p-3">This invoice was generated from Purchase Order <a className="underline" href={`/purchase-orders/${(initialData?.purchase_order || form.purchase_order).id}`}>{(initialData?.purchase_order || form.purchase_order).number}</a>. Review quantities, prices, batches and expiry before saving.</div>}
+{(initialData?.purchase_order || form.purchase_order) && <div className="g-toolbar p-3">This invoice was generated from Purchase Order <a className="underline" href={`/purchase-orders/${(initialData?.purchase_order || form.purchase_order).id}`}>{(initialData?.purchase_order || form.purchase_order).number}</a>. Review quantities, prices, batches and expiry before saving.{!invoiceId && <p className="text-xs mt-1 font-medium">{(initialData?.purchase_order || form.purchase_order).previous_receipts ? `Additional delivery · ${(initialData?.purchase_order || form.purchase_order).previous_receipts} previous receipt(s)` : "First delivery"} · {(initialData?.purchase_order || form.purchase_order).remaining_units} paid units remaining before this delivery. Save the delivered quantities; you can receive the balance later.</p>}</div>}
 {/* ================= HEADER SECTION ================= */}
       <div className="purchase-entry-header sticky top-0 z-10 shadow-lg" autoComplete="off">
 {/* ---- Branded Title Banner ---- */}

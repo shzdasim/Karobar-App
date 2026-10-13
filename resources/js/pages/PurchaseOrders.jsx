@@ -221,6 +221,7 @@ export default function PurchaseOrders() {
         <div className="flex items-center gap-3"><div className="purchase-entry-icon p-2.5 rounded-xl"><ClipboardDocumentListIcon className="h-6 w-6" /></div><h1 className="purchase-entry-title text-xl font-semibold">{creating ? 'New Purchase Order' : editing ? `Edit ${order?.number || 'Purchase Order'}` : order?.number || 'Purchase Orders'}</h1></div>
         <div className="flex flex-wrap gap-2 print:hidden">
           {has('purchase-order.generate') && <Link className="g-btn-ghost inline-flex items-center justify-center gap-2 disabled:opacity-50" to="/purchase-orders/forecast" title="New Forecast (Alt+N)">New Forecast <kbd className="text-[10px] opacity-70">Alt+N</kbd></Link>}
+          {order && !editing && ['ordered', 'partially_received'].includes(order.status) && has('purchase-invoice.create') && <button className="g-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={receive}><ArrowDownTrayIcon className="w-4 h-4" />{busy ? 'Preparing…' : order.status === 'partially_received' ? 'Receive Remaining Items' : 'Receive Delivery'}</button>}
           {entryMode && <button className="purchase-entry-add-product inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg" disabled={busy} onClick={addItem}><PlusIcon className="h-4 w-4" />Add Product</button>}
           {(id || creating) && <Link className="g-btn-ghost inline-flex items-center justify-center gap-2 disabled:opacity-50" to="/purchase-orders">All Orders</Link>}
           {!id && !creating && has('purchase-order.create') && <Link className="g-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" to="/purchase-orders/create">New Purchase Order</Link>}
@@ -266,21 +267,29 @@ export default function PurchaseOrders() {
         {order.notes && <p>{order.notes}</p>}
         <div className="purchase-entry-items purchase-order-form-items px-1 py-1"><table className="purchase-order-form-table purchase-order-detail-table w-full border-collapse text-[11px]"><colgroup>{[23, 12, 5, 7, 8, 8, 10, 6, 6, 6, 9].map((width, index) => <col key={index} style={{ width: `${width}%` }} />)}</colgroup><thead><tr>{detailLabels.map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map(row => <tr key={row.id}>{[row.product?.name, row.product?.brand?.name || '—', row.pack_size, row.ordered_quantity / row.pack_size, row.received_quantity, row.remaining_quantity, Number(row.unit_purchase_price * row.pack_size).toFixed(2), Number(row.unit_bonus || 0) / row.pack_size, row.unit_bonus || 0, row.item_discount_percentage, (row.ordered_quantity * row.unit_purchase_price * (1-row.item_discount_percentage/100)).toFixed(2)].map((v, i) => <td data-label={detailLabels[i]} className={i < 2 ? "text-left" : "text-right tabular-nums"} key={i}>{v}</td>)}</tr>)}</tbody></table></div>
         <p className="text-xs font-medium">{rows.length} items · {rows.reduce((s, r) => s + Number(r.ordered_quantity), 0)} ordered units · Total: {total.toFixed(2)}</p>
-        {order.status === 'partially_received' && <p>One invoice is linked to this order. Remaining quantities are tracked; additional receipts will be supported in a future update.</p>}
+        <section className="px-3 py-3 space-y-3" aria-label="Purchase order receiving">
+          <div className="flex flex-wrap gap-6 text-xs">
+            <p><span className="block opacity-70">Deliveries received</span><strong className="text-lg">{order.invoices?.length || 0}</strong></p>
+            <p><span className="block opacity-70">Paid units received</span><strong className="text-lg">{rows.reduce((sum, row) => sum + Number(row.received_quantity || 0), 0)}</strong></p>
+            <p><span className="block opacity-70">Paid units remaining</span><strong className="text-lg">{rows.reduce((sum, row) => sum + Number(row.remaining_quantity || 0), 0)}</strong></p>
+          </div>
+          <h3 className="font-semibold text-sm">Receipt History</h3>
+          {order.invoices?.length ? <div className="overflow-x-auto"><table className="w-full text-xs text-left"><thead><tr>{['Purchase Invoice', 'Received Date', 'Supplier Invoice', 'Amount', 'Action'].map(label => <th key={label} className="px-3 py-2 border-b">{label}</th>)}</tr></thead><tbody>{order.invoices.map(invoice => <tr key={invoice.id}><td className="px-3 py-2 border-b font-medium">{invoice.posted_number}</td><td className="px-3 py-2 border-b">{invoice.posted_date}</td><td className="px-3 py-2 border-b">{invoice.invoice_number}</td><td className="px-3 py-2 border-b tabular-nums">{Number(invoice.total_amount).toFixed(2)}</td><td className="px-3 py-2 border-b">{has('purchase-invoice.view') && <Link className="underline" to={`/purchase-invoices/${invoice.id}`}>View Invoice</Link>}</td></tr>)}</tbody></table></div> : <p className="text-xs opacity-70">No deliveries received yet. Use Receive Delivery to record the first delivery.</p>}
+        </section>
         <div className="purchase-entry-footer flex flex-wrap gap-2 px-3 py-2 print:hidden">
-          {order.invoice ? has('purchase-invoice.view') && <Link className="g-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" to={`/purchase-invoices/${order.invoice.id}`}>View Purchase Invoice</Link> : order.status === 'ordered' && <>
-            {has('purchase-order.update') && <Link className="g-btn-ghost inline-flex items-center justify-center gap-2 disabled:opacity-50" to={`/purchase-orders/${id}/edit`}>Edit</Link>}
-            {has('purchase-invoice.create') && <button className="g-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={receive}>{busy ? 'Preparing Purchase Invoice…' : 'Receive Order'}</button>}
-            {has('purchase-order.cancel') && <button className="g-btn-ghost inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={cancel}>Cancel Order</button>}
+          {order.status === 'ordered' && !order.invoices?.length && <>
+            {has('purchase-order.update') && <Link className="g-btn-ghost inline-flex items-center justify-center gap-2" to={`/purchase-orders/${id}/edit`}>Edit</Link>}
+            {has('purchase-order.cancel') && <button className="g-btn-ghost inline-flex items-center justify-center gap-2" disabled={busy} onClick={cancel}>Cancel Order</button>}
           </>}
+          {['ordered', 'partially_received'].includes(order.status) && has('purchase-invoice.create') && <button className="g-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={receive}>{busy ? 'Preparing Purchase Invoice…' : order.status === 'partially_received' ? 'Receive Remaining Items' : 'Receive Order'}</button>}
           <button className="g-btn-ghost inline-flex items-center justify-center gap-2 disabled:opacity-50" onClick={() => window.print()}>Print Order</button>
         </div>
       </> : listing && <>
         <div className="products-panel purchase-invoice-catalog purchase-order-catalog">
           <div className="purchase-invoice-table-scroll" tabIndex={0} role="region" aria-label="Purchase order list" aria-busy={busy}>
-            <table className="w-full text-xs"><colgroup>{[13, 12, 25, 5, 9, 16, 20].map((width, index) => <col key={index} style={{ width: `${width}%` }} />)}</colgroup>
+            <table className="w-full text-xs"><colgroup>{[11, 10, 18, 5, 9, 6, 13, 28].map((width, index) => <col key={index} style={{ width: `${width}%` }} />)}</colgroup>
               <thead className="sticky top-0 z-10 shadow-xs"><tr>
-                {['PO Number', 'Date', 'Supplier', 'Items', 'Ordered Units', 'Status', 'Actions'].map(h => <th className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider ${h === 'Actions' ? 'text-center' : 'text-left'}`} key={h}>{h}</th>)}
+                {['PO Number', 'Date', 'Supplier', 'Items', 'Ordered Units', 'Receipts', 'Status', 'Actions'].map(h => <th className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider ${h === 'Actions' ? 'text-center' : 'text-left'}`} key={h}>{h}</th>)}
               </tr></thead>
               <tbody>{listing.data.map(po => <tr key={po.id}>
                 <td data-label="PO Number" className="px-3 py-2.5 font-semibold">{po.number}</td>
@@ -288,15 +297,16 @@ export default function PurchaseOrders() {
                 <td data-label="Supplier" className="px-3 py-2.5">{po.supplier?.name}</td>
                 <td data-label="Items" className="px-3 py-2.5 tabular-nums">{po.items_count}</td>
                 <td data-label="Ordered Units" className="px-3 py-2.5 tabular-nums">{po.items_sum_ordered_quantity}</td>
+                <td data-label="Receipts" className="px-3 py-2.5 tabular-nums">{po.invoices?.length || 0}</td>
                 <td data-label="Status" className="px-3 py-2.5"><span className="purchase-order-status" data-status={po.status}>{statusLabel(po.status)}</span></td>
-                <td data-label="Actions" className="px-3 py-2.5"><div className="purchase-order-index-actions flex flex-wrap items-center justify-center gap-1">
-                  <Link className="products-row-action" to={`/purchase-orders/${po.id}`} title={`View / Print ${po.number}`} aria-label={`View Purchase Order ${po.number}`}><EyeIcon aria-hidden="true" className="w-4 h-4" /></Link>
-                  {po.status === 'ordered' && !po.invoice && <>
-                    {has('purchase-order.update') && <Link className="products-row-action" to={`/purchase-orders/${po.id}/edit`} title={`Edit ${po.number}`} aria-label={`Edit Purchase Order ${po.number}`}><PencilSquareIcon aria-hidden="true" className="w-4 h-4" /></Link>}
-                    {has('purchase-invoice.create') && <Link className="products-row-action" to={`/purchase-invoices/create?purchase_order_id=${po.id}`} title={`Receive ${po.number}`} aria-label={`Receive Purchase Order ${po.number}`}><ArrowDownTrayIcon aria-hidden="true" className="w-4 h-4" /></Link>}
+                <td data-label="Actions" className="px-3 py-2.5"><div className="purchase-order-index-actions">
+                  <Link className="purchase-order-action" to={`/purchase-orders/${po.id}`} title={`View / Print ${po.number}`} aria-label={`View Purchase Order ${po.number}`}><EyeIcon aria-hidden="true" className="w-4 h-4" /><span>View / Print</span></Link>
+                  {po.status === 'ordered' && !po.invoices?.length && <>
+                    {has('purchase-order.update') && <Link className="purchase-order-action" to={`/purchase-orders/${po.id}/edit`} title={`Edit ${po.number}`} aria-label={`Edit Purchase Order ${po.number}`}><PencilSquareIcon aria-hidden="true" className="w-4 h-4" /><span>Edit</span></Link>}
                   </>}
-                  {!po.invoice && ['ordered', 'cancelled'].includes(po.status) && has('purchase-order.delete') && <button className="products-row-action products-row-delete" disabled={busy} onClick={() => deleteOrder(po)} title={`Delete ${po.number}`} aria-label={`Delete Purchase Order ${po.number}`}><TrashIcon aria-hidden="true" className="w-4 h-4" /></button>}
-                  {po.invoice && has('purchase-invoice.view') && <Link className="products-row-action" to={`/purchase-invoices/${po.invoice.id}`} title={`View invoice for ${po.number}`} aria-label={`View Purchase Invoice for ${po.number}`}><DocumentTextIcon aria-hidden="true" className="w-4 h-4" /></Link>}
+                  {['ordered', 'partially_received'].includes(po.status) && has('purchase-invoice.create') && <Link className="purchase-order-action purchase-order-action-primary" to={`/purchase-invoices/create?purchase_order_id=${po.id}`} title={`Receive ${po.number}`} aria-label={`Receive Purchase Order ${po.number}`}><ArrowDownTrayIcon aria-hidden="true" className="w-4 h-4" /><span>{po.status === 'partially_received' ? 'Receive Balance' : 'Receive Delivery'}</span></Link>}
+                  {!po.invoices?.length && ['ordered', 'cancelled'].includes(po.status) && has('purchase-order.delete') && <button className="purchase-order-action purchase-order-action-danger" disabled={busy} onClick={() => deleteOrder(po)} title={`Delete ${po.number}`} aria-label={`Delete Purchase Order ${po.number}`}><TrashIcon aria-hidden="true" className="w-4 h-4" /><span>Delete</span></button>}
+                  {!!po.invoices?.length && has('purchase-invoice.view') && <Link className="purchase-order-action" to={`/purchase-orders/${po.id}`} title={`View receipts for ${po.number}`} aria-label={`View receipt history for ${po.number}`}><DocumentTextIcon aria-hidden="true" className="w-4 h-4" /><span>Receipts</span></Link>}
                 </div></td>
               </tr>)}</tbody>
             </table>

@@ -20,16 +20,16 @@ class PurchaseOrder extends Model
         return $this->hasMany(PurchaseOrderItem::class);
     }
 
-    public function invoice()
+    public function invoices()
     {
-        return $this->hasOne(PurchaseInvoice::class);
+        return $this->hasMany(PurchaseInvoice::class);
     }
 
     public static function expectedAmountBetween(string $from, string $to): float
     {
         return (float) static::query()
             ->where('status', 'ordered')
-            ->whereDoesntHave('invoice')
+            ->whereDoesntHave('invoices')
             ->whereBetween('expected_received_date', [$from, $to])
             ->join('purchase_order_items as lines', 'lines.purchase_order_id', '=', 'purchase_orders.id')
             ->selectRaw('COALESCE(SUM(lines.ordered_quantity * lines.unit_purchase_price * (1 - COALESCE(lines.item_discount_percentage, 0) / 100.0)), 0) as amount')

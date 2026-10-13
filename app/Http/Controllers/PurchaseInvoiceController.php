@@ -81,6 +81,7 @@ class PurchaseInvoiceController extends Controller
         $this->authorize('create', PurchaseInvoice::class);
         $data = $request->validate([
             'purchase_order_id'    => 'nullable|integer|exists:purchase_orders,id',
+            'receipt_key' => 'exclude_without:purchase_order_id|required|uuid|unique:purchase_invoices,receipt_key',
             'supplier_id'          => 'required|exists:suppliers,id',
             'invoice_type'         => 'nullable|string|in:credit,debit',
             // 'posted_number'      => now generated server-side
@@ -129,8 +130,8 @@ class PurchaseInvoiceController extends Controller
                 if (!empty($data['purchase_order_id'])) {
                     $order = PurchaseOrder::lockForUpdate()->findOrFail($data['purchase_order_id']);
                     $this->authorize('view', $order);
-                    if ($order->status !== 'ordered' || $order->invoice()->exists()) {
-                        throw ValidationException::withMessages(['purchase_order_id' => 'This Purchase Order already has a receipt or cannot be received.']);
+                    if (!in_array($order->status, ['ordered', 'partially_received'], true)) {
+                        throw ValidationException::withMessages(['purchase_order_id' => 'This Purchase Order cannot be received.']);
                     }
                     app(PurchaseOrderReceiving::class)->validateReceipt($order, $data);
                 } else {
@@ -253,7 +254,7 @@ if ($invoiceType === 'credit') {
                     ? PurchaseOrder::lockForUpdate()->findOrFail($purchaseInvoice->purchase_order_id) : null;
                 if ($order) {
                     $purchaseInvoice->refresh();
-                    app(PurchaseOrderReceiving::class)->validateReceipt($order, $data);
+                    app(PurchaseOrderReceiving::class)->validateReceipt($order, $data, $purchaseInvoice->id);
                 }
                 else {
                     foreach ($data['items'] as &$row) unset($row['purchase_order_item_id']);
@@ -458,8 +459,8 @@ if ($invoiceType === 'credit') {
 
         $errors = [];
 
-        if (str_contains($mLower, 'purchase_order_id')) {
-            $errors['purchase_order_id'][] = 'This Purchase Order already has a Purchase Invoice.';
+        if (str_contains($mLower, 'receipt_key')) {
+            $errors['receipt_key'][] = 'This receipt has already been saved. Open the Purchase Order to review its invoices.';
         }
         if (str_contains($mLower, 'invoice_number')) {
             $errors['invoice_number'][] = 'Invoice number has already been taken for this supplier or globally.';
