@@ -107,6 +107,11 @@
       Invoice Number: <span class="invoice-number">{{ $inv['posted_number'] ?? 'N/A' }}</span>
     </h2>
 
+    @if($inv['cost_is_estimated'] ?? false)
+      <p style="font-size:10px;">Estimated historical profit: items without saved costs use the existing current-cost calculation.</p>
+    @else
+      <p style="font-size:10px;">Cost basis: saved sale costs.</p>
+    @endif
     <!-- Invoice Summary -->
     <div class="invoice-summary">
       <div class="summary-item">
@@ -160,7 +165,7 @@
             <td class="num">{{ $it['product_code'] ?? '-' }}</td>
             <td class="num">{{ number_format($it['pack_size'] ?? 0) }}</td>
             <td class="num">{{ number_format($it['quantity'] ?? 0) }}</td>
-            <td class="num">Rs. {{ number_format($it['cost_price'] ?? 0, 2) }}</td>
+            <td class="num">Rs. {{ number_format($it['cost_price'] ?? 0, 2) }}{{ ($it['cost_is_estimated'] ?? false) ? ' (estimated)' : '' }}</td>
             <td class="num">Rs. {{ number_format($it['sale_price'] ?? 0, 2) }}</td>
             <td class="num">Rs. {{ number_format($it['total_cost'] ?? 0, 2) }}</td>
             <td class="num">Rs. {{ number_format($it['total_sale'] ?? 0, 2) }}</td>

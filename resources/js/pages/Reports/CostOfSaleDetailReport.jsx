@@ -335,6 +335,7 @@ export default function CostOfSaleDetailReport() {
         </div>
       </section>
 
+      {invoices.some(invoice => invoice.cost_is_estimated) && <p role="note" className="text-xs px-3 py-2">Estimated historical profit: some items have no saved original cost and use the existing current-cost calculation.</p>}
       {/* ===== Summary KPIs ===== */}
       {invoices.length > 0 && (
         <div className="report-kpis">
@@ -407,6 +408,7 @@ export default function CostOfSaleDetailReport() {
                   </div>
                 </div>
                 <div className="report-invoice-chips">
+                  <span className="report-badge">{inv.cost_is_estimated ? "Includes estimated profit" : "Saved sale costs"}</span>
                   <span className="report-badge">{inv.invoice_type?.toUpperCase() || 'DEBIT'}</span>
                   <span className="report-badge">{inv.sale_type?.toUpperCase() || 'RETAIL'}</span>
                 </div>

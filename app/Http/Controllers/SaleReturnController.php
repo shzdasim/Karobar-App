@@ -77,10 +77,21 @@ class SaleReturnController extends Controller
     }
 
     // Create items and INCREASE stock (sale return adds back to inventory)
-    private function createItemsAndIncrease(SaleReturn $sr, array $items): void
+    private function createItemsAndIncrease(SaleReturn $sr, array $items, ?\Illuminate\Support\Collection $originalItems = null): void
     {
+        $snapshots = app(\App\Services\SaleCostSnapshot::class);
+        $source = \App\Models\SaleInvoice::whereKey($sr->sale_invoice_id)->where('customer_id', $sr->customer_id)->first();
+        $sourceItems = $source ? $source->items()->get() : collect();
         foreach ($items as $raw) {
+            $matches = $sourceItems->where('product_id', $raw['product_id']);
+            if (!empty($raw['batch_number']) || !empty($raw['expiry'])) {
+                $matches = $snapshots->matchingRows($matches, $raw);
+            }
+            $cost = $originalItems !== null
+                ? $snapshots->originalCost($originalItems, $raw)
+                : $snapshots->unambiguousCost($matches);
             $payload = [
+                'cost_price_snapshot' => $cost,
                 'product_id'               => $raw['product_id'],
                 'batch_number'             => $raw['batch_number'] ?? ($raw['batch'] ?? null),
                 'expiry'                   => $raw['expiry'] ?? null,
@@ -247,6 +258,8 @@ class SaleReturnController extends Controller
         }
 
         return DB::transaction(function () use ($saleReturn, $data, $userId) {
+            $originalItems = (int) $saleReturn->sale_invoice_id === (int) ($data['sale_invoice_id'] ?? 0)
+                && (int) $saleReturn->customer_id === (int) $data['customer_id'] ? $saleReturn->items()->get() : collect();
             // Revert previous stock effects
             $this->revertItems($saleReturn);
 
@@ -267,7 +280,7 @@ class SaleReturnController extends Controller
                 'total'               => $this->f($data['total'] ?? 0),
             ]);
 
-            $this->createItemsAndIncrease($saleReturn, $data['items']);
+            $this->createItemsAndIncrease($saleReturn, $data['items'], $originalItems);
 
             return $saleReturn->load(['customer', 'items.product']);
         });

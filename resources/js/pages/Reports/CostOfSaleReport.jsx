@@ -316,6 +316,7 @@ export default function CostOfSaleReport() {
         </div>
       </section>
 
+      {rows.some(row => row.cost_is_estimated) && <p role="note" className="text-xs px-3 py-2">Estimated historical profit: some sales or returns have no saved original cost and use the existing current-cost calculation.</p>}
       {/* ===== Summary KPIs ===== */}
       <div className="report-kpis report-kpis-6">
         <KpiCard
@@ -420,7 +421,7 @@ export default function CostOfSaleReport() {
 
               {computed.withDerived.map((r, idx) => (
                 <tr key={r.sale_date + "_" + idx}>
-                  <td>{r.sale_date}</td>
+                  <td>{r.sale_date}{r.cost_is_estimated && <span className="block text-[10px] opacity-70">Estimated profit</span>}</td>
                   <td className="report-num">{fmtCurrency(r.gross_sale)}</td>
                   <td className="report-num">{fmtCurrency(r.item_discount)}</td>
                   <td className="report-num">{fmtCurrency(r.discount_amount)}</td>

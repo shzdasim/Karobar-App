@@ -75,10 +75,17 @@ class SaleInvoiceController extends Controller
         }
     }
 
-    private function createItemsAndReduce(SaleInvoice $invoice, array $items): void
+    private function createItemsAndReduce(SaleInvoice $invoice, array $items, ?\Illuminate\Support\Collection $originalItems = null, ?\Illuminate\Support\Collection $costs = null): void
     {
+        $snapshots = app(\App\Services\SaleCostSnapshot::class);
+        // Capture every product before any stock depletion can reset its average.
+        $costs ??= $snapshots->productCosts($items);
+        $legacy = $originalItems !== null && $originalItems->every(fn ($item) => $item->cost_price_snapshot === null);
         foreach ($items as $raw) {
+            $matches = $originalItems === null ? collect() : $originalItems->where('product_id', $raw['product_id']);
+            $cost = $legacy ? null : ($matches->isNotEmpty() ? $snapshots->originalCost($originalItems, $raw) : $costs->get($raw['product_id'], 0));
             $payload = [
+                'cost_price_snapshot' => $cost,
                 'product_id'               => $raw['product_id'],
                 'pack_size'                => $this->i($raw['pack_size'] ?? 0),
                 'batch_number'             => $raw['batch_number'] ?? ($raw['batch'] ?? null),
@@ -316,6 +323,8 @@ class SaleInvoiceController extends Controller
         ]);
 
         return DB::transaction(function () use ($invoice, $data) {
+            $originalItems = $invoice->items()->get();
+            $costs = app(\App\Services\SaleCostSnapshot::class)->productCosts($data['items']);
             $this->revertItems($invoice);
             $invoice->items()->delete();
 
@@ -345,7 +354,7 @@ class SaleInvoiceController extends Controller
                 'total_receive'      => $data['total_receive'] ?? 0,
             ]);
 
-            $this->createItemsAndReduce($invoice, $data['items']);
+            $this->createItemsAndReduce($invoice, $data['items'], $originalItems, $costs);
 
             // Save customer-specific wholesale prices if any custom prices were used
             if ($newSaleType === 'wholesale' && isset($data['items'])) {

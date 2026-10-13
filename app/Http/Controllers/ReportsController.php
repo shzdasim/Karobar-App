@@ -107,7 +107,8 @@ class ReportsController extends Controller
             // Note: We use quantity * cost_price (not sub_total) because cost remains the same regardless of discounts
             $cogsSales = $cogsQuery
                 ->selectRaw('DATE(si.date) as sale_date')
-                ->selectRaw('SUM(COALESCE(sii.quantity, 0) * CASE WHEN p.avg_price IS NULL OR p.avg_price = 0 THEN COALESCE(p.unit_purchase_price, 0) ELSE p.avg_price END) as cogs_sales')
+                ->selectRaw('SUM(COALESCE(sii.quantity, 0) * COALESCE(sii.cost_price_snapshot, CASE WHEN p.avg_price IS NULL OR p.avg_price = 0 THEN COALESCE(p.unit_purchase_price, 0) ELSE p.avg_price END)) as cogs_sales')
+                ->selectRaw('SUM(CASE WHEN sii.cost_price_snapshot IS NULL THEN 1 ELSE 0 END) as estimated_items')
                 ->groupBy('sale_date')
                 ->get()
                 ->keyBy('sale_date');
@@ -119,7 +120,8 @@ class ReportsController extends Controller
                 ->join('products as p', 'p.id', '=', 'sri.product_id')
                 ->whereBetween('sr.date', [$fromDateStr, $toDateStr])
                 ->selectRaw('DATE(sr.date) as sale_date')
-                ->selectRaw('SUM(COALESCE(sri.unit_return_quantity, 0) * CASE WHEN p.avg_price IS NULL OR p.avg_price = 0 THEN COALESCE(p.unit_purchase_price, 0) ELSE p.avg_price END) as cogs_returns')
+                ->selectRaw('SUM(COALESCE(sri.unit_return_quantity, 0) * COALESCE(sri.cost_price_snapshot, CASE WHEN p.avg_price IS NULL OR p.avg_price = 0 THEN COALESCE(p.unit_purchase_price, 0) ELSE p.avg_price END)) as cogs_returns')
+                ->selectRaw('SUM(CASE WHEN sri.cost_price_snapshot IS NULL THEN 1 ELSE 0 END) as estimated_items')
                 ->groupBy('sale_date')
                 ->get()
                 ->keyBy('sale_date');
@@ -141,6 +143,7 @@ class ReportsController extends Controller
 
                 $rows[] = [
                     'sale_date'       => $d,
+                    'cost_is_estimated' => (($cs->estimated_items ?? 0) + ($cr->estimated_items ?? 0)) > 0,
                     'gross_sale'      => round(($s->gross_sale ?? 0), 2),
                     'item_discount'   => round(($s->item_discount ?? 0), 2),
                     'discount_amount' => round(($s->discount_amount ?? 0), 2),  // Flat discount
@@ -210,9 +213,12 @@ class ReportsController extends Controller
             $rows = $invoices->map(function ($invoice) {
                 $items = $invoice->items->map(function ($item) {
                     // Get cost price - use avg_price or fallback to unit_purchase_price
-                    $costPrice = $item->product->avg_price ?? 0;
-                    if ($costPrice == 0) {
-                        $costPrice = $item->product->unit_purchase_price ?? 0;
+                    $costPrice = $item->cost_price_snapshot;
+                    if ($costPrice === null) {
+                        $costPrice = $item->product->avg_price ?? 0;
+                        if ($costPrice == 0) {
+                            $costPrice = $item->product->unit_purchase_price ?? 0;
+                        }
                     }
                     
                     $quantity = $item->quantity ?? 0;
@@ -230,6 +236,7 @@ class ReportsController extends Controller
                         'pack_size' => $item->pack_size ?? 0,
                         'quantity' => $quantity,
                         'cost_price' => round($costPrice, 2),
+                        'cost_is_estimated' => $item->cost_price_snapshot === null,
                         'sale_price' => round($salePrice, 2),
                         'item_discount_percentage' => round($item->item_discount_percentage ?? 0, 2),
                         'total_cost' => round($totalCost, 2),
@@ -264,6 +271,7 @@ class ReportsController extends Controller
                     'total_sale' => round($totalSale, 2),
                     'profit' => round($profit, 2),
                     'profit_margin' => $profitMargin,
+                    'cost_is_estimated' => $invoice->items->contains(fn ($item) => $item->cost_price_snapshot === null),
                     'items' => $items,
                 ];
             });
@@ -325,9 +333,12 @@ class ReportsController extends Controller
         foreach ($invoices as $invoice) {
             $items = [];
             foreach ($invoice->items as $item) {
-                $costPrice = (float) ($item->product->avg_price ?? 0);
-                if ($costPrice == 0) {
-                    $costPrice = (float) ($item->product->unit_purchase_price ?? 0);
+                $costPrice = $item->cost_price_snapshot;
+                if ($costPrice === null) {
+                    $costPrice = (float) ($item->product->avg_price ?? 0);
+                    if ($costPrice == 0) {
+                        $costPrice = (float) ($item->product->unit_purchase_price ?? 0);
+                    }
                 }
                 
                 $quantity = (int) ($item->quantity ?? 0);
@@ -343,6 +354,7 @@ class ReportsController extends Controller
                     'pack_size' => (int) ($item->pack_size ?? 0),
                     'quantity' => (int) $quantity,
                     'cost_price' => round($costPrice, 2),
+                    'cost_is_estimated' => $item->cost_price_snapshot === null,
                     'sale_price' => round($salePrice, 2),
                     'item_discount_percentage' => round($item->item_discount_percentage ?? 0, 2),
                     'total_cost' => round($totalCost, 2),
@@ -374,6 +386,7 @@ class ReportsController extends Controller
                 'total_sale' => round($totalSale, 2),
                 'profit' => round($profit, 2),
                 'profit_margin' => $profitMargin,
+                'cost_is_estimated' => $invoice->items->contains(fn ($item) => $item->cost_price_snapshot === null),
                 'items' => $items,
             ];
         }
