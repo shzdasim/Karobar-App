@@ -3,14 +3,18 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\PurchaseInvoiceController;
+use App\Http\Controllers\PurchaseReturnController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\SaleInvoiceController;
 use App\Http\Controllers\SaleReturnController;
 use App\Models\Batch;
 use App\Models\Product;
+use App\Models\PurchaseInvoice;
+use App\Models\PurchaseReturn;
 use App\Models\SaleInvoice;
 use App\Models\SaleReturn;
 use App\Models\User;
+use App\Services\ReturnEntitlement;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -34,6 +38,8 @@ class SaleCostSnapshotTest extends TestCase
             '2025_08_10_152438_create_batches_table.php',
             '2025_08_20_154726_create_purchase_invoices_table.php',
             '2025_08_20_154744_create_purchase_invoice_items_table.php',
+            '2025_08_24_015207_create_purchase_returns_table.php',
+            '2025_08_24_015215_create_purchase_return_items_table.php',
             '2025_09_08_012037_add_total_paid_to_purchase_invoices_table.php',
             '2025_09_26_000000_add_invoice_type_to_purchase_invoices_table.php',
             '2025_08_30_171505_create_sale_invoices_table.php',
@@ -270,6 +276,91 @@ class SaleCostSnapshotTest extends TestCase
         $this->assertEquals(750, $sale->fresh()->total);
         $this->assertEquals(0, Product::find(1)->quantity);
         $this->assertEquals(0, $batch->fresh()->quantity);
+    }
+
+    private function linkedSaleReturn(SaleInvoice $sale, int $quantity, int $customer = 1)
+    {
+        return app(SaleReturnController::class)->store($this->request([
+            'customer_id' => $customer, 'sale_invoice_id' => $sale->id, 'date' => '2026-10-14', 'total' => $quantity * 150,
+            'items' => [['product_id' => 1, 'unit_return_quantity' => $quantity, 'unit_sale_quantity' => 999,
+                'unit_sale_price' => 150, 'sub_total' => $quantity * 150]],
+        ]));
+    }
+
+    public function test_sale_return_entitlement_is_cumulative_and_edit_delete_restore_allowance(): void
+    {
+        $sale = $this->sale(5);
+        $this->linkedSaleReturn($sale, 2);
+        $this->linkedSaleReturn($sale, 3);
+        $stock = Product::find(1)->quantity;
+        try {
+            $this->linkedSaleReturn($sale, 1);
+            $this->fail('Excess return accepted');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('Only 0 units', $e->errors()['items.0.unit_return_quantity'][0]);
+        }
+        $this->assertSame(2, SaleReturn::count());
+        $this->assertEquals($stock, Product::find(1)->quantity);
+        $first = SaleReturn::first();
+        $edit = $first->load('items')->toArray();
+        $edit['items'][0]['unit_return_quantity'] = 1;
+        app(SaleReturnController::class)->update($this->request($edit), $first);
+        $this->linkedSaleReturn($sale, 1);
+        app(SaleReturnController::class)->destroy($first->fresh());
+        $remaining = app(ReturnEntitlement::class)->remaining('sale', $sale);
+        $this->assertEquals(1, array_sum($remaining));
+    }
+
+    public function test_linked_return_rejects_wrong_party_and_unmatched_batch_without_mutations(): void
+    {
+        $sale = $this->sale(5);
+        DB::table('customers')->insert(['id' => 2, 'name' => 'Wrong customer']);
+        try {
+            $this->linkedSaleReturn($sale, 1, 2);
+            $this->fail('Wrong customer accepted');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('sale_invoice_id', $e->errors());
+        }
+        try {
+            app(SaleReturnController::class)->store($this->request(['customer_id' => 1,
+                'sale_invoice_id' => $sale->id, 'date' => '2026-10-14', 'total' => 150,
+                'items' => [['product_id' => 1, 'batch_number' => 'WRONG', 'unit_return_quantity' => 1,
+                    'unit_sale_price' => 150, 'sub_total' => 150]]]));
+            $this->fail('Unmatched batch accepted');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('items.0.unit_return_quantity', $e->errors());
+        }
+        $this->assertSame(0, SaleReturn::count());
+        $this->assertEquals(95, Product::find(1)->quantity);
+    }
+
+    public function test_purchase_returns_use_actual_quantity_and_validate_remaining_batch_units(): void
+    {
+        Product::find(1)->update(['quantity' => 0, 'avg_price' => 0]);
+        $this->purchase(4, 100);
+        $invoice = PurchaseInvoice::first();
+        $invoice->items()->update(['batch' => 'LOT', 'expiry' => '2028-01-01']);
+        $batch = Batch::create(['product_id' => 1, 'batch_number' => 'LOT', 'expiry_date' => '2028-01-01', 'quantity' => 4]);
+        $data = ['supplier_id' => 1, 'purchase_invoice_id' => $invoice->id, 'date' => '2026-10-14', 'total' => 200,
+            'items' => [['product_id' => 1, 'batch' => 'LOT', 'expiry' => '2028-01-01',
+                'return_unit_quantity' => 2, 'pack_size' => 10, 'unit_purchase_price' => 100, 'sub_total' => 200]]];
+        app(PurchaseReturnController::class)->store($this->request($data));
+        $this->assertEquals(2, $batch->fresh()->quantity);
+        $this->assertEquals(2, Product::find(1)->quantity);
+        $data['items'][0]['return_unit_quantity'] = 3;
+        try {
+            app(PurchaseReturnController::class)->store($this->request($data));
+            $this->fail('Excess purchase return accepted');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('Only 2 units', $e->errors()['items.0.return_unit_quantity'][0]);
+        }
+        $return = PurchaseReturn::first();
+        $edit = $return->load('items')->toArray();
+        app(PurchaseReturnController::class)->update($this->request($edit), $return);
+        $this->assertEquals(2, $batch->fresh()->quantity);
+        app(PurchaseReturnController::class)->destroy($return->fresh());
+        $this->assertEquals(4, $batch->fresh()->quantity);
+        $this->assertEquals(4, array_sum(app(ReturnEntitlement::class)->remaining('purchase', $invoice)));
     }
 
     public function test_saved_cost_freezes_reports_without_changing_profit_formulas(): void

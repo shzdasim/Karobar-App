@@ -26,7 +26,7 @@ export function useInvoiceErrors(items) {
     report([{ row, field: '', message: String(message).replace(/^Row \d+:\s*/i, '') }]);
   };
   return { entries: visible, rowId, focusRow, clear: () => setEntries([]), showMessage,
-    showError: error => report(invoiceErrorEntries(error)),
+    showError: (error, submittedRowIndices) => report(invoiceErrorEntries(error, submittedRowIndices)),
     rowMessages: index => visible.filter(entry => entry.row === index).map(entry => entry.message) };
 }
 

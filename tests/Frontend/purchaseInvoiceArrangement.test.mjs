@@ -22,3 +22,18 @@ test('natural codes, missing brands and row-level product fallback work', () => 
  assert.deepEqual(arrangePurchaseInvoiceRows(items, [], 'code_asc').map(row=>row.index),[1,0]);
  assert.deepEqual(arrangePurchaseInvoiceRows(items, [], 'brand_asc').map(row=>row.index),[1,0]);
 });
+
+test('popup-selected products remain sortable outside the current search results', () => {
+ const items = [
+  {product_id: 9, product: {id:9,name:'Zinc',brand:{id:3,name:'Zeta'},product_code:'P10'}},
+  {product_id: 2, product: {id:2,name:'Alpha',brand:{id:1,name:'Alpha'},product_code:'P2'}},
+  {product_id: 5, product: {id:5,name:'Beta',brand:{id:2,name:'Beta'},product_code:'P5'}},
+ ];
+ const partial = [{id:'9', name:'Zinc'}];
+ assert.deepEqual(arrangePurchaseInvoiceRows(items,partial,'brand_asc').map(r=>r.index),[1,2,0]);
+ assert.deepEqual(arrangePurchaseInvoiceRows(items,partial,'brand_desc').map(r=>r.index),[0,2,1]);
+ assert.deepEqual(arrangePurchaseInvoiceRows(items,partial,'name_asc').map(r=>r.index),[1,2,0]);
+ assert.deepEqual(arrangePurchaseInvoiceRows(items,{data:partial},'code_asc').map(r=>r.index),[1,2,0]);
+ assert.deepEqual(arrangePurchaseInvoiceRows(items,partial,'original').map(r=>r.index),[0,1,2]);
+ assert.equal(arrangePurchaseInvoiceRows(items,partial,'brand_asc')[2].brand_name,'Zeta');
+});

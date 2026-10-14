@@ -1,10 +1,11 @@
-export function invoiceErrorEntries(error) {
+export function invoiceErrorEntries(error, submittedRowIndices = null) {
   const data = error?.response?.data;
   const errors = data?.errors;
   if (errors && Object.keys(errors).length) {
     return Object.entries(errors).flatMap(([field, messages]) => {
       const match = field.match(/^items(?:\.(\d+)|\[(\d+)\])(?:\.|$)/);
-      const row = match ? Number(match[1] ?? match[2]) : null;
+      const submittedRow = match ? Number(match[1] ?? match[2]) : null;
+      const row = submittedRow === null ? null : (submittedRowIndices?.[submittedRow] ?? submittedRow);
       return (Array.isArray(messages) ? messages : [messages]).map(message => ({
         row, field, message: row === null ? String(message) : String(message).replaceAll(field, field.split('.').pop().replaceAll('_', ' ')),
       }));

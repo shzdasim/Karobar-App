@@ -133,7 +133,16 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
   const [arrangement, setArrangement] = useState('brand_asc');
-  const arrangedRows = useMemo(() => arrangePurchaseInvoiceRows(form.items, products, arrangement), [form.items, products, arrangement]);
+  const [displayOrder, setDisplayOrder] = useState([]);
+  const arrangedRows = useMemo(() => {
+    const rows = arrangePurchaseInvoiceRows(form.items, products, 'original');
+    const rank = new Map(displayOrder.map((index, position) => [index, position]));
+    return rows.sort((a, b) => (rank.get(a.index) ?? displayOrder.length + a.index) - (rank.get(b.index) ?? displayOrder.length + b.index));
+  }, [form.items, products, displayOrder]);
+  const applyArrangement = value => {
+    setArrangement(value);
+    setDisplayOrder(arrangePurchaseInvoiceRows(form.items, products, value).map(row => row.index));
+  };
 
   const [currentField, setCurrentField] = useState("supplier");
   const [currentRowIndex, setCurrentRowIndex] = useState(0);
@@ -212,7 +221,7 @@ useEffect(() => {
 
   const fetchProducts = async (q = "") => {
     const { data } = await axios.get("/api/products/search", { params: { q, limit: 30 } });
-    setProducts(data);
+    upsertProducts(Array.isArray(data) ? data : (data?.data || []));
   };
 
   // Fetch batches for a product and return the most recent batch (sorted by expiry descending)
@@ -419,6 +428,7 @@ useEffect(() => {
   };
 
   const removeItem = (index) => {
+    setDisplayOrder(order => order.filter(i => i !== index).map(i => i > index ? i - 1 : i));
     if (form.items.length > 1) {
       const newItems = form.items.filter((_, i) => i !== index);
       setForm({ ...form, items: newItems });
@@ -510,8 +520,8 @@ const contRect = container.getBoundingClientRect();
   const upsertProducts = (list) => {
     if (!Array.isArray(list)) return;
     setProducts((prev) => {
-      const map = new Map((prev || []).map((p) => [p.id, p]));
-      list.forEach((p) => p?.id && map.set(p.id, p));
+      const map = new Map((prev || []).filter(Boolean).map((p) => [String(p.id), p]));
+      list.forEach((p) => { if (p?.id) map.set(String(p.id), { ...map.get(String(p.id)), ...p }); });
       return Array.from(map.values());
     });
   };
@@ -815,6 +825,7 @@ const contRect = container.getBoundingClientRect();
 
     savingRef.current = true;
     setSaving(true);
+    let submittedRowIndices = null;
     try {
       // 3) Duplicate invoice number check per supplier
       const checkRes = await axios.get("/api/purchase-invoices/check-unique", {
@@ -837,7 +848,9 @@ const contRect = container.getBoundingClientRect();
         total_paid: paidTouched ? form.total_paid : (form.total_amount ?? ""),
       };
 
-      const payloadToSend = { ...payload };
+      const sortedRows = arrangePurchaseInvoiceRows(payload.items, products, arrangement);
+      submittedRowIndices = sortedRows.map(row => row.index);
+      const payloadToSend = { ...payload, items: sortedRows.map(row => row.item) };
       if (!invoiceId) {
         // Do NOT send posted_number on CREATE; server will atomically generate it.
         delete payloadToSend.posted_number;
@@ -862,7 +875,7 @@ const contRect = container.getBoundingClientRect();
         toast.success(`Invoice created: ${saved?.posted_number || "(number assigned)"}`);
         onSuccess && onSuccess();
       }
-    } catch (err) { invoiceErrors.showError(err); }
+    } catch (err) { invoiceErrors.showError(err, submittedRowIndices); }
     finally { savingRef.current = false; setSaving(false); }
   };
 
@@ -1214,11 +1227,12 @@ const contRect = container.getBoundingClientRect();
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-gray-200 dark:border-slate-600">
-        <span className="text-xs font-semibold">Products by Brand</span>
+        <span className="text-xs font-semibold">Arrange existing rows when ready · new items stay at the end</span>
         <label className="flex items-center gap-2 text-xs">Arrange products
-          <select aria-label="Arrange purchase invoice products" className="border rounded-md px-2 py-1 text-xs bg-white dark:bg-slate-700" value={arrangement} onChange={event => setArrangement(event.target.value)}>
+          <select aria-label="Purchase invoice arrangement on save" className="border rounded-md px-2 py-1 text-xs bg-white dark:bg-slate-700" value={arrangement} onChange={event => applyArrangement(event.target.value)}>
             {[...new Set(purchaseInvoiceArrangements.map(option => option.group))].map(group => <optgroup key={group} label={group}>{purchaseInvoiceArrangements.filter(option => option.group === group).map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</optgroup>)}
           </select>
+          <button type="button" className="g-btn-ghost px-2 py-1" onClick={() => applyArrangement(arrangement)}>Apply Sort</button>
         </label>
       </div>
       {/* ================= ITEMS SECTION ================= */}
@@ -1285,11 +1299,12 @@ const contRect = container.getBoundingClientRect();
                   <InvoiceRowError messages={invoiceErrors.rowMessages(i)} />
                   <div ref={(el) => (productSearchRefs.current[i] = el)}>
                     <ProductSearchInput
-                      value={products.find(p => p.id === item.product_id) || item.product_id}
+                      value={products.find(p => String(p.id) === String(item.product_id)) || item.product || item.product_id}
                       onChange={async (val) => {
                         const list = Array.isArray(products) ? products : (Array.isArray(products?.data) ? products.data : []);
                         const selectedProduct = (val && typeof val === "object") ? val : list.find((p) => p?.id === val);
                         if (!selectedProduct) return;
+                        upsertProducts([selectedProduct]);
 
                         const get = (obj, keys, d="") => {
                           for (const k of keys) {
@@ -1324,6 +1339,7 @@ const contRect = container.getBoundingClientRect();
                         const prepared = {
                           ...newItems[i],
                           product_id: selectedProduct?.id || "",
+                          product: selectedProduct,
                           pack_size: packSize ?? "",
                           pack_purchase_price: zeroToEmpty(packPurchase),
                           unit_purchase_price: unitPurchase ?? "",

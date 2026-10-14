@@ -158,6 +158,7 @@ class SaleInvoiceController extends Controller
     {
         $invoice = SaleInvoice::with(['customer', 'items.product'])->findOrFail($id);
         $this->authorize('view', $invoice);
+        app(\App\Services\ReturnEntitlement::class)->annotate('sale', $invoice, request()->integer('exclude_return_id') ?: null);
         return response()->json($invoice);
     }
 

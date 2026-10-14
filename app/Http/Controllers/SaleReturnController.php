@@ -41,10 +41,10 @@ class SaleReturnController extends Controller
         if ($batchNo !== '' && $expiry !== '') {
             $batch = Batch::where('product_id', $productId)
                 ->where(function ($q) use ($batchNo) {
-                    $q->where('batch_number', $batchNo)->orWhere('batch', $batchNo);
+                    $q->where('batch_number', $batchNo);
                 })
                 ->where(function ($q) use ($expiry) {
-                    $q->where('expiry_date', $expiry)->orWhere('expiry', $expiry);
+                    $q->where('expiry_date', $expiry);
                 })
                 ->first();
         }
@@ -196,6 +196,7 @@ class SaleReturnController extends Controller
         }
 
         return DB::transaction(function () use ($data, $userId) {
+            app(\App\Services\ReturnEntitlement::class)->validate('sale', $data);
             // Generate posted_number server-side (concurrency-safe)
             $last = SaleReturn::lockForUpdate()->orderByDesc('id')->first();
             $next = $last ? ($last->id + 1) : 1;
@@ -258,6 +259,7 @@ class SaleReturnController extends Controller
         }
 
         return DB::transaction(function () use ($saleReturn, $data, $userId) {
+            app(\App\Services\ReturnEntitlement::class)->validate('sale', $data, $saleReturn);
             $originalItems = (int) $saleReturn->sale_invoice_id === (int) ($data['sale_invoice_id'] ?? 0)
                 && (int) $saleReturn->customer_id === (int) $data['customer_id'] ? $saleReturn->items()->get() : collect();
             // Revert previous stock effects
@@ -292,6 +294,7 @@ class SaleReturnController extends Controller
         $this->authorize('delete', $saleReturn);
 
         return DB::transaction(function () use ($saleReturn) {
+            app(\App\Services\ReturnEntitlement::class)->lockSource('sale', $saleReturn);
             $this->revertItems($saleReturn);
             $saleReturn->items()->delete();
             $saleReturn->delete();

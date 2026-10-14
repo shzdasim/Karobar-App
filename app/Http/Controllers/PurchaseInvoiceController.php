@@ -72,7 +72,9 @@ class PurchaseInvoiceController extends Controller
     public function show(PurchaseInvoice $purchaseInvoice)
     {
         $this->authorize('view', $purchaseInvoice);
-        return $purchaseInvoice->load('supplier', 'items.product.brand', 'purchaseOrder');
+        $purchaseInvoice->load('supplier', 'items.product.brand', 'purchaseOrder');
+        app(\App\Services\ReturnEntitlement::class)->annotate('purchase', $purchaseInvoice, request()->integer('exclude_return_id') ?: null);
+        return $purchaseInvoice;
     }
 
     // Store new invoice — posted_number is assigned HERE (atomic, race-safe)

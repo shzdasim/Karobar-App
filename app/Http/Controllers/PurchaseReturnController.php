@@ -41,10 +41,10 @@ class PurchaseReturnController extends Controller
         if ($batchNo !== '' && $expiry !== '') {
             $batch = Batch::where('product_id', $productId)
                 ->where(function ($q) use ($batchNo) {
-                    $q->where('batch_number', $batchNo)->orWhere('batch', $batchNo);
+                    $q->where('batch_number', $batchNo);
                 })
                 ->where(function ($q) use ($expiry) {
-                    $q->where('expiry_date', $expiry)->orWhere('expiry', $expiry);
+                    $q->where('expiry_date', $expiry);
                 })
                 ->first();
         }
@@ -174,6 +174,7 @@ public function index(Request $request)
         ]);
 
         return DB::transaction(function () use ($data) {
+            app(\App\Services\ReturnEntitlement::class)->validate('purchase', $data);
             // Generate posted_number server-side (concurrency-safe)
             $last = PurchaseReturn::lockForUpdate()->orderByDesc('id')->first();
             $next = $last ? ($last->id + 1) : 1;
@@ -231,6 +232,7 @@ public function index(Request $request)
         ]);
 
         return DB::transaction(function () use ($purchaseReturn, $data) {
+            app(\App\Services\ReturnEntitlement::class)->validate('purchase', $data, $purchaseReturn);
             // Revert previous stock effects
             $this->revertItems($purchaseReturn);
 
@@ -263,6 +265,7 @@ public function index(Request $request)
     {
         $this->authorize('delete', $purchaseReturn);
         return DB::transaction(function () use ($purchaseReturn) {
+            app(\App\Services\ReturnEntitlement::class)->lockSource('purchase', $purchaseReturn);
             $this->revertItems($purchaseReturn);
             $purchaseReturn->items()->delete();
             $purchaseReturn->delete();

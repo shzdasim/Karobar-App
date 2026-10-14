@@ -1,5 +1,5 @@
 // /src/pages/purchase-invoices/Show.jsx
-import { useEffect, useRef, useState, useMemo } from "react";
+import { Fragment, useEffect, useRef, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { DocumentTextIcon, MagnifyingGlassIcon, PencilSquareIcon, TrashIcon, PlusIcon, ArrowLeftIcon } from "@heroicons/react/24/outline";
@@ -494,7 +494,7 @@ return (
       </div>
 
 {/* ================= ITEMS SECTION ================= */}
-      <div className="purchase-show-items flex-1 min-h-0 overflow-auto p-1" autoComplete="off">
+      <div className="purchase-show-items purchase-entry-items flex-1 min-h-0 overflow-auto p-1" autoComplete="off">
         <h2 className="text-xs font-bold mb-1 dark:text-gray-200">Items</h2>
 
         <table className="w-full border-collapse text-[11px]">
@@ -535,6 +535,8 @@ return (
 
           <tbody>
             {(inv.items || []).map((item, i) => (
+              <Fragment key={item.id || i}>
+                {(i === 0 || (inv.items[i - 1]?.product?.brand?.name || inv.items[i - 1]?.product?.brand_name || '') !== (item.product?.brand?.name || item.product?.brand_name || '')) && <tr className="purchase-invoice-brand-heading"><th colSpan={21} scope="rowgroup">{item.product?.brand?.name || item.product?.brand_name || 'No Brand'}</th></tr>}
               <tr key={i} className="text-center dark:text-gray-300">
                 {/* Row Number */}
                 <td className="border px-1 dark:border-slate-600">{i + 1}</td>
@@ -740,6 +742,7 @@ return (
                   />
                 </td>
               </tr>
+              </Fragment>
             ))}
           </tbody>
         </table>

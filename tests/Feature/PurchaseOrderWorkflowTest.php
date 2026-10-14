@@ -39,6 +39,8 @@ class PurchaseOrderWorkflowTest extends TestCase
             '2025_08_10_152438_create_batches_table.php',
             '2025_08_20_154726_create_purchase_invoices_table.php',
             '2025_08_20_154744_create_purchase_invoice_items_table.php',
+            '2025_08_24_015207_create_purchase_returns_table.php',
+            '2025_08_24_015215_create_purchase_return_items_table.php',
             '2025_09_08_012037_add_total_paid_to_purchase_invoices_table.php',
             '2025_09_26_000000_add_invoice_type_to_purchase_invoices_table.php',
             '2026_04_01_000000_add_whole_sale_prices_to_products_table.php',

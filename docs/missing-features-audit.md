@@ -1,5 +1,7 @@
 # Karobar missing-feature audit
 
+**Historical baseline:** the current reassessment and remaining priorities are in [Software reevaluation — 14 October 2026](software-feature-reevaluation-2026-10-14.md). The original descriptions below are retained for history and may refer to limitations already resolved.
+
 Reviewed: 13 October 2026.
 
 Feature #3 update: sale availability validation and product/batch locks are implemented for create/edit/delete. See [sale stock safeguards](sale-stock-safeguards.md) for scope and verification.

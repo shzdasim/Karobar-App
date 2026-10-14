@@ -53,8 +53,8 @@ export default function EditPurchaseInvoice() {
       navigate(`/purchase-invoices/${id}`);
       return data;
     } catch (e) {
-      const msg = e?.response?.data?.message || "Update failed";
-      toast.error(msg);
+      // Let the form map sorted submission errors back to its entry rows.
+      throw e;
     }
   };
 

@@ -1,3 +1,4 @@
+import { useInvoiceErrors, InvoiceErrorSummary, InvoiceRowError } from "../../components/InvoiceErrors";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -70,7 +71,7 @@ const extractItemDiscPct = (obj) => {
 
 const extractUnitSaleQty = (obj) => {
   if (!obj) return 0;
-  const candidates = [obj.unit_sale_quantity, obj.unit_quantity, obj.quantity, obj.units];
+  const candidates = [obj.returnable_quantity, obj.unit_sale_quantity, obj.unit_quantity, obj.quantity, obj.units];
   for (const c of candidates) {
     const n = toNum(c);
     if (n > 0) return n;
@@ -164,6 +165,7 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
     gross_total: 0,
     total: 0,
   });
+  const invoiceErrors = useInvoiceErrors(form.items);
 
   const [customers, setCustomers] = useState([]);
   const refreshProducts = async (q = "") => {
@@ -227,24 +229,24 @@ const [saleInvoices, setSaleInvoices] = useState([]);
   }, [theme]);
 
   // Calculate text colors based on background brightness
-  const primaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
+  const primaryTextColor = useMemo(() =>
+    getButtonTextColor(themeColors.primary, themeColors.primaryHover),
     [themeColors.primary, themeColors.primaryHover]
   );
-  
-  const secondaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
+
+  const secondaryTextColor = useMemo(() =>
+    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover),
     [themeColors.secondary, themeColors.secondaryHover]
   );
-  
-  const dangerTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.danger, themeColors.dangerHover), 
+
+  const dangerTextColor = useMemo(() =>
+    getButtonTextColor(themeColors.danger, themeColors.dangerHover),
     [themeColors.danger, themeColors.dangerHover]
   );
 
   // Get button style from theme
   const buttonStyle = theme?.button_style || 'rounded-sm';
-  
+
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
@@ -253,7 +255,7 @@ const [saleInvoices, setSaleInvoices] = useState([]);
       'soft': 'rounded-xl',
     };
     const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
-    
+
     if (buttonStyle === 'outlined') {
       return {
         primary: {
@@ -291,7 +293,7 @@ const [saleInvoices, setSaleInvoices] = useState([]);
         },
       };
     }
-    
+
     // Filled styles for rounded and soft
     return {
       primary: {
@@ -351,10 +353,9 @@ const [saleInvoices, setSaleInvoices] = useState([]);
   useEffect(() => {
     (async () => {
       try {
-        const [custRes, prodRes, codeRes] = await Promise.all([
+        const [custRes, prodRes] = await Promise.all([
           axios.get("/api/customers"),
           axios.get("/api/products/search", { params: { q: "", limit: 30 } }),
-          axios.get("/api/sale-returns/new-code"),
         ]);
         const customersArr = Array.isArray(custRes.data) ? custRes.data : [];
         setCustomers(customersArr);
@@ -363,7 +364,6 @@ const [saleInvoices, setSaleInvoices] = useState([]);
         setCatalogProducts(catalog);
         setProducts(catalog);
 
-        setForm((prev) => ({ ...prev, posted_number: codeRes?.data?.posted_number || "" }));
 
         if (customersArr.length) {
           // Select customer with lowest ID (not highest)
@@ -485,7 +485,7 @@ const [saleInvoices, setSaleInvoices] = useState([]);
 
 const loadInvoice = async (invoiceId) => {
     try {
-      const res = await axios.get(`/api/sale-invoices/${invoiceId}`);
+      const res = await axios.get(`/api/sale-invoices/${invoiceId}`, { params: { exclude_return_id: returnId || undefined } });
       const data = res.data || {};
       setSelectedInvoiceObj(data);
       const items = Array.isArray(data?.items) ? data.items : [];
@@ -680,7 +680,7 @@ const handleSelectChange = async (field, value) => {
     // Prevent duplicate product across rows
     const dupIndex = form.items.findIndex((it, idx) => idx !== row && eqId(it.product_id, pid));
     if (dupIndex !== -1) {
-      toast.error(`Product already selected in row ${dupIndex + 1}. Each product can be used only once.`);
+      invoiceErrors.showMessage(`Product already selected in row ${dupIndex + 1}. Each product can be used only once.`);
       resetRow(row);
       setTimeout(() => productRefs.current[row]?.querySelector("input")?.focus?.(), 40);
       return;
@@ -748,7 +748,7 @@ const handleSelectChange = async (field, value) => {
         (it, idx) => idx !== row && eqId(it.product_id, form.items[row].product_id) && eqId(it.batch_number, bn)
       );
       if (duplicate !== -1) {
-        toast.error(`Same Product & Batch already used in row ${duplicate + 1}.`);
+        invoiceErrors.showMessage(`Same Product & Batch already used in row ${duplicate + 1}.`);
         // clear batch in this row and refocus
         setForm((prev) => {
           const items = [...prev.items];
@@ -811,7 +811,7 @@ const handleSelectChange = async (field, value) => {
       const prevQty = toNum(newItems[row].unit_return_quantity);
       const nextQty = toNum(v);
       if (nextQty > allowed && prevQty <= allowed) {
-        toast.error(`Row ${row + 1}: Return qty exceeds allowed (${allowed}).`);
+        invoiceErrors.showMessage(`Row ${row + 1}: Return qty exceeds allowed (${allowed}).`);
       }
     }
 
@@ -847,9 +847,10 @@ const handleSelectChange = async (field, value) => {
     setForm((prev) => recalcFooter({ ...prev, tax_amount: val }, { tax: "amt" }));
 
   const handleSubmit = async () => {
+    invoiceErrors.clear();
     try {
       if (!form.customer_id) {
-        toast.error("Please select a customer");
+        invoiceErrors.showMessage("Please select a customer");
         customerSelectRef.current?.focus?.();
         return;
       }
@@ -864,7 +865,7 @@ const handleSelectChange = async (field, value) => {
         // duplicate product
         const keyP = String(it.product_id);
         if (seenProducts.has(keyP)) {
-          toast.error(`Duplicate product detected at row ${i + 1}. Each product only once.`);
+          invoiceErrors.showMessage(`Duplicate product detected at row ${i + 1}. Each product only once.`);
           return;
         }
         seenProducts.add(keyP);
@@ -874,7 +875,7 @@ const handleSelectChange = async (field, value) => {
         if (bn) {
           const keyPB = `${keyP}__${bn}`;
           if (seenPairs.has(keyPB)) {
-            toast.error(`Duplicate Product + Batch at row ${i + 1}.`);
+            invoiceErrors.showMessage(`Duplicate Product + Batch at row ${i + 1}.`);
             return;
           }
           seenPairs.add(keyPB);
@@ -884,7 +885,7 @@ const handleSelectChange = async (field, value) => {
         if (form.sale_invoice_id) {
           const allowed = toNum(it.unit_sale_quantity);
           if (toNum(it.unit_return_quantity) > allowed) {
-            toast.error(`Row ${i + 1}: Return qty exceeds allowed (${allowed}).`);
+            invoiceErrors.showMessage(`Row ${i + 1}: Return qty exceeds allowed (${allowed}).`);
             return;
           }
         }
@@ -957,7 +958,7 @@ const handleSelectChange = async (field, value) => {
       }
     } catch (e) {
       console.error(e);
-      toast.error("Failed to save sale return");
+      invoiceErrors.showError(e);
     }
   };
 
@@ -1055,12 +1056,13 @@ const handleSelectChange = async (field, value) => {
 
   return (
     <div className="relative">
-      <form className={`return-entry-form sale-return-form h-[calc(100vh-130px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}>
+      <form className={`sale-entry sale-entry-form sale-return-form h-[calc(100vh-130px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}>
+        <InvoiceErrorSummary errors={invoiceErrors} />
         {/* ===== HEADER ===== */}
-        <div className={`return-header shrink-0 sticky top-0 z-20 border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+        <div className={`sale-entry-header shrink-0 sticky top-0 z-20 border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
           {/* Branded Banner */}
           <div
-            className="return-banner px-4 py-2.5 flex items-center justify-between gap-3"
+            className="sale-entry-banner px-3 sm:px-4 py-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2"
 
           >
             <div className="flex items-center gap-3">
@@ -1105,7 +1107,7 @@ const handleSelectChange = async (field, value) => {
           </div>
 
           {/* Fields Card */}
-          <div className="return-details px-3 py-2">
+          <div className="sale-entry-details px-3 py-2">
             <div className="grid grid-cols-12 gap-2 items-end">
               {/* Posted Number */}
               <div className="col-span-2">
@@ -1188,42 +1190,47 @@ const handleSelectChange = async (field, value) => {
           </div>
         </div>
 
+        <div className={`sale-entry-workspace flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_280px] gap-2 px-2 py-2 overflow-hidden ${isDark ? "bg-slate-900" : "bg-white"}`}>
         {/* ITEMS */}
-        <div className={`return-items flex-1 min-h-0 overflow-auto p-1 ${isDark ? "bg-slate-900" : "bg-gray-50"}`}>
+        <div className={`sale-entry-items flex-1 min-h-0 overflow-auto border-2 rounded-sm relative ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
           <h2 className={`text-xs font-bold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Items</h2>
-          <table className={`w-full border-collapse text-[11px] ${isDark ? "bg-slate-800" : "bg-white"}`}>
-            <thead className={`sticky top-0 z-5 ${isDark ? "bg-slate-700" : "bg-gray-100"}`}>
-              <tr>
-                <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>#</th>
-                <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>Product</th>
-                <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>Batch</th>
-                <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>Expiry</th>
-                <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>{form.sale_invoice_id ? "Unit Sale Qty" : "Available Qty"}</th>
-                <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>Unit Sale Price</th>
-                <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>Return Qty (Units)</th>
-                <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>Disc %</th>
-                <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>Sub Total</th>
-                <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>+</th>
-              </tr>
-            </thead>
-            <tbody>
+          <table className="w-full min-w-[560px] text-[11px] table-fixed border-collapse" autoComplete="off">
+              <thead className={`sticky top-0 z-20 ${isDark ? "bg-slate-800/90 backdrop-blur-xs border-slate-700" : "bg-white/80 backdrop-blur-xs border-gray-200/70"} border-b`}>
+                <tr className="[&>th]:py-1 [&>th]:px-1 [&>th]:text-left">
+                  <th className={`w-7 text-center ${isDark ? "text-rose-400" : "text-red-600"}`}>DEL</th>
+                  <th className={`w-7 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>#</th>
+                  <th className={`w-[180px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Product</th>
+                  <th className={`w-14 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>PSize</th>
+                  <th className={`w-24 ${isDark ? "text-slate-400" : "text-gray-600"}`}>Batch</th>
+                  <th className={`w-15 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Expiry</th>
+                  <th className={`w-18 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>{form.sale_invoice_id ? "Returnable" : "Avail"}</th>
+                  <th className={`w-25 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Return Qty</th>
+                  <th className={`w-22 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Price</th>
+                  <th className={`w-18 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Disc%</th>
+                  <th className={`w-26 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Sub Total</th>
+                  <th className="w-7 text-center">+</th>
+                </tr>
+              </thead>
+            <tbody className="[&>tr>td]:py-1 [&>tr>td]:px-0.2">
               {form.items.map((item, i) => {
                 const exceeds = form.sale_invoice_id
                   ? toNum(item.unit_return_quantity) > toNum(item.unit_sale_quantity)
                   : false;
                 return (
-                  <tr key={item.id} className={`text-center ${isDark ? "hover:bg-slate-700/50" : "hover:bg-gray-50"}`}>
-                    <td className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                  <tr key={item.id} id={invoiceErrors.rowId(i)} aria-invalid={invoiceErrors.rowMessages(i).length > 0 || undefined} className={`${invoiceErrors.rowMessages(i).length ? "invoice-row-invalid" : ""} text-center ${isDark ? "hover:bg-slate-700/50" : "hover:bg-gray-50"}`}>
+                    <td className="text-center">
                       <button
                         type="button"
                         onClick={() => removeItem(i)} aria-label="Remove item" title="Remove item"
-                        className="return-item-action return-item-remove"
+                        className="sale-item-action sale-item-remove"
                       >
                         <TrashIcon aria-hidden="true" />
                       </button>
                     </td>
-                    <td className={`border text-left w-[260px] ${isDark ? "border-slate-600" : "border-gray-200"}`}>
-                      <div ref={(el) => (productRefs.current[i] = el)}>
+                    <td className="text-center">{i + 1}</td>
+                    <td>
+                      <InvoiceRowError messages={invoiceErrors.rowMessages(i)} />
+                    <div ref={(el) => (productRefs.current[i] = el)}>
                         <ProductSearchInput
                           value={products.find((p) => eqId(p.id, item.product_id)) || item.product_id}
                           onChange={(val) => handleProductSelect(i, val)}
@@ -1233,103 +1240,104 @@ const handleSelectChange = async (field, value) => {
                         />
                       </div>
                     </td>
-                    <td className={`border w-20 ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                    <td className="text-center"><input type="text" readOnly value={products.find(p => eqId(p.id, item.product_id))?.pack_size ?? ""} className={`w-full h-6 border rounded px-1 text-center ${isDark ? "border-slate-600 bg-slate-700 text-slate-300" : "border-gray-200 bg-gray-100 text-gray-700"}`} /></td>
+                    <td className="text-center">
                       <div ref={(el) => (batchRefs.current[i] = el)}>
                         <BatchSearchInput
                           value={item.batch_number}
-                          batches={(rowBatches[i] || []).map((b) => ({
-                            batch_number: b.batch_number,
-                          }))}
+                          batches={(rowBatches[i] || []).map(b => ({ ...b, batch_number: b.batch_number || b.batch }))}
+                          usedBatches={form.items.filter((row, index) => index !== i && eqId(row.product_id, item.product_id)).map(row => row.batch_number).filter(Boolean)}
+                          inputProps={{ autoComplete: "off", autoCapitalize: "off", autoCorrect: "off", spellCheck: false }}
                           onChange={(v) => handleBatchSelect(i, v)}
                           onKeyDown={(e) => onKeyNav(e, i, "batch")}
                         />
                       </div>
                     </td>
-                    <td className={`border w-20 ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                    <td className="text-center">
                       <input
-                        type="text"
+                        type="date"
                         readOnly
-                        value={item.expiry || ""}
-                        className={`border w-full h-6 text-[11px] px-1 ${
-                          isDark 
-                            ? "border-slate-600 bg-slate-700 text-slate-300" 
+                        value={String(item.expiry || "").slice(0, 10)}
+                        className={`w-full h-6 border rounded px-1 text-center text-[11px] ${
+                          isDark
+                            ? "border-slate-600 bg-slate-700 text-slate-300"
                             : "border-gray-200 bg-gray-100 text-gray-700"
                         }`}
                       />
                     </td>
-                    <td className={`border w-24 ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                    <td className="text-center">
                       <input
                         type="number"
                         readOnly
                         value={item.unit_sale_quantity || 0}
-                        className={`border w-full h-6 text-[11px] px-1 ${
-                          isDark 
-                            ? "border-slate-600 bg-slate-700 text-slate-300" 
+                        className={`w-full h-6 border rounded px-1 text-center text-[11px] ${
+                          isDark
+                            ? "border-slate-600 bg-slate-700 text-slate-300"
                             : "border-gray-200 bg-gray-100 text-gray-700"
                         }`}
                       />
                     </td>
-                    <td className={`border w-24 ${isDark ? "border-slate-600" : "border-gray-200"}`}>
-                      <input
-                        type="number"
-                        readOnly
-                        value={item.unit_sale_price || 0}
-                        className={`border w-full h-6 text-[11px] px-1 ${
-                          isDark 
-                            ? "border-slate-600 bg-slate-700 text-slate-300" 
-                            : "border-gray-200 bg-gray-100 text-gray-700"
-                        }`}
-                      />
-                    </td>
-                    <td className={`border w-24 ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                    <td className="text-center">
                       <input
                         ref={(el) => (qtyRefs.current[i] = el)}
                         type="text"
                         value={item.unit_return_quantity === 0 ? "" : item.unit_return_quantity}
                         onChange={(e) => handleItemChange(i, "unit_return_quantity", e.target.value)}
                         className={
-                          `border w-full h-6 text-[11px] px-1 ` +
-                          (exceeds 
-                            ? "border-red-500 ring-1 ring-red-400" 
-                            : isDark 
-                              ? "bg-slate-700 border-slate-600 text-slate-200" 
+                          `w-full h-6 border rounded px-1 text-center text-[11px] ` +
+                          (exceeds
+                            ? "border-red-500 ring-1 ring-red-400"
+                            : isDark
+                              ? "bg-slate-700 border-slate-600 text-slate-200"
                               : "bg-white border-gray-300 text-gray-800"
                           )
                         }
                         onKeyDown={(e) => onKeyNav(e, i, "quantity")}
                       />
                     </td>
-                    <td className={`border w-16 ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                    <td className="text-center">
+                      <input
+                        type="number"
+                        readOnly
+                        value={item.unit_sale_price || 0}
+                        className={`w-full h-6 border rounded px-1 text-center text-[11px] ${
+                          isDark
+                            ? "border-slate-600 bg-slate-700 text-slate-300"
+                            : "border-gray-200 bg-gray-100 text-gray-700"
+                        }`}
+                      />
+                    </td>
+                    <td className="text-center">
                       <input
                         ref={(el) => (discRefs.current[i] = el)}
                         type="text"
                         value={item.item_discount_percentage === 0 ? "" : item.item_discount_percentage}
                         onChange={(e) => handleItemChange(i, "item_discount_percentage", e.target.value)}
-                        className={`border w-full h-6 text-[11px] px-1 ${
-                          isDark 
-                            ? "bg-slate-700 border-slate-600 text-slate-200" 
+                        className={`w-full h-6 border rounded px-1 text-center text-[11px] ${
+                          isDark
+                            ? "bg-slate-700 border-slate-600 text-slate-200"
                             : "bg-white border-gray-300 text-gray-800"
                         }`}
                         onKeyDown={(e) => onKeyNav(e, i, "disc")}
                       />
                     </td>
-                    <td className={`border w-20 ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                    <td className="text-center">
                       <input
                         type="number"
                         readOnly
                         value={(Number(item.sub_total) || 0).toFixed(2)}
-                        className={`border w-full h-6 text-[11px] px-1 ${
-                          isDark 
-                            ? "border-slate-600 bg-slate-700 text-slate-300" 
+                        className={`w-full h-6 border rounded px-1 text-center text-[11px] ${
+                          isDark
+                            ? "border-slate-600 bg-slate-700 text-slate-300"
                             : "border-gray-200 bg-gray-100 text-gray-700"
                         }`}
                       />
                     </td>
-                    <td className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
+                    <td className="text-center">
                       <button
                         type="button"
                         onClick={addItem} aria-label="Add item" title="Add item"
-                        className="return-item-action return-item-add"
+                        className="sale-item-action sale-item-add"
                       >
                         <PlusIcon aria-hidden="true" />
                       </button>
@@ -1342,7 +1350,9 @@ const handleSelectChange = async (field, value) => {
         </div>
 
         {/* FOOTER */}
-        <div className={`return-footer sticky bottom-0 p-2 z-10 ${isDark ? "bg-slate-800 border-t border-slate-700" : "bg-white border-t border-gray-200"}`}>
+        <div className={`sale-entry-summary sale-return-summary h-full min-h-0 flex flex-col rounded-2xl overflow-hidden ${isDark ? "bg-slate-800" : "bg-white"}`}>
+          <div className="sale-entry-summary-heading px-4 py-3 shrink-0"><span className="font-bold text-sm">Return Summary</span></div>
+          <div className="sale-summary-body flex-1 min-h-0 px-4 py-3 overflow-y-auto">
           <table className="w-full border-collapse text-xs">
             <tbody>
               <tr>
@@ -1353,8 +1363,8 @@ const handleSelectChange = async (field, value) => {
                     readOnly
                     value={(Number(form.gross_total) || 0).toFixed(2)}
                     className={`border rounded w-full p-1 h-7 text-xs ${
-                      isDark 
-                        ? "border-slate-600 bg-slate-700 text-slate-300" 
+                      isDark
+                        ? "border-slate-600 bg-slate-700 text-slate-300"
                         : "border-gray-300 bg-gray-100 text-gray-700"
                     }`}
                   />
@@ -1366,8 +1376,8 @@ const handleSelectChange = async (field, value) => {
                     value={form.discount_percentage === 0 ? "" : form.discount_percentage}
                     onChange={(e) => onDiscountPctChange(e.target.value)}
                     className={`border rounded w-full p-1 h-7 text-xs ${
-                      isDark 
-                        ? "border-slate-600 bg-slate-700 text-slate-200" 
+                      isDark
+                        ? "border-slate-600 bg-slate-700 text-slate-200"
                         : "border-gray-300 text-gray-800"
                     }`}
                   />
@@ -1379,8 +1389,8 @@ const handleSelectChange = async (field, value) => {
                     value={form.discount_amount === 0 ? "" : form.discount_amount}
                     onChange={(e) => onDiscountAmtChange(e.target.value)}
                     className={`border rounded w-full p-1 h-7 text-xs ${
-                      isDark 
-                        ? "border-slate-600 bg-slate-700 text-slate-200" 
+                      isDark
+                        ? "border-slate-600 bg-slate-700 text-slate-200"
                         : "border-gray-300 text-gray-800"
                     }`}
                   />
@@ -1392,8 +1402,8 @@ const handleSelectChange = async (field, value) => {
                     value={form.tax_percentage === 0 ? "" : form.tax_percentage}
                     onChange={(e) => onTaxPctChange(e.target.value)}
                     className={`border rounded w-full p-1 h-7 text-xs ${
-                      isDark 
-                        ? "border-slate-600 bg-slate-700 text-slate-200" 
+                      isDark
+                        ? "border-slate-600 bg-slate-700 text-slate-200"
                         : "border-gray-300 text-gray-800"
                     }`}
                   />
@@ -1405,8 +1415,8 @@ const handleSelectChange = async (field, value) => {
                     value={form.tax_amount === 0 ? "" : form.tax_amount}
                     onChange={(e) => onTaxAmtChange(e.target.value)}
                     className={`border rounded w-full p-1 h-7 text-xs ${
-                      isDark 
-                        ? "border-slate-600 bg-slate-700 text-slate-200" 
+                      isDark
+                        ? "border-slate-600 bg-slate-700 text-slate-200"
                         : "border-gray-300 text-gray-800"
                     }`}
                   />
@@ -1418,8 +1428,8 @@ const handleSelectChange = async (field, value) => {
                     readOnly
                     value={(Number(form.total) || 0).toFixed(2)}
                     className={`border rounded w-full p-1 h-7 text-xs ${
-                      isDark 
-                        ? "border-slate-600 bg-slate-700 text-rose-400" 
+                      isDark
+                        ? "border-slate-600 bg-slate-700 text-rose-400"
                         : "border-gray-300 bg-gray-100 text-red-600"
                     }`}
                   />
@@ -1451,6 +1461,8 @@ const handleSelectChange = async (field, value) => {
           </table>
         </div>
 
+          </div>
+        </div>
         {/* Customer Search Modal */}
         <CustomerSearch
           isOpen={customerSearchOpen}

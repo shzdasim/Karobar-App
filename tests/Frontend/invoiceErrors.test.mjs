@@ -16,3 +16,10 @@ test('invoice-wide errors do not invent an affected row', () => {
   assert.equal(invoiceErrorEntries({ response: { data: { message: 'Supplier mismatch' } } })[0].message, 'Supplier mismatch');
   assert.match(invoiceErrorEntries({})[0].message, /Connection failed/);
 });
+
+test('sorted save errors map back to the unchanged entry-order rows', () => {
+ const entries = invoiceErrorEntries({ response: { data: { errors: {
+  'items.0.unit_quantity': ['Invalid quantity'], 'items.2.batch': ['Batch required'], supplier_id: ['Supplier required'],
+ } } } }, [2, 0, 1]);
+ assert.deepEqual(entries.map(entry => entry.row), [2, 1, null]);
+});

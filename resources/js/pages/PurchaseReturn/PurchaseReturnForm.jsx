@@ -1,3 +1,4 @@
+import { useInvoiceErrors, InvoiceErrorSummary, InvoiceRowError } from "../../components/InvoiceErrors";
 // PurchaseReturnForm.jsx
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
@@ -62,6 +63,7 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
     tax_amount: 0,
     total: 0,
   });
+  const invoiceErrors = useInvoiceErrors(form.items);
 
   const [suppliers, setSuppliers] = useState([]);
   const refreshProducts = async (q = "") => {
@@ -95,6 +97,12 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
 
   // Modal + selected-object state for header search
   const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
+  useEffect(() => {
+    // Match purchase invoice entry: select the supplier first on a new form.
+    if (returnId || initialData) return;
+    const timer = setTimeout(() => setSupplierSearchOpen(true), 150);
+    return () => clearTimeout(timer);
+  }, [returnId, initialData]);
   const [invoiceSearchOpen, setInvoiceSearchOpen] = useState(false);
   const [selectedSupplierObj, setSelectedSupplierObj] = useState(null);
   const [selectedInvoiceObj, setSelectedInvoiceObj] = useState(null);
@@ -360,15 +368,11 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
   useEffect(() => {
     (async () => {
       try {
-        // Only fetch new code when NOT in edit mode
         const requests = [
           axios.get("/api/suppliers"),
           axios.get("/api/products/search", { params: { q: "", limit: 30 } }),
         ];
         
-        if (!returnId) {
-          requests.push(axios.get("/api/purchase-returns/new-code"));
-        }
         
         const results = await Promise.all(requests);
         setSuppliers(results[0].data || []);
@@ -376,9 +380,6 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
         setCatalogProducts(catalog);
         setProducts(catalog); // until an invoice is chosen
         
-        if (!returnId && results[2]) {
-          setForm((prev) => ({ ...prev, posted_number: results[2].data?.posted_number || results[2].data?.code || "" }));
-        }
       } catch (err) { console.error(err); }
     })();
   }, []);
@@ -511,7 +512,7 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
 
 const loadInvoice = async (invoiceId) => {
     try {
-      const res = await axios.get(`/api/purchase-invoices/${invoiceId}`);
+      const res = await axios.get(`/api/purchase-invoices/${invoiceId}`, { params: { exclude_return_id: returnId || undefined } });
       const data = res.data || {};
       setSelectedInvoiceObj(data);
       const items = Array.isArray(data?.items) ? data.items : [];
@@ -770,7 +771,7 @@ const handleSelectChange = async (field, value) => {
         // uniqueness (no batch scenario)
         const dupPI = findDuplicateProductIndex(selectedId, index);
         if (dupPI !== -1) {
-          toast.error(`Duplicate product "${productNameById(selectedId)}" already used in row ${dupPI + 1}.`);
+          invoiceErrors.showMessage(`Duplicate product "${productNameById(selectedId)}" already used in row ${dupPI + 1}.`);
           setRowError(index, "product");
           focusProductSearch(index);
           return;
@@ -797,7 +798,7 @@ const handleSelectChange = async (field, value) => {
         const b = openBatches[0];
         const dupPB = findDuplicateProductBatchIndex(selectedId, b.batch_number, index);
         if (dupPB !== -1) {
-          toast.error(`Row ${dupPB + 1} already has "${productNameById(selectedId)}" with batch "${b.batch_number}".`);
+          invoiceErrors.showMessage(`Row ${dupPB + 1} already has "${productNameById(selectedId)}" with batch "${b.batch_number}".`);
           setRowError(index, "batch");
           focusProductSearch(index);
           return;
@@ -833,7 +834,7 @@ const handleSelectChange = async (field, value) => {
       // uniqueness (no batch on invoice)
       const dupPI2 = findDuplicateProductIndex(selectedId, index);
       if (dupPI2 !== -1) {
-        toast.error(`Duplicate product "${productNameById(selectedId)}" already used in row ${dupPI2 + 1}.`);
+        invoiceErrors.showMessage(`Duplicate product "${productNameById(selectedId)}" already used in row ${dupPI2 + 1}.`);
         setRowError(index, "product");
         focusProductSearch(index);
         return;
@@ -860,7 +861,7 @@ const handleSelectChange = async (field, value) => {
       const b = batchOptsInvoice[0];
       const dupPB = findDuplicateProductBatchIndex(selectedId, b.batch_number, index);
       if (dupPB !== -1) {
-        toast.error(`Row ${dupPB + 1} already has product "${productNameById(selectedId)}" with batch "${b.batch_number}". Choose a different row or batch.`);
+        invoiceErrors.showMessage(`Row ${dupPB + 1} already has product "${productNameById(selectedId)}" with batch "${b.batch_number}". Choose a different row or batch.`);
         setRowError(index, "batch");
         focusProductSearch(index);
         return;
@@ -917,7 +918,7 @@ const handleSelectChange = async (field, value) => {
     if (ensurePid && bn) {
       const dupIndex2 = findDuplicateProductBatchIndex(ensurePid, bn, index);
       if (dupIndex2 !== -1) {
-        toast.error(`Duplicate (product + batch) in row ${dupIndex2 + 1}. Use a unique batch for the same product.`);
+        invoiceErrors.showMessage(`Duplicate (product + batch) in row ${dupIndex2 + 1}. Use a unique batch for the same product.`);
         setRowError(index, "batch");
         const updDup = [...form.items];
         updDup[index] = recalcItem(
@@ -963,7 +964,7 @@ const handleSelectChange = async (field, value) => {
         (it) => eqPid(it.product_id, ensurePid) && String(it.batch ?? "") === bn
       );
       if (!matched) {
-        toast.error("Selected batch not found on this invoice.");
+        invoiceErrors.showMessage("Selected batch not found on this invoice.");
         return;
       }
       const avail = unitsOnInvoiceForProductBatch(ensurePid, bn);
@@ -988,7 +989,7 @@ const handleSelectChange = async (field, value) => {
       const cached = productBatchCache.current.get(String(ensurePid)) || [];
       const matchedOpen = cached.find((b) => String(b.batch_number) === bn) || null;
       if (!matchedOpen) {
-        toast.error("Selected batch not found for this product.");
+        invoiceErrors.showMessage("Selected batch not found for this product.");
         return;
       }
       const avail = toNum(firstDefined(matchedOpen.available_units, await fetchAvailableUnits(ensurePid, bn)));
@@ -1090,9 +1091,10 @@ const handleSelectChange = async (field, value) => {
 
   // -------- submit with validations --------
   const handleSubmit = async () => {
+    invoiceErrors.clear();
     try {
       if (!form.supplier_id) {
-        toast.error("Please select a supplier");
+        invoiceErrors.showMessage("Please select a supplier");
         supplierSelectRef.current?.focus?.();
         return;
       }
@@ -1110,11 +1112,11 @@ const handleSelectChange = async (field, value) => {
           if (seen.has(key)) {
             const firstRow = seen.get(key);
             if (hasBatches && batchKey) {
-              toast.error(`Duplicate product & batch in rows ${firstRow + 1} and ${i + 1}. Use a unique batch for the same product.`);
+              invoiceErrors.showMessage(`Duplicate product & batch in rows ${firstRow + 1} and ${i + 1}. Use a unique batch for the same product.`);
               setRowError(i, "batch");
               setCurrentField("batch"); setCurrentRowIndex(i);
             } else {
-              toast.error(`Duplicate product without batch in rows ${firstRow + 1} and ${i + 1}. This product can only appear once when no batch is available.`);
+              invoiceErrors.showMessage(`Duplicate product without batch in rows ${firstRow + 1} and ${i + 1}. This product can only appear once when no batch is available.`);
               setRowError(i, "product");
               focusProductSearch(i);
             }
@@ -1134,7 +1136,7 @@ const handleSelectChange = async (field, value) => {
         let available = toNum(it.available_units);
         if (productHasBatches(it.product_id)) {
           if (!it.batch) {
-            toast.error(`Row ${i + 1}: Please pick a batch for this product.`);
+            invoiceErrors.showMessage(`Row ${i + 1}: Please pick a batch for this product.`);
             setRowError(i, "batch");
             setCurrentField("batch"); setCurrentRowIndex(i);
             return;
@@ -1149,7 +1151,7 @@ const handleSelectChange = async (field, value) => {
         }
         // Block saving if availability is zero
         if (toNum(available) <= 0) {
-          toast.error(`Row ${i + 1}: "${productNameById(it.product_id)}" has Avail.Q (Units) of 0.`);
+          invoiceErrors.showMessage(`Row ${i + 1}: "${productNameById(it.product_id)}" has Avail.Q (Units) of 0.`);
           if (productHasBatches(it.product_id)) {
             setCurrentField("batch"); setCurrentRowIndex(i);
           } else {
@@ -1159,7 +1161,7 @@ const handleSelectChange = async (field, value) => {
         }
 
         if (returnedUnits > toNum(available)) {
-          toast.error(`Row ${i + 1}: Returned units (${returnedUnits}) exceed available (${available}).`);
+          invoiceErrors.showMessage(`Row ${i + 1}: Returned units (${returnedUnits}) exceed available (${available}).`);
           return;
         }
       }
@@ -1233,7 +1235,7 @@ const handleSelectChange = async (field, value) => {
       }
     } catch (err) {
       console.error(err);
-      toast.error("Failed to save purchase return");
+      invoiceErrors.showError(err);
     }
   };
 
@@ -1250,13 +1252,21 @@ const handleSelectChange = async (field, value) => {
 
   // ========== Helpers for invoice-based units ==========
   const unitsFromInvoiceItem = (it) => {
+    if (it.returnable_quantity != null) return toNum(it.returnable_quantity);
     const uq = toNum(firstDefined(it?.unit_quantity, it?.unit_qty, it?.units, it?.quantity_units, 0));
     const ub = toNum(firstDefined(it?.unit_bonus, it?.bonus_units, it?.free_units, 0));
     return uq + ub; // ✅ units purchased on that invoice line (qty + bonus)
   };
 
-  const unitsOnInvoiceForProduct = (productId) =>
-    invoiceItemsForProduct(productId).reduce((sum, it) => sum + unitsFromInvoiceItem(it), 0);
+  const unitsOnInvoiceForProduct = (productId) => {
+    const seen = new Set();
+    return invoiceItemsForProduct(productId).reduce((sum, it) => {
+      const key = JSON.stringify([it.batch || '', it.expiry || '']);
+      if (it.returnable_quantity != null && seen.has(key)) return sum;
+      seen.add(key);
+      return sum + unitsFromInvoiceItem(it);
+    }, 0);
+  };
 
   const unitsOnInvoiceForProductBatch = (productId, batchNumber) => {
     const m = invoiceItems.find(
@@ -1489,12 +1499,13 @@ const handleSelectChange = async (field, value) => {
 // ===== render =====
   return (
     <div className="relative w-full h-full">
-      <form className={`return-entry-form purchase-return-form h-[calc(100vh-130px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}>
+      <form className={`purchase-entry purchase-return-form h-[calc(100vh-130px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}>
+        <InvoiceErrorSummary errors={invoiceErrors} />
 {/* ================= HEADER ================= */}
-        <div className="return-header sticky top-0 z-20">
+        <div className="purchase-entry-header sticky top-0 z-20">
           {/* Branded Banner */}
           <div
-            className="return-banner px-4 py-2.5 flex items-center justify-between gap-3"
+            className="purchase-entry-banner px-4 py-2.5 flex items-center justify-between gap-3"
 
           >
             <div className="flex items-center gap-3">
@@ -1539,7 +1550,7 @@ const handleSelectChange = async (field, value) => {
           </div>
 
           {/* Fields Card */}
-          <div className="return-details px-3 py-2">
+          <div className="purchase-entry-details px-3 py-2">
             <div className="grid grid-cols-12 gap-2 items-end">
               {/* Posted Number */}
               <div className="col-span-2">
@@ -1635,7 +1646,7 @@ const handleSelectChange = async (field, value) => {
         </div>
 
         {/* ================= ITEMS ================= */}
-        <div className="return-items flex-1 min-h-0 overflow-auto p-1">
+        <div className="purchase-entry-items flex-1 min-h-0 overflow-auto p-1">
           <h2 className="text-xs font-bold mb-1 text-gray-900 dark:text-gray-100">Items (↑↓ arrows to navigate rows)</h2>
 
           <table className="w-full border-collapse text-[11px]">
@@ -1654,7 +1665,7 @@ const handleSelectChange = async (field, value) => {
                 <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">PSize</th>
                 <th className="border w-16 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Batch</th>
                 <th className="border w-20 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Exp</th>
-                <th className="border w-20 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Avail.Q (Units)</th>
+                <th className="border w-20 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">{form.purchase_invoice_id ? "Returnable Qty" : "Avail.Q (Units)"}</th>
                 <th className="border w-12 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Pack.Q</th>
                 <th className="border w-12 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Unit.Q</th>
                 <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Pack.P</th>
@@ -1665,13 +1676,13 @@ const handleSelectChange = async (field, value) => {
 
             <tbody>
               {form.items.map((item, i) => (
-                <tr key={item.id} className="text-center odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/30 dark:even:bg-slate-700/50">
+                <tr key={item.id} id={invoiceErrors.rowId(i)} aria-invalid={invoiceErrors.rowMessages(i).length > 0 || undefined} className={`text-center odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/30 dark:even:bg-slate-700/50 ${invoiceErrors.rowMessages(i).length ? "invoice-row-invalid" : ""}`}>
                   {/* Remove */}
                   <td className="border">
                     <button
                       type="button"
                       onClick={() => removeItem(i)} aria-label="Remove item" title="Remove item"
-                      className="return-item-action return-item-remove"
+                      className="products-row-action products-row-delete"
                     >
                       <TrashIcon aria-hidden="true" />
                     </button>
@@ -1816,7 +1827,7 @@ const handleSelectChange = async (field, value) => {
                     <button
                       type="button"
                       onClick={addItem} aria-label="Add item" title="Add item"
-                      className="return-item-action return-item-add"
+                      className="products-row-action products-row-add"
                     >
                       <PlusIcon aria-hidden="true" />
                     </button>
@@ -1828,7 +1839,7 @@ const handleSelectChange = async (field, value) => {
         </div>
 
 {/* ================= FOOTER ================= */}
-        <div className={`return-footer sticky bottom-0 p-2 z-10 ${isDark ? "bg-slate-800 border-t border-slate-700" : "bg-white border-t border-gray-200"}`}>
+        <div className={`purchase-entry-footer sticky bottom-0 p-2 z-10 ${isDark ? "bg-slate-800 border-t border-slate-700" : "bg-white border-t border-gray-200"}`}>
           <div className="grid grid-cols-6 gap-2 text-xs">
             <div className={`p-1.5 rounded-lg border ${isDark ? "border-slate-700 bg-slate-700/40" : "border-gray-200 bg-gray-50"}`}>
               <label className={`block text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Gross Total</label>

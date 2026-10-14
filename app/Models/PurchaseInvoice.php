@@ -32,6 +32,6 @@ class PurchaseInvoice extends Model
 
     public function items()
     {
-        return $this->hasMany(PurchaseInvoiceItem::class);
+        return $this->hasMany(PurchaseInvoiceItem::class)->orderBy('id');
     }
 }
