@@ -1,3 +1,4 @@
+import { useInvoiceErrors, InvoiceErrorSummary, InvoiceRowError } from "../../components/InvoiceErrors";
 // /src/pages/sales/SaleInvoiceWholesaleForm.jsx - Wholesale Sale Invoice Form (hardcoded wholesale mode)
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
@@ -117,6 +118,7 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
       },
     ],
   });
+  const invoiceErrors = useInvoiceErrors(form.items);
 
   // State for customer wholesale prices (fetched when customer is selected)
 const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
@@ -580,7 +582,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
         const prevQtyNum = Number(items[index].quantity || 0);
         const nextQtyNum = Number(value || 0);
         if (nextQtyNum > available && prevQtyNum <= available) {
-          toast.error(`Row ${index + 1}: quantity exceeds available (${available})`);
+          invoiceErrors.showMessage(`Row ${index + 1}: quantity exceeds available (${available})`);
         }
       }
       
@@ -708,7 +710,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
         (row, idx) => idx !== rowIndex && eqId(row.product_id, productId)
       );
       if (dupIndex !== -1) {
-        toast.error(`Product already used in row ${dupIndex + 1}. Each product can be added only once.`);
+        invoiceErrors.showMessage(`Product already used in row ${dupIndex + 1}. Each product can be added only once.`);
         resetRow(rowIndex);
         setTimeout(() => {
           productRefs.current[rowIndex]?.querySelector?.("input")?.focus?.();
@@ -979,15 +981,16 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    invoiceErrors.clear();
 
     // Wholesale requires customer selection
     if (!form.customer_id) {
-      return toast.error("Please select a customer for wholesale sale");
+      return invoiceErrors.showMessage("Please select a customer for wholesale sale");
     }
 
     // Validate customer selection for credit invoices
     if (form.invoice_type === "credit" && !form.customer_id) {
-      return toast.error("Please select a customer for credit sale");
+      return invoiceErrors.showMessage("Please select a customer for credit sale");
     }
 
     // Check if any item has a narcotic product
@@ -995,24 +998,24 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
 
     if (isPharmacy && hasNarcoticProduct) {
       if (!form.doctor_name || form.doctor_name.trim() === "") {
-        return toast.error("Doctor name is required for narcotic products");
+        return invoiceErrors.showMessage("Doctor name is required for narcotic products");
       }
       if (!form.patient_name || form.patient_name.trim() === "") {
-        return toast.error("Patient name is required for narcotic products");
+        return invoiceErrors.showMessage("Patient name is required for narcotic products");
       }
     }
 
     for (let i = 0; i < form.items.length; i++) {
       const it = form.items[i];
-      if (!it.product_id) return toast.error(`Row ${i + 1}: select a product`);
+      if (!it.product_id) return invoiceErrors.showMessage(`Row ${i + 1}: select a product`);
       const list = batchesByProduct[String(it.product_id)];
       const hasBatches = Array.isArray(list) && list.length > 0;
-      if (hasBatches && !it.batch_number) return toast.error(`Row ${i + 1}: select a batch`);
+      if (hasBatches && !it.batch_number) return invoiceErrors.showMessage(`Row ${i + 1}: select a batch`);
       if (it.quantity === "" || it.quantity == null)
-        return toast.error(`Row ${i + 1}: enter quantity`);
+        return invoiceErrors.showMessage(`Row ${i + 1}: enter quantity`);
       const available = Number(it.current_quantity || 0);
       if (Number(it.quantity || 0) > available) {
-        return toast.error(`Row ${i + 1}: quantity exceeds available (${available})`);
+        return invoiceErrors.showMessage(`Row ${i + 1}: quantity exceeds available (${available})`);
       }
       
       // Validate minimum price for wholesale
@@ -1029,7 +1032,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
       
       if (Number(it.price || 0) < minPrice && minPrice > 0) {
         const priceLabel = form.wholesale_type === "pack" ? "pack purchase price" : "unit purchase price";
-        return toast.error(`Row ${i + 1}: Price cannot be less than ${priceLabel} (${minPrice.toFixed(2)})`);
+        return invoiceErrors.showMessage(`Row ${i + 1}: Price cannot be less than ${priceLabel} (${minPrice.toFixed(2)})`);
       }
     }
 
@@ -1040,7 +1043,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
         const id = form.items[i].product_id;
         if (!id) continue;
         if (seen.has(String(id))) {
-          toast.error(`Duplicate product in row ${i + 1}. Each product can be added only once.`);
+          invoiceErrors.showMessage(`Duplicate product in row ${i + 1}. Each product can be added only once.`);
           return;
         }
         seen.add(String(id));
@@ -1051,8 +1054,8 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
     {
       const totalNum = Math.round(Number(form.total || 0));
       const recvNum = Math.round(Number(form.total_receive || 0));
-      if (recvNum < 0) return toast.error("Total Receive cannot be negative");
-      if (recvNum > totalNum) return toast.error("Total Receive cannot exceed Total");
+      if (recvNum < 0) return invoiceErrors.showMessage("Total Receive cannot be negative");
+      if (recvNum > totalNum) return invoiceErrors.showMessage("Total Receive cannot exceed Total");
     }
 
     // Always set sale_type to wholesale for this form
@@ -1097,13 +1100,10 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
         const id = res?.data?.id;
         toast.success("Sale invoice created");
         if (id) navigate(`/sale-invoices/${id}`);
-        else toast.error("Missing invoice ID from server response.");
+        else invoiceErrors.showMessage("Missing invoice ID from server response.");
       }
     } catch (err) {
-      console.error("Save invoice error:", err?.response?.data);
-      const errorMsg = err?.response?.data?.message 
-        || (err?.response?.data?.errors ? JSON.stringify(err.response.data.errors) : "Failed to save sale invoice");
-      toast.error(errorMsg);
+      invoiceErrors.showError(err);
     }
   };
 
@@ -1219,6 +1219,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
       className={`sale-entry sale-entry-form h-[calc(100vh-130px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`}
       autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
     >
+      <InvoiceErrorSummary errors={invoiceErrors} />
       {/* Header */}
       <div className={`sale-entry-header shrink-0 sticky top-0 z-20 border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
         {/* Branded Banner */}
@@ -1447,7 +1448,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
               </thead>
               <tbody className="[&>tr>td]:py-1 [&>tr>td]:px-0.2">
                 {form.items.map((it, i) => (
-                  <tr key={it.id} className={`border-b ${isDark ? "border-slate-700 hover:bg-slate-700/50" : "border-gray-100 hover:bg-gray-50"}`}>
+                  <tr key={it.id} id={invoiceErrors.rowId(i)} aria-invalid={invoiceErrors.rowMessages(i).length > 0 || undefined} className={`${invoiceErrors.rowMessages(i).length ? "invoice-row-invalid" : ""} border-b ${isDark ? "border-slate-700 hover:bg-slate-700/50" : "border-gray-100 hover:bg-gray-50"}`}>
                     <td className="text-center">
                       <button
                         type="button"
@@ -1461,6 +1462,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                     <td className={`text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>{i + 1}</td>
 
                     <td>
+                      <InvoiceRowError messages={invoiceErrors.rowMessages(i)} />
                       <div ref={(el) => (productRefs.current[i] = el)}>
                         <ProductSearchInput
                           value={products.find((p) => eqId(p.id, it.product_id)) || it.product_id}

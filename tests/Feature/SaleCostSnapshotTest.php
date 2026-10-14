@@ -6,6 +6,7 @@ use App\Http\Controllers\PurchaseInvoiceController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\SaleInvoiceController;
 use App\Http\Controllers\SaleReturnController;
+use App\Models\Batch;
 use App\Models\Product;
 use App\Models\SaleInvoice;
 use App\Models\SaleReturn;
@@ -14,6 +15,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class SaleCostSnapshotTest extends TestCase
@@ -184,6 +186,90 @@ class SaleCostSnapshotTest extends TestCase
         $this->assertEquals(288, $this->daily()['cost_of_sales']);
         $this->assertEquals(135, $this->daily()['sale_return']);
         $this->assertFalse($this->daily()['cost_is_estimated']);
+    }
+
+    public function test_second_cashier_stale_quantity_is_rejected_without_changing_stock_or_invoices(): void
+    {
+        Product::find(1)->update(['quantity' => 5]);
+        $first = $this->sale(4);
+        try {
+            $this->sale(4);
+            $this->fail('Stale sale was accepted');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('Available: 1 units', $e->errors()['items.0.quantity'][0]);
+        }
+        $this->assertSame(1, SaleInvoice::count());
+        $this->assertEquals(1, Product::find(1)->quantity);
+        $this->assertEquals(100, $first->items()->first()->cost_price_snapshot);
+    }
+
+    public function test_duplicate_product_rows_are_checked_together_and_fail_atomically(): void
+    {
+        Product::find(1)->update(['quantity' => 5]);
+        $row = ['product_id' => 1, 'quantity' => 3, 'price' => 150, 'sub_total' => 450];
+        try {
+            app(SaleInvoiceController::class)->store($this->request(['customer_id' => 1,
+                'date' => '2026-10-13', 'gross_amount' => 900, 'total' => 900, 'items' => [$row, $row]]));
+            $this->fail('Combined over-sale accepted');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('items.1.quantity', $e->errors());
+        }
+        $this->assertEquals(5, Product::find(1)->quantity);
+        $this->assertSame(0, SaleInvoice::count());
+        $this->assertSame(0, DB::table('sale_invoice_items')->count());
+    }
+
+    public function test_batch_availability_is_enforced_even_with_sufficient_product_stock(): void
+    {
+        $batch = Batch::create(['product_id' => 1, 'batch_number' => 'LOT-A',
+            'expiry_date' => '2028-01-01', 'quantity' => 3]);
+        foreach (['LOT-A', 'MISSING'] as $number) {
+            try {
+                app(SaleInvoiceController::class)->store($this->request(['customer_id' => 1,
+                    'date' => '2026-10-13', 'gross_amount' => 600, 'total' => 600,
+                    'items' => [['product_id' => 1, 'quantity' => 4, 'price' => 150, 'sub_total' => 600,
+                        'batch_number' => $number, 'expiry' => '2028-01-01']]]));
+                $this->fail('Invalid batch sale accepted');
+            } catch (ValidationException $e) {
+                $this->assertNotEmpty($e->errors());
+            }
+        }
+        $this->assertSame(0, SaleInvoice::count());
+        $this->assertEquals(100, Product::find(1)->quantity);
+        $this->assertEquals(3, $batch->fresh()->quantity);
+    }
+
+    public function test_batch_sale_edit_credits_original_units_and_rejected_edit_preserves_everything(): void
+    {
+        Product::find(1)->update(['quantity' => 5]);
+        $batch = Batch::create(['product_id' => 1, 'batch_number' => 'LOT-A',
+            'expiry_date' => '2028-01-01', 'quantity' => 5]);
+        app(SaleInvoiceController::class)->store($this->request(['customer_id' => 1,
+            'date' => '2026-10-13', 'gross_amount' => 600, 'total' => 600,
+            'items' => [['product_id' => 1, 'quantity' => 4, 'price' => 150, 'sub_total' => 600,
+                'batch_number' => 'LOT-A', 'expiry' => '2028-01-01']]]));
+        $sale = SaleInvoice::first();
+        $this->assertEquals(1, Product::find(1)->quantity);
+        $this->assertEquals(1, $batch->fresh()->quantity);
+        $edit = $sale->load('items')->toArray();
+        $edit['items'][0]['quantity'] = 5;
+        $edit['items'][0]['sub_total'] = $edit['total'] = 750;
+        app(SaleInvoiceController::class)->update($this->request($edit), $sale->id);
+        $this->assertEquals(0, Product::find(1)->quantity);
+        $this->assertEquals(0, $batch->fresh()->quantity);
+        $this->assertEquals(100, $sale->items()->first()->cost_price_snapshot);
+        $edit = $sale->fresh()->load('items')->toArray();
+        $edit['items'][0]['quantity'] = 6;
+        try {
+            app(SaleInvoiceController::class)->update($this->request($edit), $sale->id);
+            $this->fail('Oversized edit accepted');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('items.0.quantity', $e->errors());
+        }
+        $this->assertEquals(5, $sale->items()->first()->quantity);
+        $this->assertEquals(750, $sale->fresh()->total);
+        $this->assertEquals(0, Product::find(1)->quantity);
+        $this->assertEquals(0, $batch->fresh()->quantity);
     }
 
     public function test_saved_cost_freezes_reports_without_changing_profit_formulas(): void

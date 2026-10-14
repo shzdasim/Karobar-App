@@ -36,31 +36,25 @@ class SaleInvoiceController extends Controller
 
         $batch = null;
         if ($batchNo !== '') {
-            $batch = Batch::where('product_id', $productId)
-                ->where(function ($q) use ($batchNo) {
-                    $q->where('batch_number', $batchNo)->orWhere('batch', $batchNo);
-                })
-                ->when($expiry !== '', function ($q) use ($expiry) {
-                    $q->where(function ($q2) use ($expiry) {
-                        $q2->where('expiry', $expiry)->orWhere('expiry_date', $expiry);
-                    });
-                })
-                ->first();
+            $batch = app(\App\Services\SaleStockAvailability::class)->matchBatch(
+                Batch::where('product_id', $productId)->orderBy('id')->lockForUpdate()->get(),
+                ['product_id' => $productId, 'batch_number' => $batchNo, 'expiry' => $expiry]
+            );
         }
 
         if ($batch) {
             $before = $this->i($batch->quantity);
             $after  = $before + $deltaUnits;
-            if ($after < 0) $after = 0;
+            if ($after < 0) throw \Illuminate\Validation\ValidationException::withMessages(['items' => 'Selected batch has insufficient stock.']);
             $actualApplied = $after - $before;
             $batch->quantity = $after;
             $batch->save();
         }
 
-        if ($product = Product::find($productId)) {
+        if ($product = Product::lockForUpdate()->find($productId)) {
             $pBefore = $this->i($product->quantity);
             $pAfter  = $pBefore + $actualApplied;
-            if ($pAfter < 0) $pAfter = 0;
+            if ($pAfter < 0) throw \Illuminate\Validation\ValidationException::withMessages(['items' => 'Product has insufficient stock.']);
             $product->quantity = $pAfter;
             
             // If stock becomes zero, reset average price and margins
@@ -210,6 +204,7 @@ class SaleInvoiceController extends Controller
         ]);
 
         return DB::transaction(function () use ($data, $request) {
+            app(\App\Services\SaleStockAvailability::class)->validate($data['items']);
             // 🔐 Concurrency-safe numbering: lock last row, compute next
             $last = SaleInvoice::lockForUpdate()->orderByDesc('id')->first();
             $next = $last ? ($last->id + 1) : 1;
@@ -323,7 +318,9 @@ class SaleInvoiceController extends Controller
         ]);
 
         return DB::transaction(function () use ($invoice, $data) {
+            $invoice = SaleInvoice::lockForUpdate()->findOrFail($invoice->id);
             $originalItems = $invoice->items()->get();
+            app(\App\Services\SaleStockAvailability::class)->validate($data['items'], $originalItems);
             $costs = app(\App\Services\SaleCostSnapshot::class)->productCosts($data['items']);
             $this->revertItems($invoice);
             $invoice->items()->delete();
@@ -433,6 +430,8 @@ class SaleInvoiceController extends Controller
         $remaining = max($invTotal - $received, 0);
 
         return DB::transaction(function () use ($invoice, $mode, $invTotal, $received, $remaining) {
+            $invoice = SaleInvoice::lockForUpdate()->findOrFail($invoice->id);
+            app(\App\Services\SaleStockAvailability::class)->validate([], $invoice->items()->get());
             $this->revertItems($invoice);
 
             // Only handle customer ledger entries for credit invoices

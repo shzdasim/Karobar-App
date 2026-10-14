@@ -1,3 +1,4 @@
+import { useInvoiceErrors, InvoiceErrorSummary, InvoiceRowError } from "../../components/InvoiceErrors";
 // /src/pages/purchases/PurchaseInvoiceForm.jsx
 import { useState, useEffect, useRef, useMemo } from "react";
 import axios from "axios";
@@ -100,6 +101,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
       },
     ],
   });
+  const invoiceErrors = useInvoiceErrors(form.items);
 
   // Track if user has manually edited total_paid
   const [paidTouched, setPaidTouched] = useState(false);
@@ -753,11 +755,12 @@ const contRect = container.getBoundingClientRect();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    invoiceErrors.clear();
     if (savingRef.current) return;
 
     // Validate supplier selection for credit invoices
     if (form.invoice_type === "credit" && !form.supplier_id) {
-      return toast.error("Please select a supplier for credit purchase");
+      return invoiceErrors.showMessage("Please select a supplier for credit purchase");
     }
 
     // 0) Block if any selected product has margin <= 0 (or not a number)
@@ -770,7 +773,7 @@ const contRect = container.getBoundingClientRect();
       const idx = form.items.indexOf(badItem);
       const product = products.find((p) => p.id === badItem.product_id);
       const productName = product?.name || `row ${idx + 1}`;
-      toast.error(`Margin must be greater than 0 for ${productName}`);
+      invoiceErrors.showMessage(`Margin must be greater than 0 for ${productName}`, idx);
       return;
     }
 
@@ -781,7 +784,7 @@ const contRect = container.getBoundingClientRect();
     if (negativeMarginItem) {
       const product = products.find((p) => p.id === negativeMarginItem.product_id);
       const productName = product ? product.name : negativeMarginItem.product_id;
-      toast.error(`Margin cannot be negative for Product ${productName}`);
+      invoiceErrors.showMessage(`Margin cannot be negative for Product ${productName}`, form.items.indexOf(negativeMarginItem));
       return;
     }
 
@@ -790,15 +793,15 @@ const contRect = container.getBoundingClientRect();
     const totalAmount = Number(form.total_amount || 0);
     const totalPaid = Number(form.total_paid || 0);
     if (totalPaid < 0) {
-      toast.error("Total Paid cannot be negative");
+      invoiceErrors.showMessage("Total Paid cannot be negative");
       return;
     }
     if (totalPaid > totalAmount) {
-      toast.error("Total Paid cannot exceed Total Amount");
+      invoiceErrors.showMessage("Total Paid cannot exceed Total Amount");
       return;
     }
     if (Math.abs(invoiceAmount - totalAmount) > 5) {
-      toast.error(
+      invoiceErrors.showMessage(
         `Invoice amount (${invoiceAmount}) must be equal to total amount (${totalAmount}), difference > 5`
       );
       return;
@@ -816,7 +819,7 @@ const contRect = container.getBoundingClientRect();
         },
       });
       if (!checkRes.data.unique) {
-        toast.error(
+        invoiceErrors.showMessage(
           `Invoice number "${form.invoice_number}" already exists for this supplier`
         );
         return;
@@ -853,7 +856,7 @@ const contRect = container.getBoundingClientRect();
         toast.success(`Invoice created: ${saved?.posted_number || "(number assigned)"}`);
         onSuccess && onSuccess();
       }
-    } catch (err) { showAxiosError(err); }
+    } catch (err) { invoiceErrors.showError(err); }
     finally { savingRef.current = false; setSaving(false); }
   };
 
@@ -1017,6 +1020,7 @@ const contRect = container.getBoundingClientRect();
       style={{ minHeight: "calc(100vh - 130px)", maxHeight: "calc(100vh - 130px)" }}
       autoComplete="off" // disable browser suggestions globally
     >
+      <InvoiceErrorSummary errors={invoiceErrors} />
 {(initialData?.purchase_order || form.purchase_order) && <div className="g-toolbar p-3">This invoice was generated from Purchase Order <a className="underline" href={`/purchase-orders/${(initialData?.purchase_order || form.purchase_order).id}`}>{(initialData?.purchase_order || form.purchase_order).number}</a>. Review quantities, prices, batches and expiry before saving.{!invoiceId && <p className="text-xs mt-1 font-medium">{(initialData?.purchase_order || form.purchase_order).previous_receipts ? `Additional delivery · ${(initialData?.purchase_order || form.purchase_order).previous_receipts} previous receipt(s)` : "First delivery"} · {(initialData?.purchase_order || form.purchase_order).remaining_units} paid units remaining before this delivery. Save the delivered quantities; you can receive the balance later.</p>}</div>}
 {/* ================= HEADER SECTION ================= */}
       <div className="purchase-entry-header sticky top-0 z-10 shadow-lg" autoComplete="off">
@@ -1246,7 +1250,7 @@ const contRect = container.getBoundingClientRect();
 
           <tbody>
             {form.items.map((item, i) => (
-              <tr key={i} className="text-center odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/30 dark:even:bg-slate-700/50">
+              <tr key={i} id={invoiceErrors.rowId(i)} aria-invalid={invoiceErrors.rowMessages(i).length > 0 || undefined} className={`text-center odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/30 dark:even:bg-slate-700/50 ${invoiceErrors.rowMessages(i).length ? "invoice-row-invalid" : ""}`}>
                 {/* Remove */}
                 <td className="border">
                   <button
@@ -1262,6 +1266,7 @@ const contRect = container.getBoundingClientRect();
 
                 {/* Product Search Input */}
                 <td colSpan={1} className="border text-left w-[200px]">
+                  <InvoiceRowError messages={invoiceErrors.rowMessages(i)} />
                   <div ref={(el) => (productSearchRefs.current[i] = el)}>
                     <ProductSearchInput
                       value={products.find(p => p.id === item.product_id) || item.product_id}
@@ -1380,7 +1385,7 @@ const contRect = container.getBoundingClientRect();
                       });
 
                       if (duplicateIndex !== -1) {
-                        toast.error(
+                        invoiceErrors.showMessage(
                           newBatch
                             ? `Product "${products.find((p) => p.id === item.product_id)?.name}" with batch "${newBatch}" already exists in row ${duplicateIndex + 1}`
                             : `Product "${products.find((p) => p.id === item.product_id)?.name}" without batch already exists in row ${duplicateIndex + 1}`

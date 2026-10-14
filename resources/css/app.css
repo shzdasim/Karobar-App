@@ -2072,3 +2072,9 @@ body {
   .purchase-order-entry .purchase-order-form-table td:first-child { grid-column: auto; }
   .purchase-order-entry .purchase-order-form-table td[data-label="Product"] { grid-column: span 2; }
 }
+.invoice-error-summary { flex-shrink: 0; margin: 8px; padding: 10px 12px; border: 1px solid var(--color-danger, #dc2626); border-radius: 8px; color: var(--color-danger, #dc2626); background: color-mix(in srgb, var(--color-danger, #dc2626) 8%, var(--workspace-surface, white)); font-size: 12px; }
+.invoice-error-summary ul { margin: 4px 0 0; padding-left: 18px; list-style: disc; }
+.invoice-error-summary button { text-align: left; text-decoration: underline; cursor: pointer; }
+tr.invoice-row-invalid > td { background: color-mix(in srgb, var(--color-danger, #dc2626) 12%, var(--workspace-surface, white)) !important; border-top: 1px solid var(--color-danger, #dc2626) !important; border-bottom: 1px solid var(--color-danger, #dc2626) !important; }
+tr.invoice-row-invalid > td:first-child { box-shadow: inset 3px 0 var(--color-danger, #dc2626); }
+.invoice-row-error-message { padding: 4px; color: var(--color-danger, #dc2626); font-size: 11px; font-weight: 600; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
