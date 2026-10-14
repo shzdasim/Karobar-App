@@ -254,7 +254,7 @@ if ($invoiceType === 'credit') {
                     ? PurchaseOrder::lockForUpdate()->findOrFail($purchaseInvoice->purchase_order_id) : null;
                 if ($order) {
                     $purchaseInvoice->refresh();
-                    app(PurchaseOrderReceiving::class)->validateReceipt($order, $data, $purchaseInvoice->id);
+                    app(PurchaseOrderReceiving::class)->validateReceipt($order, $data);
                 }
                 else {
                     foreach ($data['items'] as &$row) unset($row['purchase_order_item_id']);

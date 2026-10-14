@@ -171,10 +171,10 @@ class PurchaseOrderWorkflowTest extends TestCase
         $this->assertSame(0, PurchaseOrder::count());
     }
 
-    public function test_invalid_supplier_or_over_receipt_leaves_order_and_stock_unchanged(): void
+    public function test_invalid_supplier_leaves_order_and_stock_unchanged(): void
     {
         $order = $this->order();
-        foreach (['supplier', 'quantity'] as $case) {
+        foreach (['supplier'] as $case) {
             $data = $this->invoiceData($order, $case === 'quantity' ? 101 : 100);
             if ($case === 'supplier') {
                 $data['supplier_id'] = 2;
@@ -232,7 +232,7 @@ class PurchaseOrderWorkflowTest extends TestCase
         $this->assertSame([5, 5, 5], Product::orderBy('id')->pluck('quantity')->all());
     }
 
-    public function test_multiple_deliveries_complete_order_and_reject_stale_over_receipt(): void
+    public function test_multiple_deliveries_allow_extra_paid_units_and_complete_order(): void
     {
         $this->withoutMiddleware(EnsureLicensed::class);
         $order = $this->order();
@@ -240,17 +240,16 @@ class PurchaseOrderWorkflowTest extends TestCase
         $stale = $this->invoiceData($order, 30);
         $stale['invoice_number'] = 'STALE';
         $this->postJson('/api/purchase-invoices', $first)->assertCreated();
-        $this->postJson('/api/purchase-invoices', $stale)->assertUnprocessable()->assertJsonValidationErrors('items');
         $prepared = $this->postJson('/api/purchase-orders/'.$order->id.'/receive')->assertOk();
         $this->assertSame([20, 20, 20], array_column($prepared->json('items'), 'unit_quantity'));
-        $second = $this->invoiceData($order, 20);
+        $second = $stale;
         $second['invoice_number'] = 'SUP-2';
         $this->postJson('/api/purchase-invoices', $second)->assertCreated();
         $this->assertSame('received', $order->fresh()->status);
         $details = $this->getJson('/api/purchase-orders/'.$order->id)->assertOk()->assertJsonCount(2, 'invoices');
         $this->assertSame([0, 0, 0], array_column($details->json('items'), 'remaining_quantity'));
-        $this->assertSame([105, 105, 105], Product::orderBy('id')->pluck('quantity')->all());
-        $this->assertSame([100, 100, 100], DB::table('batches')->pluck('quantity')->all());
+        $this->assertSame([115, 115, 115], Product::orderBy('id')->pluck('quantity')->all());
+        $this->assertSame([110, 110, 110], DB::table('batches')->pluck('quantity')->all());
         $this->postJson('/api/purchase-orders/'.$order->id.'/receive')->assertStatus(409);
     }
 
@@ -268,13 +267,9 @@ class PurchaseOrderWorkflowTest extends TestCase
             $line['pack_quantity'] = 5;
         }
         unset($line);
-        try {
-            app(PurchaseInvoiceController::class)->update($this->request($data), $invoice);
-            $this->fail('Edit exceeded cumulative ordered quantity');
-        } catch (ValidationException $e) {
-            $this->assertArrayHasKey('items', $e->errors());
-        }
-        $this->assertSame([105, 105, 105], Product::orderBy('id')->pluck('quantity')->all());
+        app(PurchaseInvoiceController::class)->update($this->request($data), $invoice);
+        $this->assertSame('received', $order->fresh()->status);
+        $this->assertSame([115, 115, 115], Product::orderBy('id')->pluck('quantity')->all());
         foreach ($data['items'] as &$line) {
             $line['unit_quantity'] = $line['quantity'] = 20;
             $line['pack_quantity'] = 2;

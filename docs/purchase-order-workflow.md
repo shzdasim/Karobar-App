@@ -161,3 +161,10 @@ Rollback refuses to restore one-invoice uniqueness if any PO already has multipl
 The Expected Orders dashboard KPI keeps its original scope: only uninvoiced Ordered POs scheduled in the selected range. Remaining value for partially received POs is a separate reporting enhancement.
 
 Verification: all 35 backend tests pass (175 assertions), including 24 purchasing tests. New coverage includes successive deliveries, stale over-receipts, duplicate keys, cumulative edit/delete behavior, split-batch receipts, remaining bonus suggestions and migration preservation/rollback safety. Frontend production build passes with existing CSS selector and bundle-size warnings. No browser was connected; interactive UI/printing and concurrent production MySQL execution were not verified.
+
+
+## Extra delivered quantities — 14 October 2026
+
+Purchase invoices linked to a PO now allow paid quantities above the ordered amount, including invoice edits and cumulative deliveries. The original ordered quantity stays unchanged, actual received quantity includes all paid units, and remaining quantity is clamped to zero. An order is Received when every line meets or exceeds its ordered quantity; otherwise it is Partially Received. Stock/pricing/accounting use the actual invoice quantities and existing formulas. Bonus units still do not count toward paid-unit fulfillment. Duplicate receipt protection and supplier/source validation remain enforced. This supersedes earlier references to blocking over-receipts.
+
+Validation: all 49 backend tests pass (310 assertions), including extra quantities in a subsequent receipt, extra quantities on invoice edit, subsequent reduction to partial receipt, deletion and stock reversal.
