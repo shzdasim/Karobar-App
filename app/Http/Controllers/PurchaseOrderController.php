@@ -133,7 +133,7 @@ class PurchaseOrderController extends Controller
         return DB::transaction(function () use ($purchaseOrder) {
             $order = \App\Models\PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
             if (!in_array($order->status, ['ordered', 'partially_received'], true)) abort(409, 'This order cannot be received.');
-            $order->load('supplier', 'items.product', 'items.invoiceItems');
+            $order->load('supplier', 'items.product.brand', 'items.invoiceItems');
             return response()->json([
                 'purchase_order_id' => $order->id,
                 'receipt_key' => (string) \Illuminate\Support\Str::uuid(),

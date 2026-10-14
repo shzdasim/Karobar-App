@@ -1,6 +1,7 @@
+import { arrangePurchaseInvoiceRows, purchaseInvoiceArrangements } from "../../utils/purchaseInvoiceArrangement";
 import { useInvoiceErrors, InvoiceErrorSummary, InvoiceRowError } from "../../components/InvoiceErrors";
 // /src/pages/purchases/PurchaseInvoiceForm.jsx
-import { useState, useEffect, useRef, useMemo } from "react";
+import { Fragment, useState, useEffect, useRef, useMemo } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
@@ -131,6 +132,9 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
 
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
+  const [arrangement, setArrangement] = useState('brand_asc');
+  const arrangedRows = useMemo(() => arrangePurchaseInvoiceRows(form.items, products, arrangement), [form.items, products, arrangement]);
+
   const [currentField, setCurrentField] = useState("supplier");
   const [currentRowIndex, setCurrentRowIndex] = useState(0);
 
@@ -614,6 +618,8 @@ const contRect = container.getBoundingClientRect();
     }, 50);
   };
 
+  const displayedPosition = index => arrangedRows.findIndex(row => row.index === index);
+  const adjacentRow = (index, direction) => arrangedRows[displayedPosition(index) + direction]?.index;
   const navigateToNextField = (currentFieldName, rowIndex = 0) => {
     setTimeout(() => {
       switch (currentFieldName) {
@@ -630,7 +636,7 @@ const contRect = container.getBoundingClientRect();
           }
           break;
         case "invoice_amount":
-          focusProductSearch(0);
+          focusProductSearch(arrangedRows[0]?.index ?? 0);
           break;
         case "product":
           // If batch field has ref and is visible, check if we should focus it
@@ -685,11 +691,11 @@ const contRect = container.getBoundingClientRect();
           }
           break;
         case "whole_sale_unit_price":
-          if (rowIndex < form.items.length - 1) {
-            focusProductSearch(rowIndex + 1);
+          if (adjacentRow(rowIndex, 1) !== undefined) {
+            focusProductSearch(adjacentRow(rowIndex, 1) ?? form.items.length);
           } else {
             addItem();
-            focusProductSearch(rowIndex + 1);
+            focusProductSearch(adjacentRow(rowIndex, 1) ?? form.items.length);
           }
           break;
       }
@@ -705,19 +711,19 @@ const contRect = container.getBoundingClientRect();
       navigateToNextField(field, rowIndex);
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      if (rowIndex === form.items.length - 1) {
+      if (adjacentRow(rowIndex, 1) === undefined) {
         addItem();
         setTimeout(() => {
-          focusProductSearch(rowIndex + 1);
+          focusProductSearch(adjacentRow(rowIndex, 1) ?? form.items.length);
         }, 200);
       } else {
-        const nextRowIndex = rowIndex + 1;
+        const nextRowIndex = adjacentRow(rowIndex, 1);
         focusOnField(field, nextRowIndex);
       }
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      if (rowIndex > 0) {
-        const prevRowIndex = rowIndex - 1;
+      if (adjacentRow(rowIndex, -1) !== undefined) {
+        const prevRowIndex = adjacentRow(rowIndex, -1);
         focusOnField(field, prevRowIndex);
       }
     }
@@ -727,19 +733,19 @@ const contRect = container.getBoundingClientRect();
     if (e.key === "Enter") {
       e.preventDefault();
       navigateToNextField("product", rowIndex);
-    } else if (e.key === "ArrowUp" && rowIndex > 0) {
+    } else if (e.key === "ArrowUp" && adjacentRow(rowIndex, -1) !== undefined) {
       e.preventDefault();
-      const prevRowIndex = rowIndex - 1;
+      const prevRowIndex = adjacentRow(rowIndex, -1);
       focusProductSearch(prevRowIndex);
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      if (rowIndex === form.items.length - 1) {
+      if (adjacentRow(rowIndex, 1) === undefined) {
         addItem();
         setTimeout(() => {
-          focusProductSearch(rowIndex + 1);
+          focusProductSearch(adjacentRow(rowIndex, 1) ?? form.items.length);
         }, 200);
       } else {
-        focusProductSearch(rowIndex + 1);
+        focusProductSearch(adjacentRow(rowIndex, 1) ?? form.items.length);
       }
     }
   };
@@ -1207,6 +1213,14 @@ const contRect = container.getBoundingClientRect();
         </div>
       </div>
 
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-gray-200 dark:border-slate-600">
+        <span className="text-xs font-semibold">Products by Brand</span>
+        <label className="flex items-center gap-2 text-xs">Arrange products
+          <select aria-label="Arrange purchase invoice products" className="border rounded-md px-2 py-1 text-xs bg-white dark:bg-slate-700" value={arrangement} onChange={event => setArrangement(event.target.value)}>
+            {[...new Set(purchaseInvoiceArrangements.map(option => option.group))].map(group => <optgroup key={group} label={group}>{purchaseInvoiceArrangements.filter(option => option.group === group).map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</optgroup>)}
+          </select>
+        </label>
+      </div>
       {/* ================= ITEMS SECTION ================= */}
       <div ref={itemsScrollRef} className="purchase-entry-items flex-1 min-h-0 overflow-auto pt-1 px-1 pb-16" autoComplete="off">
         <h2 className="text-xs font-bold mb-1 text-gray-900 dark:text-gray-100">Items (↑↓ arrows to navigate rows)</h2>
@@ -1249,7 +1263,9 @@ const contRect = container.getBoundingClientRect();
           </thead>
 
           <tbody>
-            {form.items.map((item, i) => (
+            {arrangedRows.map(({ item, index: i, brand_name, brand_key }, displayIndex) => (
+              <Fragment key={i}>
+                {item.product_id && (displayIndex === 0 || String(arrangedRows[displayIndex - 1].brand_key) !== String(brand_key) || arrangedRows[displayIndex - 1].brand_name !== brand_name) && <tr className="purchase-invoice-brand-heading"><th colSpan={21} scope="rowgroup"><span>{brand_name || 'No Brand'}</span></th></tr>}
               <tr key={i} id={invoiceErrors.rowId(i)} aria-invalid={invoiceErrors.rowMessages(i).length > 0 || undefined} className={`text-center odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/30 dark:even:bg-slate-700/50 ${invoiceErrors.rowMessages(i).length ? "invoice-row-invalid" : ""}`}>
                 {/* Remove */}
                 <td className="border">
@@ -1627,6 +1643,7 @@ const contRect = container.getBoundingClientRect();
                   </button>
                 </td>
               </tr>
+              </Fragment>
             ))}
           </tbody>
         </table>

@@ -72,7 +72,7 @@ class PurchaseInvoiceController extends Controller
     public function show(PurchaseInvoice $purchaseInvoice)
     {
         $this->authorize('view', $purchaseInvoice);
-        return $purchaseInvoice->load('supplier', 'items.product', 'purchaseOrder');
+        return $purchaseInvoice->load('supplier', 'items.product.brand', 'purchaseOrder');
     }
 
     // Store new invoice — posted_number is assigned HERE (atomic, race-safe)
