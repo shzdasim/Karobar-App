@@ -321,7 +321,7 @@ export default function BrandSearch({
                   <button
                     type="button"
                     onClick={handleClose}
-                    className="h-7 px-3 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-bold transition-colors"
+                    className="theme-btn-secondary h-7 px-3 text-[11px] font-bold"
                     title="Apply selected brands"
                   >
                     Done

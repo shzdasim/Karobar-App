@@ -85,13 +85,16 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
   }), [theme]);
 
   // Get button style class from theme
-  const buttonStyle = theme?.button_style || 'rounded-sm';
+  const buttonStyle = theme?.button_style || 'modern';
   const isOutlined = buttonStyle === 'outlined';
   const buttonStyleClass = {
-    'rounded-sm': 'rounded-lg',
-    'outlined': 'rounded-lg',
-    'soft': 'rounded-xl',
-  }[buttonStyle] || 'rounded-lg';
+    'modern':     'rounded-xl',
+    'rounded':    'rounded-lg',
+    'rounded-sm': 'rounded-md',
+    'outlined':   'rounded-lg',
+    'soft':       'rounded-2xl',
+    'pill':       'rounded-full',
+  }[buttonStyle] || 'rounded-xl';
 
   // Get button background based on style (outlined = transparent)
   const getButtonBg = (color) => isOutlined ? "transparent" : `color-mix(in srgb, ${color} 8%, var(--workspace-surface))`;

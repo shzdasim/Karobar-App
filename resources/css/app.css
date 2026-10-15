@@ -525,8 +525,9 @@ body:has(.workspace-shell) { transform: none; }
 }
 
 @utility g-btn-base {
-  @apply h-9 px-3 rounded-xl text-sm font-medium transition focus:outline-hidden
+  @apply h-9 px-3 text-sm font-medium transition focus:outline-hidden
            ring-1 ring-transparent focus:ring-blue-400/40;
+  border-radius: var(--btn-radius, 0.75rem);
 }
 
 @utility g-btn-ghost {
@@ -540,8 +541,9 @@ body:has(.workspace-shell) { transform: none; }
 }
 
 @utility g-btn-chip {
-  @apply px-2 bg-white/70 backdrop-blur-xs border border-gray-200/70 hover:bg-white shadow-xs rounded-xl text-sm text-gray-900;
+  @apply px-2 bg-white/70 backdrop-blur-xs border border-gray-200/70 hover:bg-white shadow-xs text-sm text-gray-900;
   @apply dark:bg-slate-700/70 dark:border-slate-600/70 dark:hover:bg-slate-600/70 dark:text-gray-100;
+  border-radius: var(--btn-radius, 0.75rem);
 }
 
 @utility btn-rounded {
@@ -838,10 +840,9 @@ body {
 .products-action { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 14px; border: 1px solid var(--workspace-border); border-radius: 14px; color: var(--workspace-ink); background: var(--workspace-panel-fill); font-size: 14px; font-weight: 500; transition: background .15s; }
 .products-action:hover:not(:disabled), .products-row-action:hover:not(:disabled) { background: color-mix(in srgb, var(--workspace-accent) 12%, var(--workspace-surface)); }
 .products-action:disabled, .products-row-action:disabled { opacity: .45; cursor: not-allowed; }
-.products-action-primary { background: var(--color-primary); color: var(--color-button-text, #fff); border-color: transparent; box-shadow: 0 6px 16px -8px var(--workspace-accent); }
-.products-action-primary:hover { background: var(--color-primary-hover, var(--workspace-accent)) !important; }
-.products-action-danger { background: var(--color-danger, #dc2626); color: var(--color-button-text, #fff); border-color: transparent; box-shadow: 0 6px 16px -8px var(--color-danger, #dc2626); }
-.products-action-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--color-danger, #dc2626) 86%, #000) !important; }
+/* Filled look for .products-action-primary / .products-action-danger is owned by
+   the THEME BUTTON SYSTEM at the bottom of this file, so the selected button
+   style (modern / rounded / soft / pill / outlined) applies consistently. */
 .products-selection-count { padding: 1px 6px; border-radius: 8px; background: color-mix(in srgb, var(--workspace-accent) 15%, transparent); font-size: 12px; }
 .products-filter-panel { padding: 0 24px 24px; }
 .products-filters { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 16px; }
@@ -1801,6 +1802,7 @@ body {
 .settings-tile-title svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--workspace-accent); }
 .settings-fields-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .settings-options-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.settings-options-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .settings-options-auto { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); }
 .settings-choice-button { display: grid; gap: 8px; align-content: start; min-width: 0; padding: 16px; border: 1px solid var(--workspace-border); border-radius: 16px; color: var(--workspace-ink); background: var(--workspace-reading-fill); text-align: center; cursor: pointer; transition: border-color .15s ease-out, background-color .15s ease-out; }
 .settings-choice-button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--workspace-accent) 40%, var(--workspace-border)); }
@@ -1949,6 +1951,7 @@ body {
 }
 @media screen and (max-width: 900px) {
 .settings-fields, .settings-fields-3, .settings-options-2, .settings-options-3, .settings-tiles, .people-fields, .people-fields-3 { grid-template-columns: minmax(0, 1fr); }
+.settings-options-5 { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
 .settings-field-wide, .people-field-wide { grid-column: auto; }
 }
 @media screen and (max-width: 640px) {
@@ -2087,3 +2090,366 @@ tr.invoice-row-invalid > td:first-child { box-shadow: inset 3px 0 var(--color-da
 .sale-return-summary td button { flex: 1; min-width: 0; padding: 8px 10px; font-size: 12px; white-space: nowrap; }
 .sale-return-form .sale-entry-items td { border: 0; padding: 4px 2px; }
 .sale-return-form .sale-entry-items tr { border-bottom: 1px solid var(--workspace-border); }
+
+/* ============================================================================
+   THEME BUTTON SYSTEM — every button follows Settings → Theme → Button Style
+   ----------------------------------------------------------------------------
+   ThemeContext mirrors the active theme onto <html>:
+
+     data-btn-style = "modern" | "rounded" | "rounded-sm" | "soft" | "pill" | "outlined"
+     --btn-radius, --color-primary(-hover), --color-secondary(-hover),
+     --color-danger, --color-success, --color-button-text
+
+   Everything below reads those tokens, so a style change in ThemeSetting
+   updates every button in the app at once.
+
+   Roles
+     primary  — Save / Create / Load / Validate   (accent fill)
+     secondary— alternate accent actions
+     danger   — Delete / destructive
+     success  — Import / confirmations
+     ghost    — Cancel / Close / Refresh (surface button)
+   ==========================================================================*/
+
+:root {
+  --btn-radius: 0.75rem;
+  --color-button-text: #fff;
+}
+
+/* ---- 1. Shape: every button inherits the themed corner radius ------------- */
+/* Covers <button> everywhere plus the link-based buttons (React Router <Link>
+   renders an <a>) that carry a button class. Circular controls keep
+   `rounded-full`; [data-btn-radius="keep"] opts out.                          */
+:is(button,
+    .theme-btn, .theme-btn-primary, .theme-btn-secondary, .theme-btn-danger,
+    .theme-btn-success, .theme-btn-ghost,
+    .products-action, .products-action-primary, .products-action-danger,
+    .products-action-success, .products-row-action, .products-row-action-danger,
+    .purchase-order-action, .purchase-order-action-primary, .purchase-order-action-danger,
+    .dashboard-refresh, .g-btn-primary, .g-btn-ghost, .g-btn-secondary,
+    .g-btn-chip, .g-btn-glass, .activity-primary-button, .activity-secondary-button,
+    .product-modal-save, .product-modal-cancel, .report-icon-btn):not(.rounded-full):not([data-btn-radius="keep"]) {
+  border-radius: var(--btn-radius, 0.75rem);
+}
+
+:is(button, a[class*="theme-btn"], a[class*="products-action"]):focus-visible {
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+button:disabled { cursor: not-allowed; }
+
+/* ---- 2. Generic theme button utility (for one-off buttons) --------------- */
+/* Layout base — pair with a role class: `theme-btn theme-btn-primary`.
+   Role classes also work alone on compact buttons that keep their own sizing. */
+.theme-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 9px 16px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 160ms ease-out, border-color 160ms ease-out,
+              box-shadow 160ms ease-out, transform 160ms ease-out, color 160ms ease-out;
+}
+
+:is(.theme-btn, .theme-btn-primary, .theme-btn-secondary, .theme-btn-danger, .theme-btn-success, .theme-btn-ghost):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Role buttons that keep custom sizing still need no-underline + cursor. */
+:is(.theme-btn-primary, .theme-btn-secondary, .theme-btn-danger, .theme-btn-success) {
+  cursor: pointer;
+}
+
+:is(.theme-btn-primary, .theme-btn-secondary, .theme-btn-danger, .theme-btn-success):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+:is(.theme-btn, .theme-btn-ghost) {
+  color: var(--color-text-primary, #172033);
+  border: 1px solid var(--color-border, #d8e1ee);
+  background: color-mix(in srgb, var(--color-surface, #fff) 60%, transparent);
+}
+
+:is(.theme-btn, .theme-btn-ghost):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-primary, #2563eb) 45%, var(--color-border, #d8e1ee));
+  background: color-mix(in srgb, var(--color-primary, #2563eb) 10%, var(--color-surface, #fff));
+}
+
+/* ============================ MODERN ====================================== */
+/* Gradient fill, accent glow, lift on hover.                                  */
+html[data-btn-style="modern"] :is(
+  .theme-btn-primary, .g-btn-primary, .products-action-primary,
+  .purchase-order-action-primary, .activity-primary-button, .product-modal-save
+) {
+  background: linear-gradient(135deg, var(--color-primary, #3b82f6), var(--color-primary-hover, #2563eb));
+  color: var(--color-button-text, #fff);
+  font-weight: 600;
+  border: 1px solid color-mix(in srgb, #fff 25%, transparent);
+  box-shadow: 0 4px 14px 0 color-mix(in srgb, var(--color-primary, #3b82f6) 27%, transparent),
+              0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out,
+              background-color 200ms ease-out, border-color 200ms ease-out;
+}
+
+html[data-btn-style="modern"] :is(
+  .theme-btn-primary, .g-btn-primary, .products-action-primary,
+  .purchase-order-action-primary, .activity-primary-button, .product-modal-save
+):hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -4px color-mix(in srgb, var(--color-primary, #3b82f6) 45%, transparent);
+}
+
+html[data-btn-style="modern"] :is(
+  .theme-btn-primary, .g-btn-primary, .products-action-primary,
+  .purchase-order-action-primary, .activity-primary-button, .product-modal-save
+):active:not(:disabled) {
+  transform: translateY(0) scale(0.99);
+}
+
+html[data-btn-style="modern"] :is(.theme-btn-secondary, .g-btn-secondary) {
+  background: linear-gradient(135deg, var(--color-secondary, #8b5cf6), var(--color-secondary-hover, #7c3aed));
+  color: #fff;
+  font-weight: 600;
+  border: 1px solid color-mix(in srgb, #fff 25%, transparent);
+  box-shadow: 0 4px 14px 0 color-mix(in srgb, var(--color-secondary, #8b5cf6) 27%, transparent),
+              0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out, background-color 200ms ease-out;
+}
+
+html[data-btn-style="modern"] :is(.theme-btn-secondary, .g-btn-secondary):hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -4px color-mix(in srgb, var(--color-secondary, #8b5cf6) 45%, transparent);
+}
+
+html[data-btn-style="modern"] :is(.theme-btn-secondary, .g-btn-secondary):active:not(:disabled) {
+  transform: translateY(0) scale(0.99);
+}
+
+html[data-btn-style="modern"] :is(.theme-btn-danger, .products-action-danger, .purchase-order-action-danger) {
+  background: linear-gradient(135deg, var(--color-danger, #ef4444), color-mix(in srgb, var(--color-danger, #ef4444) 80%, #000));
+  color: #fff;
+  font-weight: 600;
+  border: 1px solid color-mix(in srgb, #fff 25%, transparent);
+  box-shadow: 0 4px 14px 0 color-mix(in srgb, var(--color-danger, #ef4444) 35%, transparent),
+              0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out, background-color 200ms ease-out;
+}
+
+html[data-btn-style="modern"] :is(.theme-btn-danger, .products-action-danger, .purchase-order-action-danger):hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -4px color-mix(in srgb, var(--color-danger, #ef4444) 45%, transparent);
+}
+
+html[data-btn-style="modern"] :is(.theme-btn-danger, .products-action-danger, .purchase-order-action-danger):active:not(:disabled) {
+  transform: translateY(0) scale(0.99);
+}
+
+html[data-btn-style="modern"] :is(.theme-btn-success, .products-action-success) {
+  background: linear-gradient(135deg, var(--color-success, #10b981), color-mix(in srgb, var(--color-success, #10b981) 80%, #000));
+  color: #fff;
+  font-weight: 600;
+  border: 1px solid color-mix(in srgb, #fff 25%, transparent);
+  box-shadow: 0 4px 14px 0 color-mix(in srgb, var(--color-success, #10b981) 27%, transparent),
+              0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out, background-color 200ms ease-out;
+}
+
+html[data-btn-style="modern"] :is(.theme-btn-success, .products-action-success):hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -4px color-mix(in srgb, var(--color-success, #10b981) 45%, transparent);
+}
+
+html[data-btn-style="modern"] :is(.theme-btn-success, .products-action-success):active:not(:disabled) {
+  transform: translateY(0) scale(0.99);
+}
+
+/* ====================== FILLED (rounded / soft / pill) ===================== */
+:is(html[data-btn-style="rounded"], html[data-btn-style="rounded-sm"],
+    html[data-btn-style="soft"], html[data-btn-style="pill"]) :is(
+  .theme-btn-primary, .g-btn-primary, .products-action-primary,
+  .purchase-order-action-primary, .activity-primary-button, .product-modal-save
+) {
+  background: linear-gradient(to bottom right, var(--color-primary, #3b82f6), var(--color-primary-hover, #2563eb));
+  color: var(--color-button-text, #fff);
+  font-weight: 500;
+  border-color: transparent;
+  box-shadow: 0 4px 14px 0 color-mix(in srgb, var(--color-primary, #3b82f6) 25%, transparent);
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out, background-color 200ms ease-out;
+}
+
+:is(html[data-btn-style="rounded"], html[data-btn-style="rounded-sm"],
+    html[data-btn-style="soft"], html[data-btn-style="pill"]) :is(
+  .theme-btn-primary, .g-btn-primary, .products-action-primary,
+  .purchase-order-action-primary, .activity-primary-button, .product-modal-save
+):active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+:is(html[data-btn-style="rounded"], html[data-btn-style="rounded-sm"],
+    html[data-btn-style="soft"], html[data-btn-style="pill"]) :is(.theme-btn-secondary, .g-btn-secondary) {
+  background: linear-gradient(to bottom right, var(--color-secondary, #8b5cf6), var(--color-secondary-hover, #7c3aed));
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 14px 0 color-mix(in srgb, var(--color-secondary, #8b5cf6) 25%, transparent);
+  transition: transform 200ms ease-out, background-color 200ms ease-out;
+}
+
+:is(html[data-btn-style="rounded"], html[data-btn-style="rounded-sm"],
+    html[data-btn-style="soft"], html[data-btn-style="pill"]) :is(.theme-btn-secondary, .g-btn-secondary):active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+:is(html[data-btn-style="rounded"], html[data-btn-style="rounded-sm"],
+    html[data-btn-style="soft"], html[data-btn-style="pill"]) :is(
+  .theme-btn-danger, .products-action-danger, .purchase-order-action-danger
+) {
+  background: linear-gradient(to bottom right, var(--color-danger, #ef4444), color-mix(in srgb, var(--color-danger, #ef4444) 80%, #000));
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 14px 0 color-mix(in srgb, var(--color-danger, #ef4444) 30%, transparent);
+  transition: transform 200ms ease-out, background-color 200ms ease-out;
+}
+
+:is(html[data-btn-style="rounded"], html[data-btn-style="rounded-sm"],
+    html[data-btn-style="soft"], html[data-btn-style="pill"]) :is(
+  .theme-btn-danger, .products-action-danger, .purchase-order-action-danger
+):active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+:is(html[data-btn-style="rounded"], html[data-btn-style="rounded-sm"],
+    html[data-btn-style="soft"], html[data-btn-style="pill"]) :is(.theme-btn-success, .products-action-success) {
+  background: linear-gradient(to bottom right, var(--color-success, #10b981), color-mix(in srgb, var(--color-success, #10b981) 80%, #000));
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 14px 0 color-mix(in srgb, var(--color-success, #10b981) 30%, transparent);
+  transition: transform 200ms ease-out, background-color 200ms ease-out;
+}
+
+/* ============================= OUTLINED =================================== */
+/* Outlined turns the accent into a border + accent text, which has to win over
+   the accent-contrast text some screens set inline (`style={{ color: … }}`).
+   ThemeSetting's live preview opts out with [data-btn-preview] so it keeps
+   showing the unsaved draft colours.                                        */
+html[data-btn-style="outlined"] :is(
+  .theme-btn-primary, .g-btn-primary, .products-action-primary,
+  .purchase-order-action-primary, .activity-primary-button, .product-modal-save
+):not([data-btn-preview]) {
+  background: transparent !important;
+  color: var(--color-primary, #3b82f6) !important;
+  font-weight: 500;
+  border: 2px solid var(--color-primary, #3b82f6) !important;
+  box-shadow: none !important;
+  transition: background-color 160ms ease-out, transform 160ms ease-out;
+}
+
+html[data-btn-style="outlined"] :is(
+  .theme-btn-primary, .g-btn-primary, .products-action-primary,
+  .purchase-order-action-primary, .activity-primary-button, .product-modal-save
+):not([data-btn-preview]):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 12%, transparent) !important;
+}
+
+html[data-btn-style="outlined"] :is(
+  .theme-btn-primary, .g-btn-primary, .products-action-primary,
+  .purchase-order-action-primary, .activity-primary-button, .product-modal-save
+):not([data-btn-preview]):active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+html[data-btn-style="outlined"] :is(.theme-btn-secondary, .g-btn-secondary):not([data-btn-preview]) {
+  background: transparent !important;
+  color: var(--color-secondary, #8b5cf6) !important;
+  border: 2px solid var(--color-secondary, #8b5cf6) !important;
+  box-shadow: none !important;
+}
+
+html[data-btn-style="outlined"] :is(.theme-btn-secondary, .g-btn-secondary):not([data-btn-preview]):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-secondary, #8b5cf6) 12%, transparent) !important;
+}
+
+html[data-btn-style="outlined"] :is(.theme-btn-danger, .products-action-danger, .purchase-order-action-danger):not([data-btn-preview]) {
+  background: transparent !important;
+  color: var(--color-danger, #ef4444) !important;
+  border: 2px solid var(--color-danger, #ef4444) !important;
+  box-shadow: none !important;
+  transition: background-color 160ms ease-out, transform 160ms ease-out;
+}
+
+html[data-btn-style="outlined"] :is(.theme-btn-danger, .products-action-danger, .purchase-order-action-danger):not([data-btn-preview]):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger, #ef4444) 12%, transparent) !important;
+}
+
+html[data-btn-style="outlined"] :is(.theme-btn-danger, .products-action-danger, .purchase-order-action-danger):not([data-btn-preview]):active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+html[data-btn-style="outlined"] :is(.theme-btn-success, .products-action-success):not([data-btn-preview]) {
+  background: transparent !important;
+  color: var(--color-success, #10b981) !important;
+  border: 2px solid var(--color-success, #10b981) !important;
+  box-shadow: none !important;
+}
+
+html[data-btn-style="outlined"] :is(.theme-btn-success, .products-action-success):not([data-btn-preview]):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-success, #10b981) 12%, transparent) !important;
+}
+
+/* ---- 3. Fallback before the theme attribute lands (SSR / first paint) ----- */
+html:not([data-btn-style]) :is(
+  .theme-btn-primary, .g-btn-primary, .products-action-primary,
+  .purchase-order-action-primary, .activity-primary-button, .product-modal-save
+) {
+  background: linear-gradient(135deg, var(--color-primary, #3b82f6), var(--color-primary-hover, #2563eb));
+  color: var(--color-button-text, #fff);
+  border-color: transparent;
+  box-shadow: 0 4px 14px 0 color-mix(in srgb, var(--color-primary, #3b82f6) 25%, transparent);
+}
+
+html:not([data-btn-style]) :is(.theme-btn-secondary, .g-btn-secondary) {
+  background: linear-gradient(135deg, var(--color-secondary, #8b5cf6), var(--color-secondary-hover, #7c3aed));
+  color: #fff;
+  border-color: transparent;
+}
+
+html:not([data-btn-style]) :is(.theme-btn-danger, .products-action-danger, .purchase-order-action-danger) {
+  background: linear-gradient(135deg, var(--color-danger, #ef4444), color-mix(in srgb, var(--color-danger, #ef4444) 80%, #000));
+  color: #fff;
+  border-color: transparent;
+}
+
+html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
+  background: linear-gradient(135deg, var(--color-success, #10b981), color-mix(in srgb, var(--color-success, #10b981) 80%, #000));
+  color: #fff;
+  border-color: transparent;
+}
+
+/* ---- 4. Surface buttons follow the theme accent on hover ------------------ */
+:is(.g-btn-ghost, .g-btn-secondary, .activity-secondary-button, .dashboard-refresh,
+    .product-modal-cancel, .products-action):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-primary, #2563eb) 40%, var(--color-border, #d8e1ee));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.theme-btn, .theme-btn-primary, .theme-btn-secondary, .theme-btn-danger,
+      .theme-btn-success, .theme-btn-ghost) {
+    transition: none;
+  }
+  html[data-btn-style="modern"] :is(
+    .theme-btn-primary, .g-btn-primary, .products-action-primary,
+    .purchase-order-action-primary, .activity-primary-button, .product-modal-save,
+    .theme-btn-secondary, .g-btn-secondary, .theme-btn-danger, .products-action-danger,
+    .purchase-order-action-danger, .theme-btn-success, .products-action-success
+  ) { transform: none; }
+}

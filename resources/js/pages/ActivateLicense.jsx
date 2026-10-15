@@ -104,10 +104,10 @@ export default function ActivateLicense() {
           onChange={(e) => setKey(e.target.value)}
         />
         <div className="mt-3 flex items-center gap-2">
-          <button type="submit" className="px-4 py-2 rounded-sm bg-black text-white disabled:opacity-60" disabled={busy || key.trim().length === 0}>
+          <button type="submit" className="theme-btn-primary px-4 py-2" disabled={busy || key.trim().length === 0}>
             {busy ? "Activating…" : "Activate"}
           </button>
-          <button type="button" className="px-4 py-2 rounded-sm border" onClick={loadStatus} disabled={busy}>
+          <button type="button" className="theme-btn-ghost px-4 py-2" onClick={loadStatus} disabled={busy}>
             Refresh Status
           </button>
           <Link to="/" className="ml-auto text-sm underline">Back to Home</Link>

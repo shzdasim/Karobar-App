@@ -46,10 +46,12 @@ class ThemeSetting extends Model
     {
         // Map button style to border radius
         $radiusMap = [
-            'rounded' => '0.5rem',
-            'outlined' => '0.5rem',
-            'pill' => '9999px',
-            'soft' => '0.75rem',
+            'modern'     => '0.75rem',
+            'rounded'    => '0.5rem',
+            'rounded-sm' => '0.375rem',
+            'outlined'   => '0.5rem',
+            'pill'       => '9999px',
+            'soft'       => '1rem',
         ];
         
         return [
@@ -71,7 +73,7 @@ class ThemeSetting extends Model
             '--color-danger' => $this->danger_color,
             '--color-border' => $this->border_color,
             '--color-shadow' => $this->shadow_color,
-            '--btn-radius' => $radiusMap[$this->button_style] ?? '0.5rem',
+            '--btn-radius' => $radiusMap[$this->button_style] ?? '0.75rem',
             '--sidebar-template' => $this->sidebar_template ?? 'classic',
             '--topbar-template' => $this->topbar_template ?? 'classic',
         ];

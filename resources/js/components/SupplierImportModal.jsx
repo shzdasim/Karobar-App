@@ -204,13 +204,13 @@ export default function SupplierImportModal({ open, onClose, onImported }) {
               <div className="text-sm text-gray-600">CSV with header: <code>name,address,phone</code></div>
               <div className="flex items-center gap-2">
                 <button
-                  className="px-4 h-10 rounded-sm border"
+                  className="theme-btn theme-btn-ghost"
                   onClick={() => { reset(); onClose?.(); }}
                 >Cancel</button>
                 <button
                   disabled={!canValidate}
                   onClick={handleValidate}
-                  className={`px-4 h-10 rounded-sm text-white ${validating ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'}`}
+                  className="theme-btn theme-btn-primary"
                 >
                   {validating ? 'Validating…' : 'Validate'}
                 </button>
@@ -219,14 +219,14 @@ export default function SupplierImportModal({ open, onClose, onImported }) {
           ) : (
             <>
               <button
-                className="px-4 h-10 rounded-sm border"
+                className="theme-btn theme-btn-ghost"
                 onClick={() => { reset(); }}
               >Start Over</button>
               <div className="flex items-center gap-2">
                 <button
                   disabled={committing}
                   onClick={() => handleCommit(true)}
-                  className={`px-4 h-10 rounded-sm text-white ${committing ? 'bg-green-400' : 'bg-green-600 hover:bg-green-700'}`}
+                  className="theme-btn theme-btn-success"
                   title="Insert/Update only valid rows"
                 >
                   {committing ? 'Importing…' : `Import ${res.invalid ? 'Valid Rows Only' : 'All'}`}
@@ -235,7 +235,7 @@ export default function SupplierImportModal({ open, onClose, onImported }) {
                   <button
                     disabled={committing}
                     onClick={() => handleCommit(false)}
-                    className="px-4 h-10 rounded-sm border border-red-600 text-red-700 hover:bg-red-50"
+                    className="theme-btn theme-btn-danger"
                     title="Abort on error"
                   >
                     Import (Abort on Error)

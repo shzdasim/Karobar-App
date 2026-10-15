@@ -262,7 +262,7 @@ export default function ProductImportModal({ open, onClose, onImported }) {
               </div>
               <div className="flex items-center gap-2">
                 <button 
-                  className="px-4 h-10 rounded-sm border dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                  className="theme-btn theme-btn-ghost"
                   onClick={()=>{reset(); onClose?.();}}
                 >
                   Cancel
@@ -270,13 +270,7 @@ export default function ProductImportModal({ open, onClose, onImported }) {
                 <button 
                   disabled={!canValidate} 
                   onClick={handleValidate}
-                  className="px-4 h-10 rounded-sm text-white transition-all duration-200"
-                  style={{ 
-                    background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                    color: primaryTextColor,
-                    opacity: canValidate ? 1 : 0.6,
-                    cursor: canValidate ? 'pointer' : 'not-allowed'
-                  }}
+                  className="theme-btn theme-btn-primary"
                 >
                   {validating ? 'Validating…' : 'Validate'}
                 </button>
@@ -285,7 +279,7 @@ export default function ProductImportModal({ open, onClose, onImported }) {
           ) : (
             <>
               <button 
-                className="px-4 h-10 rounded-sm border dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                className="theme-btn theme-btn-ghost"
                 onClick={reset}
               >
                 Start Over
@@ -294,13 +288,7 @@ export default function ProductImportModal({ open, onClose, onImported }) {
                 <button 
                   disabled={committing} 
                   onClick={()=>handleCommit(true)}
-                  className="px-4 h-10 rounded-sm text-white transition-all duration-200"
-                  style={{ 
-                    background: `linear-gradient(to bottom right, ${themeColors.success}, ${themeColors.successHover})`,
-                    color: successTextColor,
-                    opacity: committing ? 0.6 : 1,
-                    cursor: committing ? 'not-allowed' : 'pointer'
-                  }}
+                  className="theme-btn theme-btn-success"
                 >
                   {committing ? 'Importing…' : `Import ${res.invalid ? 'Valid Rows Only' : 'All'}`}
                 </button>
@@ -308,14 +296,7 @@ export default function ProductImportModal({ open, onClose, onImported }) {
                   <button 
                     disabled={committing} 
                     onClick={()=>handleCommit(false)}
-                    className="px-4 h-10 rounded-sm border transition-all duration-200"
-                    style={{ 
-                      borderColor: themeColors.danger,
-                      color: themeColors.danger,
-                      background: 'transparent',
-                      opacity: committing ? 0.5 : 1,
-                      cursor: committing ? 'not-allowed' : 'pointer'
-                    }}
+                    className="theme-btn theme-btn-danger"
                   >
                     Import (Abort on Error)
                   </button>

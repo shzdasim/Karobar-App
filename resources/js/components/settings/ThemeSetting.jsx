@@ -1,7 +1,8 @@
 // resources/js/components/settings/ThemeSetting.jsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import toast from "react-hot-toast";
 import { useTheme } from "@/context/ThemeContext";
+import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import {
   PaintBrushIcon,
   CheckIcon,
@@ -12,11 +13,35 @@ import {
 // Button style options
 const BUTTON_STYLES = [
   {
-    id: 'rounded-sm',
+    id: 'modern',
+    name: 'Modern',
+    icon: '✦',
+    description: 'Gradient with glow shadow',
+    className: 'rounded-xl',
+    variant: 'modern'
+  },
+  {
+    id: 'rounded',
     name: 'Rounded',
     icon: '◼',
-    description: 'Modern rounded-sm corners',
+    description: 'Clean rounded corners',
     className: 'rounded-lg',
+    variant: 'filled'
+  },
+  {
+    id: 'soft',
+    name: 'Soft',
+    icon: '▣',
+    description: 'Extra soft corners',
+    className: 'rounded-2xl',
+    variant: 'filled'
+  },
+  {
+    id: 'pill',
+    name: 'Pill',
+    icon: '◉',
+    description: 'Fully rounded pill shape',
+    className: 'rounded-full',
     variant: 'filled'
   },
   {
@@ -26,14 +51,6 @@ const BUTTON_STYLES = [
     description: 'Border with transparent bg',
     className: 'rounded-lg',
     variant: 'outlined'
-  },
-  {
-    id: 'soft',
-    name: 'Soft',
-    icon: '▣',
-    description: 'Medium rounded-sm corners',
-    className: 'rounded-xl',
-    variant: 'filled'
   },
 ];
 
@@ -107,7 +124,7 @@ export default function ThemeSetting({ disableInputs }) {
     tertiary_color: '#06b6d4',
     tertiary_hover: '#0891b2',
     tertiary_light: 'rgba(6, 182, 212, 0.1)',
-    button_style: 'rounded-sm',
+    button_style: 'modern',
   });
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
@@ -128,7 +145,7 @@ export default function ThemeSetting({ disableInputs }) {
         tertiary_color: theme.tertiary_color,
         tertiary_hover: theme.tertiary_hover,
         tertiary_light: theme.tertiary_light,
-        button_style: theme.button_style || 'rounded-sm',
+        button_style: theme.button_style || 'modern',
       });
 
       // Check if loaded theme matches a preset
@@ -215,7 +232,7 @@ export default function ThemeSetting({ disableInputs }) {
       tertiary_color: preset.tertiary,
       tertiary_hover: tv.hover,
       tertiary_light: tv.light,
-      button_style: themeSettings.button_style || 'rounded-sm',
+      button_style: themeSettings.button_style || 'modern',
     };
 
     // Update local state immediately for instant preview
@@ -254,7 +271,7 @@ export default function ThemeSetting({ disableInputs }) {
         tertiary_color: savedTheme.tertiary_color,
         tertiary_hover: savedTheme.tertiary_hover,
         tertiary_light: savedTheme.tertiary_light,
-        button_style: savedTheme.button_style || 'rounded-sm',
+        button_style: savedTheme.button_style || 'modern',
       });
       setHasChanges(false);
     } catch (err) {
@@ -276,10 +293,19 @@ export default function ThemeSetting({ disableInputs }) {
   }
 
   // Get button style class
-  const getButtonStyleClass = (styleId) => {
-    const style = BUTTON_STYLES.find(s => s.id === styleId);
-    return style?.className || 'rounded-lg';
-  };
+  // Rich live preview using the central button style utility
+  const previewButtonClasses = useMemo(() => getThemeButtonClasses(
+    themeSettings.button_style,
+    {
+      primary: themeSettings.primary_color,
+      primaryHover: themeSettings.primary_hover,
+      secondary: themeSettings.secondary_color,
+      secondaryHover: themeSettings.secondary_hover,
+      tertiary: themeSettings.tertiary_color,
+      tertiaryHover: themeSettings.tertiary_hover,
+    },
+    false
+  ), [themeSettings]);
 
   return (
     <>
@@ -299,9 +325,11 @@ export default function ThemeSetting({ disableInputs }) {
         </div>
 
         <div className="settings-body">
-          <div className="settings-options settings-options-3">
+          <div className="settings-options settings-options-5">
             {BUTTON_STYLES.map((style) => {
               const isActive = themeSettings.button_style === style.id;
+              const isModern = style.variant === 'modern';
+              const isOutlined = style.variant === 'outlined';
               return (
                 <button
                   key={style.id}
@@ -314,21 +342,31 @@ export default function ThemeSetting({ disableInputs }) {
                   {/* Visual preview */}
                   <span className="settings-choice-preview">
                     <span
-                      className={`w-8 h-8 flex items-center justify-center text-xs font-medium ${style.className} ${style.variant === 'outlined' ? 'border-2' : 'text-white'}`}
-                      style={{
-                        backgroundColor: style.variant === 'outlined' ? 'transparent' : themeSettings.primary_color,
+                      className={`w-8 h-8 flex items-center justify-center text-xs font-medium ${style.className} ${isOutlined ? 'border-2' : 'text-white'}`}
+                      style={isModern ? {
+                        background: `linear-gradient(135deg, ${themeSettings.primary_color}, ${themeSettings.primary_hover || themeSettings.primary_color})`,
+                        color: 'white',
+                        boxShadow: `0 4px 10px 0 ${themeSettings.primary_color}55`,
+                        border: '1px solid rgba(255,255,255,0.25)',
+                      } : {
+                        backgroundColor: isOutlined ? 'transparent' : themeSettings.primary_color,
                         borderColor: themeSettings.primary_color,
-                        color: style.variant === 'outlined' ? themeSettings.primary_color : 'white',
+                        color: isOutlined ? themeSettings.primary_color : 'white',
                       }}
                     >
                       {style.icon}
                     </span>
                     <span
-                      className={`w-8 h-8 flex items-center justify-center text-xs font-medium ${style.className} ${style.variant === 'outlined' ? 'border-2' : 'text-white'}`}
-                      style={{
-                        backgroundColor: style.variant === 'outlined' ? 'transparent' : themeSettings.secondary_color,
+                      className={`w-8 h-8 flex items-center justify-center text-xs font-medium ${style.className} ${isOutlined ? 'border-2' : 'text-white'}`}
+                      style={isModern ? {
+                        background: `linear-gradient(135deg, ${themeSettings.secondary_color}, ${themeSettings.secondary_hover || themeSettings.secondary_color})`,
+                        color: 'white',
+                        boxShadow: `0 4px 10px 0 ${themeSettings.secondary_color}55`,
+                        border: '1px solid rgba(255,255,255,0.25)',
+                      } : {
+                        backgroundColor: isOutlined ? 'transparent' : themeSettings.secondary_color,
                         borderColor: themeSettings.secondary_color,
-                        color: style.variant === 'outlined' ? themeSettings.secondary_color : 'white',
+                        color: isOutlined ? themeSettings.secondary_color : 'white',
                       }}
                     >
                       {style.icon}
@@ -531,32 +569,34 @@ export default function ThemeSetting({ disableInputs }) {
         </div>
         <div className="settings-body">
           <div className="flex items-center gap-3 flex-wrap">
+            {/* data-btn-preview keeps these showing the unsaved draft colours */}
             <button
               type="button"
               disabled
-              className={`px-4 py-2.5 text-sm font-medium text-white ${getButtonStyleClass(themeSettings.button_style)}`}
-              style={{ backgroundColor: themeSettings.primary_color }}
+              data-btn-preview
+              className={`px-4 py-2.5 text-sm ${previewButtonClasses.primary.className}`}
+              style={previewButtonClasses.primary.style}
             >
               Primary
             </button>
             <button
               type="button"
               disabled
-              className={`px-4 py-2.5 text-sm font-medium text-white ${getButtonStyleClass(themeSettings.button_style)}`}
-              style={{ backgroundColor: themeSettings.secondary_color }}
+              data-btn-preview
+              className={`px-4 py-2.5 text-sm ${previewButtonClasses.secondary.className}`}
+              style={previewButtonClasses.secondary.style}
             >
               Secondary
             </button>
-            <span
-              className="settings-chip"
-              style={{
-                "--settings-chip": themeSettings.tertiary_color,
-                backgroundColor: themeSettings.tertiary_color,
-                color: "#fff",
-              }}
+            <button
+              type="button"
+              disabled
+              data-btn-preview
+              className={`px-4 py-2.5 text-sm ${previewButtonClasses.danger.className}`}
+              style={previewButtonClasses.danger.style}
             >
-              Tertiary
-            </span>
+              Danger
+            </button>
             <span
               className="settings-chip"
               style={{
@@ -565,7 +605,7 @@ export default function ThemeSetting({ disableInputs }) {
                 color: themeSettings.primary_color,
               }}
             >
-              Light
+              Chip
             </span>
           </div>
         </div>

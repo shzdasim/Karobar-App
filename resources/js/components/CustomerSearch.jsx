@@ -478,7 +478,7 @@ const handleClose = () => {
                 <button
                   type="button"
                   onClick={() => setShowCreate(false)}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  className="theme-btn-ghost px-3 py-1.5 text-xs font-semibold"
                 >
                   Cancel
                 </button>
@@ -486,7 +486,7 @@ const handleClose = () => {
                   type="button"
                   onClick={handleCreateCustomer}
                   disabled={creating || !newCustomer.name?.trim()}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  className="theme-btn-primary px-3 py-1.5 text-xs font-semibold"
                 >
                   {creating ? "Creating..." : "Create"}
                 </button>
@@ -508,7 +508,7 @@ const handleClose = () => {
                 <button
                   type="button"
                   onClick={() => setShowCreate(true)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                  className="theme-btn-primary inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold"
                 >
                   <PlusCircleIcon className="w-3.5 h-3.5" />
                   New Customer

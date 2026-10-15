@@ -197,7 +197,7 @@ function DetailPane({ detail, loading, error, onOpen }) {
         {/* Action button */}
         <button
           onClick={onOpen}
-          className="w-full py-2 px-3 rounded-lg bg-linear-to-r from-blue-500 to-indigo-600 text-white text-xs font-medium shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-1.5"
+          className="theme-btn-primary w-full py-2 px-3 text-xs font-medium flex items-center justify-center gap-1.5"
         >
           <ArrowTopRightOnSquareIcon className="w-4 h-4" />
           Open Details

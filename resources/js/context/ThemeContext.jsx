@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { getButtonTextColor } from '@/utils/buttonStyles';
 
 const ThemeContext = createContext(null);
 
@@ -23,7 +24,7 @@ const DARK_THEME = {
   danger_color: '#ef4444',
   border_color: '#334155',
   shadow_color: '#000000',
-  button_style: 'rounded-sm',
+  button_style: 'modern',
   sidebar_template: 'classic',
   topbar_template: 'classic',
 };
@@ -47,7 +48,7 @@ const LIGHT_THEME = {
   danger_color: '#ef4444',
   border_color: '#e2e8f0',
   shadow_color: '#1e293b',
-  button_style: 'rounded-sm',
+  button_style: 'modern',
   sidebar_template: 'classic',
   topbar_template: 'classic',
 };
@@ -220,11 +221,14 @@ export function ThemeProvider({ children }) {
     
     // Button style radius
     const radiusMap = {
-      'rounded-sm': '0.5rem',  // 8px
-      'outlined': '0.5rem', // 8px
-      'soft': '0.75rem',   // 12px - medium rounded
+      'modern':     '0.75rem',  // 12px – modern default
+      'rounded':    '0.5rem',   // 8px
+      'rounded-sm': '0.375rem', // 6px
+      'outlined':   '0.5rem',   // 8px
+      'soft':       '1rem',     // 16px
+      'pill':       '9999px',   // full pill
     };
-    root.style.setProperty('--btn-radius', radiusMap[theme.button_style] || '0.5rem');
+    root.style.setProperty('--btn-radius', radiusMap[theme.button_style] || '0.75rem');
     
     // Sidebar template
     root.style.setProperty('--sidebar-template', theme.sidebar_template || 'classic');
@@ -238,6 +242,18 @@ export function ThemeProvider({ children }) {
     root.style.setProperty('--tw-color-primary-100', theme.primary_light);
     
   }, [theme]);
+
+  // Button style: <html data-btn-style> + --color-button-text drive the
+  // app-wide THEME BUTTON SYSTEM in app.css, so every button in the app follows
+  // the style picked in Settings → Theme.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute('data-btn-style', theme.button_style || 'modern');
+    root.style.setProperty(
+      '--color-button-text',
+      getButtonTextColor(theme.primary_color || '#3b82f6')
+    );
+  }, [theme.button_style, theme.primary_color]);
 
   // Update theme
   const updateTheme = useCallback(async (updates) => {
@@ -318,11 +334,14 @@ export function ThemeProvider({ children }) {
       
       // Apply button style radius
       const radiusMap = {
-        'rounded-sm': '0.5rem',  // 8px
-        'outlined': '0.5rem', // 8px
-        'soft': '0.75rem',   // 12px - medium rounded
+        'modern':     '0.75rem',  // 12px – modern default
+        'rounded':    '0.5rem',   // 8px
+        'rounded-sm': '0.375rem', // 6px
+        'outlined':   '0.5rem',   // 8px
+        'soft':       '1rem',     // 16px
+        'pill':       '9999px',   // full pill
       };
-      root.style.setProperty('--btn-radius', radiusMap[data.button_style] || '0.5rem');
+      root.style.setProperty('--btn-radius', radiusMap[data.button_style] || '0.75rem');
       
       // Apply sidebar template
       root.style.setProperty('--sidebar-template', data.sidebar_template || 'classic');
@@ -363,6 +382,17 @@ export function ThemeProvider({ children }) {
       root.style.setProperty('--color-tertiary-light', data.tertiary_light);
       root.style.setProperty('--sidebar-template', data.sidebar_template || 'classic');
       root.style.setProperty('--topbar-template', data.topbar_template || 'classic');
+      
+      // Apply button style radius
+      const activateRadiusMap = {
+        'modern':     '0.75rem',
+        'rounded':    '0.5rem',
+        'rounded-sm': '0.375rem',
+        'outlined':   '0.5rem',
+        'soft':       '1rem',
+        'pill':       '9999px',
+      };
+      root.style.setProperty('--btn-radius', activateRadiusMap[data.button_style] || '0.75rem');
       
       // Dispatch event for other components
       window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: data } }));

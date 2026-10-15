@@ -92,15 +92,18 @@ export default function Brands() {
     };
 
   // 🎨 Dynamic Button styles using theme colors
-  const buttonStyle = theme?.button_style || 'rounded-sm';
+  const buttonStyle = theme?.button_style || 'modern';
   
   const getButtonClasses = useMemo(() => {
     const radiusMap = {
-      'rounded-sm': 'rounded-lg',
-      'outlined': 'rounded-lg',
-      'soft': 'rounded-xl',
+      'modern':     'rounded-xl',
+      'rounded':    'rounded-lg',
+      'rounded-sm': 'rounded-md',
+      'outlined':   'rounded-lg',
+      'soft':       'rounded-2xl',
+      'pill':       'rounded-full',
     };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-lg';
+    const radiusClass = radiusMap[buttonStyle] || 'rounded-xl';
     
     if (buttonStyle === 'outlined') {
       return {
@@ -138,7 +141,39 @@ export default function Brands() {
       };
     }
     
-    // Filled styles for rounded and soft
+    if (buttonStyle === 'modern') {
+      return {
+        primary: {
+          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
+          style: {
+            background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})`,
+            color: 'white',
+            boxShadow: `0 4px 14px 0 ${themeColors.primary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
+            border: '1px solid rgba(255, 255, 255, 0.25)',
+          }
+        },
+        secondary: {
+          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
+          style: {
+            background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
+            color: 'white',
+            boxShadow: `0 4px 14px 0 ${themeColors.secondary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
+            border: '1px solid rgba(255, 255, 255, 0.25)',
+          }
+        },
+        danger: {
+          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
+          style: {
+            background: `linear-gradient(135deg, ${themeColors.danger}, ${themeColors.dangerHover})`,
+            color: 'white',
+            boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.45), 0 1px 2px 0 rgba(0,0,0,0.06)',
+            border: '1px solid rgba(255, 255, 255, 0.25)',
+          }
+        },
+      };
+    }
+
+    // Filled styles for rounded, soft, pill, rounded-sm
     return {
       primary: {
         className: radiusClass,
