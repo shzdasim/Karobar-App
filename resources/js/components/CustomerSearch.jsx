@@ -290,7 +290,11 @@ const handleClose = () => {
 
   const handleCreateCustomer = async (e) => {
     e?.preventDefault?.();
-    if (!newCustomer.name?.trim()) return;
+    e?.stopPropagation?.();
+    if (!newCustomer.name?.trim()) {
+      toast?.error?.("Customer name is required");
+      return;
+    }
     setCreating(true);
     try {
       const { data } = await axios.post("/api/customers", {
@@ -298,8 +302,13 @@ const handleClose = () => {
         phone: newCustomer.phone?.trim() || null,
         email: newCustomer.email?.trim() || null,
       });
-      if (onCreate) onCreate(data);
-      else if (onSelect) onSelect(data);
+      toast?.success?.("Customer added successfully");
+      if (onCreate) {
+        onCreate(data);
+      }
+      if (onSelect && onSelect !== onCreate) {
+        onSelect(data);
+      }
       handleClose();
     } catch (err) {
       const d = err?.response?.data;
@@ -415,7 +424,7 @@ const handleClose = () => {
 
 {/* Footer */}
           {showCreate ? (
-            <form onSubmit={handleCreateCustomer} className="px-4 py-4 bg-slate-50/80 dark:bg-slate-800/80 border-t border-slate-100 dark:border-slate-700 space-y-3">
+            <div className="px-4 py-4 bg-slate-50/80 dark:bg-slate-800/80 border-t border-slate-100 dark:border-slate-700 space-y-3">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
                 <PlusCircleIcon className="w-4 h-4 text-blue-500" />
                 New Customer
@@ -425,6 +434,13 @@ const handleClose = () => {
                   type="text"
                   value={newCustomer.name}
                   onChange={(e) => setNewCustomer((s) => ({ ...s, name: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleCreateCustomer(e);
+                    }
+                  }}
                   placeholder="Name *"
                   autoFocus
                   className="px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-500/50"
@@ -433,6 +449,13 @@ const handleClose = () => {
                   type="text"
                   value={newCustomer.phone}
                   onChange={(e) => setNewCustomer((s) => ({ ...s, phone: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleCreateCustomer(e);
+                    }
+                  }}
                   placeholder="Phone"
                   className="px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-500/50"
                 />
@@ -440,6 +463,13 @@ const handleClose = () => {
                   type="email"
                   value={newCustomer.email}
                   onChange={(e) => setNewCustomer((s) => ({ ...s, email: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleCreateCustomer(e);
+                    }
+                  }}
                   placeholder="Email"
                   className="px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-500/50"
                 />
@@ -453,14 +483,15 @@ const handleClose = () => {
                   Cancel
                 </button>
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleCreateCustomer}
                   disabled={creating || !newCustomer.name?.trim()}
                   className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
                   {creating ? "Creating..." : "Create"}
                 </button>
               </div>
-            </form>
+            </div>
           ) : (
             <GlassToolbar className="items-center justify-between py-2 px-4 bg-slate-50/80 dark:bg-slate-800/80 border-t border-slate-100 dark:border-slate-700">
               <div className="text-xs text-slate-500 dark:text-slate-400">

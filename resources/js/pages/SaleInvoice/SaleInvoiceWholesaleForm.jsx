@@ -515,7 +515,13 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
   };
 
   // Handle customer selection change
-  const handleCustomerChange = (customerId) => {
+  const handleCustomerChange = (customerId, customerObj = null) => {
+    if (customerObj?.id) {
+      setCustomers((prev) => {
+        const exists = prev.some((c) => String(c.id) === String(customerObj.id));
+        return exists ? prev : [customerObj, ...prev];
+      });
+    }
     setForm((prev) => {
       const next = { ...prev, customer_id: customerId };
       // Fetch customer wholesale prices
@@ -1207,10 +1213,15 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
   );
 
   return (
-    <form
-      className={`sale-entry sale-entry-form h-[calc(100vh-130px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`}
-      autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-    >
+    <>
+      <form
+        className={`sale-entry sale-entry-form h-[calc(100vh-130px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`}
+        autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleSubmit(e);
+        }}
+      >
       <InvoiceErrorSummary errors={invoiceErrors} />
       {/* Header */}
       <div className={`sale-entry-header shrink-0 sticky top-0 z-20 border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
@@ -1815,15 +1826,22 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
         </div>
       </div>
 
+      </form>
+
       {/* Customer Search Modal */}
       <CustomerSearch
         isOpen={customerSearchOpen}
         onClose={() => setCustomerSearchOpen(false)}
         onSelect={(customer) => {
-          handleCustomerChange(customer?.id || "");
+          handleCustomerChange(customer?.id || "", customer);
+          setCustomerSearchOpen(false);
+        }}
+        onCreate={(customer) => {
+          handleCustomerChange(customer?.id || "", customer);
+          setCustomerSearchOpen(false);
         }}
       />
-    </form>
+    </>
   );
 }
 

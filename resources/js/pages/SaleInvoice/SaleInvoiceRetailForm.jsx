@@ -431,6 +431,16 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     });
   };
 
+  const handleCustomerSelect = (customer) => {
+    if (!customer?.id) return;
+    setCustomers((prev) => {
+      const exists = prev.some((c) => String(c.id) === String(customer.id));
+      return exists ? prev : [customer, ...prev];
+    });
+    setForm((prev) => ({ ...prev, customer_id: customer.id }));
+    setCustomerSearchOpen(false);
+  };
+
   // Retail form - no sale type change handler needed (always retail)
   const handleSaleTypeChange = (type) => {
     // This form is always retail, ignore wholesale switch
@@ -1036,10 +1046,15 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   );
 
   return (
-    <form
-      className={`sale-entry sale-entry-form h-[calc(100vh-130px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`}
-      autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-    >
+    <>
+      <form
+        className={`sale-entry sale-entry-form h-[calc(100vh-130px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`}
+        autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleSubmit(e);
+        }}
+      >
       <InvoiceErrorSummary errors={invoiceErrors} />
       {/* Header */}
       <div className={`sale-entry-header shrink-0 sticky top-0 z-20 border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
@@ -1630,15 +1645,16 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         </div>
       </div>
 
+      </form>
+
       {/* Customer Search Modal */}
       <CustomerSearch
         isOpen={customerSearchOpen}
         onClose={() => setCustomerSearchOpen(false)}
-        onSelect={(customer) => {
-          setForm((prev) => ({ ...prev, customer_id: customer?.id || "" }));
-        }}
+        onSelect={handleCustomerSelect}
+        onCreate={handleCustomerSelect}
       />
-    </form>
+    </>
   );
 }
 
