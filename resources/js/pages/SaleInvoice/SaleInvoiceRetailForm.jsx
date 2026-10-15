@@ -484,14 +484,6 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     }
     setForm((prev) => {
       const items = [...prev.items];
-      if (field === "quantity") {
-        const available = Number(items[index].current_quantity || 0);
-        const prevQtyNum = Number(items[index].quantity || 0);
-        const nextQtyNum = Number(value || 0);
-        if (nextQtyNum > available && prevQtyNum <= available) {
-          invoiceErrors.showMessage(`Row ${index + 1}: quantity exceeds available (${available})`);
-        }
-      }
       let row = recalcItem({ ...items[index], [field]: value }, field);
       if (field === "item_discount_percentage") row.item_discount_percentage = value;
       items[index] = row;
@@ -858,7 +850,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       const list = batchesByProduct[String(it.product_id)];
       const hasBatches = Array.isArray(list) && list.length > 0;
       if (hasBatches && !it.batch_number) return invoiceErrors.showMessage(`Row ${i + 1}: select a batch`);
-      if (it.quantity === "" || it.quantity == null)
+      if (it.quantity === "" || it.quantity == null || Number(it.quantity) <= 0)
         return invoiceErrors.showMessage(`Row ${i + 1}: enter quantity`);
       const available = Number(it.current_quantity || 0);
       if (Number(it.quantity || 0) > available) {
@@ -1261,6 +1253,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                     <td className="text-center">
                       <button
                         type="button"
+                        tabIndex={-1}
                         onClick={() => removeRow(i)}
                         aria-label="Remove item" title="Remove item"
                         className="sale-item-action sale-item-remove"
@@ -1351,6 +1344,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                       <input
                         ref={(el) => (qtyRefs.current[i] = el)}
                         type="text"
+                        name="quantity"
                         inputMode="numeric"
                         value={zeroToEmpty(it.quantity)}
                         onChange={(e) => handleItemChange(i, "quantity", e.target.value)}
