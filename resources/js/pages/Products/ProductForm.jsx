@@ -698,8 +698,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
             <div className="flex items-center gap-2">
               <Link 
                 to="/products" 
-                className={`products-action ${btnGlass.className}`}
-                style={btnGlass.style}
+                className="products-action theme-btn-secondary"
                 title="Back (Alt+C)"
               >
                 <ArrowLeftIcon className="w-4 h-4" />
@@ -709,11 +708,10 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                 id="save-product-btn-top"
                 type="submit"
                 form="product-form"
-                className={`products-action ${btnPrimary.className}`}
-                style={{ ...btnPrimary.style, boxShadow: `0 4px 14px 0 ${themeColors.primary}40` }}
+                className="products-action products-action-primary theme-btn-primary"
                 title="Save (Alt+S)"
               >
-              <PencilSquareIcon className="w-4 h-4" />
+                <PencilSquareIcon className="w-4 h-4" />
                 <span className="text-sm font-medium">Save Changes</span>
               </button>
             </div>

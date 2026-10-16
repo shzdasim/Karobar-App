@@ -60,7 +60,7 @@ export default function CreateProduct() {
             <Link
               to="/products"
               title="Back to products (Alt+C)"
-              className="products-action"
+              className="products-action theme-btn-secondary"
             >
               <ArrowLeftIcon className="w-3.5 h-3.5" />
               <span>Back to Products</span>
@@ -71,7 +71,7 @@ export default function CreateProduct() {
               type="submit"
               form="product-form"
               title="Save (Alt+S)"
-              className="products-action products-action-primary"
+              className="products-action products-action-primary theme-btn-primary"
             >
               <PlusCircleIcon className="w-4 h-4" />
               <span>Save Product</span>

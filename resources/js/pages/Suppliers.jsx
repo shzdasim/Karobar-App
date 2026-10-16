@@ -23,6 +23,7 @@ import {
   GlassInput,
   GlassBtn,
 } from "@/components/glass.jsx";
+import { getThemeButtonClasses } from "@/utils/buttonStyles";
 
 export default function Suppliers() {
   const [suppliers, setSuppliers] = useState([]);
@@ -88,122 +89,10 @@ export default function Suppliers() {
   // 🎨 Dynamic Button styles using theme colors
   const buttonStyle = theme?.button_style || 'modern';
   
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'modern':     'rounded-xl',
-      'rounded':    'rounded-lg',
-      'rounded-sm': 'rounded-md',
-      'outlined':   'rounded-lg',
-      'soft':       'rounded-2xl',
-      'pill':       'rounded-full',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-xl';
-    
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.secondary,
-            color: themeColors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-        danger: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: '#ef4444',
-            color: '#ef4444',
-            backgroundColor: 'transparent',
-          }
-        },
-        glass: {
-          className: `${radiusClass} transition-all duration-200`,
-          style: {
-            backgroundColor: 'transparent',
-            color: isDark ? '#f1f5f9' : '#111827',
-          }
-        },
-      };
-    }
-    
-    if (buttonStyle === 'modern') {
-      return {
-        primary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.primary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.secondary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        danger: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.danger}, ${themeColors.dangerHover})`,
-            color: 'white',
-            boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.45), 0 1px 2px 0 rgba(0,0,0,0.06)',
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-      };
-    }
-
-    // Filled styles for rounded, soft, pill, rounded-sm
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: 'white',
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-          color: 'white',
-          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
-        }
-      },
-      danger: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, #ef4444, #dc2626)`,
-          color: 'white',
-          boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)',
-        }
-      },
-      glass: {
-        className: radiusClass,
-        style: {
-          backgroundColor: isDark ? 'rgba(51, 65, 85, 0.6)' : 'rgba(255, 255, 255, 0.8)',
-          color: isDark ? '#f1f5f9' : '#111827',
-          backdropFilter: 'blur(6px)',
-          border: isDark ? '1px solid rgba(71, 85, 105, 0.5)' : '1px solid rgba(229, 231, 235, 0.6)',
-        }
-      },
-    };
-  }, [buttonStyle, themeColors, isDark]);
+  const getButtonClasses = useMemo(
+    () => getThemeButtonClasses(buttonStyle, themeColors, isDark),
+    [buttonStyle, themeColors, isDark]
+  );
 
   const btnPrimary = getButtonClasses.primary;
   const btnSecondary = getButtonClasses.secondary;
@@ -382,26 +271,26 @@ return (
             <Guard when={can.import}>
               <button
                 onClick={() => setImportOpen(true)}
-                className="products-action"
+                className="products-action theme-btn-secondary"
               >
                 <ArrowUpTrayIcon className="w-3.5 h-3.5" />
-                Import
+                <span>Import</span>
               </button>
             </Guard>
             <Guard when={can.export}>
               <button
                 onClick={handleExport}
                 disabled={exporting}
-                className="products-action"
+                className="products-action theme-btn-secondary"
               >
                 <ArrowDownTrayIcon className={`w-3.5 h-3.5 ${exporting ? "animate-spin" : ""}`} />
-                {exporting ? "..." : "Export"}
+                <span>{exporting ? "..." : "Export"}</span>
               </button>
             </Guard>
             <button
               onClick={fetchSuppliers}
               title="Refresh"
-              className="products-action"
+              className="products-action theme-btn-tertiary"
             >
               <ArrowPathIcon className="w-3.5 h-3.5" />
               <span>Refresh</span>
@@ -451,10 +340,9 @@ return (
               </div>
               {editingId && (
                 <GlassBtn 
-                  className={`h-8 px-3 ${btnGlass.className}`} 
+                  className="h-8 px-3" 
                   onClick={resetForm}
                   aria-label="Cancel editing"
-                  style={btnGlass.style}
                 >
                   <XMarkIcon className="w-4 h-4" />
                 </GlassBtn>
@@ -506,22 +394,27 @@ return (
                 <GlassBtn
                   type="button"
                   onClick={resetForm}
-                  className={`h-9 px-3 ${btnGlass.className}`}
+                  className="h-9 px-3 theme-btn-tertiary"
                   disabled={saving}
-                  style={btnGlass.style}
                 >
-                  Clear
+                  <span>Clear</span>
                 </GlassBtn>
                 <GlassBtn
                   type="button"
+                  variant="primary"
                   onClick={handleSave}
                   ref={saveBtnRef}
-                  className={`flex-1 h-9 ${btnPrimary.className}`}
+                  className="glass-save-btn flex-1 h-9 theme-btn-primary"
                   disabled={saving || (!can.create && !can.update)}
-                  style={btnPrimary.style}
+                  aria-busy={saving}
+                  aria-keyshortcuts="Alt+S"
                 >
-                  <span className="inline-flex items-center justify-center gap-1.5">
-                    <CheckCircleIcon className="w-4 h-4" />
+                  {saving ? (
+                    <ArrowPathIcon aria-hidden="true" className="w-4 h-4 animate-spin motion-reduce:animate-none" />
+                  ) : (
+                    <CheckCircleIcon aria-hidden="true" className="w-4 h-4" />
+                  )}
+                  <span>
                     {editingId ? (saving ? "Updating..." : "Update") : saving ? "Saving..." : "Save"}
                   </span>
                 </GlassBtn>

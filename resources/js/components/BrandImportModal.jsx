@@ -168,7 +168,7 @@ export default function BrandImportModal({ open, onClose, onImported }) {
             <>
               <div className="text-sm text-gray-600">CSV header: <code>name[,image]</code></div>
               <div className="flex items-center gap-2">
-                <button className="theme-btn theme-btn-ghost" onClick={()=>{reset(); onClose?.();}}>Cancel</button>
+                <button className="theme-btn theme-btn-tertiary" onClick={()=>{reset(); onClose?.();}}>Cancel</button>
                 <button disabled={!canValidate} onClick={handleValidate}
                         className="theme-btn theme-btn-primary">
                   {validating ? 'Validating…' : 'Validate'}
@@ -177,7 +177,7 @@ export default function BrandImportModal({ open, onClose, onImported }) {
             </>
           ) : (
             <>
-              <button className="theme-btn theme-btn-ghost" onClick={reset}>Start Over</button>
+              <button className="theme-btn theme-btn-tertiary" onClick={reset}>Start Over</button>
               <div className="flex items-center gap-2">
                 <button disabled={committing} onClick={()=>handleCommit(true)}
                         className="theme-btn theme-btn-success"

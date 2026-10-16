@@ -204,7 +204,7 @@ export default function SupplierImportModal({ open, onClose, onImported }) {
               <div className="text-sm text-gray-600">CSV with header: <code>name,address,phone</code></div>
               <div className="flex items-center gap-2">
                 <button
-                  className="theme-btn theme-btn-ghost"
+                  className="theme-btn theme-btn-tertiary"
                   onClick={() => { reset(); onClose?.(); }}
                 >Cancel</button>
                 <button
@@ -219,7 +219,7 @@ export default function SupplierImportModal({ open, onClose, onImported }) {
           ) : (
             <>
               <button
-                className="theme-btn theme-btn-ghost"
+                className="theme-btn theme-btn-tertiary"
                 onClick={() => { reset(); }}
               >Start Over</button>
               <div className="flex items-center gap-2">

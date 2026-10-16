@@ -223,7 +223,7 @@ export default function CategoryImportModal({ open, onClose, onImported }) {
               </div>
               <div className="flex items-center gap-2">
                 <button 
-                  className="theme-btn theme-btn-ghost"
+                  className="theme-btn theme-btn-tertiary"
                   onClick={()=>{reset(); onClose?.();}}
                 >
                   Cancel
@@ -240,7 +240,7 @@ export default function CategoryImportModal({ open, onClose, onImported }) {
           ) : (
             <>
               <button 
-                className="theme-btn theme-btn-ghost"
+                className="theme-btn theme-btn-tertiary"
                 onClick={reset}
               >
                 Start Over
