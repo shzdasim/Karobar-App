@@ -1,6 +1,8 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import axios from 'axios';
 import { getButtonTextColor } from '@/utils/buttonStyles';
+import { ThemeCurtainStage } from '@/mascot';
 
 const ThemeContext = createContext(null);
 
@@ -54,12 +56,54 @@ const LIGHT_THEME = {
 };
 
 const DEFAULT_THEME = LIGHT_THEME;
+const CURTAIN_DURATION_MS = 2800;
+
+function applyThemeCssVariables(targetTheme, darkFlag) {
+  const root = document.documentElement;
+  if (typeof darkFlag === 'boolean') {
+    root.classList.toggle('dark', darkFlag);
+  }
+  root.style.setProperty('--color-primary', targetTheme.primary_color);
+  root.style.setProperty('--color-primary-hover', targetTheme.primary_hover);
+  root.style.setProperty('--color-primary-light', targetTheme.primary_light);
+  root.style.setProperty('--color-secondary', targetTheme.secondary_color);
+  root.style.setProperty('--color-secondary-hover', targetTheme.secondary_hover);
+  root.style.setProperty('--color-secondary-light', targetTheme.secondary_light);
+  root.style.setProperty('--color-tertiary', targetTheme.tertiary_color);
+  root.style.setProperty('--color-tertiary-hover', targetTheme.tertiary_hover);
+  root.style.setProperty('--color-tertiary-light', targetTheme.tertiary_light);
+  root.style.setProperty('--color-background', targetTheme.background_color);
+  root.style.setProperty('--color-surface', targetTheme.surface_color);
+  root.style.setProperty('--color-text-primary', targetTheme.text_primary);
+  root.style.setProperty('--color-text-secondary', targetTheme.text_secondary);
+  root.style.setProperty('--color-success', targetTheme.success_color);
+  root.style.setProperty('--color-warning', targetTheme.warning_color);
+  root.style.setProperty('--color-danger', targetTheme.danger_color);
+  root.style.setProperty('--color-border', targetTheme.border_color);
+  root.style.setProperty('--color-shadow', targetTheme.shadow_color);
+}
 
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(DEFAULT_THEME);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('theme_mode') === 'dark';
+    }
+    return false;
+  });
+  const [curtainTransition, setCurtainTransition] = useState(null);
+  const transitionTimersRef = useRef([]);
+
+  const clearTransitionTimers = useCallback(() => {
+    transitionTimersRef.current.forEach((id) => clearTimeout(id));
+    transitionTimersRef.current = [];
+  }, []);
+
+  useEffect(() => {
+    return () => clearTransitionTimers();
+  }, [clearTransitionTimers]);
 
   // Check if current theme is dark
   const checkIsDark = useCallback((currentTheme) => {
@@ -70,35 +114,135 @@ export function ThemeProvider({ children }) {
            bg.includes('gray-800') || bg.includes('gray-900');
   }, []);
 
-  // Toggle between light and dark mode
-  const toggleTheme = useCallback(() => {
+  // Toggle between light and dark mode with the Mascot & Curtain Cord choreography
+  const toggleTheme = useCallback((triggerElement = null) => {
+    if (curtainTransition?.active) {
+      return theme;
+    }
+
+    clearTransitionTimers();
+
     const newIsDark = !isDark;
-    const newTheme = newIsDark ? DARK_THEME : LIGHT_THEME;
-    setIsDark(newIsDark);
-    setTheme(newTheme);
-    
-    // Apply CSS variables immediately
-    const root = document.documentElement;
-    Object.entries(newTheme).forEach(([key, value]) => {
-      const cssVar = `--color-${key.replace(/_/g, '-')}`;
-      root.style.setProperty(cssVar, value);
-    });
-    
-    // Save preference to localStorage
-    localStorage.setItem('theme_mode', newIsDark ? 'dark' : 'light');
-    
-    // Dispatch event for other components
-    window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: newTheme, isDark: newIsDark } }));
-    
+    const direction = newIsDark ? 'to-dark' : 'to-light';
+    const basePreset = newIsDark ? DARK_THEME : LIGHT_THEME;
+    const newTheme = {
+      ...basePreset,
+      primary_color: theme.primary_color || basePreset.primary_color,
+      primary_hover: theme.primary_hover || basePreset.primary_hover,
+      secondary_color: theme.secondary_color || basePreset.secondary_color,
+      secondary_hover: theme.secondary_hover || basePreset.secondary_hover,
+      tertiary_color: theme.tertiary_color || basePreset.tertiary_color,
+      tertiary_hover: theme.tertiary_hover || basePreset.tertiary_hover,
+      button_style: theme.button_style || basePreset.button_style,
+      sidebar_template: theme.sidebar_template || basePreset.sidebar_template,
+      topbar_template: theme.topbar_template || basePreset.topbar_template,
+    };
+
+    const btnEl =
+      (triggerElement instanceof Element ? triggerElement : null) ||
+      (typeof document !== 'undefined' ? document.querySelector('[data-theme-toggle-btn]') : null);
+    const rect = btnEl ? btnEl.getBoundingClientRect() : null;
+    const rawX = rect
+      ? rect.left + rect.width / 2
+      : typeof window !== 'undefined'
+        ? window.innerWidth - 260
+        : 900;
+    const cordX =
+      typeof window !== 'undefined'
+        ? Math.min(Math.max(rawX, 140), window.innerWidth - 120)
+        : rawX;
+
+    const commitThemeDomAndState = () => {
+      setIsDark(newIsDark);
+      setTheme(newTheme);
+      applyThemeCssVariables(newTheme, newIsDark);
+      localStorage.setItem('theme_mode', newIsDark ? 'dark' : 'light');
+      window.dispatchEvent(
+        new CustomEvent('themeChanged', { detail: { theme: newTheme, isDark: newIsDark } })
+      );
+    };
+
+    const transitionId = Date.now();
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+
+    if (prefersReducedMotion) {
+      commitThemeDomAndState();
+      btnEl?.focus?.({ preventScroll: true });
+      return newTheme;
+    }
+
+    if (typeof document !== 'undefined' && typeof document.startViewTransition === 'function') {
+      const root = document.documentElement;
+      root.dataset.curtainTransition = direction;
+
+      const updateCallback = () => {
+        flushSync(() => {
+          commitThemeDomAndState();
+          setCurtainTransition({
+            active: true,
+            direction,
+            cordX,
+            fallback: false,
+            id: transitionId,
+          });
+        });
+      };
+
+      let vt;
+      try {
+        vt = document.startViewTransition({
+          update: updateCallback,
+          types: [direction],
+        });
+      } catch {
+        vt = document.startViewTransition(updateCallback);
+      }
+
+      const cleanup = () => {
+        delete root.dataset.curtainTransition;
+        setCurtainTransition((prev) => (prev?.id === transitionId ? null : prev));
+        // Route focus back to the toggle control after view transition finishes
+        btnEl?.focus?.({ preventScroll: true });
+      };
+
+      if (vt && vt.finished) {
+        vt.finished.finally(cleanup);
+      }
+      const safetyTimer = setTimeout(cleanup, CURTAIN_DURATION_MS + 120);
+      transitionTimersRef.current.push(safetyTimer);
+    } else {
+      // Progressive enhancement fallback when View Transitions API is unavailable
+      setCurtainTransition({
+        active: true,
+        direction,
+        cordX,
+        fallback: true,
+        id: transitionId,
+      });
+
+      const midTimer = setTimeout(() => {
+        commitThemeDomAndState();
+      }, Math.round(CURTAIN_DURATION_MS * 0.52));
+
+      const endTimer = setTimeout(() => {
+        setCurtainTransition(null);
+        btnEl?.focus?.({ preventScroll: true });
+      }, CURTAIN_DURATION_MS);
+
+      transitionTimersRef.current.push(midTimer, endTimer);
+    }
+
     return newTheme;
-  }, [isDark]);
+  }, [isDark, theme, curtainTransition, clearTransitionTimers]);
 
   // Set dark mode directly
   const setDarkMode = useCallback((dark) => {
-    if (checkIsDark(theme) !== dark) {
+    if (isDark !== Boolean(dark)) {
       toggleTheme();
     }
-  }, [theme, checkIsDark, toggleTheme]);
+  }, [isDark, toggleTheme]);
 
   // Load saved theme mode from localStorage on mount
   useEffect(() => {
@@ -106,17 +250,9 @@ export function ThemeProvider({ children }) {
     if (savedMode === 'dark') {
       setIsDark(true);
       setTheme(DARK_THEME);
-      // Apply dark theme CSS variables
-      const root = document.documentElement;
-      Object.entries(DARK_THEME).forEach(([key, value]) => {
-        const cssVar = `--color-${key.replace(/_/g, '-')}`;
-        root.style.setProperty(cssVar, value);
-      });
-      // Add dark class for Tailwind dark mode
-      document.documentElement.classList.add('dark');
+      applyThemeCssVariables(DARK_THEME, true);
     } else {
-      // Add light class for Tailwind light mode
-      document.documentElement.classList.remove('dark');
+      applyThemeCssVariables(LIGHT_THEME, false);
     }
   }, []);
 
@@ -136,28 +272,30 @@ export function ThemeProvider({ children }) {
       const { data } = await axios.get('/api/theme-settings/active');
       
       if (data) {
+        const savedDark = localStorage.getItem('theme_mode') === 'dark';
+        const modeBase = savedDark ? DARK_THEME : DEFAULT_THEME;
         setTheme({
-          primary_color: data.primary_color || DEFAULT_THEME.primary_color,
-          primary_hover: data.primary_hover || DEFAULT_THEME.primary_hover,
-          primary_light: data.primary_light || DEFAULT_THEME.primary_light,
-          secondary_color: data.secondary_color || DEFAULT_THEME.secondary_color,
-          secondary_hover: data.secondary_hover || DEFAULT_THEME.secondary_hover,
-          secondary_light: data.secondary_light || DEFAULT_THEME.secondary_light,
-          tertiary_color: data.tertiary_color || DEFAULT_THEME.tertiary_color,
-          tertiary_hover: data.tertiary_hover || DEFAULT_THEME.tertiary_hover,
-          tertiary_light: data.tertiary_light || DEFAULT_THEME.tertiary_light,
-          background_color: data.background_color || DEFAULT_THEME.background_color,
-          surface_color: data.surface_color || DEFAULT_THEME.surface_color,
-          text_primary: data.text_primary || DEFAULT_THEME.text_primary,
-          text_secondary: data.text_secondary || DEFAULT_THEME.text_secondary,
-          success_color: data.success_color || DEFAULT_THEME.success_color,
-          warning_color: data.warning_color || DEFAULT_THEME.warning_color,
-          danger_color: data.danger_color || DEFAULT_THEME.danger_color,
-          border_color: data.border_color || DEFAULT_THEME.border_color,
-          shadow_color: data.shadow_color || DEFAULT_THEME.shadow_color,
-          button_style: data.button_style || DEFAULT_THEME.button_style,
-          sidebar_template: data.sidebar_template || DEFAULT_THEME.sidebar_template,
-          topbar_template: data.topbar_template || DEFAULT_THEME.topbar_template,
+          primary_color: data.primary_color || modeBase.primary_color,
+          primary_hover: data.primary_hover || modeBase.primary_hover,
+          primary_light: savedDark ? modeBase.primary_light : (data.primary_light || modeBase.primary_light),
+          secondary_color: data.secondary_color || modeBase.secondary_color,
+          secondary_hover: data.secondary_hover || modeBase.secondary_hover,
+          secondary_light: savedDark ? modeBase.secondary_light : (data.secondary_light || modeBase.secondary_light),
+          tertiary_color: data.tertiary_color || modeBase.tertiary_color,
+          tertiary_hover: data.tertiary_hover || modeBase.tertiary_hover,
+          tertiary_light: savedDark ? modeBase.tertiary_light : (data.tertiary_light || modeBase.tertiary_light),
+          background_color: savedDark ? DARK_THEME.background_color : (data.background_color || DEFAULT_THEME.background_color),
+          surface_color: savedDark ? DARK_THEME.surface_color : (data.surface_color || DEFAULT_THEME.surface_color),
+          text_primary: savedDark ? DARK_THEME.text_primary : (data.text_primary || DEFAULT_THEME.text_primary),
+          text_secondary: savedDark ? DARK_THEME.text_secondary : (data.text_secondary || DEFAULT_THEME.text_secondary),
+          success_color: data.success_color || modeBase.success_color,
+          warning_color: data.warning_color || modeBase.warning_color,
+          danger_color: data.danger_color || modeBase.danger_color,
+          border_color: savedDark ? DARK_THEME.border_color : (data.border_color || DEFAULT_THEME.border_color),
+          shadow_color: savedDark ? DARK_THEME.shadow_color : (data.shadow_color || DEFAULT_THEME.shadow_color),
+          button_style: data.button_style || modeBase.button_style,
+          sidebar_template: data.sidebar_template || modeBase.sidebar_template,
+          topbar_template: data.topbar_template || modeBase.topbar_template,
         });
       }
     } catch (err) {
@@ -415,11 +553,13 @@ export function ThemeProvider({ children }) {
     toggleTheme,
     setDarkMode,
     isDark,
+    isTransitioning: Boolean(curtainTransition?.active),
   };
 
   return (
     <ThemeContext.Provider value={value}>
       {children}
+      <ThemeCurtainStage transition={curtainTransition} />
     </ThemeContext.Provider>
   );
 }

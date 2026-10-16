@@ -3050,3 +3050,670 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   }
 }
 
+/* ==========================================================================
+   MASCOT & CURTAIN CORD THEME TRANSITION (DARK MODE <-> LIGHT MODE)
+   ========================================================================== */
+
+:root {
+  --mascot-curtain-duration: 2800ms;
+}
+
+/* Promote the mascot & curtain stage into its own top-layer View Transition group
+   so it renders unclipped above the root theme wipe snapshots. */
+.mascot-curtain-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483640;
+  pointer-events: none;
+  overflow: hidden;
+  view-transition-name: mascot-curtain-stage;
+}
+
+::view-transition-group(root) {
+  animation-duration: var(--mascot-curtain-duration);
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+
+::view-transition-group(mascot-curtain-stage) {
+  z-index: 2147483647;
+  animation: none !important;
+}
+
+::view-transition-old(mascot-curtain-stage) {
+  display: none !important;
+}
+
+::view-transition-new(mascot-curtain-stage) {
+  animation: none !important;
+}
+
+/* Directional View Transition: Light -> Dark (Night curtain pulled DOWN from top to bottom) */
+:is(html:active-view-transition-type(to-dark), html[data-curtain-transition="to-dark"])::view-transition-old(root) {
+  animation: none !important;
+  z-index: 1;
+}
+
+:is(html:active-view-transition-type(to-dark), html[data-curtain-transition="to-dark"])::view-transition-new(root) {
+  z-index: 2;
+  animation: vt-curtain-pull-down var(--mascot-curtain-duration) linear both !important;
+}
+
+/* Directional View Transition: Dark -> Light (Dark curtain pushed UP from bottom to top, revealing Light Mode) */
+:is(html:active-view-transition-type(to-light), html[data-curtain-transition="to-light"])::view-transition-new(root) {
+  animation: none !important;
+  z-index: 1;
+}
+
+:is(html:active-view-transition-type(to-light), html[data-curtain-transition="to-light"])::view-transition-old(root) {
+  z-index: 2;
+  animation: vt-curtain-push-up var(--mascot-curtain-duration) linear both !important;
+}
+
+@keyframes vt-curtain-pull-down {
+  0%, 18% {
+    clip-path: inset(0 0 100% 0);
+  }
+  22% {
+    clip-path: inset(0 0 96% 0);
+    animation-timing-function: cubic-bezier(0.42, 0, 0.22, 1);
+  }
+  84%, 100% {
+    clip-path: inset(0 0 0% 0);
+  }
+}
+
+@keyframes vt-curtain-push-up {
+  0%, 18% {
+    clip-path: inset(0 0 0% 0);
+  }
+  22% {
+    clip-path: inset(0 0 4% 0);
+    animation-timing-function: cubic-bezier(0.42, 0, 0.22, 1);
+  }
+  84%, 100% {
+    clip-path: inset(0 0 100% 0);
+  }
+}
+
+/* Top ornamental curtain rod & pulley bracket */
+.mascot-top-rod {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 10px;
+  background: linear-gradient(180deg, #fbbf24 0%, #d97706 60%, #78350f 100%);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.45);
+  z-index: 30;
+  animation: mascot-rod-visibility var(--mascot-curtain-duration) linear both;
+}
+
+.mascot-pulley-bracket {
+  position: absolute;
+  top: 0;
+  left: var(--cord-x, calc(100vw - 260px));
+  transform: translateX(-50%);
+  width: 28px;
+  height: 22px;
+  border-radius: 0 0 12px 12px;
+  background: linear-gradient(180deg, #fef08a 0%, #f59e0b 55%, #b45309 100%);
+  border: 1.5px solid #78350f;
+  border-top: 0;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+}
+
+.mascot-pulley-wheel {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 2.5px solid #78350f;
+  background: conic-gradient(from 0deg, #fde047, #b45309, #fde047, #b45309, #fde047);
+  animation: mascot-wheel-spin 0.45s linear infinite;
+}
+
+.mascot-stage-to-light .mascot-pulley-wheel {
+  animation-direction: reverse;
+}
+
+@keyframes mascot-wheel-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes mascot-rod-visibility {
+  0% {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  6%, 92% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+}
+
+/* Curtain Seam Track: follows the exact 0vh <-> 100vh wipe boundary */
+.mascot-curtain-seam-track {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  will-change: transform;
+}
+
+.mascot-seam-to-dark {
+  animation: mascot-seam-pull-down var(--mascot-curtain-duration) linear both;
+}
+
+.mascot-seam-to-light {
+  animation: mascot-seam-push-up var(--mascot-curtain-duration) linear both;
+}
+
+@keyframes mascot-seam-pull-down {
+  0%, 18% {
+    transform: translateY(0vh);
+  }
+  22% {
+    transform: translateY(4vh);
+    animation-timing-function: cubic-bezier(0.42, 0, 0.22, 1);
+  }
+  84% {
+    transform: translateY(100vh);
+  }
+  100% {
+    transform: translateY(calc(100vh + 150px));
+  }
+}
+
+@keyframes mascot-seam-push-up {
+  0%, 18% {
+    transform: translateY(100vh);
+  }
+  22% {
+    transform: translateY(96vh);
+    animation-timing-function: cubic-bezier(0.42, 0, 0.22, 1);
+  }
+  84% {
+    transform: translateY(0vh);
+  }
+  100% {
+    transform: translateY(-150px);
+  }
+}
+
+/* Pleated theatrical curtain valance extending above the moving hem bar */
+.mascot-curtain-drape {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 135px;
+  background: linear-gradient(
+    180deg,
+    rgba(15, 23, 42, 0) 0%,
+    rgba(15, 23, 42, 0.55) 45%,
+    rgba(15, 23, 42, 0.92) 100%
+  );
+  overflow: hidden;
+}
+
+/* If browser does not support View Transitions, render a full-height curtain panel */
+.mascot-stage-fallback .mascot-curtain-drape {
+  height: 115vh;
+  background: linear-gradient(180deg, #0b1120 0%, #1e1b4b 60%, #0f172a 100%);
+}
+
+.mascot-curtain-pleats {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(30, 27, 75, 0.42) 0px,
+    rgba(99, 102, 241, 0.18) 28px,
+    rgba(15, 23, 42, 0.55) 56px,
+    rgba(49, 46, 129, 0.32) 84px
+  );
+}
+
+.mascot-curtain-stars {
+  position: absolute;
+  inset: 0;
+}
+
+.mascot-curtain-star {
+  position: absolute;
+  border-radius: 999px;
+  background: #fef08a;
+  box-shadow: 0 0 8px 2px rgba(250, 204, 21, 0.75);
+  animation: mascot-star-twinkle 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes mascot-star-twinkle {
+  from {
+    opacity: 0.35;
+    transform: scale(0.75);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+}
+
+/* Weighted Golden/Indigo Curtain Bottom Hem Bar & Scalloped Fringe */
+.mascot-curtain-hem {
+  position: absolute;
+  top: -7px;
+  left: 0;
+  right: 0;
+  height: 22px;
+}
+
+.mascot-curtain-hem-rod {
+  height: 9px;
+  width: 100%;
+  background: linear-gradient(
+    90deg,
+    #b45309 0%,
+    #facc15 20%,
+    #fef08a 50%,
+    #facc15 80%,
+    #b45309 100%
+  );
+  border-top: 1px solid rgba(255, 255, 255, 0.65);
+  border-bottom: 1.5px solid #78350f;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.55);
+}
+
+.mascot-curtain-fringe {
+  height: 11px;
+  width: 100%;
+  background-image: radial-gradient(circle at 12px 0, #312e81 10px, transparent 10.5px);
+  background-size: 24px 12px;
+  background-repeat: repeat-x;
+  filter: drop-shadow(0 2px 0 #facc15);
+}
+
+.mascot-curtain-glow {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  right: 0;
+  height: 36px;
+  background: linear-gradient(
+    180deg,
+    rgba(250, 204, 21, 0.28) 0%,
+    rgba(99, 102, 241, 0.14) 45%,
+    transparent 100%
+  );
+}
+
+.mascot-stage-to-light .mascot-curtain-glow {
+  background: linear-gradient(
+    180deg,
+    rgba(251, 191, 36, 0.48) 0%,
+    rgba(56, 189, 248, 0.22) 55%,
+    transparent 100%
+  );
+}
+
+/* Hanging Curtain Cord & Golden Tassel Track (Track 2) */
+.mascot-cord-track {
+  position: absolute;
+  top: 0;
+  left: var(--cord-x, calc(100vw - 260px));
+  z-index: 20;
+  will-change: transform;
+}
+
+.mascot-cord-to-dark {
+  animation: mascot-cord-pull-down var(--mascot-curtain-duration) linear both;
+}
+
+.mascot-cord-to-light {
+  animation: mascot-cord-push-up var(--mascot-curtain-duration) linear both;
+}
+
+@keyframes mascot-cord-pull-down {
+  0% {
+    transform: translateY(-20px);
+  }
+  8% {
+    transform: translateY(46px);
+  }
+  18% {
+    transform: translateY(42px);
+  }
+  22% {
+    transform: translateY(calc(4vh + 42px));
+    animation-timing-function: cubic-bezier(0.42, 0, 0.22, 1);
+  }
+  84% {
+    transform: translateY(calc(100vh + 42px));
+  }
+  100% {
+    transform: translateY(calc(100vh + 195px));
+  }
+}
+
+@keyframes mascot-cord-push-up {
+  0%, 18% {
+    transform: translateY(calc(100vh - 96px));
+  }
+  22% {
+    transform: translateY(calc(96vh - 92px));
+    animation-timing-function: cubic-bezier(0.42, 0, 0.22, 1);
+  }
+  84% {
+    transform: translateY(42px);
+  }
+  92% {
+    transform: translateY(34px);
+  }
+  100% {
+    transform: translateY(-40px);
+  }
+}
+
+.mascot-cord-line {
+  position: absolute;
+  bottom: 0;
+  left: -2.5px;
+  width: 5px;
+  height: 120vh;
+  background: repeating-linear-gradient(
+    45deg,
+    #fde047 0px,
+    #fde047 4px,
+    #d97706 4px,
+    #d97706 8px
+  );
+  border-left: 1px solid #92400e;
+  border-right: 1px solid #92400e;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.mascot-cord-tassel {
+  position: absolute;
+  top: -12px;
+  left: -10px;
+  width: 20px;
+  height: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.4));
+}
+
+.mascot-tassel-cap {
+  width: 13px;
+  height: 10px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 30%, #fef08a, #f59e0b 65%, #92400e 100%);
+  border: 1.5px solid #78350f;
+}
+
+.mascot-tassel-skirt {
+  width: 18px;
+  height: 15px;
+  margin-top: -2px;
+  border-radius: 4px 4px 8px 8px;
+  background: repeating-linear-gradient(
+    90deg,
+    #facc15 0px,
+    #facc15 2px,
+    #b45309 2px,
+    #b45309 4px
+  );
+  border: 1.5px solid #78350f;
+}
+
+/* Mascot Actor Track (Track 3): aligned so gripping hand at (39px, 17px) holds the cord tassel */
+.mascot-actor-track {
+  position: absolute;
+  top: -17px;
+  left: calc(var(--cord-x, calc(100vw - 260px)) - 39px);
+  z-index: 25;
+  will-change: transform;
+}
+
+.mascot-actor-to-dark {
+  animation: mascot-actor-pull-down var(--mascot-curtain-duration) linear both;
+}
+
+.mascot-actor-to-light {
+  animation: mascot-actor-push-up var(--mascot-curtain-duration) linear both;
+}
+
+/* Dark Mode Choreography:
+   0% -> 8%: Appears near topbar & crouches
+   8% -> 18%: Jumps UP to the top where the curtain cord is hanging & grabs it
+   18% -> 84%: Pushes/pulls the cord & curtain DOWN while waving at us
+   84% -> 100%: Goes down with the curtain, slides down into the bottom & disappears */
+@keyframes mascot-actor-pull-down {
+  0% {
+    opacity: 0;
+    transform: translateY(124px) scale(0.35);
+  }
+  5% {
+    opacity: 1;
+    transform: translateY(124px) scale(1);
+  }
+  9% {
+    transform: translateY(140px) scale(1.12, 0.86);
+    animation-timing-function: cubic-bezier(0.2, 0.9, 0.3, 1.1);
+  }
+  16% {
+    transform: translateY(30px) scale(0.93, 1.08);
+  }
+  18% {
+    transform: translateY(42px) scale(1);
+  }
+  22% {
+    transform: translateY(calc(4vh + 42px)) scale(1.04, 0.96);
+    animation-timing-function: cubic-bezier(0.42, 0, 0.22, 1);
+  }
+  84% {
+    opacity: 1;
+    transform: translateY(calc(100vh + 42px)) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(calc(100vh + 195px)) scale(0.94);
+  }
+}
+
+/* Light Mode Reverse Choreography:
+   0% -> 18%: Slides UP from the bottom of the screen to grab the lowered curtain cord
+   18% -> 84%: Pushes/pulls the cord & curtain UP to the top while waving at us
+   84% -> 100%: Reaches top cord, hops off & disappears */
+@keyframes mascot-actor-push-up {
+  0% {
+    opacity: 0;
+    transform: translateY(calc(100vh + 165px)) scale(0.9);
+    animation-timing-function: cubic-bezier(0.2, 0.85, 0.3, 1);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(calc(100vh - 108px)) scale(0.95, 1.06);
+  }
+  18% {
+    transform: translateY(calc(100vh - 96px)) scale(1);
+  }
+  22% {
+    transform: translateY(calc(96vh - 92px)) scale(1.04, 0.95);
+    animation-timing-function: cubic-bezier(0.42, 0, 0.22, 1);
+  }
+  84% {
+    opacity: 1;
+    transform: translateY(42px) scale(1);
+  }
+  91% {
+    opacity: 1;
+    transform: translateY(18px) scale(1.08, 0.92);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-150px) scale(0.45);
+  }
+}
+
+/* Mascot SVG & Internal Limb Animations (Waving Arm, Kicking Feet, Blinking Eyes) */
+.mascot-character {
+  position: relative;
+  width: 136px;
+  height: 148px;
+}
+
+.mascot-svg {
+  width: 136px;
+  height: 148px;
+  overflow: visible;
+}
+
+.mascot-body-rig {
+  transform-origin: 46px 20px;
+  animation: mascot-pendulum-sway 0.7s ease-in-out infinite alternate;
+}
+
+@keyframes mascot-pendulum-sway {
+  from {
+    transform: rotate(-3deg);
+  }
+  to {
+    transform: rotate(3.5deg);
+  }
+}
+
+/* Enthusiastic Waving Arm animation */
+.mascot-arm-wave {
+  transform-origin: 104px 88px;
+  animation: mascot-hand-wave 0.28s ease-in-out infinite alternate;
+}
+
+@keyframes mascot-hand-wave {
+  from {
+    transform: rotate(-18deg);
+  }
+  to {
+    transform: rotate(24deg);
+  }
+}
+
+.mascot-wave-arc {
+  animation: mascot-arc-pulse 0.28s ease-in-out infinite alternate;
+}
+
+@keyframes mascot-arc-pulse {
+  from {
+    opacity: 0.25;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Playful Kicking Legs while riding the curtain */
+.mascot-leg-left {
+  transform-origin: 62px 132px;
+  animation: mascot-kick 0.35s ease-in-out infinite alternate;
+}
+
+.mascot-leg-right {
+  transform-origin: 94px 132px;
+  animation: mascot-kick 0.35s ease-in-out 0.175s infinite alternate;
+}
+
+@keyframes mascot-kick {
+  from {
+    transform: rotate(-12deg);
+  }
+  to {
+    transform: rotate(14deg);
+  }
+}
+
+/* Fluttering Cape */
+.mascot-cape {
+  transform-origin: 78px 92px;
+  animation: mascot-cape-flutter 0.32s ease-in-out infinite alternate;
+}
+
+@keyframes mascot-cape-flutter {
+  from {
+    transform: scaleX(0.95) skewX(-3deg);
+  }
+  to {
+    transform: scaleX(1.05) skewX(3deg);
+  }
+}
+
+/* Blinking Eyes */
+.mascot-eyes {
+  transform-origin: 78px 66px;
+  animation: mascot-eye-blink 1.4s ease-in-out infinite;
+}
+
+@keyframes mascot-eye-blink {
+  0%, 42%, 50%, 100% {
+    transform: scaleY(1);
+  }
+  46% {
+    transform: scaleY(0.1);
+  }
+}
+
+/* Friendly Greeting Bubble beside the Mascot */
+.mascot-wave-bubble {
+  position: absolute;
+  top: 26px;
+  right: calc(100% + 4px);
+  white-space: nowrap;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  background: rgba(15, 23, 42, 0.88);
+  color: #fef08a;
+  border: 1.5px solid rgba(250, 204, 21, 0.65);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  animation: mascot-bubble-appear var(--mascot-curtain-duration) linear both;
+}
+
+.mascot-character-to-light .mascot-wave-bubble {
+  background: rgba(255, 255, 255, 0.94);
+  color: #b45309;
+  border-color: #f59e0b;
+}
+
+@keyframes mascot-bubble-appear {
+  0%, 20% {
+    opacity: 0;
+    transform: translateX(8px) scale(0.8);
+  }
+  26%, 78% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  84%, 100% {
+    opacity: 0;
+    transform: translateX(6px) scale(0.85);
+  }
+}
+
+/* Reduced motion accessibility fallback */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0.01ms !important;
+  }
+}
+
+
