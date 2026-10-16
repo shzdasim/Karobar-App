@@ -146,7 +146,7 @@ export default function LicenseSetting({
             <button
               type="button"
               onClick={() => openPasswordModal("view-details")}
-              className="products-action"
+              className="products-action theme-btn-secondary"
             >
               <ShieldCheckIcon className="w-4 h-4" />
               <span>View details</span>
@@ -194,7 +194,7 @@ export default function LicenseSetting({
                 <button
                   type="button"
                   onClick={copyMachineId}
-                  className="products-action"
+                  className="products-action theme-btn-tertiary"
                   style={{ marginLeft: "auto" }}
                   title="Copy machine ID"
                 >
@@ -224,7 +224,7 @@ export default function LicenseSetting({
                 <button
                   type="button"
                   onClick={() => setShowLicenseDetails(false)}
-                  className="products-action"
+                  className="products-action theme-btn-tertiary"
                   style={{ marginLeft: "auto" }}
                 >
                   Hide
@@ -327,14 +327,14 @@ export default function LicenseSetting({
                   type="button"
                   onClick={closePasswordModal}
                   disabled={verifying}
-                  className="products-action"
+                  className="products-action theme-btn-tertiary"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={verifying || !password}
-                  className="products-action products-action-primary"
+                  className="products-action products-action-primary theme-btn-primary"
                 >
                   {verifying ? "Verifying…" : "Verify"}
                 </button>

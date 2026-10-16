@@ -343,7 +343,7 @@ export default function CurrentStockReport() {
                     ? "Generating PDF…"
                     : "Export report as PDF"
                 }
-                className="products-action"
+                className="products-action theme-btn-secondary"
               >
                 <ArrowDownOnSquareIcon className="w-4 h-4" />
                 <span>{pdfLoading ? "Generating…" : "Export PDF"}</span>
@@ -354,7 +354,7 @@ export default function CurrentStockReport() {
               type="button"
               onClick={resetFilters}
               title="Clear filters and results"
-              className="products-action"
+              className="products-action theme-btn-tertiary"
             >
               <ArrowPathIcon className="w-4 h-4" />
               <span>Reset</span>
@@ -366,8 +366,7 @@ export default function CurrentStockReport() {
                 onClick={fetchReport}
                 disabled={loading}
                 title="Load the current stock report"
-                className="products-action products-action-primary"
-                style={{ color: primaryTextColor }}
+                className="products-action products-action-primary theme-btn-primary"
               >
                 {loading ? (
                   <ArrowPathIcon className="w-4 h-4 animate-spin" />

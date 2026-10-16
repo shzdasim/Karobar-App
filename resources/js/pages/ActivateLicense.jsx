@@ -79,7 +79,7 @@ export default function ActivateLicense() {
 
         <div className="mt-3 text-sm">
           <div><span className="font-medium">Machine ID:</span> {status?.machine_id || "—"}</div>
-          <button type="button" className="mt-2 px-3 py-1 rounded-sm border text-sm" onClick={copyMachineId} disabled={!status?.machine_id}>
+          <button type="button" className="mt-2 px-3 py-1.5 text-sm theme-btn theme-btn-secondary" onClick={copyMachineId} disabled={!status?.machine_id}>
             Copy Machine ID
           </button>
           {expiresText && <div className="mt-3"><span className="font-medium">Expires:</span> {expiresText}</div>}
@@ -104,10 +104,10 @@ export default function ActivateLicense() {
           onChange={(e) => setKey(e.target.value)}
         />
         <div className="mt-3 flex items-center gap-2">
-          <button type="submit" className="theme-btn-primary px-4 py-2" disabled={busy || key.trim().length === 0}>
+          <button type="submit" className="theme-btn theme-btn-primary px-4 py-2" disabled={busy || key.trim().length === 0}>
             {busy ? "Activating…" : "Activate"}
           </button>
-          <button type="button" className="theme-btn-ghost px-4 py-2" onClick={loadStatus} disabled={busy}>
+          <button type="button" className="theme-btn theme-btn-tertiary px-4 py-2" onClick={loadStatus} disabled={busy}>
             Refresh Status
           </button>
           <Link to="/" className="ml-auto text-sm underline">Back to Home</Link>

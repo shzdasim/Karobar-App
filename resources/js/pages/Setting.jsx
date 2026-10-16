@@ -352,8 +352,7 @@ export default function Setting() {
               type="button"
               onClick={handleSave}
               disabled={saveDisabled}
-              className="products-action products-action-primary"
-              style={{ color: getContrastText(themeColors.primary) }}
+              className="products-action products-action-primary theme-btn-primary"
               title={can.update ? "Save (Alt+S)" : "You lack update permission"}
             >
               <ArrowDownOnSquareIcon className="w-4 h-4" />
@@ -469,8 +468,7 @@ export default function Setting() {
               type="button"
               onClick={handleSave}
               disabled={saveDisabled}
-              className="products-action products-action-primary"
-              style={{ color: getContrastText(themeColors.primary) }}
+              className="products-action products-action-primary theme-btn-primary"
               title={can.update ? "Save (Alt+S)" : "You lack update permission"}
             >
               <ArrowDownOnSquareIcon className="w-4 h-4" />

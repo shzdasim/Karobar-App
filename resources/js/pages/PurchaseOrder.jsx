@@ -19,6 +19,7 @@ import {
 } from "@heroicons/react/24/solid";
 import { usePermissions } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext.jsx";
+import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import BrandSearch from "../components/BrandSearch.jsx";
 import SupplierSearch from "../components/SupplierSearch.jsx";
 
@@ -159,126 +160,11 @@ export default function PurchaseOrder() {
 
   // Get button style from theme
   const buttonStyle = theme?.button_style || 'modern';
-  
-  // Get button style classes and styles based on theme button_style
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'modern':     'rounded-xl',
-      'rounded':    'rounded-lg',
-      'rounded-sm': 'rounded-md',
-      'outlined':   'rounded-lg',
-      'soft':       'rounded-2xl',
-      'pill':       'rounded-full',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-xl';
-    
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.secondary,
-            color: themeColors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-        tertiary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.tertiary,
-            color: themeColors.tertiary,
-            backgroundColor: 'transparent',
-          }
-        },
-        glass: {
-          className: radiusClass,
-          style: {
-            background: isDark ? "rgba(71,85,105,0.6)" : "rgba(255,255,255,0.8)",
-            backdropFilter: "blur(8px)",
-            border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.1)",
-            color: isDark ? "#f1f5f9" : "#1f2937",
-          }
-        },
-      };
-    }
-    
-    if (buttonStyle === 'modern') {
-      return {
-        primary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.primary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.secondary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        danger: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.danger}, ${themeColors.dangerHover})`,
-            color: 'white',
-            boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.45), 0 1px 2px 0 rgba(0,0,0,0.06)',
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-      };
-    }
 
-    // Filled styles for rounded, soft, pill, rounded-sm
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: primaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-          color: secondaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
-        }
-      },
-      tertiary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
-          color: secondaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`,
-        }
-      },
-      glass: {
-        className: radiusClass,
-        style: {
-          background: isDark ? "rgba(71,85,105,0.6)" : "rgba(255,255,255,0.8)",
-          backdropFilter: "blur(8px)",
-          border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.1)",
-          color: isDark ? "#f1f5f9" : "#1f2937",
-        }
-      },
-    };
-  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor, isDark]);
+  const getButtonClasses = useMemo(
+    () => getThemeButtonClasses(buttonStyle, themeColors, isDark, primaryTextColor),
+    [buttonStyle, themeColors, isDark, primaryTextColor]
+  );
 
   const btnPrimary = getButtonClasses.primary;
   const btnSecondary = getButtonClasses.secondary;
@@ -799,8 +685,8 @@ ${isA4 ? `
   return (
     <div className="purchase-order-page space-y-4 print:p-0" onKeyDown={onKeyDownTable}>
 <div className="flex flex-wrap gap-2 print:hidden">
-        <Link className="g-btn-ghost inline-flex items-center justify-center gap-2" to="/purchase-orders">Orders & Receipt History</Link>
-        {has('purchase-order.create') && <button className="g-btn-primary" disabled={!printRows.length} onClick={() => navigate('/purchase-orders/create', { state: { items: printRows.map(r => ({ product_id: r.product_id, product: { id: r.product_id, name: r.product_name, brand_name: r.brand_name }, ordered_quantity: r.order_units, pack_size: r.pack_size, unit_purchase_price: r.pack_price / r.pack_size, item_discount_percentage: 0 })) } })}>Create Order from Forecast</button>}
+        <Link className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2" to="/purchase-orders">Orders & Receipt History</Link>
+        {has('purchase-order.create') && <button className="g-btn-primary theme-btn-primary" disabled={!printRows.length} onClick={() => navigate('/purchase-orders/create', { state: { items: printRows.map(r => ({ product_id: r.product_id, product: { id: r.product_id, name: r.product_name, brand_name: r.brand_name }, ordered_quantity: r.order_units, pack_size: r.pack_size, unit_purchase_price: r.pack_price / r.pack_size, item_discount_percentage: 0 })) } })}>Create Order from Forecast</button>}
       </div>
 {/* Forecast overview */}
       <div
@@ -848,21 +734,21 @@ ${isA4 ? `
               type="button"
               onClick={handleFetch}
               disabled={loading || !canGenerate}
-              className="purchase-order-action purchase-order-action-primary"
+              className="purchase-order-action purchase-order-action-primary theme-btn-primary"
               title={!canGenerate ? "Not permitted" : "Generate forecast (Alt+G)"}
             >
               <PlayCircleIcon aria-hidden="true" />
-              {loading ? "Generating…" : "Generate forecast"}
+              <span>{loading ? "Generating…" : "Generate forecast"}</span>
             </button>
             <button
               type="button"
               onClick={pruneNoPackPrice}
               disabled={!rows.length}
-              className="purchase-order-action"
+              className="purchase-order-action theme-btn-secondary"
               title="Remove products with no Pack Purchase Price"
             >
               <XMarkIcon aria-hidden="true" />
-              Exclude zero-price items
+              <span>Exclude zero-price items</span>
             </button>
             <button
               type="button"
@@ -884,7 +770,7 @@ ${isA4 ? `
                   type="button"
                   onClick={() => setPrinterType(t)}
                   aria-pressed={printerType === t}
-                  className="purchase-order-print-option"
+                  className={`purchase-order-print-option ${printerType === t ? "theme-btn-secondary" : "theme-btn-tertiary"}`}
                   title={t === "a4" ? "A4 paper" : "Thermal receipt (80mm)"}
                 >
                   {t === "a4" ? "A4" : "Thermal"}
@@ -895,11 +781,11 @@ ${isA4 ? `
               type="button"
               ref={printBtnRef}
               onClick={doPrint}
-              className="purchase-order-action"
+              className="purchase-order-action theme-btn-secondary"
               title={`Print ${printerType === "thermal" ? "Thermal (80mm)" : "A4"} (Alt+P)${hasActiveResultFilters ? " — prints the filtered view" : ""}`}
             >
               <PrinterIcon aria-hidden="true" />
-              Print
+              <span>Print</span>
             </button>
           </div>
         </div>
@@ -1174,13 +1060,13 @@ ${isA4 ? `
               <button
                 type="button"
                 onClick={clearResultFilters}
-                className="h-8 px-2.5 inline-flex items-center gap-1 rounded-lg text-xs font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
+                className="h-8 px-2.5 inline-flex items-center gap-1 rounded-lg text-xs font-semibold theme-btn-tertiary"
                 title="Clear result filters"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
-                Reset
+                <span>Reset</span>
               </button>
             )}
 
@@ -1324,7 +1210,7 @@ ${isA4 ? `
                       <button
                         type="button"
                         onClick={clearResultFilters}
-                        className="theme-btn-ghost h-8 px-3 text-xs font-semibold"
+                        className="theme-btn-tertiary h-8 px-3 text-xs font-semibold"
                       >
                         Reset filters
                       </button>

@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
+import { getThemeButtonClasses } from "@/utils/buttonStyles";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -75,108 +76,11 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
 
   // Get button style from theme
   const buttonStyle = theme?.button_style || 'modern';
-  
-  // Get button style classes and styles based on theme button_style
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'modern':     'rounded-xl',
-      'rounded':    'rounded-lg',
-      'rounded-sm': 'rounded-md',
-      'outlined':   'rounded-lg',
-      'soft':       'rounded-2xl',
-      'pill':       'rounded-full',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-xl';
-    
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.secondary,
-            color: themeColors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-        danger: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.danger,
-            color: themeColors.danger,
-            backgroundColor: 'transparent',
-          }
-        },
-      };
-    }
-    
-    if (buttonStyle === 'modern') {
-      return {
-        primary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.primary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.secondary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        danger: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.danger}, ${themeColors.dangerHover})`,
-            color: 'white',
-            boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.45), 0 1px 2px 0 rgba(0,0,0,0.06)',
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-      };
-    }
 
-    // Filled styles for rounded, soft, pill, rounded-sm
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: primaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-          color: secondaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
-        }
-      },
-      danger: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-          color: dangerTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.danger}40`,
-        }
-      },
-    };
-  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor, dangerTextColor]);
+  const getButtonClasses = useMemo(
+    () => getThemeButtonClasses(buttonStyle, themeColors, isDark, primaryTextColor),
+    [buttonStyle, themeColors, isDark, primaryTextColor]
+  );
 
   const btnPrimary = getButtonClasses.primary;
   const btnSecondary = getButtonClasses.secondary;
@@ -942,10 +846,10 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  className="products-action products-action-primary"
+                  className="products-action products-action-primary theme-btn-primary"
                   title="Save (Alt+S)"
                 >
-                  {adjustmentId ? 'Update Adjustment' : 'Create Adjustment'}
+                  <span>{adjustmentId ? 'Update Adjustment' : 'Create Adjustment'}</span>
                   <span className="ml-2 hidden sm:inline text-[10px] opacity-80 border rounded-sm px-1 py-0.5">Alt+S</span>
                 </button>
               </td>

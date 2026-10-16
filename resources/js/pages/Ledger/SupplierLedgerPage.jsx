@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import SupplierSearch from "../../components/SupplierSearch.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext.jsx";
+import { getThemeButtonClasses } from "@/utils/buttonStyles";
 
 // 🧊 glass primitives
 import { GlassCard, GlassSectionHeader, GlassInput } from "@/components/glass.jsx";
@@ -140,181 +141,18 @@ const [suppliers, setSuppliers] = useState([]);
     getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
     [themeColors.primary, themeColors.primaryHover]
   );
-  
-  const secondaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.secondary, themeColors.secondaryHover), 
-    [themeColors.secondary, themeColors.secondaryHover]
-  );
-  
-  const tertiaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.tertiary, themeColors.tertiaryHover), 
-    [themeColors.tertiary, themeColors.tertiaryHover]
-  );
-  
-  const dangerTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.danger, themeColors.dangerHover), 
-    [themeColors.danger, themeColors.dangerHover]
-  );
-
-  const emeraldTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.emerald, themeColors.emeraldHover), 
-    [themeColors.emerald, themeColors.emeraldHover]
-  );
 
   // Get button style from theme
   const buttonStyle = theme?.button_style || 'modern';
-  
-  // Get button style classes and styles based on theme button_style
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'modern':     'rounded-xl',
-      'rounded':    'rounded-lg',
-      'rounded-sm': 'rounded-md',
-      'outlined':   'rounded-lg',
-      'soft':       'rounded-2xl',
-      'pill':       'rounded-full',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-xl';
-    
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.secondary,
-            color: themeColors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-        tertiary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.tertiary,
-            color: themeColors.tertiary,
-            backgroundColor: 'transparent',
-          }
-        },
-        emerald: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.emerald,
-            color: themeColors.emerald,
-            backgroundColor: 'transparent',
-          }
-        },
-        danger: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.danger,
-            color: themeColors.danger,
-            backgroundColor: 'transparent',
-          }
-        },
-        outlined: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-      };
-    }
-    
-    if (buttonStyle === 'modern') {
-      return {
-        primary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.primary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.secondary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        danger: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.danger}, ${themeColors.dangerHover})`,
-            color: 'white',
-            boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.45), 0 1px 2px 0 rgba(0,0,0,0.06)',
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-      };
-    }
 
-    // Filled styles for rounded, soft, pill, rounded-sm
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: primaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-          color: secondaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
-        }
-      },
-      tertiary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
-          color: tertiaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`,
-        }
-      },
-      emerald: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.emerald}, ${themeColors.emeraldHover})`,
-          color: emeraldTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.emerald}40`,
-        }
-      },
-      danger: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-          color: dangerTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.danger}40`,
-        }
-      },
-      outlined: {
-        className: `${radiusClass} border-2 transition-all duration-200`,
-        style: {
-          borderColor: themeColors.primary,
-          color: themeColors.primary,
-          backgroundColor: 'transparent',
-        }
-      },
-    };
-  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor, tertiaryTextColor, dangerTextColor, emeraldTextColor]);
+  const getButtonClasses = useMemo(
+    () => getThemeButtonClasses(buttonStyle, themeColors, isDark, primaryTextColor),
+    [buttonStyle, themeColors, isDark, primaryTextColor]
+  );
 
   const btnPrimary = getButtonClasses.primary;
+  const btnSecondary = getButtonClasses.secondary;
+  const btnTertiary = getButtonClasses.tertiary;
   const btnEmerald = getButtonClasses.emerald;
   const btnDanger = getButtonClasses.danger;
   const btnOutlined = getButtonClasses.outlined;
@@ -868,7 +706,7 @@ return (
                   onClick={rebuild}
                   disabled={!supplierId}
                   title="Rebuild ledger from purchase invoices"
-                  className="products-action"
+                  className="products-action theme-btn-tertiary"
                 >
                   <ArrowPathIcon className="w-3.5 h-3.5" />
                   <span>Rebuild</span>
@@ -881,7 +719,7 @@ return (
                   onClick={fetchData}
                   disabled={!supplierId}
                   title="Reload ledger entries"
-                  className="products-action"
+                  className="products-action theme-btn-tertiary"
                 >
                   <ArrowPathIcon className="w-3.5 h-3.5" />
                   <span>Load entries</span>
@@ -894,7 +732,7 @@ return (
                   onClick={openAddPayment}
                   disabled={!supplierId}
                   title="Add a payment row (new entries are added at the top)"
-                  className="products-action"
+                  className="products-action theme-btn-secondary"
                 >
                   <PlusCircleIcon className="w-3.5 h-3.5" />
                   <span>Add payment</span>
@@ -907,7 +745,7 @@ return (
                   onClick={openAddManual}
                   disabled={!supplierId}
                   title="Add a manual ledger row (new entries are added at the top)"
-                  className="products-action"
+                  className="products-action theme-btn-secondary"
                 >
                   <WrenchScrewdriverIcon className="w-3.5 h-3.5" />
                   <span>Add manual row</span>
@@ -919,7 +757,7 @@ return (
                 <button
                   onClick={openSaveModal}
                   disabled={!supplierId || (newCount === 0 && updCount === 0)}
-                  className="products-action products-action-primary"
+                  className="products-action products-action-primary theme-btn-primary"
                 >
                   <ArrowDownOnSquareIcon className="w-3.5 h-3.5" />
                   <span>Save changes</span>
@@ -936,7 +774,7 @@ return (
             <button
               onClick={() => handlePrint()}
               disabled={!supplierId}
-              className="products-action"
+              className="products-action theme-btn-secondary"
             >
               <PrinterIcon className="w-4 h-4" />
               <span>Print</span>
@@ -1001,10 +839,10 @@ return (
             <button
               onClick={() => setNewestFirst((v) => !v)}
               title="Toggle newest / oldest first"
-              className={`inline-flex items-center gap-1.5 h-8 px-2.5 text-xs font-medium rounded-lg border transition-all duration-200 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200 hover:bg-slate-600" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-100"}`}
+              className="theme-btn-tertiary inline-flex items-center gap-1.5 h-8 px-2.5 text-xs font-medium"
             >
               <ChevronUpDownIcon className="w-3.5 h-3.5" />
-              {newestFirst ? "Newest first" : "Oldest first"}
+              <span>{newestFirst ? "Newest first" : "Oldest first"}</span>
             </button>
           </div>
         </div>
@@ -1380,15 +1218,13 @@ return (
                     Cancel
                   </button>
                   <button
-                    className={`min-w-[170px] px-4 py-2 text-sm font-semibold transition-all duration-200 disabled:opacity-60 ${btnEmerald.className}`}
+                    className={`min-w-[170px] px-4 py-2 text-sm font-semibold transition-all duration-200 disabled:opacity-60 inline-flex items-center justify-center gap-1.5 ${btnEmerald.className}`}
                     style={btnEmerald.style}
                     onClick={confirmSettle}
                     disabled={settling}
                   >
-                    <span className="inline-flex items-center justify-center gap-1.5">
-                      {settling ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <CheckCircleIcon className="w-4 h-4" />}
-                      {settling ? "Marking…" : "Yes, mark as paid"}
-                    </span>
+                    {settling ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <CheckCircleIcon className="w-4 h-4" />}
+                    <span>{settling ? "Marking…" : "Yes, mark as paid"}</span>
                   </button>
                 </div>
               </div>

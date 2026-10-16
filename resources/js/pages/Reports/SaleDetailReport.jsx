@@ -267,7 +267,7 @@ export default function SaleDetailReport() {
                     ? "Generating PDF…"
                     : "Export report as PDF"
                 }
-                className="products-action"
+                className="products-action theme-btn-secondary"
               >
                 <ArrowDownOnSquareIcon className="w-4 h-4" />
                 <span>{pdfLoading ? "Generating…" : "Export PDF"}</span>
@@ -278,7 +278,7 @@ export default function SaleDetailReport() {
               type="button"
               onClick={resetFilters}
               title="Reset the filters and results"
-              className="products-action"
+              className="products-action theme-btn-tertiary"
             >
               <ArrowPathIcon className="w-4 h-4" />
               <span>Reset</span>
@@ -290,8 +290,7 @@ export default function SaleDetailReport() {
                 onClick={fetchReport}
                 disabled={loading}
                 title="Load the sale detail report"
-                className="products-action products-action-primary"
-                style={{ color: primaryTextColor }}
+                className="products-action products-action-primary theme-btn-primary"
               >
                 <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
                 <span>{loading ? "Loading…" : "Load Report"}</span>
@@ -391,7 +390,7 @@ export default function SaleDetailReport() {
               <div className="report-quick">
                 <button
                   type="button"
-                  className="products-action"
+                  className="products-action theme-btn-tertiary"
                   onClick={() => {
                     const end = new Date();
                     const start = new Date();
@@ -406,7 +405,7 @@ export default function SaleDetailReport() {
 
                 <button
                   type="button"
-                  className="products-action"
+                  className="products-action theme-btn-tertiary"
                   onClick={() => {
                     const end = new Date();
                     const start = new Date();
@@ -421,7 +420,7 @@ export default function SaleDetailReport() {
 
                 <button
                   type="button"
-                  className="products-action"
+                  className="products-action theme-btn-tertiary"
                   onClick={() => {
                     const end = new Date();
                     const start = new Date();

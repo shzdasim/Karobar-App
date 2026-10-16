@@ -692,22 +692,16 @@ onKeyDown={(e) => {
             <button
               type="button"
               onClick={handleClose}
-              className="product-modal-cancel"
+              className="product-modal-cancel theme-btn-tertiary"
             >
               Cancel
             </button>
-<button
+            <button
               ref={saveButtonRef}
               type="button"
               onClick={handleSubmit}
               disabled={saving}
-              className="product-modal-save transition-all duration-200"
-              style={{ 
-                background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-                color: primaryTextColor,
-                opacity: saving ? 0.6 : 1,
-                cursor: saving ? 'not-allowed' : 'pointer'
-              }}
+              className="product-modal-save theme-btn-primary transition-all duration-200"
             >
               {saving ? 'Saving...' : 'Save Product'}
             </button>

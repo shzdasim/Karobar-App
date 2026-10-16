@@ -141,17 +141,17 @@ export default function UserDemandsIndex() {
             <button
               onClick={fetchDemands}
               disabled={loading}
-              className="products-action"
+              className="products-action theme-btn-tertiary"
             >
               <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-              {loading ? "Loading…" : "Refresh"}
+              <span>{loading ? "Loading…" : "Refresh"}</span>
             </button>
             {canCreate && (
               <Link
                 to="/user-demands/create"
                 title="Request product (Alt+N)"
                 aria-keyshortcuts="Alt+N"
-                className="products-action products-action-primary"
+                className="products-action products-action-primary theme-btn-primary"
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 <span>Request product</span>
@@ -169,7 +169,7 @@ export default function UserDemandsIndex() {
                 key={s}
                 onClick={() => setStatusFilter(s === "all" ? "" : s)}
                 aria-pressed={statusFilter === (s === "all" ? "" : s)}
-                className="user-demand-status-option"
+                className={`user-demand-status-option ${statusFilter === (s === "all" ? "" : s) ? "theme-btn-secondary" : "theme-btn-tertiary"}`}
               >
                 {s === "all" ? "All" : STATUS_STYLES[s]?.label}
               </button>
@@ -219,10 +219,10 @@ export default function UserDemandsIndex() {
                       {canCreate && (
                         <Link
                           to="/user-demands/create"
-                          className="inline-flex items-center gap-1 text-xs font-semibold"
-                          style={{ color: themeColors.primary }}
+                          className="products-action products-action-primary theme-btn-primary text-xs font-semibold"
                         >
-                          <PlusCircleIcon className="w-3.5 h-3.5" /> Request a product
+                          <PlusCircleIcon className="w-3.5 h-3.5" />
+                          <span>Request a product</span>
                         </Link>
                       )}
                     </div>
@@ -317,11 +317,6 @@ export default function UserDemandsIndex() {
         title="Delete user demand"
         isDeleting={deletingLoading}
         setIsDeleting={setDeletingLoading}
-        tintClasses={{
-          primary: { className: "rounded-lg", style: { background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`, color: "#fff" } },
-          danger: { className: "rounded-lg", style: { background: "linear-gradient(to bottom right, #ef4444, #dc2626)", color: "#fff" } },
-          glass: { className: "rounded-lg", style: {} },
-        }}
       />
     </div>
   );

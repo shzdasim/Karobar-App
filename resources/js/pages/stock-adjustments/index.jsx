@@ -31,6 +31,7 @@ import {
   DeleteConfirmationModal,
 } from "@/components";
 import { useTheme } from "@/context/ThemeContext";
+import { getThemeButtonClasses } from "@/utils/buttonStyles";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -164,108 +165,11 @@ export default function StockAdjustmentsIndex() {
 
   // Get button style from theme
   const buttonStyle = theme?.button_style || 'modern';
-  
-  // Get button style classes and styles based on theme button_style
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'modern':     'rounded-xl',
-      'rounded':    'rounded-lg',
-      'rounded-sm': 'rounded-md',
-      'outlined':   'rounded-lg',
-      'soft':       'rounded-2xl',
-      'pill':       'rounded-full',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-xl';
-    
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.secondary,
-            color: themeColors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-        danger: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.danger,
-            color: themeColors.danger,
-            backgroundColor: 'transparent',
-          }
-        },
-      };
-    }
-    
-    if (buttonStyle === 'modern') {
-      return {
-        primary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.primary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.secondary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        danger: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.danger}, ${themeColors.dangerHover})`,
-            color: 'white',
-            boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.45), 0 1px 2px 0 rgba(0,0,0,0.06)',
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-      };
-    }
 
-    // Filled styles for rounded, soft, pill, rounded-sm
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: primaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-          color: secondaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
-        }
-      },
-      danger: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-          color: dangerTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.danger}40`,
-        }
-      },
-    };
-  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor, dangerTextColor]);
+  const getButtonClasses = useMemo(
+    () => getThemeButtonClasses(buttonStyle, themeColors, isDark, primaryTextColor),
+    [buttonStyle, themeColors, isDark, primaryTextColor]
+  );
 
   const btnPrimary = getButtonClasses.primary;
   const btnSecondary = getButtonClasses.secondary;
@@ -426,7 +330,7 @@ export default function StockAdjustmentsIndex() {
                 fetchAdjustments(ctrl.signal);
               }}
               title="Refresh"
-              className="products-action"
+              className="products-action theme-btn-tertiary"
               disabled={loading}
               aria-label="Refresh adjustments"
             >
@@ -439,7 +343,7 @@ export default function StockAdjustmentsIndex() {
                 to="/stock-adjustments/create"
                 title="Add (Alt+N)"
                 aria-keyshortcuts="Alt+N"
-                className="products-action products-action-primary"
+                className="products-action products-action-primary theme-btn-primary"
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 <span>Add adjustment</span>
@@ -678,11 +582,11 @@ export default function StockAdjustmentsIndex() {
                     className={`
                       w-7 h-7 rounded text-xs font-medium transition-colors
                       ${page === pageNum
-                        ? ""
+                        ? "text-white"
                         : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700"
                       }
                     `}
-                    style={page === pageNum ? btnSecondary.style : {}}
+                    style={page === pageNum ? { backgroundColor: themeColors.secondary, color: '#fff' } : {}}
                   >
                     {pageNum}
                   </button>

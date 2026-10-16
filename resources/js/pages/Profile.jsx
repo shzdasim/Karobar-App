@@ -167,8 +167,7 @@ export default function Profile() {
             <button
               type="submit"
               disabled={loading}
-              className="products-action products-action-primary"
-              style={{ color: primaryTextColor }}
+              className="products-action products-action-primary theme-btn-primary"
             >
               {loading ? "Updating…" : "Update Profile"}
             </button>

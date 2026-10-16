@@ -437,7 +437,7 @@ onClick={() => {
               type="button"
               onClick={() => navigate("/user-demands")}
               title="Cancel (Alt+C)"
-              className="products-action"
+              className="products-action theme-btn-tertiary"
             >
               Cancel
             </button>
@@ -447,10 +447,10 @@ onClick={() => {
               disabled={saving}
               title="Save (Alt+S)"
               aria-keyshortcuts="Alt+S"
-              className="products-action products-action-primary"
+              className="products-action products-action-primary theme-btn-primary"
             >
               {saving ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <HandRaisedIcon className="w-4 h-4" />}
-              {saving ? "Creating…" : "Create Demand"}
+              <span>{saving ? "Creating…" : "Create Demand"}</span>
             </button>
           </div>
         </form>

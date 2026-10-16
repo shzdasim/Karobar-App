@@ -67,7 +67,7 @@ export default function EditStockAdjustment(){
   return (
     <div className="stock-adjustment-page stock-adjustment-edit space-y-4">
       <div className="flex justify-end">
-        <Link to="/stock-adjustments" className="products-action"><ArrowLeftIcon className="w-5 h-5" aria-hidden="true" />Back</Link>
+        <Link to="/stock-adjustments" className="products-action theme-btn-tertiary"><ArrowLeftIcon className="w-5 h-5" aria-hidden="true" /><span>Back</span></Link>
       </div>
 
       <Guard when={can.update}>

@@ -30,6 +30,7 @@ import {
   DeleteConfirmationModal,
 } from "@/components";
 import { useTheme } from "@/context/ThemeContext";
+import { getThemeButtonClasses } from "@/utils/buttonStyles";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -168,138 +169,10 @@ export default function SaleInvoicesIndex() {
   // 🎨 Dynamic Button styles using theme colors
   const buttonStyle = theme?.button_style || 'modern';
 
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'modern':     'rounded-xl',
-      'rounded':    'rounded-lg',
-      'rounded-sm': 'rounded-md',
-      'outlined':   'rounded-lg',
-      'soft':       'rounded-2xl',
-      'pill':       'rounded-full',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-xl';
-
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.secondary,
-            color: themeColors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-        tertiary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.tertiary,
-            color: themeColors.tertiary,
-            backgroundColor: 'transparent',
-          }
-        },
-        danger: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.danger,
-            color: themeColors.danger,
-            backgroundColor: 'transparent',
-          }
-        },
-        glass: {
-          className: `${radiusClass} transition-all duration-200`,
-          style: {
-            backgroundColor: 'transparent',
-            color: isDark ? '#f1f5f9' : '#111827',
-          }
-        },
-      };
-    }
-
-    if (buttonStyle === 'modern') {
-      return {
-        primary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.primary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.secondary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        danger: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.danger}, ${themeColors.dangerHover})`,
-            color: 'white',
-            boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.45), 0 1px 2px 0 rgba(0,0,0,0.06)',
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-      };
-    }
-
-    // Filled styles for rounded, soft, pill, rounded-sm
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: 'white',
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-          color: 'white',
-          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
-        }
-      },
-      tertiary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.tertiary}, ${themeColors.tertiaryHover})`,
-          color: 'white',
-          boxShadow: `0 4px 14px 0 ${themeColors.tertiary}40`,
-        }
-      },
-      danger: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-          color: 'white',
-          boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)',
-        }
-      },
-      glass: {
-        className: radiusClass,
-        style: {
-          backgroundColor: isDark ? 'rgba(51, 65, 85, 0.6)' : 'rgba(255, 255, 255, 0.8)',
-          color: isDark ? '#f1f5f9' : '#111827',
-          backdropFilter: 'blur(6px)',
-          border: isDark ? '1px solid rgba(71, 85, 105, 0.5)' : '1px solid rgba(229, 231, 235, 0.6)',
-        }
-      },
-    };
-  }, [buttonStyle, themeColors, isDark]);
+  const getButtonClasses = useMemo(
+    () => getThemeButtonClasses(buttonStyle, themeColors, isDark),
+    [buttonStyle, themeColors, isDark]
+  );
 
   const btnPrimary = getButtonClasses.primary;
   const btnSecondary = getButtonClasses.secondary;
@@ -578,33 +451,30 @@ export default function SaleInvoicesIndex() {
               }}
               title="Refresh"
               aria-label="Refresh sale invoices"
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-sm transition-all duration-200"
+              className="products-action theme-btn-tertiary"
             >
               <ArrowPathIcon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Refresh</span>
+              <span>Refresh</span>
             </button>
 
             <Guard when={can.create}>
               <Link
                 to="/sale-invoices/create/retail"
                 title="Add Retail Sale Invoice"
-                className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-bold text-white bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
-                style={{ color: themeColors.primaryHover }}
+                className="products-action products-action-primary theme-btn-primary"
               >
                 <PlusCircleIcon className="w-4 h-4" />
-                <span className="hidden sm:inline">Retail Sale</span>
-                <span className="sm:hidden">Retail</span>
+                <span>Retail Sale</span>
               </Link>
 
               {!saleSystemLoading && hasWholesale && (
                 <Link
                   to="/sale-invoices/create/wholesale"
                   title="Add Wholesale Sale Invoice"
-                  className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-bold text-white bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/30 shadow-lg transition-all duration-200"
+                  className="products-action theme-btn-secondary"
                 >
                   <PlusCircleIcon className="w-4 h-4" />
-                  <span className="hidden sm:inline">Wholesale Sale</span>
-                  <span className="sm:hidden">Wholesale</span>
+                  <span>Wholesale Sale</span>
                 </Link>
               )}
             </Guard>
@@ -879,11 +749,11 @@ export default function SaleInvoicesIndex() {
                     className={`
                       w-7 h-7 rounded text-xs font-medium transition-colors
                       ${page === pageNum
-                        ? ''
+                        ? 'text-white'
                         : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700"
                       }
                     `}
-                    style={page === pageNum ? btnPrimary.style : {}}
+                    style={page === pageNum ? { backgroundColor: themeColors.primary, color: '#fff' } : {}}
                   >
                     {pageNum}
                   </button>

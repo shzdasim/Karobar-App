@@ -10,6 +10,7 @@ import BatchSearchInput from "../../components/BatchSearchInput.jsx";
 import CustomerSearch from "../../components/CustomerSearch.jsx";
 import { recalcItem, recalcFooter } from "../../Formula/SaleInvoice.js";
 import { useTheme } from "@/context/ThemeContext";
+import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 
 // Helper to determine text color based on background brightness
@@ -264,106 +265,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   // 🎨 Dynamic Button styles using theme colors
   const buttonStyle = theme?.button_style || 'modern';
   
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'modern':     'rounded-xl',
-      'rounded':    'rounded-lg',
-      'rounded-sm': 'rounded-md',
-      'outlined':   'rounded-lg',
-      'soft':       'rounded-2xl',
-      'pill':       'rounded-full',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-xl';
-    
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.secondary,
-            color: themeColors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-        danger: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.danger,
-            color: themeColors.danger,
-            backgroundColor: 'transparent',
-          }
-        },
-      };
-    }
-    
-    if (buttonStyle === 'modern') {
-      return {
-        primary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.primary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.secondary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        danger: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.danger}, ${themeColors.dangerHover})`,
-            color: 'white',
-            boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.45), 0 1px 2px 0 rgba(0,0,0,0.06)',
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-      };
-    }
-
-    // Filled styles for rounded, soft, pill, rounded-sm
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: 'white',
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-          color: 'white',
-          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
-        }
-      },
-      danger: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-          color: 'white',
-          boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)',
-        }
-      },
-    };
-  }, [buttonStyle, themeColors]);
+  const getButtonClasses = useMemo(
+    () => getThemeButtonClasses(buttonStyle, themeColors, isDark),
+    [buttonStyle, themeColors, isDark]
+  );
 
   const btnPrimary = getButtonClasses.primary;
   const btnSecondary = getButtonClasses.secondary;
@@ -1147,11 +1052,11 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                     key={type}
                     type="button"
                     onClick={() => handleInvoiceTypeChange(type)}
-                    className={`sale-type-option ${active ? "is-active" : ""}`}
+                    className={`sale-type-option text-xs font-semibold ${active ? "is-active theme-btn-primary" : "theme-btn-tertiary"}`}
                     aria-pressed={active}
                   >
                     {active && <CheckIcon aria-hidden="true" />}
-                    {type === "debit" ? "Debit" : "Credit"}
+                    <span>{type === "debit" ? "Debit" : "Credit"}</span>
                   </button>
                 );
               })}
@@ -1160,8 +1065,8 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
             <button
               type="button"
               onClick={handleSubmit}
-              className="px-4 py-2 rounded-lg text-[11px] font-bold bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
-              style={{ color: themeColors.primaryHover }}
+              className={`px-4 py-2 text-[11px] font-bold transition-all duration-200 ${btnPrimary.className}`}
+              style={btnPrimary.style}
             >
               {saleId ? "Edit (Alt+S)" : "Create (Alt+S)"}
             </button>
@@ -1670,9 +1575,9 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
               <button
                 type="button"
                 onClick={handleSubmit}
-                className={`w-full h-11 rounded-xl text-white text-[13px] font-bold transition-all duration-200 ${btnPrimary.className}`}
-                style={{ ...btnPrimary.style, boxShadow: `0 8px 20px -6px ${themeColors.primary}80` }}
->
+                className={`w-full h-11 text-[13px] font-bold transition-all duration-200 ${btnPrimary.className}`}
+                style={btnPrimary.style}
+              >
                 {saleId ? "Edit Sale" : "Create Sale"}
               </button>
             </div>

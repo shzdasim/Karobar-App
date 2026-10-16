@@ -36,8 +36,8 @@ export default function DeleteConfirmationModal({
 
   // Default tint classes
   const defaultTint = {
-    red: "bg-rose-500/85 text-white shadow-[0_6px_20px_-6px_rgba(244,63,94,0.45)] ring-1 ring-white/20 hover:bg-rose-500/95",
-    glass: "bg-white/60 text-slate-700 ring-1 ring-white/30 hover:bg-white/75 dark:text-gray-100 dark:bg-slate-700/60 dark:ring-slate-600/30 dark:hover:bg-slate-600/75",
+    red: "theme-btn-danger",
+    glass: "theme-btn-tertiary",
   };
 
   const tintRed = tintClasses.red || defaultTint.red;
@@ -98,9 +98,15 @@ export default function DeleteConfirmationModal({
               </span>
             }
             right={
-              <GlassBtn className={`h-8 px-3 ${tintGlass}`} onClick={handleClose} title="Close">
+              <button
+                type="button"
+                className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200/60 dark:text-slate-300 dark:hover:bg-slate-700/60 transition-colors"
+                onClick={handleClose}
+                title="Close"
+                aria-label="Close"
+              >
                 <XMarkIcon className="w-5 h-5" />
-              </GlassBtn>
+              </button>
             }
           />
           <div className="px-4 py-4 space-y-4">

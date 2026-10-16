@@ -206,7 +206,7 @@ export default function RolesIndex() {
               onClick={refresh}
               title="Refresh roles"
               aria-label="Refresh roles"
-              className="products-action"
+              className="products-action theme-btn-tertiary"
             >
               <ArrowPathIcon className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
               <span>Refresh</span>
@@ -217,8 +217,7 @@ export default function RolesIndex() {
                 to="/roles/create"
                 title="Add Role (Alt+N)"
                 aria-keyshortcuts="Alt+N"
-                className="products-action products-action-primary"
-                style={{ color: primaryTextColor }}
+                className="products-action products-action-primary theme-btn-primary"
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 <span>Add Role</span>

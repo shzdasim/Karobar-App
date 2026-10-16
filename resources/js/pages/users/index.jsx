@@ -251,7 +251,7 @@ export default function UsersIndex() {
               onClick={refresh}
               title="Refresh users"
               aria-label="Refresh users"
-              className="products-action"
+              className="products-action theme-btn-tertiary"
             >
               <ArrowPathIcon className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
               <span>Refresh</span>
@@ -262,8 +262,7 @@ export default function UsersIndex() {
                 to="/users/create"
                 title="Add User (Alt+N)"
                 aria-keyshortcuts="Alt+N"
-                className="products-action products-action-primary"
-                style={{ color: primaryTextColor }}
+                className="products-action products-action-primary theme-btn-primary"
               >
                 <PlusCircleIcon className="w-4 h-4" />
                 <span>Add User</span>

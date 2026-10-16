@@ -276,7 +276,7 @@ export default function BackupRestoreSetting() {
           <button
             type="button"
             onClick={() => { fetchBackups(); fetchBackupStats(); }}
-            className="products-action"
+            className="products-action theme-btn-tertiary"
             title="Refresh backups"
             aria-label="Refresh backups"
           >
@@ -363,7 +363,7 @@ export default function BackupRestoreSetting() {
                 type="button"
                 onClick={handleCreateBackup}
                 disabled={creatingBackup || !can.create}
-                className="products-action products-action-primary"
+                className="products-action products-action-primary theme-btn-primary"
               >
                 {creatingBackup ? (
                   <ArrowPathIcon className="w-4 h-4 animate-spin" />
@@ -455,7 +455,7 @@ export default function BackupRestoreSetting() {
                 type="button"
                 onClick={handleUploadBackup}
                 disabled={uploadFiles.length === 0 || uploading || !can.upload}
-                className="products-action products-action-primary"
+                className="products-action products-action-primary theme-btn-primary"
               >
                 {uploading ? (
                   <ArrowPathIcon className="w-4 h-4 animate-spin" />
@@ -651,14 +651,14 @@ export default function BackupRestoreSetting() {
                   type="button"
                   onClick={closeRestoreModal}
                   disabled={restoring}
-                  className="products-action"
+                  className="products-action theme-btn-tertiary"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={restoring || !restorePassword}
-                  className="products-action products-action-danger"
+                  className="products-action products-action-danger theme-btn-danger"
                 >
                   {restoring && <ArrowPathIcon className="w-4 h-4 animate-spin" />}
                   <span>{restoring ? "Restoring…" : "Restore backup"}</span>

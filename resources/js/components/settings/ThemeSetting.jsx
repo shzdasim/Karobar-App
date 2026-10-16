@@ -430,7 +430,7 @@ export default function ThemeSetting({ disableInputs }) {
               type="button"
               onClick={handleSaveTheme}
               disabled={disableInputs || saving}
-              className="products-action products-action-primary"
+              className="products-action products-action-primary theme-btn-primary"
             >
               {saving ? 'Saving…' : 'Save theme'}
             </button>

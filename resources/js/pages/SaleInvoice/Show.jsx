@@ -7,6 +7,7 @@ import toast from "react-hot-toast";
 // 🔒 permissions
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext";
+import { getThemeButtonClasses } from "@/utils/buttonStyles";
 // Search modal
 import SaleInvoiceSearch from "@/components/SaleInvoiceSearch.jsx";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
@@ -105,138 +106,10 @@ export default function SaleInvoiceShow() {
   const buttonStyle = theme?.button_style || 'modern';
   
   // Get button style classes and styles based on theme button_style
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'modern':     'rounded-xl',
-      'rounded':    'rounded-lg',
-      'rounded-sm': 'rounded-md',
-      'outlined':   'rounded-lg',
-      'soft':       'rounded-2xl',
-      'pill':       'rounded-full',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-xl';
-    
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.secondary,
-            color: themeColors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-        danger: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.danger,
-            color: themeColors.danger,
-            backgroundColor: 'transparent',
-          }
-        },
-        success: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.success,
-            color: themeColors.success,
-            backgroundColor: 'transparent',
-          }
-        },
-        glass: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: '#64748b',
-            color: '#64748b',
-            backgroundColor: 'transparent',
-          }
-        },
-      };
-    }
-    
-    if (buttonStyle === 'modern') {
-      return {
-        primary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.primary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.secondary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        danger: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.danger}, ${themeColors.dangerHover})`,
-            color: 'white',
-            boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.45), 0 1px 2px 0 rgba(0,0,0,0.06)',
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-      };
-    }
-
-    // Filled styles for rounded, soft, pill, rounded-sm
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: primaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-          color: secondaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
-        }
-      },
-      danger: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-          color: dangerTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.danger}40`,
-        }
-      },
-      success: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.success}, ${themeColors.successHover})`,
-          color: successTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.success}40`,
-        }
-      },
-      glass: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, #64748b, #475569)`,
-          color: 'white',
-          boxShadow: `0 4px 14px 0 #64748b40`,
-        }
-      },
-    };
-  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor, dangerTextColor, successTextColor]);
+  const getButtonClasses = useMemo(
+    () => getThemeButtonClasses(buttonStyle, themeColors, isDark),
+    [buttonStyle, themeColors, isDark]
+  );
 
   const btnPrimary = getButtonClasses.primary;
   const btnSecondary = getButtonClasses.secondary;
@@ -563,36 +436,41 @@ export default function SaleInvoiceShow() {
             <button
               type="button"
               onClick={() => setSearchOpen(true)}
-              className="px-3 py-2 rounded-lg text-[11px] font-bold bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
-              style={{ color: themeColors.primaryHover }}
+              className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnSecondary.className}`}
+              style={btnSecondary.style}
             >
-              <MagnifyingGlassIcon aria-hidden="true" /> Search
+              <MagnifyingGlassIcon className="w-4 h-4" aria-hidden="true" />
+              <span>Search</span>
             </button>
             <button
               type="button"
               onClick={handlePrint}
-              className="px-3 py-2 rounded-lg text-[11px] font-bold bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
-              style={{ color: themeColors.primaryHover }}
+              className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnSuccess.className}`}
+              style={btnSuccess.style}
             >
-              <PrinterIcon aria-hidden="true" /> Print
+              <PrinterIcon className="w-4 h-4" aria-hidden="true" />
+              <span>Print</span>
             </button>
             <Guard when={can.update}>
               <button
                 type="button"
                 onClick={() => navigate(`/sale-invoices/${id}/edit`)}
-                className="px-3 py-2 rounded-lg text-[11px] font-bold bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
-                style={{ color: themeColors.primaryHover }}
+                className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnSecondary.className}`}
+                style={btnSecondary.style}
               >
-                <PencilSquareIcon aria-hidden="true" /> Edit
+                <PencilSquareIcon className="w-4 h-4" aria-hidden="true" />
+                <span>Edit</span>
               </button>
             </Guard>
             <Guard when={can.delete}>
               <button
                 type="button"
                 onClick={openDeleteModal}
-                className="theme-btn-danger px-3 py-2 text-[11px] font-bold"
+                className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnDanger.className}`}
+                style={btnDanger.style}
               >
-                <TrashIcon aria-hidden="true" /> Delete
+                <TrashIcon className="w-4 h-4" aria-hidden="true" />
+                <span>Delete</span>
               </button>
             </Guard>
             <Guard when={can.create}>
@@ -603,18 +481,21 @@ export default function SaleInvoiceShow() {
                   if (saleType === "wholesale") navigate("/sale-invoices/create/wholesale");
                   else navigate("/sale-invoices/create/retail");
                 }}
-                className="px-3 py-2 rounded-lg text-[11px] font-bold bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
-                style={{ color: themeColors.primaryHover }}
+                className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnPrimary.className}`}
+                style={btnPrimary.style}
               >
-                <PlusIcon aria-hidden="true" /> New
+                <PlusIcon className="w-4 h-4" aria-hidden="true" />
+                <span>New</span>
               </button>
             </Guard>
             <button
               type="button"
               onClick={() => navigate(-1)}
-              className="px-3 py-2 rounded-lg text-[11px] font-bold bg-black/25 hover:bg-black/30 shadow-lg transition-all duration-200 text-white"
+              className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnGlass.className}`}
+              style={btnGlass.style}
             >
-              <ArrowLeftIcon aria-hidden="true" /> Back
+              <ArrowLeftIcon className="w-4 h-4" aria-hidden="true" />
+              <span>Back</span>
             </button>
           </div>
         </div>
@@ -848,17 +729,19 @@ export default function SaleInvoiceShow() {
                   style={btnSuccess.style}
                   title="Alt+P"
                 >
-                  <PrinterIcon aria-hidden="true" /> Print
+                  <PrinterIcon className="w-4 h-4" aria-hidden="true" />
+                  <span>Print</span>
                 </button>
                 <Guard when={can.update}>
                   <button
                     type="button"
                     onClick={() => navigate(`/sale-invoices/${id}/edit`)}
-                    className={`h-8 rounded-lg text-[11px] font-semibold transition-all duration-200 ${btnPrimary.className}`}
-                    style={btnPrimary.style}
+                    className={`h-8 rounded-lg text-[11px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
+                    style={btnSecondary.style}
                     title="Alt+E"
                   >
-                    <PencilSquareIcon aria-hidden="true" /> Edit
+                    <PencilSquareIcon className="w-4 h-4" aria-hidden="true" />
+                    <span>Edit</span>
                   </button>
                 </Guard>
               </div>
@@ -871,10 +754,11 @@ export default function SaleInvoiceShow() {
                       if (saleType === "wholesale") navigate("/sale-invoices/create/wholesale");
                       else navigate("/sale-invoices/create/retail");
                     }}
-                    className={`flex-1 h-8 rounded-lg text-[11px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
-                    style={btnSecondary.style}
+                    className={`flex-1 h-8 rounded-lg text-[11px] font-semibold transition-all duration-200 ${btnPrimary.className}`}
+                    style={btnPrimary.style}
                   >
-                    <PlusIcon aria-hidden="true" /> New
+                    <PlusIcon className="w-4 h-4" aria-hidden="true" />
+                    <span>New</span>
                   </button>
                 </Guard>
                 <Guard when={can.delete}>
@@ -884,7 +768,8 @@ export default function SaleInvoiceShow() {
                     className={`flex-1 h-8 rounded-lg text-[11px] font-semibold transition-all duration-200 ${btnDanger.className}`}
                     style={btnDanger.style}
                   >
-                    <TrashIcon aria-hidden="true" /> Delete
+                    <TrashIcon className="w-4 h-4" aria-hidden="true" />
+                    <span>Delete</span>
                   </button>
                 </Guard>
                 <button
@@ -893,7 +778,8 @@ export default function SaleInvoiceShow() {
                   className={`flex-1 h-8 rounded-lg text-[11px] font-semibold transition-all duration-200 ${btnGlass.className}`}
                   style={btnGlass.style}
                 >
-                  <ArrowLeftIcon aria-hidden="true" /> Back
+                  <ArrowLeftIcon className="w-4 h-4" aria-hidden="true" />
+                  <span>Back</span>
                 </button>
               </div>
             </div>
@@ -920,11 +806,15 @@ export default function SaleInvoiceShow() {
                 </div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">This action cannot be undone.</p>
                 <div className="mt-4 flex justify-end gap-2">
-                  <button className="px-3 py-1 rounded-sm border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700" onClick={closeDeleteModal}>
+                  <button
+                    className={`px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnGlass.className}`}
+                    style={btnGlass.style}
+                    onClick={closeDeleteModal}
+                  >
                     Cancel
                   </button>
                   <button
-                    className={`px-3 py-1 rounded-sm text-white font-semibold transition-all duration-200 ${btnDanger.className}`}
+                    className={`px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnDanger.className}`}
                     style={btnDanger.style}
                     onClick={proceedAfterConfirm}
                   >
@@ -968,11 +858,16 @@ export default function SaleInvoiceShow() {
                   </label>
                 </div>
                 <div className="mt-4 flex justify-between">
-                  <button className="px-3 py-1 rounded-sm border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700" onClick={() => setDeleteStep(1)}>
-                    <ArrowLeftIcon aria-hidden="true" /> Back
+                  <button
+                    className={`px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnGlass.className}`}
+                    style={btnGlass.style}
+                    onClick={() => setDeleteStep(1)}
+                  >
+                    <ArrowLeftIcon className="w-4 h-4" aria-hidden="true" />
+                    <span>Back</span>
                   </button>
                   <button
-                    className={`px-3 py-1 rounded-sm text-white font-semibold transition-all duration-200 ${btnPrimary.className}`}
+                    className={`px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnPrimary.className}`}
                     style={btnPrimary.style}
                     onClick={proceedToPassword}
                   >
@@ -1003,18 +898,25 @@ export default function SaleInvoiceShow() {
                 />
                 <div className="mt-4 flex justify-between">
                   <button
-                    className="px-3 py-1 rounded-sm border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700"
+                    className={`px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnGlass.className}`}
+                    style={btnGlass.style}
                     onClick={() => setDeleteStep(needsChoice ? 2 : 1)}
                     disabled={deleting}
                   >
-                    <ArrowLeftIcon aria-hidden="true" /> Back
+                    <ArrowLeftIcon className="w-4 h-4" aria-hidden="true" />
+                    <span>Back</span>
                   </button>
                   <div className="flex gap-2">
-                    <button className="px-3 py-1 rounded-sm border dark:border-slate-600 dark:text-gray-300 dark:bg-slate-700" onClick={closeDeleteModal} disabled={deleting}>
+                    <button
+                      className={`px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${btnGlass.className}`}
+                      style={btnGlass.style}
+                      onClick={closeDeleteModal}
+                      disabled={deleting}
+                    >
                       Cancel
                     </button>
                     <button
-                      className={`px-3 py-1 rounded-sm text-white font-semibold transition-all duration-200 disabled:opacity-60 ${btnDanger.className}`}
+                      className={`px-3 py-1.5 text-xs font-semibold transition-all duration-200 disabled:opacity-60 ${btnDanger.className}`}
                       style={btnDanger.style}
                       onClick={confirmAndDelete}
                       disabled={deleting || password.trim() === ""}

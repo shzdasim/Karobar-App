@@ -335,7 +335,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
                 <button
                   type="button"
                   onClick={selectAllPermissions}
-                  className="products-action"
+                  className="products-action theme-btn-secondary"
                   title="Select all permissions"
                 >
                   Select all
@@ -343,7 +343,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
                 <button
                   type="button"
                   onClick={clearAllPermissions}
-                  className="products-action"
+                  className="products-action theme-btn-tertiary"
                   title="Clear all permissions"
                 >
                   Clear
@@ -402,8 +402,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
               type="submit"
               aria-keyshortcuts="Alt+S"
               title="Save (Alt+S)"
-              className="products-action products-action-primary"
-              style={{ color: primaryTextColor }}
+              className="products-action products-action-primary theme-btn-primary"
               disabled={submitting}
             >
               <CheckCircleIcon className="w-4 h-4" />

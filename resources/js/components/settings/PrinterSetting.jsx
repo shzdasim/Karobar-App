@@ -225,7 +225,7 @@ export default function PrinterSetting({
                 }
               }}
               disabled={disableInputs}
-              className={`products-action w-full ${isSelected ? "products-action-primary" : ""}`}
+              className={`products-action w-full ${isSelected ? "products-action-primary theme-btn-primary" : "theme-btn-secondary"}`}
             >
               {isSelected ? "Selected" : "Select template"}
             </button>
@@ -397,7 +397,7 @@ export default function PrinterSetting({
               type="button"
               onClick={handleSave}
               disabled={disableInputs || saving}
-              className="products-action products-action-primary"
+              className="products-action products-action-primary theme-btn-primary"
               title={!disableInputs ? "Alt+S" : "You lack update permission"}
             >
               {saving ? "Saving…" : "Save settings"}
@@ -471,7 +471,7 @@ export default function PrinterSetting({
                 href={`/print/${previewingType}-preview/${previewingTemplate.id}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="products-action"
+                className="products-action theme-btn-secondary"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -486,7 +486,7 @@ export default function PrinterSetting({
                     setShowPreviewModal(false);
                     setPreviewingTemplate(null);
                   }}
-                  className="products-action"
+                  className="products-action theme-btn-tertiary"
                 >
                   Close
                 </button>
@@ -507,7 +507,7 @@ export default function PrinterSetting({
                     }
                   }}
                   disabled={disableInputs}
-                  className="products-action products-action-primary"
+                  className="products-action products-action-primary theme-btn-primary"
                 >
                   {(previewingType === 'a4' ? form.a4_template : form.thermal_template) === previewingTemplate.id
                     ? "Already selected"

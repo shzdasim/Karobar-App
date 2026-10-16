@@ -27,6 +27,7 @@ import {
   DeleteConfirmationModal,
 } from "@/components";
 import { useTheme } from "@/context/ThemeContext";
+import { getThemeButtonClasses } from "@/utils/buttonStyles";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -132,122 +133,10 @@ export default function PurchaseReturnsIndex() {
   const buttonStyle = theme?.button_style || 'modern';
 
   // Get button style classes and styles based on theme button_style
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'modern':     'rounded-xl',
-      'rounded':    'rounded-lg',
-      'rounded-sm': 'rounded-md',
-      'outlined':   'rounded-lg',
-      'soft':       'rounded-2xl',
-      'pill':       'rounded-full',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-xl';
-
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.secondary,
-            color: themeColors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-        danger: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.danger,
-            color: themeColors.danger,
-            backgroundColor: 'transparent',
-          }
-        },
-        glass: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: '#64748b',
-            color: '#64748b',
-            backgroundColor: 'transparent',
-          }
-        },
-      };
-    }
-
-    if (buttonStyle === 'modern') {
-      return {
-        primary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.primary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.secondary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        danger: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.danger}, ${themeColors.dangerHover})`,
-            color: 'white',
-            boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.45), 0 1px 2px 0 rgba(0,0,0,0.06)',
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-      };
-    }
-
-    // Filled styles for rounded, soft, pill, rounded-sm
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: primaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-          color: secondaryTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
-        }
-      },
-      danger: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-          color: dangerTextColor,
-          boxShadow: `0 4px 14px 0 ${themeColors.danger}40`,
-        }
-      },
-      glass: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, #64748b, #475569)`,
-          color: 'white',
-          boxShadow: `0 4px 14px 0 #64748b40`,
-        }
-      },
-    };
-  }, [buttonStyle, themeColors, primaryTextColor, secondaryTextColor, dangerTextColor]);
+  const getButtonClasses = useMemo(
+    () => getThemeButtonClasses(buttonStyle, themeColors, isDark),
+    [buttonStyle, themeColors, isDark]
+  );
 
   const btnPrimary = getButtonClasses.primary;
   const btnSecondary = getButtonClasses.secondary;
@@ -419,12 +308,12 @@ export default function PurchaseReturnsIndex() {
                 controllerRef.current = ctrl;
                 fetchReturns(ctrl.signal);
               }}
-              className="h-10 px-4 inline-flex items-center gap-2 rounded-xl text-xs font-semibold text-white bg-white/15 hover:bg-white/25 backdrop-blur-xs border border-white/20 transition-all duration-200 shadow-lg"
+              className="products-action theme-btn-tertiary"
               title="Refresh"
               aria-label="Refresh purchase returns"
             >
               <ArrowPathIcon className="w-4 h-4" />
-              Refresh
+              <span>Refresh</span>
             </button>
 
             <Guard when={can.create}>
@@ -432,11 +321,10 @@ export default function PurchaseReturnsIndex() {
                 to="/purchase-returns/create"
                 title="Add Return (Alt+N)"
                 aria-keyshortcuts="Alt+N"
-                className="h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-xs font-bold text-white bg-white/95 hover:bg-white shadow-lg transition-all duration-200"
-                style={{ color: themeColors.primaryHover }}
+                className="products-action products-action-primary theme-btn-primary"
               >
                 <PlusCircleIcon className="w-4 h-4" />
-                Add Return
+                <span>Add Return</span>
               </Link>
             </Guard>
           </div>
@@ -683,11 +571,11 @@ export default function PurchaseReturnsIndex() {
                     className={`
                       w-7 h-7 rounded text-xs font-medium transition-all duration-200
                       ${page === pageNum
-                        ? ""
+                        ? "text-white"
                         : "text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700"
                       }
                     `}
-                    style={page === pageNum ? btnSecondary.style : {}}
+                    style={page === pageNum ? { backgroundColor: themeColors.secondary, color: '#fff' } : {}}
                   >
                     {pageNum}
                   </button>
@@ -723,8 +611,8 @@ export default function PurchaseReturnsIndex() {
         isDeleting={deleting}
         setIsDeleting={setDeleting}
         tintClasses={{
-          red: `bg-linear-to-br from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-500/25 ring-1 ring-white/20 hover:shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] hover:from-rose-600 hover:to-rose-700 active:scale-[0.98] transition-all duration-200`,
-          glass: "bg-white/80 dark:bg-slate-700/60 backdrop-blur-xs text-slate-700 dark:text-gray-100 ring-1 ring-gray-200/60 dark:ring-white/10 hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+          red: btnDanger.className,
+          glass: getButtonClasses.glass.className
         }}
       />
     </div>

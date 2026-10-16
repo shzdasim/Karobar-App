@@ -398,7 +398,7 @@ export default function SupplierSearch({ isOpen, onClose, onSelect, title, confi
             )}
           </div>
 
-          {confirmLabel && <div className="flex items-center justify-between gap-3 px-4 py-3"><span>{selection?.name || "Select a supplier above"}</span><button className="g-btn-ghost inline-flex items-center justify-center" onClick={handleClose}>Cancel</button><button className="g-btn-primary inline-flex items-center justify-center disabled:opacity-50" disabled={!selection} onClick={() => { onSelect?.(selection); handleClose(); }}>{confirmLabel}</button></div>}
+          {confirmLabel && <div className="flex items-center justify-between gap-3 px-4 py-3"><span>{selection?.name || "Select a supplier above"}</span><button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center" onClick={handleClose}>Cancel</button><button className="g-btn-primary theme-btn-primary inline-flex items-center justify-center disabled:opacity-50" disabled={!selection} onClick={() => { onSelect?.(selection); handleClose(); }}>{confirmLabel}</button></div>}
           {/* Footer */}
           <GlassToolbar className="items-center justify-between py-2 px-4 bg-slate-50/80 dark:bg-slate-800/80 border-t border-slate-100 dark:border-slate-700">
             <div className="text-xs text-slate-500 dark:text-slate-400">

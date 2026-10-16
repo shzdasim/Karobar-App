@@ -7,6 +7,7 @@ import toast from "react-hot-toast";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import { recalcItem, recalcFooter } from "../../Formula/PurchaseInvoice.js";
 import { useTheme } from "@/context/ThemeContext";
+import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 import ProductFormModal from "../../components/ProductFormModal.jsx";
 import SupplierSearch from "../../components/SupplierSearch.jsx";
@@ -946,122 +947,10 @@ const contRect = container.getBoundingClientRect();
   // 🎨 Dynamic Button styles using theme colors
   const buttonStyle = theme?.button_style || 'modern';
   
-  const getButtonClasses = useMemo(() => {
-    const radiusMap = {
-      'modern':     'rounded-xl',
-      'rounded':    'rounded-lg',
-      'rounded-sm': 'rounded-md',
-      'outlined':   'rounded-lg',
-      'soft':       'rounded-2xl',
-      'pill':       'rounded-full',
-    };
-    const radiusClass = radiusMap[buttonStyle] || 'rounded-xl';
-    
-    if (buttonStyle === 'outlined') {
-      return {
-        primary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.primary,
-            color: themeColors.primary,
-            backgroundColor: 'transparent',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.secondary,
-            color: themeColors.secondary,
-            backgroundColor: 'transparent',
-          }
-        },
-        danger: {
-          className: `${radiusClass} border-2 transition-all duration-200`,
-          style: {
-            borderColor: themeColors.danger,
-            color: themeColors.danger,
-            backgroundColor: 'transparent',
-          }
-        },
-        glass: {
-          className: `${radiusClass} transition-all duration-200`,
-          style: {
-            backgroundColor: 'transparent',
-            color: isDark ? '#f1f5f9' : '#111827',
-          }
-        },
-      };
-    }
-    
-    if (buttonStyle === 'modern') {
-      return {
-        primary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.primary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        secondary: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-            color: 'white',
-            boxShadow: `0 4px 14px 0 ${themeColors.secondary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-        danger: {
-          className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-          style: {
-            background: `linear-gradient(135deg, ${themeColors.danger}, ${themeColors.dangerHover})`,
-            color: 'white',
-            boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.45), 0 1px 2px 0 rgba(0,0,0,0.06)',
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-          }
-        },
-      };
-    }
-
-    // Filled styles for rounded, soft, pill, rounded-sm
-    return {
-      primary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.primary}, ${themeColors.primaryHover})`,
-          color: 'white',
-          boxShadow: `0 4px 14px 0 ${themeColors.primary}40`,
-        }
-      },
-      secondary: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.secondary}, ${themeColors.secondaryHover})`,
-          color: 'white',
-          boxShadow: `0 4px 14px 0 ${themeColors.secondary}40`,
-        }
-      },
-      danger: {
-        className: radiusClass,
-        style: {
-          background: `linear-gradient(to bottom right, ${themeColors.danger}, ${themeColors.dangerHover})`,
-          color: 'white',
-          boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.4)',
-        }
-      },
-      glass: {
-        className: radiusClass,
-        style: {
-          backgroundColor: isDark ? 'rgba(51, 65, 85, 0.6)' : 'rgba(255, 255, 255, 0.8)',
-          color: isDark ? '#f1f5f9' : '#111827',
-          backdropFilter: 'blur(6px)',
-          border: isDark ? '1px solid rgba(71, 85, 105, 0.5)' : '1px solid rgba(229, 231, 235, 0.6)',
-        }
-      },
-    };
-  }, [buttonStyle, themeColors, isDark]);
+  const getButtonClasses = useMemo(
+    () => getThemeButtonClasses(buttonStyle, themeColors, isDark),
+    [buttonStyle, themeColors, isDark]
+  );
 
   const btnPrimary = getButtonClasses.primary;
   const btnSecondary = getButtonClasses.secondary;
@@ -1105,7 +994,7 @@ const contRect = container.getBoundingClientRect();
           <div className="flex items-center gap-3">
             {/* Invoice Type Segmented Control */}
             <div
-              className="purchase-entry-type flex items-center rounded-lg p-1 shadow-inner"
+              className="purchase-entry-type flex items-center gap-1 rounded-lg p-1 shadow-inner"
             >
               {["debit", "credit"].map((type) => {
                 const active = form.invoice_type === type;
@@ -1115,7 +1004,7 @@ const contRect = container.getBoundingClientRect();
                     type="button"
                     onClick={() => handleInvoiceTypeChange(type)}
                     aria-pressed={active}
-                    className={`purchase-entry-type-button px-4 py-1.5 text-xs font-semibold rounded-md ${active ? "is-active" : ""}`}
+                    className={`purchase-entry-type-button px-4 py-1.5 text-xs font-semibold rounded-md ${active ? "is-active theme-btn-primary" : "theme-btn-tertiary"}`}
                   >
                     {type === "debit" ? "Debit" : "Credit"}
                   </button>
@@ -1127,9 +1016,10 @@ const contRect = container.getBoundingClientRect();
             <button
               type="button"
               onClick={() => setShowProductModal(true)}
-              className="purchase-entry-add-product px-4 py-2 text-xs font-semibold rounded-lg"
+              className="purchase-entry-add-product theme-btn-secondary px-4 py-2 text-xs font-semibold rounded-lg"
             >
-              <PlusCircleIcon aria-hidden="true" className="w-4 h-4" /> Add Product
+              <PlusCircleIcon aria-hidden="true" className="w-4 h-4" />
+              <span>Add Product</span>
             </button>
           </div>
         </div>
@@ -1267,7 +1157,7 @@ const contRect = container.getBoundingClientRect();
           <select aria-label="Purchase invoice arrangement on save" className="border rounded-md px-2 py-1 text-xs bg-white dark:bg-slate-700" value={arrangement} onChange={event => applyArrangement(event.target.value)}>
             {[...new Set(purchaseInvoiceArrangements.map(option => option.group))].map(group => <optgroup key={group} label={group}>{purchaseInvoiceArrangements.filter(option => option.group === group).map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</optgroup>)}
           </select>
-          <button type="button" className="g-btn-ghost px-2 py-1" onClick={() => applyArrangement(arrangement)}>Apply Sort</button>
+          <button type="button" className="g-btn-ghost theme-btn-tertiary px-2.5 py-1 text-xs font-semibold" onClick={() => applyArrangement(arrangement)}>Apply Sort</button>
         </label>
       </div>
       {/* ================= ITEMS SECTION ================= */}

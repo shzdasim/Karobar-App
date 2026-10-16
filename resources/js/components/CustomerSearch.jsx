@@ -478,7 +478,7 @@ const handleClose = () => {
                 <button
                   type="button"
                   onClick={() => setShowCreate(false)}
-                  className="theme-btn-ghost px-3 py-1.5 text-xs font-semibold"
+                  className="theme-btn-tertiary px-3 py-1.5 text-xs font-semibold"
                 >
                   Cancel
                 </button>
@@ -511,7 +511,7 @@ const handleClose = () => {
                   className="theme-btn-primary inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold"
                 >
                   <PlusCircleIcon className="w-3.5 h-3.5" />
-                  New Customer
+                  <span>New Customer</span>
                 </button>
                 <div className="flex items-center gap-3 text-[10px] text-slate-400">
                   <span className="flex items-center gap-1">
