@@ -16,41 +16,41 @@ const BUTTON_STYLES = [
     id: 'modern',
     name: 'Modern',
     icon: '✦',
-    description: 'Gradient with glow shadow',
+    description: 'Frosted glass with orbiting glow',
     className: 'rounded-xl',
     variant: 'modern'
   },
   {
-    id: 'rounded',
-    name: 'Rounded',
+    id: 'rounded', // stored id kept for saved themes
+    name: 'Neumorphic',
     icon: '◼',
-    description: 'Clean rounded corners',
+    description: 'Soft emboss with rising fill',
     className: 'rounded-lg',
-    variant: 'filled'
+    variant: 'neumorphic'
   },
   {
-    id: 'soft',
-    name: 'Soft',
+    id: 'soft', // stored id kept for saved themes
+    name: 'Slide Reveal',
     icon: '▣',
-    description: 'Extra soft corners',
+    description: 'Icon panel sweeps across on hover',
     className: 'rounded-2xl',
-    variant: 'filled'
+    variant: 'slide'
   },
   {
-    id: 'pill',
-    name: 'Pill',
+    id: 'pill', // stored id kept for saved themes
+    name: 'Letter Cascade',
     icon: '◉',
-    description: 'Fully rounded pill shape',
-    className: 'rounded-full',
-    variant: 'filled'
+    description: 'Face drops, letters cascade in',
+    className: 'rounded-[5px]',
+    variant: 'cascade'
   },
   {
-    id: 'outlined',
-    name: 'Outlined',
+    id: 'outlined', // stored id kept for saved themes
+    name: 'Stacked Lift',
     icon: '▢',
-    description: 'Border with transparent bg',
-    className: 'rounded-lg',
-    variant: 'outlined'
+    description: 'Lifts with a layered colour trail',
+    className: 'rounded-[5px]',
+    variant: 'lift'
   },
 ];
 
@@ -329,6 +329,10 @@ export default function ThemeSetting({ disableInputs }) {
             {BUTTON_STYLES.map((style) => {
               const isActive = themeSettings.button_style === style.id;
               const isModern = style.variant === 'modern';
+              const isNeu = style.variant === 'neumorphic';
+              const isSlide = style.variant === 'slide';
+              const isCascade = style.variant === 'cascade';
+              const isLift = style.variant === 'lift';
               const isOutlined = style.variant === 'outlined';
               return (
                 <button
@@ -341,14 +345,23 @@ export default function ThemeSetting({ disableInputs }) {
                 >
                   {/* Visual preview */}
                   <span className="settings-choice-preview">
+                    {isLift ? (
+                      <span className="btn-lift h-8 inline-flex items-center px-3 text-[11px]">
+                        Save
+                      </span>
+                    ) : isCascade ? (
+                      <span className="btn-cascade h-8 inline-flex items-center px-3 text-[11px]">
+                        Save
+                      </span>
+                    ) : isSlide ? (
+                      <span className="btn-slide h-8 inline-flex items-center pl-2 text-[11px] rounded-md">
+                        <CheckIcon aria-hidden="true" className="w-3.5 h-3.5" />
+                        Save
+                      </span>
+                    ) : (
                     <span
-                      className={`w-8 h-8 flex items-center justify-center text-xs font-medium ${style.className} ${isOutlined ? 'border-2' : 'text-white'}`}
-                      style={isModern ? {
-                        background: `linear-gradient(135deg, ${themeSettings.primary_color}, ${themeSettings.primary_hover || themeSettings.primary_color})`,
-                        color: 'white',
-                        boxShadow: `0 4px 10px 0 ${themeSettings.primary_color}55`,
-                        border: '1px solid rgba(255,255,255,0.25)',
-                      } : {
+                      className={`w-8 h-8 flex items-center justify-center text-xs font-medium ${style.className} ${isModern ? 'btn-glass' : isNeu ? 'btn-neu' : isOutlined ? 'border-2' : 'text-white'}`}
+                      style={isModern || isNeu ? undefined : {
                         backgroundColor: isOutlined ? 'transparent' : themeSettings.primary_color,
                         borderColor: themeSettings.primary_color,
                         color: isOutlined ? themeSettings.primary_color : 'white',
@@ -356,6 +369,7 @@ export default function ThemeSetting({ disableInputs }) {
                     >
                       {style.icon}
                     </span>
+                    )}
                     <span
                       className={`w-8 h-8 flex items-center justify-center text-xs font-medium ${style.className} ${isOutlined ? 'border-2' : 'text-white'}`}
                       style={isModern ? {

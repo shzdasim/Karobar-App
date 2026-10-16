@@ -224,9 +224,9 @@ export function ThemeProvider({ children }) {
       'modern':     '0.75rem',  // 12px – modern default
       'rounded':    '0.5rem',   // 8px
       'rounded-sm': '0.375rem', // 6px
-      'outlined':   '0.5rem',   // 8px
+      'outlined':   '5px',      // Stacked Lift (stored id "outlined")
       'soft':       '1rem',     // 16px
-      'pill':       '9999px',   // full pill
+      'pill':       '5px',      // Letter Cascade (stored id "pill")
     };
     root.style.setProperty('--btn-radius', radiusMap[theme.button_style] || '0.75rem');
     

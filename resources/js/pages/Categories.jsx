@@ -481,14 +481,21 @@ return (
 
               <div className="flex items-center gap-2">
                 <GlassBtn
+                  type="button"
+                  variant="primary"
                   onClick={handleSave}
                   ref={saveBtnRef}
-                  className={`flex-1 h-9 ${btnPrimary.className}`}
+                  className="glass-save-btn flex-1"
                   disabled={saving || (!can.create && !can.update)}
-                  style={btnPrimary.style}
+                  aria-busy={saving}
+                  aria-keyshortcuts="Alt+S"
                 >
-                  <span className="inline-flex items-center justify-center gap-1.5">
-                    <CheckCircleIcon className="w-4 h-4" />
+                  {saving ? (
+                    <ArrowPathIcon aria-hidden="true" className="w-4 h-4 animate-spin motion-reduce:animate-none" />
+                  ) : (
+                    <CheckCircleIcon aria-hidden="true" className="w-4 h-4" />
+                  )}
+                  <span>
                     {editingId ? (saving ? "Updating..." : "Update") : (saving ? "Saving..." : "Save")}
                   </span>
                 </GlassBtn>

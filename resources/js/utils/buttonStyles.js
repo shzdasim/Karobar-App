@@ -5,8 +5,8 @@ export const BUTTON_RADIUS_MAP = {
   rounded: 'rounded-lg',
   'rounded-sm': 'rounded-md',
   soft: 'rounded-2xl',
-  pill: 'rounded-full',
-  outlined: 'rounded-lg',
+  pill: 'rounded-[5px]', // Letter Cascade (stored id "pill")
+  outlined: 'rounded-[5px]', // Stacked Lift (stored id "outlined")
 };
 
 export const getButtonTextColor = (color, hoverColor = null) => {
@@ -45,13 +45,10 @@ export function getThemeButtonClasses(buttonStyle = 'modern', themeColors = {}, 
 
   if (style === 'outlined') {
     return {
+      // Shown as "Stacked Lift": primary look lives in app.css (.btn-lift).
       primary: {
-        className: `${radiusClass} border-2 font-medium transition-all duration-200 hover:shadow-xs active:scale-[0.98]`,
-        style: {
-          borderColor: primary,
-          color: primary,
-          backgroundColor: 'transparent',
-        }
+        className: `${radiusClass} btn-lift font-medium`,
+        style: {}
       },
       secondary: {
         className: `${radiusClass} border-2 font-medium transition-all duration-200 hover:shadow-xs active:scale-[0.98]`,
@@ -98,14 +95,10 @@ export function getThemeButtonClasses(buttonStyle = 'modern', themeColors = {}, 
 
   if (style === 'modern') {
     return {
+      // Primary = milky iridescent glass; look lives in app.css (.btn-glass).
       primary: {
-        className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
-        style: {
-          background: `linear-gradient(135deg, ${primary}, ${primaryHover})`,
-          color: primaryText,
-          boxShadow: `0 4px 14px 0 ${primary}45, 0 1px 2px 0 rgba(0,0,0,0.06)`,
-          border: '1px solid rgba(255, 255, 255, 0.25)',
-        }
+        className: `${radiusClass} btn-glass font-semibold`,
+        style: {}
       },
       secondary: {
         className: `${radiusClass} font-semibold transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]`,
@@ -157,8 +150,23 @@ export function getThemeButtonClasses(buttonStyle = 'modern', themeColors = {}, 
   }
 
   // Filled styles for rounded, soft, pill, rounded-sm
+  // ("rounded" is shown as "Neumorphic": its primary uses .btn-neu from app.css)
+  // ("soft" is shown as "Slide Reveal": its primary uses .btn-slide from app.css)
+  // ("pill" is shown as "Letter Cascade": its primary uses .btn-cascade from app.css)
+  const neumorphic = style === 'rounded';
+  const slide = style === 'soft';
+  const cascade = style === 'pill';
   return {
-    primary: {
+    primary: cascade ? {
+      className: `${radiusClass} btn-cascade`,
+      style: {}
+    } : slide ? {
+      className: `${radiusClass} btn-slide font-semibold`,
+      style: {}
+    } : neumorphic ? {
+      className: `${radiusClass} btn-neu font-medium`,
+      style: {}
+    } : {
       className: `${radiusClass} font-medium transition-all duration-200 active:scale-[0.98]`,
       style: {
         background: `linear-gradient(to bottom right, ${primary}, ${primaryHover})`,
