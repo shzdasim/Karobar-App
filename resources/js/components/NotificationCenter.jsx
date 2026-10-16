@@ -245,7 +245,7 @@ export default function NotificationCenter({ open, onClose }) {
                 <h3>No pending demands</h3>
                 <p className="activity-muted">New product requests will appear here. You can also create a request for a customer.</p>
                 <button type="button" onClick={() => { onClose(); navigate("/user-demands/create"); }} className="activity-secondary-button">
-                  <PlusCircleIcon className="h-5 w-5" aria-hidden="true" />Request product
+                  <PlusCircleIcon className="h-5 w-5" aria-hidden="true" /><span>Request product</span>
                 </button>
               </div>
             ) : (
@@ -293,10 +293,10 @@ export default function NotificationCenter({ open, onClose }) {
         </div>
         <footer className="activity-center-footer">
           {tab === "low-stock" && rows.length > 0 && !activeError && (
-            <button type="button" onClick={dismissAll} disabled={dismissBusy} className="activity-dismiss-all"><BellSlashIcon className="h-4 w-4" aria-hidden="true" />{dismissBusy ? "Dismissing…" : "Dismiss all alerts"}</button>
+            <button type="button" onClick={dismissAll} disabled={dismissBusy} className="activity-dismiss-all theme-btn-tertiary"><BellSlashIcon className="h-4 w-4" aria-hidden="true" /><span>{dismissBusy ? "Dismissing…" : "Dismiss all alerts"}</span></button>
           )}
           <button type="button" onClick={tab === "demands" ? goToDemands : goToProducts} className="activity-primary-button">
-            {tab === "demands" ? "View all demands" : "View all products"}<ArrowRightIcon className="h-5 w-5" aria-hidden="true" />
+            <span>{tab === "demands" ? "View all demands" : "View all products"}</span><ArrowRightIcon className="h-5 w-5" aria-hidden="true" />
           </button>
         </footer>
       </aside>

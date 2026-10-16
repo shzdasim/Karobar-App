@@ -261,7 +261,8 @@ body:has(.workspace-shell) { transform: none; }
 .workspace-search { flex: 1; min-width: min(220px, 100%); max-width: 480px; }
 .workspace-search > div > div:first-child { min-height: 44px; max-width: none; border-radius: 12px; }
 .workspace-topbar-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: auto; }
-.workspace-topbar-actions > button, .workspace-topbar-actions > div > button { min-height: 44px; min-width: 44px; font-size: 12px; box-shadow: none; }
+.workspace-topbar-actions > button, .workspace-topbar-actions > div > button { min-height: 40px; min-width: 40px; font-size: 12px; }
+.workspace-topbar-actions > button:not([class*="theme-btn"]), .workspace-topbar-actions > div > button:not([class*="theme-btn"]) { box-shadow: none; }
 .workspace-topbar-actions svg { flex-shrink: 0; }
 .workspace-user-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-user-menu { z-index: 40; color: var(--workspace-ink); background: var(--workspace-surface); border: 1px solid var(--workspace-border); box-shadow: var(--workspace-shadow); }

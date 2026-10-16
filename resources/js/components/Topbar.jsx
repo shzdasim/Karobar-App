@@ -221,17 +221,11 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
             {/* License badge */}
             <button
               onClick={() => navigate("/settings#license")}
-              className={`inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.secondary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-xs'}`}
-              style={{ 
-                background: getButtonBg(themeColors.secondary),
-                border: getButtonBorder(themeColors.secondary),
-                color: getButtonTextColor(themeColors.secondary),
-                borderRadius: 'var(--btn-radius, 0.5rem)',
-              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold theme-btn-tertiary relative z-50"
               title={licValid ? "License is active" : "License required – click to activate"}
             >
-              <ClockIcon className="w-3.5 h-3.5" />
-              {licLoading ? "Checking…" : licValid ? `${leftTxt} left` : "Activate"}
+              <ClockIcon className="w-4 h-4" />
+              <span>{licLoading ? "Checking…" : licValid ? `${leftTxt} left` : "Activate"}</span>
             </button>
 
             <button
@@ -239,15 +233,9 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
               aria-label="Open purchase invoice"
               aria-keyshortcuts="Alt+1"
               title="Open Purchase Invoice (Alt+1) in a new tab"
-              className={`inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.secondary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-xs'}`}
-              style={{ 
-                background: getButtonBg(themeColors.secondary),
-                border: getButtonBorder(themeColors.secondary),
-                color: getButtonTextColor(themeColors.secondary),
-                borderRadius: 'var(--btn-radius, 0.5rem)',
-              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold theme-btn-secondary relative z-50"
             >
-              <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
+              <ClipboardDocumentListIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Purchase</span>
             </button>
 
@@ -256,15 +244,9 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
               aria-label="Open sale invoice"
               aria-keyshortcuts="Alt+2"
               title="Open Sale Invoice (Alt+2) in a new tab"
-              className={`inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-xs'}`}
-              style={{ 
-                background: getButtonBg(themeColors.primary),
-                border: getButtonBorder(themeColors.primary),
-                color: getButtonTextColor(themeColors.primary),
-                borderRadius: 'var(--btn-radius, 0.5rem)',
-              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold theme-btn-primary relative z-50"
             >
-              <ShoppingCartIcon className="w-3.5 h-3.5" />
+              <ShoppingCartIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Sale</span>
             </button>
 
@@ -275,27 +257,18 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
               <button
                 ref={btnRef}
                 onClick={() => setOpen((v) => !v)}
-                className={`flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-xs'}`}
-                style={{ 
-                  background: getButtonBg(themeColors.primary),
-                  border: getButtonBorder(themeColors.primary),
-                  color: getButtonTextColor(themeColors.primary),
-                  borderRadius: 'var(--btn-radius, 0.5rem)',
-                }}
+                className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold theme-btn-tertiary relative z-50"
                 aria-haspopup="menu"
                 aria-expanded={open}
                 aria-controls="topbar-user-menu"
               >
-                <span 
-                  className={`inline-grid h-5 w-5 place-items-center rounded-full bg-white/90 text-xs font-bold shadow-sm ${isOutlined ? '' : ''}`}
-                  style={{ color: themeColors.primary }}
-                >
+                <span className="inline-grid h-5 w-5 place-items-center rounded-full border border-current/30 text-xs font-bold">
                   {(user?.name || "U").slice(0, 1).toUpperCase()}
                 </span>
-                <span className="hidden sm:inline text-sm font-medium workspace-user-name">
+                <span className="hidden sm:inline text-xs font-semibold workspace-user-name">
                   {user?.name || "User"}
                 </span>
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: isOutlined ? themeColors.primary : undefined }}>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
