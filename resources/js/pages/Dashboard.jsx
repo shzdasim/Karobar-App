@@ -858,10 +858,10 @@ const heroStats = [
             <button
               onClick={fetchAll}
               disabled={loading}
-              className="dashboard-refresh"
+              className="dashboard-refresh theme-btn-primary"
             >
               <ArrowPathIcon className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-              {loading ? "Loading…" : "Refresh"}
+              <span>{loading ? "Loading…" : "Refresh"}</span>
             </button>
             <kbd className="hidden xl:flex items-center rounded-md bg-white/5 ring-1 ring-white/10 px-1.5 py-1 text-xs font-medium text-slate-400 whitespace-nowrap">
               Alt+R
@@ -881,14 +881,14 @@ const heroStats = [
             <label className="text-xs font-semibold dashboard-muted sm:whitespace-nowrap">To</label>
             <ModernDatePicker value={to} onChange={setTo} placeholder="End date" className="w-full min-w-0 sm:w-48" portalId="dashboard-calendar-portal" popperProps={{ strategy: "fixed" }} />
           </div>
-          <div className="flex flex-wrap items-center gap-1.5 sm:ml-auto">
+          <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
             {quickPresets.map((p) => (
               <button
                 key={p.label}
                 onClick={p.fn}
-                className="theme-btn-ghost min-h-11 px-3 py-2 text-xs font-semibold"
+                className="theme-btn-secondary inline-flex items-center justify-center min-h-10 px-3.5 py-2 text-xs font-semibold"
               >
-                {p.label}
+                <span>{p.label}</span>
               </button>
             ))}
           </div>
@@ -1322,7 +1322,7 @@ const heroStats = [
           title="Near Expiry Products"
           subtitle="Stock that will expire soon"
           right={
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1.5">
               {[
                 { m: 1, label: "1 mo" },
                 { m: 3, label: "3 mo" },
@@ -1333,14 +1333,14 @@ const heroStats = [
                 <button
                   key={opt.m}
                   onClick={() => setExpiryMonths(opt.m)}
-                  className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all duration-200 ${
+                  aria-pressed={expiryMonths === opt.m}
+                  className={`theme-btn-tertiary inline-flex items-center justify-center px-3 py-1.5 text-xs font-semibold ${
                     expiryMonths === opt.m
-                      ? "text-white shadow-xs"
-                      : "text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700"
+                      ? "ring-2 ring-offset-2 ring-[var(--color-tertiary)] dark:ring-offset-slate-800"
+                      : "opacity-75 hover:opacity-100"
                   }`}
-                  style={expiryMonths === opt.m ? { background: `linear-gradient(135deg, ${themeColors.tertiary}, ${themeColors.tertiaryHover})` } : {}}
                 >
-                  {opt.label}
+                  <span>{opt.label}</span>
                 </button>
               ))}
             </div>
@@ -1394,18 +1394,17 @@ const heroStats = [
                 setSupplierId("");
                 setBrandId("");
               }}
-              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all duration-200"
+              className="theme-btn-secondary inline-flex items-center justify-center px-3.5 py-1.5 text-xs font-semibold"
             >
-              Clear Filters
+              <span>Clear Filters</span>
             </button>
             <button
               onClick={fetchNearExpiry}
               disabled={loadingExpiry}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white rounded-lg shadow-xs hover:shadow-md active:scale-95 transition-all duration-200 disabled:opacity-60"
-              style={{ background: `linear-gradient(135deg, ${themeColors.tertiary}, ${themeColors.tertiaryHover})` }}
+              className="theme-btn-primary inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold disabled:opacity-60"
             >
               <ArrowPathIcon className={`w-3.5 h-3.5 ${loadingExpiry ? "animate-spin" : ""}`} />
-              {loadingExpiry ? "Loading…" : "Refresh"}
+              <span>{loadingExpiry ? "Loading…" : "Refresh"}</span>
             </button>
           </div>
         </div>

@@ -2125,12 +2125,12 @@ tr.invoice-row-invalid > td:first-child { box-shadow: inset 3px 0 var(--color-da
    renders an <a>) that carry a button class. Circular controls keep
    `rounded-full`; [data-btn-radius="keep"] opts out.                          */
 :is(button,
-    .theme-btn, .theme-btn-primary, .theme-btn-secondary, .theme-btn-danger,
+    .theme-btn, .theme-btn-primary, .theme-btn-secondary, .theme-btn-tertiary, .theme-btn-danger,
     .theme-btn-success, .theme-btn-ghost,
     .products-action, .products-action-primary, .products-action-danger,
     .products-action-success, .products-row-action, .products-row-action-danger,
     .purchase-order-action, .purchase-order-action-primary, .purchase-order-action-danger,
-    .dashboard-refresh, .g-btn-primary, .g-btn-ghost, .g-btn-secondary,
+    .dashboard-refresh, .g-btn-primary, .g-btn-ghost, .g-btn-secondary, .g-btn-tertiary,
     .g-btn-chip, .g-btn-glass, .activity-primary-button, .activity-secondary-button,
     .product-modal-save, .product-modal-cancel, .report-icon-btn):not(.rounded-full):not([data-btn-radius="keep"]) {
   border-radius: var(--btn-radius, 0.75rem);
@@ -2164,17 +2164,17 @@ button:disabled { cursor: not-allowed; }
               box-shadow 160ms ease-out, transform 160ms ease-out, color 160ms ease-out;
 }
 
-:is(.theme-btn, .theme-btn-primary, .theme-btn-secondary, .theme-btn-danger, .theme-btn-success, .theme-btn-ghost):disabled {
+:is(.theme-btn, .theme-btn-primary, .theme-btn-secondary, .theme-btn-tertiary, .theme-btn-danger, .theme-btn-success, .theme-btn-ghost):disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 /* Role buttons that keep custom sizing still need no-underline + cursor. */
-:is(.theme-btn-primary, .theme-btn-secondary, .theme-btn-danger, .theme-btn-success) {
+:is(.theme-btn-primary, .theme-btn-secondary, .theme-btn-tertiary, .theme-btn-danger, .theme-btn-success) {
   cursor: pointer;
 }
 
-:is(.theme-btn-primary, .theme-btn-secondary, .theme-btn-danger, .theme-btn-success):disabled {
+:is(.theme-btn-primary, .theme-btn-secondary, .theme-btn-tertiary, .theme-btn-danger, .theme-btn-success):disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -2458,9 +2458,39 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   ) { transform: none; }
 }
 
+/* ======================= ROLE ACCENT TOKENS ================================ */
+/* Maps button priority roles (primary / secondary / tertiary / danger / success)
+   to --btn-accent and --btn-accent-hover so all 5 ThemeSetting button styles
+   render in the appropriate priority colour. */
+:is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save) {
+  --btn-accent: var(--color-primary, #3b82f6);
+  --btn-accent-hover: var(--color-primary-hover, #2563eb);
+  --btn-accent-ink: var(--color-button-text, #ffffff);
+}
+:is(.theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel) {
+  --btn-accent: var(--color-secondary, #8b5cf6);
+  --btn-accent-hover: var(--color-secondary-hover, #7c3aed);
+  --btn-accent-ink: #ffffff;
+}
+:is(.theme-btn-tertiary, .g-btn-tertiary) {
+  --btn-accent: var(--color-tertiary, #06b6d4);
+  --btn-accent-hover: var(--color-tertiary-hover, #0891b2);
+  --btn-accent-ink: #ffffff;
+}
+:is(.theme-btn-danger, .products-action-danger, .purchase-order-action-danger) {
+  --btn-accent: var(--color-danger, #ef4444);
+  --btn-accent-hover: color-mix(in srgb, var(--color-danger, #ef4444) 80%, #000000);
+  --btn-accent-ink: #ffffff;
+}
+:is(.theme-btn-success, .products-action-success) {
+  --btn-accent: var(--color-success, #10b981);
+  --btn-accent-hover: color-mix(in srgb, var(--color-success, #10b981) 80%, #000000);
+  --btn-accent-ink: #ffffff;
+}
+
 /* ======================= GLASS BUTTON (Modern style) ======================= */
 /* Milky iridescent glass with an orbiting pink/violet glow.
-   Applies to .btn-glass anywhere, and to every primary action when the
+   Applies to .btn-glass anywhere, and to every action button when the
    "Modern" button style is selected (html[data-btn-style="modern"]).
    ThemeSetting's live preview opts out of the global mapping with
    [data-btn-preview] and uses .btn-glass directly.
@@ -2515,21 +2545,21 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
 
 /* Positioning lives in a layer so Tailwind utilities (e.g. `absolute`) still win. */
 @layer components {
-  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
+  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
     position: relative;
     isolation: isolate;
   }
 }
 
-:is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
+:is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
   --ca: cos(var(--glow-angle));
   --sa: sin(var(--glow-angle));
   --gx: calc(var(--ca) * 16px);
   --gy: calc(var(--sa) * 12px);
-  /* Iridescent glow built from the theme primary (+ two hue-shifted partners). */
-  --g1: var(--color-primary, #6366f1);
-  --g2: var(--color-primary-hover, #4f46e5);
-  --g3: color-mix(in oklab, var(--color-primary, #6366f1) 55%, #ffffff);
+  /* Iridescent glow built from the button's priority accent (+ two hue-shifted partners). */
+  --g1: var(--btn-accent, var(--color-primary, #6366f1));
+  --g2: var(--btn-accent-hover, var(--color-primary-hover, #4f46e5));
+  --g3: color-mix(in oklab, var(--btn-accent, var(--color-primary, #6366f1)) 55%, #ffffff);
   color: color-mix(in oklab, var(--g1) var(--gb-tint), var(--gb-ink)) !important;
   background: var(--gb-solid) !important;
   border-color: transparent !important;
@@ -2546,7 +2576,7 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
               background-color 220ms ease-out, color 160ms ease-out;
 }
 /* Thick soft white rim. */
-:is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::before {
+:is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::before {
   content: ""; position: absolute; inset: 0; padding: 1.5px;
   border-radius: inherit; pointer-events: none;
   background: var(--gb-edge);
@@ -2556,7 +2586,7 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   mask-composite: exclude;
 }
 /* Pink / violet / blue light pooled inside the glass, following the orbit. */
-:is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::after {
+:is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::after {
   content: ""; position: absolute; inset: 0; z-index: -1;
   border-radius: inherit; pointer-events: none;
   background:
@@ -2566,16 +2596,16 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
     radial-gradient(55% 90% at 50% 45%, var(--gb-core), transparent 80%);
 }
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
+  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
     background: var(--gb-fill) !important;
     -webkit-backdrop-filter: blur(24px) saturate(160%);
     backdrop-filter: blur(24px) saturate(160%);
   }
-  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):hover:not(:disabled) {
+  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):hover:not(:disabled) {
     background: var(--gb-fill-hover) !important;
   }
 }
-:is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):hover:not(:disabled) {
+:is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):hover:not(:disabled) {
   color: color-mix(in oklab, var(--g1) var(--gb-tint-hover), var(--gb-ink)) !important;
   transform: none;
   box-shadow:
@@ -2585,38 +2615,38 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
     calc(var(--gx) * 1.2) calc(var(--gy) * 1.2) 40px -8px color-mix(in oklab, var(--g2) calc(var(--gb-violet-hover) * 100%), transparent),
     var(--gb-drop-hover) !important;
 }
-:is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):active:not(:disabled) {
+:is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):active:not(:disabled) {
   transform: scale(0.97);
   transition-duration: 110ms;
 }
 @media (prefers-reduced-transparency: reduce) {
-  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])),
-  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):hover:not(:disabled) {
+  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])),
+  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):hover:not(:disabled) {
     background: var(--gb-solid) !important;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
+  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
     animation: none;
     transition: none;
   }
-  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):active:not(:disabled) {
+  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):active:not(:disabled) {
     transform: none;
   }
 }
 @media (forced-colors: active) {
-  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
+  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
     border: 1px solid ButtonText !important;
   }
-  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::before,
-  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::after {
+  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::before,
+  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::after {
     display: none;
   }
 }
 @media print {
-  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
+  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
     animation: none;
     box-shadow: none !important;
     backdrop-filter: none;
@@ -2626,8 +2656,8 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
 
 /* ===================== NEUMORPHIC BUTTON (Rounded style id) ================ */
 /* Adapted from Uiverse.io by shah1345: soft embossed surface; on hover/focus a
-   teal liquid fill rises from below; pressing debosses the surface.
-   Applies to .btn-neu anywhere, and to every primary action when the
+   liquid fill rises from below; pressing debosses the surface.
+   Applies to .btn-neu anywhere, and to every action button when the
    "Neumorphic" style (stored id: "rounded") is selected. Sizing is left to
    each screen; only the material and motion are applied.                    */
 :root {
@@ -2650,16 +2680,16 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
 }
 
 @layer components {
-  :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
+  :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
     position: relative;
     overflow: hidden;
     isolation: isolate;
   }
 }
 
-:is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
-  --nm-fill: var(--color-primary, #009087);
-  --nm-fill-text: var(--color-button-text, #ffffff);
+:is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
+  --nm-fill: var(--btn-accent, var(--color-primary, #009087));
+  --nm-fill-text: var(--btn-accent-ink, var(--color-button-text, #ffffff));
   color: var(--nm-text) !important;
   background: var(--nm-bg) !important;
   border: 1px solid var(--nm-bg) !important;
@@ -2669,7 +2699,7 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   cursor: pointer;
   transition: color 200ms ease-in, border-color 200ms ease-in, box-shadow 200ms ease-in;
 }
-:is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::before {
+:is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::before {
   content: "";
   position: absolute;
   left: 50%;
@@ -2685,7 +2715,7 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
               transform 500ms 100ms cubic-bezier(0.55, 0, 0.1, 1),
               background-color 500ms 100ms cubic-bezier(0.55, 0, 0.1, 1);
 }
-:is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::after {
+:is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::after {
   content: "";
   position: absolute;
   left: 55%;
@@ -2701,44 +2731,44 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
               transform 500ms 100ms cubic-bezier(0.55, 0, 0.1, 1),
               background-color 500ms 100ms cubic-bezier(0.55, 0, 0.1, 1);
 }
-:is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) {
+:is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) {
   color: var(--nm-fill-text) !important;
   border-color: var(--nm-fill) !important;
   transform: none;
 }
-:is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled)::before {
+:is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled)::before {
   top: -35%;
   background-color: var(--nm-fill);
   transform: translateX(-50%) scaleY(1.3) scaleX(0.8);
 }
-:is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled)::after {
+:is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled)::after {
   top: -45%;
   background-color: var(--nm-fill);
   transform: translateX(-50%) scaleY(1.3) scaleX(0.8);
 }
-:is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):active:not(:disabled) {
+:is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):active:not(:disabled) {
   color: var(--nm-text-active) !important;
   box-shadow: inset 4px 4px 12px var(--nm-shade), inset -4px -4px 12px var(--nm-light) !important;
   transform: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])),
-  :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::before,
-  :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::after {
+  :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])),
+  :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::before,
+  :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::after {
     transition: none;
   }
 }
 @media (forced-colors: active) {
-  :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
+  :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
     border: 1px solid ButtonText !important;
   }
-  :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::before,
-  :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::after {
+  :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::before,
+  :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::after {
     display: none;
   }
 }
 @media print {
-  :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
+  :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
     box-shadow: none !important;
   }
 }
@@ -2748,25 +2778,25 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
 .settings-choice-button:is(:hover, :focus-visible):not(:disabled) .btn-neu::after { top: -45%; background-color: var(--nm-fill); transform: translateX(-50%) scaleY(1.3) scaleX(0.8); }
 
 /* ===================== SLIDE REVEAL BUTTON (Soft style id) ================= */
-/* Adapted from Uiverse.io by andrew-demchenk0: green action with an icon panel
+/* Adapted from Uiverse.io by andrew-demchenk0: action with an icon panel
    docked on the right; on hover/focus the panel slides across the whole
    button and the label fades out. Done with a pseudo-element so existing
    buttons need no extra markup. Applies to .btn-slide anywhere, and to every
-   primary action when "Slide Reveal" (stored id: "soft") is selected.
+   action button when "Slide Reveal" (stored id: "soft") is selected.
    Default icon is a check; add data-icon="plus" for the original plus.       */
 @layer components {
-  :is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
+  :is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
     position: relative;
     overflow: hidden;
     isolation: isolate;
   }
 }
-:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
-  --sl-bg: var(--color-primary, #209978);
-  --sl-deep: var(--color-primary-hover, #17795e);
-  --sl-press: color-mix(in oklab, var(--color-primary-hover, #17795e) 82%, #000000);
+:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
+  --sl-bg: var(--btn-accent, var(--color-primary, #209978));
+  --sl-deep: var(--btn-accent-hover, var(--color-primary-hover, #17795e));
+  --sl-press: color-mix(in oklab, var(--btn-accent-hover, var(--color-primary-hover, #17795e)) 82%, #000000);
   --sl-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E");
-  color: var(--color-button-text, #fff) !important;
+  color: var(--btn-accent-ink, var(--color-button-text, #fff)) !important;
   background: var(--sl-bg) !important;
   border: 1px solid var(--sl-deep) !important;
   box-shadow: none !important;
@@ -2776,11 +2806,11 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   padding-inline-end: calc(2.5em + 0.6rem) !important;
   transition: background-color 300ms, color 300ms, border-color 300ms;
 }
-:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))[data-icon="plus"] {
+:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))[data-icon="plus"] {
   --sl-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E");
 }
 /* Icon panel docked on the right. */
-:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::after {
+:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::after {
   content: "";
   position: absolute;
   top: 0; bottom: 0; right: 0;
@@ -2789,29 +2819,29 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   pointer-events: none;
   transition: width 300ms, background-color 300ms;
 }
-:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) {
+:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) {
   background: var(--sl-deep) !important;
   color: transparent !important;
   transform: none;
 }
-:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled)::after {
+:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled)::after {
   width: 100%;
 }
-:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):active:not(:disabled) {
+:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):active:not(:disabled) {
   border-color: var(--sl-press) !important;
   transform: none;
 }
-:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):active:not(:disabled)::after {
+:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):active:not(:disabled)::after {
   background-color: var(--sl-press);
 }
 @media (prefers-reduced-motion: reduce) {
-  :is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])),
-  :is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::after {
+  :is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])),
+  :is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::after {
     transition: none;
   }
 }
 @media (forced-colors: active), print {
-  :is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::after {
+  :is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::after {
     display: none;
   }
 }
@@ -2823,34 +2853,34 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
    the right-hand panel and glides to the centre as the panel sweeps across.
    Uses the `translate` property so spinning loaders (transform: rotate) still work.
    Buttons without an icon keep the built-in check from the panel background.   */
-:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):has(> svg)::after {
+:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):has(> svg)::after {
   background-image: none;
 }
-:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::after {
+:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::after {
   z-index: 0;
 }
-:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) > svg:first-of-type {
+:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) > svg:first-of-type {
   position: absolute;
   z-index: 1;
   top: 50%;
   right: 1.25em;
   translate: 50% -50%;
   margin: 0;
-  color: var(--color-button-text, #fff) !important;
+  color: var(--btn-accent-ink, var(--color-button-text, #fff)) !important;
   pointer-events: none;
   transition: right 300ms;
 }
-:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) > svg:first-of-type {
+:is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) > svg:first-of-type {
   right: 50%;
 }
 .settings-choice-button:is(:hover, :focus-visible):not(:disabled) .btn-slide > svg:first-of-type { right: 50%; }
 @media (prefers-reduced-motion: reduce) {
-  :is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) > svg:first-of-type {
+  :is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) > svg:first-of-type {
     transition: none;
   }
 }
 @media (forced-colors: active), print {
-  :is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) > svg:first-of-type {
+  :is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) > svg:first-of-type {
     position: static;
     translate: none;
   }
@@ -2858,10 +2888,10 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
 
 /* ===================== LETTER CASCADE BUTTON (Pill style id) =============== */
 /* Adapted from Uiverse.io by doniaskima (btn-53): a white face with bold
-   uppercase label; on hover/focus the face drops away revealing black, and the
-   label cascades in from above in white. Works on existing buttons without
+   uppercase label; on hover/focus the face drops away revealing the accent, and
+   the label cascades in from above in white. Works on existing buttons without
    per-letter markup: the label is redrawn with an animated text-shadow.
-   Applies to .btn-cascade anywhere, and to every primary action when
+   Applies to .btn-cascade anywhere, and to every action button when
    "Letter Cascade" (stored id: "pill") is selected. Corners are 5px.        */
 @keyframes lc-drop {
   from { text-shadow: 0 -15px 0 rgba(255, 255, 255, 0); }
@@ -2872,15 +2902,15 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   to   { translate: 0 0; opacity: 1; }
 }
 @layer components {
-  :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
+  :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
     position: relative;
     overflow: hidden;
     isolation: isolate;
   }
 }
-:is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
-  --lc-accent: var(--color-primary, #000000);
-  --lc-ink: var(--color-button-text, #ffffff);
+:is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
+  --lc-accent: var(--btn-accent, var(--color-primary, #000000));
+  --lc-ink: var(--btn-accent-ink, var(--color-button-text, #ffffff));
   color: color-mix(in oklab, var(--lc-accent) 70%, #000000) !important;
   background: var(--lc-accent) !important;
   border: 1px solid var(--lc-accent) !important;
@@ -2895,7 +2925,7 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   -webkit-mask-image: -webkit-radial-gradient(#000, #fff); /* Safari: clip children to radius */
 }
 /* The white "original" face. */
-:is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::before {
+:is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -2904,36 +2934,36 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   pointer-events: none;
   transition: transform 200ms cubic-bezier(0.87, 0, 0.13, 1);
 }
-:is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled)::before {
+:is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled)::before {
   transform: translateY(100%);
 }
-:is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) {
+:is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) {
   color: transparent !important;
   transform: none;
   animation: lc-drop 300ms cubic-bezier(0.87, 0, 0.13, 1) 120ms both;
 }
-:is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) svg {
+:is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) svg {
   color: var(--lc-ink) !important;
   animation: lc-drop-icon 300ms cubic-bezier(0.87, 0, 0.13, 1) 120ms both;
 }
-:is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):active:not(:disabled) {
+:is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):active:not(:disabled) {
   transform: scale(0.98);
 }
 @media (prefers-reduced-motion: reduce) {
-  :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::before {
+  :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::before {
     transition: none;
   }
-  :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled),
-  :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) svg {
+  :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled),
+  :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) svg {
     animation: none;
     color: var(--lc-ink) !important;
   }
 }
 @media (forced-colors: active), print {
-  :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
+  :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
     background: #fff !important;
   }
-  :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview]))::before {
+  :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview]))::before {
     display: none;
   }
 }
@@ -2942,20 +2972,20 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
 .settings-choice-button:is(:hover, :focus-visible):not(:disabled) .btn-cascade::before { transform: translateY(100%); }
 
 /* ===================== STACKED LIFT BUTTON (Outlined style id) ============= */
-/* Adapted from Uiverse.io by Mike11jr: a dark charcoal button that lifts on
-   hover/focus and leaves a stacked red + blue "shadow trail" beneath it;
+/* Adapted from Uiverse.io by Mike11jr: an accent button that lifts on
+   hover/focus and leaves a stacked two-tone "shadow trail" beneath it;
    pressing settles it halfway. Applies to .btn-lift anywhere, and to every
-   primary action when "Stacked Lift" (stored id: "outlined") is selected.
+   action button when "Stacked Lift" (stored id: "outlined") is selected.
    Rules come after the old outlined rules so they win at equal specificity. */
 :root { --lift-ring: transparent; }
 .dark { --lift-ring: rgba(255, 255, 255, 0.14); }
 
-:is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
-  --lift-face: var(--color-primary, #171717);
-  --lift-a: color-mix(in oklab, var(--color-primary, #f85959) 45%, #ffffff);
-  --lift-b: var(--color-primary-hover, #39a2db);
+:is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
+  --lift-face: var(--btn-accent, var(--color-primary, #171717));
+  --lift-a: color-mix(in oklab, var(--btn-accent, var(--color-primary, #f85959)) 45%, #ffffff);
+  --lift-b: var(--btn-accent-hover, var(--color-primary-hover, #39a2db));
   background: var(--lift-face) !important;
-  color: var(--color-button-text, #fff) !important;
+  color: var(--btn-accent-ink, var(--color-button-text, #fff)) !important;
   border: 0 solid transparent !important;
   border-radius: 5px !important;
   box-shadow: inset 0 0 0 1px var(--lift-ring) !important;
@@ -2963,7 +2993,7 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   cursor: pointer;
   transition: transform 400ms, box-shadow 400ms, background-color 400ms;
 }
-:is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) {
+:is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) {
   background: var(--lift-face) !important;
   transform: translateY(-10px);
   box-shadow:
@@ -2972,7 +3002,7 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
     0 15px 0 -4px var(--lift-b),
     0 16px 10px -3px var(--lift-b) !important;
 }
-:is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):active:not(:disabled) {
+:is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):active:not(:disabled) {
   transition-duration: 200ms;
   transform: translateY(-5px);
   box-shadow:
@@ -2982,19 +3012,19 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
     0 12px 10px -3px var(--lift-b) !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  :is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])),
-  :is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible, :active):not(:disabled) {
+  :is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])),
+  :is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):is(:hover, :focus-visible, :active):not(:disabled) {
     transition: none;
     transform: none;
   }
 }
 @media (forced-colors: active) {
-  :is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
+  :is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
     border: 1px solid ButtonText !important;
   }
 }
 @media print {
-  :is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
+  :is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
     box-shadow: none !important;
     transform: none !important;
   }
@@ -3005,11 +3035,12 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   box-shadow: inset 0 0 0 1px var(--lift-ring), 0 5px 0 -2px var(--lift-a), 0 10px 0 -4px var(--lift-b), 0 11px 8px -3px var(--lift-b) !important;
 }
 
-/* Modern (glass): keep the glow iridescent by pairing the theme primary with two
-   nearby hues of itself, where relative colour syntax is supported. */
+/* Modern (glass): keep the glow iridescent by pairing the button's priority accent
+   with two nearby hues of itself, where relative colour syntax is supported. */
 @supports (color: oklch(from red l c h)) {
-  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
-    --g2: oklch(from var(--color-primary, #6366f1) l c calc(h + 40));
-    --g3: oklch(from var(--color-primary, #6366f1) calc(l + 0.12) c calc(h - 40));
+  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])) {
+    --g2: oklch(from var(--btn-accent, var(--color-primary, #6366f1)) l c calc(h + 40));
+    --g3: oklch(from var(--btn-accent, var(--color-primary, #6366f1)) calc(l + 0.12) c calc(h - 40));
   }
 }
+
