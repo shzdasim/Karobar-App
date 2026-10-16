@@ -5,7 +5,7 @@ import FilePondPluginImagePreview from "filepond-plugin-image-preview";
 import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
 import "filepond/dist/filepond.min.css";
 import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
-import { GlassInput } from "@/components/glass.jsx";
+import { GlassInput } from "@/components/Glass.jsx";
 import { BuildingStorefrontIcon } from "@heroicons/react/24/solid";
 
 registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);

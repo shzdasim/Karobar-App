@@ -22,7 +22,7 @@ import {
   GlassCard,
   GlassInput,
   GlassBtn,
-} from "@/components/glass.jsx";
+} from "@/components/Glass.jsx";
 
 // Section configuration with color schemes - matching sidebar design
 const SECTION_CONFIG = {

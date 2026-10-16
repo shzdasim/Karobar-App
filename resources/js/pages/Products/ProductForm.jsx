@@ -23,7 +23,7 @@ import "filepond/dist/filepond.min.css";
 import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
 
 // 🧊 glass primitives
-import { GlassCard, GlassInput, GlassBtn } from "@/components/glass.jsx";
+import { GlassCard, GlassInput, GlassBtn } from "@/components/Glass.jsx";
 import { useTheme } from "@/context/ThemeContext";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 

@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listAllPermissions } from "@/api/roles";
 import { useTheme } from "@/context/ThemeContext";
-import { GlassInput } from "@/components/glass.jsx";
+import { GlassInput } from "@/components/Glass.jsx";
 import {
   UserGroupIcon,
   ShieldCheckIcon,

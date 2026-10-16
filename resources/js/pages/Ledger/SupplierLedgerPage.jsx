@@ -8,7 +8,7 @@ import { useTheme } from "@/context/ThemeContext.jsx";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 
 // 🧊 glass primitives
-import { GlassCard, GlassSectionHeader, GlassInput } from "@/components/glass.jsx";
+import { GlassCard, GlassSectionHeader, GlassInput } from "@/components/Glass.jsx";
 
 import {
   ArrowPathIcon,

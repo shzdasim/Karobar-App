@@ -22,7 +22,7 @@ import {
   GlassCard,
   GlassInput,
   GlassBtn,
-} from "@/components/glass.jsx";
+} from "@/components/Glass.jsx";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 
 export default function Customers() {

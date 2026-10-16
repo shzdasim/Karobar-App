@@ -1,5 +1,5 @@
 // src/layouts/DashboardLayout.jsx
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import axios from "axios";
 import { useLocation } from "react-router-dom";
 import Sidebar from "../components/Sidebar.jsx";
@@ -132,7 +132,15 @@ export default function DashboardLayout({ children }) {
         <main className="workspace-content">
           <div className="workspace-page">
             <Toaster position="top-right" reverseOrder={false} />
-            {children}
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center min-h-[40vh] text-sm text-slate-500 dark:text-slate-400">
+                  Loading…
+                </div>
+              }
+            >
+              {children}
+            </Suspense>
           </div>
         </main>
       </div>

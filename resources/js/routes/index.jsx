@@ -1,66 +1,75 @@
-import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import React, { Suspense, lazy } from "react";
+import { Routes, Route } from "react-router-dom";
 
-import Login from "../pages/Login";
-import ForgotPassword from "../pages/ForgotPassword";
-import ResetPassword from "../pages/ResetPassword";
 import DashboardLayout from "../layouts/DashboardLayout.jsx";
 import ProtectedRoute from "../components/ProtectedRoute.jsx";
 import AuthGuard from "../components/AuthGuard.jsx";
-import Profile from "../pages/Profile.jsx";
-import Suppliers from "../pages/Suppliers.jsx";
-import Customers from "../pages/Customers.jsx";
-import Categories from "../pages/Categories.jsx";
-import Brands from "../pages/Brands.jsx";
-import ProductsIndex from "../pages/Products/index.jsx";
-import CreateProduct from "../pages/Products/Create.jsx";
-import EditProduct from "../pages/Products/Edit.jsx";
-import PurchaseInvoicesIndex from "../pages/PurchaseInvoice/index.jsx";
-import CreatePurchaseInvoice from "../pages/PurchaseInvoice/Create.jsx";
-import EditPurchaseInvoice from "../pages/PurchaseInvoice/Edit.jsx";
-import ShowPurchaseInvoice from "../pages/PurchaseInvoice/Show.jsx";
-import PurchaseReturnsIndex from "../pages/PurchaseReturn/index.jsx";
-import CreatePurchaseReturn from "../pages/PurchaseReturn/Create.jsx";
-import EditPurchaseReturn from "../pages/PurchaseReturn/Edit.jsx";
-import IndexSaleInvoice from "../pages/SaleInvoice/Index.jsx";
-import CreateSaleInvoiceRetail from "../pages/SaleInvoice/CreateRetail.jsx";
-import CreateSaleInvoiceWholesale from "../pages/SaleInvoice/CreateWholesale.jsx";
-import EditSaleInvoice from "../pages/SaleInvoice/Edit.jsx";
-import ShowSaleInvoice from "../pages/SaleInvoice/Show.jsx";
-import IndexSaleReturn from "../pages/SaleReturn/Index.jsx";
-import CreateSaleReturn from "../pages/SaleReturn/Create.jsx";
-import EditSaleReturn from "../pages/SaleReturn/Edit.jsx";
-import PurchaseOrders from "../pages/PurchaseOrders.jsx";
-import PurchaseOrder from "../pages/PurchaseOrder.jsx";
-import UserDemandsIndex from "../pages/UserDemand/index.jsx";
-import CreateUserDemand from "../pages/UserDemand/Create.jsx";
-import Dashboard from "../pages/Dashboard.jsx";
-import CostOfSaleReport from "../pages/Reports/CostOfSaleReport.jsx";
-import CostOfSaleDetailReport from "../pages/Reports/CostOfSaleDetailReport.jsx";
-import PurchaseDetailReport from "../pages/Reports/PurchaseDetailReport.jsx";
-import SaleDetailReport from "../pages/Reports/SaleDetailReport.jsx";
-import CurrentStockReport from "../pages/Reports/CurrentStockReport.jsx";
-import StockAdjustmentReport from "../pages/Reports/StockAdjustmentReport.jsx";
-import ProductComprehensiveReport from "../pages/Reports/ProductComprehensiveReport.jsx";
-import NearExpiryProductReport from "../pages/Reports/NearExpiryProductReport.jsx";
-import Setting from "../pages/Setting.jsx";
-import StockAdjustmentsIndex from "../pages/stock-adjustments/index.jsx";
-import CreateStockAdjustment from "../pages/stock-adjustments/Create.jsx";
-import EditStockAdjustment from "../pages/stock-adjustments/Edit.jsx";
-import SupplierLedgerPage from "../pages/Ledger/SupplierLedgerPage.jsx";
-import CustomerLedgerPage from "../pages/Ledger/CustomerLedgerPage.jsx";
-import UsersIndex from "../pages/users/index.jsx";
-import CreateUser from "../pages/users/Create.jsx";
-import EditUser from "../pages/users/Edit.jsx";
-import RolesIndex from "../pages/roles/index.jsx";
-import CreateRole from "../pages/roles/Create.jsx";
-import EditRole from "../pages/roles/Edit.jsx";
-import ActivateLicense from "../pages/ActivateLicense.jsx";
 import SaleSystemGuard from "../components/SaleSystemGuard.jsx";
 
+const Login = lazy(() => import("../pages/Login.jsx"));
+const ForgotPassword = lazy(() => import("../pages/ForgotPassword.jsx"));
+const ResetPassword = lazy(() => import("../pages/ResetPassword.jsx"));
+const Profile = lazy(() => import("../pages/Profile.jsx"));
+const Suppliers = lazy(() => import("../pages/Suppliers.jsx"));
+const Customers = lazy(() => import("../pages/Customers.jsx"));
+const Categories = lazy(() => import("../pages/Categories.jsx"));
+const Brands = lazy(() => import("../pages/Brands.jsx"));
+const ProductsIndex = lazy(() => import("../pages/Products/index.jsx"));
+const CreateProduct = lazy(() => import("../pages/Products/Create.jsx"));
+const EditProduct = lazy(() => import("../pages/Products/Edit.jsx"));
+const PurchaseInvoicesIndex = lazy(() => import("../pages/PurchaseInvoice/index.jsx"));
+const CreatePurchaseInvoice = lazy(() => import("../pages/PurchaseInvoice/Create.jsx"));
+const EditPurchaseInvoice = lazy(() => import("../pages/PurchaseInvoice/Edit.jsx"));
+const ShowPurchaseInvoice = lazy(() => import("../pages/PurchaseInvoice/Show.jsx"));
+const PurchaseReturnsIndex = lazy(() => import("../pages/PurchaseReturn/index.jsx"));
+const CreatePurchaseReturn = lazy(() => import("../pages/PurchaseReturn/Create.jsx"));
+const EditPurchaseReturn = lazy(() => import("../pages/PurchaseReturn/Edit.jsx"));
+const IndexSaleInvoice = lazy(() => import("../pages/SaleInvoice/Index.jsx"));
+const CreateSaleInvoiceRetail = lazy(() => import("../pages/SaleInvoice/CreateRetail.jsx"));
+const CreateSaleInvoiceWholesale = lazy(() => import("../pages/SaleInvoice/CreateWholesale.jsx"));
+const EditSaleInvoice = lazy(() => import("../pages/SaleInvoice/Edit.jsx"));
+const ShowSaleInvoice = lazy(() => import("../pages/SaleInvoice/Show.jsx"));
+const IndexSaleReturn = lazy(() => import("../pages/SaleReturn/Index.jsx"));
+const CreateSaleReturn = lazy(() => import("../pages/SaleReturn/Create.jsx"));
+const EditSaleReturn = lazy(() => import("../pages/SaleReturn/Edit.jsx"));
+const PurchaseOrders = lazy(() => import("../pages/PurchaseOrders.jsx"));
+const PurchaseOrder = lazy(() => import("../pages/PurchaseOrder.jsx"));
+const UserDemandsIndex = lazy(() => import("../pages/UserDemand/index.jsx"));
+const CreateUserDemand = lazy(() => import("../pages/UserDemand/Create.jsx"));
+const Dashboard = lazy(() => import("../pages/Dashboard.jsx"));
+const CostOfSaleReport = lazy(() => import("../pages/Reports/CostOfSaleReport.jsx"));
+const CostOfSaleDetailReport = lazy(() => import("../pages/Reports/CostOfSaleDetailReport.jsx"));
+const PurchaseDetailReport = lazy(() => import("../pages/Reports/PurchaseDetailReport.jsx"));
+const SaleDetailReport = lazy(() => import("../pages/Reports/SaleDetailReport.jsx"));
+const CurrentStockReport = lazy(() => import("../pages/Reports/CurrentStockReport.jsx"));
+const StockAdjustmentReport = lazy(() => import("../pages/Reports/StockAdjustmentReport.jsx"));
+const ProductComprehensiveReport = lazy(() => import("../pages/Reports/ProductComprehensiveReport.jsx"));
+const NearExpiryProductReport = lazy(() => import("../pages/Reports/NearExpiryProductReport.jsx"));
+const Setting = lazy(() => import("../pages/Setting.jsx"));
+const StockAdjustmentsIndex = lazy(() => import("../pages/stock-adjustments/index.jsx"));
+const CreateStockAdjustment = lazy(() => import("../pages/stock-adjustments/Create.jsx"));
+const EditStockAdjustment = lazy(() => import("../pages/stock-adjustments/Edit.jsx"));
+const SupplierLedgerPage = lazy(() => import("../pages/Ledger/SupplierLedgerPage.jsx"));
+const CustomerLedgerPage = lazy(() => import("../pages/Ledger/CustomerLedgerPage.jsx"));
+const UsersIndex = lazy(() => import("../pages/users/index.jsx"));
+const CreateUser = lazy(() => import("../pages/users/Create.jsx"));
+const EditUser = lazy(() => import("../pages/users/Edit.jsx"));
+const RolesIndex = lazy(() => import("../pages/roles/index.jsx"));
+const CreateRole = lazy(() => import("../pages/roles/Create.jsx"));
+const EditRole = lazy(() => import("../pages/roles/Edit.jsx"));
+const ActivateLicense = lazy(() => import("../pages/ActivateLicense.jsx"));
+
+function RouteFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-[40vh] text-sm text-slate-500 dark:text-slate-400">
+      Loading…
+    </div>
+  );
+}
 
 export default function AppRoutes() {
   return (
+    <Suspense fallback={<RouteFallback />}>
       <Routes>
         {/* Public - Login page (redirects to dashboard if already authenticated) */}
         <Route path="/" element={
@@ -590,6 +599,7 @@ export default function AppRoutes() {
         </AuthGuard>
       } />
 
-</Routes>
+      </Routes>
+    </Suspense>
   );
 }
