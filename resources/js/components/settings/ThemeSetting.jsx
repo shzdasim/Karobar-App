@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from "react";
 import toast from "react-hot-toast";
 import { useTheme } from "@/context/ThemeContext";
-import { getThemeButtonClasses } from "@/utils/buttonStyles";
+import { getThemeButtonClasses, getButtonTextColor } from "@/utils/buttonStyles";
 import {
   PaintBrushIcon,
   CheckIcon,
@@ -307,6 +307,14 @@ export default function ThemeSetting({ disableInputs }) {
     false
   ), [themeSettings]);
 
+  // Draft primary as CSS variables: the button styles read --color-primary,
+  // so previews reflect the colour being picked before it is saved.
+  const draftPrimaryVars = {
+    '--color-primary': themeSettings.primary_color,
+    '--color-primary-hover': themeSettings.primary_hover || generateVariants(themeSettings.primary_color).hover,
+    '--color-button-text': getButtonTextColor(themeSettings.primary_color),
+  };
+
   return (
     <>
       {/* ===== Button style ===== */}
@@ -344,7 +352,7 @@ export default function ThemeSetting({ disableInputs }) {
                   className={`settings-choice-button ${isActive ? "is-active" : ""}`}
                 >
                   {/* Visual preview */}
-                  <span className="settings-choice-preview">
+                  <span className="settings-choice-preview" style={draftPrimaryVars}>
                     {isLift ? (
                       <span className="btn-lift h-8 inline-flex items-center px-3 text-[11px]">
                         Save
@@ -582,7 +590,7 @@ export default function ThemeSetting({ disableInputs }) {
           </div>
         </div>
         <div className="settings-body">
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap" style={draftPrimaryVars}>
             {/* data-btn-preview keeps these showing the unsaved draft colours */}
             <button
               type="button"

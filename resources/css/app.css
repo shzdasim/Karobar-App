@@ -2475,11 +2475,9 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   to   { --glow-angle: 395deg; }
 }
 :root {
-  --glow-pink: 236, 72, 153;
-  --glow-violet: 139, 92, 246;
-  --glow-blue: 96, 165, 250;
-  --gb-text: #5b5880;
-  --gb-text-hover: #4a4670;
+  --gb-ink: #1f1d33;
+  --gb-tint: 55%;
+  --gb-tint-hover: 65%;
   --gb-solid: #f7f5fc;
   --gb-fill: rgba(250, 248, 255, 0.55);
   --gb-fill-hover: rgba(252, 250, 255, 0.70);
@@ -2496,8 +2494,9 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   --gb-glow-k: 1;
 }
 .dark {
-  --gb-text: #dcd8ff;
-  --gb-text-hover: #f1efff;
+  --gb-ink: #ffffff;
+  --gb-tint: 35%;
+  --gb-tint-hover: 25%;
   --gb-solid: #24223a;
   --gb-fill: rgba(255, 255, 255, 0.07);
   --gb-fill-hover: rgba(255, 255, 255, 0.12);
@@ -2527,7 +2526,11 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   --sa: sin(var(--glow-angle));
   --gx: calc(var(--ca) * 16px);
   --gy: calc(var(--sa) * 12px);
-  color: var(--gb-text) !important;
+  /* Iridescent glow built from the theme primary (+ two hue-shifted partners). */
+  --g1: var(--color-primary, #6366f1);
+  --g2: var(--color-primary-hover, #4f46e5);
+  --g3: color-mix(in oklab, var(--color-primary, #6366f1) 55%, #ffffff);
+  color: color-mix(in oklab, var(--g1) var(--gb-tint), var(--gb-ink)) !important;
   background: var(--gb-solid) !important;
   border-color: transparent !important;
   font-weight: 600;
@@ -2535,8 +2538,8 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   box-shadow:
     inset 0 0 0 1px var(--gb-rim),
     var(--gb-inner),
-    calc(var(--gx) * -1) calc(var(--gy) * -1) 30px -10px rgba(var(--glow-pink), var(--gb-pink)),
-    var(--gx) var(--gy) 34px -10px rgba(var(--glow-violet), var(--gb-violet)),
+    calc(var(--gx) * -1) calc(var(--gy) * -1) 30px -10px color-mix(in oklab, var(--g1) calc(var(--gb-pink) * 100%), transparent),
+    var(--gx) var(--gy) 34px -10px color-mix(in oklab, var(--g2) calc(var(--gb-violet) * 100%), transparent),
     var(--gb-drop) !important;
   animation: glass-glow-orbit 8s linear infinite;
   transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
@@ -2557,9 +2560,9 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   content: ""; position: absolute; inset: 0; z-index: -1;
   border-radius: inherit; pointer-events: none;
   background:
-    radial-gradient(60% 140% at calc(50% - var(--ca) * 50%) calc(50% - var(--sa) * 60%), rgba(var(--glow-pink), calc(0.24 * var(--gb-glow-k))), transparent 70%),
-    radial-gradient(65% 150% at calc(50% + var(--ca) * 50%) calc(50% + var(--sa) * 60%), rgba(var(--glow-violet), calc(0.28 * var(--gb-glow-k))), transparent 70%),
-    radial-gradient(50% 120% at calc(50% - var(--sa) * 45%) calc(50% + var(--ca) * 60%), rgba(var(--glow-blue), calc(0.16 * var(--gb-glow-k))), transparent 70%),
+    radial-gradient(60% 140% at calc(50% - var(--ca) * 50%) calc(50% - var(--sa) * 60%), color-mix(in oklab, var(--g1) calc(0.24 * var(--gb-glow-k) * 100%), transparent), transparent 70%),
+    radial-gradient(65% 150% at calc(50% + var(--ca) * 50%) calc(50% + var(--sa) * 60%), color-mix(in oklab, var(--g2) calc(0.28 * var(--gb-glow-k) * 100%), transparent), transparent 70%),
+    radial-gradient(50% 120% at calc(50% - var(--sa) * 45%) calc(50% + var(--ca) * 60%), color-mix(in oklab, var(--g3) calc(0.16 * var(--gb-glow-k) * 100%), transparent), transparent 70%),
     radial-gradient(55% 90% at 50% 45%, var(--gb-core), transparent 80%);
 }
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
@@ -2573,13 +2576,13 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   }
 }
 :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):hover:not(:disabled) {
-  color: var(--gb-text-hover) !important;
+  color: color-mix(in oklab, var(--g1) var(--gb-tint-hover), var(--gb-ink)) !important;
   transform: none;
   box-shadow:
     inset 0 0 0 1px var(--gb-rim-hover),
     var(--gb-inner-hover),
-    calc(var(--gx) * -1.2) calc(var(--gy) * -1.2) 36px -8px rgba(var(--glow-pink), var(--gb-pink-hover)),
-    calc(var(--gx) * 1.2) calc(var(--gy) * 1.2) 40px -8px rgba(var(--glow-violet), var(--gb-violet-hover)),
+    calc(var(--gx) * -1.2) calc(var(--gy) * -1.2) 36px -8px color-mix(in oklab, var(--g1) calc(var(--gb-pink-hover) * 100%), transparent),
+    calc(var(--gx) * 1.2) calc(var(--gy) * 1.2) 40px -8px color-mix(in oklab, var(--g2) calc(var(--gb-violet-hover) * 100%), transparent),
     var(--gb-drop-hover) !important;
 }
 :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):active:not(:disabled) {
@@ -2655,6 +2658,8 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
 }
 
 :is(.btn-neu, html[data-btn-style="rounded"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
+  --nm-fill: var(--color-primary, #009087);
+  --nm-fill-text: var(--color-button-text, #ffffff);
   color: var(--nm-text) !important;
   background: var(--nm-bg) !important;
   border: 1px solid var(--nm-bg) !important;
@@ -2757,11 +2762,11 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   }
 }
 :is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
-  --sl-bg: #209978;
-  --sl-deep: #17795e;
-  --sl-press: #146c54;
+  --sl-bg: var(--color-primary, #209978);
+  --sl-deep: var(--color-primary-hover, #17795e);
+  --sl-press: color-mix(in oklab, var(--color-primary-hover, #17795e) 82%, #000000);
   --sl-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E");
-  color: #fff !important;
+  color: var(--color-button-text, #fff) !important;
   background: var(--sl-bg) !important;
   border: 1px solid var(--sl-deep) !important;
   box-shadow: none !important;
@@ -2831,7 +2836,7 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   right: 1.25em;
   translate: 50% -50%;
   margin: 0;
-  color: #fff !important;
+  color: var(--color-button-text, #fff) !important;
   pointer-events: none;
   transition: right 300ms;
 }
@@ -2860,7 +2865,7 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
    "Letter Cascade" (stored id: "pill") is selected. Corners are 5px.        */
 @keyframes lc-drop {
   from { text-shadow: 0 -15px 0 rgba(255, 255, 255, 0); }
-  to   { text-shadow: 0 0 0 #fff; }
+  to   { text-shadow: 0 0 0 var(--lc-ink, #fff); }
 }
 @keyframes lc-drop-icon {
   from { translate: 0 -15px; opacity: 0; }
@@ -2874,9 +2879,11 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   }
 }
 :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
-  color: #000 !important;
-  background: #000 !important;
-  border: 1px solid #000 !important;
+  --lc-accent: var(--color-primary, #000000);
+  --lc-ink: var(--color-button-text, #ffffff);
+  color: color-mix(in oklab, var(--lc-accent) 70%, #000000) !important;
+  background: var(--lc-accent) !important;
+  border: 1px solid var(--lc-accent) !important;
   border-radius: 5px !important;
   box-shadow: none !important;
   font-weight: 900;
@@ -2906,7 +2913,7 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   animation: lc-drop 300ms cubic-bezier(0.87, 0, 0.13, 1) 120ms both;
 }
 :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) svg {
-  color: #fff !important;
+  color: var(--lc-ink) !important;
   animation: lc-drop-icon 300ms cubic-bezier(0.87, 0, 0.13, 1) 120ms both;
 }
 :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):active:not(:disabled) {
@@ -2919,7 +2926,7 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled),
   :is(.btn-cascade, html[data-btn-style="pill"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) svg {
     animation: none;
-    color: #fff !important;
+    color: var(--lc-ink) !important;
   }
 }
 @media (forced-colors: active), print {
@@ -2944,8 +2951,11 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
 .dark { --lift-ring: rgba(255, 255, 255, 0.14); }
 
 :is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
-  background: #171717 !important;
-  color: #fff !important;
+  --lift-face: var(--color-primary, #171717);
+  --lift-a: color-mix(in oklab, var(--color-primary, #f85959) 45%, #ffffff);
+  --lift-b: var(--color-primary-hover, #39a2db);
+  background: var(--lift-face) !important;
+  color: var(--color-button-text, #fff) !important;
   border: 0 solid transparent !important;
   border-radius: 5px !important;
   box-shadow: inset 0 0 0 1px var(--lift-ring) !important;
@@ -2954,22 +2964,22 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   transition: transform 400ms, box-shadow 400ms, background-color 400ms;
 }
 :is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) {
-  background: #171717 !important;
+  background: var(--lift-face) !important;
   transform: translateY(-10px);
   box-shadow:
     inset 0 0 0 1px var(--lift-ring),
-    0 7px 0 -2px #f85959,
-    0 15px 0 -4px #39a2db,
-    0 16px 10px -3px #39a2db !important;
+    0 7px 0 -2px var(--lift-a),
+    0 15px 0 -4px var(--lift-b),
+    0 16px 10px -3px var(--lift-b) !important;
 }
 :is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])):active:not(:disabled) {
   transition-duration: 200ms;
   transform: translateY(-5px);
   box-shadow:
     inset 0 0 0 1px var(--lift-ring),
-    0 2px 0 -2px #f85959,
-    0 8px 0 -4px #39a2db,
-    0 12px 10px -3px #39a2db !important;
+    0 2px 0 -2px var(--lift-a),
+    0 8px 0 -4px var(--lift-b),
+    0 12px 10px -3px var(--lift-b) !important;
 }
 @media (prefers-reduced-motion: reduce) {
   :is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])),
@@ -2992,5 +3002,14 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
 /* Theme settings: hovering the whole style tile plays the lift on its swatch. */
 .settings-choice-button:is(:hover, :focus-visible):not(:disabled) .btn-lift {
   transform: translateY(-6px);
-  box-shadow: inset 0 0 0 1px var(--lift-ring), 0 5px 0 -2px #f85959, 0 10px 0 -4px #39a2db, 0 11px 8px -3px #39a2db !important;
+  box-shadow: inset 0 0 0 1px var(--lift-ring), 0 5px 0 -2px var(--lift-a), 0 10px 0 -4px var(--lift-b), 0 11px 8px -3px var(--lift-b) !important;
+}
+
+/* Modern (glass): keep the glow iridescent by pairing the theme primary with two
+   nearby hues of itself, where relative colour syntax is supported. */
+@supports (color: oklch(from red l c h)) {
+  :is(.btn-glass, html[data-btn-style="modern"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save):not([data-btn-preview])) {
+    --g2: oklch(from var(--color-primary, #6366f1) l c calc(h + 40));
+    --g3: oklch(from var(--color-primary, #6366f1) calc(l + 0.12) c calc(h - 40));
+  }
 }
