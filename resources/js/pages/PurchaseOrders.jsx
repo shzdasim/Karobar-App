@@ -4,7 +4,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import { usePermissions } from "@/api/usePermissions";
 import ProductSearchInput from "../components/ProductSearchInput";
-import { ClipboardDocumentListIcon, PlusIcon, TrashIcon, EyeIcon, PencilSquareIcon, ArrowDownTrayIcon, DocumentTextIcon, BuildingStorefrontIcon } from "@heroicons/react/24/outline";
+import { ClipboardDocumentListIcon, PlusIcon, TrashIcon, EyeIcon, PencilSquareIcon, ArrowDownTrayIcon, DocumentTextIcon, BuildingStorefrontIcon, MagnifyingGlassIcon, ArrowsUpDownIcon } from "@heroicons/react/24/outline";
 import SupplierSearch from "../components/SupplierSearch";
 
 const blank = () => ({ date: new Date().toLocaleDateString('en-CA'), expected_received_date: '', notes: '', reference: '', supplier_id: '', items: [] });
@@ -19,6 +19,16 @@ const newItem = () => ({ product_id: '', ordered_packs: 1, pack_size: 1, pack_pu
 const detailLabels = ['Product', 'Brand', 'Pack Size', 'Order Packs', 'Received Units', 'Remaining Units', 'Pack Purchase Price', 'Pack Bonus', 'Unit Bonus', 'Discount %', 'Total'];
 const itemLabels = { pack_size: 'Pack Size', ordered_packs: 'Order Packs', pack_purchase_price: 'Pack Purchase Price', pack_bonus: 'Pack Bonus', unit_bonus: 'Unit Bonus', item_discount_percentage: 'Discount %' };
 const statusLabel = (s) => ({ ordered: 'Ordered', partially_received: 'Partially Received', received: 'Received', cancelled: 'Cancelled' }[s] || s);
+const sortOptions = [
+  ['newest', 'PO Number (Newest first)'], ['oldest', 'PO Number (Oldest first)'],
+  ['date_desc', 'Date (Newest first)'], ['date_asc', 'Date (Oldest first)'],
+  ['supplier_asc', 'Supplier (A–Z)'], ['supplier_desc', 'Supplier (Z–A)'],
+  ['total_desc', 'Total Amount (High–Low)'], ['total_asc', 'Total Amount (Low–High)'],
+  ['units_desc', 'Ordered Units (High–Low)'], ['units_asc', 'Ordered Units (Low–High)'],
+  ['items_desc', 'Items (High–Low)'], ['items_asc', 'Items (Low–High)'],
+  ['status_asc', 'Status (A–Z)'], ['status_desc', 'Status (Z–A)'],
+];
+const headerSorts = { 'PO Number': ['newest', 'oldest'], Date: ['date_desc', 'date_asc'], Supplier: ['supplier_asc', 'supplier_desc'], Items: ['items_desc', 'items_asc'], 'Ordered Units': ['units_desc', 'units_asc'], 'Total Amount': ['total_desc', 'total_asc'], Status: ['status_asc', 'status_desc'] };
 const errorMessage = (e) => Object.values(e.response?.data?.errors || {}).flat().join(' ') || e.response?.data?.message || 'Unable to complete this action. Please try again.';
 
 export default function PurchaseOrders() {
@@ -32,6 +42,9 @@ export default function PurchaseOrders() {
   const [order, setOrder] = useState(null);
   const [listing, setListing] = useState(null);
   const [page, setPage] = useState(1);
+  const [supplierQuery, setSupplierQuery] = useState('');
+  const [supplierFilter, setSupplierFilter] = useState('');
+  const [sort, setSort] = useState('newest');
   const [products, setProducts] = useState([]);
   const [supplier, setSupplier] = useState(null);
   const [supplierOpen, setSupplierOpen] = useState(false);
@@ -61,6 +74,16 @@ export default function PurchaseOrders() {
   };
   const [pendingFocus, setPendingFocus] = useState(null);
   const entryMode = creating || editing;
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSupplierFilter(prev => {
+        const next = supplierQuery.trim();
+        if (prev !== next) setPage(1);
+        return next;
+      });
+    }, supplierQuery.trim() ? 250 : 0);
+    return () => clearTimeout(timer);
+  }, [supplierQuery]);
   useEffect(() => {
     if (!pendingFocus || loading) return;
     const { index, field } = pendingFocus;
@@ -108,14 +131,14 @@ export default function PurchaseOrders() {
           setOrder(data); setForm({ ...data, items: data.items.map(orderRow) }); setSupplier(data.supplier);
           setProducts(data.items.map(i => i.product));
         } else {
-          const { data } = await axios.get('/api/purchase-orders', { params: { page } });
+          const { data } = await axios.get('/api/purchase-orders', { params: { page, supplier: supplierFilter || undefined, sort } });
           if (alive) setListing(data);
         }
       } catch (e) { if (alive) setError(errorMessage(e)); }
       finally { if (alive) setLoading(false); }
     })();
     return () => { alive = false; };
-  }, [id, creating, editing, page, permissionsLoading, has]);
+  }, [id, creating, editing, page, supplierFilter, sort, permissionsLoading, has]);
 
   useEffect(() => {
     if (permissionsLoading || !has('purchase-order.generate')) return;
@@ -138,7 +161,7 @@ export default function PurchaseOrders() {
       const nextPage = listing.data.length === 1 && page > 1 ? page - 1 : page;
       if (nextPage !== page) setPage(nextPage);
       else {
-        const { data } = await axios.get('/api/purchase-orders', { params: { page } });
+        const { data } = await axios.get('/api/purchase-orders', { params: { page, supplier: supplierFilter || undefined, sort } });
         setListing(data);
       }
     } catch (e) { setError(errorMessage(e)); }
@@ -240,7 +263,7 @@ export default function PurchaseOrders() {
         </div>
       </div>
       {error && <p role="alert" className="text-red-600 dark:text-red-400">{error}</p>}
-      {loading ? <p>Loading Purchase Orders…</p> : creating || editing ? <>
+      {loading && (id || creating || !listing) ? <p>Loading Purchase Orders…</p> : creating || editing ? <>
         <div className="purchase-entry-details grid gap-3 sm:grid-cols-5 px-3 py-2.5">
           <label>Date<input className="w-full h-8 border rounded-md px-2 text-xs" type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></label>
           <label>Expected Receiving Date *<input required className="w-full h-8 border rounded-md px-2 text-xs" type="date" min={form.date} value={form.expected_received_date || ''} onChange={e => setForm({ ...form, expected_received_date: e.target.value })} /></label>
@@ -297,11 +320,34 @@ export default function PurchaseOrders() {
           <button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" onClick={() => window.print()}>Print Order</button>
         </div>
       </> : listing && <>
+        <div className="px-3 flex flex-wrap items-end gap-3 print:hidden">
+          <label className="flex-1 min-w-[220px] text-xs font-medium space-y-1">
+            <span className="block text-[var(--workspace-muted)]">Supplier</span>
+            <div className="relative flex items-center">
+              <MagnifyingGlassIcon aria-hidden="true" className="w-4 h-4 absolute left-2.5 pointer-events-none opacity-60" />
+              <input type="search" value={supplierQuery} onChange={e => setSupplierQuery(e.target.value)} placeholder="Search by supplier name…" aria-label="Search purchase orders by supplier name" className="w-full h-9 pl-8 pr-3 rounded-lg border border-[var(--workspace-border)] bg-[var(--workspace-reading-fill)] text-xs" />
+            </div>
+          </label>
+          <label className="min-w-[210px] text-xs font-medium space-y-1">
+            <span className="inline-flex items-center gap-1 text-[var(--workspace-muted)]"><ArrowsUpDownIcon aria-hidden="true" className="w-3.5 h-3.5" />Sort by</span>
+            <select value={sort} onChange={e => { setSort(e.target.value); setPage(1); }} aria-label="Sort purchase orders" className="w-full h-9 px-2.5 rounded-lg border border-[var(--workspace-border)] bg-[var(--workspace-reading-fill)] text-xs">
+              {sortOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+        </div>
         <div className="products-panel purchase-invoice-catalog purchase-order-catalog">
-          <div className="purchase-invoice-table-scroll" tabIndex={0} role="region" aria-label="Purchase order list" aria-busy={busy}>
-            <table className="w-full text-xs"><colgroup>{[11, 10, 18, 5, 9, 6, 13, 28].map((width, index) => <col key={index} style={{ width: `${width}%` }} />)}</colgroup>
+          <div className="purchase-invoice-table-scroll" tabIndex={0} role="region" aria-label="Purchase order list" aria-busy={busy || loading}>
+            <table className="w-full text-xs"><colgroup>{[10, 9, 16, 5, 8, 10, 6, 11, 25].map((width, index) => <col key={index} style={{ width: `${width}%` }} />)}</colgroup>
               <thead className="sticky top-0 z-10 shadow-xs"><tr>
-                {['PO Number', 'Date', 'Supplier', 'Items', 'Ordered Units', 'Receipts', 'Status', 'Actions'].map(h => <th className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider ${h === 'Actions' ? 'text-center' : 'text-left'}`} key={h}>{h}</th>)}
+                {['PO Number', 'Date', 'Supplier', 'Items', 'Ordered Units', 'Total Amount', 'Receipts', 'Status', 'Actions'].map(h => {
+                  const pair = headerSorts[h];
+                  const active = pair && pair.includes(sort);
+                  const dir = active ? (sort === pair[0] ? '↓' : '↑') : '';
+                  const align = h === 'Actions' ? 'text-center' : h === 'Total Amount' ? 'text-right' : 'text-left';
+                  return <th className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider ${align}`} key={h} aria-sort={active ? (sort.endsWith('_asc') || sort === 'oldest' ? 'ascending' : 'descending') : undefined}>
+                    {pair ? <button type="button" onClick={() => { setSort(sort === pair[0] ? pair[1] : pair[0]); setPage(1); }} className={`inline-flex items-center gap-1 font-semibold uppercase tracking-wider cursor-pointer hover:text-[var(--workspace-accent)] ${h === 'Total Amount' ? 'ml-auto' : ''}`}>{h}{dir && <span aria-hidden="true">{dir}</span>}</button> : h}
+                  </th>;
+                })}
               </tr></thead>
               <tbody>{listing.data.map(po => <tr key={po.id}>
                 <td data-label="PO Number" className="px-3 py-2.5 font-semibold">{po.number}</td>
@@ -309,6 +355,7 @@ export default function PurchaseOrders() {
                 <td data-label="Supplier" className="px-3 py-2.5">{po.supplier?.name}</td>
                 <td data-label="Items" className="px-3 py-2.5 tabular-nums">{po.items_count}</td>
                 <td data-label="Ordered Units" className="px-3 py-2.5 tabular-nums">{po.items_sum_ordered_quantity}</td>
+                <td data-label="Total Amount" className="px-3 py-2.5 text-right tabular-nums font-semibold">{Number(po.total_amount || 0).toFixed(2)}</td>
                 <td data-label="Receipts" className="px-3 py-2.5 tabular-nums">{po.invoices?.length || 0}</td>
                 <td data-label="Status" className="px-3 py-2.5"><span className="purchase-order-status" data-status={po.status}>{statusLabel(po.status)}</span></td>
                 <td data-label="Actions" className="px-3 py-2.5"><div className="purchase-order-index-actions">
@@ -324,7 +371,7 @@ export default function PurchaseOrders() {
             </table>
           </div>
         </div>
-        {!listing.data.length && <p>No Purchase Orders yet. Create an order or start from a forecast.</p>}
+        {!listing.data.length && <p className="px-5 text-sm text-[var(--workspace-muted)]">{supplierFilter ? `No Purchase Orders found for supplier "${supplierFilter}".` : 'No Purchase Orders yet. Create an order or start from a forecast.'}</p>}
         <div className="purchase-entry-footer flex gap-3 items-center px-5 py-4"><button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={page <= 1} onClick={() => setPage(page-1)}>Previous</button><span>Page {listing.current_page} of {listing.last_page}</span><button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={page >= listing.last_page} onClick={() => setPage(page+1)}>Next</button></div>
       </>}
     </div>

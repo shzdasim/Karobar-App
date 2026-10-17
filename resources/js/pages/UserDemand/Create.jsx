@@ -1,500 +1,477 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   HandRaisedIcon,
-  ArrowPathIcon,
-  MagnifyingGlassIcon,
-  BuildingStorefrontIcon,
-  TagIcon,
-  Squares2X2Icon,
-  CubeIcon,
+  PlusIcon,
+  TrashIcon,
   UserIcon,
-} from "@heroicons/react/24/solid";
+} from "@heroicons/react/24/outline";
 import { usePermissions } from "@/api/usePermissions.js";
-import BrandSearch from "@/components/BrandSearch.jsx";
-import SupplierSearch from "@/components/SupplierSearch.jsx";
-import CategorySearch from "@/components/CategorySearch.jsx";
+import ProductSearchInput from "@/components/ProductSearchInput.jsx";
 import CustomerSearch from "@/components/CustomerSearch.jsx";
 
-const asList = (payload) =>
-  Array.isArray(payload) ? payload : (payload?.data ?? payload?.items ?? []);
+const entryFields = ["requested_quantity", "notes"];
+const newItem = () => ({
+  product_id: "",
+  product: null,
+  requested_quantity: 1,
+  notes: "",
+});
 
 export default function CreateUserDemand() {
   const navigate = useNavigate();
-  const { has } = usePermissions();
+  const { loading: permissionsLoading, has } = usePermissions();
   const canCreate = has("user-demands.create");
 
-const [name, setName] = useState("");
-  const [requestedQuantity, setRequestedQuantity] = useState(1);
-  const [packSize, setPackSize] = useState(1);
-  const [notes, setNotes] = useState("");
-
-  // Product selection (optional — if an existing product is picked, use it)
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [productResults, setProductResults] = useState([]);
-  const [searching, setSearching] = useState(false);
-  const productQueryRef = useRef("");
-  const abortRef = useRef(null);
-  const debounceRef = useRef(null);
-
-  // Brand / supplier / category
-  const [brand, setBrand] = useState(null);
-  const [brandSearchOpen, setBrandSearchOpen] = useState(false);
-  const [supplier, setSupplier] = useState(null);
-  const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
-const [category, setCategory] = useState(null);
-  const [categorySearchOpen, setCategorySearchOpen] = useState(false);
-
-  // Customer (optional — who requested the demand)
+  const [items, setItems] = useState(() => [newItem()]);
+  const [products, setProducts] = useState([]);
   const [customer, setCustomer] = useState(null);
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [pendingFocus, setPendingFocus] = useState(null);
 
-const [saving, setSaving] = useState(false);
+  const inFlight = useRef(false);
+  const focusedOnce = useRef(false);
+  const productRefs = useRef({});
+  const fieldRefs = useRef({});
+  const itemRowRefs = useRef({});
+  const itemsContainerRef = useRef(null);
 
-  // Refs for Enter-to-next-field navigation
-  const nameRef = useRef(null);
-  const brandRef = useRef(null);
-  const categoryRef = useRef(null);
-  const supplierRef = useRef(null);
-  const qtyRef = useRef(null);
-  const packSizeRef = useRef(null);
-  const notesRef = useRef(null);
-  const customerRef = useRef(null);
-  const submitRef = useRef(null);
+  const scrollToItem = (index) => {
+    const row = itemRowRefs.current[index];
+    const container = itemsContainerRef.current;
+    if (!row || !container) return;
+    if (container.scrollHeight <= container.clientHeight) {
+      row.scrollIntoView({ block: "nearest", inline: "nearest" });
+      return;
+    }
+    const bounds = container.getBoundingClientRect();
+    const rowBounds = row.getBoundingClientRect();
+    const headerHeight = container.querySelector("thead")?.getBoundingClientRect().height || 0;
+    const top = bounds.top + headerHeight + 4;
+    const bottom = bounds.bottom - 4;
+    if (rowBounds.top < top) container.scrollTop += rowBounds.top - top;
+    else if (rowBounds.bottom > bottom) container.scrollTop += rowBounds.bottom - bottom;
+  };
 
-  // Keyboard shortcuts: Alt+S save, Alt+C cancel
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        if (!e.repeat) submitRef.current?.click();
-      }
-      if (e.altKey && e.key.toLowerCase() === "c") {
-        e.preventDefault();
-        navigate("/user-demands");
-      }
-    };
-window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [navigate]);
-
-  // Focus product name on mount
-  useEffect(() => {
-    const timer = setTimeout(() => nameRef.current?.focus(), 150);
-    return () => clearTimeout(timer);
+  const refreshProducts = useCallback(async (q = "") => {
+    try {
+      const { data } = await axios.get("/api/products/search", { params: { q, limit: 30 } });
+      const list = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+      setProducts((prev) => [...new Map([...prev, ...list].map((p) => [p.id, p])).values()]);
+    } catch {
+      /* ignore background search error */
+    }
   }, []);
 
-  if (!canCreate) return <div className="p-6 text-sm text-gray-700">You don't have permission to create user demands.</div>;
+  // Load initial products and automatically open first row's ProductSearchInput like SaleInvoiceRetailForm
+  useEffect(() => {
+    if (permissionsLoading || !canCreate) return;
+    let alive = true;
+    (async () => {
+      await refreshProducts("");
+      if (!alive || focusedOnce.current) return;
+      setTimeout(() => {
+        if (alive && !focusedOnce.current && productRefs.current[0]) {
+          productRefs.current[0].focus();
+          focusedOnce.current = true;
+        }
+      }, 60);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [permissionsLoading, canCreate, refreshProducts]);
 
-  const searchProducts = async (q) => {
-    if (abortRef.current) abortRef.current.abort();
-    abortRef.current = new AbortController();
-    const signal = abortRef.current.signal;
-    productQueryRef.current = q;
-    setSearching(true);
-    try {
-      const { data } = await axios.get("/api/products/search", {
-        params: { q, limit: 20 },
-        signal,
-      });
-      setProductResults(Array.isArray(data) ? data : asList(data));
-    } catch (err) {
-      if (!axios.isCancel(err)) setProductResults([]);
-    } finally {
-      setSearching(false);
+  useEffect(() => {
+    if (!pendingFocus || permissionsLoading || !canCreate) return;
+    const { index, field } = pendingFocus;
+    const timer = setTimeout(() => {
+      if (field === "product") {
+        productRefs.current[index]?.focus();
+      } else {
+        const input = fieldRefs.current[`${index}:${field}`];
+        input?.focus({ preventScroll: true });
+        input?.select?.();
+      }
+      scrollToItem(index);
+      setPendingFocus(null);
+    }, 30);
+    return () => clearTimeout(timer);
+  }, [pendingFocus, items.length, permissionsLoading, canCreate]);
+
+  const addItem = useCallback(() => {
+    if (inFlight.current) return;
+    setItems((prev) => {
+      setPendingFocus({ index: prev.length, field: "product" });
+      return [...prev, newItem()];
+    });
+  }, []);
+
+  const removeItem = (index) => {
+    setItems((prev) => (prev.length <= 1 ? [newItem()] : prev.filter((_, i) => i !== index)));
+  };
+
+  const changeItem = (index, field, value) => {
+    setItems((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, [field]: value } : row))
+    );
+  };
+
+  const navigateItem = (event, index, field) => {
+    if (!["Enter", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+    if (event.repeat) {
+      event.preventDefault();
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.key === "Enter") {
+      const nextField =
+        field === "product"
+          ? entryFields[0]
+          : entryFields[entryFields.indexOf(field) + 1];
+      if (nextField) {
+        setPendingFocus({ index, field: nextField });
+      } else if (index < items.length - 1) {
+        setPendingFocus({ index: index + 1, field: "product" });
+      } else {
+        addItem();
+      }
+    } else if (event.key === "ArrowUp" && index > 0) {
+      setPendingFocus({ index: index - 1, field });
+    } else if (event.key === "ArrowDown") {
+      if (index < items.length - 1) {
+        setPendingFocus({ index: index + 1, field });
+      } else {
+        addItem();
+      }
     }
   };
 
-  const handleNameChange = (val) => {
-    setName(val);
-    setSelectedProduct(null);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    const q = (val || "").trim();
-    if (!q) {
-      setProductResults([]);
-      return;
-    }
-    debounceRef.current = setTimeout(() => searchProducts(q), 300);
-  };
+  const save = useCallback(async () => {
+    if (inFlight.current || saving) return;
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (saving) return;
-    if (!selectedProduct && !name.trim()) {
-      toast.error("Please enter a product name or select an existing product.");
-      return;
-    }
-if (!selectedProduct && !brand) {
-      toast.error("Please select a brand for the new product.");
-      return;
-    }
-    if (!selectedProduct && !category) {
-      toast.error("Please select a category for the new product.");
+    const filledRows = items.filter((r) => r.product_id || (r.notes && r.notes.trim()));
+    if (filledRows.length === 0) {
+      toast.error("Please select at least one product.");
+      setPendingFocus({ index: 0, field: "product" });
       return;
     }
 
+    for (let i = 0; i < items.length; i++) {
+      const row = items[i];
+      const isBlankRow = !row.product_id && !(row.notes && row.notes.trim());
+      if (isBlankRow && filledRows.length > 0) continue;
+
+      if (!row.product_id) {
+        toast.error(`Row ${i + 1}: Please select a product.`);
+        setPendingFocus({ index: i, field: "product" });
+        return;
+      }
+      const qty = Number(row.requested_quantity);
+      if (!Number.isInteger(qty) || qty < 1) {
+        toast.error(`Row ${i + 1}: Enter a whole requested quantity of at least 1.`);
+        setPendingFocus({ index: i, field: "requested_quantity" });
+        return;
+      }
+    }
+
+    const validRows = items.filter((r) => r.product_id);
+    inFlight.current = true;
     setSaving(true);
     try {
-const payload = {
-        requested_quantity: requestedQuantity || 1,
-        notes: notes || null,
-      };
-      if (customer) payload.customer_id = customer.id;
-if (selectedProduct) {
-        payload.product_id = selectedProduct.id;
-      } else {
-        payload.name = name.trim();
-        payload.pack_size = packSize || 1;
-        payload.brand_id = brand.value;
-        payload.category_id = category.value;
-        if (supplier) payload.supplier_id = supplier.value;
-      }
-      await axios.post("/api/user-demands", payload);
-      toast.success("User demand created! It will appear in purchase order forecast.");
+      const payloadItems = validRows.map((row) => ({
+        product_id: row.product_id,
+        requested_quantity: Number(row.requested_quantity) || 1,
+        notes: row.notes?.trim() || null,
+        ...(customer?.id ? { customer_id: customer.id } : {}),
+      }));
+
+      await axios.post("/api/user-demands", {
+        customer_id: customer?.id || null,
+        items: payloadItems,
+      });
+
+      toast.success(
+        payloadItems.length === 1
+          ? "User demand created!"
+          : `${payloadItems.length} user demands created!`
+      );
       navigate("/user-demands");
     } catch (err) {
       const d = err?.response?.data;
-      const msg = d?.message || (d?.errors ? Object.values(d.errors).flat().join(", ") : "Create failed.");
+      const msg =
+        d?.message ||
+        (d?.errors ? Object.values(d.errors).flat().join(" ") : "Unable to save user demands.");
       toast.error(msg);
     } finally {
+      inFlight.current = false;
       setSaving(false);
     }
-  };
+  }, [items, customer, saving, navigate]);
+
+  useEffect(() => {
+    if (!canCreate) return;
+    const onShortcut = (event) => {
+      if (event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (!customerSearchOpen && !inFlight.current) save();
+      } else if (event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "c") {
+        event.preventDefault();
+        navigate("/user-demands");
+      }
+    };
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, [canCreate, customerSearchOpen, save, navigate]);
+
+  if (permissionsLoading) {
+    return <div className="p-6">Loading permissions…</div>;
+  }
+  if (!canCreate) {
+    return <div className="p-6 text-sm text-gray-700">You don't have permission to create user demands.</div>;
+  }
+
+  const selectedCount = items.filter((r) => r.product_id).length;
+  const totalUnits = items.reduce(
+    (sum, r) => sum + (r.product_id ? Number(r.requested_quantity || 0) : 0),
+    0
+  );
 
   return (
-    <div className="user-demands-page space-y-4">
-      {/* Hero */}
-      <div
-        className="user-demands-header products-panel"
-      >
-        <div className="relative px-6 py-5 flex items-center gap-4">
-          <div className="products-identity-icon">
-            <HandRaisedIcon className="w-6 h-6 text-white" />
+    <div className="purchase-entry-page space-y-4 purchase-order-documents">
+      <div className="purchase-entry g-card overflow-hidden space-y-4 purchase-order-entry">
+        {/* Header */}
+        <div className="purchase-entry-header purchase-entry-banner flex flex-wrap justify-between gap-3 items-center px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="purchase-entry-icon p-2.5 rounded-xl">
+              <HandRaisedIcon className="h-6 w-6" />
+            </div>
+            <h1 className="purchase-entry-title text-xl font-semibold">Request Products</h1>
           </div>
-          <div>
-            <h1 className="products-title">Request Product</h1>
-            <p className="products-subtitle">
-              Request an existing product or add a new product demand. Enter to move to the next field · Alt+S to save.
-            </p>
+          <div className="flex flex-wrap gap-2 print:hidden">
+            <Link
+              to="/user-demands"
+              title="Back to User Demands (Alt+C)"
+              className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2"
+            >
+              All Demands
+            </Link>
           </div>
         </div>
-      </div>
 
-      <div className="user-demand-form-panel products-panel">
-        <form onSubmit={handleSubmit} className="user-demand-form p-6 space-y-5">
-          {/* Product name / existing product picker */}
-          <div>
-            <label className="block text-sm font-medium mb-1.5 dark:text-slate-200">Product Name</label>
-            <div className="relative">
-              <div className="user-demand-product-search flex items-center gap-2 px-3">
-                <MagnifyingGlassIcon className="w-4 h-4 text-gray-400" />
-<input
-                  ref={nameRef}
-                  aria-label="Product name"
-                  type="text"
-                  value={name}
-                  onChange={(e) => handleNameChange(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      if (!selectedProduct) brandRef.current?.click();
-                      else qtyRef.current?.focus();
-                    }
-                  }}
-                  placeholder="Type a product name..."
-                  className="flex-1 min-w-0 h-10 bg-transparent outline-hidden text-sm dark:text-slate-100"
-                />
-                {searching && <ArrowPathIcon className="w-4 h-4 animate-spin text-gray-400" />}
-              </div>
-
-              {selectedProduct && (
-                <div className="mt-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-sm">
-                  <CubeIcon className="w-4 h-4" />
-                  <span className="flex-1">
-                    Using existing product: <b>{selectedProduct.name}</b> ({selectedProduct.product_code})
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedProduct(null)}
-                    className="text-xs font-semibold underline"
-                  >
-                    Change
-                  </button>
-                </div>
-              )}
-
-              {!selectedProduct && productResults.length > 0 && (
-                <ul className="mt-2 border border-gray-200 dark:border-slate-600 rounded-lg max-h-48 overflow-auto divide-y divide-gray-100 dark:divide-slate-600">
-                  {productResults.map((p) => (
-                    <li key={p.id}>
-                      <button
-                        type="button"
-onClick={() => {
-                          setSelectedProduct(p);
-                          setName(p.name);
-                          setProductResults([]);
-                          setBrand(null);
-                          setSupplier(null);
-                          setCategory(null);
-                          qtyRef.current?.focus();
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-slate-600 transition-colors"
-                      >
-                        <div className="text-sm font-medium text-gray-800 dark:text-gray-100">{p.name}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          {p.product_code} · {p.brand?.name || "No brand"} · Qty {p.quantity ?? 0}
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <p className="text-xs text-gray-400 mt-1.5">
-              {selectedProduct
-                ? "This product already exists — the demand will be linked to it."
-                : "If no matching product is found, a new product will be created automatically with the selected brand & category."}
-            </p>
-          </div>
-
-          {!selectedProduct && (
-            <>
-              {/* Brand + Category + Supplier */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-<div>
-                  <label className="block text-sm font-medium mb-1.5 dark:text-slate-200">Brand *</label>
-                  <button
-                    ref={brandRef}
-                  aria-label="Select brand"
-                    type="button"
-                    onClick={() => setBrandSearchOpen(true)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        if (brand) categoryRef.current?.focus();
-                        else setBrandSearchOpen(true);
-                      }
-                    }}
-                    className="w-full h-10 flex items-center gap-2 px-3 border border-gray-200 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-left"
-                  >
-                    <TagIcon className="w-4 h-4 text-gray-400" />
-                    <span className={brand ? "text-gray-800 dark:text-slate-100" : "text-gray-400"}>
-                      {brand ? brand.label : "Search brand..."}
-                    </span>
-                  </button>
-                </div>
-
-<div>
-                  <label className="block text-sm font-medium mb-1.5 dark:text-slate-200">Category *</label>
-                  <button
-                    ref={categoryRef}
-                  aria-label="Select category"
-                    type="button"
-                    onClick={() => setCategorySearchOpen(true)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        if (category) supplierRef.current?.focus();
-                        else setCategorySearchOpen(true);
-                      }
-                    }}
-                    className="w-full h-10 flex items-center gap-2 px-3 border border-gray-200 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-left"
-                  >
-                    <Squares2X2Icon className="w-4 h-4 text-gray-400" />
-                    <span className={category ? "text-gray-800 dark:text-slate-100" : "text-gray-400"}>
-                      {category ? category.label : "Search category..."}
-                    </span>
-                  </button>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-1.5 dark:text-slate-200">Supplier (optional)</label>
-                  <button
-                    ref={supplierRef}
-                  aria-label="Select supplier"
-                    type="button"
-                    onClick={() => setSupplierSearchOpen(true)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        qtyRef.current?.focus();
-                      }
-                    }}
-                    className="w-full h-10 flex items-center gap-2 px-3 border border-gray-200 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-left"
-                  >
-                    <BuildingStorefrontIcon className="w-4 h-4 text-gray-400" />
-                    <span className={supplier ? "text-gray-800 dark:text-slate-100" : "text-gray-400"}>
-                      {supplier ? supplier.label : "Search supplier..."}
-                    </span>
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-
-{/* Quantity + Notes */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-<div>
-              <label className="block text-sm font-medium mb-1.5 dark:text-slate-200">Requested Quantity</label>
-              <input
-                ref={qtyRef}
-                  aria-label="Requested quantity"
-                type="number"
-                min={1}
-                value={requestedQuantity}
-                onChange={(e) => setRequestedQuantity(parseInt(e.target.value || 0, 10))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    if (!selectedProduct) packSizeRef.current?.focus();
-                    else notesRef.current?.focus();
-                  }
-                }}
-                className="w-full h-10 px-3 border border-gray-200 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 dark:text-slate-100"
-              />
-            </div>
-            {!selectedProduct && (
-              <div>
-                <label className="block text-sm font-medium mb-1.5 dark:text-slate-200">Pack Size</label>
-                <input
-                  ref={packSizeRef}
-                  aria-label="Pack size"
-                  type="number"
-                  min={1}
-                  value={packSize}
-                  onChange={(e) => setPackSize(parseInt(e.target.value || 1, 10))}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      notesRef.current?.focus();
-                    }
-                  }}
-                  className="w-full h-10 px-3 border border-gray-200 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 dark:text-slate-100"
-                />
-              </div>
-            )}
-            <div>
-              <label className="block text-sm font-medium mb-1.5 dark:text-slate-200">Notes</label>
-              <input
-                ref={notesRef}
-                  aria-label="Notes"
-                type="text"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    customerRef.current?.click();
-                  }
-                }}
-                placeholder="Optional notes..."
-                className="w-full h-10 px-3 border border-gray-200 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 dark:text-slate-100"
-              />
-            </div>
-          </div>
-
-{/* Customer (optional) */}
-          <div>
-<label className="block text-sm font-medium mb-1.5 dark:text-slate-200">Customer (optional)</label>
-            <div
-              ref={customerRef}
-                  aria-label="Select customer"
-              role="button"
-              tabIndex={0}
-              onClick={() => setCustomerSearchOpen(true)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  submitRef.current?.focus();
-                }
-              }}
-              className="w-full h-10 flex items-center gap-2 px-3 border border-gray-200 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-left cursor-pointer"
-            >
-              <UserIcon className="w-4 h-4 text-gray-400" />
-              <span className={customer ? "text-gray-800 dark:text-slate-100" : "text-gray-400"}>
-                {customer ? customer.name : "Search customer (who requested this product)..."}
-              </span>
+        {/* Top Details Bar */}
+        <div className="purchase-entry-details grid gap-3 sm:grid-cols-3 px-3 py-2.5 items-end">
+          <label className="sm:col-span-1">
+            Customer (optional)
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setCustomerSearchOpen(true)}
+                aria-label={customer ? `Customer: ${customer.name}` : "Select customer"}
+                className="w-full h-8 border rounded-md px-2 text-xs text-left flex items-center gap-2 disabled:opacity-70"
+              >
+                <UserIcon aria-hidden="true" className="w-4 h-4 shrink-0" />
+                <span className="truncate">{customer?.name || "Click to search customer…"}</span>
+              </button>
               {customer && (
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCustomer(null);
-                  }}
-                  className="ml-auto text-xs font-semibold underline text-red-500"
+                  onClick={() => setCustomer(null)}
+                  className="h-8 px-2 text-xs font-semibold text-red-500 hover:underline shrink-0"
                 >
                   Clear
                 </button>
               )}
             </div>
+          </label>
+          <div className="sm:col-span-2 flex items-center">
+            <p className="text-xs text-[var(--workspace-muted)]">
+              Enter: next field / new row · ↑↓: move between rows (↓ on last row adds a new row) · Alt+S: save.
+            </p>
           </div>
+        </div>
 
-          {/* Actions */}
-          <div className="user-demand-form-actions flex items-center justify-end gap-3 pt-4">
-<button
-              type="button"
-              onClick={() => navigate("/user-demands")}
-              title="Cancel (Alt+C)"
-              className="products-action theme-btn-tertiary"
-            >
-              Cancel
-            </button>
-<button
-              ref={submitRef}
-              type="submit"
-              disabled={saving}
-              title="Save (Alt+S)"
-              aria-keyshortcuts="Alt+S"
-              className="products-action products-action-primary theme-btn-primary"
-            >
-              {saving ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <HandRaisedIcon className="w-4 h-4" />}
-              <span>{saving ? "Creating…" : "Create Demand"}</span>
-            </button>
+        {/* Single-line sleek items table */}
+        <div
+          ref={itemsContainerRef}
+          className="purchase-entry-items purchase-order-form-items px-1 py-2"
+        >
+          <table className="purchase-order-form-table w-full border-collapse text-[11px]">
+            <colgroup>
+              {[4, 4, 28, 14, 14, 7, 7, 8, 10, 4].map((width, index) => (
+                <col key={index} style={{ width: `${width}%` }} />
+              ))}
+            </colgroup>
+            <thead>
+              <tr>
+                <th aria-label="Remove item" />
+                <th>#</th>
+                <th className="text-left">Product</th>
+                <th className="text-left">Brand</th>
+                <th className="text-left">Supplier</th>
+                <th>Pack Size</th>
+                <th>Stock Qty</th>
+                <th>Demand Qty *</th>
+                <th className="text-left">Notes</th>
+                <th className="text-center">+</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((row, i) => (
+                <tr
+                  key={i}
+                  ref={(ref) => {
+                    itemRowRefs.current[i] = ref;
+                  }}
+                  onFocusCapture={(event) => {
+                    if (event.currentTarget.contains(event.target)) scrollToItem(i);
+                  }}
+                >
+                  <td data-label="Remove" className="text-center">
+                    <button
+                      type="button"
+                      className="products-row-action products-row-delete"
+                      title="Remove row"
+                      aria-label={`Remove row ${i + 1}`}
+                      onClick={() => removeItem(i)}
+                    >
+                      <TrashIcon className="h-4 w-4 text-red-500" />
+                    </button>
+                  </td>
+                  <td data-label="#" className="text-center tabular-nums opacity-70">
+                    {i + 1}
+                  </td>
+                  <td
+                    data-label="Product"
+                    className="text-left min-w-0"
+                    onKeyDownCapture={(event) => {
+                      if (
+                        event.target.matches(".product-search-trigger input") &&
+                        (event.key === "ArrowUp" ||
+                          event.key === "ArrowDown" ||
+                          (event.key === "Enter" && row.product_id))
+                      ) {
+                        navigateItem(event, i, "product");
+                      }
+                    }}
+                  >
+                    <ProductSearchInput
+                      ref={(ref) => {
+                        productRefs.current[i] = ref;
+                      }}
+                      value={row.product || row.product_id}
+                      products={products}
+                      onRefreshProducts={refreshProducts}
+                      onChange={(product) => {
+                        setItems((prev) =>
+                          prev.map((r, idx) =>
+                            idx === i
+                              ? {
+                                  ...r,
+                                  product_id: product.id,
+                                  product,
+                                }
+                              : r
+                          )
+                        );
+                        setPendingFocus({ index: i, field: "requested_quantity" });
+                      }}
+                    />
+                  </td>
+                  <td data-label="Brand" className="text-left break-words">
+                    {row.product?.brand?.name || row.product?.brand_name || "—"}
+                  </td>
+                  <td data-label="Supplier" className="text-left break-words">
+                    {row.product?.supplier?.name || row.product?.supplier_name || "—"}
+                  </td>
+                  <td data-label="Pack Size" className="text-right tabular-nums">
+                    {row.product?.pack_size ?? "—"}
+                  </td>
+                  <td data-label="Stock Qty" className="text-right tabular-nums">
+                    {row.product?.quantity ?? "—"}
+                  </td>
+                  <td data-label="Demand Qty">
+                    <input
+                      ref={(ref) => {
+                        fieldRefs.current[`${i}:requested_quantity`] = ref;
+                      }}
+                      aria-label={`Requested quantity row ${i + 1}`}
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={row.requested_quantity}
+                      onChange={(e) => changeItem(i, "requested_quantity", e.target.value)}
+                      onKeyDown={(event) => navigateItem(event, i, "requested_quantity")}
+                      className="w-full min-w-0 h-7 rounded-md border px-1 text-right text-xs tabular-nums"
+                    />
+                  </td>
+                  <td data-label="Notes">
+                    <input
+                      ref={(ref) => {
+                        fieldRefs.current[`${i}:notes`] = ref;
+                      }}
+                      aria-label={`Notes row ${i + 1}`}
+                      type="text"
+                      placeholder="Optional note…"
+                      value={row.notes}
+                      onChange={(e) => changeItem(i, "notes", e.target.value)}
+                      onKeyDown={(event) => navigateItem(event, i, "notes")}
+                      className="w-full min-w-0 h-7 rounded-md border px-1.5 text-left text-xs"
+                    />
+                  </td>
+                  <td data-label="Add item" className="text-center">
+                    <button
+                      type="button"
+                      onClick={addItem}
+                      className="products-row-action stock-adjustment-add"
+                      aria-label={`Add item after row ${i + 1}`}
+                      title="Add row"
+                    >
+                      <PlusIcon className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer */}
+        <div className="purchase-entry-footer flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <div className="text-xs">
+            <p className="font-semibold text-sm">
+              {selectedCount} products · {totalUnits} total units
+            </p>
           </div>
-        </form>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={save}
+            className="g-btn-primary theme-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {saving ? "Saving Demands…" : "Save User Demands (Alt+S)"}
+          </button>
+        </div>
+
+        <CustomerSearch
+          isOpen={customerSearchOpen}
+          onClose={() => setCustomerSearchOpen(false)}
+          onSelect={(cust) => {
+            setCustomer(cust || null);
+            setCustomerSearchOpen(false);
+          }}
+          onCreate={(cust) => {
+            setCustomer(cust || null);
+            setCustomerSearchOpen(false);
+          }}
+        />
       </div>
-
-<BrandSearch
-        isOpen={brandSearchOpen}
-        onClose={() => setBrandSearchOpen(false)}
-        onSelect={(b) => {
-          setBrand(b ? { value: b.id, label: b.name } : null);
-          // After selecting brand, move focus to category
-          setTimeout(() => categoryRef.current?.click(), 50);
-        }}
-      />
-<SupplierSearch
-        isOpen={supplierSearchOpen}
-        onClose={() => setSupplierSearchOpen(false)}
-        onSelect={(s) => {
-          setSupplier(s ? { value: s.id, label: s.name } : null);
-          // After selecting supplier, move focus to requested quantity
-          setTimeout(() => qtyRef.current?.focus(), 50);
-        }}
-      />
-<CategorySearch
-        isOpen={categorySearchOpen}
-        onClose={() => setCategorySearchOpen(false)}
-        onSelect={(c) => {
-          setCategory(c ? { value: c.id, label: c.name } : null);
-          // After selecting category, move focus to supplier
-          setTimeout(() => supplierRef.current?.click(), 50);
-        }}
-      />
-      <CustomerSearch
-        isOpen={customerSearchOpen}
-        onClose={() => setCustomerSearchOpen(false)}
-        onSelect={(cust) => {
-          setCustomer(cust ? cust : null);
-          setTimeout(() => submitRef.current?.focus(), 50);
-        }}
-        onCreate={(cust) => {
-          setCustomer(cust ? cust : null);
-          setTimeout(() => submitRef.current?.focus(), 50);
-        }}
-      />
     </div>
   );
 }

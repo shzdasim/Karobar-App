@@ -149,12 +149,12 @@ export default function UserDemandsIndex() {
             {canCreate && (
               <Link
                 to="/user-demands/create"
-                title="Request product (Alt+N)"
+                title="Request products (Alt+N)"
                 aria-keyshortcuts="Alt+N"
                 className="products-action products-action-primary theme-btn-primary"
               >
                 <PlusCircleIcon className="w-4 h-4" />
-                <span>Request product</span>
+                <span>Request Products</span>
                 <kbd className="text-[10px] opacity-70">Alt+N</kbd>
               </Link>
             )}

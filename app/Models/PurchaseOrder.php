@@ -8,7 +8,7 @@ class PurchaseOrder extends Model
 {
     protected $fillable = ['date', 'expected_received_date', 'supplier_id', 'status', 'reference', 'notes', 'created_by', 'updated_by', 'received_by', 'received_at'];
 
-    protected $casts = ['received_at' => 'datetime'];
+    protected $casts = ['received_at' => 'datetime', 'total_amount' => 'float'];
 
     public function supplier()
     {

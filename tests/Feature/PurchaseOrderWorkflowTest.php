@@ -607,4 +607,57 @@ class PurchaseOrderWorkflowTest extends TestCase
         app(PurchaseInvoiceController::class)->store($this->request($this->invoiceData($order)));
         $this->assertEquals(0, PurchaseOrder::expectedAmountBetween('2026-10-13', '2026-10-13'));
     }
+
+    public function test_index_returns_total_amount_filters_by_supplier_and_sorts_orders(): void
+    {
+        $this->withoutMiddleware(EnsureLicensed::class);
+        $first = $this->order();
+        $first->items()->update(['item_discount_percentage' => 10]); // 600 * 0.9 = 540
+
+        $secondData = [
+            'supplier_id' => 2,
+            'date' => '2026-10-10',
+            'expected_received_date' => '2026-10-15',
+            'items' => [['product_id' => 1, 'ordered_quantity' => 50, 'pack_size' => 10, 'unit_purchase_price' => 3, 'item_discount_percentage' => 0]],
+        ];
+        $second = PurchaseOrder::findOrFail(app(PurchaseOrderController::class)->store($this->request($secondData))->getData(true)['id']);
+
+        $defaultList = $this->getJson('/api/purchase-orders')->assertOk()->json('data');
+        $this->assertSame([$second->id, $first->id], array_column($defaultList, 'id'));
+        $this->assertEquals([150.0, 540.0], array_column($defaultList, 'total_amount'));
+
+        $filtered = $this->getJson('/api/purchase-orders?supplier=Final')->assertOk()->json('data');
+        $this->assertSame([$first->id], array_column($filtered, 'id'));
+        $this->assertEquals(540.0, $filtered[0]['total_amount']);
+
+        $byTotalDesc = $this->getJson('/api/purchase-orders?sort=total_desc')->assertOk()->json('data');
+        $this->assertSame([$first->id, $second->id], array_column($byTotalDesc, 'id'));
+
+        $bySupplierDesc = $this->getJson('/api/purchase-orders?sort=supplier_desc')->assertOk()->json('data');
+        $this->assertSame([$second->id, $first->id], array_column($bySupplierDesc, 'id'));
+
+        $byDateAsc = $this->getJson('/api/purchase-orders?sort=date_asc')->assertOk()->json('data');
+        $this->assertSame([$second->id, $first->id], array_column($byDateAsc, 'id'));
+    }
+
+    public function test_user_demands_can_be_created_with_multiple_products_at_once(): void
+    {
+        (require database_path('migrations/2025_08_10_103922_create_customers_table.php'))->up();
+        (require database_path('migrations/2026_05_02_000000_add_customer_id_to_user_demands_table.php'))->up();
+        $this->withoutMiddleware(EnsureLicensed::class);
+        $response = $this->postJson('/api/user-demands', [
+            'items' => [
+                ['product_id' => 1, 'requested_quantity' => 5, 'notes' => 'Urgent'],
+                ['product_id' => 2, 'requested_quantity' => 12, 'notes' => 'Regular'],
+                ['name' => 'Brand New Syrup', 'brand_id' => 1, 'category_id' => 1, 'supplier_id' => 1, 'pack_size' => 6, 'requested_quantity' => 3],
+            ],
+        ])->assertCreated();
+
+        $response->assertJsonPath('count', 3);
+        $this->assertCount(3, $response->json('demands'));
+        $list = $this->getJson('/api/user-demands')->assertOk();
+        $list->assertJsonPath('count', 3);
+        $list->assertJsonPath('pending_count', 3);
+        $this->assertSame(['Brand New Syrup', 'Abbott item', 'GSK item'], array_column($list->json('rows'), 'requested_name'));
+    }
 }

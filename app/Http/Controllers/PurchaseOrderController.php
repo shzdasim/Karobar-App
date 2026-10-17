@@ -13,8 +13,43 @@ class PurchaseOrderController extends Controller
     public function index(Request $request)
     {
         $this->authorize('viewAny', \App\Models\PurchaseOrder::class);
-        return \App\Models\PurchaseOrder::with('supplier', 'invoices')->withCount('items')
-            ->withSum('items', 'ordered_quantity')->orderByDesc('id')->paginate(20);
+        $totalAmount = \App\Models\PurchaseOrderItem::query()
+            ->selectRaw('COALESCE(SUM(ordered_quantity * unit_purchase_price * (1 - COALESCE(item_discount_percentage, 0) / 100.0)), 0)')
+            ->whereColumn('purchase_order_items.purchase_order_id', 'purchase_orders.id');
+        $supplierName = \App\Models\Supplier::query()
+            ->select('name')
+            ->whereColumn('suppliers.id', 'purchase_orders.supplier_id')
+            ->limit(1);
+
+        $query = \App\Models\PurchaseOrder::with('supplier', 'invoices')
+            ->withCount('items')
+            ->withSum('items', 'ordered_quantity')
+            ->selectSub($totalAmount, 'total_amount');
+
+        $supplier = trim((string) ($request->query('supplier') ?? $request->query('search') ?? $request->query('q') ?? ''));
+        if ($supplier !== '') {
+            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $supplier) . '%';
+            $query->whereHas('supplier', fn ($q) => $q->where('name', 'like', $like));
+        }
+
+        match ((string) $request->query('sort', 'newest')) {
+            'oldest' => $query->orderBy('purchase_orders.id'),
+            'date_desc' => $query->orderByDesc('purchase_orders.date')->orderByDesc('purchase_orders.id'),
+            'date_asc' => $query->orderBy('purchase_orders.date')->orderBy('purchase_orders.id'),
+            'supplier_asc' => $query->orderBy($supplierName)->orderByDesc('purchase_orders.id'),
+            'supplier_desc' => $query->orderByDesc($supplierName)->orderByDesc('purchase_orders.id'),
+            'total_desc' => $query->orderByDesc('total_amount')->orderByDesc('purchase_orders.id'),
+            'total_asc' => $query->orderBy('total_amount')->orderByDesc('purchase_orders.id'),
+            'units_desc' => $query->orderByDesc('items_sum_ordered_quantity')->orderByDesc('purchase_orders.id'),
+            'units_asc' => $query->orderBy('items_sum_ordered_quantity')->orderByDesc('purchase_orders.id'),
+            'items_desc' => $query->orderByDesc('items_count')->orderByDesc('purchase_orders.id'),
+            'items_asc' => $query->orderBy('items_count')->orderByDesc('purchase_orders.id'),
+            'status_asc' => $query->orderBy('purchase_orders.status')->orderByDesc('purchase_orders.id'),
+            'status_desc' => $query->orderByDesc('purchase_orders.status')->orderByDesc('purchase_orders.id'),
+            default => $query->orderByDesc('purchase_orders.id'),
+        };
+
+        return $query->paginate(20);
     }
 
     public function show(\App\Models\PurchaseOrder $purchaseOrder)

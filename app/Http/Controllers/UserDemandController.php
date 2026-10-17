@@ -62,56 +62,93 @@ $query = UserDemand::with(['product:id,name,product_code,quantity,brand_id,suppl
     /**
      * POST /api/user-demands
      *
-     * Create a user demand. If the product name does not match an existing product,
+     * Create one or multiple user demands. If a product name does not match an existing product,
      * a new product is created (with quantity 0) to satisfy the demand.
      */
     public function store(Request $request)
     {
         $this->authorize('create', UserDemand::class);
-
-$validated = $request->validate([
-            'product_id'        => 'nullable|integer|exists:products,id',
-            'name'              => 'required_without:product_id|string|max:255',
-            'brand_id'          => 'required_without:product_id|integer|exists:brands,id',
-            'category_id'       => 'nullable|integer|exists:categories,id',
-            'supplier_id'       => 'nullable|integer|exists:suppliers,id',
-            'customer_id'       => 'nullable|integer|exists:customers,id',
-            'pack_size'         => 'required_without:product_id|integer|min:1',
-            'requested_quantity'=> 'nullable|integer|min:1',
-            'notes'             => 'nullable|string|max:1000',
-            'status'            => 'nullable|in:pending,ordered,fulfilled,cancelled',
-        ]);
-
         $user = $this->currentUser();
 
-        return DB::transaction(function () use ($validated, $user) {
-            $quantity = (int) ($validated['requested_quantity'] ?? 1);
-            $name     = trim($validated['name'] ?? '');
-
-            // Resolve or create the product
-            if (!empty($validated['product_id'])) {
-                $product = Product::findOrFail($validated['product_id']);
-                $name    = $product->name;
-            } else {
-                $product = Product::where('name', $name)->first();
-
-                if (!$product) {
-                    $product = $this->createProductFromDemand($validated);
-                }
-            }
-
-$demand = UserDemand::create([
-                'product_id'         => $product->id,
-                'customer_id'        => $validated['customer_id'] ?? null,
-                'requested_by'       => $user->id,
-                'requested_name'     => $name,
-                'requested_quantity' => $quantity,
-                'notes'              => $validated['notes'] ?? null,
-                'status'             => $validated['status'] ?? 'pending',
+        if (is_array($request->input('items'))) {
+            $validated = $request->validate([
+                'customer_id'                => 'nullable|integer|exists:customers,id',
+                'notes'                      => 'nullable|string|max:1000',
+                'status'                     => 'nullable|in:pending,ordered,fulfilled,cancelled',
+                'items'                      => 'required|array|min:1',
+                'items.*.product_id'         => 'nullable|integer|exists:products,id',
+                'items.*.name'               => 'required_without:items.*.product_id|string|max:255',
+                'items.*.brand_id'           => 'required_without:items.*.product_id|integer|exists:brands,id',
+                'items.*.category_id'        => 'nullable|integer|exists:categories,id',
+                'items.*.supplier_id'        => 'nullable|integer|exists:suppliers,id',
+                'items.*.customer_id'        => 'nullable|integer|exists:customers,id',
+                'items.*.pack_size'          => 'required_without:items.*.product_id|integer|min:1',
+                'items.*.requested_quantity' => 'nullable|integer|min:1',
+                'items.*.notes'              => 'nullable|string|max:1000',
+                'items.*.status'             => 'nullable|in:pending,ordered,fulfilled,cancelled',
             ]);
 
-            return response()->json($demand->load('product', 'customer', 'requester'), 201);
-        });
+            return DB::transaction(function () use ($validated, $user) {
+                $demands = [];
+                foreach ($validated['items'] as $item) {
+                    $payload = array_merge([
+                        'customer_id' => $validated['customer_id'] ?? null,
+                        'notes'       => $validated['notes'] ?? null,
+                        'status'      => $validated['status'] ?? 'pending',
+                    ], array_filter($item, fn ($value) => $value !== null && $value !== ''));
+                    $demands[] = $this->persistDemand($payload, $user);
+                }
+
+                return response()->json([
+                    'count'   => count($demands),
+                    'demands' => $demands,
+                ], 201);
+            });
+        }
+
+        $validated = $request->validate([
+            'product_id'         => 'nullable|integer|exists:products,id',
+            'name'               => 'required_without:product_id|string|max:255',
+            'brand_id'           => 'required_without:product_id|integer|exists:brands,id',
+            'category_id'        => 'nullable|integer|exists:categories,id',
+            'supplier_id'        => 'nullable|integer|exists:suppliers,id',
+            'customer_id'        => 'nullable|integer|exists:customers,id',
+            'pack_size'          => 'required_without:product_id|integer|min:1',
+            'requested_quantity' => 'nullable|integer|min:1',
+            'notes'              => 'nullable|string|max:1000',
+            'status'             => 'nullable|in:pending,ordered,fulfilled,cancelled',
+        ]);
+
+        return DB::transaction(fn () => response()->json($this->persistDemand($validated, $user), 201));
+    }
+
+    private function persistDemand(array $validated, User $user): UserDemand
+    {
+        $quantity = (int) ($validated['requested_quantity'] ?? 1);
+        $name     = trim($validated['name'] ?? '');
+
+        if (!empty($validated['product_id'])) {
+            $product = Product::findOrFail($validated['product_id']);
+            $name    = $product->name;
+        } else {
+            $product = Product::where('name', $name)->first();
+
+            if (!$product) {
+                $product = $this->createProductFromDemand($validated);
+            }
+        }
+
+        $demand = UserDemand::create([
+            'product_id'         => $product->id,
+            'customer_id'        => $validated['customer_id'] ?? null,
+            'requested_by'       => $user->id,
+            'requested_name'     => $name,
+            'requested_quantity' => $quantity,
+            'notes'              => $validated['notes'] ?? null,
+            'status'             => $validated['status'] ?? 'pending',
+        ]);
+
+        return $demand->load('product', 'customer', 'requester');
     }
 
     /**
@@ -177,6 +214,10 @@ $userDemand->update($validated);
         }
 
         $productCode = 'PRD-' . str_pad($newCodeNum, 4, '0', STR_PAD_LEFT);
+        while (Product::where('product_code', $productCode)->exists()) {
+            $newCodeNum++;
+            $productCode = 'PRD-' . str_pad($newCodeNum, 4, '0', STR_PAD_LEFT);
+        }
         $barcode     = 'PRD' . str_pad((string) random_int(0, 9999999999), 10, '0', STR_PAD_LEFT);
 
 return Product::create([
