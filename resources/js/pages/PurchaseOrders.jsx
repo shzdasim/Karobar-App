@@ -158,6 +158,18 @@ export default function PurchaseOrders() {
     if (field === 'unit_bonus') next.pack_bonus = Number(value || 0) / row.pack_size;
     return next;
   }) }));
+  // Arrange lines in the order last saved on this supplier's Purchase Order based invoice.
+  const applySupplierOrder = async (chosen = supplier, { quiet = false } = {}) => {
+    if (!chosen?.id) return;
+    try {
+      const { data } = await axios.get(`/api/purchase-orders/supplier-sort-order/${chosen.id}`);
+      const rank = new Map((data?.product_ids || []).map((productId, position) => [String(productId), position]));
+      if (!rank.size) { if (!quiet) toast(`No saved product order for ${chosen.name} yet. Save a Purchase Invoice from one of its orders first.`); return; }
+      const position = (row, index) => (row.product_id && rank.has(String(row.product_id)) ? rank.get(String(row.product_id)) : rank.size + index);
+      setForm(prev => ({ ...prev, items: prev.items.map((row, index) => ({ row, key: position(row, index) })).sort((a, b) => a.key - b.key).map(entry => entry.row) }));
+      toast.success(`Products arranged in ${chosen.name}'s saved order`);
+    } catch { /* sorting is a convenience; never block order entry */ }
+  };
   const save = async (chosen = supplier) => {
     if (inFlight.current) return;
     if (!form.expected_received_date || form.expected_received_date < form.date) {
@@ -260,8 +272,8 @@ export default function PurchaseOrders() {
             <td data-label="Total" className="text-right font-semibold break-words">{(Number(row.ordered_packs || 0) * Number(row.pack_purchase_price || 0) * (1 - Number(row.item_discount_percentage || 0) / 100)).toFixed(2)}</td>
           </tr>)}
         </tbody></table></div>
-        <div className="purchase-entry-footer flex flex-wrap items-center justify-between gap-3 px-5 py-4"><button className="g-btn-secondary theme-btn-secondary inline-flex items-center justify-center gap-2 disabled:opacity-50" onClick={addItem}><PlusIcon className="h-4 w-4" /><span>Add Product</span></button><div className="text-right text-xs"><p>{rows.length} items · {rows.reduce((sum, row) => sum + Number(row.ordered_packs || 0), 0)} packs</p><p className="font-semibold text-lg">Total: {total.toFixed(2)}</p></div><button className="g-btn-primary theme-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={() => save()}>{busy ? 'Saving Purchase Order…' : 'Save Purchase Order (Alt+S)'}</button></div>
-        <SupplierSearch title="Select Supplier" isOpen={supplierOpen} onClose={() => setSupplierOpen(false)} onSelect={chosen => { setSupplier(chosen); setSupplierOpen(false); setError(''); }} />
+        <div className="purchase-entry-footer flex flex-wrap items-center justify-between gap-3 px-5 py-4"><div className="flex flex-wrap gap-2"><button className="g-btn-secondary theme-btn-secondary inline-flex items-center justify-center gap-2 disabled:opacity-50" onClick={addItem}><PlusIcon className="h-4 w-4" /><span>Add Product</span></button>{supplier?.id && <button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} title={`Arrange products in ${supplier.name}'s remembered order`} onClick={() => applySupplierOrder()}>Apply Saved Order</button>}</div><div className="text-right text-xs"><p>{rows.length} items · {rows.reduce((sum, row) => sum + Number(row.ordered_packs || 0), 0)} packs</p><p className="font-semibold text-lg">Total: {total.toFixed(2)}</p></div><button className="g-btn-primary theme-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={() => save()}>{busy ? 'Saving Purchase Order…' : 'Save Purchase Order (Alt+S)'}</button></div>
+        <SupplierSearch title="Select Supplier" isOpen={supplierOpen} onClose={() => setSupplierOpen(false)} onSelect={chosen => { setSupplier(chosen); setSupplierOpen(false); setError(''); applySupplierOrder(chosen, { quiet: true }); }} />
       </> : order ? <>
         <div className="purchase-entry-details grid gap-2 sm:grid-cols-4 px-3 py-2 text-xs"><p>Date: {order.date}</p><p>Expected Receiving: {order.expected_received_date || "Not scheduled"}</p><p>Supplier: {order.supplier?.name}</p><p>Status: {statusLabel(order.status)}</p><p>Reference: {order.reference || '—'}</p></div>
         {order.notes && <p>{order.notes}</p>}

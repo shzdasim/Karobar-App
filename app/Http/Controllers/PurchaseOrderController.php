@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Authorizables\PurchaseOrderForecast;
+use App\Services\SupplierProductSorting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -25,7 +26,16 @@ class PurchaseOrderController extends Controller
             $item->remaining_quantity = max(0, $item->ordered_quantity - $item->received_quantity);
             $item->unsetRelation('invoiceItems');
         }
+        $purchaseOrder->setRelation('items', app(SupplierProductSorting::class)
+            ->sort((int) $purchaseOrder->supplier_id, $purchaseOrder->items, fn ($line) => $line->product_id));
         return $purchaseOrder;
+    }
+
+    /** Product IDs in the order last saved on a Purchase Order based invoice for this supplier. */
+    public function supplierSortOrder(\App\Models\Supplier $supplier)
+    {
+        $this->authorize('viewAny', \App\Models\PurchaseOrder::class);
+        return response()->json(['product_ids' => app(SupplierProductSorting::class)->productIds((int) $supplier->id)]);
     }
 
     private function validateOrder(Request $request): array
@@ -144,7 +154,8 @@ class PurchaseOrderController extends Controller
                 'supplier' => $order->supplier,
                 'posted_date' => now()->toDateString(),
                 'remarks' => $order->notes,
-                'items' => $order->items->filter(fn ($line) => $line->invoiceItems->sum('unit_quantity') < $line->ordered_quantity)->values()->map(function ($line) {
+                'items' => app(SupplierProductSorting::class)->sort((int) $order->supplier_id, $order->items, fn ($line) => $line->product_id)
+                    ->filter(fn ($line) => $line->invoiceItems->sum('unit_quantity') < $line->ordered_quantity)->values()->map(function ($line) {
                     $p = $line->product;
                     $remaining = max(0, $line->ordered_quantity - $line->invoiceItems->sum('unit_quantity'));
                     $bonus = max(0, $line->unit_bonus - $line->invoiceItems->sum('unit_bonus'));

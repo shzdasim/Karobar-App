@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Batch;
 use App\Models\PurchaseOrder;
 use App\Services\PurchaseOrderReceiving;
+use App\Services\SupplierProductSorting;
 use Illuminate\Validation\ValidationException;
 use App\Models\Product;
 use App\Models\PurchaseInvoice;
@@ -188,7 +189,10 @@ if ($invoiceType === 'credit') {
                     $ledger->save();
                 }
 
-                if ($order) app(PurchaseOrderReceiving::class)->sync($order);
+                if ($order) {
+                    app(PurchaseOrderReceiving::class)->sync($order);
+                    app(SupplierProductSorting::class)->remember((int) $order->supplier_id, array_column($data['items'], 'product_id'));
+                }
                 // Return the created invoice including items and supplier for the client
                 return response()->json($invoice->load('items.product', 'supplier', 'purchaseOrder'), 201);
             });
@@ -394,7 +398,10 @@ if ($invoiceType === 'credit') {
                     }
                 }
 
-                if ($order) app(PurchaseOrderReceiving::class)->sync($order);
+                if ($order) {
+                    app(PurchaseOrderReceiving::class)->sync($order);
+                    app(SupplierProductSorting::class)->remember((int) $order->supplier_id, array_column($data['items'], 'product_id'));
+                }
                 return response()->json($purchaseInvoice->load('items.product', 'supplier', 'purchaseOrder'));
             });
         } catch (\Illuminate\Database\QueryException $e) {

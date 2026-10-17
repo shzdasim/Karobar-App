@@ -11,7 +11,15 @@ import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 import ProductFormModal from "../../components/ProductFormModal.jsx";
 import SupplierSearch from "../../components/SupplierSearch.jsx";
+import useRowDragAndDrop from "./useRowDragAndDrop.jsx";
 import { BuildingStorefrontIcon, TrashIcon, PlusCircleIcon } from "@heroicons/react/24/solid";
+
+// Six-dot grip shown on drag handles
+const DragGripIcon = () => (
+  <svg aria-hidden="true" width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+    {[2, 7, 12].flatMap(cy => [<circle key={`a${cy}`} cx="2.5" cy={cy} r="1.4" />, <circle key={`b${cy}`} cx="7.5" cy={cy} r="1.4" />])}
+  </svg>
+);
 
 // Helper to determine text color based on background brightness
 // Returns dark text for light backgrounds, light text for dark backgrounds
@@ -133,7 +141,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
 
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
-  const [arrangement, setArrangement] = useState('brand_asc');
+  // Purchase Order receipts arrive pre-sorted in the supplier's remembered order; keep it.
+  const [arrangement, setArrangement] = useState(initialData?.purchase_order_id ? 'original' : 'brand_asc');
   const [displayOrder, setDisplayOrder] = useState([]);
   const arrangedRows = useMemo(() => {
     const rows = arrangePurchaseInvoiceRows(form.items, products, 'original');
@@ -141,9 +150,17 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
     return rows.sort((a, b) => (rank.get(a.index) ?? displayOrder.length + a.index) - (rank.get(b.index) ?? displayOrder.length + b.index));
   }, [form.items, products, displayOrder]);
   const applyArrangement = value => {
+    if (value === 'custom') return; // manual order is kept as-is
     setArrangement(value);
     setDisplayOrder(arrangePurchaseInvoiceRows(form.items, products, value).map(row => row.index));
   };
+  // Commit a manual (drag & drop) order; empty rows stay at the end. Saved as-is.
+  const commitManualOrder = productIndices => {
+    const empty = arrangedRows.filter(row => !row.item.product_id).map(row => row.index);
+    setArrangement('custom');
+    setDisplayOrder([...productIndices, ...empty]);
+  };
+  const remembersSupplierOrder = Boolean(form.purchase_order_id || initialData?.purchase_order_id);
 
   const [currentField, setCurrentField] = useState("supplier");
   const [currentRowIndex, setCurrentRowIndex] = useState(0);
@@ -162,6 +179,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
 
   // Scroll container for the items section
   const itemsScrollRef = useRef(null);
+  // Drag & drop for product rows and whole brand groups
+  const dnd = useRowDragAndDrop(arrangedRows, itemsScrollRef, commitManualOrder);
 
   // productSearchRefs will hold container DOM nodes (wrapping ProductSearchInput)
   const productSearchRefs = useRef([]);
@@ -213,7 +232,7 @@ useEffect(() => {
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [form, paidTouched]);
+  }, [form, paidTouched, arrangement, displayOrder, products]);
 
   const fetchSuppliers = async () => {
     const res = await axios.get("/api/suppliers");
@@ -247,6 +266,7 @@ useEffect(() => {
     next.total_paid = next.total_amount ?? "";
     setForm(next);
     setPaidTouched(false);
+    if (res.data?.purchase_order_id) setArrangement('original');
     // Reflect the invoice's supplier in the search button display
     if (next.supplier_id) {
       const sup = res.data?.supplier || suppliers.find((s) => String(s.id) === String(next.supplier_id));
@@ -849,7 +869,7 @@ const contRect = container.getBoundingClientRect();
         total_paid: paidTouched ? form.total_paid : (form.total_amount ?? ""),
       };
 
-      const sortedRows = arrangePurchaseInvoiceRows(payload.items, products, arrangement);
+      const sortedRows = arrangement === 'custom' ? arrangedRows : arrangePurchaseInvoiceRows(payload.items, products, arrangement);
       submittedRowIndices = sortedRows.map(row => row.index);
       const payloadToSend = { ...payload, items: sortedRows.map(row => row.item) };
       if (!invoiceId) {
@@ -964,6 +984,7 @@ const contRect = container.getBoundingClientRect();
       autoComplete="off" // disable browser suggestions globally
     >
       <InvoiceErrorSummary errors={invoiceErrors} />
+      {dnd.ghost}
 {(initialData?.purchase_order || form.purchase_order) && <div className="g-toolbar p-3">This invoice was generated from Purchase Order <a className="underline" href={`/purchase-orders/${(initialData?.purchase_order || form.purchase_order).id}`}>{(initialData?.purchase_order || form.purchase_order).number}</a>. Review quantities, prices, batches and expiry before saving.{!invoiceId && <p className="text-xs mt-1 font-medium">{(initialData?.purchase_order || form.purchase_order).previous_receipts ? `Additional delivery · ${(initialData?.purchase_order || form.purchase_order).previous_receipts} previous receipt(s)` : "First delivery"} · {(initialData?.purchase_order || form.purchase_order).remaining_units} paid units remaining before this delivery. Save the delivered quantities; you can receive the balance later.</p>}</div>}
 {/* ================= HEADER SECTION ================= */}
       <div className="purchase-entry-header sticky top-0 z-10 shadow-lg" autoComplete="off">
@@ -1152,10 +1173,14 @@ const contRect = container.getBoundingClientRect();
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-gray-200 dark:border-slate-600">
-        <span className="text-xs font-semibold">Arrange existing rows when ready · new items stay at the end</span>
+        <span className="text-xs font-semibold">
+          Drag ⠿ to reorder products or whole brands (or focus ⠿ and use ↑↓) · new items stay at the end
+          {remembersSupplierOrder && <span className="block font-normal opacity-75">This order is remembered for {selectedSupplier?.name || 'this supplier'} and reused on its next Purchase Orders and Invoices.</span>}
+        </span>
         <label className="flex items-center gap-2 text-xs">Arrange products
           <select aria-label="Purchase invoice arrangement on save" className="border rounded-md px-2 py-1 text-xs bg-white dark:bg-slate-700" value={arrangement} onChange={event => applyArrangement(event.target.value)}>
-            {[...new Set(purchaseInvoiceArrangements.map(option => option.group))].map(group => <optgroup key={group} label={group}>{purchaseInvoiceArrangements.filter(option => option.group === group).map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</optgroup>)}
+            {arrangement === 'custom' && <option value="custom">Custom order (moved manually)</option>}
+            {[...new Set(purchaseInvoiceArrangements.map(option => option.group))].map(group => <optgroup key={group} label={group}>{purchaseInvoiceArrangements.filter(option => option.group === group).map(option => <option key={option.id} value={option.id}>{option.id === 'original' && remembersSupplierOrder ? 'Saved supplier order' : option.label}</option>)}</optgroup>)}
           </select>
           <button type="button" className="g-btn-ghost theme-btn-tertiary px-2.5 py-1 text-xs font-semibold" onClick={() => applyArrangement(arrangement)}>Apply Sort</button>
         </label>
@@ -1202,21 +1227,46 @@ const contRect = container.getBoundingClientRect();
           </thead>
 
           <tbody>
-            {arrangedRows.map(({ item, index: i, brand_name, brand_key }, displayIndex) => (
+            {arrangedRows.map(({ item, index: i, brand_name, product_name }) => (
               <Fragment key={i}>
-                {item.product_id && (displayIndex === 0 || String(arrangedRows[displayIndex - 1].brand_key) !== String(brand_key) || arrangedRows[displayIndex - 1].brand_name !== brand_name) && <tr className="purchase-invoice-brand-heading"><th colSpan={21} scope="rowgroup"><span>{brand_name || 'No Brand'}</span></th></tr>}
-              <tr key={i} id={invoiceErrors.rowId(i)} aria-invalid={invoiceErrors.rowMessages(i).length > 0 || undefined} className={`text-center odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/30 dark:even:bg-slate-700/50 ${invoiceErrors.rowMessages(i).length ? "invoice-row-invalid" : ""}`}>
-                {/* Remove */}
+                {dnd.groupStart.has(i) && (() => {
+                  const groupPos = dnd.groupStart.get(i);
+                  const brandLabel = brand_name || 'No Brand';
+                  return (
+                    <tr className={`purchase-invoice-brand-heading ${dnd.headingDropClass(groupPos)} ${dnd.isDragging(i) ? 'dnd-dragging' : ''}`} data-dnd-group={groupPos}>
+                      <th colSpan={21} scope="rowgroup">
+                        <span className="inline-flex items-center gap-2">
+                          {dnd.groups.length > 1 && (
+                            <button type="button" className="invoice-drag-handle" onPointerDown={e => dnd.startGroupDrag(e, groupPos, brandLabel)} onKeyDown={e => dnd.keyMoveGroup(e, groupPos)} aria-label={`Move brand ${brandLabel}. Drag, or use arrow up and down keys.`} title="Drag to move this whole brand">
+                              <DragGripIcon />
+                            </button>
+                          )}
+                          {brandLabel}
+                          <span className="font-normal opacity-60">· {dnd.groups[groupPos]?.indices.length || 0}</span>
+                        </span>
+                      </th>
+                    </tr>
+                  );
+                })()}
+              <tr key={i} id={invoiceErrors.rowId(i)} data-dnd-row={item.product_id ? i : undefined} aria-invalid={invoiceErrors.rowMessages(i).length > 0 || undefined} className={`text-center odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/30 dark:even:bg-slate-700/50 ${invoiceErrors.rowMessages(i).length ? "invoice-row-invalid" : ""} ${item.product_id ? dnd.rowDropClass(i) : ""} ${item.product_id && dnd.isDragging(i) ? "dnd-dragging" : ""}`}>
+                {/* Drag handle / Remove */}
                 <td className="border">
-                  <button
-                    type="button"
-                    onClick={() => removeItem(i)}
-                    className="products-row-action products-row-delete"
-                    aria-label={`Remove item ${i + 1}`}
-                    title="Remove item"
-                  >
-                    <TrashIcon aria-hidden="true" className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center justify-center gap-0.5">
+                    {item.product_id && (
+                      <button type="button" className="invoice-drag-handle" onPointerDown={e => dnd.startRowDrag(e, i, product_name || `Item ${i + 1}`)} onKeyDown={e => dnd.keyMoveRow(e, i)} aria-label={`Move ${product_name || `item ${i + 1}`}. Drag, or use arrow up and down keys.`} title="Drag to reorder">
+                        <DragGripIcon />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeItem(i)}
+                      className="products-row-action products-row-delete"
+                      aria-label={`Remove item ${i + 1}`}
+                      title="Remove item"
+                    >
+                      <TrashIcon aria-hidden="true" className="w-4 h-4" />
+                    </button>
+                  </div>
                 </td>
 
                 {/* Product Search Input */}

@@ -53,6 +53,7 @@ class PurchaseOrderWorkflowTest extends TestCase
             '2026_10_13_000002_add_bonus_to_purchase_order_items.php',
             '2026_10_13_000004_add_expected_received_date_to_purchase_orders.php',
             '2026_10_13_000005_allow_multiple_purchase_order_receipts.php',
+            '2026_10_15_000001_create_supplier_product_positions_table.php',
         ] as $file) {
             (require database_path('migrations/'.$file))->up();
         }
@@ -155,6 +156,35 @@ class PurchaseOrderWorkflowTest extends TestCase
         $this->assertNull(PurchaseInvoice::latest('id')->first()->purchase_order_id);
         $this->assertSame([205, 205, 205], Product::orderBy('id')->pluck('quantity')->all());
         $this->assertSame(3, DB::table('purchase_invoice_items')->whereNull('purchase_order_item_id')->count());
+    }
+
+    public function test_saved_invoice_line_order_is_remembered_for_supplier_orders_and_receipts(): void
+    {
+        $data = $this->invoiceData($this->order());
+        $data['items'] = [$data['items'][2], $data['items'][0], $data['items'][1]];
+        app(PurchaseInvoiceController::class)->store($this->request($data));
+        $sortOrder = fn () => app(PurchaseOrderController::class)->supplierSortOrder(\App\Models\Supplier::find(1))->getData(true)['product_ids'];
+        $this->assertSame([3, 1, 2], $sortOrder());
+        $this->assertSame([], app(PurchaseOrderController::class)->supplierSortOrder(\App\Models\Supplier::find(2))->getData(true)['product_ids']);
+
+        $next = $this->order();
+        $this->assertSame([3, 1, 2], array_column(app(PurchaseOrderController::class)->show($next)->toArray()['items'], 'product_id'));
+        $prepared = $this->invoiceData($next);
+        $this->assertSame([3, 1, 2], array_column($prepared['items'], 'product_id'));
+
+        // A partial receipt reorders only its own products and keeps the others' slots.
+        $prepared['invoice_number'] = 'SUP-2';
+        $prepared['items'] = [$prepared['items'][2], $prepared['items'][0]];
+        app(PurchaseInvoiceController::class)->store($this->request($prepared));
+        $this->assertSame([2, 1, 3], $sortOrder());
+
+        // Standalone invoices do not change the remembered order.
+        $standalone = $this->invoiceData($this->order());
+        unset($standalone['purchase_order_id']);
+        $standalone['invoice_number'] = 'NORMAL';
+        $standalone['items'] = array_reverse($standalone['items']);
+        app(PurchaseInvoiceController::class)->store($this->request($standalone));
+        $this->assertSame([2, 1, 3], $sortOrder());
     }
 
     public function test_invalid_order_headers_and_items_are_rejected(): void

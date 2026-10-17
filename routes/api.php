@@ -159,6 +159,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
 
     // Purchase Orders
     Route::get('/purchase-orders/forecast',       [PurchaseOrderController::class, 'forecast']);
+    Route::get('/purchase-orders/supplier-sort-order/{supplier}', [PurchaseOrderController::class, 'supplierSortOrder']);
     Route::post('/purchase-orders/{purchaseOrder}/receive', [PurchaseOrderController::class, 'receive']);
     Route::post('/purchase-orders/{purchaseOrder}/cancel', [PurchaseOrderController::class, 'cancel']);
     Route::apiResource('purchase-orders', PurchaseOrderController::class);

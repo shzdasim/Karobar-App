@@ -2092,6 +2092,15 @@ tr.invoice-row-invalid > td { background: color-mix(in srgb, var(--color-danger,
 tr.invoice-row-invalid > td:first-child { box-shadow: inset 3px 0 var(--color-danger, #dc2626); }
 .invoice-row-error-message { padding: 4px; color: var(--color-danger, #dc2626); font-size: 11px; font-weight: 600; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
 .purchase-invoice-brand-heading th { padding: 7px 10px; text-align: left; font-size: 12px; font-weight: 700; color: var(--workspace-accent, #2563eb); background: color-mix(in srgb, var(--workspace-accent, #2563eb) 10%, var(--workspace-surface, white)); border-block: 1px solid var(--workspace-border, #d1d5db); }
+/* Purchase invoice drag & drop (rows and brand groups) */
+.invoice-drag-handle { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 22px; border-radius: 5px; color: var(--workspace-muted, #6b7280); cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; transition: background-color .15s, color .15s; }
+.invoice-drag-handle:hover { color: var(--workspace-accent, #2563eb); background: color-mix(in srgb, var(--workspace-accent, #2563eb) 12%, transparent); }
+.invoice-drag-handle:focus-visible { outline: 2px solid var(--workspace-accent, #2563eb); outline-offset: 1px; }
+.invoice-drag-handle:active { cursor: grabbing; }
+tr.dnd-dragging > * { opacity: .35; }
+tr.dnd-drop-before > * { box-shadow: inset 0 3px 0 0 var(--workspace-accent, #2563eb); }
+tr.dnd-drop-after > * { box-shadow: inset 0 -3px 0 0 var(--workspace-accent, #2563eb); }
+.invoice-dnd-ghost { position: fixed; left: 0; top: 0; z-index: 9999; pointer-events: none; max-width: 280px; padding: 6px 12px; border-radius: 10px; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; background: var(--workspace-accent, #2563eb); box-shadow: 0 10px 25px -5px rgb(0 0 0 / .3); will-change: transform; }
 .sale-return-summary table, .sale-return-summary tbody, .sale-return-summary tr { display: block; width: 100%; }
 .sale-return-summary td { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 5px 0; border: 0; }
 .sale-return-summary td > label { flex: 1; font-size: 12px; font-weight: 600; margin: 0; }
