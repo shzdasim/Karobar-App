@@ -153,9 +153,9 @@ const [suppliers, setSuppliers] = useState([]);
   const btnPrimary = getButtonClasses.primary;
   const btnSecondary = getButtonClasses.secondary;
   const btnTertiary = getButtonClasses.tertiary;
-  const btnEmerald = getButtonClasses.emerald;
+  const btnEmerald = getButtonClasses.emerald || getButtonClasses.success;
   const btnDanger = getButtonClasses.danger;
-  const btnOutlined = getButtonClasses.outlined;
+  const btnOutlined = getButtonClasses.outlined || getButtonClasses.glass || getButtonClasses.secondary;
 
   // ---------- utils ----------
   const nf = useMemo(

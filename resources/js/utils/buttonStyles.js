@@ -64,13 +64,18 @@ export function getThemeButtonClasses(buttonStyle = 'modern', themeColors = {}, 
       : {},
   });
 
+  const successVariant = makeRoleVariant('theme-btn-success', (themeColors.success || themeColors.emerald) ? success : null, successHover, successText);
+  const glassVariant = makeRoleVariant('theme-btn-secondary', themeColors.secondary ? secondary : null, secondaryHover, secondaryText);
+
   return {
     primary: makeRoleVariant('theme-btn-primary', themeColors.primary ? primary : null, primaryHover, primaryText),
     secondary: makeRoleVariant('theme-btn-secondary', themeColors.secondary ? secondary : null, secondaryHover, secondaryText),
     tertiary: makeRoleVariant('theme-btn-tertiary', themeColors.tertiary ? tertiary : null, tertiaryHover, tertiaryText),
     danger: makeRoleVariant('theme-btn-danger', themeColors.danger ? danger : null, dangerHover, dangerText),
-    success: makeRoleVariant('theme-btn-success', (themeColors.success || themeColors.emerald) ? success : null, successHover, successText),
-    glass: makeRoleVariant('theme-btn-secondary', themeColors.secondary ? secondary : null, secondaryHover, secondaryText),
+    success: successVariant,
+    emerald: successVariant,
+    glass: glassVariant,
+    outlined: glassVariant,
   };
 }
 
