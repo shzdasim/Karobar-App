@@ -1,76 +1,136 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import axios from "axios";
 
-const SaleSystemContext = createContext(null);
+const SaleSystemCtx = createContext(null);
+
+/* ─────────────── Shared defaults (single source of truth) ─────────────── */
+// Used for initial state, fetch fallbacks AND the no-provider fallback, so
+// the three can never drift apart.
+const DEFAULT_SALE_SYSTEM = "retail_wholesale"; // retail + wholesale
+const DEFAULT_SHOP_TYPE = "pharmacy";
+const RETRY_DELAY_MS = 1500;
+
+const noopRefresh = async () => {};
+
+// Module-level fallback returned by useSaleSystem() when the hook is used
+// outside <SaleSystemProvider>. Keeping it a constant means the fallback
+// object identity is stable across renders, so consumers don't re-render for
+// no reason. Falling back (instead of throwing) matches the convention used
+// by useTheme()/useLicense() in this codebase.
+const FALLBACK_CONTEXT = {
+  saleSystem: DEFAULT_SALE_SYSTEM,
+  hasWholesale: true,
+  isRetailOnly: false,
+  shopType: DEFAULT_SHOP_TYPE,
+  isPharmacy: true,
+  isGeneralStore: false,
+  loading: false,
+  refreshSaleSystem: noopRefresh,
+};
 
 export function SaleSystemProvider({ children }) {
-  const [saleSystem, setSaleSystem] = useState("retail_wholesale"); // default to retail + wholesale
-  const [shopType, setShopType] = useState("pharmacy"); // default to pharmacy
+  const [saleSystem, setSaleSystem] = useState(DEFAULT_SALE_SYSTEM);
+  const [shopType, setShopType] = useState(DEFAULT_SHOP_TYPE);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchSaleSystem();
-    
-    // Listen for settings changes to refresh sale system setting
-    const handleSettingsChange = () => {
-      fetchSaleSystem();
-    };
-    
-    window.addEventListener('settingsChanged', handleSettingsChange);
-    
-    return () => {
-      window.removeEventListener('settingsChanged', handleSettingsChange);
-    };
-  }, []);
+  // Concurrency / lifecycle guards:
+  // - mountedRef:    never setState (or schedule retries) after unmount
+  // - requestIdRef:  only the LATEST request may apply its result, so a slow
+  //                  stale response can't overwrite a newer refresh
+  // - retryTimerRef: keep a handle on the pending retry so it can be
+  //                  cancelled when a newer fetch starts or on unmount
+  const mountedRef = useRef(true);
+  const requestIdRef = useRef(0);
+  const retryTimerRef = useRef(null);
 
-  const fetchSaleSystem = async (isRetry = false) => {
+  // Memoized so `refreshSaleSystem` keeps a stable identity across renders
+  // (consumers can safely list it in useMemo/useCallback dependency arrays).
+  const fetchSaleSystem = useCallback(async function fetchSaleSystem(isRetry = false) {
+    // This call supersedes any pending retry.
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+
+    const requestId = ++requestIdRef.current;
+
     try {
       const { data } = await axios.get("/api/sale-system");
-      setSaleSystem(data?.sale_system || "retail_wholesale");
-      setShopType(data?.shop_type || "pharmacy");
+      if (!mountedRef.current || requestId !== requestIdRef.current) return;
+
+      setSaleSystem(data?.sale_system || DEFAULT_SALE_SYSTEM);
+      setShopType(data?.shop_type || DEFAULT_SHOP_TYPE);
       setLoading(false);
     } catch (error) {
+      if (!mountedRef.current || requestId !== requestIdRef.current) return;
+
       console.error("Failed to fetch sale system setting:", error);
       // Never reset the mode on failure — keep the last known value so a
       // retail-only shop doesn't flip back to showing wholesale actions.
       if (!isRetry) {
         // One retry for transient failures (keeps `loading` true meanwhile)
-        setTimeout(() => fetchSaleSystem(true), 1500);
+        retryTimerRef.current = setTimeout(() => {
+          retryTimerRef.current = null;
+          fetchSaleSystem(true);
+        }, RETRY_DELAY_MS);
         return;
       }
       setLoading(false);
     }
-  };
+  }, []);
 
-  const hasWholesale = saleSystem === "retail_wholesale";
-  const isRetailOnly = saleSystem === "retail";
+  useEffect(() => {
+    mountedRef.current = true;
+    fetchSaleSystem();
 
-  const isPharmacy = shopType === "pharmacy";
-  const isGeneralStore = shopType === "general_store";
+    // Listen for settings changes to refresh sale system setting
+    const handleSettingsChange = () => {
+      fetchSaleSystem();
+    };
 
-  const value = {
-    saleSystem,
-    hasWholesale,
-    isRetailOnly,
-    shopType,
-    isPharmacy,
-    isGeneralStore,
-    loading,
-    refreshSaleSystem: fetchSaleSystem,
-  };
+    window.addEventListener("settingsChanged", handleSettingsChange);
+
+    return () => {
+      mountedRef.current = false;
+      window.removeEventListener("settingsChanged", handleSettingsChange);
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, [fetchSaleSystem]);
+
+  // Memoize the context value so consumers only re-render when the actual
+  // state changes; the derived flags are computed inside the memo.
+  const value = useMemo(
+    () => ({
+      saleSystem,
+      hasWholesale: saleSystem === "retail_wholesale",
+      isRetailOnly: saleSystem === "retail",
+      shopType,
+      isPharmacy: shopType === "pharmacy",
+      isGeneralStore: shopType === "general_store",
+      loading,
+      refreshSaleSystem: fetchSaleSystem,
+    }),
+    [saleSystem, shopType, loading, fetchSaleSystem]
+  );
 
   return (
-    <SaleSystemContext.Provider value={value}>
+    <SaleSystemCtx.Provider value={value}>
       {children}
-    </SaleSystemContext.Provider>
+    </SaleSystemCtx.Provider>
   );
 }
 
 export function useSaleSystem() {
-  const context = useContext(SaleSystemContext);
-  if (!context) {
-    throw new Error("useSaleSystem must be used within a SaleSystemProvider");
-  }
-  return context;
+  return useContext(SaleSystemCtx) ?? FALLBACK_CONTEXT;
 }
-

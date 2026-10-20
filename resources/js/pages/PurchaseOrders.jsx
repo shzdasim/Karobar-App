@@ -249,6 +249,7 @@ export default function PurchaseOrders() {
   if (permissionsLoading) return <div className="p-6">Loading permissions…</div>;
   if (!has('purchase-order.view') || (creating && !has('purchase-order.create')) || (editing && !has('purchase-order.update'))) return <div className="p-6">You don’t have permission to access this Purchase Order action.</div>;
   const rows = creating || editing ? form.items : order?.items || [];
+  const visibleOrders = (listing?.data || []).filter(po => !['received', 'partially_received'].includes(po.status));
   const total = rows.reduce((s, i) => s + (creating || editing ? Number(i.ordered_packs || 0) * Number(i.pack_purchase_price || 0) : Number(i.ordered_quantity || 0) * Number(i.unit_purchase_price || 0)) * (1 - Number(i.item_discount_percentage || 0) / 100), 0);
   return <div className="purchase-entry-page space-y-4 purchase-order-documents">
     <div className={`purchase-entry g-card overflow-hidden space-y-4 ${order && !editing ? "purchase-order-show" : entryMode ? "purchase-order-entry" : ""}`}>
@@ -256,7 +257,7 @@ export default function PurchaseOrders() {
         <div className="flex items-center gap-3"><div className="purchase-entry-icon p-2.5 rounded-xl"><ClipboardDocumentListIcon className="h-6 w-6" /></div><h1 className="purchase-entry-title text-xl font-semibold">{creating ? 'New Purchase Order' : editing ? `Edit ${order?.number || 'Purchase Order'}` : order?.number || 'Purchase Orders'}</h1></div>
         <div className="flex flex-wrap gap-2 print:hidden">
           {has('purchase-order.generate') && <Link className="g-btn-secondary theme-btn-secondary inline-flex items-center justify-center gap-2 disabled:opacity-50" to="/purchase-orders/forecast" title="New Forecast (Alt+N)"><span>New Forecast</span> <kbd className="text-[10px] opacity-70">Alt+N</kbd></Link>}
-          {order && !editing && ['ordered', 'partially_received'].includes(order.status) && has('purchase-invoice.create') && <button className="g-btn-primary theme-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={receive}><ArrowDownTrayIcon className="w-4 h-4" /><span>{busy ? 'Preparing…' : order.status === 'partially_received' ? 'Receive Remaining Items' : 'Receive Delivery'}</span></button>}
+          {order && !editing && order.status === 'ordered' && has('purchase-invoice.create') && <button className="g-btn-primary theme-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={receive}><ArrowDownTrayIcon className="w-4 h-4" /><span>{busy ? 'Preparing…' : 'Receive Delivery'}</span></button>}
           {entryMode && <button className="purchase-entry-add-product theme-btn-secondary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg" disabled={busy} onClick={addItem}><PlusIcon className="h-4 w-4" /><span>Add Product</span></button>}
           {(id || creating) && <Link className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" to="/purchase-orders">All Orders</Link>}
           {!id && !creating && has('purchase-order.create') && <Link className="g-btn-primary theme-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" to="/purchase-orders/create">New Purchase Order</Link>}
@@ -316,7 +317,7 @@ export default function PurchaseOrders() {
             {has('purchase-order.update') && <Link className="g-btn-secondary theme-btn-secondary inline-flex items-center justify-center gap-2" to={`/purchase-orders/${id}/edit`}>Edit</Link>}
             {has('purchase-order.cancel') && <button className="g-btn-ghost theme-btn-danger inline-flex items-center justify-center gap-2" disabled={busy} onClick={cancel}>Cancel Order</button>}
           </>}
-          {['ordered', 'partially_received'].includes(order.status) && has('purchase-invoice.create') && <button className="g-btn-primary theme-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={receive}>{busy ? 'Preparing Purchase Invoice…' : order.status === 'partially_received' ? 'Receive Remaining Items' : 'Receive Order'}</button>}
+          {order.status === 'ordered' && has('purchase-invoice.create') && <button className="g-btn-primary theme-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={receive}>{busy ? 'Preparing Purchase Invoice…' : 'Receive Order'}</button>}
           <button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" onClick={() => window.print()}>Print Order</button>
         </div>
       </> : listing && <>
@@ -349,7 +350,7 @@ export default function PurchaseOrders() {
                   </th>;
                 })}
               </tr></thead>
-              <tbody>{listing.data.map(po => <tr key={po.id}>
+              <tbody>{visibleOrders.map(po => <tr key={po.id}>
                 <td data-label="PO Number" className="px-3 py-2.5 font-semibold">{po.number}</td>
                 <td data-label="Date" className="px-3 py-2.5 whitespace-nowrap">{po.date}</td>
                 <td data-label="Supplier" className="px-3 py-2.5">{po.supplier?.name}</td>
@@ -363,7 +364,7 @@ export default function PurchaseOrders() {
                   {po.status === 'ordered' && !po.invoices?.length && <>
                     {has('purchase-order.update') && <Link className="purchase-order-action theme-btn-secondary" to={`/purchase-orders/${po.id}/edit`} title={`Edit ${po.number}`} aria-label={`Edit Purchase Order ${po.number}`}><PencilSquareIcon aria-hidden="true" className="w-4 h-4" /><span>Edit</span></Link>}
                   </>}
-                  {['ordered', 'partially_received'].includes(po.status) && has('purchase-invoice.create') && <Link className="purchase-order-action purchase-order-action-primary theme-btn-primary" to={`/purchase-invoices/create?purchase_order_id=${po.id}`} title={`Receive ${po.number}`} aria-label={`Receive Purchase Order ${po.number}`}><ArrowDownTrayIcon aria-hidden="true" className="w-4 h-4" /><span>{po.status === 'partially_received' ? 'Receive Balance' : 'Receive Delivery'}</span></Link>}
+                  {po.status === 'ordered' && has('purchase-invoice.create') && <Link className="purchase-order-action purchase-order-action-primary theme-btn-primary" to={`/purchase-invoices/create?purchase_order_id=${po.id}`} title={`Receive ${po.number}`} aria-label={`Receive Purchase Order ${po.number}`}><ArrowDownTrayIcon aria-hidden="true" className="w-4 h-4" /><span>Receive Delivery</span></Link>}
                   {!po.invoices?.length && ['ordered', 'cancelled'].includes(po.status) && has('purchase-order.delete') && <button className="purchase-order-action purchase-order-action-danger theme-btn-danger" disabled={busy} onClick={() => deleteOrder(po)} title={`Delete ${po.number}`} aria-label={`Delete Purchase Order ${po.number}`}><TrashIcon aria-hidden="true" className="w-4 h-4" /><span>Delete</span></button>}
                   {!!po.invoices?.length && has('purchase-invoice.view') && <Link className="purchase-order-action theme-btn-tertiary" to={`/purchase-orders/${po.id}`} title={`View receipts for ${po.number}`} aria-label={`View receipt history for ${po.number}`}><DocumentTextIcon aria-hidden="true" className="w-4 h-4" /><span>Receipts</span></Link>}
                 </div></td>
@@ -371,7 +372,7 @@ export default function PurchaseOrders() {
             </table>
           </div>
         </div>
-        {!listing.data.length && <p className="px-5 text-sm text-[var(--workspace-muted)]">{supplierFilter ? `No Purchase Orders found for supplier "${supplierFilter}".` : 'No Purchase Orders yet. Create an order or start from a forecast.'}</p>}
+        {!visibleOrders.length && <p className="px-5 text-sm text-[var(--workspace-muted)]">{supplierFilter ? `No Purchase Orders found for supplier "${supplierFilter}".` : 'No Purchase Orders yet. Create an order or start from a forecast.'}</p>}
         <div className="purchase-entry-footer flex gap-3 items-center px-5 py-4"><button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={page <= 1} onClick={() => setPage(page-1)}>Previous</button><span>Page {listing.current_page} of {listing.last_page}</span><button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={page >= listing.last_page} onClick={() => setPage(page+1)}>Next</button></div>
       </>}
     </div>

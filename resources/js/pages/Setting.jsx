@@ -12,7 +12,6 @@ import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
 import { usePermissions } from "@/api/usePermissions.js"; // 🔒
 import { useLicense } from "@/context/LicenseContext.jsx"; // 🔒 license context
 import { useTheme } from "@/context/ThemeContext.jsx"; // 🎨 theme context
-import { useSaleSystem } from "@/context/SaleSystemContext.jsx"; // Sale system context
 
 import {
   ArrowDownOnSquareIcon,
@@ -59,7 +58,6 @@ export default function Setting() {
   const [saving, setSaving] = useState(false);
   const license = useLicense();
   const { theme } = useTheme();
-  const { refreshSaleSystem } = useSaleSystem();
 
   const [form, setForm] = useState({
     store_name: "",
@@ -258,11 +256,11 @@ export default function Setting() {
 
       toast.success("✅ Settings saved!");
 
-      // Dispatch custom event so other contexts (e.g. sale system) refresh immediately
+      // Dispatch custom event so other contexts (e.g. sale system) refresh
+      // immediately. SaleSystemProvider listens for this and re-fetches
+      // /api/sale-system itself — no need to also call refreshSaleSystem(),
+      // which would fire a duplicate request.
       window.dispatchEvent(new CustomEvent('settingsChanged'));
-
-      // Refresh sale system context to reflect changes immediately
-      refreshSaleSystem();
 
       // Refresh FilePond with the latest stored logo
       if (data.logo_url) {

@@ -39,7 +39,13 @@ export default function CreatePurchaseInvoice() {
       return;
     }
     const { data } = await axios.post("/api/purchase-invoices", { ...payload, purchase_order_id: orderId || null });
-    toast.success(data.purchase_order ? `Purchase Invoice ${data.posted_number} created from Purchase Order ${data.purchase_order.number}.` : "Purchase invoice created");
+    toast.success(
+      data.purchase_order
+        ? data.purchase_order.status === "partially_received"
+          ? `Purchase Invoice ${data.posted_number} created from Purchase Order ${data.purchase_order.number}. Undelivered items added to User Demands.`
+          : `Purchase Invoice ${data.posted_number} created from Purchase Order ${data.purchase_order.number}.`
+        : "Purchase invoice created"
+    );
     // Navigate to the show page
     navigate(`/purchase-invoices/${data.id}`, { replace: true });
     return data;

@@ -452,7 +452,11 @@ useEffect(() => {
     setDisplayOrder(order => order.filter(i => i !== index).map(i => i > index ? i - 1 : i));
     if (form.items.length > 1) {
       const newItems = form.items.filter((_, i) => i !== index);
-      setForm({ ...form, items: newItems });
+      let nextForm = recalcFooter({ ...form, items: newItems }, "items");
+      if (!paidTouched) {
+        nextForm.total_paid = nextForm.total_amount ?? "";
+      }
+      setForm(nextForm);
       if (currentRowIndex >= newItems.length) {
         setCurrentRowIndex(newItems.length - 1);
       }
@@ -800,9 +804,14 @@ const contRect = container.getBoundingClientRect();
       return invoiceErrors.showMessage("Please select a supplier for credit purchase");
     }
 
+    const isPurchaseOrderReceipt = Boolean(form.purchase_order_id || initialData?.purchase_order_id);
+    const hasDeliveredRow = (item) =>
+      Number(item.unit_quantity || 0) > 0 || Number(item.unit_bonus || 0) > 0;
+
     // 0) Block if any selected product has margin <= 0 (or not a number)
     const badItem = form.items.find((item) => {
       if (!item.product_id) return false;
+      if (isPurchaseOrderReceipt && !hasDeliveredRow(item)) return false;
       const m = Number(item.margin);
       return !Number.isFinite(m) || m <= 0;
     });
@@ -870,8 +879,11 @@ const contRect = container.getBoundingClientRect();
       };
 
       const sortedRows = arrangement === 'custom' ? arrangedRows : arrangePurchaseInvoiceRows(payload.items, products, arrangement);
-      submittedRowIndices = sortedRows.map(row => row.index);
-      const payloadToSend = { ...payload, items: sortedRows.map(row => row.item) };
+      const effectiveRows = isPurchaseOrderReceipt && sortedRows.some(row => hasDeliveredRow(row.item))
+        ? sortedRows.filter(row => hasDeliveredRow(row.item))
+        : sortedRows;
+      submittedRowIndices = effectiveRows.map(row => row.index);
+      const payloadToSend = { ...payload, items: effectiveRows.map(row => row.item) };
       if (!invoiceId) {
         // Do NOT send posted_number on CREATE; server will atomically generate it.
         delete payloadToSend.posted_number;
@@ -985,7 +997,7 @@ const contRect = container.getBoundingClientRect();
     >
       <InvoiceErrorSummary errors={invoiceErrors} />
       {dnd.ghost}
-{(initialData?.purchase_order || form.purchase_order) && <div className="g-toolbar p-3">This invoice was generated from Purchase Order <a className="underline" href={`/purchase-orders/${(initialData?.purchase_order || form.purchase_order).id}`}>{(initialData?.purchase_order || form.purchase_order).number}</a>. Review quantities, prices, batches and expiry before saving.{!invoiceId && <p className="text-xs mt-1 font-medium">{(initialData?.purchase_order || form.purchase_order).previous_receipts ? `Additional delivery · ${(initialData?.purchase_order || form.purchase_order).previous_receipts} previous receipt(s)` : "First delivery"} · {(initialData?.purchase_order || form.purchase_order).remaining_units} paid units remaining before this delivery. Save the delivered quantities; you can receive the balance later.</p>}</div>}
+{(initialData?.purchase_order || form.purchase_order) && <div className="g-toolbar p-3">This invoice was generated from Purchase Order <a className="underline" href={`/purchase-orders/${(initialData?.purchase_order || form.purchase_order).id}`}>{(initialData?.purchase_order || form.purchase_order).number}</a>. Review quantities, prices, batches and expiry before saving.{!invoiceId && <p className="text-xs mt-1 font-medium">{(initialData?.purchase_order || form.purchase_order).previous_receipts ? `Additional delivery · ${(initialData?.purchase_order || form.purchase_order).previous_receipts} previous receipt(s)` : "First delivery"} · {(initialData?.purchase_order || form.purchase_order).remaining_units} paid units remaining before this delivery. Save the delivered quantities; any undelivered items will be added to User Demands.</p>}</div>}
 {/* ================= HEADER SECTION ================= */}
       <div className="purchase-entry-header sticky top-0 z-10 shadow-lg" autoComplete="off">
 {/* ---- Branded Title Banner ---- */}

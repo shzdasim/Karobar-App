@@ -22,6 +22,7 @@ class PurchaseOrderController extends Controller
             ->limit(1);
 
         $query = \App\Models\PurchaseOrder::with('supplier', 'invoices')
+            ->whereNotIn('purchase_orders.status', ['received', 'partially_received'])
             ->withCount('items')
             ->withSum('items', 'ordered_quantity')
             ->selectSub($totalAmount, 'total_amount');

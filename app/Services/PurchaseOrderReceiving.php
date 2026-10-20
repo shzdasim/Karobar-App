@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\Product;
 use App\Models\PurchaseOrder;
+use App\Models\UserDemand;
 use Illuminate\Validation\ValidationException;
 
 class PurchaseOrderReceiving
@@ -49,13 +51,78 @@ class PurchaseOrderReceiving
 
     public function sync(PurchaseOrder $order): void
     {
-        $order->load('items.invoiceItems', 'invoices');
+        $order->load('items.product', 'items.invoiceItems', 'invoices');
+        $hasInvoices = $order->invoices->isNotEmpty();
         $complete = $order->items->every(fn ($line) => $line->invoiceItems->sum('unit_quantity') >= $line->ordered_quantity);
+        $status = $hasInvoices ? ($complete ? 'received' : 'partially_received') : 'ordered';
+
         $order->update([
-            'status' => $order->invoices->isNotEmpty() ? ($complete ? 'received' : 'partially_received') : 'ordered',
-            'received_by' => $order->invoices->isNotEmpty() ? ($order->received_by ?? auth()->id()) : null,
+            'status' => $status,
+            'received_by' => $hasInvoices ? ($order->received_by ?? auth()->id()) : null,
             'updated_by' => auth()->id(),
-            'received_at' => $order->invoices->isNotEmpty() ? ($order->received_at ?? now()) : null,
+            'received_at' => $hasInvoices ? ($order->received_at ?? now()) : null,
         ]);
+
+        $this->syncUndeliveredUserDemands($order, $status);
+    }
+
+    private function syncUndeliveredUserDemands(PurchaseOrder $order, string $status): void
+    {
+        $orderNumber = $order->number ?: ('PO-' . str_pad((string) $order->id, 5, '0', STR_PAD_LEFT));
+        $note = "Undelivered from Purchase Order {$orderNumber}";
+
+        if ($status !== 'partially_received') {
+            UserDemand::where('notes', $note)
+                ->where('status', 'pending')
+                ->delete();
+            return;
+        }
+
+        foreach ($order->items as $line) {
+            $receivedUnits = (int) $line->invoiceItems->sum('unit_quantity');
+            $remainingUnits = max(0, (int) $line->ordered_quantity - $receivedUnits);
+
+            if ($remainingUnits <= 0) {
+                UserDemand::where('product_id', $line->product_id)
+                    ->where('notes', $note)
+                    ->where('status', 'pending')
+                    ->delete();
+                continue;
+            }
+
+            // Mark any pre-existing pending demands for this product as ordered
+            // so the undelivered balance from this PO is the single active pending demand.
+            UserDemand::where('product_id', $line->product_id)
+                ->where('status', 'pending')
+                ->where(function ($query) use ($note) {
+                    $query->whereNull('notes')->orWhere('notes', '!=', $note);
+                })
+                ->update(['status' => 'ordered']);
+
+            $productName = $line->product?->name
+                ?? Product::whereKey($line->product_id)->value('name')
+                ?? (string) $line->product_id;
+
+            $existing = UserDemand::where('product_id', $line->product_id)
+                ->where('notes', $note)
+                ->first();
+
+            if ($existing) {
+                $existing->update([
+                    'requested_name' => $productName,
+                    'requested_quantity' => $remainingUnits,
+                    'status' => 'pending',
+                ]);
+            } else {
+                UserDemand::create([
+                    'product_id' => $line->product_id,
+                    'requested_by' => auth()->id() ?? $order->created_by,
+                    'requested_name' => $productName,
+                    'requested_quantity' => $remainingUnits,
+                    'notes' => $note,
+                    'status' => 'pending',
+                ]);
+            }
+        }
     }
 }

@@ -660,4 +660,43 @@ class PurchaseOrderWorkflowTest extends TestCase
         $list->assertJsonPath('pending_count', 3);
         $this->assertSame(['Brand New Syrup', 'Abbott item', 'GSK item'], array_column($list->json('rows'), 'requested_name'));
     }
+
+    public function test_received_and_partially_received_orders_are_removed_from_index_and_undelivered_items_added_to_user_demands(): void
+    {
+        $this->withoutMiddleware(EnsureLicensed::class);
+        $fullOrder = $this->order();
+        $partialOrder = $this->order();
+        $openOrder = $this->order();
+
+        // Receive $fullOrder completely
+        $fullData = $this->invoiceData($fullOrder, 100);
+        $fullData['invoice_number'] = 'FULL-INV';
+        app(PurchaseInvoiceController::class)->store($this->request($fullData));
+        $this->assertSame('received', $fullOrder->fresh()->status);
+
+        // Partially receive $partialOrder: item 1 fully delivered (100), item 2 partially delivered (60 of 100), item 3 omitted (0 of 100)
+        $partialData = $this->invoiceData($partialOrder, 100);
+        $partialData['invoice_number'] = 'PARTIAL-INV';
+        $partialData['items'][1]['unit_quantity'] = 60;
+        $partialData['items'][1]['pack_quantity'] = 6;
+        $partialData['items'][1]['quantity'] = 60;
+        $partialData['items'][1]['sub_total'] = 120;
+        unset($partialData['items'][2]); // item 3 not delivered at all
+        $partialData['items'] = array_values($partialData['items']);
+        $partialData['invoice_amount'] = 320;
+        $partialData['total_amount'] = 320;
+        app(PurchaseInvoiceController::class)->store($this->request($partialData));
+        $this->assertSame('partially_received', $partialOrder->fresh()->status);
+
+        // Both full and partially received orders are removed from the purchase order table listing
+        $listedIds = array_column($this->getJson('/api/purchase-orders')->assertOk()->json('data'), 'id');
+        $this->assertSame([$openOrder->id], $listedIds);
+
+        // Undelivered items from $partialOrder are added to pending user demands
+        $demands = \App\Models\UserDemand::where('status', 'pending')->orderBy('product_id')->get();
+        $this->assertCount(2, $demands);
+        $this->assertSame([2, 3], $demands->pluck('product_id')->all());
+        $this->assertSame([40, 100], $demands->pluck('requested_quantity')->all());
+        $this->assertSame(['Abbott item', 'Getz item'], $demands->pluck('requested_name')->all());
+    }
 }
