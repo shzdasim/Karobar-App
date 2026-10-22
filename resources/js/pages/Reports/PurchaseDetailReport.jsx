@@ -11,6 +11,8 @@ import {
   BuildingStorefrontIcon,
   Squares2X2Icon,
   XMarkIcon,
+  CurrencyDollarIcon,
+  CubeIcon,
 } from "@heroicons/react/24/solid";
 import SupplierSearch from "@/components/SupplierSearch.jsx";
 import ProductSearchInput from "@/components/ProductSearchInput.jsx";
@@ -85,6 +87,17 @@ export default function PurchaseDetailReport() {
     () => getContrastText(themeColors.primary),
     [themeColors.primary]
   );
+
+  const summary = useMemo(() => {
+    const items = data.flatMap((invoice) => invoice.items || []);
+
+    return {
+      invoiceCount: data.length,
+      itemCount: items.length,
+      quantity: items.reduce((total, item) => total + n(item.quantity), 0),
+      purchaseValue: items.reduce((total, item) => total + n(item.sub_total), 0),
+    };
+  }, [data]);
 
   /* ------------------ Product fetch (for ProductSearchInput) ------------------ */
   const fetchProducts = async (q = "") => {
@@ -209,7 +222,7 @@ export default function PurchaseDetailReport() {
               <h1 className="products-title">Purchase Detail Report</h1>
               <p className="products-subtitle">
                 <Squares2X2Icon className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">{data.length} entries</span>
+                <span className="truncate">{summary.invoiceCount} invoices · {summary.itemCount} item lines</span>
               </p>
             </div>
           </div>
@@ -397,6 +410,40 @@ export default function PurchaseDetailReport() {
         </div>
       </section>
 
+      {/* ===== Purchase summary ===== */}
+      {data.length > 0 && (
+        <section className="report-kpis report-kpis-4" aria-label="Purchase report summary">
+          <KpiCard
+            label="Total Purchase Value"
+            value={`Rs. ${fmtCurrency(summary.purchaseValue)}`}
+            note="Value of items in this report"
+            icon={CurrencyDollarIcon}
+            accent={themeColors.secondary}
+          />
+          <KpiCard
+            label="Invoices"
+            value={summary.invoiceCount.toLocaleString()}
+            note="Purchase invoices in range"
+            icon={DocumentTextIcon}
+            accent={themeColors.primary}
+          />
+          <KpiCard
+            label="Item Lines"
+            value={summary.itemCount.toLocaleString()}
+            note="Purchased product entries"
+            icon={Squares2X2Icon}
+            accent={themeColors.primary}
+          />
+          <KpiCard
+            label="Quantity Purchased"
+            value={summary.quantity.toLocaleString()}
+            note="Total quantity across item lines"
+            icon={CubeIcon}
+            accent={themeColors.secondary}
+          />
+        </section>
+      )}
+
       {/* ===== Empty state ===== */}
       {data.length === 0 && !loading && (
         <section className="products-panel">
@@ -407,7 +454,13 @@ export default function PurchaseDetailReport() {
       {/* ===== Purchase invoice cards ===== */}
       {data.length > 0 && (
         <div className="report-detail-list">
-          {data.map((inv) => (
+          {data.map((inv) => {
+            const itemPurchaseValue = (inv.items || []).reduce(
+              (total, item) => total + n(item.sub_total),
+              0
+            );
+
+            return (
             <section
               key={inv.id || `${inv.posted_number}-${inv.invoice_number}-${inv.invoice_date}`}
               className="products-panel report-invoice"
@@ -487,16 +540,23 @@ export default function PurchaseDetailReport() {
                       <td colSpan={2} className="report-num">{fmtCurrency(inv.discount_amount)}</td>
                     </tr>
                     <tr className="report-total-row">
-                      <td colSpan={10} className="report-num">Total</td>
+                      <td colSpan={10} className="report-num">Items Purchase Value</td>
                       <td colSpan={2} className="report-num report-strong report-value-purchase">
-                        {fmtCurrency(inv.total_amount)}
+                        Rs. {fmtCurrency(itemPurchaseValue)}
+                      </td>
+                    </tr>
+                    <tr className="report-total-row">
+                      <td colSpan={10} className="report-num">Invoice Total</td>
+                      <td colSpan={2} className="report-num report-strong report-value-purchase">
+                        Rs. {fmtCurrency(inv.total_amount)}
                       </td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
             </section>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -506,6 +566,21 @@ export default function PurchaseDetailReport() {
         onClose={() => setSupplierSearchOpen(false)}
         onSelect={handleSupplierSelect}
       />
+    </div>
+  );
+}
+
+function KpiCard({ label, value, note, icon: Icon, accent }) {
+  return (
+    <div className="report-kpi" style={accent ? { "--report-accent": accent } : undefined}>
+      <div className="report-kpi-head">
+        <span className="report-kpi-icon">
+          <Icon />
+        </span>
+        <span>{label}</span>
+      </div>
+      <div className="report-kpi-value">{value}</div>
+      {note && <div className="report-kpi-note">{note}</div>}
     </div>
   );
 }

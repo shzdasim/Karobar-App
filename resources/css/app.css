@@ -967,6 +967,7 @@ body {
 @media (min-width: 768px) {
   .report-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .report-kpis-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 760px; }
+  .report-kpis-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .report-kpis-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (min-width: 1536px) {
@@ -3724,5 +3725,4 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
     animation-duration: 0.01ms !important;
   }
 }
-
 

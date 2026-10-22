@@ -16,6 +16,8 @@ import {
   UserIcon,
   Squares2X2Icon,
   XMarkIcon,
+  CurrencyDollarIcon,
+  CubeIcon,
 } from "@heroicons/react/24/solid";
 import CustomerSearch from "@/components/CustomerSearch.jsx";
 import ProductSearchInput from "@/components/ProductSearchInput.jsx";
@@ -96,6 +98,17 @@ export default function SaleDetailReport() {
     () => getContrastText(themeColors.primary),
     [themeColors.primary]
   );
+
+  const summary = useMemo(() => {
+    const items = data.flatMap((invoice) => invoice.items || []);
+
+    return {
+      invoiceCount: data.length,
+      itemCount: items.length,
+      quantity: items.reduce((total, item) => total + n(item.quantity), 0),
+      saleValue: items.reduce((total, item) => total + n(item.sub_total), 0),
+    };
+  }, [data]);
 
   /* ============ Product fetch (for ProductSearchInput) ============ */
   const fetchProducts = async (q = "") => {
@@ -249,7 +262,7 @@ export default function SaleDetailReport() {
               <h1 className="products-title">Sale Detail Report</h1>
               <p className="products-subtitle">
                 <Squares2X2Icon className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">{data.length} entries</span>
+                <span className="truncate">{summary.invoiceCount} invoices · {summary.itemCount} item lines</span>
               </p>
             </div>
           </div>
@@ -438,6 +451,40 @@ export default function SaleDetailReport() {
         </div>
       </section>
 
+      {/* ===== Sale summary ===== */}
+      {data.length > 0 && (
+        <section className="report-kpis report-kpis-4" aria-label="Sale report summary">
+          <KpiCard
+            label="Total Sale Value"
+            value={`Rs. ${fmtCurrency(summary.saleValue)}`}
+            note="Value of items in this report"
+            icon={CurrencyDollarIcon}
+            accent={themeColors.secondary}
+          />
+          <KpiCard
+            label="Invoices"
+            value={summary.invoiceCount.toLocaleString()}
+            note="Sale invoices in range"
+            icon={DocumentTextIcon}
+            accent={themeColors.primary}
+          />
+          <KpiCard
+            label="Item Lines"
+            value={summary.itemCount.toLocaleString()}
+            note="Sold product entries"
+            icon={Squares2X2Icon}
+            accent={themeColors.primary}
+          />
+          <KpiCard
+            label="Quantity Sold"
+            value={summary.quantity.toLocaleString()}
+            note="Total quantity across item lines"
+            icon={CubeIcon}
+            accent={themeColors.secondary}
+          />
+        </section>
+      )}
+
       {/* ===== Empty state ===== */}
       {data.length === 0 && !loading && (
         <section className="products-panel">
@@ -448,7 +495,13 @@ export default function SaleDetailReport() {
       {/* ===== Sale invoice cards ===== */}
       {data.length > 0 && (
         <div className="report-detail-list">
-          {data.map((inv, idxInv) => (
+          {data.map((inv, idxInv) => {
+            const itemSaleValue = (inv.items || []).reduce(
+              (total, item) => total + n(item.sub_total),
+              0
+            );
+
+            return (
             <section
               key={idxInv + "-" + (inv.posted_number ?? "") + "-" + (inv.invoice_date ?? "")}
               className="products-panel report-invoice"
@@ -598,16 +651,23 @@ export default function SaleDetailReport() {
                       <td colSpan={1} className="report-num">{fmtCurrency(inv.gross_amount)}</td>
                     </tr>
                     <tr className="report-total-row">
-                      <td colSpan={8} className="report-num">Total</td>
+                      <td colSpan={8} className="report-num">Items Sale Value</td>
+                      <td className="report-num report-strong report-value-sale">
+                        Rs. {fmtCurrency(itemSaleValue)}
+                      </td>
+                    </tr>
+                    <tr className="report-total-row">
+                      <td colSpan={8} className="report-num">Invoice Total</td>
                       <td colSpan={1} className="report-num report-strong report-value-sale">
-                        {fmtCurrency(inv.total)}
+                        Rs. {fmtCurrency(inv.total)}
                       </td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
             </section>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -617,6 +677,21 @@ export default function SaleDetailReport() {
         onClose={() => setCustomerSearchOpen(false)}
         onSelect={handleCustomerSelect}
       />
+    </div>
+  );
+}
+
+function KpiCard({ label, value, note, icon: Icon, accent }) {
+  return (
+    <div className="report-kpi" style={accent ? { "--report-accent": accent } : undefined}>
+      <div className="report-kpi-head">
+        <span className="report-kpi-icon">
+          <Icon />
+        </span>
+        <span>{label}</span>
+      </div>
+      <div className="report-kpi-value">{value}</div>
+      {note && <div className="report-kpi-note">{note}</div>}
     </div>
   );
 }
