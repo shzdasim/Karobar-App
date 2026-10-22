@@ -11,6 +11,9 @@
     $cust   = optional($invoice->customer)->name ?? '';
     $doctor = $invoice->doctor_name ?? '';
     $patient = $invoice->patient_name ?? '';
+    $invoiceType = strtoupper($invoice->invoice_type ?? 'debit');
+    $remarks = trim((string)($invoice->remarks ?? ''));
+    $itemCount = $invoice->items->count();
 
     $gross  = $invoice->items->sum('sub_total');
     $disc   = (float)($invoice->discount_amount ?? 0);
@@ -55,6 +58,11 @@
   .solid-hr { border-top:3px solid #000; margin:8px 0; }
   .pair { display:flex; justify-content:space-between; font-weight:bold; }
   .pair + .pair { margin-top:4px; }
+  .invoice-banner { display:flex; align-items:center; justify-content:space-between; padding:6px; border:3px solid #000; font-size:16px; }
+  .type-tag { padding:2px 5px; border:2px solid #000; font-size:11px; }
+  .meta { margin-top:6px; padding:6px; border:2px solid #000; }
+  .meta-label { text-transform:uppercase; }
+  .remarks { margin-top:6px; padding:6px; border:2px solid #000; white-space:pre-wrap; overflow-wrap:anywhere; }
   table { width:100%; border-collapse:collapse; }
   thead th { text-align:left; padding:4px 3px; border-bottom:3px solid #000; font-size:12px; text-transform:uppercase; }
   tbody td { padding:4px 0; border-bottom:2px solid #000; vertical-align:top; font-weight:bold; }
@@ -79,12 +87,16 @@
   @if($addr)<div class="center" style="font-size:12px;">{{ $addr }}</div>@endif
   @if($phone)<div class="center" style="font-size:12px;">PH: {{ $phone }}</div>@endif
   <div class="hr"></div>
-  <div class="pair"><span>INVOICE</span><span>#{{ $posted }}</span></div>
-  <div class="pair"><span>DATE</span><span>{{ $date }}</span></div>
-  @if($cust)<div class="pair"><span>CUSTOMER</span><span>{{ $cust }}</span></div>@endif
-  @if($doctor)<div class="pair"><span>DOCTOR</span><span>{{ $doctor }}</span></div>@endif
-  @if($patient)<div class="pair"><span>PATIENT</span><span>{{ $patient }}</span></div>@endif
-  @if($user)<div class="pair"><span>CASHIER</span><span>{{ $user }}</span></div>@endif
+  <div class="invoice-banner"><span>SALE INVOICE #{{ $posted }}</span><span class="type-tag">{{ $invoiceType }}</span></div>
+  <div class="meta">
+    <div class="pair"><span class="meta-label">Date</span><span>{{ $date }}</span></div>
+    <div class="pair"><span class="meta-label">Customer</span><span>{{ $cust ?: 'Walk-in' }}</span></div>
+    @if($doctor)<div class="pair"><span class="meta-label">Doctor</span><span>{{ $doctor }}</span></div>@endif
+    @if($patient)<div class="pair"><span class="meta-label">Patient</span><span>{{ $patient }}</span></div>@endif
+    @if($user)<div class="pair"><span class="meta-label">Cashier</span><span>{{ $user }}</span></div>@endif
+    <div class="pair"><span class="meta-label">Items</span><span>{{ $itemCount }}</span></div>
+  </div>
+  @if($remarks)<div class="remarks"><strong>REMARKS:</strong> {{ $remarks }}</div>@endif
   <div class="solid-hr"></div>
   <table>
     <thead>

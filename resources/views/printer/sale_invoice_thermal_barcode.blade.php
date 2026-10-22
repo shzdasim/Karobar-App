@@ -12,6 +12,9 @@
     $cust   = optional($invoice->customer)->name ?? '';
     $doctor = $invoice->doctor_name ?? '';
     $patient = $invoice->patient_name ?? '';
+    $invoiceType = strtoupper($invoice->invoice_type ?? 'debit');
+    $remarks = trim((string)($invoice->remarks ?? ''));
+    $itemCount = $invoice->items->count();
 
     $gross  = $invoice->items->sum('sub_total');
     $disc   = (float)($invoice->discount_amount ?? 0);
@@ -65,6 +68,10 @@
   .section { margin-bottom:6px; }
   .pair { display:flex; justify-content:space-between; }
   .pair + .pair { margin-top:2px; }
+  .type-tag { display:inline-block; border:1px solid #333; padding:2px 6px; font-weight:bold; letter-spacing:.5px; }
+  .meta { padding:5px; border:1px solid #333; background:#f6f6f6; }
+  .meta-label { font-weight:bold; }
+  .remarks { margin-top:5px; padding:5px; border-left:3px solid #333; background:#f6f6f6; white-space:pre-wrap; overflow-wrap:anywhere; }
   .barcode-text { font-family: 'Courier New', monospace; letter-spacing:1px; font-size:14px; font-weight:bold; }
   table { width:100%; border-collapse:collapse; }
   thead th { text-align:left; padding:3px 2px; border-bottom:2px solid #333; font-size:8px; text-transform:uppercase; background:#f0f0f0; }
@@ -96,14 +103,17 @@
   <div class="hr"></div>
   
   <div class="center barcode-text">{{ $posted }}</div>
+  <div class="center"><span class="type-tag">{{ $invoiceType }} SALE</span></div>
   
-  <div class="section">
-    <div class="pair"><span>Date:</span><span>{{ $date }} {{ $time }}</span></div>
-    @if($cust)<div class="pair"><span>Customer:</span><span>{{ $cust }}</span></div>@endif
-    @if($doctor)<div class="pair"><span>Doctor:</span><span>{{ $doctor }}</span></div>@endif
-    @if($patient)<div class="pair"><span>Patient:</span><span>{{ $patient }}</span></div>@endif
-    @if($user)<div class="pair"><span>Cashier:</span><span>{{ $user }}</span></div>@endif
+  <div class="section meta">
+    <div class="pair"><span class="meta-label">Date:</span><span>{{ $date }} {{ $time }}</span></div>
+    <div class="pair"><span class="meta-label">Customer:</span><span>{{ $cust ?: 'Walk-in' }}</span></div>
+    @if($doctor)<div class="pair"><span class="meta-label">Doctor:</span><span>{{ $doctor }}</span></div>@endif
+    @if($patient)<div class="pair"><span class="meta-label">Patient:</span><span>{{ $patient }}</span></div>@endif
+    @if($user)<div class="pair"><span class="meta-label">Cashier:</span><span>{{ $user }}</span></div>@endif
+    <div class="pair"><span class="meta-label">Items:</span><span>{{ $itemCount }}</span></div>
   </div>
+  @if($remarks)<div class="remarks"><strong>Remarks:</strong> {{ $remarks }}</div>@endif
   
   <div class="double-hr"></div>
   

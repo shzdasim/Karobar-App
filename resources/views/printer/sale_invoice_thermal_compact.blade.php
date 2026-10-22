@@ -11,6 +11,9 @@
     $cust   = optional($invoice->customer)->name ?? '';
     $doctor = $invoice->doctor_name ?? '';
     $patient = $invoice->patient_name ?? '';
+    $invoiceType = strtoupper($invoice->invoice_type ?? 'debit');
+    $remarks = trim((string)($invoice->remarks ?? ''));
+    $itemCount = $invoice->items->count();
 
     $gross  = $invoice->items->sum('sub_total');
     $disc   = (float)($invoice->discount_amount ?? 0);
@@ -55,6 +58,11 @@
   .dotted-hr { border-top:1px dotted #000; margin:3px 0; }
   .pair { display:flex; justify-content:space-between; }
   .pair + .pair { margin-top:1px; }
+  .type-line { display:flex; justify-content:space-between; font-weight:bold; }
+  .type-tag { border:1px solid #000; padding:0 3px; }
+  .meta { display:grid; grid-template-columns:1fr 1fr; gap:1px 4px; padding:2px; border:1px solid #000; }
+  .meta-wide { grid-column:1 / -1; overflow-wrap:anywhere; }
+  .remarks { margin-top:2px; padding:2px; border:1px dotted #000; white-space:pre-wrap; overflow-wrap:anywhere; }
   table { width:100%; border-collapse:collapse; font-size:7px; }
   tbody td { padding:0; border-bottom:1px dotted #000; vertical-align:top; }
   th.right, td.right { text-align:right; white-space:nowrap; }
@@ -81,10 +89,15 @@
   @if($addr)<div class="center" style="font-size:7px">{{ $addr }}</div>@endif
   @if($phone)<div class="center" style="font-size:7px">{{ $phone }}</div>@endif
   <div class="hr"></div>
-  <div class="pair"><span>#{{ $posted }}</span><span>{{ $date }}</span></div>
-  @if($cust)<div class="pair"><span>{{ $cust }}</span></div>@endif
-  @if($doctor)<div class="pair"><span>Dr:{{ $doctor }}</span></div>@endif
-  @if($patient)<div class="pair"><span>Pt:{{ $patient }}</span></div>@endif
+  <div class="type-line"><span>SALE #{{ $posted }}</span><span class="type-tag">{{ $invoiceType }}</span></div>
+  <div class="meta">
+    <span>Date</span><span class="right">{{ $date }}</span>
+    <span>Customer</span><span class="right">{{ $cust ?: 'Walk-in' }}</span>
+    @if($doctor)<span>Doctor</span><span class="right">{{ $doctor }}</span>@endif
+    @if($patient)<span>Patient</span><span class="right">{{ $patient }}</span>@endif
+    <span>Items</span><span class="right">{{ $itemCount }}</span>
+  </div>
+  @if($remarks)<div class="remarks"><strong>Note:</strong> {{ $remarks }}</div>@endif
   <div class="dotted-hr"></div>
   <table>
     <tbody>

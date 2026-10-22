@@ -11,6 +11,9 @@
     $custPhone = optional($invoice->customer)->phone ?? '';
     $doctor = $invoice->doctor_name ?? '';
     $patient = $invoice->patient_name ?? '';
+    $invoiceType = strtoupper($invoice->invoice_type ?? 'debit');
+    $remarks = trim((string)($invoice->remarks ?? ''));
+    $itemCount = $invoice->items->count();
 
     $gross  = $invoice->items->sum('sub_total');
     $disc   = (float)($invoice->discount_amount ?? 0);
@@ -56,6 +59,10 @@
   .section { margin-bottom:8px; }
   .pair { display:flex; justify-content:space-between; }
   .pair + .pair { margin-top:2px; }
+  .invoice-title { display:flex; align-items:center; justify-content:space-between; border:2px solid #000; padding:5px; font-size:12px; font-weight:bold; }
+  .type-tag { border:1px solid #000; padding:2px 6px; letter-spacing:.5px; }
+  .section-label { font-weight:bold; }
+  .remarks { padding:5px; border:1px solid #000; margin-top:5px; white-space:pre-wrap; overflow-wrap:anywhere; }
   .small-text { font-size:9px; }
   table { width:100%; border-collapse:collapse; }
   thead th { text-align:left; padding:3px 2px; border-bottom:2px solid #000; font-size:9px; }
@@ -83,15 +90,18 @@
   @if($phone)<div class="center small-text">Ph: {{ $phone }}</div>@endif
   <div class="hr"></div>
   
+  <div class="invoice-title"><span>SALE INVOICE</span><span class="type-tag">{{ $invoiceType }}</span></div>
   <div class="section">
-    <div class="pair"><span>Invoice #</span><span>{{ $posted }}</span></div>
-    <div class="pair"><span>Date</span><span>{{ $date }}</span></div>
-    @if($cust)<div class="pair"><span>Customer</span><span>{{ $cust }}</span></div>@endif
+    <div class="pair"><span class="section-label">Invoice #</span><span>{{ $posted }}</span></div>
+    <div class="pair"><span class="section-label">Date</span><span>{{ $date }}</span></div>
+    <div class="pair"><span class="section-label">Customer</span><span>{{ $cust ?: 'Walk-in' }}</span></div>
     @if($custPhone)<div class="pair"><span>Phone</span><span>{{ $custPhone }}</span></div>@endif
     @if($doctor)<div class="pair"><span>Doctor</span><span>{{ $doctor }}</span></div>@endif
     @if($patient)<div class="pair"><span>Patient</span><span>{{ $patient }}</span></div>@endif
     @if($user)<div class="pair"><span>Cashier</span><span>{{ $user }}</span></div>@endif
+    <div class="pair"><span class="section-label">Items</span><span>{{ $itemCount }}</span></div>
   </div>
+  @if($remarks)<div class="remarks"><strong>Remarks:</strong> {{ $remarks }}</div>@endif
   
   <div class="double-hr"></div>
   
@@ -145,4 +155,3 @@
 </div>
 </body>
 </html>
-

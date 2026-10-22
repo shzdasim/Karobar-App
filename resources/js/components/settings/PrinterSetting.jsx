@@ -37,37 +37,37 @@ export default function PrinterSetting({
     {
       id: 'minimal',
       name: 'Minimal',
-      description: 'No logo, basic info only',
+      description: 'Clean 58mm receipt with essential invoice details',
       icon: 'DocumentIcon',
-      preview: 'Compact receipt without logo'
+      preview: 'Customer, invoice type, remarks and item count'
     },
     {
       id: 'detailed',
       name: 'Detailed',
-      description: 'Extended customer & payment info',
+      description: 'Roomy 80mm receipt with a complete customer header',
       icon: 'ClipboardDocumentListIcon',
-      preview: 'Complete with customer balance details'
+      preview: 'Full invoice details, remarks and payment balance'
     },
     {
       id: 'compact',
       name: 'Compact',
-      description: 'Small fonts, more items per page',
+      description: 'Space-saving 58mm receipt with a compact detail grid',
       icon: 'ScaleIcon',
-      preview: 'Maximum items on single receipt'
+      preview: 'All invoice header fields in a tight layout'
     },
     {
       id: 'bold',
       name: 'Bold',
-      description: 'Large fonts, high emphasis',
+      description: 'High-contrast 80mm receipt with bold invoice details',
       icon: 'BoltIcon',
-      preview: 'Large fonts with black/white contrast'
+      preview: 'Prominent invoice type, customer and total'
     },
     {
       id: 'barcode',
       name: 'Barcode',
-      description: 'With product barcodes & QR code',
+      description: 'Verification-focused layout with product barcodes',
       icon: 'QrCodeIcon',
-      preview: 'Includes barcodes and verification QR'
+      preview: 'Invoice details, remarks, product barcodes and QR'
     },
   ];
 

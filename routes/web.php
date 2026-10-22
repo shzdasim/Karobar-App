@@ -36,6 +36,8 @@ Route::get('/print/thermal-preview/{template}', function ($template) {
     $sampleInvoice->total_receive = 500.00;
     $sampleInvoice->discount_amount = 50.00;
     $sampleInvoice->tax_amount = 0;
+    $sampleInvoice->invoice_type = 'credit';
+    $sampleInvoice->remarks = 'Please keep refrigerated';
     $sampleInvoice->footer_note = '';
     $sampleInvoice->customer_id = null;
     $sampleInvoice->doctor_name = 'Dr. Ahmed Khan';
