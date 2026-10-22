@@ -23,14 +23,6 @@ const getButtonTextColor = (primaryColor, primaryHoverColor) => {
   return getContrastText(primaryHoverColor || primaryColor);
 };
 
-// Common anti-autofill props
-const antiFill = {
-  autoComplete: "off",
-  autoCorrect: "off",
-  autoCapitalize: "off",
-  spellCheck: false,
-};
-
 const to2 = (n) => Number(parseFloat(n || 0).toFixed(2));
 
 export default function PurchaseInvoiceShow() {
@@ -258,108 +250,34 @@ return (
 
         {/* ---- Fields Card ---- */}
         <div className="purchase-show-details px-3 py-2.5">
-          <div className="grid grid-cols-12 gap-2 items-end">
-            {/* Posted Number */}
-            <div className="col-span-2">
-              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Posted Number</label>
-              <input
-                type="text"
-                inputMode="decimal"
-                name="posted_number"
-                readOnly
-                value={fmt(inv.posted_number)}
-                className="bg-gray-100 dark:bg-slate-600 border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs text-gray-900 dark:text-gray-100"
-                {...antiFill}
-              />
-            </div>
-
-            {/* Posted Date */}
-            <div className="col-span-2">
-              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Posted Date</label>
-              <input
-                type="text"
-                name="posted_date"
-                readOnly
-                value={fmt(inv.posted_date)}
-                className="border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100"
-                {...antiFill}
-              />
-            </div>
-
-            {/* Supplier */}
-            <div className="col-span-4">
-              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Supplier *</label>
-              <div className="w-full h-8 px-2 rounded-md border border-gray-200 dark:border-slate-600 bg-gray-100 dark:bg-slate-600 flex items-center text-xs font-medium text-gray-900 dark:text-gray-100">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-gray-400 shrink-0">
-                  <path d="M3 21h18" />
-                  <path d="M5 21V7l7-4 7 4v14" />
-                  <path d="M9 9h1" />
-                  <path d="M9 13h1" />
-                  <path d="M9 17h1" />
-                  <path d="M14 9h1" />
-                  <path d="M14 13h1" />
-                  <path d="M14 17h1" />
-                </svg>
-                <span className="truncate">{inv.supplier?.name ?? inv.supplier_id ?? "—"}</span>
-              </div>
-            </div>
-
-            {/* Invoice Number */}
-            <div className="col-span-1">
-              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Invoice #</label>
-              <input
-                type="text"
-                name="invoice_number"
-                readOnly
-                value={fmt(inv.invoice_number)}
-                className="border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100"
-                {...antiFill}
-              />
-            </div>
-
-            {/* Invoice Amount */}
-            <div className="col-span-1">
-              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Amount</label>
-              <input
-                type="text"
-                name="invoice_amount"
-                readOnly
-                value={fmt(inv.invoice_amount)}
-                className="border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100"
-                {...antiFill}
-              />
-            </div>
-
-            {/* Difference */}
-            <div className="col-span-2">
-              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Difference</label>
-              <input
-                type="text"
-                readOnly
-                value={difference.toFixed(2)}
-                className={`border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs font-bold text-center bg-gray-100 dark:bg-slate-600 ${
-                  difference !== 0 ? "text-red-600 dark:text-red-400" : "text-gray-700 dark:text-gray-300"
-                }`}
-                {...antiFill}
-              />
-            </div>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr className="bg-gray-100 dark:bg-slate-700">
+                  {["Posted Number", "Posted Date", "Supplier", "Invoice #", "Amount", "Difference"].map((label) => (
+                    <th key={label} scope="col" className="border px-2 py-1 text-left font-medium text-gray-600 dark:border-slate-600 dark:text-gray-300">{label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="text-gray-900 dark:text-gray-100">
+                  <td className="border px-2 py-1 dark:border-slate-600">{fmt(inv.posted_number)}</td>
+                  <td className="border px-2 py-1 dark:border-slate-600">{fmt(inv.posted_date)}</td>
+                  <td className="border px-2 py-1 dark:border-slate-600">{inv.supplier?.name ?? inv.supplier_id ?? "—"}</td>
+                  <td className="border px-2 py-1 dark:border-slate-600">{fmt(inv.invoice_number)}</td>
+                  <td className="border px-2 py-1 dark:border-slate-600">{fmt(inv.invoice_amount)}</td>
+                  <td className={`border px-2 py-1 font-bold dark:border-slate-600 ${difference !== 0 ? "text-red-600 dark:text-red-400" : ""}`}>{difference.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <th scope="row" className="border px-2 py-1 text-left font-medium text-gray-600 dark:border-slate-600 dark:text-gray-300">Remarks</th>
+                  <td colSpan={5} className="border px-2 py-1 text-gray-900 dark:border-slate-600 dark:text-gray-100">{fmt(inv.remarks)}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
-          {/* Remarks + Actions row */}
-          <div className="purchase-show-remarks mt-2 flex items-end gap-3">
-            <div className="flex-1">
-              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Remarks</label>
-              <input
-                type="text"
-                name="remarks"
-                readOnly
-                value={fmt(inv.remarks)}
-                className="border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100"
-                {...antiFill}
-              />
-            </div>
-
-            {/* Action Buttons */}
+          {/* Action Buttons */}
+          <div className="purchase-show-remarks mt-2 flex justify-end">
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -437,7 +355,7 @@ return (
               <th colSpan={3} className="border dark:border-slate-600 dark:text-gray-200">Disc % / Bonus (P / U)</th>
               <th colSpan={2} className="border dark:border-slate-600 dark:text-gray-200">Sale Price (P / U)</th>
               <th colSpan={3} className="border dark:border-slate-600 dark:text-gray-200">Wholesale Price (P / U)</th>
-              <th colSpan={3} className="border dark:border-slate-600 dark:text-gray-200">Margin % / W.S.Mrg% / Avg / Sub Total</th>
+              <th colSpan={4} className="border dark:border-slate-600 dark:text-gray-200">Margin % / W.S.Mrg% / Avg / Sub Total</th>
             </tr>
 
             <tr>
@@ -463,325 +381,90 @@ return (
           </thead>
 
           <tbody>
-            {(inv.items || []).map((item, i) => (
-              <Fragment key={item.id || i}>
-                {(i === 0 || (inv.items[i - 1]?.product?.brand?.name || inv.items[i - 1]?.product?.brand_name || '') !== (item.product?.brand?.name || item.product?.brand_name || '')) && <tr className="purchase-invoice-brand-heading"><th colSpan={21} scope="rowgroup">{item.product?.brand?.name || item.product?.brand_name || 'No Brand'}</th></tr>}
-              <tr key={i} className="text-center dark:text-gray-300">
-                {/* Row Number */}
-                <td className="border px-1 dark:border-slate-600">{i + 1}</td>
+            {(inv.items || []).map((item, i) => {
+              const brand = item.product?.brand?.name || item.product?.brand_name || "";
+              const previousBrand = inv.items[i - 1]?.product?.brand?.name || inv.items[i - 1]?.product?.brand_name || "";
 
-                {/* Product */}
-                <td className="border px-1 text-left dark:border-slate-600">{fmt(item.product?.name ?? item.product_id)}</td>
-
-                {/* Pack Size */}
-                <td className="border w-14 dark:border-slate-600">
-                  <input
-                    type="number"
-                    readOnly
-                    value={fmt(item.pack_size)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* Batch */}
-                <td className="border w-16 dark:border-slate-600">
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(item.batch)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* Expiry */}
-                <td className="border w-20 dark:border-slate-600">
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(item.expiry)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* Pack Qty */}
-                <td className="border dark:border-slate-600">
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(item.pack_quantity)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* Unit Qty */}
-                <td className="border dark:border-slate-600">
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(item.unit_quantity)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* Pack Purchase */}
-                <td className="border dark:border-slate-600">
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(item.pack_purchase_price)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* Unit Purchase */}
-                <td className="border dark:border-slate-600">
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(item.unit_purchase_price)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* Disc% */}
-                <td className="border dark:border-slate-600">
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(item.item_discount_percentage)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* Pack Bonus */}
-                <td className="border dark:border-slate-600">
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(item.pack_bonus)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* Unit Bonus */}
-                <td className="border dark:border-slate-600">
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(item.unit_bonus)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* Pack Sale */}
-                <td className="border dark:border-slate-600">
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(item.pack_sale_price)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* Unit Sale */}
-                <td className="border dark:border-slate-600">
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(item.unit_sale_price)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* Wholesale Pack Price */}
-                <td className="border dark:border-slate-600">
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(item.whole_sale_pack_price)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* Wholesale Unit Price */}
-                <td className="border dark:border-slate-600">
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(item.whole_sale_unit_price)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* Margin % */}
-                <td className="border dark:border-slate-600">
-                  <input
-                    type="number"
-                    readOnly
-                    value={fmt(item.margin)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* W.S. Margin % */}
-                <td className="border dark:border-slate-600">
-                  <input
-                    type="number"
-                    readOnly
-                    value={fmt(item.whole_sale_margin)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* Avg Price */}
-                <td className="border dark:border-slate-600">
-                  <input
-                    type="number"
-                    readOnly
-                    value={fmt(item.avg_price)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-
-                {/* Sub Total */}
-                <td className="border dark:border-slate-600">
-                  <input
-                    type="number"
-                    readOnly
-                    value={fmt(item.sub_total)}
-                    className="border dark:border-slate-600 bg-gray-100 dark:bg-slate-700 dark:text-gray-200 w-full h-6 text-[11px] px-1"
-                    {...antiFill}
-                  />
-                </td>
-              </tr>
-              </Fragment>
-            ))}
+              return (
+                <Fragment key={item.id || i}>
+                  {(i === 0 || previousBrand !== brand) && (
+                    <tr className="purchase-invoice-brand-heading">
+                      <th colSpan={20} scope="rowgroup">{brand || "No Brand"}</th>
+                    </tr>
+                  )}
+                  <tr className="text-center dark:text-gray-300">
+                    <td className="border px-1 dark:border-slate-600">{i + 1}</td>
+                    <td className="border px-1 text-left dark:border-slate-600">{fmt(item.product?.name ?? item.product_id)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.pack_size)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.batch)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.expiry)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.pack_quantity)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.unit_quantity)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.pack_purchase_price)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.unit_purchase_price)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.item_discount_percentage)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.pack_bonus)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.unit_bonus)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.pack_sale_price)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.unit_sale_price)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.whole_sale_pack_price)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.whole_sale_unit_price)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.margin)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.whole_sale_margin)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.avg_price)}</td>
+                    <td className="border px-1 dark:border-slate-600">{fmt(item.sub_total)}</td>
+                  </tr>
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       {/* ================= FOOTER SECTION ================= */}
       <div className="purchase-show-footer sticky bottom-0 p-2 z-10" autoComplete="off">
-        <table className="w-full border-collapse text-xs">
-          <tbody>
-            <tr>
-              <td className="border p-1 w-1/8 dark:border-slate-600">
-                <label className="block text-[10px] dark:text-gray-400">Tax %</label>
-                <input
-                  type="text"
-                  name="tax_percentage"
-                  readOnly
-                  value={fmt(inv.tax_percentage)}
-                  className="border dark:border-slate-600 rounded-sm w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/8 dark:border-slate-600">
-                <label className="block text-[10px] dark:text-gray-400">Tax Amount</label>
-                <input
-                  type="text"
-                  name="tax_amount"
-                  readOnly
-                  value={fmt(inv.tax_amount)}
-                  className="border dark:border-slate-600 rounded-sm w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/8 dark:border-slate-600">
-                <label className="block text-[10px] dark:text-gray-400">Discount %</label>
-                <input
-                  type="text"
-                  name="discount_percentage"
-                  readOnly
-                  value={fmt(inv.discount_percentage)}
-                  className="border dark:border-slate-600 rounded-sm w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/8 dark:border-slate-600">
-                <label className="block text-[10px] dark:text-gray-400">Discount Amount</label>
-                <input
-                  type="text"
-                  name="discount_amount"
-                  readOnly
-                  value={fmt(inv.discount_amount)}
-                  className="border dark:border-slate-600 rounded-sm w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/8 dark:border-slate-600">
-                <label className="block text-[10px] dark:text-gray-400">Total Amount</label>
-                <input
-                  type="number"
-                  name="total_amount"
-                  readOnly
-                  value={totalAmount.toFixed(2)}
-                  className="border dark:border-slate-600 rounded-sm w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200 font-bold"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/8 dark:border-slate-600">
-                <label className="block text-[10px] dark:text-gray-400">Total Paid</label>
-                <input
-                  type="text"
-                  name="total_paid"
-                  readOnly
-                  value={totalPaid.toFixed(2)}
-                  className="border dark:border-slate-600 rounded-sm w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/8 dark:border-slate-600">
-                <label className="block text-[10px] dark:text-gray-400">Remaining</label>
-                <input
-                  type="number"
-                  name="remaining_amount"
-                  readOnly
-                  value={remainingAmount.toFixed(2)}
-                  className="border dark:border-slate-600 rounded-sm w-full p-1 h-7 text-xs bg-gray-100 dark:bg-slate-700 dark:text-gray-200"
-                  {...antiFill}
-                />
-              </td>
-              <td className="border p-1 w-1/8 text-center align-middle dark:border-slate-600">
-                <button
-                  type="button"
-                  onClick={() => navigate(`/purchase-invoices/${id}/edit`)}
-                  className={`w-full px-3 py-2 rounded-sm text-xs font-semibold transition-all duration-200 mb-1 ${btnSecondary.className}`}
-                  style={btnSecondary.style}
-                >
-                  <PencilSquareIcon className="w-4 h-4" aria-hidden="true" />
-                  <span>Edit</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate("/purchase-invoices/create")}
-                  className={`w-full px-3 py-2 rounded-sm text-xs font-semibold transition-all duration-200 ${btnPrimary.className}`}
-                  style={btnPrimary.style}
-                >
-                  <PlusIcon className="w-4 h-4" aria-hidden="true" />
-                  <span>New Invoice</span>
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <div className="flex items-end gap-2 overflow-x-auto">
+          <table className="min-w-[700px] flex-1 border-collapse text-xs">
+            <thead>
+              <tr className="bg-gray-100 dark:bg-slate-700">
+                {["Tax %", "Tax Amount", "Discount %", "Discount Amount", "Total Amount", "Total Paid", "Remaining"].map((label) => (
+                  <th key={label} scope="col" className="border p-1 text-left font-medium text-gray-600 dark:border-slate-600 dark:text-gray-300">{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="text-gray-900 dark:text-gray-100">
+                <td className="border p-1 dark:border-slate-600">{fmt(inv.tax_percentage)}</td>
+                <td className="border p-1 dark:border-slate-600">{fmt(inv.tax_amount)}</td>
+                <td className="border p-1 dark:border-slate-600">{fmt(inv.discount_percentage)}</td>
+                <td className="border p-1 dark:border-slate-600">{fmt(inv.discount_amount)}</td>
+                <td className="border p-1 font-bold dark:border-slate-600">{totalAmount.toFixed(2)}</td>
+                <td className="border p-1 dark:border-slate-600">{totalPaid.toFixed(2)}</td>
+                <td className="border p-1 dark:border-slate-600">{remainingAmount.toFixed(2)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={() => navigate(`/purchase-invoices/${id}/edit`)}
+              className={`px-3 py-2 rounded-sm text-xs font-semibold transition-all duration-200 ${btnSecondary.className}`}
+              style={btnSecondary.style}
+            >
+              <PencilSquareIcon className="w-4 h-4" aria-hidden="true" />
+              <span>Edit</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/purchase-invoices/create")}
+              className={`px-3 py-2 rounded-sm text-xs font-semibold transition-all duration-200 ${btnPrimary.className}`}
+              style={btnPrimary.style}
+            >
+              <PlusIcon className="w-4 h-4" aria-hidden="true" />
+              <span>New Invoice</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ===== Delete Modal ===== */}
@@ -886,4 +569,3 @@ return (
     </div>
   );
 }
-
