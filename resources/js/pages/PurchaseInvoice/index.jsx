@@ -13,7 +13,9 @@ import {
   ArrowPathIcon,
   ShieldExclamationIcon,
   ClipboardDocumentListIcon,
+  ClockIcon,
 } from "@heroicons/react/24/solid";
+import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
@@ -114,6 +116,47 @@ export default function PurchaseInvoicesIndex() {
   const btnSecondary = getButtonClasses.secondary;
   const btnDanger = getButtonClasses.danger;
   const btnGlass = getButtonClasses.glass;
+
+  // Held Drafts state
+  const [isDraftsOpen, setIsDraftsOpen] = useState(false);
+  const [draftsList, setDraftsList] = useState([]);
+
+  const fetchDrafts = useCallback(async () => {
+    try {
+      const res = await axios.get("/api/invoice-drafts", { params: { type: "purchase", status: "draft" } });
+      setDraftsList(res.data || []);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    fetchDrafts();
+  }, [fetchDrafts]);
+
+  // Alt+D to open Held Drafts modal
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.altKey && (e.key || "").toLowerCase() === "d") {
+        e.preventDefault();
+        setIsDraftsOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const handleResumeDraft = (draftId) => {
+    navigate(`/purchase-invoices/create?draft_id=${draftId}`);
+  };
+
+  const handleDiscardDraft = async (draftId) => {
+    try {
+      await axios.delete(`/api/invoice-drafts/${draftId}`);
+      toast.success("Draft discarded");
+      fetchDrafts();
+    } catch {
+      toast.error("Failed to discard draft");
+    }
+  };
 
   useEffect(() => {
     document.title = "Purchase Invoices - Pharmacy ERP";
@@ -295,6 +338,24 @@ export default function PurchaseInvoicesIndex() {
             </button>
 
             <Guard when={can.create}>
+              <button
+                type="button"
+                onClick={() => {
+                  fetchDrafts();
+                  setIsDraftsOpen(true);
+                }}
+                title="View Held Invoices & Drafts (Alt+D)"
+                className="products-action theme-btn-secondary relative"
+              >
+                <ClockIcon className="w-3.5 h-3.5 shrink-0" />
+                <span>Held Drafts</span>
+                {draftsList.length > 0 && (
+                  <span className="h-4 min-w-[16px] px-1 flex items-center justify-center rounded-full text-[10px] font-bold bg-amber-400 text-slate-900 leading-none">
+                    {draftsList.length}
+                  </span>
+                )}
+              </button>
+
               <Link
                 to="/purchase-invoices/create"
                 className="products-action products-action-primary theme-btn-primary"
@@ -676,6 +737,17 @@ export default function PurchaseInvoicesIndex() {
           </div>
         </div>
       )}
+
+      {/* Held Invoices & Drafts Modal */}
+      <InvoiceDraftsModal
+        isOpen={isDraftsOpen}
+        onClose={() => setIsDraftsOpen(false)}
+        drafts={draftsList}
+        onResumeDraft={handleResumeDraft}
+        onDiscardDraft={handleDiscardDraft}
+        onStartBlank={() => navigate("/purchase-invoices/create")}
+        type="purchase"
+      />
     </div>
   );
 }

@@ -13,6 +13,7 @@ use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\CustomerImportController;
 use App\Http\Controllers\CustomerLedgerController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\InvoiceDraftController;
 use App\Http\Controllers\LicenseController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\ProductController;
@@ -147,6 +148,10 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     // Purchase returns
     Route::get('purchase-returns/new-code',       [PurchaseReturnController::class, 'generateNewCode']);
     Route::apiResource('purchase-returns',        PurchaseReturnController::class);
+
+    // Drafts
+    Route::post('invoice-drafts/{id}/post',       [InvoiceDraftController::class, 'post']);
+    Route::apiResource('invoice-drafts',          InvoiceDraftController::class);
 
     // Sales
     Route::get('sale-invoices/new-code',          [SaleInvoiceController::class, 'generateNewCode']);

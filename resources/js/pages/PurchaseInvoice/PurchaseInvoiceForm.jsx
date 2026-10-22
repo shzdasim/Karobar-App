@@ -12,6 +12,9 @@ import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 import ProductFormModal from "../../components/ProductFormModal.jsx";
 import SupplierSearch from "../../components/SupplierSearch.jsx";
 import useRowDragAndDrop from "./useRowDragAndDrop.jsx";
+import { useInvoiceDraft } from "@/hooks/useInvoiceDraft.js";
+import InvoiceDraftIndicator from "@/components/InvoiceDraftIndicator.jsx";
+import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
 import { BuildingStorefrontIcon, TrashIcon, PlusCircleIcon } from "@heroicons/react/24/solid";
 
 // Six-dot grip shown on drag handles
@@ -168,6 +171,74 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
   // Supplier search modal state
   const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
+
+  const isDraftingEnabled = !invoiceId && !form.purchase_order_id && !initialData?.purchase_order_id;
+
+  const handleStartBlank = () => {
+    draftHook.resetToNew();
+    setForm({
+      invoice_type: "debit",
+      supplier_id: "",
+      posted_number: "",
+      posted_date: new Date().toISOString().split("T")[0],
+      remarks: "",
+      invoice_number: "",
+      invoice_amount: "",
+      tax_percentage: "",
+      tax_amount: "",
+      discount_percentage: "",
+      discount_amount: "",
+      total_amount: "",
+      total_paid: "",
+      items: [
+        {
+          product_id: "",
+          batch: "",
+          expiry: "",
+          pack_quantity: "",
+          pack_size: "",
+          unit_quantity: "",
+          pack_purchase_price: "",
+          unit_purchase_price: "",
+          pack_sale_price: "",
+          unit_sale_price: "",
+          whole_sale_pack_price: "",
+          whole_sale_unit_price: "",
+          whole_sale_margin: "",
+          pack_bonus: "",
+          unit_bonus: "",
+          item_discount_percentage: "",
+          margin: "",
+          sub_total: "",
+          avg_price: "",
+          quantity: "",
+        },
+      ],
+    });
+    setTimeout(() => {
+      supplierRef.current?.focus?.();
+    }, 60);
+  };
+
+  const draftHook = useInvoiceDraft({
+    type: "purchase",
+    form,
+    setForm,
+    enabled: isDraftingEnabled,
+    onStartBlank: () => handleStartBlank(),
+    onDraftLoaded: async (loadedPayload, draft, responseData) => {
+      if (Array.isArray(responseData?.products) && responseData.products.length > 0) {
+        upsertProducts(responseData.products);
+      }
+      let next = recalcFooter(loadedPayload, "init");
+      setForm(next);
+      if (next.supplier_id) {
+        const sup = suppliers.find((s) => String(s.id) === String(next.supplier_id));
+        if (sup) setSelectedSupplier(sup);
+      }
+      await ensureProductsForItems(next?.items || []);
+    },
+  });
 
   // Refs for navigation
   const supplierRef = useRef(null);
@@ -887,11 +958,15 @@ const contRect = container.getBoundingClientRect();
       if (!invoiceId) {
         // Do NOT send posted_number on CREATE; server will atomically generate it.
         delete payloadToSend.posted_number;
+        if (draftHook.activeDraftId) {
+          payloadToSend.draft_id = draftHook.activeDraftId;
+        }
       }
 
       // If onSubmit prop is provided, use it for API calls
       if (onSubmit) {
         const result = await onSubmit(payloadToSend);
+        draftHook.resetToNew();
         onSuccess && onSuccess();
         return result;
       }
@@ -903,6 +978,7 @@ const contRect = container.getBoundingClientRect();
         onSuccess && onSuccess();
       } else {
         const { data: saved } = await axios.post("/api/purchase-invoices", payloadToSend);
+        draftHook.resetToNew();
         // Server returns created invoice with posted_number assigned — reflect it locally.
         setForm((prev) => ({ ...prev, posted_number: saved?.posted_number || prev.posted_number }));
         toast.success(`Invoice created: ${saved?.posted_number || "(number assigned)"}`);
@@ -1025,6 +1101,17 @@ const contRect = container.getBoundingClientRect();
           </div>
 
           <div className="flex items-center gap-3">
+            {isDraftingEnabled && (
+              <InvoiceDraftIndicator
+                saveStatus={draftHook.saveStatus}
+                lastSavedAt={draftHook.lastSavedAt}
+                saveError={draftHook.saveError}
+                draftsCount={draftHook.draftsList.length}
+                activeDraftTitle={draftHook.activeDraft?.title}
+                onOpenDrafts={() => draftHook.setIsDraftsModalOpen(true)}
+                onSaveDraft={() => draftHook.holdAndNew()}
+              />
+            )}
             {/* Invoice Type Segmented Control */}
             <div
               className="purchase-entry-type flex items-center gap-1 rounded-lg p-1 shadow-inner"
@@ -1286,7 +1373,7 @@ const contRect = container.getBoundingClientRect();
                   <InvoiceRowError messages={invoiceErrors.rowMessages(i)} />
                   <div ref={(el) => (productSearchRefs.current[i] = el)}>
                     <ProductSearchInput
-                      value={products.find(p => String(p.id) === String(item.product_id)) || item.product || item.product_id}
+                      value={products.find(p => String(p.id) === String(item.product_id)) || item.product || (item.product_name ? { id: item.product_id, name: item.product_name } : item.product_id)}
                       onChange={async (val) => {
                         const list = Array.isArray(products) ? products : (Array.isArray(products?.data) ? products.data : []);
                         const selectedProduct = (val && typeof val === "object") ? val : list.find((p) => p?.id === val);
@@ -1853,6 +1940,20 @@ const contRect = container.getBoundingClientRect();
         onClose={() => setSupplierSearchOpen(false)}
         onSelect={handleSupplierSelect}
       />
+
+      {/* Held Drafts Modal */}
+      {isDraftingEnabled && (
+        <InvoiceDraftsModal
+          isOpen={draftHook.isDraftsModalOpen}
+          onClose={() => draftHook.setIsDraftsModalOpen(false)}
+          drafts={draftHook.draftsList}
+          activeDraftId={draftHook.activeDraftId}
+          onResumeDraft={(id) => draftHook.loadDraft(id)}
+          onDiscardDraft={(id) => draftHook.discardDraft(id)}
+          onStartBlank={handleStartBlank}
+          type="purchase"
+        />
+      )}
     </form>
   );
 }

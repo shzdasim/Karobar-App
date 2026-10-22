@@ -171,6 +171,7 @@ class SaleInvoiceController extends Controller
 
         // ⬇️ posted_number is NOT provided by client anymore (server assigns)
         $data = $request->validate([
+            'draft_id'            => 'nullable|integer|exists:invoice_drafts,id',
             'customer_id'         => 'required|exists:customers,id',
             'invoice_type'        => 'nullable|string|in:credit,debit,default:debit',
             'sale_type'           => 'nullable|string|in:retail,wholesale,default:retail',
@@ -205,6 +206,19 @@ class SaleInvoiceController extends Controller
         ]);
 
         return DB::transaction(function () use ($data, $request) {
+            $draft = null;
+            if (!empty($data['draft_id'])) {
+                $draft = \App\Models\InvoiceDraft::lockForUpdate()->find($data['draft_id']);
+                if ($draft && $draft->status === 'posted') {
+                    $postedInv = SaleInvoice::find($draft->posted_invoice_id);
+                    return response()->json([
+                        'message'       => 'Sale Invoice already created',
+                        'id'            => $draft->posted_invoice_id,
+                        'posted_number' => $postedInv?->posted_number,
+                    ], 200);
+                }
+            }
+
             app(\App\Services\SaleStockAvailability::class)->validate($data['items']);
             // 🔐 Concurrency-safe numbering: lock last row, compute next
             $last = SaleInvoice::lockForUpdate()->orderByDesc('id')->first();
@@ -272,7 +286,14 @@ class SaleInvoiceController extends Controller
                 $ledger->save();
             }
 
-            return response()->json(['message' => 'Sale Invoice created', 'id' => $invoice->id], 201);
+            if ($draft) {
+                $draft->status = 'posted';
+                $draft->posted_invoice_id = $invoice->id;
+                $draft->posted_invoice_type = SaleInvoice::class;
+                $draft->save();
+            }
+
+            return response()->json(['message' => 'Sale Invoice created', 'id' => $invoice->id, 'posted_number' => $posted], 201);
         });
     }
 

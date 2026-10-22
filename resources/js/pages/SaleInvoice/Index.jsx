@@ -15,7 +15,9 @@ import {
   UserIcon,
   CalendarIcon,
   CurrencyDollarIcon,
+  ClockIcon,
 } from "@heroicons/react/24/solid";
+import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 
@@ -82,6 +84,53 @@ export default function SaleInvoicesIndex() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deletingInvoice, setDeletingInvoice] = useState(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Held Drafts state
+  const [isDraftsOpen, setIsDraftsOpen] = useState(false);
+  const [draftsList, setDraftsList] = useState([]);
+
+  const fetchDrafts = useCallback(async () => {
+    try {
+      const res = await axios.get("/api/invoice-drafts", { params: { status: "draft" } });
+      const saleDrafts = (res.data || []).filter((d) => ["sale_retail", "sale_wholesale"].includes(d.type));
+      setDraftsList(saleDrafts);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    fetchDrafts();
+  }, [fetchDrafts]);
+
+  // Alt+D to open Held Drafts modal
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.altKey && (e.key || "").toLowerCase() === "d") {
+        e.preventDefault();
+        setIsDraftsOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const handleResumeDraft = (draftId) => {
+    const draft = draftsList.find((d) => d.id === draftId);
+    if (draft?.type === "sale_wholesale") {
+      navigate(`/sale-invoices/create/wholesale?draft_id=${draftId}`);
+    } else {
+      navigate(`/sale-invoices/create/retail?draft_id=${draftId}`);
+    }
+  };
+
+  const handleDiscardDraft = async (draftId) => {
+    try {
+      await axios.delete(`/api/invoice-drafts/${draftId}`);
+      toast.success("Draft discarded");
+      fetchDrafts();
+    } catch {
+      toast.error("Failed to discard draft");
+    }
+  };
 
   const navigate = useNavigate();
 
@@ -458,6 +507,24 @@ export default function SaleInvoicesIndex() {
             </button>
 
             <Guard when={can.create}>
+              <button
+                type="button"
+                onClick={() => {
+                  fetchDrafts();
+                  setIsDraftsOpen(true);
+                }}
+                title="View Held Invoices & Drafts (Alt+D)"
+                className="products-action theme-btn-secondary relative"
+              >
+                <ClockIcon className="w-3.5 h-3.5 shrink-0" />
+                <span>Held Drafts</span>
+                {draftsList.length > 0 && (
+                  <span className="h-4 min-w-[16px] px-1 flex items-center justify-center rounded-full text-[10px] font-bold bg-amber-400 text-slate-900 leading-none">
+                    {draftsList.length}
+                  </span>
+                )}
+              </button>
+
               <Link
                 to="/sale-invoices/create/retail"
                 title="Add Retail Sale Invoice"
@@ -794,6 +861,17 @@ export default function SaleInvoicesIndex() {
           glass: btnGlass.className 
         }}
         glassStyle={btnGlass.style}
+      />
+
+      {/* Held Invoices & Drafts Modal */}
+      <InvoiceDraftsModal
+        isOpen={isDraftsOpen}
+        onClose={() => setIsDraftsOpen(false)}
+        drafts={draftsList}
+        onResumeDraft={handleResumeDraft}
+        onDiscardDraft={handleDiscardDraft}
+        onStartBlank={() => navigate("/sale-invoices/create/retail")}
+        type="sale_retail"
       />
     </div>
   );

@@ -122,11 +122,20 @@ const MIN_WIDTH = 640;
         return;
       }
       if (typeof value === "object") {
-        setDisplay(value?.name || "");
-        setSelectedProduct(value);
+        const objName = value?.name || value?.product_name || "";
+        if (objName) {
+          setDisplay(objName);
+          setSelectedProduct(value);
+          return;
+        }
+        const selected = items.find((p) => String(p?.id) === String(value?.id));
+        if (selected) {
+          setDisplay(selected.name || "");
+          setSelectedProduct(selected);
+        }
         return;
       }
-      const selected = items.find((p) => p?.id === value);
+      const selected = items.find((p) => String(p?.id) === String(value));
       if (selected) {
         setDisplay(selected.name || "");
         setSelectedProduct(selected);

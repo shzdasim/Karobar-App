@@ -83,6 +83,7 @@ class PurchaseInvoiceController extends Controller
     {
         $this->authorize('create', PurchaseInvoice::class);
         $data = $request->validate([
+            'draft_id'             => 'nullable|integer|exists:invoice_drafts,id',
             'purchase_order_id'    => 'nullable|integer|exists:purchase_orders,id',
             'receipt_key' => 'exclude_without:purchase_order_id|required|uuid|unique:purchase_invoices,receipt_key',
             'supplier_id'          => 'required|exists:suppliers,id',
@@ -129,6 +130,15 @@ class PurchaseInvoiceController extends Controller
 
         try {
             return DB::transaction(function () use ($data) {
+                $draft = null;
+                if (!empty($data['draft_id'])) {
+                    $draft = \App\Models\InvoiceDraft::lockForUpdate()->find($data['draft_id']);
+                    if ($draft && $draft->status === 'posted') {
+                        $postedInv = PurchaseInvoice::with('items.product', 'supplier', 'purchaseOrder')->find($draft->posted_invoice_id);
+                        return response()->json($postedInv, 200);
+                    }
+                }
+
                 $order = null;
                 if (!empty($data['purchase_order_id'])) {
                     $order = PurchaseOrder::lockForUpdate()->findOrFail($data['purchase_order_id']);
@@ -193,6 +203,14 @@ if ($invoiceType === 'credit') {
                     app(PurchaseOrderReceiving::class)->sync($order);
                     app(SupplierProductSorting::class)->remember((int) $order->supplier_id, array_column($data['items'], 'product_id'));
                 }
+
+                if ($draft) {
+                    $draft->status = 'posted';
+                    $draft->posted_invoice_id = $invoice->id;
+                    $draft->posted_invoice_type = PurchaseInvoice::class;
+                    $draft->save();
+                }
+
                 // Return the created invoice including items and supplier for the client
                 return response()->json($invoice->load('items.product', 'supplier', 'purchaseOrder'), 201);
             });

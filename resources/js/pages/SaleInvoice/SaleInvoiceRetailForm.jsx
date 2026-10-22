@@ -12,6 +12,9 @@ import { recalcItem, recalcFooter } from "../../Formula/SaleInvoice.js";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
+import { useInvoiceDraft } from "@/hooks/useInvoiceDraft.js";
+import InvoiceDraftIndicator from "@/components/InvoiceDraftIndicator.jsx";
+import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -50,6 +53,8 @@ const normalizeFormLoaded = (f) => {
         return {
           id: it?.id ?? `row_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 9)}`,
           product_id: it?.product_id ?? "",
+          product_name: it?.product_name ?? it?.product?.name ?? "",
+          product: it?.product ?? null,
           pack_size: it?.pack_size ?? "",
           batch_number: it?.batch_number ?? "",
           expiry: it?.expiry ?? "",
@@ -117,6 +122,65 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   const [originalItems, setOriginalItems] = useState({}); // Store original items for edit mode to calculate available quantity correctly
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
   const navigate = useNavigate();
+
+  const handleStartBlank = () => {
+    draftHook.resetToNew();
+    setForm(normalizeFormLoaded({
+      invoice_type: "debit",
+      sale_type: "retail",
+      wholesale_type: "unit",
+      customer_id: "",
+      posted_number: "",
+      date: new Date().toISOString().split("T")[0],
+      remarks: "",
+      doctor_name: "",
+      patient_name: "",
+      discount_percentage: "",
+      discount_amount: "",
+      tax_percentage: "",
+      tax_amount: "",
+      item_discount: "",
+      gross_amount: "",
+      total: "",
+      total_receive: "",
+      items: [
+        {
+          id: generateRowId(),
+          product_id: "",
+          pack_size: "",
+          batch_number: "",
+          expiry: "",
+          current_quantity: "",
+          quantity: "",
+          price: "",
+          item_discount_percentage: "",
+          sub_total: "",
+          is_narcotic: false,
+          is_custom_price: false,
+        },
+      ],
+    }));
+    setTimeout(() => {
+      productRefs.current[0]?.querySelector?.("input")?.focus?.();
+    }, 60);
+  };
+
+  const draftHook = useInvoiceDraft({
+    type: "sale_retail",
+    form,
+    setForm,
+    enabled: !saleId,
+    onStartBlank: () => handleStartBlank(),
+    onDraftLoaded: async (loadedPayload, draft, responseData) => {
+      if (Array.isArray(responseData?.products) && responseData.products.length > 0) {
+        upsertProducts(responseData.products);
+      }
+      const loaded = normalizeFormLoaded(loadedPayload);
+      await ensureProductsForItems(loaded?.items || []);
+      await ensureBatchesForItems(loaded?.items || []);
+      setForm(loaded);
+    },
+  });
 
   // Calculate margin based on sale type (retail) - use focused row
   useEffect(() => {
@@ -613,6 +677,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       ? form.items[rowIndex]?.expiry
       : "";
 
+    if (freshProductData || (selected && selected.id)) {
+      upsertProducts([freshProductData || selected]);
+    }
+
     setForm((prev) => {
       const items = [...prev.items];
       
@@ -631,6 +699,8 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         {
           ...items[rowIndex],
           product_id: productId,
+          product_name: freshProductData?.name ?? selected?.name ?? items[rowIndex]?.product_name ?? "",
+          product: freshProductData ?? (selected?.id ? selected : null),
           pack_size: packSize,
           price,
           batch_number: shouldPreserveBatch ? existingBatchNumber : "",
@@ -863,8 +933,12 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         toast.success("Sale invoice updated");
         navigate(`/sale-invoices/${id}`);
       } else {
+        if (draftHook.activeDraftId) {
+          payload.draft_id = draftHook.activeDraftId;
+        }
         const res = await axios.post("/api/sale-invoices", payload);
         const id = res?.data?.id;
+        draftHook.resetToNew();
         toast.success("Sale invoice created");
         if (id) navigate(`/sale-invoices/${id}`);
         else invoiceErrors.showMessage("Missing invoice ID from server response.");
@@ -1041,6 +1115,17 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
           </div>
 
           <div className="flex items-center ml-auto gap-2.5">
+            {!saleId && (
+              <InvoiceDraftIndicator
+                saveStatus={draftHook.saveStatus}
+                lastSavedAt={draftHook.lastSavedAt}
+                saveError={draftHook.saveError}
+                draftsCount={draftHook.draftsList.length}
+                activeDraftTitle={draftHook.activeDraft?.title}
+                onOpenDrafts={() => draftHook.setIsDraftsModalOpen(true)}
+                onSaveDraft={() => draftHook.holdAndNew()}
+              />
+            )}
             {/* Invoice Type Segmented Control */}
             <div
               className="sale-type-toggle flex items-center"
@@ -1222,7 +1307,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                       <InvoiceRowError messages={invoiceErrors.rowMessages(i)} />
                       <div ref={(el) => (productRefs.current[i] = el)} onFocus={() => setFocusedRowIndex(i)}>
                         <ProductSearchInput
-                          value={products.find((p) => eqId(p.id, it.product_id)) || it.product_id}
+                          value={products.find((p) => eqId(p.id, it.product_id)) || it.product || (it.product_name ? { id: it.product_id, name: it.product_name } : it.product_id)}
                           onChange={(val) => handleProductSelect(i, val)}
                           onKeyDown={(e) => onKeyNav(e, i, "product")}
                           products={products}
@@ -1593,6 +1678,18 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         onClose={() => setCustomerSearchOpen(false)}
         onSelect={handleCustomerSelect}
         onCreate={handleCustomerSelect}
+      />
+
+      {/* Held Drafts Modal */}
+      <InvoiceDraftsModal
+        isOpen={draftHook.isDraftsModalOpen}
+        onClose={() => draftHook.setIsDraftsModalOpen(false)}
+        drafts={draftHook.draftsList}
+        activeDraftId={draftHook.activeDraftId}
+        onResumeDraft={(id) => draftHook.loadDraft(id)}
+        onDiscardDraft={(id) => draftHook.discardDraft(id)}
+        onStartBlank={handleStartBlank}
+        type="sale_retail"
       />
     </>
   );
