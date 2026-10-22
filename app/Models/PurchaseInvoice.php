@@ -22,7 +22,13 @@ class PurchaseInvoice extends Model
         'discount_amount',
         'total_amount',
         'total_paid',
+        'status',
+        'reversed_at',
+        'reversed_by_id',
+        'reversal_reason',
     ];
+
+    public function reversedBy() { return $this->belongsTo(User::class, 'reversed_by_id'); }
     public function purchaseOrder() { return $this->belongsTo(PurchaseOrder::class); }
 
     public function supplier()

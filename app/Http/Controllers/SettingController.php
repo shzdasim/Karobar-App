@@ -20,6 +20,10 @@ class SettingController extends Controller
             'navigation_style' => 'sidebar',
             'sale_system' => 'retail_wholesale',
             'shop_type' => 'pharmacy',
+            'currency_code' => 'PKR',
+            'currency_symbol' => 'Rs.',
+            'currency_position' => 'before',
+            'currency_decimal_places' => 2,
         ]);
 
         return response()->json($setting);
@@ -35,8 +39,25 @@ class SettingController extends Controller
         $setting = Setting::first();
 
         return response()->json([
-            'sale_system' => $setting?->sale_system ?? 'retail_wholesale',
-            'shop_type'   => $setting?->shop_type ?? 'pharmacy',
+            'sale_system'             => $setting?->sale_system ?? 'retail_wholesale',
+            'shop_type'               => $setting?->shop_type ?? 'pharmacy',
+            'currency_code'           => $setting?->currency_code ?? 'PKR',
+            'currency_symbol'         => $setting?->currency_symbol ?? 'Rs.',
+            'currency_position'       => $setting?->currency_position ?? 'before',
+            'currency_decimal_places' => (int)($setting?->currency_decimal_places ?? 2),
+        ]);
+    }
+
+    // GET /api/currency
+    public function currency()
+    {
+        $setting = Setting::first();
+
+        return response()->json([
+            'currency_code'           => $setting?->currency_code ?? 'PKR',
+            'currency_symbol'         => $setting?->currency_symbol ?? 'Rs.',
+            'currency_position'       => $setting?->currency_position ?? 'before',
+            'currency_decimal_places' => (int)($setting?->currency_decimal_places ?? 2),
         ]);
     }
 
@@ -47,18 +68,22 @@ class SettingController extends Controller
         $setting = Setting::firstOrCreate(['id' => 1]);
 
         $validated = $request->validate([
-            'store_name'     => ['nullable','string','max:255'],
-            'phone_number'   => ['nullable','string','max:30'],
-            'address'        => ['nullable','string','max:500'],
-            'license_number' => ['nullable','string','max:100'],
-            'note'           => ['nullable','string','max:2000'],
-            'printer_type'   => ['required', Rule::in(['thermal','a4'])],
-            'thermal_template' => ['nullable', Rule::in(['standard','minimal','detailed','compact','bold','barcode'])],
-            'a4_template' => ['nullable', Rule::in(['standard','minimal','detailed','compact','bold','barcode'])],
-            'navigation_style' => ['nullable', Rule::in(['sidebar','topbar'])],
-            'sale_system'    => ['nullable', Rule::in(['retail', 'retail_wholesale'])],
-            'shop_type'      => ['nullable', Rule::in(['pharmacy', 'general_store'])],
-            'logo'           => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],
+            'store_name'              => ['nullable','string','max:255'],
+            'phone_number'            => ['nullable','string','max:30'],
+            'address'                 => ['nullable','string','max:500'],
+            'license_number'          => ['nullable','string','max:100'],
+            'note'                    => ['nullable','string','max:2000'],
+            'printer_type'            => ['required', Rule::in(['thermal','a4'])],
+            'thermal_template'        => ['nullable', Rule::in(['standard','minimal','detailed','compact','bold','barcode'])],
+            'a4_template'             => ['nullable', Rule::in(['standard','minimal','detailed','compact','bold','barcode'])],
+            'navigation_style'        => ['nullable', Rule::in(['sidebar','topbar'])],
+            'sale_system'             => ['nullable', Rule::in(['retail', 'retail_wholesale'])],
+            'shop_type'               => ['nullable', Rule::in(['pharmacy', 'general_store'])],
+            'currency_code'           => ['nullable', 'string', 'max:10'],
+            'currency_symbol'         => ['nullable', 'string', 'max:15'],
+            'currency_position'       => ['nullable', Rule::in(['before', 'after'])],
+            'currency_decimal_places' => ['nullable', 'integer', 'min:0', 'max:4'],
+            'logo'                    => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],
         ]);
 
         // Handle logo upload (optional)
@@ -87,6 +112,19 @@ class SettingController extends Controller
         // Ensure shop_type is always updated (it might not be in validated if null)
         if ($request->has('shop_type')) {
             $setting->shop_type = $request->input('shop_type');
+        }
+
+        if ($request->has('currency_code')) {
+            $setting->currency_code = $request->input('currency_code');
+        }
+        if ($request->has('currency_symbol')) {
+            $setting->currency_symbol = $request->input('currency_symbol');
+        }
+        if ($request->has('currency_position')) {
+            $setting->currency_position = $request->input('currency_position');
+        }
+        if ($request->has('currency_decimal_places')) {
+            $setting->currency_decimal_places = (int)$request->input('currency_decimal_places');
         }
         
         $setting->save();

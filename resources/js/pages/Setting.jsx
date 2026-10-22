@@ -71,6 +71,10 @@ export default function Setting() {
     navigation_style: "sidebar",
     sale_system: "retail_wholesale",
     shop_type: "pharmacy",
+    currency_code: "PKR",
+    currency_symbol: "Rs.",
+    currency_position: "before",
+    currency_decimal_places: 2,
   });
 
   // FilePond files (supports remote preload)
@@ -193,6 +197,10 @@ export default function Setting() {
         navigation_style: data.navigation_style || "sidebar",
         sale_system: data.sale_system || "retail_wholesale",
         shop_type: data.shop_type || "pharmacy",
+        currency_code: data.currency_code || "PKR",
+        currency_symbol: data.currency_symbol || "Rs.",
+        currency_position: data.currency_position || "before",
+        currency_decimal_places: data.currency_decimal_places !== undefined ? Number(data.currency_decimal_places) : 2,
       });
 
       // Preload existing logo into FilePond as remote file
@@ -244,6 +252,10 @@ export default function Setting() {
       fd.append("navigation_style", form.navigation_style || "sidebar");
       fd.append("sale_system", form.sale_system || "retail_wholesale");
       fd.append("shop_type", form.shop_type || "pharmacy");
+      fd.append("currency_code", form.currency_code || "PKR");
+      fd.append("currency_symbol", form.currency_symbol || "Rs.");
+      fd.append("currency_position", form.currency_position || "before");
+      fd.append("currency_decimal_places", String(form.currency_decimal_places ?? 2));
 
       // If user selected a new file (files[0].file will exist)
       if (files.length > 0 && files[0].file) {
@@ -393,6 +405,7 @@ export default function Setting() {
         {activeTab === "general" && (
           <GeneralSetting
             form={form}
+            setForm={setForm}
             handleChange={handleChange}
             disableInputs={disableInputs}
             files={files}

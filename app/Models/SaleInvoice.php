@@ -25,7 +25,16 @@ class SaleInvoice extends Model
         'gross_amount',
         'total',
         'total_receive',
+        'status',
+        'reversed_at',
+        'reversed_by_id',
+        'reversal_reason',
     ];
+
+    public function reversedBy()
+    {
+        return $this->belongsTo(User::class, 'reversed_by_id');
+    }
 
     public function customer()
     {

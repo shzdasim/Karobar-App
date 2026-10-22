@@ -20,6 +20,10 @@ class Setting extends Model
         'navigation_style',
         'sale_system',
         'shop_type',
+        'currency_code',
+        'currency_symbol',
+        'currency_position',
+        'currency_decimal_places',
     ];
     protected $appends = ['logo_url'];
 

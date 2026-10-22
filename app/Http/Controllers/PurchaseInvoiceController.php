@@ -211,6 +211,8 @@ if ($invoiceType === 'credit') {
                     $draft->save();
                 }
 
+                app(\App\Services\DocumentAuditService::class)->recordCreate($invoice->load('items.product'), Auth::user());
+
                 // Return the created invoice including items and supplier for the client
                 return response()->json($invoice->load('items.product', 'supplier', 'purchaseOrder'), 201);
             });
@@ -233,7 +235,16 @@ if ($invoiceType === 'credit') {
     public function update(Request $request, PurchaseInvoice $purchaseInvoice)
     {
         $this->authorize('update', $purchaseInvoice);
+
+        if ($purchaseInvoice->status === 'reversed') {
+            abort(422, 'Cannot edit an invoice that has been reversed.');
+        }
+
+        $auditService = app(\App\Services\DocumentAuditService::class);
+        $beforeSnapshot = $auditService->snapshot($purchaseInvoice->load('items.product'));
+
         $data = $request->validate([
+            'reason'               => 'nullable|string|max:500',
             'supplier_id'          => 'required|exists:suppliers,id',
             'invoice_type'         => 'nullable|string|in:credit,debit',
             // 'posted_number'      => not user-editable on update
@@ -273,7 +284,7 @@ if ($invoiceType === 'credit') {
         ]);
 
         try {
-            return DB::transaction(function () use ($purchaseInvoice, $data) {
+            return DB::transaction(function () use ($purchaseInvoice, $data, $auditService, $beforeSnapshot) {
                 $order = $purchaseInvoice->purchase_order_id
                     ? PurchaseOrder::lockForUpdate()->findOrFail($purchaseInvoice->purchase_order_id) : null;
                 if ($order) {
@@ -420,6 +431,9 @@ if ($invoiceType === 'credit') {
                     app(PurchaseOrderReceiving::class)->sync($order);
                     app(SupplierProductSorting::class)->remember((int) $order->supplier_id, array_column($data['items'], 'product_id'));
                 }
+
+                $auditService->recordUpdate($purchaseInvoice->fresh(['items.product', 'supplier']), $beforeSnapshot, Auth::user(), $data['reason'] ?? 'Purchase invoice updated');
+
                 return response()->json($purchaseInvoice->load('items.product', 'supplier', 'purchaseOrder'));
             });
         } catch (\Illuminate\Database\QueryException $e) {
@@ -474,6 +488,61 @@ if ($invoiceType === 'credit') {
                 'error'   => $e->getMessage()
             ], 500);
         }
+    }
+
+    public function reverse(Request $request, $id)
+    {
+        $purchaseInvoice = PurchaseInvoice::with(['items.product', 'supplier'])->findOrFail($id);
+        $this->authorize('reverse', $purchaseInvoice);
+
+        $validated = $request->validate([
+            'reason' => 'required|string|min:3|max:500',
+        ]);
+
+        if ($purchaseInvoice->status === 'reversed') {
+            return response()->json(['message' => 'Invoice has already been reversed.'], 422);
+        }
+
+        // Check if any linked purchase return exists
+        if (\App\Models\PurchaseReturn::where('purchase_invoice_id', $purchaseInvoice->id)->exists()) {
+            return response()->json([
+                'message' => 'Cannot reverse this invoice because linked purchase returns exist. Please reverse or remove the returns first.',
+            ], 422);
+        }
+
+        return DB::transaction(function () use ($purchaseInvoice, $validated, $request) {
+            $order = $purchaseInvoice->purchase_order_id ? \App\Models\PurchaseOrder::lockForUpdate()->findOrFail($purchaseInvoice->purchase_order_id) : null;
+            if ($order) $purchaseInvoice->refresh();
+            $purchaseInvoice->load('items');
+
+            $affectedIds = $purchaseInvoice->items->pluck('product_id')->unique()->all();
+
+            foreach ($purchaseInvoice->items as $item) {
+                $this->revertItem($item, true, true);
+            }
+
+            if ($order) {
+                app(\App\Services\PurchaseOrderReceiving::class)->sync($order);
+            }
+
+            $this->recalcProductsByIds($affectedIds);
+
+            // Revert supplier ledger entry if credit/invoice entry
+            \App\Models\SupplierLedger::where('purchase_invoice_id', $purchaseInvoice->id)->delete();
+
+            $purchaseInvoice->status = 'reversed';
+            $purchaseInvoice->reversed_at = now();
+            $purchaseInvoice->reversed_by_id = $request->user()?->id;
+            $purchaseInvoice->reversal_reason = $validated['reason'];
+            $purchaseInvoice->save();
+
+            app(\App\Services\DocumentAuditService::class)->recordReversal($purchaseInvoice, $request->user(), $validated['reason']);
+
+            return response()->json([
+                'message' => 'Purchase invoice reversed successfully.',
+                'invoice' => $purchaseInvoice->fresh(['items.product', 'supplier']),
+            ]);
+        });
     }
 
     

@@ -31,4 +31,14 @@ class PurchaseInvoicePolicy
     {
         return $user->can('purchase-invoice.delete');
     }
+
+    public function reverse(User $user, PurchaseInvoice $invoice): bool
+    {
+        return $user->can('purchase-invoice.delete');
+    }
+
+    public function viewHistory(User $user, PurchaseInvoice $invoice): bool
+    {
+        return $user->can('purchase-invoice.view');
+    }
 }

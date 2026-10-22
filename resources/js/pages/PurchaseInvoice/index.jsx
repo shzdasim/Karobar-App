@@ -14,8 +14,12 @@ import {
   ShieldExclamationIcon,
   ClipboardDocumentListIcon,
   ClockIcon,
+  ArrowUturnLeftIcon,
 } from "@heroicons/react/24/solid";
 import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
+import DocumentHistoryModal from "@/components/DocumentHistoryModal.jsx";
+import VoidInvoiceModal from "@/components/VoidInvoiceModal.jsx";
+import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
@@ -50,6 +54,7 @@ const formatDate = (dateStr) => {
 };
 
 export default function PurchaseInvoicesIndex() {
+  const { formatCurrency } = useCurrency();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -62,6 +67,15 @@ export default function PurchaseInvoicesIndex() {
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
   const [lastPage, setLastPage] = useState(1);
+
+  // History modal state
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [historyTarget, setHistoryTarget] = useState(null);
+
+  // Void/Reversal modal state
+  const [voidModalOpen, setVoidModalOpen] = useState(false);
+  const [voidingInvoice, setVoidingInvoice] = useState(null);
+  const [isReversing, setIsReversing] = useState(false);
 
   const navigate = useNavigate();
 
@@ -155,6 +169,32 @@ export default function PurchaseInvoicesIndex() {
       fetchDrafts();
     } catch {
       toast.error("Failed to discard draft");
+    }
+  };
+
+  const handleOpenHistory = (invoice) => {
+    setHistoryTarget(invoice);
+    setHistoryModalOpen(true);
+  };
+
+  const handleOpenVoid = (invoice) => {
+    setVoidingInvoice(invoice);
+    setVoidModalOpen(true);
+  };
+
+  const handleConfirmVoid = async (reason) => {
+    if (!voidingInvoice) return;
+    try {
+      setIsReversing(true);
+      await axios.post(`/api/purchase-invoices/${voidingInvoice.id}/reverse`, { reason });
+      toast.success(`Purchase Invoice ${voidingInvoice.posted_number || voidingInvoice.invoice_number || ""} reversed successfully`);
+      setVoidModalOpen(false);
+      setVoidingInvoice(null);
+      fetchInvoices();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to reverse invoice");
+    } finally {
+      setIsReversing(false);
     }
   };
 
@@ -479,15 +519,22 @@ export default function PurchaseInvoicesIndex() {
                 >
                   <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">{(page - 1) * pageSize + idx + 1}</td>
                   <td className="px-3 py-2.5">
-                    {inv.invoice_type === 'credit' ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400">
-                        Credit
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400">
-                        Debit
-                      </span>
-                    )}
+                    <div className="flex flex-col gap-1 items-start">
+                      {inv.invoice_type === 'credit' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400">
+                          Credit
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400">
+                          Debit
+                        </span>
+                      )}
+                      {inv.status === 'reversed' && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
+                          Reversed
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-3 py-2.5 font-medium text-gray-900 dark:text-gray-100">{inv.posted_number || "-"}</td>
                   <td className="px-3 py-2.5 text-gray-900 dark:text-gray-100">{inv.invoice_number}</td>
@@ -498,7 +545,9 @@ export default function PurchaseInvoicesIndex() {
                   </td>
                   <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">{formatDate(inv.posted_date)}</td>
                   <td className="px-3 py-2.5 text-right font-medium text-gray-900 dark:text-gray-100">
-                    {Number(inv.total_amount ?? 0).toLocaleString()}
+                    <span className={inv.status === 'reversed' ? 'line-through text-gray-400 dark:text-gray-500' : ''}>
+                      {formatCurrency(Number(inv.total_amount ?? 0))}
+                    </span>
                   </td>
 
                   {hasActions && (
@@ -518,14 +567,50 @@ export default function PurchaseInvoicesIndex() {
 
                         {/* Edit Action */}
                         <Guard when={can.update}>
-                          <Link
-                            to={`/purchase-invoices/${inv.id}/edit`}
-                            className="products-row-action"
-                            aria-label={`Edit invoice ${inv.posted_number || inv.invoice_number}`}
-                            title={`Edit ${inv.posted_number || inv.invoice_number}`}
-                          >
-                            <PencilSquareIcon aria-hidden="true" className="w-4 h-4" />
-                          </Link>
+                          {inv.status !== 'reversed' ? (
+                            <Link
+                              to={`/purchase-invoices/${inv.id}/edit`}
+                              className="products-row-action"
+                              aria-label={`Edit invoice ${inv.posted_number || inv.invoice_number}`}
+                              title={`Edit ${inv.posted_number || inv.invoice_number}`}
+                            >
+                              <PencilSquareIcon aria-hidden="true" className="w-4 h-4" />
+                            </Link>
+                          ) : (
+                            <span
+                              className="products-row-action opacity-30 cursor-not-allowed"
+                              title="Reversed invoices cannot be edited"
+                              aria-label="Cannot edit reversed invoice"
+                            >
+                              <PencilSquareIcon aria-hidden="true" className="w-4 h-4" />
+                            </span>
+                          )}
+                        </Guard>
+
+                        {/* Audit History Action */}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenHistory(inv)}
+                          className="products-row-action text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                          title="Audit History"
+                          aria-label={`View audit history for invoice ${inv.posted_number || inv.invoice_number}`}
+                        >
+                          <ClockIcon aria-hidden="true" className="w-4 h-4" />
+                        </button>
+
+                        {/* Void / Reversal Action */}
+                        <Guard when={can.delete}>
+                          {inv.status !== 'reversed' && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenVoid(inv)}
+                              className="products-row-action text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/30"
+                              title="Void / Reverse Invoice"
+                              aria-label={`Void invoice ${inv.posted_number || inv.invoice_number}`}
+                            >
+                              <ArrowUturnLeftIcon aria-hidden="true" className="w-4 h-4" />
+                            </button>
+                          )}
                         </Guard>
 
                         {/* Delete Action */}
@@ -747,6 +832,30 @@ export default function PurchaseInvoicesIndex() {
         onDiscardDraft={handleDiscardDraft}
         onStartBlank={() => navigate("/purchase-invoices/create")}
         type="purchase"
+      />
+
+      {/* Audit History Modal */}
+      <DocumentHistoryModal
+        isOpen={historyModalOpen}
+        onClose={() => {
+          setHistoryModalOpen(false);
+          setHistoryTarget(null);
+        }}
+        entityType="purchase_invoice"
+        entityId={historyTarget?.id}
+        entityNumber={historyTarget?.posted_number || historyTarget?.invoice_number || `#${historyTarget?.id || ""}`}
+      />
+
+      {/* Void / Reversal Modal */}
+      <VoidInvoiceModal
+        isOpen={voidModalOpen}
+        onClose={() => {
+          setVoidModalOpen(false);
+          setVoidingInvoice(null);
+        }}
+        onConfirm={handleConfirmVoid}
+        invoice={voidingInvoice}
+        isReversing={isReversing}
       />
     </div>
   );

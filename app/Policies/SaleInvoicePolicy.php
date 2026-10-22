@@ -31,4 +31,14 @@ class SaleInvoicePolicy
    {
     return $user->can('sale-invoice.delete');
    }
+
+   public function reverse(User $user, SaleInvoice $invoice): bool
+   {
+    return $user->can('sale-invoice.delete');
+   }
+
+   public function viewHistory(User $user, SaleInvoice $invoice): bool
+   {
+    return $user->can('sale-invoice.view');
+   }
 }

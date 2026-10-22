@@ -293,17 +293,27 @@ class SaleInvoiceController extends Controller
                 $draft->save();
             }
 
+            app(\App\Services\DocumentAuditService::class)->recordCreate($invoice->load('items.product'), $request->user());
+
             return response()->json(['message' => 'Sale Invoice created', 'id' => $invoice->id, 'posted_number' => $posted], 201);
         });
     }
 
     public function update(Request $request, $id)
     {
-        $invoice = SaleInvoice::with('items')->findOrFail($id);
+        $invoice = SaleInvoice::with(['items.product', 'customer'])->findOrFail($id);
         $this->authorize('update', $invoice);
+
+        if ($invoice->status === 'reversed') {
+            abort(422, 'Cannot edit an invoice that has been reversed.');
+        }
+
+        $auditService = app(\App\Services\DocumentAuditService::class);
+        $beforeSnapshot = $auditService->snapshot($invoice);
 
         // keep posted_number unique on update (user may not change it)
         $data = $request->validate([
+            'reason'              => 'nullable|string|max:500',
             'customer_id'         => 'required|exists:customers,id',
             'invoice_type'        => 'nullable|string|in:credit,debit',
             'sale_type'           => 'nullable|string|in:retail,wholesale',
@@ -339,7 +349,7 @@ class SaleInvoiceController extends Controller
             'items.*.is_custom_price'          => 'nullable|boolean',
         ]);
 
-        return DB::transaction(function () use ($invoice, $data) {
+        return DB::transaction(function () use ($invoice, $data, $request, $auditService, $beforeSnapshot) {
             $invoice = SaleInvoice::lockForUpdate()->findOrFail($invoice->id);
             $originalItems = $invoice->items()->get();
             app(\App\Services\SaleStockAvailability::class)->validate($data['items'], $originalItems);
@@ -433,7 +443,56 @@ class SaleInvoiceController extends Controller
                 }
             }
 
+            $auditService->recordUpdate($invoice->fresh(['items.product', 'customer']), $beforeSnapshot, $request->user(), $data['reason'] ?? 'Sale invoice updated');
+
             return response()->json(['message' => 'Sale Invoice updated', 'id' => $invoice->id]);
+        });
+    }
+
+    public function reverse(Request $request, $id)
+    {
+        $invoice = SaleInvoice::with(['items.product', 'customer'])->findOrFail($id);
+        $this->authorize('reverse', $invoice);
+
+        $validated = $request->validate([
+            'reason' => 'required|string|min:3|max:500',
+        ]);
+
+        if ($invoice->status === 'reversed') {
+            return response()->json(['message' => 'Invoice has already been reversed.'], 422);
+        }
+
+        // Check if any linked sale return exists
+        if (\App\Models\SaleReturn::where('sale_invoice_id', $invoice->id)->exists()) {
+            return response()->json([
+                'message' => 'Cannot reverse this invoice because linked sale returns exist. Please reverse or remove the returns first.',
+            ], 422);
+        }
+
+        return DB::transaction(function () use ($invoice, $validated, $request) {
+            $invoice = SaleInvoice::lockForUpdate()->findOrFail($invoice->id);
+            app(\App\Services\SaleStockAvailability::class)->validate([], $invoice->items()->get());
+            
+            // Revert inventory stock safely
+            $this->revertItems($invoice);
+
+            // If credit sale, remove or balance customer ledger entry
+            if ($invoice->invoice_type === 'credit') {
+                CustomerLedger::where('sale_invoice_id', $invoice->id)->delete();
+            }
+
+            $invoice->status = 'reversed';
+            $invoice->reversed_at = now();
+            $invoice->reversed_by_id = $request->user()?->id;
+            $invoice->reversal_reason = $validated['reason'];
+            $invoice->save();
+
+            app(\App\Services\DocumentAuditService::class)->recordReversal($invoice, $request->user(), $validated['reason']);
+
+            return response()->json([
+                'message' => 'Sale invoice reversed successfully.',
+                'invoice' => $invoice->fresh(['items.product', 'customer']),
+            ]);
         });
     }
 

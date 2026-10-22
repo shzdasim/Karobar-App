@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { MagnifyingGlassIcon, PrinterIcon, PencilSquareIcon, TrashIcon, PlusIcon, ArrowLeftIcon } from "@heroicons/react/24/outline";
+import { MagnifyingGlassIcon, PrinterIcon, PencilSquareIcon, TrashIcon, PlusIcon, ArrowLeftIcon, ClockIcon, ArrowUturnLeftIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 // 🔒 permissions
 import { usePermissions, Guard } from "@/api/usePermissions.js";
@@ -10,6 +10,8 @@ import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 // Search modal
 import SaleInvoiceSearch from "@/components/SaleInvoiceSearch.jsx";
+import DocumentHistoryModal from "@/components/DocumentHistoryModal.jsx";
+import VoidInvoiceModal from "@/components/VoidInvoiceModal.jsx";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 
 // Helper to determine text color based on background brightness
@@ -38,6 +40,26 @@ export default function SaleInvoiceShow() {
 
   // Search modal state
   const [searchOpen, setSearchOpen] = useState(false);
+
+  // History and Void modal states
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [voidModalOpen, setVoidModalOpen] = useState(false);
+  const [isReversing, setIsReversing] = useState(false);
+
+  const handleConfirmVoid = async (reason) => {
+    try {
+      setIsReversing(true);
+      await axios.post(`/api/sale-invoices/${id}/reverse`, { reason });
+      toast.success(`Invoice ${inv?.posted_number || ""} reversed successfully`);
+      setVoidModalOpen(false);
+      const { data } = await axios.get(`/api/sale-invoices/${id}`);
+      setInv(data);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to reverse invoice");
+    } finally {
+      setIsReversing(false);
+    }
+  };
 
 // Get theme colors
   const { theme, isDark } = useTheme();
@@ -400,6 +422,13 @@ export default function SaleInvoiceShow() {
                 >
                   #{fmt(inv.posted_number)}
                 </span>
+                {inv?.status === 'reversed' && (
+                  <span
+                    className="px-2 py-0.5 rounded-md text-[9px] font-extrabold tracking-widest text-white bg-rose-600 uppercase shadow-xs border border-rose-400"
+                  >
+                    REVERSED
+                  </span>
+                )}
               </div>
               <p className="text-[10px] text-white/80 mt-0.5">
                 Alt+F search · Alt+E edit · Alt+P print · Alt+B back
@@ -451,16 +480,49 @@ export default function SaleInvoiceShow() {
               <PrinterIcon className="w-4 h-4" aria-hidden="true" />
               <span>Print</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setHistoryModalOpen(true)}
+              className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnSecondary.className}`}
+              style={btnSecondary.style}
+              title="View change history and reversal logs"
+            >
+              <ClockIcon className="w-4 h-4" aria-hidden="true" />
+              <span>History</span>
+            </button>
+            <Guard when={can.delete}>
+              {inv?.status !== 'reversed' && (
+                <button
+                  type="button"
+                  onClick={() => setVoidModalOpen(true)}
+                  className="px-3 py-2 text-[11px] font-bold rounded-xl transition-all duration-200 bg-amber-500 hover:bg-amber-600 text-white shadow-sm flex items-center gap-1"
+                  title="Void / Reverse this invoice safely"
+                >
+                  <ArrowUturnLeftIcon className="w-4 h-4" aria-hidden="true" />
+                  <span>Void</span>
+                </button>
+              )}
+            </Guard>
             <Guard when={can.update}>
-              <button
-                type="button"
-                onClick={() => navigate(`/sale-invoices/${id}/edit`)}
-                className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnSecondary.className}`}
-                style={btnSecondary.style}
-              >
-                <PencilSquareIcon className="w-4 h-4" aria-hidden="true" />
-                <span>Edit</span>
-              </button>
+              {inv?.status !== 'reversed' ? (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/sale-invoices/${id}/edit`)}
+                  className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnSecondary.className}`}
+                  style={btnSecondary.style}
+                >
+                  <PencilSquareIcon className="w-4 h-4" aria-hidden="true" />
+                  <span>Edit</span>
+                </button>
+              ) : (
+                <span
+                  className="px-3 py-2 text-[11px] font-bold rounded-xl opacity-40 cursor-not-allowed bg-gray-200 dark:bg-slate-700 text-gray-500 flex items-center gap-1"
+                  title="Reversed invoices cannot be edited"
+                >
+                  <PencilSquareIcon className="w-4 h-4" aria-hidden="true" />
+                  <span>Edit</span>
+                </span>
+              )}
             </Guard>
             <Guard when={can.delete}>
               <button
@@ -940,6 +1002,24 @@ export default function SaleInvoiceShow() {
             navigate(`/sale-invoices/${invoice.id}`);
           }
         }}
+      />
+
+      {/* Audit History Modal */}
+      <DocumentHistoryModal
+        isOpen={historyModalOpen}
+        onClose={() => setHistoryModalOpen(false)}
+        entityType="sale_invoice"
+        entityId={id}
+        entityNumber={inv?.posted_number || `#${id}`}
+      />
+
+      {/* Void / Reversal Modal */}
+      <VoidInvoiceModal
+        isOpen={voidModalOpen}
+        onClose={() => setVoidModalOpen(false)}
+        onConfirm={handleConfirmVoid}
+        invoice={inv}
+        isReversing={isReversing}
       />
     </div>
   );

@@ -13,6 +13,7 @@ use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\CustomerImportController;
 use App\Http\Controllers\CustomerLedgerController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DocumentHistoryController;
 use App\Http\Controllers\InvoiceDraftController;
 use App\Http\Controllers\LicenseController;
 use App\Http\Controllers\PermissionController;
@@ -71,10 +72,11 @@ Route::middleware(['auth:sanctum', 'token.expiry'])->group(function () {
     Route::get('/theme-settings/active',          [ThemeSettingController::class, 'getActive']);
     Route::put('/theme-settings/active',          [ThemeSettingController::class, 'updateActive']);
 
-    // Sale system mode — app-wide UI gating (retail vs wholesale).
+    // Sale system mode & Currency — app-wide UI gating and formatting.
     // Any authenticated user needs this to render the correct UI, so it is
     // intentionally NOT gated by license or the settings.view permission.
     Route::get('/sale-system', [SettingController::class, 'saleSystem']);
+    Route::get('/currency',    [SettingController::class, 'currency']);
 });
 
 /*
@@ -143,6 +145,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('purchase-invoices/new-code',      [PurchaseInvoiceController::class, 'generateNewCode']);
     Route::get('purchase-invoices/check-unique',  [PurchaseInvoiceController::class, 'checkUnique']);
     Route::get('purchase-invoices/search',       [PurchaseInvoiceController::class, 'search']);
+    Route::post('purchase-invoices/{id}/reverse', [PurchaseInvoiceController::class, 'reverse']);
     Route::apiResource('purchase-invoices',       PurchaseInvoiceController::class);
 
     // Purchase returns
@@ -156,7 +159,11 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     // Sales
     Route::get('sale-invoices/new-code',          [SaleInvoiceController::class, 'generateNewCode']);
     Route::get('sale-invoices/search',            [SaleInvoiceController::class, 'search']);
+    Route::post('sale-invoices/{id}/reverse',     [SaleInvoiceController::class, 'reverse']);
     Route::apiResource('sale-invoices',           SaleInvoiceController::class);
+
+    // Document Audit History
+    Route::get('/document-histories',             [DocumentHistoryController::class, 'index']);
 
     // Sale returns
     Route::get('sale-returns/new-code',           [SaleReturnController::class, 'generateNewCode']);
