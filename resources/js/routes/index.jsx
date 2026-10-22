@@ -45,6 +45,7 @@ const CurrentStockReport = lazy(() => import("../pages/Reports/CurrentStockRepor
 const StockAdjustmentReport = lazy(() => import("../pages/Reports/StockAdjustmentReport.jsx"));
 const ProductComprehensiveReport = lazy(() => import("../pages/Reports/ProductComprehensiveReport.jsx"));
 const NearExpiryProductReport = lazy(() => import("../pages/Reports/NearExpiryProductReport.jsx"));
+const MissingReports = lazy(() => import("../pages/Reports/MissingReports.jsx"));
 const Setting = lazy(() => import("../pages/Setting.jsx"));
 const StockAdjustmentsIndex = lazy(() => import("../pages/stock-adjustments/index.jsx"));
 const CreateStockAdjustment = lazy(() => import("../pages/stock-adjustments/Create.jsx"));
@@ -466,6 +467,11 @@ export default function AppRoutes() {
         </ProtectedRoute>
       }
       />
+      <Route path="reports/purchase-returns" element={<ProtectedRoute><DashboardLayout><MissingReports type="purchase-returns" /></DashboardLayout></ProtectedRoute>} />
+      <Route path="reports/sale-returns" element={<ProtectedRoute><DashboardLayout><MissingReports type="sale-returns" /></DashboardLayout></ProtectedRoute>} />
+      <Route path="reports/purchase-summary" element={<ProtectedRoute><DashboardLayout><MissingReports type="purchase-summary" /></DashboardLayout></ProtectedRoute>} />
+      <Route path="reports/outstanding-aging" element={<ProtectedRoute><DashboardLayout><MissingReports type="outstanding-aging" /></DashboardLayout></ProtectedRoute>} />
+      <Route path="reports/reorder" element={<ProtectedRoute><DashboardLayout><MissingReports type="reorder" /></DashboardLayout></ProtectedRoute>} />
       {/* Settings */}
       <Route
       path="settings"

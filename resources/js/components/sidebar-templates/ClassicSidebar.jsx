@@ -95,6 +95,11 @@ export default function ClassicSidebar({ appName, logoUrl }) {
     { name: "Stock Adjustment", path: "/reports/stock-adjustment", icon: <ArrowsRightLeftIcon className="w-5 h-5" />, perm: "report.stock-adjustment.view", parent: "reports" },
     { name: "Product Comprehensive", path: "/reports/product-comprehensive", icon: <ReportIcon className="w-5 h-5" />, perm: "report.product-comprehensive.view", parent: "reports" },
     { name: "Near Expiry Product", path: "/reports/near-expiry-product", icon: <ClockIcon className="w-5 h-5" />, perm: "report.near-expiry-product.view", parent: "reports" },
+    { name: "Purchase Returns", path: "/reports/purchase-returns", icon: <ArrowUturnDownIcon className="w-5 h-5" />, perm: "purchase-return.view", parent: "reports" },
+    { name: "Sale Returns", path: "/reports/sale-returns", icon: <ArrowUturnLeftIcon className="w-5 h-5" />, perm: "sale-return.view", parent: "reports" },
+    { name: "Purchase Summary", path: "/reports/purchase-summary", icon: <ClipboardDocumentListIcon className="w-5 h-5" />, perm: "report.purchase-detail.view", parent: "reports" },
+    { name: "Outstanding Aging", path: "/reports/outstanding-aging", icon: <BanknotesIcon className="w-5 h-5" />, permAny: ["customer-ledger.view", "supplier-ledger.view"], parent: "reports" },
+    { name: "Low Stock & Reorder", path: "/reports/reorder", icon: <CubeIcon className="w-5 h-5" />, perm: "report.current-stock.view", parent: "reports" },
     { type: "section", name: "System", key: "system", icon: <Cog6ToothIcon className="w-5 h-5" /> },
     { name: "Settings", path: "/settings", icon: <Cog6ToothIcon className="w-5 h-5" />, perm: "settings.view", parent: "system" },
     { name: "Users", path: "/users", icon: <UserGroupIcon className="w-5 h-5" />, perm: "user.view", parent: "system" },
@@ -106,7 +111,9 @@ export default function ClassicSidebar({ appName, logoUrl }) {
     for (let i = 0; i < rawMenu.length; i++) {
       const it = rawMenu[i];
       if (it.type === "section") { visible.push(it); continue; }
-      const allowed = it.perm ? (!permsLoading && has(it.perm)) : true;
+      const allowed = it.permAny
+        ? (!permsLoading && it.permAny.some((permission) => has(permission)))
+        : it.perm ? (!permsLoading && has(it.perm)) : true;
       if (allowed) visible.push(it);
     }
     const cleaned = [];
@@ -278,4 +285,3 @@ export default function ClassicSidebar({ appName, logoUrl }) {
     </aside>
   );
 }
-

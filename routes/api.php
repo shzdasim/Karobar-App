@@ -184,6 +184,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
 
     // Reports
     Route::get('/reports/cost-of-sale',           [ReportsController::class, 'costOfSale']);
+    Route::get('/reports/cost-of-sale/pdf',       [ReportsController::class, 'costOfSalePdf']);
     Route::get('/reports/cost-of-sale-detail',    [ReportsController::class, 'costOfSaleDetail']);
     Route::get('/reports/cost-of-sale-detail/pdf', [ReportsController::class, 'costOfSaleDetailPdf']);
     Route::get('/reports/purchase-detail',        [ReportsController::class, 'purchaseDetail']);
@@ -198,6 +199,11 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/reports/product-comprehensive/pdf', [ReportsController::class, 'productComprehensivePdf']);
     Route::get('/reports/near-expiry-product',     [ReportsController::class, 'nearExpiryProduct']);
     Route::get('/reports/near-expiry-product/pdf', [ReportsController::class, 'nearExpiryProductPdf']);
+    Route::get('/reports/purchase-returns',        [ReportsController::class, 'purchaseReturns']);
+    Route::get('/reports/sale-returns',            [ReportsController::class, 'saleReturns']);
+    Route::get('/reports/purchase-summary',        [ReportsController::class, 'purchaseSummary']);
+    Route::get('/reports/outstanding-aging',       [ReportsController::class, 'outstandingAging']);
+    Route::get('/reports/reorder',                 [ReportsController::class, 'reorderReport']);
     Route::put('/sale-invoices/{saleInvoice}/meta',[SaleInvoiceController::class, 'updateMeta']);
 
 

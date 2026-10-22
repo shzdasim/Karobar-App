@@ -10,6 +10,10 @@ use App\Authorizables\PurchaseDetailReport;
 use App\Authorizables\SaleDetailReport;
 use App\Authorizables\StockAdjustmentReport;
 use App\Models\Product;
+use App\Models\PurchaseReturn;
+use App\Models\SaleReturn;
+use App\Models\CustomerLedger;
+use App\Models\SupplierLedger;
 use App\Models\PurchaseInvoice;
 use App\Models\SaleInvoice;
 use App\Models\StockAdjustment;
@@ -21,6 +25,391 @@ use Carbon\Carbon;
 
 class ReportsController extends Controller
 {
+    public function purchaseReturns(Request $req)
+    {
+        $this->authorize('viewAny', PurchaseReturn::class);
+
+        $filters = $req->validate([
+            'from' => 'sometimes|date_format:Y-m-d',
+            'to' => 'sometimes|date_format:Y-m-d',
+            'supplier_id' => 'sometimes|integer|exists:suppliers,id',
+            'product_id' => 'sometimes|integer|exists:products,id',
+        ]);
+        $from = $filters['from'] ?? Carbon::now()->startOfMonth()->toDateString();
+        $to = $filters['to'] ?? Carbon::now()->toDateString();
+        abort_if($from > $to, 422, 'The from date must be on or before the to date.');
+        $supplierId = $filters['supplier_id'] ?? null;
+        $productId = $filters['product_id'] ?? null;
+
+        $query = PurchaseReturn::with([
+            'supplier:id,name',
+            'purchaseInvoice:id,posted_number,invoice_number',
+            'items' => function ($q) use ($productId) {
+                $q->when($productId, fn($items) => $items->where('product_id', $productId))
+                    ->with('product:id,name,product_code')
+                    ->select([
+                        'id', 'purchase_return_id', 'product_id', 'batch', 'expiry',
+                        'pack_size', 'return_pack_quantity', 'return_unit_quantity',
+                        'pack_purchase_price', 'unit_purchase_price',
+                        'item_discount_percentage', 'sub_total',
+                    ]);
+            },
+        ])
+            ->whereBetween('date', [$from, $to])
+            ->when($supplierId, fn($q) => $q->where('supplier_id', $supplierId))
+            ->when($productId, fn($q) => $q->whereHas('items', fn($items) => $items->where('product_id', $productId)))
+            ->orderBy('date')
+            ->orderBy('id')
+            ->get();
+
+        $rows = $query->map(fn($return) => [
+            'id' => $return->id,
+            'posted_number' => $return->posted_number,
+            'date' => $return->date ? Carbon::parse($return->date)->toDateString() : null,
+            'supplier_name' => $return->supplier->name ?? null,
+            'invoice_number' => $return->purchaseInvoice->invoice_number ?? $return->purchaseInvoice->posted_number ?? null,
+            'remarks' => $return->remarks,
+            'gross_total' => (float) $return->gross_total,
+            'discount_amount' => (float) $return->discount_amount,
+            'tax_amount' => (float) $return->tax_amount,
+            'total' => (float) $return->total,
+            'items' => $return->items->map(fn($item) => [
+                'id' => $item->id,
+                'product_name' => $item->product->name ?? null,
+                'product_code' => $item->product->product_code ?? null,
+                'batch' => $item->batch,
+                'expiry' => $item->expiry,
+                'pack_size' => (int) $item->pack_size,
+                'return_pack_quantity' => (int) $item->return_pack_quantity,
+                'return_unit_quantity' => (int) $item->return_unit_quantity,
+                'quantity' => ((int) $item->return_pack_quantity * (int) $item->pack_size) + (int) $item->return_unit_quantity,
+                'unit_purchase_price' => (float) $item->unit_purchase_price,
+                'item_discount_percentage' => (float) $item->item_discount_percentage,
+                'sub_total' => (float) $item->sub_total,
+            ])->values(),
+        ])->values();
+
+        return response()->json([
+            'rows' => $rows,
+            'summary' => [
+                'return_count' => $rows->count(),
+                'item_count' => $rows->sum(fn($row) => count($row['items'])),
+                'quantity' => $rows->sum(fn($row) => collect($row['items'])->sum('quantity')),
+                'total' => round($rows->sum('total'), 2),
+            ],
+        ]);
+    }
+
+    public function saleReturns(Request $req)
+    {
+        $this->authorize('viewAny', SaleReturn::class);
+
+        $filters = $req->validate([
+            'from' => 'sometimes|date_format:Y-m-d',
+            'to' => 'sometimes|date_format:Y-m-d',
+            'customer_id' => 'sometimes|integer|exists:customers,id',
+            'product_id' => 'sometimes|integer|exists:products,id',
+        ]);
+        $from = $filters['from'] ?? Carbon::now()->startOfMonth()->toDateString();
+        $to = $filters['to'] ?? Carbon::now()->toDateString();
+        abort_if($from > $to, 422, 'The from date must be on or before the to date.');
+        $customerId = $filters['customer_id'] ?? null;
+        $productId = $filters['product_id'] ?? null;
+
+        $query = SaleReturn::with([
+            'customer:id,name',
+            'user:id,name',
+            'saleInvoice:id,posted_number',
+            'items' => function ($q) use ($productId) {
+                $q->when($productId, fn($items) => $items->where('product_id', $productId))
+                    ->with('product:id,name,product_code')
+                    ->select([
+                        'id', 'sale_return_id', 'product_id', 'batch_number', 'expiry',
+                        'unit_sale_quantity', 'unit_return_quantity', 'unit_sale_price',
+                        'item_discount_percentage', 'sub_total',
+                    ]);
+            },
+        ])
+            ->whereBetween('date', [$from, $to])
+            ->when($customerId, fn($q) => $q->where('customer_id', $customerId))
+            ->when($productId, fn($q) => $q->whereHas('items', fn($items) => $items->where('product_id', $productId)))
+            ->orderBy('date')
+            ->orderBy('id')
+            ->get();
+
+        $rows = $query->map(fn($return) => [
+            'id' => $return->id,
+            'posted_number' => $return->posted_number,
+            'date' => $return->date ? Carbon::parse($return->date)->toDateString() : null,
+            'customer_name' => $return->customer->name ?? null,
+            'user_name' => $return->user->name ?? null,
+            'invoice_number' => $return->saleInvoice->posted_number ?? null,
+            'gross_total' => (float) $return->gross_total,
+            'discount_amount' => (float) $return->discount_amount,
+            'tax_amount' => (float) $return->tax_amount,
+            'total' => (float) $return->total,
+            'items' => $return->items->map(fn($item) => [
+                'id' => $item->id,
+                'product_name' => $item->product->name ?? null,
+                'product_code' => $item->product->product_code ?? null,
+                'batch' => $item->batch_number,
+                'expiry' => $item->expiry,
+                'quantity' => (int) $item->unit_return_quantity,
+                'sale_price' => (float) $item->unit_sale_price,
+                'item_discount_percentage' => (float) $item->item_discount_percentage,
+                'sub_total' => (float) $item->sub_total,
+            ])->values(),
+        ])->values();
+
+        return response()->json([
+            'rows' => $rows,
+            'summary' => [
+                'return_count' => $rows->count(),
+                'item_count' => $rows->sum(fn($row) => count($row['items'])),
+                'quantity' => $rows->sum(fn($row) => collect($row['items'])->sum('quantity')),
+                'total' => round($rows->sum('total'), 2),
+            ],
+        ]);
+    }
+
+    public function purchaseSummary(Request $req)
+    {
+        $this->authorize('view', PurchaseDetailReport::class);
+
+        $filters = $req->validate([
+            'from' => 'sometimes|date_format:Y-m-d',
+            'to' => 'sometimes|date_format:Y-m-d',
+            'supplier_id' => 'sometimes|integer|exists:suppliers,id',
+            'product_id' => 'sometimes|integer|exists:products,id',
+        ]);
+        $from = $filters['from'] ?? Carbon::now()->startOfMonth()->toDateString();
+        $to = $filters['to'] ?? Carbon::now()->toDateString();
+        abort_if($from > $to, 422, 'The from date must be on or before the to date.');
+        $supplierId = $filters['supplier_id'] ?? null;
+        $productId = $filters['product_id'] ?? null;
+
+        $invoices = PurchaseInvoice::with([
+            'supplier:id,name',
+            'items' => function ($q) use ($productId) {
+                $q->when($productId, fn($items) => $items->where('product_id', $productId))
+                    ->with('product:id,name')
+                    ->select([
+                        'id', 'purchase_invoice_id', 'product_id', 'quantity',
+                        'pack_quantity', 'unit_quantity', 'unit_purchase_price', 'sub_total',
+                    ]);
+            },
+        ])
+            ->whereBetween('posted_date', [$from, $to])
+            ->when($supplierId, fn($q) => $q->where('supplier_id', $supplierId))
+            ->when($productId, fn($q) => $q->whereHas('items', fn($items) => $items->where('product_id', $productId)))
+            ->orderBy('posted_date')
+            ->orderBy('id')
+            ->get();
+
+        $rows = $invoices->map(fn($invoice) => [
+            'id' => $invoice->id,
+            'date' => optional($invoice->posted_date)->format('Y-m-d'),
+            'posted_number' => $invoice->posted_number,
+            'invoice_number' => $invoice->invoice_number,
+            'supplier_name' => $invoice->supplier->name ?? null,
+            'item_count' => $invoice->items->count(),
+            'quantity' => (int) $invoice->items->sum('quantity'),
+            'items_value' => round($invoice->items->sum('sub_total'), 2),
+            'invoice_total' => (float) $invoice->total_amount,
+            'total_paid' => (float) $invoice->total_paid,
+            'items' => $invoice->items->map(fn($item) => [
+                'product_name' => $item->product->name ?? null,
+                'quantity' => (int) $item->quantity,
+                'unit_purchase_price' => (float) $item->unit_purchase_price,
+                'sub_total' => (float) $item->sub_total,
+            ])->values(),
+        ])->values();
+
+        return response()->json([
+            'rows' => $rows,
+            'summary' => [
+                'invoice_count' => $rows->count(),
+                'item_count' => $rows->sum('item_count'),
+                'quantity' => $rows->sum('quantity'),
+                'items_value' => round($rows->sum('items_value'), 2),
+                'invoice_total' => round($rows->sum('invoice_total'), 2),
+                'total_paid' => round($rows->sum('total_paid'), 2),
+            ],
+        ]);
+    }
+
+    public function outstandingAging(Request $req)
+    {
+        $customerAllowed = \Illuminate\Support\Facades\Gate::allows('viewAny', CustomerLedger::class);
+        $supplierAllowed = \Illuminate\Support\Facades\Gate::allows('viewAny', SupplierLedger::class);
+        abort_unless($customerAllowed || $supplierAllowed, 403);
+
+        $filters = $req->validate(['as_of' => 'sometimes|date_format:Y-m-d']);
+        $asOf = Carbon::parse($filters['as_of'] ?? Carbon::today()->toDateString())->startOfDay();
+        $bucketTotals = fn() => ['days_0_30' => 0.0, 'days_31_60' => 0.0, 'days_61_90' => 0.0, 'over_90' => 0.0];
+        $bucketForDate = function ($date) use ($asOf) {
+            $days = Carbon::parse($date)->startOfDay()->diffInDays($asOf);
+            return match (true) {
+                $days <= 30 => 'days_0_30',
+                $days <= 60 => 'days_31_60',
+                $days <= 90 => 'days_61_90',
+                default => 'over_90',
+            };
+        };
+
+        $buildPartyAging = function (
+            string $ledgerTable,
+            string $partyTable,
+            string $partyKey,
+            string $amountField,
+            string $paidField,
+            string $paymentField
+        ) use ($asOf, $bucketTotals, $bucketForDate) {
+            return DB::table("{$ledgerTable} as l")
+                ->join("{$partyTable} as p", "p.id", '=', "l.{$partyKey}")
+                ->whereDate('l.entry_date', '<=', $asOf->toDateString())
+                ->select('l.*', 'p.name as party_name')
+                ->orderBy('l.entry_date')
+                ->orderBy('l.id')
+                ->get()
+                ->groupBy($partyKey)
+                ->map(function ($entries) use ($partyKey, $amountField, $paidField, $paymentField, $bucketTotals, $bucketForDate, $asOf) {
+                    $obligations = [];
+                    $availableCredit = 0.0;
+                    $applyCredit = function () use (&$obligations, &$availableCredit) {
+                        foreach ($obligations as &$obligation) {
+                            if ($availableCredit <= 0) break;
+                            $applied = min($obligation['outstanding'], $availableCredit);
+                            $obligation['payments_applied'] = round($obligation['payments_applied'] + $applied, 2);
+                            $obligation['outstanding'] = round($obligation['outstanding'] - $applied, 2);
+                            $availableCredit = round($availableCredit - $applied, 2);
+                        }
+                        unset($obligation);
+                    };
+
+                    foreach ($entries as $entry) {
+                        if (in_array($entry->entry_type, ['invoice', 'manual'], true)) {
+                            $invoiceAmount = max((float) $entry->{$amountField}, 0);
+                            $paidOnInvoice = min($invoiceAmount, max((float) $entry->{$paidField}, 0));
+                            $obligations[] = [
+                                'ledger_id' => $entry->id,
+                                'reference' => $entry->posted_number
+                                    ?: $entry->invoice_number
+                                    ?: ($entry->entry_type === 'manual' ? "Manual entry #{$entry->id}" : "Ledger entry #{$entry->id}"),
+                                'entry_type' => $entry->entry_type,
+                                'date' => Carbon::parse($entry->entry_date)->toDateString(),
+                                'invoice_amount' => round($invoiceAmount, 2),
+                                'paid_on_invoice' => round($paidOnInvoice, 2),
+                                'payments_applied' => 0.0,
+                                'outstanding' => round(max($invoiceAmount - $paidOnInvoice, 0), 2),
+                            ];
+                            $applyCredit();
+                        } elseif ($entry->entry_type === 'payment') {
+                            $availableCredit += max((float) $entry->{$paymentField}, 0);
+                            $applyCredit();
+                        }
+                    }
+
+                    $buckets = $bucketTotals();
+                    $openObligations = collect($obligations)
+                        ->filter(fn($obligation) => $obligation['outstanding'] > 0)
+                        ->map(function ($obligation) use (&$buckets, $bucketForDate, $asOf) {
+                            $obligation['age_days'] = Carbon::parse($obligation['date'])->startOfDay()->diffInDays($asOf);
+                            $obligation['aging_bucket'] = $bucketForDate($obligation['date']);
+                            $buckets[$obligation['aging_bucket']] += $obligation['outstanding'];
+                            return $obligation;
+                        })
+                        ->values();
+                    $total = round(array_sum($buckets), 2);
+                    if ($total <= 0) return null;
+
+                    return [
+                        'party_id' => $entries->first()->{$partyKey},
+                        'party_name' => $entries->first()->party_name,
+                        'open_entry_count' => $openObligations->count(),
+                        ...array_map(fn($amount) => round($amount, 2), $buckets),
+                        'total' => $total,
+                        'entries' => $openObligations,
+                    ];
+                })
+                ->filter()
+                ->sortByDesc('total')
+                ->values();
+        };
+
+        $customers = $customerAllowed
+            ? $buildPartyAging('customer_ledgers', 'customers', 'customer_id', 'invoice_total', 'total_received', 'credited_amount')
+            : collect();
+        $suppliers = $supplierAllowed
+            ? $buildPartyAging('supplier_ledgers', 'suppliers', 'supplier_id', 'invoice_total', 'total_paid', 'debited_amount')
+            : collect();
+
+        $sumBuckets = function ($parties) {
+            return [
+                'days_0_30' => round($parties->sum('days_0_30'), 2),
+                'days_31_60' => round($parties->sum('days_31_60'), 2),
+                'days_61_90' => round($parties->sum('days_61_90'), 2),
+                'over_90' => round($parties->sum('over_90'), 2),
+                'total' => round($parties->sum('total'), 2),
+                'party_count' => $parties->count(),
+                'open_entry_count' => $parties->sum('open_entry_count'),
+            ];
+        };
+
+        return response()->json([
+            'as_of' => $asOf->toDateString(),
+            'customers' => $customers,
+            'suppliers' => $suppliers,
+            'summary' => [
+                'customers' => $sumBuckets($customers),
+                'suppliers' => $sumBuckets($suppliers),
+            ],
+        ]);
+    }
+
+    public function reorderReport(Request $req)
+    {
+        $this->authorize('view', CurrentStockReport::class);
+        $filters = $req->validate([
+            'supplier_id' => 'required|integer|exists:suppliers,id',
+            'brand_id' => 'sometimes|integer|exists:brands,id',
+        ]);
+
+        $rows = Product::with(['brand:id,name', 'supplier:id,name', 'category:id,name'])
+            ->whereNotNull('quantity')
+            ->where('pack_size', '>', 0)
+            ->whereColumn('quantity', '<', 'pack_size')
+            ->when($filters['supplier_id'] ?? null, fn($q, $id) => $q->where('supplier_id', $id))
+            ->when($filters['brand_id'] ?? null, fn($q, $id) => $q->where('brand_id', $id))
+            ->orderByRaw('quantity / NULLIF(pack_size, 0) ASC')
+            ->orderBy('name')
+            ->get()
+            ->map(fn($product) => [
+                'id' => $product->id,
+                'product_code' => $product->product_code,
+                'name' => $product->name,
+                'category_name' => $product->category->name ?? null,
+                'brand_name' => $product->brand->name ?? null,
+                'supplier_name' => $product->supplier->name ?? null,
+                'quantity' => (int) $product->quantity,
+                'pack_size' => (int) $product->pack_size,
+                'suggested_reorder_quantity' => max((int) $product->pack_size - (int) $product->quantity, 0),
+                'unit_purchase_price' => (float) $product->unit_purchase_price,
+                'estimated_reorder_value' => round(max((int) $product->pack_size - (int) $product->quantity, 0) * (float) $product->unit_purchase_price, 2),
+            ])->values();
+
+        return response()->json([
+            'rows' => $rows,
+            'summary' => [
+                'product_count' => $rows->count(),
+                'total_quantity' => $rows->sum('quantity'),
+                'suggested_quantity' => $rows->sum('suggested_reorder_quantity'),
+                'estimated_reorder_value' => round($rows->sum('estimated_reorder_value'), 2),
+            ],
+            'threshold' => 'On-hand quantity below one pack (product pack size)',
+        ]);
+    }
+
     /**
      * GET /api/reports/cost-of-sale?from=YYYY-MM-DD&to=YYYY-MM-DD&invoice_type=credit|debit|all
      * Returns rows: sale_date, gross_sale, item_discount, discount_amount, tax_amount,
@@ -164,6 +553,46 @@ class ReportsController extends Controller
                 'trace'   => config('app.debug') ? $e->getTrace() : null,
             ], 500);
         }
+    }
+
+    public function costOfSalePdf(Request $req)
+    {
+        $this->authorize('export', CostOfSaleReport::class);
+
+        $response = $this->costOfSale($req);
+        if ($response->getStatusCode() >= 400) {
+            return $response;
+        }
+
+        $rows = collect($response->getData(true))->map(function ($row) {
+            $row['net_sale'] = round($row['total_sales'] - $row['sale_return'], 2);
+            $row['gp_amount'] = round($row['net_sale'] - $row['cost_of_sales'], 2);
+            $row['gp_pct'] = $row['net_sale'] > 0 ? ($row['gp_amount'] / $row['net_sale']) * 100 : 0;
+            return $row;
+        });
+
+        $totals = [
+            'gross_sale' => round($rows->sum('gross_sale'), 2),
+            'item_discount' => round($rows->sum('item_discount'), 2),
+            'discount_amount' => round($rows->sum('discount_amount'), 2),
+            'tax_amount' => round($rows->sum('tax_amount'), 2),
+            'total_sales' => round($rows->sum('total_sales'), 2),
+            'sale_return' => round($rows->sum('sale_return'), 2),
+            'net_sale' => round($rows->sum('net_sale'), 2),
+            'cost_of_sales' => round($rows->sum('cost_of_sales'), 2),
+            'gp_amount' => round($rows->sum('gp_amount'), 2),
+        ];
+        $totals['gp_pct'] = $totals['net_sale'] > 0
+            ? ($totals['gp_amount'] / $totals['net_sale']) * 100
+            : 0;
+
+        return Pdf::loadView('reports.cost_of_sale_pdf', [
+            'rows' => $rows,
+            'totals' => $totals,
+            'from' => $req->query('from', Carbon::now()->startOfMonth()->toDateString()),
+            'to' => $req->query('to', Carbon::now()->toDateString()),
+            'invoiceType' => $req->query('invoice_type', 'all'),
+        ])->setPaper('a4', 'landscape')->stream('cost-of-sale-report.pdf');
     }
 
     /**

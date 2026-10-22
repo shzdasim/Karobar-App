@@ -8,6 +8,7 @@ import {
   ArrowPathIcon,
   ArrowTrendingDownIcon,
   ArrowTrendingUpIcon,
+  ArrowDownOnSquareIcon,
   ChartBarIcon,
   ChartPieIcon,
   CurrencyDollarIcon,
@@ -45,13 +46,15 @@ export default function CostOfSaleReport() {
   const [invoiceType, setInvoiceType] = useState("all"); // all, credit, debit
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   // permissions
   const { loading: permsLoading, canFor } = usePermissions();
   const can = useMemo(
     () =>
-      (typeof canFor === "function" ? canFor("cost-of-sale-report") : {
+      (typeof canFor === "function" ? canFor("report.cost-of-sale") : {
         view: false,
+        export: false,
       }),
     [canFor]
   );
@@ -112,6 +115,7 @@ export default function CostOfSaleReport() {
           total_sales: n(r.total_sales),
           sale_return: n(r.sale_return),
           cost_of_sales: n(r.cost_of_sales),
+          cost_is_estimated: Boolean(r.cost_is_estimated),
         }))
       );
     } catch (err) {
@@ -161,6 +165,36 @@ export default function CostOfSaleReport() {
     return { withDerived, totals, totals_gp_pct };
   }, [rows]);
 
+  const exportPdf = async () => {
+    if (!can.export) {
+      toast.error("You don't have permission to export this report.");
+      return;
+    }
+    if (!computed.withDerived.length) return;
+
+    const pdfWindow = window.open("", "_blank");
+    if (!pdfWindow) {
+      toast.error("Allow pop-ups to open the PDF report.");
+      return;
+    }
+    setPdfLoading(true);
+    try {
+      const response = await axios.get("/api/reports/cost-of-sale/pdf", {
+        params: { from: fromDate, to: toDate, invoice_type: invoiceType },
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+      pdfWindow.location.href = url;
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      console.error(error);
+      pdfWindow.close();
+      toast.error("Failed to generate Cost of Sale PDF.");
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
   // Permission gating
   if (permsLoading) {
     return (
@@ -201,6 +235,18 @@ export default function CostOfSaleReport() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <Guard when={can.export}>
+              <button
+                type="button"
+                onClick={exportPdf}
+                disabled={!computed.withDerived.length || pdfLoading}
+                title="Open loaded report as PDF in a new tab"
+                className="products-action theme-btn-secondary"
+              >
+                <ArrowDownOnSquareIcon className="w-4 h-4" />
+                <span>{pdfLoading ? "Generating…" : "Export PDF"}</span>
+              </button>
+            </Guard>
             <button
               type="button"
               title="Reset to default (yesterday → today)"
