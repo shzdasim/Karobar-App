@@ -2,6 +2,15 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 
+// Immediately flag draft resumption if ?draft_id is in URL so search modals don't pop open on mount
+if (typeof window !== "undefined") {
+  try {
+    if (new URLSearchParams(window.location.search).get("draft_id")) {
+      window.__isResumingInvoiceDraft = true;
+    }
+  } catch {}
+}
+
 const generateUUID = () => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -200,6 +209,10 @@ export function useInvoiceDraft({ type, form, setForm, enabled = true, onDraftLo
     async (draftId) => {
       try {
         isResumingRef.current = true;
+        if (typeof window !== "undefined") {
+          window.__isResumingInvoiceDraft = true;
+          window.dispatchEvent(new CustomEvent("product-search:close"));
+        }
         setSaveStatus("saving");
         const { data } = await axios.get(`/api/invoice-drafts/${draftId}`);
         const draft = data.draft;
@@ -224,6 +237,10 @@ export function useInvoiceDraft({ type, form, setForm, enabled = true, onDraftLo
         setLastSavedAt(new Date(draft.updated_at));
         setIsDraftsModalOpen(false);
 
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("product-search:close"));
+        }
+
         // Inform user of any issues (depleted products, missing customer/supplier)
         if (!annotations.party_valid && annotations.party_warning) {
           toast.error(annotations.party_warning, { duration: 5000 });
@@ -242,7 +259,10 @@ export function useInvoiceDraft({ type, form, setForm, enabled = true, onDraftLo
       } finally {
         setTimeout(() => {
           isResumingRef.current = false;
-        }, 500);
+          if (typeof window !== "undefined") {
+            window.__isResumingInvoiceDraft = false;
+          }
+        }, 600);
       }
     },
     [setForm, onDraftLoaded]
@@ -255,6 +275,10 @@ export function useInvoiceDraft({ type, form, setForm, enabled = true, onDraftLo
       const params = new URLSearchParams(window.location.search);
       const urlDraftId = params.get("draft_id");
       if (urlDraftId && !activeDraftRef.current) {
+        if (typeof window !== "undefined") {
+          window.__isResumingInvoiceDraft = true;
+          window.dispatchEvent(new CustomEvent("product-search:close"));
+        }
         loadDraft(urlDraftId);
       }
     } catch {}

@@ -6,6 +6,7 @@ import {
   BookmarkSquareIcon,
   ClockIcon,
 } from "@heroicons/react/24/outline";
+import { useTheme } from "@/context/ThemeContext.jsx";
 
 export default function InvoiceDraftIndicator({
   saveStatus,
@@ -16,6 +17,8 @@ export default function InvoiceDraftIndicator({
   onOpenDrafts,
   onSaveDraft,
 }) {
+  const { isDark } = useTheme();
+
   const formatTime = (date) => {
     if (!date) return "";
     const d = new Date(date);
@@ -25,39 +28,45 @@ export default function InvoiceDraftIndicator({
   return (
     <div className="flex items-center gap-1.5 text-xs select-none shrink-0">
       {/* Save Status Indicator */}
-      <div className="hidden lg:flex items-center h-8 px-2.5 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300 gap-1.5 shrink-0">
+      <div
+        className={`hidden lg:flex items-center h-8 px-2.5 rounded-lg border gap-1.5 shrink-0 transition-colors ${
+          isDark
+            ? "bg-slate-800/80 border-slate-700 text-slate-300"
+            : "bg-gray-100/90 border-gray-200 text-gray-700"
+        }`}
+      >
         {saveStatus === "saving" && (
           <>
-            <ArrowPathIcon className="w-3.5 h-3.5 text-blue-400 animate-spin shrink-0" />
-            <span className="text-blue-300 font-medium whitespace-nowrap">Saving…</span>
+            <ArrowPathIcon className={`w-3.5 h-3.5 animate-spin shrink-0 ${isDark ? "text-blue-400" : "text-blue-600"}`} />
+            <span className={`font-medium whitespace-nowrap ${isDark ? "text-blue-300" : "text-blue-700"}`}>Saving…</span>
           </>
         )}
         {saveStatus === "saved" && (
           <>
-            <CheckCircleIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span className="text-emerald-300 font-medium whitespace-nowrap">
+            <CheckCircleIcon className={`w-3.5 h-3.5 shrink-0 ${isDark ? "text-emerald-400" : "text-emerald-600"}`} />
+            <span className={`font-medium whitespace-nowrap ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>
               Saved {lastSavedAt ? formatTime(lastSavedAt) : ""}
             </span>
           </>
         )}
         {saveStatus === "conflict" && (
           <>
-            <ExclamationCircleIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span className="text-amber-300 font-medium whitespace-nowrap">Conflict</span>
+            <ExclamationCircleIcon className={`w-3.5 h-3.5 shrink-0 ${isDark ? "text-amber-400" : "text-amber-600"}`} />
+            <span className={`font-medium whitespace-nowrap ${isDark ? "text-amber-300" : "text-amber-700"}`}>Conflict</span>
           </>
         )}
         {saveStatus === "error" && (
           <>
-            <ExclamationCircleIcon className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-            <span className="text-rose-300 font-medium whitespace-nowrap" title={saveError || "Save failed"}>
+            <ExclamationCircleIcon className={`w-3.5 h-3.5 shrink-0 ${isDark ? "text-rose-400" : "text-rose-600"}`} />
+            <span className={`font-medium whitespace-nowrap ${isDark ? "text-rose-300" : "text-rose-700"}`} title={saveError || "Save failed"}>
               Save failed
             </span>
           </>
         )}
         {saveStatus === "idle" && (
           <>
-            <ClockIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span className="text-slate-400 font-normal whitespace-nowrap">
+            <ClockIcon className={`w-3.5 h-3.5 shrink-0 ${isDark ? "text-slate-400" : "text-gray-400"}`} />
+            <span className={`font-normal whitespace-nowrap ${isDark ? "text-slate-400" : "text-gray-500"}`}>
               {activeDraftTitle ? `Draft: ${activeDraftTitle}` : "Draft ready"}
             </span>
           </>
@@ -69,11 +78,21 @@ export default function InvoiceDraftIndicator({
         type="button"
         onClick={() => onSaveDraft && onSaveDraft()}
         title="Hold / Save Draft (Shortcut: Alt+H)"
-        className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-600 transition-colors shrink-0 shadow-sm"
+        className={`inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-all shrink-0 shadow-xs ${
+          isDark
+            ? "text-slate-200 bg-slate-800 hover:bg-slate-700 border-slate-600"
+            : "text-gray-700 bg-white hover:bg-gray-50 border-gray-300 shadow-xs active:bg-gray-100"
+        }`}
       >
-        <BookmarkSquareIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+        <BookmarkSquareIcon className={`w-3.5 h-3.5 shrink-0 ${isDark ? "text-amber-400" : "text-amber-500"}`} />
         <span className="whitespace-nowrap">Hold</span>
-        <kbd className="hidden sm:inline-block px-1 py-0.5 text-[9px] font-mono rounded bg-slate-700 text-slate-300 border border-slate-600 leading-none">
+        <kbd
+          className={`hidden sm:inline-block px-1 py-0.5 text-[9px] font-mono rounded border leading-none ${
+            isDark
+              ? "bg-slate-700 text-slate-300 border-slate-600"
+              : "bg-gray-100 text-gray-500 border-gray-200"
+          }`}
+        >
           Alt+H
         </kbd>
       </button>
@@ -83,16 +102,30 @@ export default function InvoiceDraftIndicator({
         type="button"
         onClick={() => onOpenDrafts && onOpenDrafts()}
         title="View Held Invoices & Drafts (Shortcut: Alt+D)"
-        className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold text-white bg-blue-700 hover:bg-blue-600 border border-blue-600 transition-colors shrink-0 shadow-sm"
+        className={`inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border transition-all shrink-0 shadow-xs ${
+          isDark
+            ? "text-white bg-blue-700 hover:bg-blue-600 border-blue-600"
+            : "text-blue-700 bg-blue-50 hover:bg-blue-100 border-blue-200 active:bg-blue-200/80"
+        }`}
       >
         <ClockIcon className="w-3.5 h-3.5 shrink-0" />
         <span className="whitespace-nowrap">Held Drafts</span>
         {draftsCount > 0 && (
-          <span className="h-4 min-w-[16px] px-1 flex items-center justify-center rounded-full text-[10px] font-bold bg-amber-400 text-slate-900 shrink-0 leading-none">
+          <span
+            className={`h-4 min-w-[16px] px-1 flex items-center justify-center rounded-full text-[10px] font-bold shrink-0 leading-none ${
+              isDark ? "bg-amber-400 text-slate-900" : "bg-blue-600 text-white shadow-xs"
+            }`}
+          >
             {draftsCount}
           </span>
         )}
-        <kbd className="hidden sm:inline-block px-1 py-0.5 text-[9px] font-mono rounded bg-blue-800 text-blue-200 border border-blue-600 leading-none">
+        <kbd
+          className={`hidden sm:inline-block px-1 py-0.5 text-[9px] font-mono rounded border leading-none ${
+            isDark
+              ? "bg-blue-800 text-blue-200 border-blue-600"
+              : "bg-blue-100 text-blue-700 border-blue-200"
+          }`}
+        >
           Alt+D
         </kbd>
       </button>

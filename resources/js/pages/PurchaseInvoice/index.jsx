@@ -159,6 +159,9 @@ export default function PurchaseInvoicesIndex() {
   }, []);
 
   const handleResumeDraft = (draftId) => {
+    if (typeof window !== "undefined") {
+      window.__isResumingInvoiceDraft = true;
+    }
     navigate(`/purchase-invoices/create?draft_id=${draftId}`);
   };
 

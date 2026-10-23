@@ -128,6 +128,9 @@ export default function SaleInvoicesIndex() {
   }, []);
 
   const handleResumeDraft = (draftId) => {
+    if (typeof window !== "undefined") {
+      window.__isResumingInvoiceDraft = true;
+    }
     const draft = draftsList.find((d) => d.id === draftId);
     if (draft?.type === "sale_wholesale") {
       navigate(`/sale-invoices/create/wholesale?draft_id=${draftId}`);

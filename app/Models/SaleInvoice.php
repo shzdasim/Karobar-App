@@ -10,6 +10,7 @@ class SaleInvoice extends Model
         'user_id',
         'customer_id',
         'invoice_type',
+        'payment_method',
         'sale_type',
         'wholesale_type',
         'posted_number',

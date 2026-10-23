@@ -1,6 +1,7 @@
 // resources/js/components/settings/GeneralSetting.jsx
-import React from "react";
+import React, { useMemo } from "react";
 import toast from "react-hot-toast";
+import Select from "react-select";
 import { FilePond, registerPlugin } from "react-filepond";
 import FilePondPluginImagePreview from "filepond-plugin-image-preview";
 import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
@@ -8,6 +9,7 @@ import "filepond/dist/filepond.min.css";
 import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
 import { GlassInput } from "@/components/Glass.jsx";
 import { BuildingStorefrontIcon, BanknotesIcon } from "@heroicons/react/24/solid";
+import { useTheme } from "@/context/ThemeContext";
 
 registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);
 
@@ -36,8 +38,83 @@ export default function GeneralSetting({
   addressRef,
   licenseRef,
 }) {
-  const handleCurrencyPresetChange = (e) => {
-    const selectedCode = e.target.value;
+  const { isDark, theme } = useTheme();
+
+  const selectStyles = useMemo(() => ({
+    control: (base, state) => ({
+      ...base,
+      minHeight: "38px",
+      borderRadius: 12,
+      backgroundColor: isDark ? "rgba(30, 41, 59, 0.85)" : "#ffffff",
+      borderColor: state.isFocused
+        ? (theme?.primary_color || "#3b82f6")
+        : (isDark ? "rgba(71, 85, 105, 0.7)" : "rgba(209, 213, 219, 0.8)"),
+      boxShadow: state.isFocused
+        ? `0 0 0 2px ${theme?.primary_color || "#3b82f6"}33`
+        : "none",
+      fontSize: "14px",
+      color: isDark ? "#f8fafc" : "#1e293b",
+      "&:hover": {
+        borderColor: theme?.primary_color || "#3b82f6",
+      },
+    }),
+    valueContainer: (base) => ({
+      ...base,
+      padding: "2px 10px",
+    }),
+    input: (base) => ({
+      ...base,
+      color: isDark ? "#f8fafc" : "#1e293b",
+      margin: 0,
+      padding: 0,
+    }),
+    singleValue: (base) => ({
+      ...base,
+      color: isDark ? "#f8fafc" : "#1e293b",
+      fontSize: "14px",
+    }),
+    placeholder: (base) => ({
+      ...base,
+      color: isDark ? "#94a3b8" : "#64748b",
+      fontSize: "14px",
+    }),
+    menuPortal: (base) => ({
+      ...base,
+      zIndex: 9999,
+    }),
+    menu: (base) => ({
+      ...base,
+      backgroundColor: isDark ? "#1e293b" : "#ffffff",
+      borderRadius: 12,
+      border: isDark ? "1px solid rgba(71, 85, 105, 0.7)" : "1px solid rgba(229, 231, 235, 1)",
+      boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.25)",
+      overflow: "hidden",
+      zIndex: 9999,
+    }),
+    option: (base, state) => ({
+      ...base,
+      minHeight: 38,
+      backgroundColor: state.isSelected
+        ? (theme?.primary_color || "#3b82f6")
+        : state.isFocused
+        ? (isDark ? "rgba(51, 65, 85, 0.8)" : "rgba(239, 246, 255, 1)")
+        : "transparent",
+      color: state.isSelected
+        ? "#ffffff"
+        : isDark
+        ? "#f8fafc"
+        : "#1e293b",
+      cursor: "pointer",
+      fontSize: "14px",
+      "&:active": {
+        backgroundColor: theme?.primary_color || "#3b82f6",
+        color: "#ffffff",
+      },
+    }),
+  }), [isDark, theme]);
+
+  const handleCurrencyPresetChange = (selectedOption) => {
+    const selectedCode = selectedOption?.value;
     if (selectedCode === "CUSTOM") {
       setForm?.((prev) => ({
         ...prev,
@@ -189,7 +266,11 @@ export default function GeneralSetting({
       <div className="settings-block">
         <div className="settings-block-heading">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="settings-block-icon text-emerald-500 bg-emerald-500/10 border border-emerald-500/20">
+            <div className={`settings-block-icon ${
+              isDark
+                ? "text-emerald-400 bg-emerald-500/10 border border-emerald-500/20"
+                : "text-emerald-600 bg-emerald-50 border border-emerald-200"
+            }`}>
               <BanknotesIcon className="w-5 h-5" />
             </div>
             <div className="min-w-0">
@@ -206,19 +287,18 @@ export default function GeneralSetting({
               <label className="settings-label" htmlFor="setting-currency-preset">
                 Currency Selection
               </label>
-              <select
-                id="setting-currency-preset"
-                value={currentPreset}
+              <Select
+                inputId="setting-currency-preset"
+                value={PRESET_CURRENCIES.map((c) => ({ value: c.code, label: c.label })).find((o) => o.value === currentPreset)}
                 onChange={handleCurrencyPresetChange}
-                disabled={disableInputs}
-                className="w-full px-3 py-2 text-sm rounded-xl bg-slate-800/80 dark:bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {PRESET_CURRENCIES.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
+                options={PRESET_CURRENCIES.map((c) => ({ value: c.code, label: c.label }))}
+                isDisabled={disableInputs}
+                styles={selectStyles}
+                menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                menuPosition="fixed"
+                className="text-sm"
+                isSearchable
+              />
               <p className="settings-hint mt-1">Select a standard currency or configure a custom one.</p>
             </div>
 
@@ -262,17 +342,24 @@ export default function GeneralSetting({
               <label className="settings-label" htmlFor="setting-currency-pos">
                 Symbol Position
               </label>
-              <select
-                id="setting-currency-pos"
-                name="currency_position"
-                value={form.currency_position ?? "before"}
-                onChange={handleChange}
-                disabled={disableInputs}
-                className="w-full px-3 py-2 text-sm rounded-xl bg-slate-800/80 dark:bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="before">Before Amount (e.g. {form.currency_symbol || "Rs."} 1,250)</option>
-                <option value="after">After Amount (e.g. 1,250 {form.currency_symbol || "Rs."})</option>
-              </select>
+              <Select
+                inputId="setting-currency-pos"
+                value={[
+                  { value: "before", label: `Before Amount (e.g. ${form.currency_symbol || "Rs."} 1,250)` },
+                  { value: "after", label: `After Amount (e.g. 1,250 ${form.currency_symbol || "Rs."})` },
+                ].find((o) => o.value === (form.currency_position || "before"))}
+                onChange={(opt) => handleChange({ target: { name: "currency_position", value: opt?.value || "before" } })}
+                options={[
+                  { value: "before", label: `Before Amount (e.g. ${form.currency_symbol || "Rs."} 1,250)` },
+                  { value: "after", label: `After Amount (e.g. 1,250 ${form.currency_symbol || "Rs."})` },
+                ]}
+                isDisabled={disableInputs}
+                styles={selectStyles}
+                menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                menuPosition="fixed"
+                className="text-sm"
+                isSearchable={false}
+              />
             </div>
 
             {/* Decimal Places */}
@@ -280,29 +367,46 @@ export default function GeneralSetting({
               <label className="settings-label" htmlFor="setting-currency-decimals">
                 Decimal Places
               </label>
-              <select
-                id="setting-currency-decimals"
-                name="currency_decimal_places"
-                value={Number(form.currency_decimal_places ?? 2)}
-                onChange={handleChange}
-                disabled={disableInputs}
-                className="w-full px-3 py-2 text-sm rounded-xl bg-slate-800/80 dark:bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value={0}>0 Decimals (e.g. 12,500)</option>
-                <option value={2}>2 Decimals (e.g. 12,500.50)</option>
-              </select>
+              <Select
+                inputId="setting-currency-decimals"
+                value={[
+                  { value: 0, label: "0 Decimals (e.g. 12,500)" },
+                  { value: 2, label: "2 Decimals (e.g. 12,500.50)" },
+                ].find((o) => o.value === Number(form.currency_decimal_places ?? 2))}
+                onChange={(opt) => handleChange({ target: { name: "currency_decimal_places", value: opt?.value ?? 2 } })}
+                options={[
+                  { value: 0, label: "0 Decimals (e.g. 12,500)" },
+                  { value: 2, label: "2 Decimals (e.g. 12,500.50)" },
+                ]}
+                isDisabled={disableInputs}
+                styles={selectStyles}
+                menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                menuPosition="fixed"
+                className="text-sm"
+                isSearchable={false}
+              />
             </div>
 
             {/* Live Visual Preview Box */}
-            <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/60 flex flex-col justify-center">
-              <span className="text-xs uppercase tracking-wider font-semibold text-slate-400">
+            <div className={`p-4 rounded-xl border flex flex-col justify-center transition-colors ${
+              isDark
+                ? "bg-slate-800/50 border-slate-700/60"
+                : "bg-emerald-50/70 border-emerald-200/90 shadow-xs"
+            }`}>
+              <span className={`text-xs uppercase tracking-wider font-semibold ${
+                isDark ? "text-slate-400" : "text-emerald-800"
+              }`}>
                 Invoice Live Preview
               </span>
               <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-emerald-400 font-mono">
+                <span className={`text-2xl font-bold font-mono ${
+                  isDark ? "text-emerald-400" : "text-emerald-600"
+                }`}>
                   {livePreview}
                 </span>
-                <span className="text-xs text-slate-400">
+                <span className={`text-xs ${
+                  isDark ? "text-slate-400" : "text-emerald-700/80"
+                }`}>
                   (for {previewAmount.toLocaleString()} units)
                 </span>
               </div>

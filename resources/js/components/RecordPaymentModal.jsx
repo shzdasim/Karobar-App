@@ -1,0 +1,517 @@
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import axios from "axios";
+import toast from "react-hot-toast";
+import Select from "react-select";
+import {
+  XMarkIcon,
+  BanknotesIcon,
+  CreditCardIcon,
+  BuildingLibraryIcon,
+  DocumentCheckIcon,
+  DevicePhoneMobileIcon,
+  EllipsisHorizontalCircleIcon,
+  CheckIcon,
+  SparklesIcon,
+} from "@heroicons/react/24/solid";
+import { GlassCard, GlassInput } from "@/components/Glass.jsx";
+import { useCurrency } from "@/context/CurrencyContext.jsx";
+import { useTheme } from "@/context/ThemeContext.jsx";
+
+const PAYMENT_METHODS = [
+  { value: "cash", label: "Cash", icon: BanknotesIcon },
+  { value: "bank_transfer", label: "Bank Transfer", icon: BuildingLibraryIcon },
+  { value: "card", label: "Credit / Debit Card", icon: CreditCardIcon },
+  { value: "cheque", label: "Cheque", icon: DocumentCheckIcon },
+  { value: "mobile_wallet", label: "Mobile Wallet (EasyPaisa/JazzCash)", icon: DevicePhoneMobileIcon },
+  { value: "other", label: "Other", icon: EllipsisHorizontalCircleIcon },
+];
+
+export default function RecordPaymentModal({
+  isOpen,
+  onClose,
+  partyType = "customer", // 'customer' | 'supplier'
+  partyId,
+  partyName = "",
+  preselectedInvoiceId = null,
+  onPaymentSuccess,
+}) {
+  const { formatCurrency } = useCurrency();
+  const { isDark, theme } = useTheme();
+
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [openInvoices, setOpenInvoices] = useState([]);
+
+  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [amount, setAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState(PAYMENT_METHODS[0]);
+  const [reference, setReference] = useState("");
+  const [notes, setNotes] = useState("");
+  const [allocations, setAllocations] = useState({}); // { [invoiceId]: allocatedAmountString }
+
+  const selectStyles = useMemo(() => ({
+    control: (base, state) => ({
+      ...base,
+      minHeight: "38px",
+      borderRadius: 12,
+      backgroundColor: isDark ? "rgba(30, 41, 59, 0.85)" : "#ffffff",
+      borderColor: state.isFocused
+        ? (theme?.primary_color || "#3b82f6")
+        : (isDark ? "rgba(71, 85, 105, 0.7)" : "rgba(209, 213, 219, 0.8)"),
+      boxShadow: state.isFocused
+        ? `0 0 0 2px ${theme?.primary_color || "#3b82f6"}33`
+        : "none",
+      fontSize: "14px",
+      color: isDark ? "#f8fafc" : "#1e293b",
+    }),
+    valueContainer: (base) => ({ ...base, padding: "2px 10px" }),
+    input: (base) => ({ ...base, color: isDark ? "#f8fafc" : "#1e293b", margin: 0, padding: 0 }),
+    singleValue: (base) => ({ ...base, color: isDark ? "#f8fafc" : "#1e293b", fontSize: "14px" }),
+    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+    menu: (base) => ({
+      ...base,
+      backgroundColor: isDark ? "#1e293b" : "#ffffff",
+      borderRadius: 12,
+      border: isDark ? "1px solid rgba(71, 85, 105, 0.7)" : "1px solid rgba(229, 231, 235, 1)",
+      boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.25)",
+      overflow: "hidden",
+      zIndex: 9999,
+    }),
+    option: (base, state) => ({
+      ...base,
+      minHeight: 38,
+      backgroundColor: state.isSelected
+        ? (theme?.primary_color || "#3b82f6")
+        : state.isFocused
+        ? (isDark ? "rgba(51, 65, 85, 0.8)" : "rgba(239, 246, 255, 1)")
+        : "transparent",
+      color: state.isSelected ? "#ffffff" : (isDark ? "#f8fafc" : "#1e293b"),
+      cursor: "pointer",
+      fontSize: "14px",
+    }),
+  }), [isDark, theme]);
+
+  const fetchOpenInvoices = useCallback(async () => {
+    if (!partyId) return;
+    try {
+      setLoading(true);
+      const res = await axios.get("/api/payments/open-invoices", {
+        params: { party_type: partyType, party_id: partyId },
+      });
+      const list = res.data || [];
+      setOpenInvoices(list);
+
+      // If preselectedInvoiceId is passed, pre-fill its full due amount
+      if (preselectedInvoiceId) {
+        const target = list.find((inv) => Number(inv.id) === Number(preselectedInvoiceId));
+        if (target) {
+          setAmount(String(target.due));
+          setAllocations({ [target.id]: String(target.due) });
+        }
+      }
+    } catch {
+      toast.error("Failed to load open invoices");
+    } finally {
+      setLoading(false);
+    }
+  }, [partyId, partyType, preselectedInvoiceId]);
+
+  useEffect(() => {
+    if (isOpen && partyId) {
+      setAllocations({});
+      fetchOpenInvoices();
+    }
+  }, [isOpen, partyId, fetchOpenInvoices]);
+
+  const numAmount = useMemo(() => Math.max(parseFloat(amount || 0) || 0, 0), [amount]);
+
+  const totalAllocated = useMemo(() => {
+    return Object.values(allocations).reduce((sum, val) => {
+      const v = parseFloat(val || 0);
+      return sum + (isNaN(v) ? 0 : v);
+    }, 0);
+  }, [allocations]);
+
+  const unappliedCredit = useMemo(() => {
+    return Math.max(round2(numAmount - totalAllocated), 0);
+  }, [numAmount, totalAllocated]);
+
+  function round2(v) {
+    return Math.round((v + Number.EPSILON) * 100) / 100;
+  }
+
+  // Handle individual invoice allocation input change
+  const handleAllocationChange = (invoiceId, maxDue, inputVal) => {
+    if (inputVal === "") {
+      setAllocations((prev) => {
+        const next = { ...prev };
+        delete next[invoiceId];
+        return next;
+      });
+      return;
+    }
+
+    let val = parseFloat(inputVal);
+    if (isNaN(val)) return;
+    if (val < 0) val = 0;
+    if (val > maxDue) {
+      val = maxDue;
+      toast.error(`Cannot allocate more than remaining due (${formatCurrency(maxDue)})`);
+    }
+
+    setAllocations((prev) => ({
+      ...prev,
+      [invoiceId]: String(val),
+    }));
+  };
+
+  // Shortcut: Allocate full amount for a single invoice
+  const handlePayInFull = (invoice) => {
+    setAllocations((prev) => ({
+      ...prev,
+      [invoice.id]: String(invoice.due),
+    }));
+  };
+
+  // Shortcut: Auto-allocate payment amount to oldest invoices first
+  const handleAutoAllocate = () => {
+    if (numAmount <= 0) {
+      toast.error("Please enter a payment amount first");
+      return;
+    }
+
+    let remainingToAllocate = numAmount;
+    const newAllocations = {};
+
+    for (const inv of openInvoices) {
+      if (remainingToAllocate <= 0) break;
+      const alloc = Math.min(inv.due, remainingToAllocate);
+      if (alloc > 0) {
+        newAllocations[inv.id] = String(round2(alloc));
+        remainingToAllocate = round2(remainingToAllocate - alloc);
+      }
+    }
+
+    setAllocations(newAllocations);
+    toast.success("Payment automatically allocated across open invoices");
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (numAmount <= 0) {
+      toast.error("Please enter a valid payment amount");
+      return;
+    }
+
+    if (totalAllocated > numAmount) {
+      toast.error("Total allocated amount exceeds the entered payment amount");
+      return;
+    }
+
+    const payloadAllocations = Object.entries(allocations)
+      .map(([invId, val]) => ({
+        invoice_id: Number(invId),
+        amount: round2(parseFloat(val || 0)),
+      }))
+      .filter((a) => a.amount > 0);
+
+    const idempotencyKey = `pay-${partyType}-${partyId}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+    try {
+      setSubmitting(true);
+      const res = await axios.post("/api/payments", {
+        party_type: partyType,
+        party_id: partyId,
+        payment_date: paymentDate,
+        amount: round2(numAmount),
+        payment_method: paymentMethod.value,
+        reference: reference.trim() || null,
+        notes: notes.trim() || null,
+        idempotency_key: idempotencyKey,
+        allocations: payloadAllocations,
+      });
+
+      toast.success(
+        partyType === "customer"
+          ? `Customer receipt ${res.data.payment.payment_number} posted successfully`
+          : `Supplier payment ${res.data.payment.payment_number} posted successfully`
+      );
+
+      window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+      onPaymentSuccess?.(res.data.payment);
+      onClose();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to record payment");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  const isCustomer = partyType === "customer";
+  const title = isCustomer ? "Record Customer Payment (Receipt)" : "Record Supplier Payment (Disbursement)";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !submitting) onClose();
+      }}
+    >
+      <div className="relative w-full max-w-3xl my-8">
+        <GlassCard className="border border-slate-700/80 shadow-2xl rounded-2xl overflow-hidden bg-slate-900/95 text-white">
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/80 bg-slate-800/50">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                <BanknotesIcon className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">{title}</h3>
+                <p className="text-xs text-slate-400">
+                  Party: <span className="font-semibold text-slate-200">{partyName || `#${partyId}`}</span>
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              disabled={submitting}
+              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/60 transition-colors"
+            >
+              <XMarkIcon className="w-5 h-5" />
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            {/* Top Row: Date, Amount, Method */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Payment Date *
+                </label>
+                <GlassInput
+                  type="date"
+                  value={paymentDate}
+                  onChange={(e) => setPaymentDate(e.target.value)}
+                  required
+                  disabled={submitting}
+                  className="w-full text-sm h-10"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Payment Amount *
+                </label>
+                <GlassInput
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.00"
+                  required
+                  disabled={submitting}
+                  className="w-full text-sm h-10 font-mono font-bold text-emerald-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Payment Method *
+                </label>
+                <Select
+                  value={paymentMethod}
+                  onChange={(opt) => setPaymentMethod(opt)}
+                  options={PAYMENT_METHODS}
+                  styles={selectStyles}
+                  isDisabled={submitting}
+                  isSearchable={false}
+                  menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                  menuPosition="fixed"
+                />
+              </div>
+            </div>
+
+            {/* Middle Row: Reference, Notes */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Reference / Cheque #
+                </label>
+                <GlassInput
+                  type="text"
+                  value={reference}
+                  onChange={(e) => setReference(e.target.value)}
+                  placeholder="e.g. CHQ-10492 or Bank Slip"
+                  disabled={submitting}
+                  className="w-full text-sm h-10"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Notes / Remarks
+                </label>
+                <GlassInput
+                  type="text"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Optional internal remarks"
+                  disabled={submitting}
+                  className="w-full text-sm h-10"
+                />
+              </div>
+            </div>
+
+            {/* Invoices Allocation Section */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-200">
+                    Open Invoices Allocation
+                  </h4>
+                  <p className="text-xs text-slate-400">
+                    Allocate amount to specific open invoices or leave excess as unapplied advance.
+                  </p>
+                </div>
+                {openInvoices.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleAutoAllocate}
+                    disabled={submitting}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 border border-blue-500/40 transition-colors"
+                  >
+                    <SparklesIcon className="w-4 h-4 text-blue-400" />
+                    <span>Auto-Allocate (Oldest First)</span>
+                  </button>
+                )}
+              </div>
+
+              {loading ? (
+                <div className="p-8 text-center text-sm text-slate-400">
+                  Loading open invoices...
+                </div>
+              ) : openInvoices.length === 0 ? (
+                <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/60 text-center text-xs text-slate-400">
+                  No unpaid credit invoices found. Entire amount will be saved as unapplied credit / advance.
+                </div>
+              ) : (
+                <div className="rounded-xl border border-slate-700/80 overflow-hidden max-h-56 overflow-y-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="sticky top-0 bg-slate-800 text-slate-300 border-b border-slate-700">
+                      <tr>
+                        <th className="px-3 py-2 font-semibold">Invoice #</th>
+                        <th className="px-3 py-2 font-semibold">Date</th>
+                        <th className="px-3 py-2 font-semibold text-right">Total</th>
+                        <th className="px-3 py-2 font-semibold text-right">Remaining Due</th>
+                        <th className="px-3 py-2 font-semibold text-right w-36">Allocate</th>
+                        <th className="px-3 py-2 text-center w-24">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700/50">
+                      {openInvoices.map((inv) => {
+                        const curAlloc = allocations[inv.id] || "";
+                        return (
+                          <tr key={inv.id} className="hover:bg-slate-800/30 transition-colors">
+                            <td className="px-3 py-2.5 font-medium text-slate-200">
+                              {inv.posted_number}
+                            </td>
+                            <td className="px-3 py-2.5 text-slate-400">
+                              {inv.date}
+                            </td>
+                            <td className="px-3 py-2.5 text-right text-slate-300 font-mono">
+                              {formatCurrency(inv.total)}
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-semibold text-amber-400 font-mono">
+                              {formatCurrency(inv.due)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <GlassInput
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                max={inv.due}
+                                value={curAlloc}
+                                onChange={(e) => handleAllocationChange(inv.id, inv.due, e.target.value)}
+                                placeholder="0.00"
+                                disabled={submitting}
+                                className="w-full text-right text-xs h-7 font-mono font-semibold"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handlePayInFull(inv)}
+                                disabled={submitting}
+                                className="px-2 py-1 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors"
+                              >
+                                Full
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Settlement Summary Strip */}
+            <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-6">
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider text-slate-400 block font-medium">
+                    Payment Total
+                  </span>
+                  <span className="text-base font-bold text-white font-mono">
+                    {formatCurrency(numAmount)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider text-slate-400 block font-medium">
+                    Allocated
+                  </span>
+                  <span className="text-base font-bold text-blue-400 font-mono">
+                    {formatCurrency(totalAllocated)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider text-slate-400 block font-medium">
+                    Unapplied Advance
+                  </span>
+                  <span className={`text-base font-bold font-mono ${unappliedCredit > 0 ? "text-emerald-400" : "text-slate-400"}`}>
+                    {formatCurrency(unappliedCredit)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  disabled={submitting}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting || numAmount <= 0}
+                  className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 transition-colors shadow-lg shadow-emerald-900/40"
+                >
+                  <CheckIcon className="w-4 h-4" />
+                  <span>{submitting ? "Posting..." : "Confirm & Post Payment"}</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        </GlassCard>
+      </div>
+    </div>
+  );
+}
+

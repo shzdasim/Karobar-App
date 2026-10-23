@@ -12,6 +12,7 @@ class SupplierLedger extends Model
     protected $fillable = [
         'supplier_id',
         'purchase_invoice_id',
+        'payment_id',
         'entry_type',          // 'invoice' | 'payment' | 'manual'
         'entry_date',
         'posted_number',

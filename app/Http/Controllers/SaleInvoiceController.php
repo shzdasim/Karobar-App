@@ -174,6 +174,7 @@ class SaleInvoiceController extends Controller
             'draft_id'            => 'nullable|integer|exists:invoice_drafts,id',
             'customer_id'         => 'required|exists:customers,id',
             'invoice_type'        => 'nullable|string|in:credit,debit,default:debit',
+            'payment_method'      => 'nullable|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
             'sale_type'           => 'nullable|string|in:retail,wholesale,default:retail',
             'wholesale_type'      => 'nullable|string|in:unit,pack,default:unit',
             'date'                => 'required|date',
@@ -225,7 +226,7 @@ class SaleInvoiceController extends Controller
             $next = $last ? ($last->id + 1) : 1;
             $posted = 'SI-' . str_pad((string)$next, 6, '0', STR_PAD_LEFT);
 
-            $invoice = SaleInvoice::create([
+            $invoiceData = [
                 'user_id'            => $request->user()->id,
                 'customer_id'        => $data['customer_id'],
                 'invoice_type'       => $data['invoice_type'] ?? 'debit',
@@ -244,7 +245,13 @@ class SaleInvoiceController extends Controller
                 'gross_amount'       => $data['gross_amount'],
                 'total'              => $data['total'],
                 'total_receive'      => $data['total_receive'] ?? 0,
-            ]);
+            ];
+
+            if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'payment_method')) {
+                $invoiceData['payment_method'] = $data['payment_method'] ?? 'cash';
+            }
+
+            $invoice = SaleInvoice::create($invoiceData);
 
             $this->createItemsAndReduce($invoice, $data['items']);
 
@@ -293,6 +300,24 @@ class SaleInvoiceController extends Controller
                 $draft->save();
             }
 
+            // Cash Drawer recording if drawer is open and cash was received
+            $payMethod = $invoice->payment_method ?? 'cash';
+            $cashReceived = (float)($invoice->total_receive ?? 0);
+            if (($invoice->invoice_type ?? 'debit') === 'debit' && $cashReceived <= 0) {
+                $cashReceived = (float)$invoice->total;
+            }
+            if ($payMethod === 'cash' && $cashReceived > 0) {
+                app(\App\Services\CashDrawerService::class)->recordTransaction(
+                    null,
+                    'cash_sale',
+                    $cashReceived,
+                    'sale_invoice',
+                    $invoice->id,
+                    "Cash sale {$posted}",
+                    $request->user()
+                );
+            }
+
             app(\App\Services\DocumentAuditService::class)->recordCreate($invoice->load('items.product'), $request->user());
 
             return response()->json(['message' => 'Sale Invoice created', 'id' => $invoice->id, 'posted_number' => $posted], 201);
@@ -316,6 +341,7 @@ class SaleInvoiceController extends Controller
             'reason'              => 'nullable|string|max:500',
             'customer_id'         => 'required|exists:customers,id',
             'invoice_type'        => 'nullable|string|in:credit,debit',
+            'payment_method'      => 'nullable|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
             'sale_type'           => 'nullable|string|in:retail,wholesale',
             'wholesale_type'      => 'nullable|string|in:unit,pack',
             'posted_number'       => 'required|string|unique:sale_invoices,posted_number,' . $invoice->id,
@@ -363,7 +389,7 @@ class SaleInvoiceController extends Controller
             $newInvoiceType = $data['invoice_type'] ?? $oldInvoiceType;
             $newSaleType = $data['sale_type'] ?? $oldSaleType;
 
-            $invoice->update([
+            $updateData = [
                 'customer_id'        => $data['customer_id'],
                 'invoice_type'       => $newInvoiceType,
                 'sale_type'          => $newSaleType,
@@ -381,7 +407,13 @@ class SaleInvoiceController extends Controller
                 'gross_amount'       => $data['gross_amount'],
                 'total'              => $data['total'],
                 'total_receive'      => $data['total_receive'] ?? 0,
-            ]);
+            ];
+
+            if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'payment_method')) {
+                $updateData['payment_method'] = $data['payment_method'] ?? $invoice->payment_method ?? 'cash';
+            }
+
+            $invoice->update($updateData);
 
             $this->createItemsAndReduce($invoice, $data['items'], $originalItems, $costs);
 

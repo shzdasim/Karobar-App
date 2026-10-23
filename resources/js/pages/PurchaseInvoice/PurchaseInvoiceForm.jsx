@@ -3,6 +3,7 @@ import { useInvoiceErrors, InvoiceErrorSummary, InvoiceRowError } from "../../co
 // /src/pages/purchases/PurchaseInvoiceForm.jsx
 import { Fragment, useState, useEffect, useRef, useMemo } from "react";
 import axios from "axios";
+import Select from "react-select";
 import toast from "react-hot-toast";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import { recalcItem, recalcFooter } from "../../Formula/PurchaseInvoice.js";
@@ -48,6 +49,15 @@ const getButtonTextColor = (primaryColor, primaryHoverColor) => {
   return getContrastText(primaryHoverColor || primaryColor);
 };
 
+export const PAYMENT_METHOD_OPTIONS = [
+  { value: "cash", label: "Cash" },
+  { value: "card", label: "Card / POS" },
+  { value: "bank_transfer", label: "Bank Transfer" },
+  { value: "cheque", label: "Cheque" },
+  { value: "mobile_wallet", label: "Mobile Wallet" },
+  { value: "other", label: "Other" },
+];
+
 // Centralized Axios error → toast mapper
 function showAxiosError(err) {
   const resp = err?.response;
@@ -89,6 +99,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
     discount_amount: "",
     total_amount: "",
     total_paid: "",
+    payment_method: "cash",
     items: [
       {
         product_id: "",
@@ -190,6 +201,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
       discount_amount: "",
       total_amount: "",
       total_paid: "",
+      payment_method: "cash",
       items: [
         {
           product_id: "",
@@ -237,6 +249,30 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
         if (sup) setSelectedSupplier(sup);
       }
       await ensureProductsForItems(next?.items || []);
+
+      setSupplierSearchOpen(false);
+      // Close product search modal if open
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("product-search:close"));
+      }
+
+      // Focus the last row's quantity field
+      const lastIdx = Math.max(0, (next?.items?.length || 1) - 1);
+      let retries = 0;
+      const tryFocus = () => {
+        const el = packQuantityRefs.current[lastIdx];
+        if (el && typeof el.focus === "function") {
+          el.focus();
+          el.select?.();
+          el.scrollIntoView?.({ block: "nearest" });
+          setCurrentField("pack_quantity");
+          setCurrentRowIndex(lastIdx);
+        } else if (retries < 10) {
+          retries++;
+          setTimeout(tryFocus, 50);
+        }
+      };
+      setTimeout(tryFocus, 60);
     },
   });
 
@@ -282,11 +318,13 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
     // It is generated server-side on SAVE to avoid collisions when multiple forms are open.
   }, [invoiceId]);
 
-useEffect(() => {
+  useEffect(() => {
     // On load, auto-open the supplier search modal ONLY for a new (create) form
     // so its search field is focused. In edit mode we keep the modal closed and
-    // just show the existing supplier.
-    if (invoiceId || initialData) return; // skip source orders and edit mode
+    // just show the existing supplier. Also skip if resuming a draft from URL.
+    const params = new URLSearchParams(window.location.search);
+    const hasDraftInUrl = Boolean(params.get("draft_id"));
+    if (invoiceId || initialData || hasDraftInUrl) return; // skip source orders, edit mode, and draft resumption
     const t = setTimeout(() => {
       setSupplierSearchOpen(true);
     }, 150);
@@ -335,6 +373,7 @@ useEffect(() => {
     let next = recalcFooter(res.data, "init");
     // 🔗 Keep total_paid linked to total_amount on edit load
     next.total_paid = next.total_amount ?? "";
+    next.payment_method = res.data?.payment_method || "cash";
     setForm(next);
     setPaidTouched(false);
     if (res.data?.purchase_order_id) setArrangement('original');
@@ -966,6 +1005,8 @@ const contRect = container.getBoundingClientRect();
       // If onSubmit prop is provided, use it for API calls
       if (onSubmit) {
         const result = await onSubmit(payloadToSend);
+        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+        try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
         draftHook.resetToNew();
         onSuccess && onSuccess();
         return result;
@@ -974,10 +1015,14 @@ const contRect = container.getBoundingClientRect();
       // Original logic when onSubmit is not provided
       if (invoiceId) {
         await axios.put(`/api/purchase-invoices/${invoiceId}`, payloadToSend);
+        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+        try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
         toast.success("Invoice updated successfully");
         onSuccess && onSuccess();
       } else {
         const { data: saved } = await axios.post("/api/purchase-invoices", payloadToSend);
+        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+        try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
         draftHook.resetToNew();
         // Server returns created invoice with posted_number assigned — reflect it locally.
         setForm((prev) => ({ ...prev, posted_number: saved?.posted_number || prev.posted_number }));
@@ -1064,6 +1109,48 @@ const contRect = container.getBoundingClientRect();
   const btnSecondary = getButtonClasses.secondary;
   const btnDanger = getButtonClasses.danger;
   const btnGlass = getButtonClasses.glass;
+
+  const paymentSelectStyles = useMemo(() => ({
+    control: (base, state) => ({
+      ...base,
+      minHeight: "28px",
+      height: "28px",
+      borderRadius: 6,
+      backgroundColor: isDark ? "#334155" : "#ffffff",
+      borderColor: state.isFocused
+        ? (themeColors.primary || "#3b82f6")
+        : (isDark ? "#475569" : "#e2e8f0"),
+      boxShadow: "none",
+      fontSize: "11px",
+      fontWeight: 600,
+    }),
+    valueContainer: (base) => ({ ...base, padding: "0 6px", height: "26px" }),
+    indicatorsContainer: (base) => ({ ...base, height: "26px" }),
+    dropdownIndicator: (base) => ({ ...base, padding: 1 }),
+    input: (base) => ({ ...base, color: isDark ? "#f8fafc" : "#1e293b", margin: 0, padding: 0 }),
+    singleValue: (base) => ({ ...base, color: isDark ? "#f8fafc" : "#1e293b", fontSize: "11px" }),
+    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+    menu: (base) => ({
+      ...base,
+      backgroundColor: isDark ? "#1e293b" : "#ffffff",
+      border: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
+      boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.2)",
+      borderRadius: 6,
+      zIndex: 9999,
+    }),
+    option: (base, state) => ({
+      ...base,
+      backgroundColor: state.isSelected
+        ? (themeColors.primary || "#3b82f6")
+        : state.isFocused
+        ? (isDark ? "#334155" : "#f1f5f9")
+        : "transparent",
+      color: state.isSelected ? "#ffffff" : (isDark ? "#f8fafc" : "#1e293b"),
+      fontSize: "11px",
+      padding: "4px 8px",
+      cursor: "pointer",
+    }),
+  }), [isDark, themeColors]);
 
   return (
     <form
@@ -1277,10 +1364,35 @@ const contRect = container.getBoundingClientRect();
           {remembersSupplierOrder && <span className="block font-normal opacity-75">This order is remembered for {selectedSupplier?.name || 'this supplier'} and reused on its next Purchase Orders and Invoices.</span>}
         </span>
         <label className="flex items-center gap-2 text-xs">Arrange products
-          <select aria-label="Purchase invoice arrangement on save" className="border rounded-md px-2 py-1 text-xs bg-white dark:bg-slate-700" value={arrangement} onChange={event => applyArrangement(event.target.value)}>
-            {arrangement === 'custom' && <option value="custom">Custom order (moved manually)</option>}
-            {[...new Set(purchaseInvoiceArrangements.map(option => option.group))].map(group => <optgroup key={group} label={group}>{purchaseInvoiceArrangements.filter(option => option.group === group).map(option => <option key={option.id} value={option.id}>{option.id === 'original' && remembersSupplierOrder ? 'Saved supplier order' : option.label}</option>)}</optgroup>)}
-          </select>
+          <div className="w-56 text-left">
+            <Select
+              aria-label="Purchase invoice arrangement on save"
+              options={[
+                ...(arrangement === 'custom' ? [{ value: 'custom', label: 'Custom order (moved manually)' }] : []),
+                ...[...new Set(purchaseInvoiceArrangements.map(option => option.group))].map(group => ({
+                  label: group,
+                  options: purchaseInvoiceArrangements
+                    .filter(option => option.group === group)
+                    .map(option => ({
+                      value: option.id,
+                      label: option.id === 'original' && remembersSupplierOrder ? 'Saved supplier order' : option.label,
+                    })),
+                }))
+              ]}
+              value={
+                arrangement === 'custom'
+                  ? { value: 'custom', label: 'Custom order (moved manually)' }
+                  : purchaseInvoiceArrangements.map(o => ({
+                      value: o.id,
+                      label: o.id === 'original' && remembersSupplierOrder ? 'Saved supplier order' : o.label
+                    })).find(o => o.value === arrangement)
+              }
+              onChange={opt => applyArrangement(opt?.value)}
+              styles={paymentSelectStyles}
+              isSearchable={false}
+              menuPlacement="auto"
+            />
+          </div>
           <button type="button" className="g-btn-ghost theme-btn-tertiary px-2.5 py-1 text-xs font-semibold" onClick={() => applyArrangement(arrangement)}>Apply Sort</button>
         </label>
       </div>
@@ -1849,10 +1961,25 @@ const contRect = container.getBoundingClientRect();
             </div>
 
             {/* ---- Right: Payment + Action ---- */}
-            <div className="w-[250px] shrink-0 flex flex-col justify-between">
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Total Paid</label>
+            <div className="w-[260px] shrink-0 flex flex-col justify-between">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <label className="text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 shrink-0">Method</label>
+                  <div className="flex-1">
+                    <Select
+                      options={PAYMENT_METHOD_OPTIONS}
+                      value={PAYMENT_METHOD_OPTIONS.find((o) => o.value === (form.payment_method || "cash")) || PAYMENT_METHOD_OPTIONS[0]}
+                      onChange={(opt) => setForm((prev) => ({ ...prev, payment_method: opt?.value || "cash" }))}
+                      styles={paymentSelectStyles}
+                      isSearchable={false}
+                      menuPlacement="auto"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Total Paid</label>
                   <div className="flex items-center gap-1">
                     <input
                       type="text"
@@ -1906,9 +2033,10 @@ const contRect = container.getBoundingClientRect();
                   </div>
                 </div>
               </div>
+            </div>
 
-              <button
-                ref={saveButtonRef}
+            <button
+              ref={saveButtonRef}
                 disabled={saving}
                 type="button"
                 onClick={handleSubmit}

@@ -88,6 +88,7 @@ class PurchaseInvoiceController extends Controller
             'receipt_key' => 'exclude_without:purchase_order_id|required|uuid|unique:purchase_invoices,receipt_key',
             'supplier_id'          => 'required|exists:suppliers,id',
             'invoice_type'         => 'nullable|string|in:credit,debit',
+            'payment_method'       => 'nullable|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
             // 'posted_number'      => now generated server-side
             'posted_date'          => 'required|date',
             'remarks'              => 'nullable|string',
@@ -167,10 +168,17 @@ class PurchaseInvoiceController extends Controller
                 }
                 $nextCode = $prefix . str_pad($nextNum, 4, '0', STR_PAD_LEFT);
 
-                $invoice = PurchaseInvoice::create(array_merge($data, [
-                    'posted_number' => $nextCode,
-                    'invoice_type'  => $data['invoice_type'] ?? 'debit',
-                ]));
+                $createPayload = array_merge($data, [
+                    'posted_number'  => $nextCode,
+                    'invoice_type'   => $data['invoice_type'] ?? 'debit',
+                ]);
+                if (\Illuminate\Support\Facades\Schema::hasColumn('purchase_invoices', 'payment_method')) {
+                    $createPayload['payment_method'] = $data['payment_method'] ?? 'cash';
+                } else {
+                    unset($createPayload['payment_method']);
+                }
+
+                $invoice = PurchaseInvoice::create($createPayload);
 
                 $this->processInvoiceItems($invoice, $data['items']);
 
@@ -211,6 +219,24 @@ if ($invoiceType === 'credit') {
                     $draft->save();
                 }
 
+                // Cash Drawer recording if drawer is open and cash was paid
+                $payMethod = $invoice->payment_method ?? 'cash';
+                $cashPaid = (float)($invoice->total_paid ?? 0);
+                if (($invoice->invoice_type ?? 'debit') === 'debit' && $cashPaid <= 0) {
+                    $cashPaid = (float)$invoice->total_amount;
+                }
+                if ($payMethod === 'cash' && $cashPaid > 0) {
+                    app(\App\Services\CashDrawerService::class)->recordTransaction(
+                        null,
+                        'cash_purchase',
+                        $cashPaid,
+                        'purchase_invoice',
+                        $invoice->id,
+                        "Cash purchase {$nextCode}",
+                        Auth::user()
+                    );
+                }
+
                 app(\App\Services\DocumentAuditService::class)->recordCreate($invoice->load('items.product'), Auth::user());
 
                 // Return the created invoice including items and supplier for the client
@@ -247,6 +273,7 @@ if ($invoiceType === 'credit') {
             'reason'               => 'nullable|string|max:500',
             'supplier_id'          => 'required|exists:suppliers,id',
             'invoice_type'         => 'nullable|string|in:credit,debit',
+            'payment_method'       => 'nullable|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
             // 'posted_number'      => not user-editable on update
             'posted_date'          => 'required|date',
             'remarks'              => 'nullable|string',
@@ -358,7 +385,7 @@ if ($invoiceType === 'credit') {
                 }
 
                 // Update invoice with explicit invoice_type
-                $purchaseInvoice->update([
+                $updatePayload = [
                     'supplier_id'        => $data['supplier_id'],
                     'invoice_type'       => $newInvoiceType,
                     'posted_number'      => $data['posted_number'],
@@ -372,7 +399,11 @@ if ($invoiceType === 'credit') {
                     'discount_amount'    => $data['discount_amount'] ?? 0,
                     'total_amount'       => $data['total_amount'],
                     'total_paid'         => $data['total_paid'] ?? 0,
-                ]);
+                ];
+                if (\Illuminate\Support\Facades\Schema::hasColumn('purchase_invoices', 'payment_method')) {
+                    $updatePayload['payment_method'] = $data['payment_method'] ?? $purchaseInvoice->payment_method ?? 'cash';
+                }
+                $purchaseInvoice->update($updatePayload);
 
                 $purchaseInvoice->items()->delete();
                 $this->persistInvoiceItems($purchaseInvoice, $data['items']);

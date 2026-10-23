@@ -11,6 +11,7 @@ class CustomerLedger extends Model
     protected $fillable = [
         'customer_id',
         'sale_invoice_id',
+        'payment_id',
         'entry_date',
         'posted_number',
         'invoice_number',

@@ -3,6 +3,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import SupplierSearch from "../../components/SupplierSearch.jsx";
+import RecordPaymentModal from "@/components/RecordPaymentModal.jsx";
+import PaymentHistoryModal from "@/components/PaymentHistoryModal.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
@@ -76,6 +78,15 @@ const [suppliers, setSuppliers] = useState([]);
     payments_debited: 0,
     net_balance: 0,
   });
+
+  // Payment modals state
+  const [recordPaymentOpen, setRecordPaymentOpen] = useState(false);
+  const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
+
+  const selectedSupplier = useMemo(
+    () => suppliers.find((s) => String(s.id) === String(supplierId)),
+    [suppliers, supplierId]
+  );
 
   // 🔒 permissions
   const { loading: permsLoading, canFor } = usePermissions();
@@ -729,13 +740,35 @@ return (
 
               <Guard when={can.create}>
                 <button
+                  onClick={() => setRecordPaymentOpen(true)}
+                  disabled={!supplierId}
+                  title="Record an allocated supplier payment / disbursement"
+                  className="products-action bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
+                >
+                  <BanknotesIcon className="w-3.5 h-3.5" />
+                  <span>Record Payment</span>
+                </button>
+              </Guard>
+
+              <button
+                onClick={() => setPaymentHistoryOpen(true)}
+                disabled={!supplierId}
+                title="View supplier payment vouchers and receipts"
+                className="products-action theme-btn-secondary"
+              >
+                <DocumentTextIcon className="w-3.5 h-3.5" />
+                <span>Payment Vouchers</span>
+              </button>
+
+              <Guard when={can.create}>
+                <button
                   onClick={openAddPayment}
                   disabled={!supplierId}
-                  title="Add a payment row (new entries are added at the top)"
+                  title="Add an inline payment row"
                   className="products-action theme-btn-secondary"
                 >
                   <PlusCircleIcon className="w-3.5 h-3.5" />
-                  <span>Add payment</span>
+                  <span>Inline payment</span>
                 </button>
               </Guard>
 
@@ -1384,6 +1417,27 @@ return (
           setSupplierId(cust ? String(cust.id) : "");
           setSupplierSearchOpen(false);
         }}
+      />
+
+      {/* Record Payment Modal */}
+      <RecordPaymentModal
+        isOpen={recordPaymentOpen}
+        onClose={() => setRecordPaymentOpen(false)}
+        partyType="supplier"
+        partyId={supplierId}
+        partyName={selectedSupplier?.name || ""}
+        onPaymentSuccess={() => {
+          fetchData();
+        }}
+      />
+
+      {/* Payment Vouchers History Modal */}
+      <PaymentHistoryModal
+        isOpen={paymentHistoryOpen}
+        onClose={() => setPaymentHistoryOpen(false)}
+        partyType="supplier"
+        partyId={supplierId}
+        partyName={selectedSupplier?.name || ""}
       />
 
       {/* print + portal helpers */}

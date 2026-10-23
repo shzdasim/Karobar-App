@@ -3,6 +3,7 @@ import { useInvoiceErrors, InvoiceErrorSummary, InvoiceRowError } from "../../co
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import Select from "react-select";
 import { TrashIcon, PlusIcon, CubeIcon, HashtagIcon, CheckIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
@@ -30,6 +31,15 @@ const getButtonTextColor = (primaryColor, primaryHoverColor) => {
   return getContrastText(primaryHoverColor || primaryColor);
 };
 
+export const PAYMENT_METHOD_OPTIONS = [
+  { value: "cash", label: "Cash" },
+  { value: "card", label: "Card / POS" },
+  { value: "bank_transfer", label: "Bank Transfer" },
+  { value: "cheque", label: "Cheque" },
+  { value: "mobile_wallet", label: "Mobile Wallet" },
+  { value: "other", label: "Other" },
+];
+
 /* -------- utils (unchanged) -------- */
 const normalizeFormLoaded = (f) => {
   const safe = { ...f };
@@ -48,6 +58,7 @@ const normalizeFormLoaded = (f) => {
   safe.gross_amount = safe.gross_amount ?? "";
   safe.total = safe.total ?? "";
   safe.total_receive = safe.total_receive ?? "";
+  safe.payment_method = safe.payment_method ?? "cash";
   safe.items = Array.isArray(safe.items)
     ? safe.items.map((it, idx) => {
         return {
@@ -95,6 +106,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     gross_amount: "",
     total: "",
     total_receive: "",
+    payment_method: "cash",
     items: [
       {
         id: generateRowId(),
@@ -143,6 +155,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       gross_amount: "",
       total: "",
       total_receive: "",
+      payment_method: "cash",
       items: [
         {
           id: generateRowId(),
@@ -179,6 +192,29 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       await ensureProductsForItems(loaded?.items || []);
       await ensureBatchesForItems(loaded?.items || []);
       setForm(loaded);
+      focusedOnce.current = true;
+
+      // Close product search modal if open
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("product-search:close"));
+      }
+
+      // Focus the last row's quantity field
+      const lastIdx = Math.max(0, (loaded?.items?.length || 1) - 1);
+      setFocusedRowIndex(lastIdx);
+      let retries = 0;
+      const tryFocus = () => {
+        const el = qtyRefs.current[lastIdx];
+        if (el && typeof el.focus === "function") {
+          el.focus();
+          el.select?.();
+          el.scrollIntoView?.({ block: "nearest" });
+        } else if (retries < 10) {
+          retries++;
+          setTimeout(tryFocus, 50);
+        }
+      };
+      setTimeout(tryFocus, 60);
     },
   });
 
@@ -228,8 +264,14 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       if (saleId) {
         await fetchSale();
       }
-      // focus first product on brand new form
+      // focus first product on brand new form (unless resuming a draft from URL)
       setTimeout(() => {
+        const params = new URLSearchParams(window.location.search);
+        const hasDraftInUrl = Boolean(params.get("draft_id"));
+        if (hasDraftInUrl) {
+          focusedOnce.current = true;
+          return;
+        }
         if (!focusedOnce.current && !saleId) {
           productRefs.current[0]?.querySelector?.("input")?.focus?.();
           focusedOnce.current = true;
@@ -325,6 +367,48 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     getButtonTextColor(themeColors.danger, themeColors.dangerHover), 
     [themeColors.danger, themeColors.dangerHover]
   );
+
+  const paymentSelectStyles = useMemo(() => ({
+    control: (base, state) => ({
+      ...base,
+      minHeight: "32px",
+      height: "32px",
+      borderRadius: 8,
+      backgroundColor: isDark ? "#334155" : "#ffffff",
+      borderColor: state.isFocused
+        ? (themeColors.primary || "#3b82f6")
+        : (isDark ? "#475569" : "#e2e8f0"),
+      boxShadow: "none",
+      fontSize: "12px",
+      fontWeight: 600,
+    }),
+    valueContainer: (base) => ({ ...base, padding: "0 8px", height: "30px" }),
+    indicatorsContainer: (base) => ({ ...base, height: "30px" }),
+    dropdownIndicator: (base) => ({ ...base, padding: 2 }),
+    input: (base) => ({ ...base, color: isDark ? "#f8fafc" : "#1e293b", margin: 0, padding: 0 }),
+    singleValue: (base) => ({ ...base, color: isDark ? "#f8fafc" : "#1e293b", fontSize: "12px" }),
+    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+    menu: (base) => ({
+      ...base,
+      backgroundColor: isDark ? "#1e293b" : "#ffffff",
+      border: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
+      boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.2)",
+      borderRadius: 8,
+      zIndex: 9999,
+    }),
+    option: (base, state) => ({
+      ...base,
+      backgroundColor: state.isSelected
+        ? (themeColors.primary || "#3b82f6")
+        : state.isFocused
+        ? (isDark ? "#334155" : "#f1f5f9")
+        : "transparent",
+      color: state.isSelected ? "#ffffff" : (isDark ? "#f8fafc" : "#1e293b"),
+      fontSize: "12px",
+      padding: "6px 10px",
+      cursor: "pointer",
+    }),
+  }), [isDark, themeColors]);
 
   // 🎨 Dynamic Button styles using theme colors
   const buttonStyle = theme?.button_style || 'modern';
@@ -930,6 +1014,8 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       if (saleId) {
         const res = await axios.put(`/api/sale-invoices/${saleId}`, payload);
         const id = res?.data?.id ?? saleId;
+        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+        try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
         toast.success("Sale invoice updated");
         navigate(`/sale-invoices/${id}`);
       } else {
@@ -938,6 +1024,8 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         }
         const res = await axios.post("/api/sale-invoices", payload);
         const id = res?.data?.id;
+        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+        try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
         draftHook.resetToNew();
         toast.success("Sale invoice created");
         if (id) navigate(`/sale-invoices/${id}`);
@@ -1613,6 +1701,20 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
 
               {/* Payment */}
               <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label className={`font-semibold shrink-0 text-xs ${isDark ? "text-slate-400" : "text-gray-500"}`}>Method</label>
+                  <div className="w-36">
+                    <Select
+                      options={PAYMENT_METHOD_OPTIONS}
+                      value={PAYMENT_METHOD_OPTIONS.find((o) => o.value === (form.payment_method || "cash")) || PAYMENT_METHOD_OPTIONS[0]}
+                      onChange={(opt) => setForm((prev) => ({ ...prev, payment_method: opt?.value || "cash" }))}
+                      styles={paymentSelectStyles}
+                      isSearchable={false}
+                      menuPlacement="auto"
+                    />
+                  </div>
+                </div>
+
                 <div className="flex items-center justify-between">
                   <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Received</label>
                   <input

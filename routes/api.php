@@ -7,6 +7,7 @@ use App\Http\Controllers\BatchController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\BrandController;
 use App\Http\Controllers\BrandImportController;
+use App\Http\Controllers\CashDrawerController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryImportController;
 use App\Http\Controllers\CustomerController;
@@ -15,6 +16,7 @@ use App\Http\Controllers\CustomerLedgerController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentHistoryController;
 use App\Http\Controllers\InvoiceDraftController;
+use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\LicenseController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\ProductController;
@@ -164,6 +166,18 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
 
     // Document Audit History
     Route::get('/document-histories',             [DocumentHistoryController::class, 'index']);
+
+    // Payments & Allocations (Project 3)
+    Route::get('payments/open-invoices',          [PaymentController::class, 'openInvoices']);
+    Route::post('payments/{id}/reverse',          [PaymentController::class, 'reverse']);
+    Route::apiResource('payments',                PaymentController::class)->only(['index', 'show', 'store']);
+
+    // Cash Drawer Register Management
+    Route::get('cash-drawer/current',             [CashDrawerController::class, 'current']);
+    Route::post('cash-drawer/open',               [CashDrawerController::class, 'open']);
+    Route::post('cash-drawer/transaction',        [CashDrawerController::class, 'recordTransaction']);
+    Route::post('cash-drawer/close',              [CashDrawerController::class, 'close']);
+    Route::get('cash-drawer/history',             [CashDrawerController::class, 'history']);
 
     // Sale returns
     Route::get('sale-returns/new-code',           [SaleReturnController::class, 'generateNewCode']);

@@ -11,6 +11,7 @@ class PurchaseInvoice extends Model
         'purchase_order_id',
         'receipt_key',
         'invoice_type',
+        'payment_method',
         'posted_number',
         'posted_date',
         'remarks',

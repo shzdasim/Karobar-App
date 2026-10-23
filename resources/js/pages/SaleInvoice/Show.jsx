@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { MagnifyingGlassIcon, PrinterIcon, PencilSquareIcon, TrashIcon, PlusIcon, ArrowLeftIcon, ClockIcon, ArrowUturnLeftIcon } from "@heroicons/react/24/outline";
+import { MagnifyingGlassIcon, PrinterIcon, PencilSquareIcon, TrashIcon, PlusIcon, ArrowLeftIcon, ClockIcon, ArrowUturnLeftIcon, BanknotesIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 // 🔒 permissions
 import { usePermissions, Guard } from "@/api/usePermissions.js";
@@ -12,6 +12,7 @@ import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import SaleInvoiceSearch from "@/components/SaleInvoiceSearch.jsx";
 import DocumentHistoryModal from "@/components/DocumentHistoryModal.jsx";
 import VoidInvoiceModal from "@/components/VoidInvoiceModal.jsx";
+import RecordPaymentModal from "@/components/RecordPaymentModal.jsx";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 
 // Helper to determine text color based on background brightness
@@ -41,10 +42,17 @@ export default function SaleInvoiceShow() {
   // Search modal state
   const [searchOpen, setSearchOpen] = useState(false);
 
-  // History and Void modal states
+  // History, Void and Payment modal states
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [voidModalOpen, setVoidModalOpen] = useState(false);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [isReversing, setIsReversing] = useState(false);
+
+  const invoiceDue = useMemo(() => {
+    const tot = Number(inv?.total || 0);
+    const rec = Number(inv?.total_receive ?? inv?.total_recieve ?? 0);
+    return Math.max(tot - rec, 0);
+  }, [inv]);
 
   const handleConfirmVoid = async (reason) => {
     try {
@@ -480,6 +488,17 @@ export default function SaleInvoiceShow() {
               <PrinterIcon className="w-4 h-4" aria-hidden="true" />
               <span>Print</span>
             </button>
+            {invoiceDue > 0.01 && inv?.status !== 'reversed' && (
+              <button
+                type="button"
+                onClick={() => setPaymentModalOpen(true)}
+                className="px-3 py-2 text-[11px] font-bold rounded-xl transition-all duration-200 bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm flex items-center gap-1"
+                title="Receive payment against this invoice"
+              >
+                <BanknotesIcon className="w-4 h-4" aria-hidden="true" />
+                <span>Receive Payment</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setHistoryModalOpen(true)}
@@ -1020,6 +1039,20 @@ export default function SaleInvoiceShow() {
         onConfirm={handleConfirmVoid}
         invoice={inv}
         isReversing={isReversing}
+      />
+
+      {/* Record Payment Modal */}
+      <RecordPaymentModal
+        isOpen={paymentModalOpen}
+        onClose={() => setPaymentModalOpen(false)}
+        partyType="customer"
+        partyId={inv?.customer_id}
+        partyName={inv?.customer?.name || ""}
+        preselectedInvoiceId={id}
+        onPaymentSuccess={async () => {
+          const { data } = await axios.get(`/api/sale-invoices/${id}`);
+          setInv(data);
+        }}
       />
     </div>
   );

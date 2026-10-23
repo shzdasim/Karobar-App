@@ -1,13 +1,15 @@
 // src/components/Topbar.jsx
 import React, { useEffect, useRef, useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
-import { ClipboardDocumentListIcon, ShoppingCartIcon, ClockIcon, BellIcon, Bars3Icon } from "@heroicons/react/24/solid";
+import { ClipboardDocumentListIcon, ShoppingCartIcon, ClockIcon, BellIcon, Bars3Icon, BanknotesIcon } from "@heroicons/react/24/solid";
 import { useLicense } from "@/context/LicenseContext.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
+import { useCurrency } from "@/context/CurrencyContext.jsx";
 import ProductSearch from "@/components/ProductSearch.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
 import NotificationCenter from "./NotificationCenter.jsx";
+import CashDrawerModal from "./CashDrawerModal.jsx";
 import axios from "axios";
 
 function formatRemaining(ms) {
@@ -33,8 +35,46 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
   const [notifCount, setNotifCount] = useState(0);
 
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout } = useAuth();
   const { theme } = useTheme();
+  const { formatCurrency } = useCurrency();
+
+  // Cash Drawer Register state
+  const [drawerModalOpen, setDrawerModalOpen] = useState(false);
+  const [drawerStatus, setDrawerStatus] = useState({ isOpen: false, expected: 0, loading: true });
+
+  const fetchDrawerStatus = async () => {
+    try {
+      const res = await axios.get("/api/cash-drawer/current");
+      setDrawerStatus({
+        isOpen: !!res.data?.is_open,
+        expected: Number(res.data?.summary?.expected_balance || 0),
+        loading: false,
+      });
+    } catch {
+      setDrawerStatus((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  useEffect(() => {
+    fetchDrawerStatus();
+    const onDrawerChanged = () => fetchDrawerStatus();
+    const onStorage = (e) => {
+      if (e.key === "cash_drawer_sync") fetchDrawerStatus();
+    };
+    window.addEventListener("cash-drawer-changed", onDrawerChanged);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("cash-drawer-changed", onDrawerChanged);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  // Also auto-refresh drawer balance on navigation (e.g. after invoice creation)
+  useEffect(() => {
+    fetchDrawerStatus();
+  }, [location.pathname]);
 
 // Poll for low-stock + user-demand notification count
   useEffect(() => {
@@ -250,6 +290,34 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
               <span className="hidden sm:inline">Sale</span>
             </button>
 
+            {/* Cash Drawer register button */}
+            <button
+              onClick={() => setDrawerModalOpen(true)}
+              aria-label="Cash Drawer register"
+              title={
+                drawerStatus.isOpen
+                  ? `Cash Drawer Open: ${formatCurrency(drawerStatus.expected)}`
+                  : "Cash Drawer is Closed (Click to Open Shift)"
+              }
+              className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-150 relative z-50 border ${
+                drawerStatus.isOpen
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
+                  : "bg-slate-500/10 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-500/20"
+              }`}
+            >
+              <BanknotesIcon className="w-4 h-4 shrink-0" />
+              <span className="flex items-center gap-1.5">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    drawerStatus.isOpen ? "bg-emerald-500 animate-pulse" : "bg-amber-400"
+                  }`}
+                />
+                <span className="hidden sm:inline font-bold">
+                  {drawerStatus.isOpen ? formatCurrency(drawerStatus.expected) : "Drawer"}
+                </span>
+              </span>
+            </button>
+
             <div className="mx-1 h-6 w-px bg-linear-to-b from-transparent via-slate-300/60 to-transparent" />
 
             {/* User menu */}
@@ -321,6 +389,13 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
       <NotificationCenter
         open={notifOpen}
         onClose={() => setNotifOpen(false)}
+      />
+
+      {/* Cash Drawer Shift Modal */}
+      <CashDrawerModal
+        isOpen={drawerModalOpen}
+        onClose={() => setDrawerModalOpen(false)}
+        onSessionUpdated={fetchDrawerStatus}
       />
     </div>
   );

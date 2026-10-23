@@ -149,7 +149,19 @@ const MIN_WIDTH = 640;
       closeMenu: () => closeModal(),
     }));
 
+    // Listen for global close event (e.g. when resuming invoice drafts)
+    useEffect(() => {
+      const handleClose = () => {
+        setIsOpen(false);
+      };
+      window.addEventListener("product-search:close", handleClose);
+      return () => window.removeEventListener("product-search:close", handleClose);
+    }, []);
+
     const openModal = (seedChar) => {
+      if (typeof window !== "undefined" && window.__isResumingInvoiceDraft) {
+        return;
+      }
       triggerRef.current?.blur?.();
       setIsOpen(true);
       setHighlightIndex(0);
