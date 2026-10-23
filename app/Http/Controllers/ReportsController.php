@@ -2378,4 +2378,25 @@ class ReportsController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Executive Net Profit (Profit and Loss) Statement.
+     */
+    public function netProfit(Request $req, \App\Services\ExpenseService $expenseService)
+    {
+        $this->authorize('view', \App\Authorizables\CostOfSaleReport::class);
+
+        $filters = $req->validate([
+            'from' => 'sometimes|date_format:Y-m-d',
+            'to'   => 'sometimes|date_format:Y-m-d',
+        ]);
+
+        $from = $filters['from'] ?? Carbon::now()->startOfMonth()->toDateString();
+        $to   = $filters['to'] ?? Carbon::now()->toDateString();
+        abort_if($from > $to, 422, 'The from date must be on or before the to date.');
+
+        $data = $expenseService->getNetProfitReport($from, $to);
+
+        return response()->json($data);
+    }
 }

@@ -8,7 +8,7 @@
 ![Vite](https://img.shields.io/badge/Vite-6.x-646CFF?style=for-the-badge&logo=vite&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.x-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
 ![MySQL](https://img.shields.io/badge/MySQL-8.x-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
-![Tests](https://img.shields.io/badge/PHPUnit-91%20Tests%20Passing-success?style=for-the-badge&logo=checkmarx&logoColor=white)
+![Tests](https://img.shields.io/badge/PHPUnit-146%20Tests%20Passing-success?style=for-the-badge&logo=checkmarx&logoColor=white)
 
 **An enterprise-grade, modern Point of Sale (POS), Point of Purchase (POP), Batch Inventory, Double-Entry Ledger, and Cash Drawer Management System.**
 
@@ -138,6 +138,10 @@ graph TD
   * Comprehensive accounts payable ledger tracking purchase invoices, disbursements, returned goods credits, and net payable balances.
 * **Payment Allocation Engine**:
   * Multi-invoice payment distribution allocating lump-sum payments across open customer invoices, retaining unapplied advances as open credit balance with complete idempotency protection.
+* **Operating Expenses (OpEx) & Net Profit (P&L)**:
+  * Complete operational expense tracking across 13+ standard retail & pharmacy categories (Rent, Staff Salaries, Electricity/WAPDA, Generator Fuel, Tea & Kharcha, Packaging, Freight, Maintenance).
+  * Seamless integration with active Cash Drawer sessions (`cash_out`) and Bank / Digital Wallet accounts.
+  * Executive Profit & Loss Statement (P&L) with Gross Invoiced Sales, Cost of Goods Sold (COGS), Gross Profit, Itemized OpEx, Net Operating Profit, and Net Margin % with CSV export and printable statement.
 
 ---
 

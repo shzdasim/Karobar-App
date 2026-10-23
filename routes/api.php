@@ -16,6 +16,8 @@ use App\Http\Controllers\CustomerImportController;
 use App\Http\Controllers\CustomerLedgerController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentHistoryController;
+use App\Http\Controllers\ExpenseCategoryController;
+use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\InvoiceDraftController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\LicenseController;
@@ -193,6 +195,11 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::post('accounts/transfer',              [AccountController::class, 'transfer']);
     Route::post('accounts/{id}/adjust',           [AccountController::class, 'adjust']);
 
+    // Operating Expenses & Categories
+    Route::get('expenses/summary',                [ExpenseController::class, 'summary']);
+    Route::apiResource('expenses',                ExpenseController::class);
+    Route::apiResource('expense-categories',      ExpenseCategoryController::class);
+
     // Sale returns
     Route::get('sale-returns/new-code',           [SaleReturnController::class, 'generateNewCode']);
     Route::apiResource('sale-returns',            SaleReturnController::class);
@@ -245,6 +252,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/reports/outstanding-aging',       [ReportsController::class, 'outstandingAging']);
     Route::get('/reports/overdue-work-queue',      [ReportsController::class, 'overdueWorkQueue']);
     Route::get('/reports/reorder',                 [ReportsController::class, 'reorderReport']);
+    Route::get('/reports/net-profit',              [ReportsController::class, 'netProfit']);
     Route::put('/sale-invoices/{saleInvoice}/meta',[SaleInvoiceController::class, 'updateMeta']);
 
 

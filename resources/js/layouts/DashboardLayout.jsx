@@ -60,6 +60,8 @@ export default function DashboardLayout({ children }) {
     "/reports/cost-of-sale": "Cost of Sale Report",
     "/supplier-ledger": "Supplier Ledger",
     "/customer-ledger": "Customer Ledger",
+    "/expenses": "Operating Expenses",
+    "/reports/net-profit": "Profit & Loss Statement",
     "/stock-adjustments": "Stock Adjustments",
   };
 
