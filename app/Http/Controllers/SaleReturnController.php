@@ -38,15 +38,22 @@ class SaleReturnController extends Controller
         $actualApplied = $deltaUnits; // default if batch not found
 
         $batch = null;
-        if ($batchNo !== '' && $expiry !== '') {
-            $batch = Batch::where('product_id', $productId)
-                ->where(function ($q) use ($batchNo) {
-                    $q->where('batch_number', $batchNo);
-                })
-                ->where(function ($q) use ($expiry) {
-                    $q->where('expiry_date', $expiry);
-                })
-                ->first();
+        if ($batchNo !== '') {
+            $batchQuery = Batch::where('product_id', $productId)
+                ->where('batch_number', $batchNo);
+            if ($expiry !== '') {
+                $cleanExpiry = substr($expiry, 0, 10);
+                $batchQuery->where(function ($q) use ($expiry, $cleanExpiry) {
+                    $q->where('expiry_date', $cleanExpiry)
+                      ->orWhere('expiry_date', $expiry);
+                });
+            }
+            $batch = $batchQuery->first();
+            if (!$batch) {
+                $batch = Batch::where('product_id', $productId)
+                    ->where('batch_number', $batchNo)
+                    ->first();
+            }
         }
 
         if ($batch) {

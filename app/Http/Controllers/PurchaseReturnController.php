@@ -26,6 +26,64 @@ class PurchaseReturnController extends Controller
         return $this->i($item->return_unit_quantity ?? 0);
     }
 
+    private function validateStockAvailability(array $items, ?\Illuminate\Support\Collection $originalItems = null): void
+    {
+        $originalItems ??= collect();
+        $ids = collect($items)->pluck('product_id')->merge($originalItems->pluck('product_id'))->unique()->filter()->values();
+        $products = Product::whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+        $batches = Batch::whereIn('product_id', $ids)->orderBy('id')->lockForUpdate()->get();
+
+        $restored = $originalItems->groupBy('product_id')->map(fn ($rows) => $rows->sum('return_unit_quantity'));
+        $batchRestored = [];
+        foreach ($originalItems as $old) {
+            $batchNo = trim((string)($old->batch ?? ''));
+            if ($batchNo !== '') {
+                $b = $batches->first(fn ($batch) => (int)$batch->product_id === (int)$old->product_id && trim((string)$batch->batch_number) === $batchNo);
+                if ($b) {
+                    $batchRestored[$b->id] = ($batchRestored[$b->id] ?? 0) + (int)$old->return_unit_quantity;
+                }
+            }
+        }
+
+        $requested = [];
+        $batchRequested = [];
+
+        foreach ($items as $index => $row) {
+            $productId = (int)($row['product_id'] ?? 0);
+            $product = $products->get($productId);
+            if (!$product) {
+                throw \Illuminate\Validation\ValidationException::withMessages(["items.$index.product_id" => "Selected product is invalid or unavailable."]);
+            }
+            $returnQty = (int)($row['return_unit_quantity'] ?? 0);
+            if ($returnQty <= 0) {
+                continue;
+            }
+
+            $requested[$productId] = ($requested[$productId] ?? 0) + $returnQty;
+            $available = (int)($product->quantity ?? 0) + (int)($restored[$productId] ?? 0);
+
+            if ($requested[$productId] > $available) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    "items.$index.return_unit_quantity" => "Only {$available} units remain available on hand for {$product->name}. Insufficient stock (requested: {$requested[$productId]} units)."
+                ]);
+            }
+
+            $batchNo = trim((string)($row['batch'] ?? ''));
+            if ($batchNo !== '') {
+                $b = $batches->first(fn ($batch) => (int)$batch->product_id === $productId && trim((string)$batch->batch_number) === $batchNo);
+                if ($b) {
+                    $batchRequested[$b->id] = ($batchRequested[$b->id] ?? 0) + $returnQty;
+                    $batchAvailable = (int)($b->quantity ?? 0) + (int)($batchRestored[$b->id] ?? 0);
+                    if ($batchRequested[$b->id] > $batchAvailable) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            "items.$index.return_unit_quantity" => "Only {$batchAvailable} units remain available in batch {$b->batch_number} for {$product->name}. Insufficient stock (requested: {$batchRequested[$b->id]} units)."
+                        ]);
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * Apply delta to Batch first; then apply the *actual* applied delta to Product.
      * $deltaUnits: negative = reduce (creating a return), positive = revert (on update/delete).
@@ -38,21 +96,28 @@ class PurchaseReturnController extends Controller
         $actualApplied = $deltaUnits; // default if batch not found
 
         $batch = null;
-        if ($batchNo !== '' && $expiry !== '') {
-            $batch = Batch::where('product_id', $productId)
-                ->where(function ($q) use ($batchNo) {
-                    $q->where('batch_number', $batchNo);
-                })
-                ->where(function ($q) use ($expiry) {
-                    $q->where('expiry_date', $expiry);
-                })
-                ->first();
+        if ($batchNo !== '') {
+            $batchQuery = Batch::where('product_id', $productId)
+                ->where('batch_number', $batchNo);
+            if ($expiry !== '') {
+                $cleanExpiry = substr($expiry, 0, 10);
+                $batchQuery->where(function ($q) use ($expiry, $cleanExpiry) {
+                    $q->where('expiry_date', $cleanExpiry)
+                      ->orWhere('expiry_date', $expiry);
+                });
+            }
+            $batch = $batchQuery->first();
+            if (!$batch) {
+                $batch = Batch::where('product_id', $productId)
+                    ->where('batch_number', $batchNo)
+                    ->first();
+            }
         }
 
         if ($batch) {
             $before = $this->i($batch->quantity);
             $after  = $before + $deltaUnits;
-            if ($after < 0) $after = 0;                // never go below zero
+            if ($after < 0) $after = 0;                // safety floor
             $actualApplied = $after - $before;         // what really changed
             $batch->quantity = $after;
             $batch->save();
@@ -174,6 +239,7 @@ public function index(Request $request)
         ]);
 
         return DB::transaction(function () use ($data, $request) {
+            $this->validateStockAvailability($data['items']);
             app(\App\Services\ReturnEntitlement::class)->validate('purchase', $data);
             // Generate posted_number server-side (concurrency-safe)
             $last = PurchaseReturn::lockForUpdate()->orderByDesc('id')->first();
@@ -250,6 +316,8 @@ public function index(Request $request)
         ]);
 
         return DB::transaction(function () use ($purchaseReturn, $data, $request) {
+            $purchaseReturn->load('items');
+            $this->validateStockAvailability($data['items'], $purchaseReturn->items);
             $oldTotal = (float) $purchaseReturn->total;
             app(\App\Services\ReturnEntitlement::class)->validate('purchase', $data, $purchaseReturn);
             // Revert previous stock effects

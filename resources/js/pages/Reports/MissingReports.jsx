@@ -297,9 +297,7 @@ export default function MissingReports({ type }) {
     const getValue = (row, field) => {
       if (field === "item_count") return row.item_count ?? row.items?.length ?? 0;
       if (field === "quantity") return row.quantity ?? row.items?.reduce(
-        (sum, item) => sum + (item.quantity != null
-          ? number(item.quantity)
-          : number(item.return_unit_quantity) + (number(item.return_pack_quantity) * number(item.pack_size))),
+        (sum, item) => sum + number(item.quantity ?? item.return_unit_quantity),
         0
       ) ?? 0;
       return row[field] ?? "";

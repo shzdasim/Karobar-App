@@ -82,7 +82,7 @@ class ReportsController extends Controller
                 'pack_size' => (int) $item->pack_size,
                 'return_pack_quantity' => (int) $item->return_pack_quantity,
                 'return_unit_quantity' => (int) $item->return_unit_quantity,
-                'quantity' => ((int) $item->return_pack_quantity * (int) $item->pack_size) + (int) $item->return_unit_quantity,
+                'quantity' => (int) $item->return_unit_quantity,
                 'unit_purchase_price' => (float) $item->unit_purchase_price,
                 'item_discount_percentage' => (float) $item->item_discount_percentage,
                 'sub_total' => (float) $item->sub_total,
@@ -1714,6 +1714,7 @@ class ReportsController extends Controller
             ->join('suppliers as s', 's.id', '=', 'pi.supplier_id')
             ->where('pii.product_id', $productId)
             ->whereBetween('pi.posted_date', [$fromDate, $toDate])
+            ->where(fn($q) => $q->whereNull('pi.status')->orWhere('pi.status', '!=', 'reversed'))
             ->select([
                 'pi.posted_date as date',
                 'pi.posted_number as reference_number',
@@ -1721,7 +1722,7 @@ class ReportsController extends Controller
                 's.name as counter_party',
                 'pii.batch',
                 'pii.expiry',
-                'pii.unit_quantity as quantity',
+                'pii.quantity as quantity',
                 'pii.unit_purchase_price as unit_price',
                 'pii.sub_total',
             ])
@@ -1783,6 +1784,7 @@ class ReportsController extends Controller
             ->join('customers as c', 'c.id', '=', 'si.customer_id')
             ->where('sii.product_id', $productId)
             ->whereBetween('si.date', [$fromDate, $toDate])
+            ->where(fn($q) => $q->whereNull('si.status')->orWhere('si.status', '!=', 'reversed'))
             ->select([
                 'si.date',
                 'si.posted_number as reference_number',
@@ -1845,11 +1847,45 @@ class ReportsController extends Controller
                 ];
             });
 
+        // ===== Stock Adjustments =====
+        $stockAdjustments = DB::table('stock_adjustment_items as sai')
+            ->join('stock_adjustments as sa', 'sa.id', '=', 'sai.stock_adjustment_id')
+            ->where('sai.product_id', $productId)
+            ->whereBetween('sa.posted_date', [$fromDate, $toDate])
+            ->select([
+                'sa.posted_date as date',
+                'sa.posted_number as reference_number',
+                'sai.batch_number as batch',
+                'sai.expiry',
+                'sai.diff_qty',
+                'sai.unit_purchase_price as unit_price',
+                'sai.worth_adjusted as sub_total',
+            ])
+            ->orderBy('date', 'asc')
+            ->get()
+            ->map(function ($item) {
+                $diff = (float)($item->diff_qty ?? 0);
+                return [
+                    'date' => $item->date instanceof \Carbon\Carbon ? $item->date->format('Y-m-d') : (is_string($item->date) ? substr($item->date, 0, 10) : $item->date),
+                    'reference_number' => $item->reference_number,
+                    'type' => 'stock_adjustment',
+                    'type_label' => 'Stock Adjustment',
+                    'counter_party' => 'Inventory Adjustment',
+                    'batch' => $item->batch,
+                    'expiry' => $item->expiry ? (($item->expiry instanceof \Carbon\Carbon) ? $item->expiry->format('Y-m-d') : (is_string($item->expiry) ? substr($item->expiry, 0, 10) : $item->expiry)) : null,
+                    'quantity_in' => $diff > 0 ? (int)$diff : 0,
+                    'quantity_out' => $diff < 0 ? (int)abs($diff) : 0,
+                    'unit_price' => (float)($item->unit_price ?? 0),
+                    'sub_total' => (float)($item->sub_total ?? 0),
+                ];
+            });
+
         // Merge all transactions and sort by date
         $allTransactions = $purchases
             ->concat($purchaseReturns)
             ->concat($sales)
             ->concat($saleReturns)
+            ->concat($stockAdjustments)
             ->sortBy('date')
             ->values();
 
@@ -1858,8 +1894,8 @@ class ReportsController extends Controller
         $totalPurchaseReturns = $purchaseReturns->sum('sub_total');
         $totalSales = $sales->sum('sub_total');
         $totalSaleReturns = $saleReturns->sum('sub_total');
-        $totalQuantityIn = $purchases->sum('quantity_in') + $purchaseReturns->sum('quantity_in') + $saleReturns->sum('quantity_in');
-        $totalQuantityOut = $sales->sum('quantity_out') + $purchaseReturns->sum('quantity_out');
+        $totalQuantityIn = $purchases->sum('quantity_in') + $saleReturns->sum('quantity_in') + $stockAdjustments->sum('quantity_in');
+        $totalQuantityOut = $sales->sum('quantity_out') + $purchaseReturns->sum('quantity_out') + $stockAdjustments->sum('quantity_out');
 
         $summary = [
             'total_purchases' => round($totalPurchases, 2),
@@ -1959,6 +1995,7 @@ class ReportsController extends Controller
             ->join('suppliers as s', 's.id', '=', 'pi.supplier_id')
             ->where('pii.product_id', $productId)
             ->whereBetween('pi.posted_date', [$fromDate, $toDate])
+            ->where(fn($q) => $q->whereNull('pi.status')->orWhere('pi.status', '!=', 'reversed'))
             ->select([
                 'pi.posted_date as date',
                 'pi.posted_number as reference_number',
@@ -1966,7 +2003,7 @@ class ReportsController extends Controller
                 's.name as counter_party',
                 'pii.batch',
                 'pii.expiry',
-                'pii.unit_quantity as quantity',
+                'pii.quantity as quantity',
                 'pii.unit_purchase_price as unit_price',
                 'pii.sub_total',
             ])
@@ -2028,6 +2065,7 @@ class ReportsController extends Controller
             ->join('customers as c', 'c.id', '=', 'si.customer_id')
             ->where('sii.product_id', $productId)
             ->whereBetween('si.date', [$fromDate, $toDate])
+            ->where(fn($q) => $q->whereNull('si.status')->orWhere('si.status', '!=', 'reversed'))
             ->select([
                 'si.date',
                 'si.posted_number as reference_number',
@@ -2090,11 +2128,45 @@ class ReportsController extends Controller
                 ];
             });
 
+        // ===== Stock Adjustments =====
+        $stockAdjustments = DB::table('stock_adjustment_items as sai')
+            ->join('stock_adjustments as sa', 'sa.id', '=', 'sai.stock_adjustment_id')
+            ->where('sai.product_id', $productId)
+            ->whereBetween('sa.posted_date', [$fromDate, $toDate])
+            ->select([
+                'sa.posted_date as date',
+                'sa.posted_number as reference_number',
+                'sai.batch_number as batch',
+                'sai.expiry',
+                'sai.diff_qty',
+                'sai.unit_purchase_price as unit_price',
+                'sai.worth_adjusted as sub_total',
+            ])
+            ->orderBy('date', 'asc')
+            ->get()
+            ->map(function ($item) {
+                $diff = (float)($item->diff_qty ?? 0);
+                return [
+                    'date' => $item->date instanceof \Carbon\Carbon ? $item->date->format('Y-m-d') : (is_string($item->date) ? substr($item->date, 0, 10) : $item->date),
+                    'reference_number' => $item->reference_number,
+                    'type' => 'stock_adjustment',
+                    'type_label' => 'Stock Adjustment',
+                    'counter_party' => 'Inventory Adjustment',
+                    'batch' => $item->batch,
+                    'expiry' => $item->expiry ? (($item->expiry instanceof \Carbon\Carbon) ? $item->expiry->format('Y-m-d') : (is_string($item->expiry) ? substr($item->expiry, 0, 10) : $item->expiry)) : null,
+                    'quantity_in' => $diff > 0 ? (int)$diff : 0,
+                    'quantity_out' => $diff < 0 ? (int)abs($diff) : 0,
+                    'unit_price' => (float)($item->unit_price ?? 0),
+                    'sub_total' => (float)($item->sub_total ?? 0),
+                ];
+            });
+
         // Merge all transactions and sort by date
         $allTransactions = $purchases
             ->concat($purchaseReturns)
             ->concat($sales)
             ->concat($saleReturns)
+            ->concat($stockAdjustments)
             ->sortBy('date')
             ->values();
 
@@ -2103,8 +2175,8 @@ class ReportsController extends Controller
         $totalPurchaseReturns = $purchaseReturns->sum('sub_total');
         $totalSales = $sales->sum('sub_total');
         $totalSaleReturns = $saleReturns->sum('sub_total');
-        $totalQuantityIn = $purchases->sum('quantity_in') + $purchaseReturns->sum('quantity_in') + $saleReturns->sum('quantity_in');
-        $totalQuantityOut = $sales->sum('quantity_out') + $purchaseReturns->sum('quantity_out');
+        $totalQuantityIn = $purchases->sum('quantity_in') + $saleReturns->sum('quantity_in') + $stockAdjustments->sum('quantity_in');
+        $totalQuantityOut = $sales->sum('quantity_out') + $purchaseReturns->sum('quantity_out') + $stockAdjustments->sum('quantity_out');
 
         $summary = [
             'total_purchases' => round($totalPurchases, 2),
