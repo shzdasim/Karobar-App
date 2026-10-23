@@ -296,4 +296,32 @@ class CreditInvoiceOverpaymentTest extends TestCase
         // Both invoice entry and excess payment entry should be removed
         $this->assertCount(0, CustomerLedger::where('customer_id', $this->customer->id)->get());
     }
+
+    public function test_debit_sale_automatically_falls_back_to_default_customer_when_omitted(): void
+    {
+        $payload = [
+            'customer_id'    => null, // omitted or null on debit/cash sale
+            'invoice_type'   => 'debit',
+            'sale_type'      => 'retail',
+            'payment_method' => 'cash',
+            'date'           => now()->toDateString(),
+            'gross_amount'   => 200,
+            'total'          => 200,
+            'total_receive'  => 200,
+            'items'          => [
+                [
+                    'product_id'       => $this->product->id,
+                    'quantity'         => 2,
+                    'price'            => 100,
+                    'sub_total'        => 200,
+                    'current_quantity' => 100,
+                ],
+            ],
+        ];
+
+        $response = $this->postJson('/api/sale-invoices', $payload);
+        $response->assertStatus(201);
+        $invoice = SaleInvoice::find($response->json('id'));
+        $this->assertEquals($this->customer->id, $invoice->customer_id);
+    }
 }

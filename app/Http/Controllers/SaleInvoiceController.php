@@ -169,6 +169,14 @@ class SaleInvoiceController extends Controller
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
+        // Auto-fallback to default/walk-in customer if customer_id was not provided for debit (cash) sales
+        if (empty($request->input('customer_id')) && $request->input('invoice_type', 'debit') !== 'credit') {
+            $defaultCustomer = \App\Models\Customer::orderBy('id', 'asc')->first();
+            if ($defaultCustomer) {
+                $request->merge(['customer_id' => $defaultCustomer->id]);
+            }
+        }
+
         // ⬇️ posted_number is NOT provided by client anymore (server assigns)
         $data = $request->validate([
             'draft_id'            => 'nullable|integer|exists:invoice_drafts,id',
@@ -359,6 +367,14 @@ class SaleInvoiceController extends Controller
 
         $auditService = app(\App\Services\DocumentAuditService::class);
         $beforeSnapshot = $auditService->snapshot($invoice);
+
+        // Auto-fallback to default/walk-in customer if customer_id was not provided for debit (cash) sales
+        if (empty($request->input('customer_id')) && $request->input('invoice_type', $invoice->invoice_type ?? 'debit') !== 'credit') {
+            $defaultCustomer = \App\Models\Customer::orderBy('id', 'asc')->first();
+            if ($defaultCustomer) {
+                $request->merge(['customer_id' => $defaultCustomer->id]);
+            }
+        }
 
         // keep posted_number unique on update (user may not change it)
         $data = $request->validate([

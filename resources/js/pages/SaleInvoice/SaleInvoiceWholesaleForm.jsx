@@ -102,6 +102,20 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
   const generateRowId = () => `row_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
   /* -------- state -------- */
+  const [customers, setCustomers] = useState([]);
+  const customersRef = useRef([]);
+  useEffect(() => {
+    customersRef.current = customers;
+  }, [customers]);
+
+  const getDefaultCustomerId = (list = customersRef.current || customers) => {
+    if (!Array.isArray(list) || list.length === 0) return "";
+    const walkIn = list.find((c) => (c.name || "").toUpperCase().includes("WALK-IN"));
+    if (walkIn?.id) return walkIn.id;
+    const sorted = [...list].sort((a, b) => (a?.id ?? 0) - (b?.id ?? 0));
+    return sorted[0]?.id || "";
+  };
+
   const [form, setForm] = useState({
     invoice_type: "debit",
     sale_type: "wholesale", // Hardcoded to wholesale
@@ -155,12 +169,17 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
   const navigate = useNavigate();
 
   const handleStartBlank = () => {
-    draftHook.resetToNew();
+    if (draftHook?.resetToNew) draftHook.resetToNew();
+    const defaultCustId = getDefaultCustomerId();
+    setReceiveTouched(false);
+    setMarginPct("");
+    setInvalidPriceRows({});
+    invoiceErrors.clear();
     setForm(normalizeFormLoaded({
       invoice_type: "debit",
       sale_type: "wholesale",
       wholesale_type: "unit",
-      customer_id: "",
+      customer_id: defaultCustId,
       posted_number: "",
       date: new Date().toISOString().split("T")[0],
       remarks: "",
@@ -209,6 +228,9 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
         upsertProducts(responseData.products);
       }
       const loaded = normalizeFormLoaded(loadedPayload);
+      if (!loaded.customer_id && loaded.invoice_type !== "credit") {
+        loaded.customer_id = getDefaultCustomerId();
+      }
       if (loaded.customer_id) {
         fetchCustomerWholesalePrices(loaded.customer_id);
       }
@@ -274,7 +296,6 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
     setReceiveTouched(false);
   }, [saleId]);
 
-  const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [batchesByProduct, setBatchesByProduct] = useState({});
   const byIdsSupportedRef = useRef(true);
@@ -466,7 +487,16 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
       let list = Array.isArray(res.data) ? res.data : [];
       list = list.slice().sort((a, b) => (a?.id ?? 0) - (b?.id ?? 0));
       setCustomers(list);
-      // For wholesale, don't auto-select customer - require user to select
+      customersRef.current = list;
+      if (!saleId && list.length > 0) {
+        setForm((prev) => {
+          if (!prev.customer_id && prev.invoice_type !== "credit") {
+            const defId = getDefaultCustomerId(list);
+            return defId ? { ...prev, customer_id: defId } : prev;
+          }
+          return prev;
+        });
+      }
     } catch {}
   };
 
@@ -1112,14 +1142,22 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
     e.preventDefault();
     invoiceErrors.clear();
 
-    // Wholesale requires customer selection
-    if (!form.customer_id) {
-      return invoiceErrors.showMessage("Please select a customer for wholesale sale");
+    // Safety fallback: ensure customer_id is populated for debit sales
+    let effectiveCustomerId = form.customer_id;
+    if (!effectiveCustomerId && form.invoice_type !== "credit") {
+      effectiveCustomerId = getDefaultCustomerId();
+      if (effectiveCustomerId) {
+        setForm((prev) => ({ ...prev, customer_id: effectiveCustomerId }));
+      }
     }
 
-    // Validate customer selection for credit invoices
-    if (form.invoice_type === "credit" && !form.customer_id) {
-      return invoiceErrors.showMessage("Please select a customer for credit sale");
+    // Validate customer selection
+    if (!effectiveCustomerId) {
+      return invoiceErrors.showMessage(
+        form.invoice_type === "credit"
+          ? "Please select a customer for credit sale"
+          : "Please select a customer for wholesale sale"
+      );
     }
 
     // Check if any item has a narcotic product
@@ -1192,6 +1230,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
     // Always set sale_type to wholesale for this form
     const payload = {
       ...form,
+      customer_id: effectiveCustomerId,
       sale_type: "wholesale",
       invoice_type: form.invoice_type ?? "debit",
       discount_percentage:
@@ -1518,14 +1557,14 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                       ? "border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200"
                       : "border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:border-blue-400"
                   }`}
-                  title={selectedCustomer?.name || "WALK-IN-CUSTOMER"}
+                  title={selectedCustomer?.name || (form.customer_id ? `Customer #${form.customer_id}` : "Select customer...")}
                 >
                   <span className="truncate font-medium flex items-center gap-1.5">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-blue-500">
                       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                       <circle cx="12" cy="7" r="4" />
                     </svg>
-                    <span className="truncate">{selectedCustomer?.name || "Select customer..."}</span>
+                    <span className="truncate">{selectedCustomer?.name || (form.customer_id ? `Customer #${form.customer_id}` : "Select customer...")}</span>
                   </span>
                   <span className="text-[10px] text-gray-400 dark:text-slate-400 shrink-0 font-normal">Search</span>
                 </button>

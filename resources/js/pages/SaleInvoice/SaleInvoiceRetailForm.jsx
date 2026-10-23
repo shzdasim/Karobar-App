@@ -90,6 +90,20 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   const generateRowId = () => `row_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
   /* -------- state -------- */
+  const [customers, setCustomers] = useState([]);
+  const customersRef = useRef([]);
+  useEffect(() => {
+    customersRef.current = customers;
+  }, [customers]);
+
+  const getDefaultCustomerId = (list = customersRef.current || customers) => {
+    if (!Array.isArray(list) || list.length === 0) return "";
+    const walkIn = list.find((c) => (c.name || "").toUpperCase().includes("WALK-IN"));
+    if (walkIn?.id) return walkIn.id;
+    const sorted = [...list].sort((a, b) => (a?.id ?? 0) - (b?.id ?? 0));
+    return sorted[0]?.id || "";
+  };
+
   const [form, setForm] = useState({
     invoice_type: "debit",
     sale_type: "retail", // Hardcoded to retail
@@ -139,12 +153,17 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   const navigate = useNavigate();
 
   const handleStartBlank = () => {
-    draftHook.resetToNew();
+    if (draftHook?.resetToNew) draftHook.resetToNew();
+    const defaultCustId = getDefaultCustomerId();
+    setReceiveTouched(false);
+    setMarginPct("");
+    setFocusedRowIndex(0);
+    invoiceErrors.clear();
     setForm(normalizeFormLoaded({
       invoice_type: "debit",
       sale_type: "retail",
       wholesale_type: "unit",
-      customer_id: "",
+      customer_id: defaultCustId,
       posted_number: "",
       date: new Date().toISOString().split("T")[0],
       remarks: "",
@@ -193,6 +212,9 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         upsertProducts(responseData.products);
       }
       const loaded = normalizeFormLoaded(loadedPayload);
+      if (!loaded.customer_id && loaded.invoice_type !== "credit") {
+        loaded.customer_id = getDefaultCustomerId();
+      }
       await ensureProductsForItems(loaded?.items || []);
       await ensureBatchesForItems(loaded?.items || []);
       setForm(loaded);
@@ -245,7 +267,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     setOriginalItems({}); // Clear original items when creating a new invoice
   }, [saleId]);
 
-  const [customers, setCustomers] = useState([]);
+
   const [products, setProducts] = useState([]);
   const [batchesByProduct, setBatchesByProduct] = useState({});
   const byIdsSupportedRef = useRef(true);
@@ -466,8 +488,15 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       // pick the LOWEST ID as default
       list = list.slice().sort((a, b) => (a?.id ?? 0) - (b?.id ?? 0));
       setCustomers(list);
-      if (!saleId && !form.customer_id && list.length > 0) {
-        setForm((prev) => ({ ...prev, customer_id: list[0].id }));
+      customersRef.current = list;
+      if (!saleId && list.length > 0) {
+        setForm((prev) => {
+          if (!prev.customer_id && prev.invoice_type !== "credit") {
+            const defId = getDefaultCustomerId(list);
+            return defId ? { ...prev, customer_id: defId } : prev;
+          }
+          return prev;
+        });
       }
     } catch {}
   };
@@ -963,9 +992,22 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     e.preventDefault();
     invoiceErrors.clear();
 
-    // Validate customer selection for credit invoices
-    if (form.invoice_type === "credit" && !form.customer_id) {
-      return invoiceErrors.showMessage("Please select a customer for credit sale");
+    // Safety fallback: ensure customer_id is populated for debit sales
+    let effectiveCustomerId = form.customer_id;
+    if (!effectiveCustomerId && form.invoice_type !== "credit") {
+      effectiveCustomerId = getDefaultCustomerId();
+      if (effectiveCustomerId) {
+        setForm((prev) => ({ ...prev, customer_id: effectiveCustomerId }));
+      }
+    }
+
+    // Validate customer selection
+    if (!effectiveCustomerId) {
+      return invoiceErrors.showMessage(
+        form.invoice_type === "credit"
+          ? "Please select a customer for credit sale"
+          : "Please select a customer"
+      );
     }
 
     // Check if any item has a narcotic product
@@ -1022,6 +1064,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     // Always set sale_type to retail for this form
     const payload = {
       ...form,
+      customer_id: effectiveCustomerId,
       sale_type: "retail",
       invoice_type: form.invoice_type ?? "debit",
       discount_percentage:
@@ -1326,14 +1369,14 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                       ? "border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200"
                       : "border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:border-blue-400"
                   }`}
-                  title={selectedCustomer?.name || "WALK-IN-CUSTOMER"}
+                  title={selectedCustomer?.name || (form.customer_id ? `Customer #${form.customer_id}` : "Select customer...")}
                 >
                   <span className="truncate font-medium flex items-center gap-1.5">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-blue-500">
                       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                       <circle cx="12" cy="7" r="4" />
                     </svg>
-                    <span className="truncate">{selectedCustomer?.name || "WALK-IN-CUSTOMER"}</span>
+                    <span className="truncate">{selectedCustomer?.name || (form.customer_id ? `Customer #${form.customer_id}` : "Select customer...")}</span>
                   </span>
                   <span className="text-[10px] text-gray-400 dark:text-slate-400 shrink-0 font-normal">Search</span>
                 </button>
