@@ -19,6 +19,7 @@ import InvoiceDraftIndicator from "@/components/InvoiceDraftIndicator.jsx";
 import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
 import PreShiftDrawerPromptModal from "@/components/PreShiftDrawerPromptModal.jsx";
 import CreditOverrideModal from "@/components/CreditOverrideModal.jsx";
+import DiscountOverrideModal from "@/components/DiscountOverrideModal.jsx";
 import PaymentAccountSelector from "../../components/PaymentAccountSelector.jsx";
 
 // Helper to determine text color based on background brightness
@@ -176,6 +177,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
   const [drawerPrompt, setDrawerPrompt] = useState(null);
   const [customerCreditSummary, setCustomerCreditSummary] = useState(null);
   const [creditOverridePrompt, setCreditOverridePrompt] = useState(null);
+  const [discountOverridePrompt, setDiscountOverridePrompt] = useState(null);
   const originalInvoiceMetaRef = useRef(null);
   const navigate = useNavigate();
 
@@ -1373,6 +1375,17 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
           });
           return;
         }
+        if (err?.response?.status === 422 && err?.response?.data?.requires_discount_override) {
+          setDiscountOverridePrompt({
+            isOpen: true,
+            message: err.response.data.message,
+            productName: err.response.data.product_name,
+            maxDiscount: err.response.data.max_discount,
+            requestedDiscount: err.response.data.requested_discount,
+            execute: () => executeSave({ ...dataPayload, discount_override: true }, updateDrawer),
+          });
+          return;
+        }
         invoiceErrors.showError(err);
       }
     };
@@ -2382,6 +2395,21 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
         currentBalance={creditOverridePrompt?.currentBalance}
         excessAmount={creditOverridePrompt?.excessAmount}
         isHold={creditOverridePrompt?.isHold}
+      />
+
+      {/* Discount Limit Approval Override Modal */}
+      <DiscountOverrideModal
+        isOpen={!!discountOverridePrompt?.isOpen}
+        onClose={() => setDiscountOverridePrompt(null)}
+        onConfirm={() => {
+          const fn = discountOverridePrompt?.execute;
+          setDiscountOverridePrompt(null);
+          if (fn) fn();
+        }}
+        message={discountOverridePrompt?.message}
+        productName={discountOverridePrompt?.productName}
+        maxDiscount={discountOverridePrompt?.maxDiscount}
+        requestedDiscount={discountOverridePrompt?.requestedDiscount}
       />
     </>
   );

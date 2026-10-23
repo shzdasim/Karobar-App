@@ -278,6 +278,7 @@ class SaleInvoiceController extends Controller
             'date'                => 'required|date',
             'due_date'            => 'nullable|date',
             'credit_override'     => 'nullable|boolean',
+            'discount_override'   => 'nullable|boolean',
             'remarks'             => 'nullable|string',
             'doctor_name'         => 'nullable|string',
             'patient_name'        => 'nullable|string',
@@ -286,8 +287,8 @@ class SaleInvoiceController extends Controller
             'tax_percentage'      => 'nullable|numeric',
             'tax_amount'          => 'nullable|numeric',
             'item_discount'       => 'nullable|numeric',
-            'gross_amount'        => 'required|numeric',
-            'total'               => 'required|numeric',
+            'gross_amount'        => 'nullable|numeric',
+            'total'               => 'nullable|numeric',
             'total_receive'       => 'nullable|numeric',
 
             'items'                            => 'required|array|min:1',
@@ -301,10 +302,25 @@ class SaleInvoiceController extends Controller
             'items.*.quantity'                 => 'required|integer|min:1',
             'items.*.price'                    => 'required|numeric|min:0',
             'items.*.item_discount_percentage' => 'nullable|numeric',
-            'items.*.sub_total'                => 'required|numeric|min:0',
+            'items.*.sub_total'                => 'nullable|numeric|min:0',
             'items.*.sale_type'                => 'nullable|string|in:retail,wholesale',
             'items.*.is_custom_price'          => 'nullable|boolean',
         ]);
+
+        // 🛡️ Server-Authoritative Totals & Discount Controls
+        $calculated = app(\App\Services\InvoiceCalculationService::class)->calculateAndValidateSale(
+            $data,
+            $request->user(),
+            $request->boolean('discount_override')
+        );
+        $data['gross_amount']        = $calculated['gross_amount'];
+        $data['item_discount']       = $calculated['item_discount'];
+        $data['discount_percentage'] = $calculated['discount_percentage'];
+        $data['discount_amount']     = $calculated['discount_amount'];
+        $data['tax_percentage']      = $calculated['tax_percentage'];
+        $data['tax_amount']          = $calculated['tax_amount'];
+        $data['total']               = $calculated['total'];
+        $data['items']               = $calculated['items'];
 
         $this->validateCreditLimits($data, $request);
         $dueDate = $this->resolveDueDate($data);
@@ -509,6 +525,7 @@ class SaleInvoiceController extends Controller
             'date'                => 'required|date',
             'due_date'            => 'nullable|date',
             'credit_override'     => 'nullable|boolean',
+            'discount_override'   => 'nullable|boolean',
             'remarks'             => 'nullable|string',
             'doctor_name'         => 'nullable|string',
             'patient_name'        => 'nullable|string',
@@ -517,8 +534,8 @@ class SaleInvoiceController extends Controller
             'tax_percentage'      => 'nullable|numeric',
             'tax_amount'          => 'nullable|numeric',
             'item_discount'       => 'nullable|numeric',
-            'gross_amount'        => 'required|numeric',
-            'total'               => 'required|numeric',
+            'gross_amount'        => 'nullable|numeric',
+            'total'               => 'nullable|numeric',
             'total_receive'       => 'nullable|numeric',
 
             'items'                            => 'required|array|min:1',
@@ -533,10 +550,25 @@ class SaleInvoiceController extends Controller
             'items.*.quantity'                 => 'required|integer|min:1',
             'items.*.price'                    => 'required|numeric|min:0',
             'items.*.item_discount_percentage' => 'nullable|numeric',
-            'items.*.sub_total'                => 'required|numeric|min:0',
+            'items.*.sub_total'                => 'nullable|numeric|min:0',
             'items.*.sale_type'                => 'nullable|string|in:retail,wholesale',
             'items.*.is_custom_price'          => 'nullable|boolean',
         ]);
+
+        // 🛡️ Server-Authoritative Totals & Discount Controls
+        $calculated = app(\App\Services\InvoiceCalculationService::class)->calculateAndValidateSale(
+            $data,
+            $request->user(),
+            $request->boolean('discount_override')
+        );
+        $data['gross_amount']        = $calculated['gross_amount'];
+        $data['item_discount']       = $calculated['item_discount'];
+        $data['discount_percentage'] = $calculated['discount_percentage'];
+        $data['discount_amount']     = $calculated['discount_amount'];
+        $data['tax_percentage']      = $calculated['tax_percentage'];
+        $data['tax_amount']          = $calculated['tax_amount'];
+        $data['total']               = $calculated['total'];
+        $data['items']               = $calculated['items'];
 
         $this->validateCreditLimits($data, $request, $invoice);
         $dueDate = $this->resolveDueDate($data);

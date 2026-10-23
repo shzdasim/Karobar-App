@@ -140,6 +140,16 @@ class PurchaseInvoiceController extends Controller
             'items.*.quantity'                     => 'required|integer',
         ]);
 
+        // 🛡️ Server-Authoritative Totals Recalculation
+        $calculated = app(\App\Services\InvoiceCalculationService::class)->calculateAndValidatePurchase($data, $request->user());
+        $data['invoice_amount']      = $calculated['invoice_amount'];
+        $data['discount_percentage'] = $calculated['discount_percentage'];
+        $data['discount_amount']     = $calculated['discount_amount'];
+        $data['tax_percentage']      = $calculated['tax_percentage'];
+        $data['tax_amount']          = $calculated['tax_amount'];
+        $data['total_amount']        = $calculated['total_amount'];
+        $data['items']               = $calculated['items'];
+
         if (!array_key_exists('total_paid', $data) || $data['total_paid'] === null || $data['total_paid'] === '') {
             $data['total_paid'] = $data['total_amount'] ?? 0;
         }
@@ -350,6 +360,16 @@ class PurchaseInvoiceController extends Controller
             'items.*.avg_price'                    => 'required|numeric',
             'items.*.quantity'                     => 'required|integer',
         ]);
+
+        // 🛡️ Server-Authoritative Totals Recalculation
+        $calculated = app(\App\Services\InvoiceCalculationService::class)->calculateAndValidatePurchase($data, $request->user());
+        $data['invoice_amount']      = $calculated['invoice_amount'];
+        $data['discount_percentage'] = $calculated['discount_percentage'];
+        $data['discount_amount']     = $calculated['discount_amount'];
+        $data['tax_percentage']      = $calculated['tax_percentage'];
+        $data['tax_amount']          = $calculated['tax_amount'];
+        $data['total_amount']        = $calculated['total_amount'];
+        $data['items']               = $calculated['items'];
 
         try {
             return DB::transaction(function () use ($purchaseInvoice, $data, $auditService, $beforeSnapshot, $request) {
