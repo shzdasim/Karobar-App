@@ -54,9 +54,11 @@ class SupplierController extends Controller
         $this->authorize('create', Supplier::class);
 
         $data = $request->validate([
-            'name'    => 'required|string|max:150|unique:suppliers,name',
-            'address' => 'nullable|string|max:255',
-            'phone'   => 'nullable|string|max:50',
+            'name'         => 'required|string|max:150|unique:suppliers,name',
+            'address'      => 'nullable|string|max:255',
+            'phone'        => 'nullable|string|max:50',
+            'credit_limit' => 'nullable|numeric|min:0',
+            'credit_days'  => 'nullable|integer|min:0|max:365',
         ]);
 
         $supplier = Supplier::create($data);
@@ -74,6 +76,48 @@ class SupplierController extends Controller
         return response()->json($supplier);
     }
 
+    public function creditSummary(Supplier $supplier)
+    {
+        $this->authorize('view', $supplier);
+
+        $openInvoices = app(\App\Services\PaymentService::class)->getOpenInvoicesForSupplier($supplier->id);
+        $totalOutstanding = collect($openInvoices)->sum('due');
+        $creditLimit = $supplier->credit_limit !== null ? (float)$supplier->credit_limit : null;
+        $availableCredit = $creditLimit !== null ? max(0.0, round($creditLimit - $totalOutstanding, 2)) : null;
+
+        $today = now()->toDateString();
+        $totalOverdue = 0.0;
+        $overdueCount = 0;
+        $oldestDue = null;
+
+        foreach ($openInvoices as $inv) {
+            $invObj = \App\Models\PurchaseInvoice::find($inv['id']);
+            $dueDate = $invObj?->due_date ? $invObj->due_date->toDateString() : $inv['date'];
+            if ($dueDate < $today) {
+                $totalOverdue += (float)$inv['due'];
+                $overdueCount++;
+                if ($oldestDue === null || $dueDate < $oldestDue) {
+                    $oldestDue = $dueDate;
+                }
+            }
+        }
+
+        return response()->json([
+            'supplier_id'            => $supplier->id,
+            'name'                   => $supplier->name,
+            'phone'                  => $supplier->phone,
+            'credit_limit'           => $creditLimit,
+            'credit_days'            => $supplier->credit_days ?? 30,
+            'net_balance'            => round($totalOutstanding, 2),
+            'current_balance'        => round($totalOutstanding, 2),
+            'available_credit'       => $availableCredit,
+            'is_limit_exceeded'      => $creditLimit !== null && $creditLimit > 0 && $totalOutstanding > $creditLimit,
+            'total_overdue'          => round($totalOverdue, 2),
+            'overdue_invoices_count' => $overdueCount,
+            'oldest_due_date'        => $oldestDue,
+        ]);
+    }
+
     /**
      * PUT/PATCH /api/suppliers/{supplier}
      */
@@ -82,9 +126,11 @@ class SupplierController extends Controller
         $this->authorize('update', $supplier);
 
         $data = $request->validate([
-            'name'    => 'required|string|max:150|unique:suppliers,name,' . $supplier->id,
-            'address' => 'nullable|string|max:255',
-            'phone'   => 'nullable|string|max:50',
+            'name'         => 'required|string|max:150|unique:suppliers,name,' . $supplier->id,
+            'address'      => 'nullable|string|max:255',
+            'phone'        => 'nullable|string|max:50',
+            'credit_limit' => 'nullable|numeric|min:0',
+            'credit_days'  => 'nullable|integer|min:0|max:365',
         ]);
 
         $supplier->update($data);

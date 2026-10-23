@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\MeController;
+use App\Http\Controllers\AccountController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BatchController;
 use App\Http\Controllers\BackupController;
@@ -126,9 +127,11 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::apiResource('brands', BrandController::class);
 
     Route::get('/customers/export', [CustomerController::class, 'export'])->name('customers.export');
+    Route::get('/customers/{customer}/credit-summary', [CustomerController::class, 'creditSummary']);
     Route::apiResource('customers', CustomerController::class);
 
     Route::get('/suppliers/export', [SupplierController::class, 'export']);
+    Route::get('/suppliers/{supplier}/credit-summary', [SupplierController::class, 'creditSummary']);
     Route::apiResource('suppliers', SupplierController::class);
 
     // Products & batches
@@ -180,6 +183,16 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::post('cash-drawer/close',              [CashDrawerController::class, 'close']);
     Route::get('cash-drawer/history',             [CashDrawerController::class, 'history']);
 
+    // Financial Accounts & Balances
+    Route::get('accounts',                        [AccountController::class, 'index']);
+    Route::get('accounts/presets',                [AccountController::class, 'presets']);
+    Route::post('accounts/seed-defaults',         [AccountController::class, 'seedDefaults']);
+    Route::post('accounts',                       [AccountController::class, 'store']);
+    Route::put('accounts/{id}',                   [AccountController::class, 'update']);
+    Route::get('accounts/{id}/transactions',      [AccountController::class, 'transactions']);
+    Route::post('accounts/transfer',              [AccountController::class, 'transfer']);
+    Route::post('accounts/{id}/adjust',           [AccountController::class, 'adjust']);
+
     // Sale returns
     Route::get('sale-returns/new-code',           [SaleReturnController::class, 'generateNewCode']);
     Route::apiResource('sale-returns',            SaleReturnController::class);
@@ -230,6 +243,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/reports/sale-returns',            [ReportsController::class, 'saleReturns']);
     Route::get('/reports/purchase-summary',        [ReportsController::class, 'purchaseSummary']);
     Route::get('/reports/outstanding-aging',       [ReportsController::class, 'outstandingAging']);
+    Route::get('/reports/overdue-work-queue',      [ReportsController::class, 'overdueWorkQueue']);
     Route::get('/reports/reorder',                 [ReportsController::class, 'reorderReport']);
     Route::put('/sale-invoices/{saleInvoice}/meta',[SaleInvoiceController::class, 'updateMeta']);
 

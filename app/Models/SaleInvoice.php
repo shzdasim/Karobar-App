@@ -15,6 +15,7 @@ class SaleInvoice extends Model
         'wholesale_type',
         'posted_number',
         'date',
+        'due_date',
         'remarks',
         'doctor_name',
         'patient_name',
@@ -26,6 +27,7 @@ class SaleInvoice extends Model
         'gross_amount',
         'total',
         'total_receive',
+        'account_id',
         'status',
         'reversed_at',
         'reversed_by_id',
@@ -40,6 +42,10 @@ class SaleInvoice extends Model
     public function customer()
     {
         return $this->belongsTo(Customer::class);
+    }
+    public function account()
+    {
+        return $this->belongsTo(Account::class);
     }
     public function user()
     {

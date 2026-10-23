@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Customer;
+use App\Models\CustomerLedger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -67,10 +68,13 @@ class CustomerController extends Controller
     {
         $this->authorize('create', Customer::class);
         $validated = $request->validate([
-            'name'    => 'required|unique:customers,name',
-            'email'   => 'nullable|email|unique:customers,email',
-            'phone'   => 'nullable|string',
-            'address' => 'nullable|string',
+            'name'          => 'required|unique:customers,name',
+            'email'         => 'nullable|email|unique:customers,email',
+            'phone'         => 'nullable|string',
+            'address'       => 'nullable|string',
+            'credit_limit'  => 'nullable|numeric|min:0',
+            'credit_days'   => 'nullable|integer|min:0|max:365',
+            'credit_status' => 'nullable|string|in:active,on_hold,blocked',
         ]);
         $customer = Customer::create($validated);
         return response()->json($customer, 201);
@@ -82,14 +86,62 @@ class CustomerController extends Controller
         return response()->json($customer);
     }
 
+    public function creditSummary(Customer $customer)
+    {
+        $this->authorize('view', $customer);
+
+        $netBalance = CustomerLedger::getCustomerNetBalance($customer->id);
+        $creditLimit = $customer->credit_limit !== null ? (float)$customer->credit_limit : null;
+        $availableCredit = $creditLimit !== null ? max(0.0, round($creditLimit - $netBalance, 2)) : null;
+        $isLimitExceeded = $creditLimit !== null && $creditLimit > 0 && $netBalance > $creditLimit;
+
+        // Calculate overdue invoices
+        $today = now()->toDateString();
+        $openInvoices = app(\App\Services\PaymentService::class)->getOpenInvoicesForCustomer($customer->id);
+        $totalOverdue = 0.0;
+        $overdueCount = 0;
+        $oldestDue = null;
+
+        foreach ($openInvoices as $inv) {
+            $invObj = \App\Models\SaleInvoice::find($inv['id']);
+            $dueDate = $invObj?->due_date ? $invObj->due_date->toDateString() : $inv['date'];
+            if ($dueDate < $today) {
+                $totalOverdue += (float)$inv['due'];
+                $overdueCount++;
+                if ($oldestDue === null || $dueDate < $oldestDue) {
+                    $oldestDue = $dueDate;
+                }
+            }
+        }
+
+        return response()->json([
+            'customer_id'            => $customer->id,
+            'name'                   => $customer->name,
+            'phone'                  => $customer->phone,
+            'credit_status'          => $customer->credit_status ?? 'active',
+            'credit_limit'           => $creditLimit,
+            'credit_days'            => $customer->credit_days ?? 30,
+            'net_balance'            => round($netBalance, 2),
+            'current_balance'        => round($netBalance, 2),
+            'available_credit'       => $availableCredit,
+            'is_limit_exceeded'      => $isLimitExceeded,
+            'total_overdue'          => round($totalOverdue, 2),
+            'overdue_invoices_count' => $overdueCount,
+            'oldest_due_date'        => $oldestDue,
+        ]);
+    }
+
     public function update(Request $request, Customer $customer)
     {
         $this->authorize('update', $customer);
         $validated = $request->validate([
-            'name'    => 'required|unique:customers,name,' . $customer->id,
-            'email'   => 'nullable|email|unique:customers,email,' . $customer->id,
-            'phone'   => 'nullable|string',
-            'address' => 'nullable|string',
+            'name'          => 'required|unique:customers,name,' . $customer->id,
+            'email'         => 'nullable|email|unique:customers,email,' . $customer->id,
+            'phone'         => 'nullable|string',
+            'address'       => 'nullable|string',
+            'credit_limit'  => 'nullable|numeric|min:0',
+            'credit_days'   => 'nullable|integer|min:0|max:365',
+            'credit_status' => 'nullable|string|in:active,on_hold,blocked',
         ]);
         $customer->update($validated);
         return response()->json($customer);

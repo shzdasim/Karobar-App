@@ -85,6 +85,14 @@ class CashDrawerService
                 'notes'                    => $notes,
             ]);
 
+            if (Schema::hasTable('accounts')) {
+                $cashAccount = \App\Models\Account::where('type', 'cash')->first();
+                if ($cashAccount && abs((float)$cashAccount->current_balance - $opening) > 0.001) {
+                    $cashAccount->current_balance = $opening;
+                    $cashAccount->save();
+                }
+            }
+
             return $session->load('user');
         });
     }
@@ -157,6 +165,14 @@ class CashDrawerService
 
         $session->closing_balance_expected = $expected;
         $session->save();
+
+        if (Schema::hasTable('accounts')) {
+            $cashAccount = \App\Models\Account::where('type', 'cash')->first();
+            if ($cashAccount && abs((float)$cashAccount->current_balance - $expected) > 0.001) {
+                $cashAccount->current_balance = $expected;
+                $cashAccount->save();
+            }
+        }
 
         return $expected;
     }

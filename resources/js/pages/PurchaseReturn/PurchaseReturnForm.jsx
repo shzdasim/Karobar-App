@@ -1234,13 +1234,17 @@ const handleSelectChange = async (field, value) => {
           if (returnId) {
             await axios.put(`/api/purchase-returns/${returnId}`, dataPayload);
             window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+            window.dispatchEvent(new CustomEvent("accounts-changed"));
             try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+            try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
             toast.success("Purchase return updated");
             onSuccess?.(returnId);
           } else {
             const { data: saved } = await axios.post(`/api/purchase-returns`, dataPayload);
             window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+            window.dispatchEvent(new CustomEvent("accounts-changed"));
             try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+            try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
             setForm((prev) => ({ ...prev, posted_number: saved?.posted_number || prev.posted_number }));
             toast.success(`Purchase return created: ${saved?.posted_number || ""}`);
             if (saved?.id) {

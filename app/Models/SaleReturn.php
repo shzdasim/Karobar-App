@@ -9,8 +9,12 @@ class SaleReturn extends Model
     protected $fillable = [
         'sale_invoice_id', 'user_id', 'customer_id', 'posted_number', 'date',
         'discount_percentage', 'discount_amount', 'tax_percentage', 'tax_amount',
-        'total', 'gross_total'
+        'total', 'gross_total', 'payment_method', 'account_id'
     ];
+
+    public function account(){
+        return $this->belongsTo(Account::class);
+    }
 
     public function user(){
         return $this->belongsTo(User::class);

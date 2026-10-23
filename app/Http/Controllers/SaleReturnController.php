@@ -222,6 +222,21 @@ class SaleReturnController extends Controller
             // Cash drawer integration
             app(\App\Services\CashDrawerService::class)->handleSaleReturnCreation($sr, Auth::user());
 
+            // Financial account refund withdrawal
+            if ((float)$sr->total > 0) {
+                $account = app(\App\Services\AccountService::class)->resolveAccount($sr->account_id, $sr->payment_method ?? 'cash');
+                if ($account) {
+                    app(\App\Services\AccountService::class)->withdraw(
+                        $account,
+                        (float)$sr->total,
+                        'sale_return',
+                        $sr->id,
+                        "Refund for Sale Return #{$sr->posted_number}",
+                        Auth::user()
+                    );
+                }
+            }
+
             return $sr->load(['customer', 'items.product']);
         });
     }
@@ -297,6 +312,19 @@ class SaleReturnController extends Controller
                 Auth::user()
             );
 
+            // Financial account update
+            $delta = round((float)$saleReturn->total - $oldTotal, 2);
+            if (abs($delta) > 0.001) {
+                $account = app(\App\Services\AccountService::class)->resolveAccount($saleReturn->account_id, $saleReturn->payment_method ?? 'cash');
+                if ($account) {
+                    if ($delta > 0) {
+                        app(\App\Services\AccountService::class)->withdraw($account, $delta, 'sale_return_update', $saleReturn->id, "Sale Return update #{$saleReturn->posted_number} (extra refund {$delta})", Auth::user());
+                    } else {
+                        app(\App\Services\AccountService::class)->deposit($account, abs($delta), 'sale_return_update', $saleReturn->id, "Sale Return update #{$saleReturn->posted_number} (refund reduced +{$delta})", Auth::user());
+                    }
+                }
+            }
+
             return $saleReturn->load(['customer', 'items.product']);
         });
     }
@@ -311,6 +339,21 @@ class SaleReturnController extends Controller
 
             // Cash drawer integration
             app(\App\Services\CashDrawerService::class)->handleSaleReturnDeletion($saleReturn, Auth::user());
+
+            // Financial account recovery
+            if ((float)$saleReturn->total > 0) {
+                $account = app(\App\Services\AccountService::class)->resolveAccount($saleReturn->account_id, $saleReturn->payment_method ?? 'cash');
+                if ($account) {
+                    app(\App\Services\AccountService::class)->deposit(
+                        $account,
+                        (float)$saleReturn->total,
+                        'sale_return_deletion',
+                        $saleReturn->id,
+                        "Recovery for deleted sale return #{$saleReturn->posted_number}",
+                        Auth::user()
+                    );
+                }
+            }
 
             $this->revertItems($saleReturn);
             $saleReturn->items()->delete();

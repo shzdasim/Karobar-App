@@ -3,17 +3,19 @@
 namespace App\Http\Controllers;
 
 use App\Models\Batch;
-use App\Models\PurchaseOrder;
-use App\Services\PurchaseOrderReceiving;
-use App\Services\SupplierProductSorting;
-use Illuminate\Validation\ValidationException;
 use App\Models\Product;
 use App\Models\PurchaseInvoice;
+use App\Models\PurchaseOrder;
+use App\Models\Supplier;
 use App\Models\SupplierLedger;
 use App\Models\UserDemand;
+use App\Services\PurchaseOrderReceiving;
+use App\Services\SupplierProductSorting;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class PurchaseInvoiceController extends Controller
 {
@@ -33,6 +35,17 @@ class PurchaseInvoiceController extends Controller
 
         $formattedCode = 'PRINV-' . str_pad($newCodeNum, 4, '0', STR_PAD_LEFT);
         return response()->json(['posted_number' => $formattedCode]);
+    }
+
+    private function resolveDueDate(array $data): string
+    {
+        if (!empty($data['due_date'])) {
+            return Carbon::parse($data['due_date'])->toDateString();
+        }
+        $supplier = Supplier::find($data['supplier_id'] ?? null);
+        $creditDays = $supplier ? ($supplier->credit_days ?? 30) : 30;
+        $baseDate = $data['posted_date'] ?? now()->toDateString();
+        return Carbon::parse($baseDate)->addDays($creditDays)->toDateString();
     }
 
     // List all invoices
@@ -89,8 +102,10 @@ class PurchaseInvoiceController extends Controller
             'supplier_id'          => 'required|exists:suppliers,id',
             'invoice_type'         => 'nullable|string|in:credit,debit',
             'payment_method'       => 'nullable|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
+            'account_id'           => 'nullable|integer|exists:accounts,id',
             // 'posted_number'      => now generated server-side
             'posted_date'          => 'required|date',
+            'due_date'             => 'nullable|date',
             'remarks'              => 'nullable|string',
             'invoice_number'       => 'required|string|unique:purchase_invoices,invoice_number',
             'invoice_amount'       => 'required|numeric',
@@ -167,11 +182,15 @@ class PurchaseInvoiceController extends Controller
                     $nextNum = (int) $m[1] + 1;
                 }
                 $nextCode = $prefix . str_pad($nextNum, 4, '0', STR_PAD_LEFT);
+                $dueDate = $this->resolveDueDate($data);
 
                 $createPayload = array_merge($data, [
                     'posted_number'  => $nextCode,
                     'invoice_type'   => $data['invoice_type'] ?? 'debit',
                 ]);
+                if (\Illuminate\Support\Facades\Schema::hasColumn('purchase_invoices', 'due_date')) {
+                    $createPayload['due_date'] = $dueDate;
+                }
                 if (\Illuminate\Support\Facades\Schema::hasColumn('purchase_invoices', 'payment_method')) {
                     $createPayload['payment_method'] = $data['payment_method'] ?? 'cash';
                 } else {
@@ -188,13 +207,16 @@ class PurchaseInvoiceController extends Controller
 
                 // Create supplier ledger entry ONLY for credit purchases
                 $invoiceType = $data['invoice_type'] ?? 'debit';
-if ($invoiceType === 'credit') {
+                if ($invoiceType === 'credit') {
                     $ledger = new SupplierLedger();
                     $ledger->supplier_id       = $data['supplier_id'];
                     $ledger->purchase_invoice_id = $invoice->id;
                     $ledger->entry_type        = 'invoice';
                     $ledger->is_manual         = false;
                     $ledger->entry_date        = $data['posted_date'];
+                    if (\Illuminate\Support\Facades\Schema::hasColumn('supplier_ledgers', 'due_date')) {
+                        $ledger->due_date      = $dueDate;
+                    }
                     $ledger->posted_number     = $nextCode;
                     $ledger->invoice_number    = $data['invoice_number'];
                     $ledger->invoice_total     = $data['total_amount'];
@@ -219,22 +241,39 @@ if ($invoiceType === 'credit') {
                     $draft->save();
                 }
 
-                // Cash Drawer recording if drawer is open and cash was paid
+                // Account & Cash Drawer recording if money was paid
                 $payMethod = $invoice->payment_method ?? 'cash';
                 $cashPaid = (float)($invoice->total_paid ?? 0);
                 if (($invoice->invoice_type ?? 'debit') === 'debit' && $cashPaid <= 0) {
                     $cashPaid = (float)$invoice->total_amount;
                 }
-                if ($payMethod === 'cash' && $cashPaid > 0) {
-                    app(\App\Services\CashDrawerService::class)->recordTransaction(
-                        null,
-                        'cash_purchase',
-                        $cashPaid,
-                        'purchase_invoice',
-                        $invoice->id,
-                        "Cash purchase {$nextCode}",
-                        Auth::user()
-                    );
+                if ($cashPaid > 0) {
+                    $account = app(\App\Services\AccountService::class)->resolveAccount($invoice->account_id, $payMethod);
+                    if ($account) {
+                        $invoice->account_id = $account->id;
+                        $invoice->saveQuietly();
+
+                        app(\App\Services\AccountService::class)->withdraw(
+                            $account,
+                            $cashPaid,
+                            'purchase_invoice',
+                            $invoice->id,
+                            "Purchase Invoice {$nextCode} ({$account->name})",
+                            Auth::user()
+                        );
+                    }
+
+                    if (($account && $account->type === 'cash') || $payMethod === 'cash') {
+                        app(\App\Services\CashDrawerService::class)->recordTransaction(
+                            null,
+                            'cash_purchase',
+                            $cashPaid,
+                            'purchase_invoice',
+                            $invoice->id,
+                            "Cash purchase {$nextCode}",
+                            Auth::user()
+                        );
+                    }
                 }
 
                 app(\App\Services\DocumentAuditService::class)->recordCreate($invoice->load('items.product'), Auth::user());
@@ -274,8 +313,10 @@ if ($invoiceType === 'credit') {
             'supplier_id'          => 'required|exists:suppliers,id',
             'invoice_type'         => 'nullable|string|in:credit,debit',
             'payment_method'       => 'nullable|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
+            'account_id'           => 'nullable|integer|exists:accounts,id',
             // 'posted_number'      => not user-editable on update
             'posted_date'          => 'required|date',
+            'due_date'             => 'nullable|date',
             'remarks'              => 'nullable|string',
             'invoice_number'       => 'required|string|unique:purchase_invoices,invoice_number,' . $purchaseInvoice->id,
             'invoice_amount'       => 'required|numeric',
@@ -326,6 +367,7 @@ if ($invoiceType === 'credit') {
                 $data['posted_number'] = $purchaseInvoice->posted_number;
 
                 // Store old invoice type before update
+                $oldAccountId = $purchaseInvoice->account_id;
                 $oldInvoiceType = $purchaseInvoice->invoice_type ?? 'debit';
                 $oldPayMethod = $purchaseInvoice->payment_method ?? 'cash';
                 $oldPaid = (float)($purchaseInvoice->total_paid ?? 0);
@@ -390,6 +432,8 @@ if ($invoiceType === 'credit') {
                     }
                 }
 
+                $dueDate = $this->resolveDueDate($data);
+
                 // Update invoice with explicit invoice_type
                 $updatePayload = [
                     'supplier_id'        => $data['supplier_id'],
@@ -406,6 +450,9 @@ if ($invoiceType === 'credit') {
                     'total_amount'       => $data['total_amount'],
                     'total_paid'         => $data['total_paid'] ?? 0,
                 ];
+                if (\Illuminate\Support\Facades\Schema::hasColumn('purchase_invoices', 'due_date')) {
+                    $updatePayload['due_date'] = $dueDate;
+                }
                 if (\Illuminate\Support\Facades\Schema::hasColumn('purchase_invoices', 'payment_method')) {
                     $updatePayload['payment_method'] = $data['payment_method'] ?? $purchaseInvoice->payment_method ?? 'cash';
                 }
@@ -434,15 +481,18 @@ if ($invoiceType === 'credit') {
                     $existingLedger = SupplierLedger::where('purchase_invoice_id', $purchaseInvoice->id)->first();
                     
                     if ($existingLedger) {
-                        // Update existing ledger entry
-                        $existingLedger->update([
+                        $ledgerUpdates = [
                             'supplier_id'        => $data['supplier_id'],
                             'entry_date'         => $data['posted_date'],
                             'invoice_total'      => $data['total_amount'],
                             'total_paid'         => $data['total_paid'] ?? 0,
                             'credit_remaining'   => max((float)$data['total_amount'] - (float)($data['total_paid'] ?? 0), 0),
                             'description'        => 'Purchase invoice ' . $data['posted_number'],
-                        ]);
+                        ];
+                        if (\Illuminate\Support\Facades\Schema::hasColumn('supplier_ledgers', 'due_date')) {
+                            $ledgerUpdates['due_date'] = $dueDate;
+                        }
+                        $existingLedger->update($ledgerUpdates);
                     } else {
                         // Create new ledger entry
                         $ledger = new SupplierLedger();
@@ -451,6 +501,9 @@ if ($invoiceType === 'credit') {
                         $ledger->entry_type          = 'invoice';
                         $ledger->is_manual           = false;
                         $ledger->entry_date          = $data['posted_date'];
+                        if (\Illuminate\Support\Facades\Schema::hasColumn('supplier_ledgers', 'due_date')) {
+                            $ledger->due_date        = $dueDate;
+                        }
                         $ledger->posted_number       = $data['posted_number'];
                         $ledger->invoice_number      = $data['invoice_number'];
                         $ledger->invoice_total       = $data['total_amount'];
@@ -483,6 +536,19 @@ if ($invoiceType === 'credit') {
                     $oldCashPaid,
                     $newCashPaid,
                     $updateDrawerFlag,
+                    Auth::user()
+                );
+
+                // Sync with financial accounts
+                $newAccountId = array_key_exists('account_id', $data) ? $data['account_id'] : $purchaseInvoice->account_id;
+                app(\App\Services\AccountService::class)->syncPurchaseInvoiceUpdate(
+                    $purchaseInvoice,
+                    $oldAccountId,
+                    $oldPayMethod,
+                    $oldPaid,
+                    $newAccountId,
+                    $newPayMethod,
+                    $newPaid,
                     Auth::user()
                 );
 
@@ -526,6 +592,23 @@ if ($invoiceType === 'credit') {
                     $purchaseInvoice,
                     Auth::user()
                 );
+
+                // Adjust financial accounts for deleted purchase invoice (refund deposited back)
+                $delPaid = (float)($purchaseInvoice->total_paid ?? 0);
+                if (($purchaseInvoice->invoice_type ?? 'debit') === 'debit' && $delPaid <= 0) {
+                    $delPaid = (float)$purchaseInvoice->total_amount;
+                }
+                if ($delPaid > 0) {
+                    $acc = app(\App\Services\AccountService::class)->resolveAccount($purchaseInvoice->account_id, $purchaseInvoice->payment_method ?? 'cash');
+                    app(\App\Services\AccountService::class)->deposit(
+                        $acc,
+                        $delPaid,
+                        'purchase_invoice_deletion',
+                        $purchaseInvoice->id,
+                        "Refund for deleted purchase invoice #{$purchaseInvoice->posted_number}",
+                        Auth::user()
+                    );
+                }
 
                 $purchaseInvoice->items()->delete();
                 $purchaseInvoice->delete();
@@ -602,6 +685,23 @@ if ($invoiceType === 'credit') {
                 $validated['reason'],
                 $request->user()
             );
+
+            // Adjust financial accounts for reversed purchase invoice (supplier refund deposited back)
+            $revPaid = (float)($purchaseInvoice->total_paid ?? 0);
+            if (($purchaseInvoice->invoice_type ?? 'debit') === 'debit' && $revPaid <= 0) {
+                $revPaid = (float)$purchaseInvoice->total_amount;
+            }
+            if ($revPaid > 0) {
+                $acc = app(\App\Services\AccountService::class)->resolveAccount($purchaseInvoice->account_id, $purchaseInvoice->payment_method ?? 'cash');
+                app(\App\Services\AccountService::class)->deposit(
+                    $acc,
+                    $revPaid,
+                    'purchase_invoice_reversal',
+                    $purchaseInvoice->id,
+                    "Reversal refund for Purchase Invoice #{$purchaseInvoice->posted_number}",
+                    $request->user()
+                );
+            }
 
             app(\App\Services\DocumentAuditService::class)->recordReversal($purchaseInvoice, $request->user(), $validated['reason']);
 

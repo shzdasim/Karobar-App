@@ -16,6 +16,7 @@ import {
 import { GlassCard, GlassInput } from "@/components/Glass.jsx";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
+import PaymentAccountSelector from "./PaymentAccountSelector.jsx";
 
 const PAYMENT_METHODS = [
   { value: "cash", label: "Cash", icon: BanknotesIcon },
@@ -45,6 +46,7 @@ export default function RecordPaymentModal({
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [amount, setAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState(PAYMENT_METHODS[0]);
+  const [accountId, setAccountId] = useState(null);
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [allocations, setAllocations] = useState({}); // { [invoiceId]: allocatedAmountString }
@@ -225,6 +227,7 @@ export default function RecordPaymentModal({
         payment_date: paymentDate,
         amount: round2(numAmount),
         payment_method: paymentMethod.value,
+        account_id: accountId,
         reference: reference.trim() || null,
         notes: notes.trim() || null,
         idempotency_key: idempotencyKey,
@@ -238,7 +241,9 @@ export default function RecordPaymentModal({
       );
 
       window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      window.dispatchEvent(new CustomEvent("accounts-changed"));
       try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+      try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
       onPaymentSuccess?.(res.data.payment);
       onClose();
     } catch (err) {
@@ -319,18 +324,17 @@ export default function RecordPaymentModal({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Payment Method *
-                </label>
-                <Select
-                  value={paymentMethod}
-                  onChange={(opt) => setPaymentMethod(opt)}
-                  options={PAYMENT_METHODS}
-                  styles={selectStyles}
-                  isDisabled={submitting}
-                  isSearchable={false}
-                  menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-                  menuPosition="fixed"
+                <PaymentAccountSelector
+                  paymentMethod={paymentMethod?.value || "cash"}
+                  accountId={accountId}
+                  onChange={({ payment_method, account_id }) => {
+                    const found = PAYMENT_METHODS.find((m) => m.value === payment_method) || { value: payment_method, label: payment_method };
+                    setPaymentMethod(found);
+                    setAccountId(account_id);
+                  }}
+                  layout="compact"
+                  showBalance={true}
+                  disabled={submitting}
                 />
               </div>
             </div>

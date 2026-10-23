@@ -17,7 +17,8 @@ import { useInvoiceDraft } from "@/hooks/useInvoiceDraft.js";
 import InvoiceDraftIndicator from "@/components/InvoiceDraftIndicator.jsx";
 import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
 import PreShiftDrawerPromptModal from "@/components/PreShiftDrawerPromptModal.jsx";
-import { BuildingStorefrontIcon, TrashIcon, PlusCircleIcon } from "@heroicons/react/24/solid";
+import PaymentAccountSelector from "../../components/PaymentAccountSelector.jsx";
+import { BuildingStorefrontIcon, TrashIcon, PlusCircleIcon, CheckIcon } from "@heroicons/react/24/solid";
 
 // Six-dot grip shown on drag handles
 const DragGripIcon = () => (
@@ -93,6 +94,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
     supplier_id: "",
     posted_number: "", // (auto on save, stays empty until saved)
     posted_date: new Date().toISOString().split("T")[0],
+    due_date: "",
     remarks: "",
     invoice_number: "",
     invoice_amount: "",
@@ -103,6 +105,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
     total_amount: "",
     total_paid: "",
     payment_method: "cash",
+    account_id: null,
     items: [
       {
         product_id: "",
@@ -195,6 +198,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
       supplier_id: "",
       posted_number: "",
       posted_date: new Date().toISOString().split("T")[0],
+      due_date: "",
       remarks: "",
       invoice_number: "",
       invoice_amount: "",
@@ -205,6 +209,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
       total_amount: "",
       total_paid: "",
       payment_method: "cash",
+      account_id: null,
       items: [
         {
           product_id: "",
@@ -335,16 +340,25 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
   }, [invoiceId]);
 
   useEffect(() => {
-    // Handle Alt+S for save (from anywhere)
+    // Handle shortcuts: Alt+S for save, Alt+D for Debit, Alt+C for Credit, Alt+T to toggle
     const handleKeyDown = (e) => {
       if (e.altKey && e.key.toLowerCase() === "s") {
         e.preventDefault();
         handleSubmit(e);
+      } else if (e.altKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        handleInvoiceTypeChange("debit");
+      } else if (e.altKey && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        handleInvoiceTypeChange("credit");
+      } else if (e.altKey && e.key.toLowerCase() === "t") {
+        e.preventDefault();
+        handleInvoiceTypeChange(form.invoice_type === "debit" ? "credit" : "debit");
       }
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [form, paidTouched, arrangement, displayOrder, products]);
+  }, [form, paidTouched, arrangement, displayOrder, products, selectedSupplier]);
 
   const fetchSuppliers = async () => {
     const res = await axios.get("/api/suppliers");
@@ -378,6 +392,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
     // 🔗 Keep total_paid linked to total_amount on edit load
     next.total_paid = next.total_amount ?? "";
     next.payment_method = res.data?.payment_method || "cash";
+    next.account_id = res.data?.account_id || null;
     setForm(next);
     setPaidTouched(false);
     if (res.data?.purchase_order_id) setArrangement('original');
@@ -423,7 +438,20 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
   const handleSupplierSelect = (supplier) => {
     if (!supplier?.id || form.purchase_order_id) return;
     setSelectedSupplier(supplier);
-    setForm((prev) => ({ ...prev, supplier_id: supplier.id }));
+    const creditDays = Number(supplier.credit_days ?? 0);
+    let autoDueDate = undefined;
+    if (creditDays > 0 && form.posted_date) {
+      const d = new Date(form.posted_date);
+      if (!isNaN(d.getTime())) {
+        d.setDate(d.getDate() + creditDays);
+        autoDueDate = d.toISOString().split("T")[0];
+      }
+    }
+    setForm((prev) => ({
+      ...prev,
+      supplier_id: supplier.id,
+      ...(autoDueDate ? { due_date: autoDueDate } : {}),
+    }));
     setSupplierSearchOpen(false);
     // Advance to the Invoice Number field
     navigateToNextField("supplier");
@@ -437,11 +465,17 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
       if (type === "credit") {
         next.total_paid = "";
         setPaidTouched(true); // Mark as touched so it stays at 0
-      } else {
-        // Debit - auto-fill total_paid with total if not touched
-        if (!paidTouched) {
-          next.total_paid = next.total_amount ?? "";
+        if (!next.due_date && next.posted_date && selectedSupplier?.credit_days) {
+          const d = new Date(next.posted_date);
+          if (!isNaN(d.getTime())) {
+            d.setDate(d.getDate() + Number(selectedSupplier.credit_days));
+            next.due_date = d.toISOString().split("T")[0];
+          }
         }
+      } else {
+        // Debit - reset touched and auto-fill total_paid with total amount
+        setPaidTouched(false);
+        next.total_paid = next.total_amount ?? "";
       }
       return next;
     });
@@ -1012,7 +1046,9 @@ const contRect = container.getBoundingClientRect();
           if (onSubmit) {
             const result = await onSubmit(dataPayload);
             window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+            window.dispatchEvent(new CustomEvent("accounts-changed"));
             try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+            try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
             draftHook.resetToNew();
             onSuccess && onSuccess();
             return result;
@@ -1022,13 +1058,17 @@ const contRect = container.getBoundingClientRect();
           if (invoiceId) {
             await axios.put(`/api/purchase-invoices/${invoiceId}`, dataPayload);
             window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+            window.dispatchEvent(new CustomEvent("accounts-changed"));
             try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+            try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
             toast.success("Invoice updated successfully");
             onSuccess && onSuccess();
           } else {
             const { data: saved } = await axios.post("/api/purchase-invoices", dataPayload);
             window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+            window.dispatchEvent(new CustomEvent("accounts-changed"));
             try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+            try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
             draftHook.resetToNew();
             // Server returns created invoice with posted_number assigned — reflect it locally.
             setForm((prev) => ({ ...prev, posted_number: saved?.posted_number || prev.posted_number }));
@@ -1245,7 +1285,7 @@ const contRect = container.getBoundingClientRect();
             <div>
               <h2 className="purchase-entry-title text-xl font-semibold leading-none">Purchase Invoice</h2>
               <p className="products-subtitle">
-                Enter to navigate · Alt+S to save
+                Enter to navigate · Alt+S to save · Alt+T toggle
               </p>
             </div>
           </div>
@@ -1265,6 +1305,8 @@ const contRect = container.getBoundingClientRect();
             {/* Invoice Type Segmented Control */}
             <div
               className="purchase-entry-type flex items-center gap-1 rounded-lg p-1 shadow-inner"
+              role="radiogroup"
+              aria-label="Invoice type"
             >
               {["debit", "credit"].map((type) => {
                 const active = form.invoice_type === type;
@@ -1272,11 +1314,18 @@ const contRect = container.getBoundingClientRect();
                   <button
                     key={type}
                     type="button"
-                    onClick={() => handleInvoiceTypeChange(type)}
+                    role="radio"
+                    aria-checked={active}
                     aria-pressed={active}
-                    className={`purchase-entry-type-button px-4 py-1.5 text-xs font-semibold rounded-md ${active ? "is-active theme-btn-primary" : "theme-btn-tertiary"}`}
+                    onClick={() => handleInvoiceTypeChange(type)}
+                    className={`purchase-entry-type-button inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-md transition-all duration-150 cursor-pointer ${
+                      active
+                        ? "is-active theme-btn-primary shadow-sm"
+                        : "opacity-75 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/5"
+                    }`}
                   >
-                    {type === "debit" ? "Debit" : "Credit"}
+                    {active && <CheckIcon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />}
+                    <span>{type === "debit" ? "Debit" : "Credit"}</span>
                   </button>
                 );
               })}
@@ -1405,6 +1454,29 @@ const contRect = container.getBoundingClientRect();
               />
             </div>
           </div>
+
+          {form.invoice_type === "credit" && (
+            <div className="mt-2 py-1.5 px-3 rounded-md bg-blue-50/90 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="font-semibold text-blue-900 dark:text-blue-200">
+                  Credit Terms: <strong>{selectedSupplier?.credit_days ? `${selectedSupplier.credit_days} days` : 'Immediate'}</strong>
+                </span>
+                <span className="text-gray-600 dark:text-gray-300">
+                  Credit Limit: <strong>{Number(selectedSupplier?.credit_limit) > 0 ? `Rs. ${Number(selectedSupplier.credit_limit).toLocaleString()}` : 'Unlimited'}</strong>
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-[10px] font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Due Date:</label>
+                <input
+                  type="date"
+                  name="due_date"
+                  value={form.due_date || ""}
+                  onChange={handleChange}
+                  className="h-6 px-1.5 text-xs rounded border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 font-mono"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Remarks row */}
           <div className="mt-2">
@@ -2026,19 +2098,19 @@ const contRect = container.getBoundingClientRect();
             {/* ---- Right: Payment + Action ---- */}
             <div className="w-[260px] shrink-0 flex flex-col justify-between">
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-1">
-                  <label className="text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 shrink-0">Method</label>
-                  <div className="flex-1">
-                    <Select
-                      options={PAYMENT_METHOD_OPTIONS}
-                      value={PAYMENT_METHOD_OPTIONS.find((o) => o.value === (form.payment_method || "cash")) || PAYMENT_METHOD_OPTIONS[0]}
-                      onChange={(opt) => setForm((prev) => ({ ...prev, payment_method: opt?.value || "cash" }))}
-                      styles={paymentSelectStyles}
-                      isSearchable={false}
-                      menuPlacement="auto"
-                    />
-                  </div>
-                </div>
+                <PaymentAccountSelector
+                  paymentMethod={form.payment_method || "cash"}
+                  accountId={form.account_id || null}
+                  onChange={({ payment_method, account_id }) => {
+                    setForm((prev) => ({
+                      ...prev,
+                      payment_method,
+                      account_id,
+                    }));
+                  }}
+                  layout="compact"
+                  showBalance={true}
+                />
 
                 <div className="flex gap-2">
                   <div className="flex-1">

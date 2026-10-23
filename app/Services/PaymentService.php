@@ -175,8 +175,24 @@ class PaymentService
                 "Customer payment {$payment->payment_number} recorded"
             );
 
+            // Record financial account deposit
+            $account = app(AccountService::class)->resolveAccount($payment->account_id ?? $data['account_id'] ?? null, $payment->payment_method);
+            if ($account) {
+                $payment->account_id = $account->id;
+                $payment->saveQuietly();
+
+                app(AccountService::class)->deposit(
+                    $account,
+                    $payment->amount,
+                    'customer_payment',
+                    $payment->id,
+                    "Customer payment {$payment->payment_number} ({$customer->name})",
+                    $user
+                );
+            }
+
             // Record cash drawer transaction if payment method is cash
-            if ($payment->payment_method === 'cash') {
+            if (($account && $account->type === 'cash') || $payment->payment_method === 'cash') {
                 app(CashDrawerService::class)->recordTransaction(
                     null,
                     'customer_payment',
@@ -319,8 +335,24 @@ class PaymentService
                 "Supplier payment {$payment->payment_number} recorded"
             );
 
+            // Record financial account withdrawal
+            $account = app(AccountService::class)->resolveAccount($payment->account_id ?? $data['account_id'] ?? null, $payment->payment_method);
+            if ($account) {
+                $payment->account_id = $account->id;
+                $payment->saveQuietly();
+
+                app(AccountService::class)->withdraw(
+                    $account,
+                    $payment->amount,
+                    'supplier_payment',
+                    $payment->id,
+                    "Supplier payment {$payment->payment_number} ({$supplier->name})",
+                    $user
+                );
+            }
+
             // Record cash drawer transaction if payment method is cash
-            if ($payment->payment_method === 'cash') {
+            if (($account && $account->type === 'cash') || $payment->payment_method === 'cash') {
                 app(CashDrawerService::class)->recordTransaction(
                     null,
                     'supplier_payment',
@@ -381,6 +413,30 @@ class PaymentService
             $payment->reversed_by_id = $user?->id;
             $payment->reversal_reason = $reason;
             $payment->save();
+
+            // Reverse financial account effect
+            $account = app(AccountService::class)->resolveAccount($payment->account_id, $payment->payment_method);
+            if ($account) {
+                if ($payment->party_type === 'customer') {
+                    app(AccountService::class)->withdraw(
+                        $account,
+                        $payment->amount,
+                        'payment_reversal',
+                        $payment->id,
+                        "Reversal of Customer Payment {$payment->payment_number}: {$reason}",
+                        $user
+                    );
+                } else {
+                    app(AccountService::class)->deposit(
+                        $account,
+                        $payment->amount,
+                        'payment_reversal',
+                        $payment->id,
+                        "Reversal of Supplier Payment {$payment->payment_number}: {$reason}",
+                        $user
+                    );
+                }
+            }
 
             // Record audit
             $this->auditService->recordReversal(

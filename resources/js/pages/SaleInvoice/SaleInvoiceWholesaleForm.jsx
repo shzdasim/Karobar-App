@@ -18,6 +18,8 @@ import { useCurrency } from "@/context/CurrencyContext.jsx";
 import InvoiceDraftIndicator from "@/components/InvoiceDraftIndicator.jsx";
 import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
 import PreShiftDrawerPromptModal from "@/components/PreShiftDrawerPromptModal.jsx";
+import CreditOverrideModal from "@/components/CreditOverrideModal.jsx";
+import PaymentAccountSelector from "../../components/PaymentAccountSelector.jsx";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -52,6 +54,7 @@ const normalizeFormLoaded = (f) => {
   safe.doctor_name = safe.doctor_name ?? "";
   safe.patient_name = safe.patient_name ?? "";
   safe.date = safe.date ?? new Date().toISOString().split("T")[0];
+  safe.due_date = safe.due_date ?? "";
   safe.discount_percentage = safe.discount_percentage ?? "";
   safe.discount_amount = safe.discount_amount ?? "";
   safe.tax_percentage = safe.tax_percentage ?? "";
@@ -62,6 +65,7 @@ const normalizeFormLoaded = (f) => {
   safe.total_receive = safe.total_receive ?? "";
   safe.cash_given = safe.cash_given ?? "";
   safe.payment_method = safe.payment_method ?? "cash";
+  safe.account_id = safe.account_id ?? null;
   safe.items = Array.isArray(safe.items)
     ? safe.items.map((it, idx) => {
         // For wholesale pack mode, convert quantity from units back to packs for display
@@ -124,6 +128,7 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
     customer_id: "",
     posted_number: "",
     date: new Date().toISOString().split("T")[0],
+    due_date: "",
     remarks: "",
     doctor_name: "",
     patient_name: "",
@@ -137,6 +142,7 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
     total_receive: "",
     cash_given: "",
     payment_method: "cash",
+    account_id: null,
     items: [
       {
         id: generateRowId(),
@@ -168,6 +174,8 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
   // Store original invoice quantities for edit mode
   const [originalInvoiceQuantities, setOriginalInvoiceQuantities] = useState({});
   const [drawerPrompt, setDrawerPrompt] = useState(null);
+  const [customerCreditSummary, setCustomerCreditSummary] = useState(null);
+  const [creditOverridePrompt, setCreditOverridePrompt] = useState(null);
   const originalInvoiceMetaRef = useRef(null);
   const navigate = useNavigate();
 
@@ -185,6 +193,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
       customer_id: defaultCustId,
       posted_number: "",
       date: new Date().toISOString().split("T")[0],
+      due_date: "",
       remarks: "",
       doctor_name: "",
       patient_name: "",
@@ -198,6 +207,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
       total_receive: "",
       cash_given: "",
       payment_method: "cash",
+      account_id: null,
       items: [
         {
           id: generateRowId(),
@@ -690,8 +700,22 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
         return exists ? prev : [customerObj, ...prev];
       });
     }
+    const cust = customerObj || (customers || []).find((c) => String(c.id) === String(customerId));
+    const creditDays = Number(cust?.credit_days ?? 0);
+    let autoDueDate = undefined;
+    if (creditDays > 0 && form.date) {
+      const d = new Date(form.date);
+      if (!isNaN(d.getTime())) {
+        d.setDate(d.getDate() + creditDays);
+        autoDueDate = d.toISOString().split("T")[0];
+      }
+    }
     setForm((prev) => {
-      const next = { ...prev, customer_id: customerId };
+      const next = {
+        ...prev,
+        customer_id: customerId,
+        ...(autoDueDate ? { due_date: autoDueDate } : {}),
+      };
       // Fetch customer wholesale prices
       if (customerId) {
         fetchCustomerWholesalePrices(customerId);
@@ -708,6 +732,40 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
       return next;
     });
   };
+
+  useEffect(() => {
+    if (form.invoice_type === "credit" && form.customer_id) {
+      let isMounted = true;
+      axios
+        .get(`/api/customers/${form.customer_id}/credit-summary`)
+        .then((res) => {
+          if (isMounted) setCustomerCreditSummary(res.data);
+        })
+        .catch(() => {
+          if (isMounted) setCustomerCreditSummary(null);
+        });
+      return () => {
+        isMounted = false;
+      };
+    } else {
+      setCustomerCreditSummary(null);
+    }
+  }, [form.invoice_type, form.customer_id]);
+
+  useEffect(() => {
+    if (form.invoice_type === "credit" && form.customer_id && !form.due_date && form.date) {
+      const cust = (customers || []).find((c) => String(c.id) === String(form.customer_id));
+      const creditDays = Number(cust?.credit_days ?? 0);
+      if (creditDays > 0) {
+        const d = new Date(form.date);
+        if (!isNaN(d.getTime())) {
+          d.setDate(d.getDate() + creditDays);
+          const computedDue = d.toISOString().split("T")[0];
+          setForm((prev) => ({ ...prev, due_date: computedDue }));
+        }
+      }
+    }
+  }, [form.invoice_type, form.customer_id, form.date, customers]);
 
   const handleHeaderChange = (e) => {
     const { name, value } = e.target;
@@ -1244,6 +1302,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
       customer_id: effectiveCustomerId,
       sale_type: "wholesale",
       invoice_type: form.invoice_type ?? "debit",
+      due_date: form.due_date || undefined,
       discount_percentage:
         form.discount_percentage === "-" || form.discount_percentage === "-."
           ? "-0"
@@ -1280,7 +1339,9 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
           const res = await axios.put(`/api/sale-invoices/${saleId}`, dataPayload);
           const id = res?.data?.id ?? saleId;
           window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+          window.dispatchEvent(new CustomEvent("accounts-changed"));
           try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+          try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
           toast.success("Sale invoice updated");
           navigate(`/sale-invoices/${id}`);
         } else {
@@ -1290,13 +1351,28 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
           const res = await axios.post("/api/sale-invoices", dataPayload);
           const id = res?.data?.id;
           window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+          window.dispatchEvent(new CustomEvent("accounts-changed"));
           try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+          try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
           draftHook.resetToNew();
           toast.success("Sale invoice created");
           if (id) navigate(`/sale-invoices/${id}`);
           else invoiceErrors.showMessage("Missing invoice ID from server response.");
         }
       } catch (err) {
+        if (err?.response?.status === 422 && err?.response?.data?.requires_override) {
+          setCreditOverridePrompt({
+            isOpen: true,
+            message: err.response.data.message,
+            excessAmount: err.response.data.excess_amount,
+            creditLimit: err.response.data.credit_limit,
+            currentBalance: err.response.data.current_balance,
+            projectedBalance: err.response.data.projected_balance,
+            isHold: err.response.data.credit_status === "on_hold",
+            execute: () => executeSave({ ...dataPayload, credit_override: true }, updateDrawer),
+          });
+          return;
+        }
         invoiceErrors.showError(err);
       }
     };
@@ -1535,7 +1611,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                     key={type}
                     type="button"
                     onClick={() => handleWholesaleTypeChange(type)}
-                    className={`sale-type-option text-xs font-semibold ${active ? "is-active theme-btn-secondary" : "theme-btn-tertiary"}`}
+                    className={`sale-type-option text-xs font-semibold ${active ? "is-active theme-btn-secondary shadow-sm" : "opacity-75 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/5"}`}
                     aria-pressed={active}
                   >
                     {type === "unit" ? <HashtagIcon aria-hidden="true" /> : <CubeIcon aria-hidden="true" />}
@@ -1556,7 +1632,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                     key={type}
                     type="button"
                     onClick={() => handleInvoiceTypeChange(type)}
-                    className={`sale-type-option text-xs font-semibold ${active ? "is-active theme-btn-primary" : "theme-btn-tertiary"}`}
+                    className={`sale-type-option text-xs font-semibold ${active ? "is-active theme-btn-primary shadow-sm" : "opacity-75 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/5"}`}
                     aria-pressed={active}
                   >
                     {active && <CheckIcon aria-hidden="true" />}
@@ -1662,6 +1738,53 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                     autoComplete="off"
                     className="w-full h-7 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
                   />
+                </div>
+              )}
+
+              {form.invoice_type === "credit" && (
+                <div className="col-span-full py-1.5 px-3 rounded-md bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="font-semibold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                      <span>Credit Status:</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                        selectedCustomer?.credit_status === 'blocked'
+                          ? 'bg-red-100 text-red-700 dark:bg-red-900/60 dark:text-red-300'
+                          : selectedCustomer?.credit_status === 'on_hold'
+                          ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/60 dark:text-yellow-300'
+                          : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300'
+                      }`}>
+                        {selectedCustomer?.credit_status || 'active'}
+                      </span>
+                    </span>
+                    <span className="text-gray-600 dark:text-gray-300">
+                      Terms: <strong>{selectedCustomer?.credit_days ? `${selectedCustomer.credit_days} days` : 'Immediate'}</strong>
+                    </span>
+                    <span className="text-gray-600 dark:text-gray-300">
+                      Credit Limit: <strong>{Number(selectedCustomer?.credit_limit) > 0 ? `Rs. ${Number(selectedCustomer.credit_limit).toLocaleString()}` : 'Unlimited'}</strong>
+                    </span>
+                    {customerCreditSummary && (
+                      <>
+                        <span className="text-gray-600 dark:text-gray-300">
+                          Ledger Balance: <strong>Rs. {Number(customerCreditSummary.current_balance || 0).toLocaleString()}</strong>
+                        </span>
+                        {Number(selectedCustomer?.credit_limit) > 0 && (
+                          <span className={`font-semibold ${customerCreditSummary.available_credit <= 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                            Available Credit: Rs. {Number(customerCreditSummary.available_credit || 0).toLocaleString()}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Due Date:</label>
+                    <input
+                      type="date"
+                      name="due_date"
+                      value={form.due_date || ""}
+                      onChange={handleHeaderChange}
+                      className="h-6 px-1.5 text-xs rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 font-mono"
+                    />
+                  </div>
                 </div>
               )}
 
@@ -2036,21 +2159,21 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                 </div>
               </div>
 
-              {/* Payment & Cash Tendered */}
+              {/* Payment Method & Account Live Balance */}
               <div className="space-y-1">
-                <div className="flex items-center justify-between gap-1.5">
-                  <label className={`font-semibold shrink-0 text-xs ${isDark ? "text-slate-400" : "text-gray-500"}`}>Method</label>
-                  <div className="w-28">
-                    <Select
-                      options={PAYMENT_METHOD_OPTIONS}
-                      value={PAYMENT_METHOD_OPTIONS.find((o) => o.value === (form.payment_method || "cash")) || PAYMENT_METHOD_OPTIONS[0]}
-                      onChange={(opt) => setForm((prev) => ({ ...prev, payment_method: opt?.value || "cash" }))}
-                      styles={paymentSelectStyles}
-                      isSearchable={false}
-                      menuPlacement="auto"
-                    />
-                  </div>
-                </div>
+                <PaymentAccountSelector
+                  paymentMethod={form.payment_method || "cash"}
+                  accountId={form.account_id || null}
+                  onChange={({ payment_method, account_id }) => {
+                    setForm((prev) => ({
+                      ...prev,
+                      payment_method,
+                      account_id,
+                    }));
+                  }}
+                  layout="compact"
+                  showBalance={true}
+                />
 
                 {/* Cash Tendered / Given */}
                 <div className="pt-1 border-t border-dashed" style={{ borderColor: isDark ? "#334155" : "#e2e8f0" }}>
@@ -2243,6 +2366,22 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
         cashDelta={drawerPrompt?.cashDelta}
         invoiceCreatedAt={drawerPrompt?.invoiceCreatedAt}
         shiftOpenedAt={drawerPrompt?.shiftOpenedAt}
+      />
+
+      {/* Credit Limit / Status Approval Override Modal */}
+      <CreditOverrideModal
+        isOpen={!!creditOverridePrompt?.isOpen}
+        onClose={() => setCreditOverridePrompt(null)}
+        onConfirm={() => {
+          const fn = creditOverridePrompt?.execute;
+          setCreditOverridePrompt(null);
+          if (fn) fn();
+        }}
+        message={creditOverridePrompt?.message}
+        creditLimit={creditOverridePrompt?.creditLimit}
+        currentBalance={creditOverridePrompt?.currentBalance}
+        excessAmount={creditOverridePrompt?.excessAmount}
+        isHold={creditOverridePrompt?.isHold}
       />
     </>
   );

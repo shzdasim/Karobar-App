@@ -13,6 +13,7 @@ class CustomerLedger extends Model
         'sale_invoice_id',
         'payment_id',
         'entry_date',
+        'due_date',
         'posted_number',
         'invoice_number',
 
@@ -32,6 +33,7 @@ class CustomerLedger extends Model
 
     protected $casts = [
         'entry_date' => 'date',
+        'due_date'   => 'date',
         'is_manual'  => 'boolean',
     ];
 

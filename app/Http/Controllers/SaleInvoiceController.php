@@ -3,15 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Models\Batch;
+use App\Models\Customer;
 use App\Models\CustomerLedger;
 use App\Models\CustomerWholeSalePrice;
 use App\Models\Product;
 use App\Models\SaleInvoice;
 use App\Models\SaleInvoiceItem;
 use App\Models\Setting;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class SaleInvoiceController extends Controller
 {
@@ -119,6 +122,92 @@ class SaleInvoiceController extends Controller
         }
     }
 
+    private function validateCreditLimits(array $data, Request $request, ?SaleInvoice $existingInvoice = null): void
+    {
+        $invoiceType = $data['invoice_type'] ?? ($existingInvoice->invoice_type ?? 'debit');
+        if ($invoiceType !== 'credit') {
+            return;
+        }
+
+        $customerId = (int)($data['customer_id'] ?? ($existingInvoice->customer_id ?? 0));
+        if (!$customerId) {
+            return;
+        }
+
+        $customer = Customer::find($customerId);
+        if (!$customer) {
+            return;
+        }
+
+        if (($customer->credit_status ?? 'active') === 'blocked') {
+            throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
+                'message' => "Customer {$customer->name} is blocked for credit transactions.",
+                'credit_status' => 'blocked',
+                'errors' => [
+                    'customer_id' => ["Customer {$customer->name} is blocked for credit transactions."],
+                    'credit_status' => ["Customer {$customer->name} is blocked for credit transactions."],
+                ],
+            ], 422));
+        }
+
+        $override = $request->boolean('credit_override');
+
+        if (($customer->credit_status ?? 'active') === 'on_hold' && !$override) {
+            throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
+                'message' => "Customer {$customer->name} account is on hold. Requires supervisor override.",
+                'requires_override' => true,
+                'credit_status' => 'on_hold',
+                'errors' => [
+                    'credit_status' => ["Customer {$customer->name} account is on hold. Requires supervisor override."],
+                ],
+            ], 422));
+        }
+
+        if ($customer->credit_limit !== null && (float)$customer->credit_limit > 0) {
+            $currentNet = CustomerLedger::getCustomerNetBalance($customerId);
+
+            // If updating an existing credit invoice, subtract its prior unpaid balance
+            if ($existingInvoice && $existingInvoice->invoice_type === 'credit') {
+                $oldTotal = (float)$existingInvoice->total;
+                $oldRecv = min($oldTotal, (float)($existingInvoice->total_receive ?? 0));
+                $oldUnpaid = max(0.0, $oldTotal - $oldRecv);
+                $currentNet = max(0.0, $currentNet - $oldUnpaid);
+            }
+
+            $newTotal = (float)$data['total'];
+            $newRecv = min($newTotal, (float)($data['total_receive'] ?? 0));
+            $newUnpaid = max(0.0, $newTotal - $newRecv);
+
+            $projected = round($currentNet + $newUnpaid, 2);
+            $limit = (float)$customer->credit_limit;
+
+            if ($projected > $limit && !$override) {
+                $excess = round($projected - $limit, 2);
+                throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
+                    'message' => "Customer credit limit of Rs. " . number_format($limit, 2) . " exceeded by Rs. " . number_format($excess, 2) . " (projected balance: Rs. " . number_format($projected, 2) . "). Requires supervisor override.",
+                    'requires_override' => true,
+                    'excess_amount' => $excess,
+                    'credit_limit' => $limit,
+                    'current_balance' => $currentNet,
+                    'projected_balance' => $projected,
+                    'errors' => [
+                        'credit_limit' => ["Customer credit limit of Rs. " . number_format($limit, 2) . " exceeded by Rs. " . number_format($excess, 2) . ". Requires supervisor override."],
+                    ],
+                ], 422));
+            }
+        }
+    }
+
+    private function resolveDueDate(array $data, ?Customer $customer = null): string
+    {
+        if (!empty($data['due_date'])) {
+            return Carbon::parse($data['due_date'])->toDateString();
+        }
+        $customer = $customer ?: Customer::find($data['customer_id'] ?? null);
+        $creditDays = $customer ? ($customer->credit_days ?? 30) : 30;
+        return Carbon::parse($data['date'])->addDays($creditDays)->toDateString();
+    }
+
     public function generateNewCode()
     {
         // kept for compatibility but frontend no longer uses this on load
@@ -183,9 +272,12 @@ class SaleInvoiceController extends Controller
             'customer_id'         => 'required|exists:customers,id',
             'invoice_type'        => 'nullable|string|in:credit,debit,default:debit',
             'payment_method'      => 'nullable|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
+            'account_id'          => 'nullable|integer|exists:accounts,id',
             'sale_type'           => 'nullable|string|in:retail,wholesale,default:retail',
             'wholesale_type'      => 'nullable|string|in:unit,pack,default:unit',
             'date'                => 'required|date',
+            'due_date'            => 'nullable|date',
+            'credit_override'     => 'nullable|boolean',
             'remarks'             => 'nullable|string',
             'doctor_name'         => 'nullable|string',
             'patient_name'        => 'nullable|string',
@@ -214,7 +306,10 @@ class SaleInvoiceController extends Controller
             'items.*.is_custom_price'          => 'nullable|boolean',
         ]);
 
-        return DB::transaction(function () use ($data, $request) {
+        $this->validateCreditLimits($data, $request);
+        $dueDate = $this->resolveDueDate($data);
+
+        return DB::transaction(function () use ($data, $request, $dueDate) {
             $draft = null;
             if (!empty($data['draft_id'])) {
                 $draft = \App\Models\InvoiceDraft::lockForUpdate()->find($data['draft_id']);
@@ -254,6 +349,10 @@ class SaleInvoiceController extends Controller
                 'total'              => $data['total'],
                 'total_receive'      => $data['total_receive'] ?? 0,
             ];
+
+            if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'due_date')) {
+                $invoiceData['due_date'] = $dueDate;
+            }
 
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'payment_method')) {
                 $invoiceData['payment_method'] = $data['payment_method'] ?? 'cash';
@@ -295,6 +394,9 @@ class SaleInvoiceController extends Controller
                 $ledger->entry_type        = 'invoice';
                 $ledger->is_manual         = false;
                 $ledger->entry_date        = $data['date'];
+                if (\Illuminate\Support\Facades\Schema::hasColumn('customer_ledgers', 'due_date')) {
+                    $ledger->due_date      = $dueDate;
+                }
                 $ledger->posted_number     = $posted;
                 $ledger->invoice_total     = $invTotal;
                 $ledger->total_received    = $recvOnInv;
@@ -332,22 +434,39 @@ class SaleInvoiceController extends Controller
                 $draft->save();
             }
 
-            // Cash Drawer recording if drawer is open and cash was received
+            // Account & Cash Drawer recording if money was received
             $payMethod = $invoice->payment_method ?? 'cash';
             $cashReceived = (float)($invoice->total_receive ?? 0);
             if (($invoice->invoice_type ?? 'debit') === 'debit' && $cashReceived <= 0) {
                 $cashReceived = (float)$invoice->total;
             }
-            if ($payMethod === 'cash' && $cashReceived > 0) {
-                app(\App\Services\CashDrawerService::class)->recordTransaction(
-                    null,
-                    'cash_sale',
-                    $cashReceived,
-                    'sale_invoice',
-                    $invoice->id,
-                    "Cash sale {$posted}",
-                    $request->user()
-                );
+            if ($cashReceived > 0) {
+                $account = app(\App\Services\AccountService::class)->resolveAccount($invoice->account_id, $payMethod);
+                if ($account) {
+                    $invoice->account_id = $account->id;
+                    $invoice->saveQuietly();
+
+                    app(\App\Services\AccountService::class)->deposit(
+                        $account,
+                        $cashReceived,
+                        'sale_invoice',
+                        $invoice->id,
+                        "Sale invoice {$posted} ({$account->name})",
+                        $request->user()
+                    );
+                }
+
+                if (($account && $account->type === 'cash') || $payMethod === 'cash') {
+                    app(\App\Services\CashDrawerService::class)->recordTransaction(
+                        null,
+                        'cash_sale',
+                        $cashReceived,
+                        'sale_invoice',
+                        $invoice->id,
+                        "Cash sale {$posted}",
+                        $request->user()
+                    );
+                }
             }
 
             app(\App\Services\DocumentAuditService::class)->recordCreate($invoice->load('items.product'), $request->user());
@@ -383,10 +502,13 @@ class SaleInvoiceController extends Controller
             'customer_id'         => 'required|exists:customers,id',
             'invoice_type'        => 'nullable|string|in:credit,debit',
             'payment_method'      => 'nullable|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
+            'account_id'          => 'nullable|integer|exists:accounts,id',
             'sale_type'           => 'nullable|string|in:retail,wholesale',
             'wholesale_type'      => 'nullable|string|in:unit,pack',
             'posted_number'       => 'required|string|unique:sale_invoices,posted_number,' . $invoice->id,
             'date'                => 'required|date',
+            'due_date'            => 'nullable|date',
+            'credit_override'     => 'nullable|boolean',
             'remarks'             => 'nullable|string',
             'doctor_name'         => 'nullable|string',
             'patient_name'        => 'nullable|string',
@@ -416,7 +538,10 @@ class SaleInvoiceController extends Controller
             'items.*.is_custom_price'          => 'nullable|boolean',
         ]);
 
-        return DB::transaction(function () use ($invoice, $data, $request, $auditService, $beforeSnapshot) {
+        $this->validateCreditLimits($data, $request, $invoice);
+        $dueDate = $this->resolveDueDate($data);
+
+        return DB::transaction(function () use ($invoice, $data, $request, $auditService, $beforeSnapshot, $dueDate) {
             $invoice = SaleInvoice::lockForUpdate()->findOrFail($invoice->id);
             $originalItems = $invoice->items()->get();
             app(\App\Services\SaleStockAvailability::class)->validate($data['items'], $originalItems);
@@ -425,6 +550,7 @@ class SaleInvoiceController extends Controller
             $invoice->items()->delete();
 
             // Capture old cash state before update
+            $oldAccountId = $invoice->account_id;
             $oldPayMethod = $invoice->payment_method ?? 'cash';
             $oldInvoiceType = $invoice->invoice_type ?? 'debit';
             $oldReceived = (float)($invoice->total_receive ?? 0);
@@ -458,6 +584,10 @@ class SaleInvoiceController extends Controller
                 'total'              => $data['total'],
                 'total_receive'      => $data['total_receive'] ?? 0,
             ];
+
+            if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'due_date')) {
+                $invoiceData['due_date'] = $dueDate;
+            }
 
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'payment_method')) {
                 $updateData['payment_method'] = $data['payment_method'] ?? $invoice->payment_method ?? 'cash';
@@ -513,6 +643,9 @@ class SaleInvoiceController extends Controller
                 $ledger->entry_type        = 'invoice';
                 $ledger->is_manual         = false;
                 $ledger->entry_date        = $data['date'];
+                if (\Illuminate\Support\Facades\Schema::hasColumn('customer_ledgers', 'due_date')) {
+                    $ledger->due_date      = $dueDate;
+                }
                 $ledger->posted_number     = $data['posted_number'];
                 $ledger->invoice_total     = $invTotal;
                 $ledger->total_received    = $recvOnInv;
@@ -556,6 +689,19 @@ class SaleInvoiceController extends Controller
                 $oldCash,
                 $newCash,
                 $updateDrawerFlag,
+                $request->user()
+            );
+
+            // Sync with financial accounts
+            $newAccountId = array_key_exists('account_id', $data) ? $data['account_id'] : $invoice->account_id;
+            app(\App\Services\AccountService::class)->syncSaleInvoiceUpdate(
+                $invoice,
+                $oldAccountId,
+                $oldPayMethod,
+                $oldReceived,
+                $newAccountId,
+                $newPayMethod,
+                $newReceived,
                 $request->user()
             );
 
@@ -613,6 +759,23 @@ class SaleInvoiceController extends Controller
                 $validated['reason'],
                 $request->user()
             );
+
+            // Reversal refund recorded in financial account
+            $revAmount = (float)($invoice->total_receive ?? 0);
+            if (($invoice->invoice_type ?? 'debit') === 'debit' && $revAmount <= 0) {
+                $revAmount = (float)$invoice->total;
+            }
+            if ($revAmount > 0) {
+                $acc = app(\App\Services\AccountService::class)->resolveAccount($invoice->account_id, $invoice->payment_method ?? 'cash');
+                app(\App\Services\AccountService::class)->withdraw(
+                    $acc,
+                    $revAmount,
+                    'sale_invoice_reversal',
+                    $invoice->id,
+                    "Reversal refund for Sale Invoice #{$invoice->posted_number}",
+                    $request->user()
+                );
+            }
 
             app(\App\Services\DocumentAuditService::class)->recordReversal($invoice, $request->user(), $validated['reason']);
 
@@ -688,6 +851,25 @@ class SaleInvoiceController extends Controller
                 $mode,
                 $request->user()
             );
+
+            // Adjust financial accounts for deleted invoice if refund mode
+            if ($mode === 'refund') {
+                $delAmount = (float)($invoice->total_receive ?? 0);
+                if (($invoice->invoice_type ?? 'debit') === 'debit' && $delAmount <= 0) {
+                    $delAmount = (float)$invoice->total;
+                }
+                if ($delAmount > 0) {
+                    $acc = app(\App\Services\AccountService::class)->resolveAccount($invoice->account_id, $invoice->payment_method ?? 'cash');
+                    app(\App\Services\AccountService::class)->withdraw(
+                        $acc,
+                        $delAmount,
+                        'sale_invoice_deletion',
+                        $invoice->id,
+                        "Refund for deleted sale invoice #{$invoice->posted_number}",
+                        $request->user()
+                    );
+                }
+            }
 
             $invoice->items()->delete();
             $invoice->delete();

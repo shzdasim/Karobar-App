@@ -244,17 +244,45 @@ class ReportsController extends Controller
         $supplierAllowed = \Illuminate\Support\Facades\Gate::allows('viewAny', SupplierLedger::class);
         abort_unless($customerAllowed || $supplierAllowed, 403);
 
-        $filters = $req->validate(['as_of' => 'sometimes|date_format:Y-m-d']);
+        $filters = $req->validate([
+            'as_of'    => 'sometimes|date_format:Y-m-d',
+            'aging_by' => 'sometimes|string|in:due_date,invoice_date',
+        ]);
         $asOf = Carbon::parse($filters['as_of'] ?? Carbon::today()->toDateString())->startOfDay();
-        $bucketTotals = fn() => ['days_0_30' => 0.0, 'days_31_60' => 0.0, 'days_61_90' => 0.0, 'over_90' => 0.0];
-        $bucketForDate = function ($date) use ($asOf) {
-            $days = Carbon::parse($date)->startOfDay()->diffInDays($asOf);
-            return match (true) {
-                $days <= 30 => 'days_0_30',
-                $days <= 60 => 'days_31_60',
-                $days <= 90 => 'days_61_90',
-                default => 'over_90',
-            };
+        $agingBy = $filters['aging_by'] ?? 'due_date';
+
+        $bucketTotals = fn() => [
+            'current'    => 0.0,
+            'days_1_30'  => 0.0,
+            'days_31_60' => 0.0,
+            'days_61_90' => 0.0,
+            'over_90'    => 0.0,
+            'days_0_30'  => 0.0, // combined current + 1-30 for backward compatibility
+        ];
+
+        $bucketForEntry = function ($entryDate, $dueDate) use ($asOf, $agingBy) {
+            if ($agingBy === 'due_date') {
+                $target = $dueDate ?: $entryDate;
+                $targetDate = Carbon::parse($target)->startOfDay();
+                if ($targetDate->greaterThanOrEqualTo($asOf)) {
+                    return 'current';
+                }
+                $overdueDays = $targetDate->diffInDays($asOf);
+                return match (true) {
+                    $overdueDays <= 30 => 'days_1_30',
+                    $overdueDays <= 60 => 'days_31_60',
+                    $overdueDays <= 90 => 'days_61_90',
+                    default => 'over_90',
+                };
+            } else {
+                $days = Carbon::parse($entryDate)->startOfDay()->diffInDays($asOf);
+                return match (true) {
+                    $days <= 30 => 'days_0_30',
+                    $days <= 60 => 'days_31_60',
+                    $days <= 90 => 'days_61_90',
+                    default => 'over_90',
+                };
+            }
         };
 
         $buildPartyAging = function (
@@ -264,16 +292,27 @@ class ReportsController extends Controller
             string $amountField,
             string $paidField,
             string $paymentField
-        ) use ($asOf, $bucketTotals, $bucketForDate) {
+        ) use ($asOf, $bucketTotals, $bucketForEntry, $agingBy) {
+            $selectCols = [
+                'l.*',
+                'p.name as party_name',
+                'p.phone as party_phone',
+                'p.credit_limit',
+                'p.credit_days',
+            ];
+            if (\Illuminate\Support\Facades\Schema::hasColumn($partyTable, 'credit_status')) {
+                $selectCols[] = 'p.credit_status';
+            }
+
             return DB::table("{$ledgerTable} as l")
                 ->join("{$partyTable} as p", "p.id", '=', "l.{$partyKey}")
                 ->whereDate('l.entry_date', '<=', $asOf->toDateString())
-                ->select('l.*', 'p.name as party_name')
+                ->select($selectCols)
                 ->orderBy('l.entry_date')
                 ->orderBy('l.id')
                 ->get()
                 ->groupBy($partyKey)
-                ->map(function ($entries) use ($partyKey, $amountField, $paidField, $paymentField, $bucketTotals, $bucketForDate, $asOf) {
+                ->map(function ($entries) use ($partyKey, $amountField, $paidField, $paymentField, $bucketTotals, $bucketForEntry, $asOf, $agingBy) {
                     $obligations = [];
                     $availableCredit = 0.0;
                     $applyCredit = function () use (&$obligations, &$availableCredit) {
@@ -291,6 +330,7 @@ class ReportsController extends Controller
                         if (in_array($entry->entry_type, ['invoice', 'manual'], true)) {
                             $invoiceAmount = max((float) $entry->{$amountField}, 0);
                             $paidOnInvoice = min($invoiceAmount, max((float) $entry->{$paidField}, 0));
+                            $dueDate = !empty($entry->due_date) ? Carbon::parse($entry->due_date)->toDateString() : Carbon::parse($entry->entry_date)->toDateString();
                             $obligations[] = [
                                 'ledger_id' => $entry->id,
                                 'reference' => $entry->posted_number
@@ -298,6 +338,7 @@ class ReportsController extends Controller
                                     ?: ($entry->entry_type === 'manual' ? "Manual entry #{$entry->id}" : "Ledger entry #{$entry->id}"),
                                 'entry_type' => $entry->entry_type,
                                 'date' => Carbon::parse($entry->entry_date)->toDateString(),
+                                'due_date' => $dueDate,
                                 'invoice_amount' => round($invoiceAmount, 2),
                                 'paid_on_invoice' => round($paidOnInvoice, 2),
                                 'payments_applied' => 0.0,
@@ -313,23 +354,44 @@ class ReportsController extends Controller
                     $buckets = $bucketTotals();
                     $openObligations = collect($obligations)
                         ->filter(fn($obligation) => $obligation['outstanding'] > 0)
-                        ->map(function ($obligation) use (&$buckets, $bucketForDate, $asOf) {
+                        ->map(function ($obligation) use (&$buckets, $bucketForEntry, $asOf, $agingBy) {
+                            $dueDateObj = Carbon::parse($obligation['due_date'])->startOfDay();
                             $obligation['age_days'] = Carbon::parse($obligation['date'])->startOfDay()->diffInDays($asOf);
-                            $obligation['aging_bucket'] = $bucketForDate($obligation['date']);
+                            $obligation['is_overdue'] = $dueDateObj->lessThan($asOf);
+                            $obligation['days_overdue'] = $obligation['is_overdue'] ? $dueDateObj->diffInDays($asOf) : 0;
+                            $obligation['aging_bucket'] = $bucketForEntry($obligation['date'], $obligation['due_date']);
                             $buckets[$obligation['aging_bucket']] += $obligation['outstanding'];
                             return $obligation;
                         })
                         ->values();
-                    $total = round(array_sum($buckets), 2);
+
+                    if ($agingBy === 'due_date') {
+                        $buckets['days_0_30'] = round($buckets['current'] + $buckets['days_1_30'], 2);
+                        $totalOverdue = round($buckets['days_1_30'] + $buckets['days_31_60'] + $buckets['days_61_90'] + $buckets['over_90'], 2);
+                    } else {
+                        $buckets['days_1_30'] = $buckets['days_0_30'];
+                        $totalOverdue = round($buckets['days_31_60'] + $buckets['days_61_90'] + $buckets['over_90'], 2);
+                    }
+
+                    $total = round($openObligations->sum('outstanding'), 2);
                     if ($total <= 0) return null;
 
+                    $first = $entries->first();
+                    $creditLimit = $first->credit_limit !== null ? (float)$first->credit_limit : null;
+
                     return [
-                        'party_id' => $entries->first()->{$partyKey},
-                        'party_name' => $entries->first()->party_name,
-                        'open_entry_count' => $openObligations->count(),
+                        'party_id'          => $first->{$partyKey},
+                        'party_name'        => $first->party_name,
+                        'party_phone'       => $first->party_phone ?? null,
+                        'credit_limit'      => $creditLimit,
+                        'credit_days'       => $first->credit_days ?? 30,
+                        'credit_status'     => $first->credit_status ?? 'active',
+                        'is_limit_exceeded' => $creditLimit !== null && $creditLimit > 0 && $total > $creditLimit,
+                        'total_overdue'     => $totalOverdue,
+                        'open_entry_count'  => $openObligations->count(),
                         ...array_map(fn($amount) => round($amount, 2), $buckets),
-                        'total' => $total,
-                        'entries' => $openObligations,
+                        'total'             => $total,
+                        'entries'           => $openObligations,
                     ];
                 })
                 ->filter()
@@ -346,24 +408,87 @@ class ReportsController extends Controller
 
         $sumBuckets = function ($parties) {
             return [
-                'days_0_30' => round($parties->sum('days_0_30'), 2),
-                'days_31_60' => round($parties->sum('days_31_60'), 2),
-                'days_61_90' => round($parties->sum('days_61_90'), 2),
-                'over_90' => round($parties->sum('over_90'), 2),
-                'total' => round($parties->sum('total'), 2),
-                'party_count' => $parties->count(),
+                'current'          => round($parties->sum('current'), 2),
+                'days_1_30'        => round($parties->sum('days_1_30'), 2),
+                'days_0_30'        => round($parties->sum('days_0_30'), 2),
+                'days_31_60'       => round($parties->sum('days_31_60'), 2),
+                'days_61_90'       => round($parties->sum('days_61_90'), 2),
+                'over_90'          => round($parties->sum('over_90'), 2),
+                'total_overdue'    => round($parties->sum('total_overdue'), 2),
+                'total'            => round($parties->sum('total'), 2),
+                'party_count'      => $parties->count(),
                 'open_entry_count' => $parties->sum('open_entry_count'),
             ];
         };
 
         return response()->json([
-            'as_of' => $asOf->toDateString(),
+            'as_of'     => $asOf->toDateString(),
+            'aging_by'  => $agingBy,
             'customers' => $customers,
             'suppliers' => $suppliers,
-            'summary' => [
+            'summary'   => [
                 'customers' => $sumBuckets($customers),
                 'suppliers' => $sumBuckets($suppliers),
             ],
+        ]);
+    }
+
+    public function overdueWorkQueue(Request $req)
+    {
+        $customerAllowed = \Illuminate\Support\Facades\Gate::allows('viewAny', CustomerLedger::class);
+        $supplierAllowed = \Illuminate\Support\Facades\Gate::allows('viewAny', SupplierLedger::class);
+        abort_unless($customerAllowed || $supplierAllowed, 403);
+
+        $partyType = $req->input('party_type', 'customers');
+        if ($partyType === 'customers') {
+            abort_unless($customerAllowed, 403);
+        } else {
+            abort_unless($supplierAllowed, 403);
+        }
+
+        $asOf = Carbon::parse($req->input('as_of', Carbon::today()->toDateString()))->startOfDay();
+        $minOverdue = (float)$req->input('min_overdue', 0);
+        $search = trim((string)$req->input('q', ''));
+
+        // Request aging data grouped by due_date
+        $agingReq = Request::create('/api/reports/outstanding-aging', 'GET', [
+            'as_of'    => $asOf->toDateString(),
+            'aging_by' => 'due_date',
+        ]);
+        $agingResponse = $this->outstandingAging($agingReq);
+        $data = $agingResponse->getData(true);
+
+        $parties = collect($data[$partyType] ?? [])
+            ->filter(function ($party) use ($minOverdue, $search) {
+                if (($party['total_overdue'] ?? 0) <= $minOverdue) {
+                    return false;
+                }
+                if ($search !== '') {
+                    $nameMatch = stripos($party['party_name'] ?? '', $search) !== false;
+                    $phoneMatch = stripos($party['party_phone'] ?? '', $search) !== false;
+                    return $nameMatch || $phoneMatch;
+                }
+                return true;
+            })
+            ->map(function ($party) {
+                $overdueEntries = collect($party['entries'] ?? [])
+                    ->filter(fn($e) => ($e['is_overdue'] ?? false) && ($e['outstanding'] ?? 0) > 0)
+                    ->sortByDesc('days_overdue')
+                    ->values();
+
+                $party['overdue_entries'] = $overdueEntries;
+                $party['max_days_overdue'] = $overdueEntries->max('days_overdue') ?? 0;
+                return $party;
+            })
+            ->sortByDesc('total_overdue')
+            ->values();
+
+        return response()->json([
+            'as_of'             => $asOf->toDateString(),
+            'party_type'        => $partyType,
+            'total_parties'     => $parties->count(),
+            'total_overdue_sum' => round($parties->sum('total_overdue'), 2),
+            'parties'           => $parties,
         ]);
     }
 

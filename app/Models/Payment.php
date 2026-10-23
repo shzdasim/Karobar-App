@@ -20,6 +20,7 @@ class Payment extends Model
         'allocated_amount',
         'unapplied_amount',
         'payment_method',
+        'account_id',
         'reference',
         'status',
         'notes',
@@ -41,6 +42,11 @@ class Payment extends Model
     public function allocations(): HasMany
     {
         return $this->hasMany(PaymentAllocation::class, 'payment_id');
+    }
+
+    public function account(): BelongsTo
+    {
+        return $this->belongsTo(Account::class, 'account_id');
     }
 
     public function creator(): BelongsTo

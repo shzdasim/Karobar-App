@@ -27,7 +27,7 @@ import { getThemeButtonClasses } from "@/utils/buttonStyles";
 
 export default function Suppliers() {
   const [suppliers, setSuppliers] = useState([]);
-  const [form, setForm] = useState({ name: "", address: "", phone: "" });
+  const [form, setForm] = useState({ name: "", address: "", phone: "", credit_limit: "", credit_days: "" });
   const [editingId, setEditingId] = useState(null);
 
   const [loading, setLoading] = useState(false);
@@ -151,7 +151,7 @@ export default function Suppliers() {
   };
 
   const resetForm = () => {
-    setForm({ name: "", address: "", phone: "" });
+    setForm({ name: "", address: "", phone: "", credit_limit: "", credit_days: "" });
     setEditingId(null);
     setTimeout(() => nameRef.current?.focus(), 0);
   };
@@ -190,7 +190,13 @@ export default function Suppliers() {
 
   const handleEdit = (s) => {
     if (!can.update) return toast.error("You don't have permission to edit suppliers.");
-    setForm({ name: s.name || "", address: s.address || "", phone: s.phone || "" });
+    setForm({
+      name: s.name || "",
+      address: s.address || "",
+      phone: s.phone || "",
+      credit_limit: s.credit_limit ?? "",
+      credit_days: s.credit_days ?? "",
+    });
     setEditingId(s.id);
   };
 
@@ -390,6 +396,33 @@ return (
                 />
               </div>
 
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-medium mb-1">Credit Limit (Rs.)</label>
+                  <GlassInput
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="e.g. 100000"
+                    value={form.credit_limit}
+                    onChange={(e) => setForm({ ...form, credit_limit: e.target.value })}
+                    className="w-full h-9"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">Credit Days</label>
+                  <GlassInput
+                    type="number"
+                    min="0"
+                    max="365"
+                    placeholder="e.g. 30"
+                    value={form.credit_days}
+                    onChange={(e) => setForm({ ...form, credit_days: e.target.value })}
+                    className="w-full h-9"
+                  />
+                </div>
+              </div>
+
               <div className="flex items-center gap-2">
                 <GlassBtn
                   type="button"
@@ -452,15 +485,17 @@ return (
                     <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase">Name</th>
                     <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase">Address</th>
                     <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase w-32">Phone</th>
+                    <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase w-28">Credit Limit</th>
+                    <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase w-20">Terms</th>
                     {(can.update || can.delete) && (
-                      <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase text-center w-32">Actions</th>
+                      <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase text-center w-24">Actions</th>
                     )}
                   </tr>
                 </thead>
                 <tbody>
                   {paged.length === 0 && !loading && (
                     <tr>
-                      <td className="px-3 py-10 text-center text-gray-500 dark:text-gray-400" colSpan={(can.update || can.delete) ? 4 : 3}>
+                      <td className="px-3 py-10 text-center text-gray-500 dark:text-gray-400" colSpan={(can.update || can.delete) ? 6 : 5}>
                         <div className="flex flex-col items-center gap-2">
                           <BuildingStorefrontIcon className="w-8 h-8 text-gray-400" />
                           <p className="text-sm">No suppliers found</p>
@@ -478,6 +513,12 @@ return (
                         </td>
                         <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">{s.address}</td>
                         <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">{s.phone}</td>
+                        <td className="px-3 py-2.5 text-xs text-gray-700 dark:text-gray-300 font-mono">
+                          {Number(s.credit_limit) > 0 ? `Rs. ${Number(s.credit_limit).toLocaleString()}` : "Unlimited"}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-gray-700 dark:text-gray-300">
+                          {Number(s.credit_days) > 0 ? `${s.credit_days} days` : "Immediate"}
+                        </td>
                         {(can.update || can.delete) && (
                           <td className="px-3 py-2.5">
                             <div className="flex items-center justify-center gap-1.5">

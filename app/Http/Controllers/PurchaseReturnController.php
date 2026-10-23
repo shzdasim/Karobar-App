@@ -199,6 +199,21 @@ public function index(Request $request)
             // Cash drawer integration
             app(\App\Services\CashDrawerService::class)->handlePurchaseReturnCreation($pr, \Illuminate\Support\Facades\Auth::user());
 
+            // Financial account refund deposit
+            if ((float)$pr->total > 0) {
+                $account = app(\App\Services\AccountService::class)->resolveAccount($pr->account_id, $pr->payment_method ?? 'cash');
+                if ($account) {
+                    app(\App\Services\AccountService::class)->deposit(
+                        $account,
+                        (float)$pr->total,
+                        'purchase_return',
+                        $pr->id,
+                        "Supplier refund for Purchase Return #{$pr->posted_number}",
+                        \Illuminate\Support\Facades\Auth::user()
+                    );
+                }
+            }
+
             return $pr->load(['supplier', 'purchaseInvoice', 'items.product']);
         });
     }
@@ -270,6 +285,19 @@ public function index(Request $request)
                 \Illuminate\Support\Facades\Auth::user()
             );
 
+            // Financial account update
+            $delta = round((float)$purchaseReturn->total - $oldTotal, 2);
+            if (abs($delta) > 0.001) {
+                $account = app(\App\Services\AccountService::class)->resolveAccount($purchaseReturn->account_id, $purchaseReturn->payment_method ?? 'cash');
+                if ($account) {
+                    if ($delta > 0) {
+                        app(\App\Services\AccountService::class)->deposit($account, $delta, 'purchase_return_update', $purchaseReturn->id, "Purchase Return update #{$purchaseReturn->posted_number} (extra refund {$delta})", \Illuminate\Support\Facades\Auth::user());
+                    } else {
+                        app(\App\Services\AccountService::class)->withdraw($account, abs($delta), 'purchase_return_update', $purchaseReturn->id, "Purchase Return update #{$purchaseReturn->posted_number} (refund reduced {$delta})", \Illuminate\Support\Facades\Auth::user());
+                    }
+                }
+            }
+
             return $purchaseReturn->load(['supplier', 'purchaseInvoice', 'items.product']);
         });
     }
@@ -282,6 +310,21 @@ public function index(Request $request)
 
             // Cash drawer integration
             app(\App\Services\CashDrawerService::class)->handlePurchaseReturnDeletion($purchaseReturn, \Illuminate\Support\Facades\Auth::user());
+
+            // Financial account recovery
+            if ((float)$purchaseReturn->total > 0) {
+                $account = app(\App\Services\AccountService::class)->resolveAccount($purchaseReturn->account_id, $purchaseReturn->payment_method ?? 'cash');
+                if ($account) {
+                    app(\App\Services\AccountService::class)->withdraw(
+                        $account,
+                        (float)$purchaseReturn->total,
+                        'purchase_return_deletion',
+                        $purchaseReturn->id,
+                        "Reversal for deleted purchase return #{$purchaseReturn->posted_number}",
+                        \Illuminate\Support\Facades\Auth::user()
+                    );
+                }
+            }
 
             $this->revertItems($purchaseReturn);
             $purchaseReturn->items()->delete();

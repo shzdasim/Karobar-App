@@ -15,6 +15,7 @@ class SupplierLedger extends Model
         'payment_id',
         'entry_type',          // 'invoice' | 'payment' | 'manual'
         'entry_date',
+        'due_date',
         'posted_number',
         'invoice_number',
         'invoice_total',
@@ -29,6 +30,7 @@ class SupplierLedger extends Model
 
     protected $casts = [
         'entry_date'        => 'date',
+        'due_date'          => 'date',
         'invoice_total'     => 'decimal:2',
         'total_paid'        => 'decimal:2',
         'debited_amount'    => 'decimal:2',

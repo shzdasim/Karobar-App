@@ -21,7 +21,14 @@ class PurchaseReturn extends Model
         'tax_percentage',
         'tax_amount',
         'total',
+        'payment_method',
+        'account_id',
     ];
+
+    public function account()
+    {
+        return $this->belongsTo(Account::class);
+    }
 
     protected $casts = [
         'date' => 'date',

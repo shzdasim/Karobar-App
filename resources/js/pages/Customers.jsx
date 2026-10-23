@@ -27,7 +27,15 @@ import { getThemeButtonClasses } from "@/utils/buttonStyles";
 
 export default function Customers() {
   const [customers, setCustomers] = useState([]);
-  const [form, setForm] = useState({ name: "", email: "", phone: "", address: "" });
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    address: "",
+    credit_limit: "",
+    credit_days: 30,
+    credit_status: "active",
+  });
   const [editingId, setEditingId] = useState(null);
 
   const [loading, setLoading] = useState(false);
@@ -134,7 +142,15 @@ export default function Customers() {
   };
 
   const resetForm = () => {
-    setForm({ name: "", email: "", phone: "", address: "" });
+    setForm({
+      name: "",
+      email: "",
+      phone: "",
+      address: "",
+      credit_limit: "",
+      credit_days: 30,
+      credit_status: "active",
+    });
     setEditingId(null);
     setTimeout(() => nameRef.current?.focus(), 0);
   };
@@ -187,6 +203,9 @@ export default function Customers() {
       email: c.email || "",
       phone: c.phone || "",
       address: c.address || "",
+      credit_limit: c.credit_limit !== null && c.credit_limit !== undefined ? c.credit_limit : "",
+      credit_days: c.credit_days !== null && c.credit_days !== undefined ? c.credit_days : 30,
+      credit_status: c.credit_status || "active",
     });
     setEditingId(c.id);
   };
@@ -435,6 +454,46 @@ return (
                 />
               </div>
 
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-medium mb-1">Credit Limit (Rs.)</label>
+                  <GlassInput
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="e.g. 50000 (0 or empty = unlimited)"
+                    value={form.credit_limit}
+                    onChange={(e) => setForm({ ...form, credit_limit: e.target.value })}
+                    className="w-full h-9"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">Credit Days</label>
+                  <GlassInput
+                    type="number"
+                    min="0"
+                    max="365"
+                    placeholder="e.g. 30"
+                    value={form.credit_days}
+                    onChange={(e) => setForm({ ...form, credit_days: e.target.value })}
+                    className="w-full h-9"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium mb-1">Credit Status</label>
+                <select
+                  value={form.credit_status}
+                  onChange={(e) => setForm({ ...form, credit_status: e.target.value })}
+                  className="w-full h-9 px-3 rounded text-xs bg-white/70 dark:bg-slate-700/70 border border-gray-300 dark:border-slate-600 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="active">Active (Credit permitted)</option>
+                  <option value="on_hold">On Hold (Requires override)</option>
+                  <option value="blocked">Blocked (Credit blocked)</option>
+                </select>
+              </div>
+
               <div className="flex items-center gap-2">
                 <GlassBtn
                   type="button"
@@ -495,17 +554,19 @@ return (
                 <thead className="bg-white/80 dark:bg-slate-700/80 sticky top-0">
                   <tr className="border-b border-gray-200/70 dark:border-slate-600/70 text-left">
                     <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase">Name</th>
-                    <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase">Email</th>
-                    <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase w-32">Phone</th>
+                    <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase">Email / Phone</th>
+                    <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase text-right">Credit Limit</th>
+                    <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase text-center">Terms</th>
+                    <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase text-center">Status</th>
                     {hasActions && (
-                      <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase text-center w-32">Actions</th>
+                      <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase text-center w-24">Actions</th>
                     )}
                   </tr>
                 </thead>
                 <tbody>
                   {paged.length === 0 && !loading && (
                     <tr>
-                      <td className="px-3 py-10 text-center text-gray-500 dark:text-gray-400" colSpan={hasActions ? 4 : 3}>
+                      <td className="px-3 py-10 text-center text-gray-500 dark:text-gray-400" colSpan={hasActions ? 6 : 5}>
                         <div className="flex flex-col items-center gap-2">
                           <UsersIcon className="w-8 h-8 text-gray-400" />
                           <p className="text-sm">No customers found</p>
@@ -516,13 +577,39 @@ return (
 
                   {paged.map((c) => {
                     const inUse = Number(c.transactions_count || 0) > 0;
+                    const status = c.credit_status || "active";
+                    const statusBadge =
+                      status === "blocked"
+                        ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300 border-rose-200"
+                        : status === "on_hold"
+                        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border-amber-200"
+                        : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200";
+
                     return (
                       <tr key={c.id} className="odd:bg-white/90 even:bg-white/70 dark:odd:bg-slate-700/60 dark:even:bg-slate-800/60 hover:bg-blue-50/70 dark:hover:bg-slate-600/50 transition-colors">
                         <td className="px-3 py-2.5">
                           <span className="font-medium text-gray-900 dark:text-gray-100">{c.name}</span>
+                          {c.address && <span className="block text-[11px] text-gray-400 truncate max-w-xs">{c.address}</span>}
                         </td>
-                        <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400 break-all">{c.email}</td>
-                        <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">{c.phone}</td>
+                        <td className="px-3 py-2.5 text-xs text-gray-600 dark:text-gray-400">
+                          <div>{c.phone || "—"}</div>
+                          <div className="text-[11px] text-gray-400">{c.email}</div>
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-medium text-xs text-gray-800 dark:text-gray-200">
+                          {c.credit_limit && Number(c.credit_limit) > 0 ? (
+                            `Rs. ${Number(c.credit_limit).toLocaleString()}`
+                          ) : (
+                            <span className="text-gray-400 italic">Unlimited</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-center text-xs text-gray-600 dark:text-gray-400">
+                          {c.credit_days !== null && c.credit_days !== undefined ? `${c.credit_days}d` : "30d"}
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className={`inline-block px-2 py-0.5 text-[10px] font-semibold rounded-full border ${statusBadge}`}>
+                            {status === "on_hold" ? "Hold" : status.toUpperCase()}
+                          </span>
+                        </td>
                         {hasActions && (
                           <td className="px-3 py-2.5">
                             <div className="flex items-center justify-center gap-1.5">

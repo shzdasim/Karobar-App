@@ -1,7 +1,13 @@
 import { useMemo, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { ArrowDownOnSquareIcon, ArrowPathIcon, DocumentChartBarIcon } from "@heroicons/react/24/solid";
+import {
+  ArrowDownOnSquareIcon,
+  ArrowPathIcon,
+  DocumentChartBarIcon,
+  PhoneIcon,
+  ExclamationCircleIcon,
+} from "@heroicons/react/24/solid";
 import { usePermissions } from "@/api/usePermissions";
 import SupplierSearch from "@/components/SupplierSearch.jsx";
 
@@ -121,11 +127,23 @@ export default function MissingReports({ type }) {
   const [supplier, setSupplier] = useState(null);
   const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
 
+  // New Credit & Aging controls
+  const [agingBy, setAgingBy] = useState("due_date"); // "due_date" or "invoice_date"
+  const [agingTab, setAgingTab] = useState("aging"); // "aging" or "work_queue"
+  const [workQueuePayload, setWorkQueuePayload] = useState(null);
+  const [workQueueSearch, setWorkQueueSearch] = useState("");
+  const [workQueueMinOverdue, setWorkQueueMinOverdue] = useState("");
+
   const selectedPartyType = partyType === "customers" && !has("customer-ledger.view") ? "suppliers" : partyType;
   const rows = useMemo(() => {
-    if (type === "outstanding-aging") return payload?.[selectedPartyType] || [];
+    if (type === "outstanding-aging") {
+      if (agingTab === "work_queue") {
+        return workQueuePayload?.parties || [];
+      }
+      return payload?.[selectedPartyType] || [];
+    }
     return payload?.rows || [];
-  }, [payload, selectedPartyType, type]);
+  }, [payload, workQueuePayload, selectedPartyType, type, agingTab]);
 
   if (!report) return <div className="report-page"><section className="products-panel"><p className="report-state">Unknown report.</p></section></div>;
 
@@ -135,23 +153,39 @@ export default function MissingReports({ type }) {
     if (type === "reorder" && !supplier?.id) return toast.error("Select a supplier to run the reorder report.");
     setLoading(true);
     try {
-      const { data } = await axios.get(report.endpoint, {
-        params: report.dated
-          ? { from, to }
-          : type === "outstanding-aging"
-            ? { as_of: asOf }
-            : type === "reorder"
-              ? { supplier_id: supplier.id }
-              : undefined,
-      });
-      setPayload(data);
-      if (!(data?.rows?.length || data?.customers?.length || data?.suppliers?.length)) {
-        toast("No data found for the selected report.", { icon: "ℹ️" });
+      if (type === "outstanding-aging" && agingTab === "work_queue") {
+        const { data } = await axios.get("/api/reports/overdue-work-queue", {
+          params: {
+            as_of: asOf,
+            party_type: selectedPartyType,
+            min_overdue: workQueueMinOverdue || 0,
+            q: workQueueSearch || undefined,
+          },
+        });
+        setWorkQueuePayload(data);
+        if (!data?.parties?.length) {
+          toast("No overdue balances found matching criteria.", { icon: "ℹ️" });
+        }
+      } else {
+        const { data } = await axios.get(report.endpoint, {
+          params: report.dated
+            ? { from, to }
+            : type === "outstanding-aging"
+              ? { as_of: asOf, aging_by: agingBy }
+              : type === "reorder"
+                ? { supplier_id: supplier.id }
+                : undefined,
+        });
+        setPayload(data);
+        if (!(data?.rows?.length || data?.customers?.length || data?.suppliers?.length)) {
+          toast("No data found for the selected report.", { icon: "ℹ️" });
+        }
       }
     } catch (error) {
       console.error(error);
       toast.error(`Failed to load ${report.title}.`);
-      setPayload(null);
+      if (agingTab === "work_queue") setWorkQueuePayload(null);
+      else setPayload(null);
     } finally {
       setLoading(false);
     }
@@ -160,22 +194,97 @@ export default function MissingReports({ type }) {
   const exportCsv = () => {
     if (!rows.length) return;
     if (type === "outstanding-aging") {
+      if (agingTab === "work_queue") {
+        downloadCsv(
+          "overdue-work-queue.csv",
+          [
+            "Party type",
+            "Party",
+            "Phone",
+            "Credit limit",
+            "Credit days",
+            "Status",
+            "Total overdue",
+            "Max days overdue",
+            "Reference",
+            "Entry type",
+            "Invoice date",
+            "Due date",
+            "Invoice amount",
+            "Paid on invoice",
+            "Outstanding",
+            "Days overdue",
+          ],
+          rows.flatMap((party) =>
+            (party.overdue_entries || []).map((entry) => [
+              selectedPartyType === "customers" ? "Customer" : "Supplier",
+              party.party_name,
+              party.party_phone || "",
+              party.credit_limit ?? "",
+              party.credit_days ?? "",
+              party.credit_status || "active",
+              party.total_overdue,
+              party.max_days_overdue ?? 0,
+              entry.reference,
+              entry.entry_type,
+              entry.date,
+              entry.due_date,
+              entry.invoice_amount,
+              entry.paid_on_invoice,
+              entry.outstanding,
+              entry.days_overdue ?? 0,
+            ])
+          )
+        );
+        return;
+      }
+
       downloadCsv(
         "outstanding-aging.csv",
-        ["Party type", "Party", "Reference", "Entry type", "Date", "Invoice amount", "Paid on invoice", "Payments allocated", "Outstanding", "Age (days)", "Age bucket"],
-        rows.flatMap((party) => party.entries.map((entry) => [
-          selectedPartyType === "customers" ? "Customer" : "Supplier",
-          party.party_name,
-          entry.reference,
-          entry.entry_type,
-          entry.date,
-          entry.invoice_amount,
-          entry.paid_on_invoice,
-          entry.payments_applied,
-          entry.outstanding,
-          entry.age_days,
-          entry.aging_bucket.replaceAll("_", "-"),
-        ]))
+        [
+          "Party type",
+          "Party",
+          "Phone",
+          "Credit limit",
+          "Credit days",
+          "Status",
+          "Total outstanding",
+          "Total overdue",
+          "Reference",
+          "Entry type",
+          "Invoice date",
+          "Due date",
+          "Invoice amount",
+          "Paid on invoice",
+          "Payments allocated",
+          "Outstanding",
+          "Age (days)",
+          "Days overdue",
+          "Aging bucket",
+        ],
+        rows.flatMap((party) =>
+          party.entries.map((entry) => [
+            selectedPartyType === "customers" ? "Customer" : "Supplier",
+            party.party_name,
+            party.party_phone || "",
+            party.credit_limit ?? "",
+            party.credit_days ?? "",
+            party.credit_status || "active",
+            party.total,
+            party.total_overdue ?? 0,
+            entry.reference,
+            entry.entry_type,
+            entry.date,
+            entry.due_date,
+            entry.invoice_amount,
+            entry.paid_on_invoice,
+            entry.payments_applied,
+            entry.outstanding,
+            entry.age_days,
+            entry.days_overdue ?? 0,
+            (entry.aging_bucket || "").replaceAll("_", "-"),
+          ])
+        )
       );
       return;
     }
@@ -209,12 +318,26 @@ export default function MissingReports({ type }) {
   const summary = payload?.summary || {};
   const selectedAgingSummary = summary[selectedPartyType] || {};
   const summaryCards = report.summary || (type === "outstanding-aging"
-    ? [
-        ["total", "Total outstanding", true],
-        ["party_count", selectedPartyType === "customers" ? "Customers with balance" : "Suppliers with balance"],
-        ["open_entry_count", "Open invoices / entries"],
-        ["over_90", "Over 90 days", true],
-      ]
+    ? agingTab === "work_queue"
+      ? [
+          ["total_overdue_sum", "Total Overdue Debt", true],
+          ["total_parties", selectedPartyType === "customers" ? "Overdue Debtors" : "Overdue Creditors"],
+          ["critical_count", "Critical (>60d) Accounts"],
+          ["max_overdue_days", "Oldest Overdue (days)"],
+        ]
+      : agingBy === "due_date"
+      ? [
+          ["total", "Total Outstanding", true],
+          ["total_overdue", "Total Overdue", true],
+          ["current", "Current (Not Due)", true],
+          ["over_90", "Over 90 Days Overdue", true],
+        ]
+      : [
+          ["total", "Total Outstanding", true],
+          ["party_count", selectedPartyType === "customers" ? "Customers with balance" : "Suppliers with balance"],
+          ["open_entry_count", "Open invoices / entries"],
+          ["over_90", "Over 90 Days", true],
+        ]
     : type === "reorder"
       ? [
           ["product_count", "Products below threshold"],
@@ -223,6 +346,20 @@ export default function MissingReports({ type }) {
           ["estimated_reorder_value", "Estimated reorder value", true],
         ]
       : []);
+
+  // Compute work queue summary KPIs
+  const workQueueKPIs = useMemo(() => {
+    if (type !== "outstanding-aging" || agingTab !== "work_queue") return {};
+    const parties = workQueuePayload?.parties || [];
+    const critical = parties.filter((p) => (p.max_days_overdue || 0) > 60).length;
+    const maxDays = parties.reduce((m, p) => Math.max(m, p.max_days_overdue || 0), 0);
+    return {
+      total_overdue_sum: workQueuePayload?.total_overdue_sum || 0,
+      total_parties: workQueuePayload?.total_parties || parties.length,
+      critical_count: critical,
+      max_overdue_days: maxDays,
+    };
+  }, [type, agingTab, workQueuePayload]);
   return (
     <div className="report-page">
       <section className="products-panel">
@@ -230,19 +367,54 @@ export default function MissingReports({ type }) {
           <div className="flex items-center gap-3 min-w-0">
             <div className="products-identity-icon"><DocumentChartBarIcon className="w-6 h-6" /></div>
             <div className="min-w-0">
-              <h1 className="products-title">{report.title}</h1>
+              <h1 className="products-title">
+                {type === "outstanding-aging" && agingTab === "work_queue"
+                  ? "Overdue Collections Work Queue"
+                  : report.title}
+              </h1>
               <p className="products-subtitle">
                 {type === "reorder" && supplier
                   ? `${supplier.name} · ${rows.length} products`
+                  : type === "outstanding-aging" && agingTab === "work_queue"
+                  ? `${rows.length} overdue accounts · prioritized by highest debt`
                   : `${rows.length} records · live database results`}
               </p>
             </div>
           </div>
+
+          {type === "outstanding-aging" && (
+            <div className="flex items-center gap-1 p-1 rounded-lg bg-gray-100 dark:bg-slate-700/60 border border-gray-200 dark:border-slate-600">
+              <button
+                type="button"
+                onClick={() => { setAgingTab("aging"); setPayload(null); }}
+                className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
+                  agingTab === "aging"
+                    ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-300 shadow-sm"
+                    : "text-gray-600 dark:text-gray-400 hover:text-gray-900"
+                }`}
+              >
+                Aging Matrix
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAgingTab("work_queue"); setWorkQueuePayload(null); }}
+                className={`px-3 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 ${
+                  agingTab === "work_queue"
+                    ? "bg-white dark:bg-slate-800 text-red-600 dark:text-red-300 shadow-sm"
+                    : "text-gray-600 dark:text-gray-400 hover:text-gray-900"
+                }`}
+              >
+                <ExclamationCircleIcon className="w-3.5 h-3.5 text-red-500" />
+                Collections Work Queue
+              </button>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" onClick={exportCsv} disabled={!rows.length} className="products-action theme-btn-secondary">
               <ArrowDownOnSquareIcon className="w-4 h-4" /> Export CSV
             </button>
-            <button type="button" onClick={() => { setPayload(null); setAsOf(today()); setSupplier(null); }} className="products-action theme-btn-tertiary">
+            <button type="button" onClick={() => { setPayload(null); setWorkQueuePayload(null); setAsOf(today()); setSupplier(null); }} className="products-action theme-btn-tertiary">
               Reset
             </button>
             <button type="button" onClick={loadReport} disabled={loading || (type === "reorder" && !supplier)} className="products-action products-action-primary theme-btn-primary">
@@ -265,7 +437,7 @@ export default function MissingReports({ type }) {
             </>}
             {type === "outstanding-aging" && (
               <label className="products-filter">
-                <span className="products-filter-label">Age outstanding as of</span>
+                <span className="products-filter-label">As of Date</span>
                 <input type="date" value={asOf} max={today()} onChange={(event) => setAsOf(event.target.value)} className="report-input" />
               </label>
             )}
@@ -277,6 +449,40 @@ export default function MissingReports({ type }) {
                   {has("supplier-ledger.view") && <option value="suppliers">Suppliers</option>}
                 </select>
               </label>
+            )}
+            {type === "outstanding-aging" && agingTab === "aging" && (
+              <label className="products-filter">
+                <span className="products-filter-label">Aging Basis</span>
+                <select value={agingBy} onChange={(event) => setAgingBy(event.target.value)} className="report-input">
+                  <option value="due_date">Due Date (Terms-Based)</option>
+                  <option value="invoice_date">Invoice Date (Calendar Age)</option>
+                </select>
+              </label>
+            )}
+            {type === "outstanding-aging" && agingTab === "work_queue" && (
+              <>
+                <label className="products-filter">
+                  <span className="products-filter-label">Min Overdue (Rs.)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 500"
+                    value={workQueueMinOverdue}
+                    onChange={(event) => setWorkQueueMinOverdue(event.target.value)}
+                    className="report-input"
+                  />
+                </label>
+                <label className="products-filter">
+                  <span className="products-filter-label">Search Debtor / Phone</span>
+                  <input
+                    type="text"
+                    placeholder="Search name or phone..."
+                    value={workQueueSearch}
+                    onChange={(event) => setWorkQueueSearch(event.target.value)}
+                    className="report-input"
+                  />
+                </label>
+              </>
             )}
             {type === "reorder" && (
               <>
@@ -299,61 +505,341 @@ export default function MissingReports({ type }) {
 
       {summaryCards.length > 0 && (
         <div className="report-kpis report-kpis-4">
-          {summaryCards.map(([field, label, isMoney]) => (
-            <article key={field} className="report-kpi">
-              <span className="report-kpi-head">{label}</span>
-              <strong className="report-kpi-value">{isMoney ? money(type === "outstanding-aging" ? selectedAgingSummary[field] : summary[field]) : number(type === "outstanding-aging" ? selectedAgingSummary[field] : summary[field]).toLocaleString()}</strong>
-            </article>
-          ))}
+          {summaryCards.map(([field, label, isMoney]) => {
+            const val =
+              type === "outstanding-aging"
+                ? agingTab === "work_queue"
+                  ? workQueueKPIs[field]
+                  : selectedAgingSummary[field]
+                : summary[field];
+            return (
+              <article key={field} className="report-kpi">
+                <span className="report-kpi-head">{label}</span>
+                <strong className="report-kpi-value">
+                  {isMoney ? money(val) : number(val).toLocaleString()}
+                </strong>
+              </article>
+            );
+          })}
         </div>
       )}
-      {type === "outstanding-aging" && payload?.summary && (
+      {type === "outstanding-aging" && agingTab === "aging" && payload?.summary && (
         <p className="report-muted px-2">
-          Balances are aged by entry date as of {payload.as_of}. Since ledger payments are not linked to individual invoices, they are allocated FIFO to the oldest open entries.
+          {agingBy === "due_date"
+            ? `Balances are aged by Due Date (Invoice Date + Party Credit Terms) as of ${payload.as_of}. 'Current' represents invoices not yet due.`
+            : `Balances are aged by Entry Date as of ${payload.as_of}. FIFO payments apply to oldest open invoices.`}
+        </p>
+      )}
+      {type === "outstanding-aging" && agingTab === "work_queue" && (
+        <p className="report-muted px-2">
+          Showing accounts ranked by highest overdue debt past agreed credit terms. Click phone number to call or message directly via WhatsApp.
         </p>
       )}
 
       <section className="products-panel products-catalog">
         <div className="products-catalog-heading">
           <div>
-            <h2 className="products-section-title">{report.title} Details</h2>
+            <h2 className="products-section-title">
+              {type === "outstanding-aging" && agingTab === "work_queue"
+                ? "Collections Work Queue"
+                : `${report.title} Details`}
+            </h2>
             <p className="products-subtitle">{loading ? "Loading live data…" : type === "reorder" && supplier ? `Supplier: ${supplier.name} · ${rows.length} products` : `${rows.length} records`}</p>
           </div>
         </div>
         <div className="report-table-scroll" tabIndex={0} role="region" aria-label={`${report.title} data`} aria-busy={loading}>
           {type === "outstanding-aging" ? (
-            <table className="report-table report-table-medium">
-              <thead><tr><th>{selectedPartyType === "customers" ? "Customer" : "Supplier"}</th><th className="report-num">Open entries</th><th className="report-num">0–30 days</th><th className="report-num">31–60 days</th><th className="report-num">61–90 days</th><th className="report-num">Over 90 days</th><th className="report-num">Total outstanding</th></tr></thead>
-              <tbody>{rows.length ? rows.map((row) => (
-                <tr key={row.party_id}>
-                  <td>
-                    <details>
-                      <summary className="cursor-pointer font-medium">{row.party_name}</summary>
-                      <div className="mt-2 min-w-[48rem]">
-                        <table className="report-table">
-                          <thead><tr><th>Reference</th><th>Type</th><th>Date</th><th className="report-num">Original amount</th><th className="report-num">Paid on entry</th><th className="report-num">Other payments applied</th><th className="report-num">Outstanding</th><th className="report-num">Age</th></tr></thead>
-                          <tbody>{row.entries.map((entry) => (
-                            <tr key={entry.ledger_id}>
-                              <td>{entry.reference}</td><td>{entry.entry_type === "manual" ? "Manual entry" : "Invoice"}</td><td>{entry.date}</td>
-                              <td className="report-num">{money(entry.invoice_amount)}</td><td className="report-num">{money(entry.paid_on_invoice)}</td>
-                              <td className="report-num">{money(entry.payments_applied)}</td><td className="report-num report-strong">{money(entry.outstanding)}</td>
-                              <td className="report-num">{entry.age_days} days</td>
-                            </tr>
-                          ))}</tbody>
-                        </table>
-                      </div>
-                    </details>
-                  </td>
-                  <td className="report-num">{number(row.open_entry_count).toLocaleString()}</td>
-                  <td className="report-num">{money(row.days_0_30)}</td>
-                  <td className="report-num">{money(row.days_31_60)}</td>
-                  <td className="report-num">{money(row.days_61_90)}</td>
-                  <td className="report-num">{money(row.over_90)}</td>
-                  <td className="report-num report-strong">{money(row.total)}</td>
-                </tr>
-              )) : <tr><td colSpan={7} className="report-muted">Load the report to view data.</td></tr>}</tbody>
-              {rows.length > 0 && <tfoot><tr className="report-total-row"><td>Totals</td><td className="report-num">{number(selectedAgingSummary.open_entry_count).toLocaleString()}</td><td className="report-num">{money(selectedAgingSummary.days_0_30)}</td><td className="report-num">{money(selectedAgingSummary.days_31_60)}</td><td className="report-num">{money(selectedAgingSummary.days_61_90)}</td><td className="report-num">{money(selectedAgingSummary.over_90)}</td><td className="report-num report-strong">{money(selectedAgingSummary.total)}</td></tr></tfoot>}
-            </table>
+            agingTab === "work_queue" ? (
+              <table className="report-table report-table-medium">
+                <thead>
+                  <tr>
+                    <th>{selectedPartyType === "customers" ? "Customer" : "Supplier"}</th>
+                    <th>Contact</th>
+                    <th className="report-num">Credit Limit</th>
+                    <th>Terms</th>
+                    <th>Status</th>
+                    <th className="report-num">Overdue Days</th>
+                    <th className="report-num">Total Overdue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length ? (
+                    rows.map((row) => {
+                      const phoneClean = (row.party_phone || "").replace(/[^0-9]/g, "");
+                      return (
+                        <tr key={row.party_id} className={row.is_limit_exceeded ? "bg-red-50/50 dark:bg-red-950/20" : ""}>
+                          <td>
+                            <details>
+                              <summary className="cursor-pointer font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                                {row.party_name}
+                                {row.is_limit_exceeded && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-normal">Limit Exceeded</span>
+                                )}
+                              </summary>
+                              <div className="mt-2 min-w-[50rem] p-2 bg-gray-50 dark:bg-slate-800 rounded border border-gray-200 dark:border-slate-700">
+                                <h4 className="text-xs font-semibold mb-1 text-gray-700 dark:text-gray-300">Overdue Unpaid Invoices:</h4>
+                                <table className="report-table">
+                                  <thead>
+                                    <tr>
+                                      <th>Reference</th>
+                                      <th>Type</th>
+                                      <th>Invoice Date</th>
+                                      <th>Due Date</th>
+                                      <th className="report-num">Invoice Amount</th>
+                                      <th className="report-num">Paid</th>
+                                      <th className="report-num">Overdue Balance</th>
+                                      <th className="report-num">Days Overdue</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(row.overdue_entries || []).map((entry) => (
+                                      <tr key={entry.ledger_id}>
+                                        <td className="font-mono text-xs">{entry.reference}</td>
+                                        <td>{entry.entry_type === "manual" ? "Manual" : "Invoice"}</td>
+                                        <td>{entry.date}</td>
+                                        <td className="font-medium text-amber-700 dark:text-amber-400">{entry.due_date}</td>
+                                        <td className="report-num">{money(entry.invoice_amount)}</td>
+                                        <td className="report-num">{money(entry.paid_on_invoice)}</td>
+                                        <td className="report-num font-bold text-red-600 dark:text-red-400">{money(entry.outstanding)}</td>
+                                        <td className="report-num font-semibold text-red-600 dark:text-red-400">
+                                          {entry.days_overdue} days
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </details>
+                          </td>
+                          <td>
+                            {row.party_phone ? (
+                              <div className="flex items-center gap-2">
+                                <a
+                                  href={`tel:${row.party_phone}`}
+                                  className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                                  title="Click to call"
+                                >
+                                  <PhoneIcon className="w-3.5 h-3.5" />
+                                  {row.party_phone}
+                                </a>
+                                {phoneClean && (
+                                  <a
+                                    href={`https://wa.me/${phoneClean.startsWith("0") ? "92" + phoneClean.slice(1) : phoneClean}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 font-semibold hover:bg-emerald-200"
+                                    title="Chat on WhatsApp"
+                                  >
+                                    WhatsApp
+                                  </a>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 text-xs">—</span>
+                            )}
+                          </td>
+                          <td className="report-num">
+                            {Number(row.credit_limit) > 0 ? `Rs. ${money(row.credit_limit)}` : "Unlimited"}
+                          </td>
+                          <td>{row.credit_days ? `${row.credit_days}d` : "Immediate"}</td>
+                          <td>
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                row.credit_status === "blocked"
+                                  ? "bg-red-100 text-red-700 dark:bg-red-900/60 dark:text-red-300"
+                                  : row.credit_status === "on_hold"
+                                  ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/60 dark:text-yellow-300"
+                                  : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300"
+                              }`}
+                            >
+                              {row.credit_status || "active"}
+                            </span>
+                          </td>
+                          <td className="report-num">
+                            <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                              row.max_days_overdue > 60
+                                ? "bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-300"
+                                : row.max_days_overdue > 30
+                                ? "bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300"
+                                : "bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300"
+                            }`}>
+                              {row.max_days_overdue || 0} days
+                            </span>
+                          </td>
+                          <td className="report-num font-extrabold text-red-600 dark:text-red-400 text-sm">
+                            {money(row.total_overdue)}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={7} className="report-muted text-center py-6">
+                        {loading ? "Loading work queue…" : "No overdue accounts found."}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            ) : (
+              <table className="report-table report-table-medium">
+                <thead>
+                  <tr>
+                    <th>{selectedPartyType === "customers" ? "Customer" : "Supplier"}</th>
+                    <th className="report-num">Limit</th>
+                    <th>Terms</th>
+                    <th>Status</th>
+                    <th className="report-num">Open</th>
+                    {agingBy === "due_date" ? (
+                      <>
+                        <th className="report-num text-emerald-600 dark:text-emerald-400">Current</th>
+                        <th className="report-num">1–30 days</th>
+                        <th className="report-num">31–60 days</th>
+                        <th className="report-num">61–90 days</th>
+                        <th className="report-num">Over 90d</th>
+                        <th className="report-num font-bold">Total</th>
+                        <th className="report-num font-bold text-red-600 dark:text-red-400">Overdue</th>
+                      </>
+                    ) : (
+                      <>
+                        <th className="report-num">0–30 days</th>
+                        <th className="report-num">31–60 days</th>
+                        <th className="report-num">61–90 days</th>
+                        <th className="report-num">Over 90d</th>
+                        <th className="report-num font-bold">Total</th>
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length ? (
+                    rows.map((row) => (
+                      <tr key={row.party_id} className={row.is_limit_exceeded ? "bg-red-50/40 dark:bg-red-950/20" : ""}>
+                        <td>
+                          <details>
+                            <summary className="cursor-pointer font-medium flex items-center gap-1.5">
+                              {row.party_name}
+                              {row.is_limit_exceeded && (
+                                <span className="text-[10px] px-1 py-0.2 rounded bg-red-100 text-red-700 font-normal">Limit Exceeded</span>
+                              )}
+                            </summary>
+                            <div className="mt-2 min-w-[50rem] p-2 bg-gray-50 dark:bg-slate-800 rounded border border-gray-200 dark:border-slate-700">
+                              <table className="report-table">
+                                <thead>
+                                  <tr>
+                                    <th>Reference</th>
+                                    <th>Type</th>
+                                    <th>Date</th>
+                                    <th>Due Date</th>
+                                    <th className="report-num">Original</th>
+                                    <th className="report-num">Paid</th>
+                                    <th className="report-num">Allocated</th>
+                                    <th className="report-num">Outstanding</th>
+                                    <th className="report-num">Age</th>
+                                    <th className="report-num">Overdue</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {row.entries.map((entry) => (
+                                    <tr key={entry.ledger_id}>
+                                      <td>{entry.reference}</td>
+                                      <td>{entry.entry_type === "manual" ? "Manual" : "Invoice"}</td>
+                                      <td>{entry.date}</td>
+                                      <td className={entry.is_overdue ? "text-red-600 font-medium" : "text-gray-600"}>{entry.due_date}</td>
+                                      <td className="report-num">{money(entry.invoice_amount)}</td>
+                                      <td className="report-num">{money(entry.paid_on_invoice)}</td>
+                                      <td className="report-num">{money(entry.payments_applied)}</td>
+                                      <td className="report-num report-strong">{money(entry.outstanding)}</td>
+                                      <td className="report-num">{entry.age_days}d</td>
+                                      <td className={`report-num ${entry.is_overdue ? "font-bold text-red-600" : "text-emerald-600"}`}>
+                                        {entry.is_overdue ? `${entry.days_overdue}d` : "Not due"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </details>
+                        </td>
+                        <td className="report-num text-xs font-mono">
+                          {Number(row.credit_limit) > 0 ? `Rs. ${money(row.credit_limit)}` : "—"}
+                        </td>
+                        <td className="text-xs">{row.credit_days ? `${row.credit_days}d` : "Immediate"}</td>
+                        <td>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              row.credit_status === "blocked"
+                                ? "bg-red-100 text-red-700 dark:bg-red-900/60 dark:text-red-300"
+                                : row.credit_status === "on_hold"
+                                ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/60 dark:text-yellow-300"
+                                : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300"
+                            }`}
+                          >
+                            {row.credit_status || "active"}
+                          </span>
+                        </td>
+                        <td className="report-num">{number(row.open_entry_count).toLocaleString()}</td>
+                        {agingBy === "due_date" ? (
+                          <>
+                            <td className="report-num text-emerald-600 dark:text-emerald-400 font-medium">{money(row.current)}</td>
+                            <td className="report-num">{money(row.days_1_30)}</td>
+                            <td className="report-num">{money(row.days_31_60)}</td>
+                            <td className="report-num">{money(row.days_61_90)}</td>
+                            <td className="report-num">{money(row.over_90)}</td>
+                            <td className="report-num report-strong">{money(row.total)}</td>
+                            <td className="report-num font-bold text-red-600 dark:text-red-400">{money(row.total_overdue)}</td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="report-num">{money(row.days_0_30)}</td>
+                            <td className="report-num">{money(row.days_31_60)}</td>
+                            <td className="report-num">{money(row.days_61_90)}</td>
+                            <td className="report-num">{money(row.over_90)}</td>
+                            <td className="report-num report-strong">{money(row.total)}</td>
+                          </>
+                        )}
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={agingBy === "due_date" ? 12 : 10} className="report-muted text-center py-6">
+                        Load the report to view data.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                {rows.length > 0 && (
+                  <tfoot>
+                    <tr className="report-total-row">
+                      <td>Totals</td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td className="report-num">{number(selectedAgingSummary.open_entry_count).toLocaleString()}</td>
+                      {agingBy === "due_date" ? (
+                        <>
+                          <td className="report-num text-emerald-600 dark:text-emerald-400 font-bold">{money(selectedAgingSummary.current)}</td>
+                          <td className="report-num">{money(selectedAgingSummary.days_1_30)}</td>
+                          <td className="report-num">{money(selectedAgingSummary.days_31_60)}</td>
+                          <td className="report-num">{money(selectedAgingSummary.days_61_90)}</td>
+                          <td className="report-num">{money(selectedAgingSummary.over_90)}</td>
+                          <td className="report-num report-strong">{money(selectedAgingSummary.total)}</td>
+                          <td className="report-num font-bold text-red-600 dark:text-red-400">{money(selectedAgingSummary.total_overdue)}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="report-num">{money(selectedAgingSummary.days_0_30)}</td>
+                          <td className="report-num">{money(selectedAgingSummary.days_31_60)}</td>
+                          <td className="report-num">{money(selectedAgingSummary.days_61_90)}</td>
+                          <td className="report-num">{money(selectedAgingSummary.over_90)}</td>
+                          <td className="report-num report-strong">{money(selectedAgingSummary.total)}</td>
+                        </>
+                      )}
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            )
           ) : type === "reorder" ? (
             <table className="report-table report-table-medium">
               <thead><tr><th>Product</th><th>Category</th><th>Brand</th><th className="report-num">On hand</th><th className="report-num">Pack size</th><th className="report-num">Suggested reorder</th><th className="report-num">Unit cost</th><th className="report-num">Estimated value</th></tr></thead>

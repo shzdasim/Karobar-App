@@ -14,6 +14,7 @@ class PurchaseInvoice extends Model
         'payment_method',
         'posted_number',
         'posted_date',
+        'due_date',
         'remarks',
         'invoice_number',
         'invoice_amount',
@@ -23,6 +24,7 @@ class PurchaseInvoice extends Model
         'discount_amount',
         'total_amount',
         'total_paid',
+        'account_id',
         'status',
         'reversed_at',
         'reversed_by_id',
@@ -35,6 +37,11 @@ class PurchaseInvoice extends Model
     public function supplier()
     {
         return $this->belongsTo(Supplier::class);
+    }
+
+    public function account()
+    {
+        return $this->belongsTo(Account::class);
     }
 
     public function items()
