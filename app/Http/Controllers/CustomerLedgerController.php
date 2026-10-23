@@ -92,13 +92,14 @@ class CustomerLedgerController extends Controller
                 $inv->sub_total ?? null
             );
 
-            // Received on Invoice - robust to spelling/alt columns
-            $receivedOnInv = $this->num(
+            // Received on Invoice - robust to spelling/alt columns (capped at invoice total for invoice row)
+            $rawReceived = $this->num(
                 $inv->total_receive ?? null,
                 $inv->total_recieve ?? null,
                 $inv->received ?? null,
                 $inv->amount_received ?? null
             );
+            $receivedOnInv = min($rawReceived, $invoiceTotal);
 
             // Balance remaining for this invoice (what's still owed)
             $balanceRemaining = max($invoiceTotal - $receivedOnInv, 0);
@@ -443,6 +444,8 @@ class CustomerLedgerController extends Controller
                     $inv->received ?? null,
                     $inv->amount_received ?? null
                 );
+                $recvOnInv = min($recv, $invTotal);
+                $excess = max(0.0, $recv - $invTotal);
 
                 // Use 'date' column from sale_invoices (not invoice_date which doesn't exist)
                 $entryDate = $inv->date ?? now()->toDateString();
@@ -458,13 +461,40 @@ class CustomerLedgerController extends Controller
                         'entry_date'        => $entryDate,
                         'posted_number'     => $this->str($inv->posted_number),
                         'invoice_total'     => $invTotal,
-                        'total_received'    => $recv,
-                        'balance_remaining' => max($invTotal - $recv, 0),
+                        'total_received'    => $recvOnInv,
+                        'balance_remaining' => max($invTotal - $recvOnInv, 0),
                         'credited_amount'   => 0,
                         'payment_ref'       => null,
                         'description'       => $this->str($inv->invoice_no ? ('Invoice #'.$inv->invoice_no) : null),
                     ]
                 );
+
+                if ($excess > 0) {
+                    CustomerLedger::updateOrCreate(
+                        [
+                            'customer_id'     => $customerId,
+                            'payment_ref'     => 'Inv #' . $this->str($inv->posted_number),
+                            'entry_type'      => 'payment',
+                            'is_manual'       => false,
+                        ],
+                        [
+                            'sale_invoice_id'   => null,
+                            'entry_date'        => $entryDate,
+                            'posted_number'     => $this->str($inv->posted_number),
+                            'invoice_total'     => 0,
+                            'total_received'    => 0,
+                            'balance_remaining' => 0,
+                            'credited_amount'   => $excess,
+                            'description'       => 'Payment received on invoice ' . $this->str($inv->posted_number),
+                        ]
+                    );
+                } else {
+                    CustomerLedger::where('customer_id', $customerId)
+                        ->where('payment_ref', 'Inv #' . $this->str($inv->posted_number))
+                        ->where('entry_type', 'payment')
+                        ->where('is_manual', false)
+                        ->delete();
+                }
             }
         });
 
@@ -544,7 +574,8 @@ class CustomerLedgerController extends Controller
         ->map(function ($inv) use ($hasInvoiceDate, $hasInvoiceNo) {
             // robust totals
             $t = (float) ($inv->invoice_total ?? $inv->total ?? $inv->grand_total ?? $inv->net_total ?? $inv->gross_amount ?? $inv->sub_total ?? 0);
-            $r = (float) ($inv->total_receive ?? $inv->total_recieve ?? $inv->received ?? $inv->amount_received ?? 0);
+            $rawR = (float) ($inv->total_receive ?? $inv->total_recieve ?? $inv->received ?? $inv->amount_received ?? 0);
+            $r = min($rawR, $t);
 
             // entry date
             $rawDate   = $hasInvoiceDate ? ($inv->invoice_date ?? $inv->date) : $inv->date;

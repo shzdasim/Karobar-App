@@ -49,7 +49,9 @@ class CustomerLedger extends Model
             ->get();
 
         $totalInvoiced = $invoiceRows->sum('invoice_total');
-        $receivedOnInv = $invoiceRows->sum('total_received');
+        $receivedOnInv = $invoiceRows->sum(function ($r) {
+            return min((float)($r->total_received ?? 0), (float)($r->invoice_total ?? 0));
+        });
 
         // Get payments (money received from customer)
         $paymentsCred = self::where('customer_id', $customerId)

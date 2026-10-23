@@ -14,6 +14,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 import { useInvoiceDraft } from "@/hooks/useInvoiceDraft.js";
+import { useCurrency } from "@/context/CurrencyContext.jsx";
 import InvoiceDraftIndicator from "@/components/InvoiceDraftIndicator.jsx";
 import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
 
@@ -58,6 +59,7 @@ const normalizeFormLoaded = (f) => {
   safe.gross_amount = safe.gross_amount ?? "";
   safe.total = safe.total ?? "";
   safe.total_receive = safe.total_receive ?? "";
+  safe.cash_given = safe.cash_given ?? "";
   safe.payment_method = safe.payment_method ?? "cash";
   safe.items = Array.isArray(safe.items)
     ? safe.items.map((it, idx) => {
@@ -118,6 +120,7 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
     gross_amount: "",
     total: "",
     total_receive: "",
+    cash_given: "",
     payment_method: "cash",
     items: [
       {
@@ -171,6 +174,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
       gross_amount: "",
       total: "",
       total_receive: "",
+      cash_given: "",
       payment_method: "cash",
       items: [
         {
@@ -381,25 +385,57 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
   const btnSecondary = getButtonClasses.secondary;
   const btnDanger = getButtonClasses.danger;
 
+  const { formatCurrency } = useCurrency();
+  const billTotal = Math.round(Number(form.total || 0));
+  const cashGivenNum = form.cash_given !== "" && form.cash_given !== undefined ? Number(form.cash_given) : null;
+  const changeToReturn = form.invoice_type === "credit"
+    ? (cashGivenNum !== null && Number(form.total_receive || 0) < cashGivenNum ? cashGivenNum - Number(form.total_receive || 0) : 0)
+    : (cashGivenNum !== null && cashGivenNum > billTotal ? cashGivenNum - billTotal : 0);
+  const remainingDue = Math.max(0, billTotal - Math.round(Number(form.total_receive || 0)));
+  const excessCredit = form.invoice_type === "credit" && Math.round(Number(form.total_receive || 0)) > billTotal
+    ? Math.round(Number(form.total_receive || 0)) - billTotal
+    : 0;
+
+  const handleCashGivenChange = (raw) => {
+    const val = sanitizeNumberInput(raw, true, false);
+    const givenNum = Number(val || 0);
+    const totalNum = Math.round(Number(form.total || 0));
+
+    setForm((prev) => {
+      const next = { ...prev, cash_given: val };
+      if (prev.invoice_type !== "credit") {
+        next.total_receive = String(totalNum);
+      } else {
+        if (val === "") {
+          next.total_receive = "";
+        } else {
+          next.total_receive = String(givenNum);
+        }
+        setReceiveTouched(true);
+      }
+      return next;
+    });
+  };
+
   const paymentSelectStyles = useMemo(() => ({
     control: (base, state) => ({
       ...base,
-      minHeight: "32px",
-      height: "32px",
-      borderRadius: 8,
+      minHeight: "28px",
+      height: "28px",
+      borderRadius: 6,
       backgroundColor: isDark ? "#334155" : "#ffffff",
       borderColor: state.isFocused
         ? (themeColors.primary || "#3b82f6")
         : (isDark ? "#475569" : "#e2e8f0"),
       boxShadow: "none",
-      fontSize: "12px",
+      fontSize: "11px",
       fontWeight: 600,
     }),
-    valueContainer: (base) => ({ ...base, padding: "0 8px", height: "30px" }),
-    indicatorsContainer: (base) => ({ ...base, height: "30px" }),
-    dropdownIndicator: (base) => ({ ...base, padding: 2 }),
+    valueContainer: (base) => ({ ...base, padding: "0 6px", height: "26px" }),
+    indicatorsContainer: (base) => ({ ...base, height: "26px" }),
+    dropdownIndicator: (base) => ({ ...base, padding: 1 }),
     input: (base) => ({ ...base, color: isDark ? "#f8fafc" : "#1e293b", margin: 0, padding: 0 }),
-    singleValue: (base) => ({ ...base, color: isDark ? "#f8fafc" : "#1e293b", fontSize: "12px" }),
+    singleValue: (base) => ({ ...base, color: isDark ? "#f8fafc" : "#1e293b", fontSize: "11px" }),
     menuPortal: (base) => ({ ...base, zIndex: 9999 }),
     menu: (base) => ({
       ...base,
@@ -417,8 +453,8 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
         ? (isDark ? "#334155" : "#f1f5f9")
         : "transparent",
       color: state.isSelected ? "#ffffff" : (isDark ? "#f8fafc" : "#1e293b"),
-      fontSize: "12px",
-      padding: "6px 10px",
+      fontSize: "11px",
+      padding: "4px 8px",
       cursor: "pointer",
     }),
   }), [isDark, themeColors]);
@@ -654,7 +690,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
     let next = recalcFooter(tmp, name);
     next[name] = v;
     if (!receiveTouched && form.invoice_type !== "credit") next.total_receive = next.total ?? "";
-    if (form.invoice_type === "credit") next.total_receive = "";
+    if (!receiveTouched && form.invoice_type === "credit") next.total_receive = "";
     setForm(next);
   };
 
@@ -707,7 +743,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
       items[index] = row;
       let updated = recalcFooter({ ...prev, items }, "items");
       if (!receiveTouched && prev.invoice_type !== "credit") updated.total_receive = updated.total ?? "";
-      if (prev.invoice_type === "credit") updated.total_receive = "";
+      if (!receiveTouched && prev.invoice_type === "credit") updated.total_receive = "";
       return updated;
     });
   }
@@ -743,9 +779,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
         }
         return afterFooter;
       }
-      if (prev.invoice_type === "credit") {
-        next.total_receive = "";
-      }
+
       return next;
     });
   };
@@ -755,7 +789,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
     const items = form.items.filter((_, idx) => idx !== i);
     let next = recalcFooter({ ...form, items }, "items");
     if (!receiveTouched && form.invoice_type !== "credit") next.total_receive = next.total ?? "";
-    if (form.invoice_type === "credit") next.total_receive = "";
+    if (!receiveTouched && form.invoice_type === "credit") next.total_receive = "";
     setForm(next);
   };
 
@@ -783,7 +817,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
       );
       let next = recalcFooter({ ...prev, items: items2 }, "items");
       if (!receiveTouched && prev.invoice_type !== "credit") next.total_receive = next.total ?? "";
-      if (prev.invoice_type === "credit") next.total_receive = "";
+      if (!receiveTouched && prev.invoice_type === "credit") next.total_receive = "";
       return next;
     });
   };
@@ -950,7 +984,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
       );
       let next = recalcFooter({ ...prev, items }, "items");
       if (!receiveTouched && prev.invoice_type !== "credit") next.total_receive = next.total ?? "";
-      if (prev.invoice_type === "credit") next.total_receive = "";
+      if (!receiveTouched && prev.invoice_type === "credit") next.total_receive = "";
       return next;
     });
 
@@ -1008,7 +1042,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
       items[rowIndex] = recalcItem(updated, "batch_select");
       let next = recalcFooter({ ...prev, items }, "items");
       if (!receiveTouched && prev.invoice_type !== "credit") next.total_receive = next.total ?? "";
-      if (prev.invoice_type === "credit") next.total_receive = "";
+      if (!receiveTouched && prev.invoice_type === "credit") next.total_receive = "";
       return next;
     });
     setTimeout(() => {
@@ -1150,7 +1184,9 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
       const totalNum = Math.round(Number(form.total || 0));
       const recvNum = Math.round(Number(form.total_receive || 0));
       if (recvNum < 0) return invoiceErrors.showMessage("Total Receive cannot be negative");
-      if (recvNum > totalNum) return invoiceErrors.showMessage("Total Receive cannot exceed Total");
+      if (form.invoice_type !== "credit" && recvNum > totalNum) {
+        return invoiceErrors.showMessage("Total Receive cannot exceed Total");
+      }
     }
 
     // Always set sale_type to wholesale for this form
@@ -1183,6 +1219,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
         };
       }),
     };
+    delete payload.cash_given;
 
     try {
       if (saleId) {
@@ -1320,7 +1357,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
   return (
     <>
       <form
-        className={`sale-entry sale-entry-form h-[calc(100vh-130px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`}
+        className={`sale-entry sale-entry-form flex flex-col flex-1 h-auto lg:h-[calc(100dvh-130px)] min-h-0 overflow-y-auto lg:overflow-hidden ${isDark ? "bg-slate-900" : "bg-white"}`}
         autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
         onSubmit={(e) => {
           e.preventDefault();
@@ -1435,120 +1472,127 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
             </button>
           </div>
         </div>
-
-        {/* Fields Card */}
-        <div className="sale-entry-details px-3 py-2">
-          <div className="grid grid-cols-12 gap-2 items-end">
-            <div className="col-span-2">
-              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Posted #</label>
-              <input
-                type="text"
-                readOnly
-                value={form.posted_number || ""}
-                placeholder={saleId ? "" : "Auto on Save"}
-                autoComplete="off"
-                className={`w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] ${
-                  isDark 
-                    ? "bg-slate-700 text-slate-200 placeholder-slate-500" 
-                    : "bg-gray-100 text-gray-800"
-                }`}
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Date</label>
-              <input
-                type="date"
-                name="date"
-                value={form.date ?? ""}
-                onChange={handleHeaderChange}
-                autoComplete="off"
-                className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
-              />
-            </div>
-<div className="col-span-4">
-              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Customer *</label>
-              <button
-                type="button"
-                onClick={() => setCustomerSearchOpen(true)}
-                className={`w-full h-9 px-3 rounded-lg border text-left text-sm flex items-center gap-2 transition-all ${
-                  selectedCustomer
-                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200"
-                    : "border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-500 dark:text-gray-400 hover:border-blue-400"
-                }`}
-                title={selectedCustomer?.name || "Click to search customer..."}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
-                {selectedCustomer ? (
-                  <span className="truncate font-medium">{selectedCustomer.name}</span>
-                ) : (
-                  <span className="truncate">Click to search customer...</span>
-                )}
-              </button>
-            </div>
-            {isPharmacy && (
-            <div className="col-span-2">
-              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Doctor</label>
-              <input
-                type="text"
-                name="doctor_name"
-                value={form.doctor_name ?? ""}
-                onChange={handleHeaderChange}
-                autoComplete="off"
-                className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
-              />
-            </div>
-            )}
-            {isPharmacy && (
-            <div className="col-span-2">
-              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Patient</label>
-              <input
-                type="text"
-                name="patient_name"
-                value={form.patient_name ?? ""}
-                onChange={handleHeaderChange}
-                autoComplete="off"
-                className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
-              />
-            </div>
-            )}
-
-            <div className="col-span-10">
-              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Remarks</label>
-              <input
-                type="text"
-                name="remarks"
-                value={form.remarks ?? ""}
-                onChange={handleHeaderChange}
-                autoComplete="off"
-                className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Items</label>
-              <input
-                type="text"
-                readOnly
-                value={form.items.length}
-                autoComplete="off"
-                className={`w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] text-center ${
-                  isDark ? "bg-slate-700 text-slate-200" : "bg-gray-100 text-gray-800"
-                }`}
-              />
-            </div>
-          </div>
-        </div>
       </div>
 
-      {/* Main workspace: Items + Summary */}
-      <div className={`sale-entry-workspace flex-1 grid grid-cols-[1fr_280px] gap-2 px-2 py-2 overflow-hidden ${isDark ? "bg-slate-900" : "bg-white"}`}>
-        {/* LEFT: Items */}
-        <div className="flex flex-col min-h-0">
-          <div className={`text-[11px] font-semibold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Items</div>
-          <div ref={itemsScrollRef} className={`sale-entry-items flex-1 overflow-auto border-2 rounded-sm relative ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
-            <table className="w-full text-[11px] table-fixed border-collapse" autoComplete="off">
+      {/* Main workspace: Left (Compact Top Fields + Items) and Right (Squeezed Summary) */}
+      <div className={`sale-entry-workspace flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_230px] gap-2 p-2 overflow-visible lg:overflow-hidden ${isDark ? "bg-slate-900" : "bg-slate-50/50"}`}>
+        {/* LEFT COLUMN: Top Banner Fields + Items Table */}
+        <div className="flex flex-col min-h-0 flex-1 gap-1.5 overflow-hidden">
+          {/* Top Banner Details Card (Compact) */}
+          <div className={`sale-entry-details px-2.5 py-1.5 rounded-xl border shrink-0 ${isDark ? "bg-slate-800/80 border-slate-700" : "bg-white border-gray-200 shadow-2xs"}`}>
+            <div className="grid grid-cols-2 sm:grid-cols-6 lg:grid-cols-12 gap-1.5 items-end">
+              <div className="col-span-1 sm:col-span-2 lg:col-span-2">
+                <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">Posted #</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={form.posted_number || ""}
+                  placeholder={saleId ? "" : "Auto on Save"}
+                  autoComplete="off"
+                  className={`w-full h-7 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-xs font-mono ${
+                    isDark ? "bg-slate-700/60 text-slate-200 placeholder-slate-500" : "bg-gray-100 text-gray-800"
+                  }`}
+                />
+              </div>
+
+              <div className="col-span-1 sm:col-span-2 lg:col-span-2">
+                <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">Date</label>
+                <input
+                  type="date"
+                  name="date"
+                  value={form.date ?? ""}
+                  onChange={handleHeaderChange}
+                  autoComplete="off"
+                  className="w-full h-7 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
+                />
+              </div>
+
+              <div className={`col-span-2 sm:col-span-2 ${isPharmacy ? "lg:col-span-4" : "lg:col-span-8"}`}>
+                <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">Customer *</label>
+                <button
+                  ref={customerSelectRef}
+                  type="button"
+                  onClick={() => setCustomerSearchOpen(true)}
+                  className={`w-full h-7 px-2 rounded-md border text-left text-xs flex items-center justify-between transition-all ${
+                    selectedCustomer
+                      ? "border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200"
+                      : "border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:border-blue-400"
+                  }`}
+                  title={selectedCustomer?.name || "WALK-IN-CUSTOMER"}
+                >
+                  <span className="truncate font-medium flex items-center gap-1.5">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-blue-500">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                      <circle cx="12" cy="7" r="4" />
+                    </svg>
+                    <span className="truncate">{selectedCustomer?.name || "Select customer..."}</span>
+                  </span>
+                  <span className="text-[10px] text-gray-400 dark:text-slate-400 shrink-0 font-normal">Search</span>
+                </button>
+              </div>
+
+              {isPharmacy && (
+                <div className="col-span-1 sm:col-span-3 lg:col-span-2">
+                  <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">Doctor</label>
+                  <input
+                    type="text"
+                    name="doctor_name"
+                    value={form.doctor_name ?? ""}
+                    placeholder="Doctor"
+                    onChange={handleHeaderChange}
+                    autoComplete="off"
+                    className="w-full h-7 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
+                  />
+                </div>
+              )}
+
+              {isPharmacy && (
+                <div className="col-span-1 sm:col-span-3 lg:col-span-2">
+                  <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">Patient</label>
+                  <input
+                    type="text"
+                    name="patient_name"
+                    value={form.patient_name ?? ""}
+                    placeholder="Patient"
+                    onChange={handleHeaderChange}
+                    autoComplete="off"
+                    className="w-full h-7 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
+                  />
+                </div>
+              )}
+
+              {/* Row 2: Remarks + Items */}
+              <div className="col-span-2 sm:col-span-5 lg:col-span-10">
+                <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">Remarks</label>
+                <input
+                  type="text"
+                  name="remarks"
+                  value={form.remarks ?? ""}
+                  placeholder="Invoice remarks / customer notes..."
+                  onChange={handleHeaderChange}
+                  autoComplete="off"
+                  className="w-full h-7 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
+                />
+              </div>
+
+              <div className="col-span-1 sm:col-span-1 lg:col-span-2">
+                <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5 text-center">Items</label>
+                <div
+                  className={`w-full h-7 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-xs font-bold flex items-center justify-center ${
+                    isDark ? "bg-slate-700/60 text-slate-200" : "bg-gray-100 text-gray-800"
+                  }`}
+                >
+                  {form.items.length} {form.items.length === 1 ? "item" : "items"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Items Table Card */}
+          <div className="flex flex-col min-h-0 flex-1">
+            <div className={`text-[11px] font-semibold mb-0.5 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Items</div>
+            <div ref={itemsScrollRef} className={`sale-entry-items flex-1 overflow-auto border-2 rounded-sm relative ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
+              <table className="w-full text-[11px] table-fixed border-collapse" autoComplete="off">
               <thead className={`sticky top-0 z-20 ${isDark ? "bg-slate-800/90 backdrop-blur-xs border-slate-700" : "bg-white/80 backdrop-blur-xs border-gray-200/70"} border-b`}>
                 <tr className="[&>th]:py-1 [&>th]:px-1 [&>th]:text-left">
                   <th className={`w-7 text-center ${isDark ? "text-rose-400" : "text-red-600"}`}>DEL</th>
@@ -1754,29 +1798,30 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
             </table>
           </div>
         </div>
+      </div>
 
-{/* RIGHT: Summary */}
-        <div className="min-h-0">
-          <div className={`sale-entry-summary h-full flex flex-col rounded-2xl overflow-hidden ${isDark ? "bg-slate-800" : "bg-white"}`}>
+      {/* RIGHT: Squeezed Summary - compact width giving max room to items */}
+      <div className="min-h-0 w-full shrink-0 flex flex-col h-auto lg:h-full lg:w-[230px]">
+        <div className={`sale-entry-summary h-full min-h-0 flex flex-col rounded-xl overflow-hidden border ${isDark ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200 shadow-sm"}`}>
             {/* Panel Header */}
             <div
-              className="sale-entry-summary-heading px-4 py-3 flex items-center justify-between shrink-0"
+              className="sale-entry-summary-heading px-2.5 py-1.5 flex items-center justify-between shrink-0"
               style={{ background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.primaryHover})` }}
             >
-              <span className="text-white font-bold text-sm tracking-wide">Invoice Summary</span>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <span className="text-white font-bold text-xs tracking-wide">Summary</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="20" x2="18" y2="10" />
                 <line x1="12" y1="20" x2="12" y2="4" />
                 <line x1="6" y1="20" x2="6" y2="14" />
               </svg>
             </div>
 
-            {/* Non-scrollable content */}
-            <div className="sale-summary-body flex-1 flex flex-col min-h-0 px-4 py-3 text-[12px]">
-              {/* Equal-width inputs */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Margin %</label>
+            {/* Scrollable content on small heights */}
+            <div className="sale-summary-body flex-1 flex flex-col min-h-0 px-2.5 py-1.5 text-xs overflow-y-auto">
+              <div className="space-y-1">
+                {/* Margin % */}
+                <div className="flex items-center justify-between gap-1.5">
+                  <label className={`font-semibold text-xs shrink-0 ${isDark ? "text-slate-400" : "text-gray-500"}`}>Margin %</label>
                   <input
                     type="text"
                     name="margin_percentage"
@@ -1784,7 +1829,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                     value={marginPct}
                     onChange={(e) => setMarginPct(sanitizeNumberInput(e.target.value, true))}
                     autoComplete="off"
-                    className={`w-28 h-8 border rounded-lg px-2 text-center font-extrabold text-[13px] ${
+                    className={`w-24 h-6.5 border rounded-md px-2 text-center font-extrabold text-xs ${
                       isDark 
                         ? "border-slate-600 bg-slate-700 text-rose-400 placeholder-slate-500" 
                         : "border-gray-200 bg-gray-50 text-red-600"
@@ -1792,15 +1837,16 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                   />
                 </div>
 
-                <div className="flex items-center justify-between gap-2">
-                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Tax %</label>
+                {/* Tax % */}
+                <div className="flex items-center justify-between gap-1.5">
+                  <label className={`font-semibold text-xs shrink-0 ${isDark ? "text-slate-400" : "text-gray-500"}`}>Tax %</label>
                   <input
                     type="text"
                     name="tax_percentage"
                     value={form.tax_percentage ?? ""}
                     onChange={handleHeaderChange}
                     autoComplete="off"
-                    className={`w-28 h-8 border rounded-lg px-2 text-center text-[12px] ${
+                    className={`w-24 h-6.5 border rounded-md px-2 text-center text-xs ${
                       isDark 
                         ? "border-slate-600 bg-slate-700 text-slate-200" 
                         : "border-gray-200 text-gray-800"
@@ -1808,15 +1854,16 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                   />
                 </div>
 
-                <div className={`flex items-center justify-between border-t border-dashed pt-2 ${isDark ? "border-slate-700" : "border-gray-200"}`}>
-                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Tax Amt</label>
+                {/* Tax Amt */}
+                <div className={`flex items-center justify-between gap-1.5 border-t border-dashed pt-0.5 ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+                  <label className={`font-semibold text-xs shrink-0 ${isDark ? "text-slate-400" : "text-gray-500"}`}>Tax Amt</label>
                   <input
                     type="text"
                     name="tax_amount"
                     value={form.tax_amount ?? ""}
                     onChange={handleHeaderChange}
                     autoComplete="off"
-                    className={`w-28 h-8 border rounded-lg px-2 text-right font-semibold text-[12px] ${
+                    className={`w-24 h-6.5 border rounded-md px-2 text-right font-semibold text-xs ${
                       isDark 
                         ? "border-slate-600 bg-slate-700 text-slate-200" 
                         : "border-gray-200 text-gray-800"
@@ -1824,8 +1871,9 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                   />
                 </div>
 
-                <div className="flex items-center justify-between gap-2">
-                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Disc %</label>
+                {/* Disc % */}
+                <div className="flex items-center justify-between gap-1.5">
+                  <label className={`font-semibold text-xs shrink-0 ${isDark ? "text-slate-400" : "text-gray-500"}`}>Disc %</label>
                   <input
                     type="text"
                     name="discount_percentage"
@@ -1841,7 +1889,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                       }
                     }}
                     autoComplete="off"
-                    className={`w-28 h-8 border rounded-lg px-2 text-center text-[12px] ${
+                    className={`w-24 h-6.5 border rounded-md px-2 text-center text-xs ${
                       isDark 
                         ? "border-slate-600 bg-slate-700 text-slate-200" 
                         : "border-gray-200 text-gray-800"
@@ -1849,15 +1897,16 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                   />
                 </div>
 
-                <div className={`flex items-center justify-between border-t border-dashed pt-2 ${isDark ? "border-slate-700" : "border-gray-200"}`}>
-                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Disc Amt</label>
+                {/* Disc Amt */}
+                <div className={`flex items-center justify-between gap-1.5 border-t border-dashed pt-0.5 ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+                  <label className={`font-semibold text-xs shrink-0 ${isDark ? "text-slate-400" : "text-gray-500"}`}>Disc Amt</label>
                   <input
                     type="text"
                     name="discount_amount"
                     value={form.discount_amount ?? ""}
                     onChange={handleHeaderChange}
                     autoComplete="off"
-                    className={`w-28 h-8 border rounded-lg px-2 text-right font-semibold text-[12px] ${
+                    className={`w-24 h-6.5 border rounded-md px-2 text-right font-semibold text-xs ${
                       isDark 
                         ? "border-slate-600 bg-slate-700 text-slate-200" 
                         : "border-gray-200 text-gray-800"
@@ -1866,28 +1915,28 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                 </div>
               </div>
 
-              {/* Totals */}
+              {/* Totals Banner */}
               <div
-                className="mt-3 px-4 py-3 rounded-xl"
-                style={{ background: `linear-gradient(135deg, ${themeColors.primary}1a, ${themeColors.primaryHover}26)` }}
+                className="my-1 px-2.5 py-1.5 rounded-lg shrink-0"
+                style={{ background: `linear-gradient(135deg, ${themeColors.primary}18, ${themeColors.primaryHover}26)` }}
               >
-                <div className="flex items-center justify-between mb-1">
-                  <span className={`text-[10px] font-medium uppercase tracking-wide ${isDark ? "text-slate-400" : "text-gray-500"}`}>Gross</span>
-                  <span className={`text-[13px] font-bold ${isDark ? "text-slate-200" : "text-gray-800"}`}>{form.gross_amount ?? 0}</span>
+                <div className="flex items-center justify-between">
+                  <span className={`text-[9.5px] font-medium uppercase tracking-wide ${isDark ? "text-slate-400" : "text-gray-500"}`}>Gross</span>
+                  <span className={`text-[11px] font-bold ${isDark ? "text-slate-200" : "text-gray-800"}`}>{form.gross_amount ?? 0}</span>
                 </div>
-                <div className="flex items-center justify-between border-t border-dashed pt-2" style={{ borderColor: `${themeColors.primary}33` }}>
-                  <span className={`text-[13px] font-bold ${isDark ? "text-slate-200" : "text-gray-800"}`}>Total</span>
-                  <span className="text-2xl font-extrabold" style={{ color: themeColors.primary }}>
+                <div className="flex items-center justify-between border-t border-dashed pt-0.5 mt-0.5" style={{ borderColor: `${themeColors.primary}33` }}>
+                  <span className={`text-xs font-bold ${isDark ? "text-slate-200" : "text-gray-800"}`}>Total</span>
+                  <span className="text-lg font-black leading-none" style={{ color: themeColors.primary }}>
                     {form.total ?? 0}
                   </span>
                 </div>
               </div>
 
-              {/* Payment */}
-              <div className="mt-3 space-y-2">
-                <div className="flex items-center justify-between gap-2">
+              {/* Payment & Cash Tendered */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-1.5">
                   <label className={`font-semibold shrink-0 text-xs ${isDark ? "text-slate-400" : "text-gray-500"}`}>Method</label>
-                  <div className="w-36">
+                  <div className="w-28">
                     <Select
                       options={PAYMENT_METHOD_OPTIONS}
                       value={PAYMENT_METHOD_OPTIONS.find((o) => o.value === (form.payment_method || "cash")) || PAYMENT_METHOD_OPTIONS[0]}
@@ -1899,8 +1948,91 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Received</label>
+                {/* Cash Tendered / Given */}
+                <div className="pt-1 border-t border-dashed" style={{ borderColor: isDark ? "#334155" : "#e2e8f0" }}>
+                  <div className="flex items-center justify-between gap-1.5">
+                    <label className={`font-bold text-xs shrink-0 ${isDark ? "text-slate-200" : "text-gray-700"}`}>
+                      Cash Given
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder={form.invoice_type === "debit" ? String(billTotal) : "0"}
+                      value={form.cash_given ?? ""}
+                      onChange={(e) => handleCashGivenChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleSubmit(e);
+                        }
+                      }}
+                      autoComplete="off"
+                      className={`w-24 h-6.5 border-2 rounded-md px-2 text-right font-extrabold text-xs transition-all ${
+                        isDark 
+                          ? "border-blue-500/60 bg-slate-700 text-blue-300 focus:border-blue-400" 
+                          : "border-blue-400 bg-blue-50/50 text-blue-900 focus:border-blue-600 focus:bg-white"
+                      }`}
+                    />
+                  </div>
+
+                  {/* Quick suggestion chips */}
+                  <div className="flex items-center gap-1 mt-1 justify-end flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleCashGivenChange(String(billTotal))}
+                      className="px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-200 transition-colors"
+                      title="Exact bill amount"
+                    >
+                      Exact
+                    </button>
+                    {[500, 1000, 5000].map((note) => (
+                      <button
+                        key={note}
+                        type="button"
+                        onClick={() => handleCashGivenChange(String(note))}
+                        className="px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-200 transition-colors"
+                      >
+                        {note}
+                      </button>
+                    ))}
+                    {form.cash_given !== "" && form.cash_given !== undefined && (
+                      <button
+                        type="button"
+                        onClick={() => handleCashGivenChange("")}
+                        className="px-1 py-0.5 rounded text-[9.5px] text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors font-bold"
+                        title="Clear cash given"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Return to Customer (Change to hand over) */}
+                {cashGivenNum !== null && cashGivenNum > 0 && (
+                  <div
+                    className={`p-1.5 rounded-lg border flex items-center justify-between transition-all ${
+                      changeToReturn > 0
+                        ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 shadow-xs"
+                        : (isDark ? "bg-slate-700/40 border-slate-600 text-slate-300" : "bg-gray-50 border-gray-200 text-gray-700")
+                    }`}
+                  >
+                    <div>
+                      <div className="text-[9.5px] font-extrabold uppercase tracking-wider">
+                        Return
+                      </div>
+                      <div className="text-[8.5px] opacity-80">
+                        {changeToReturn > 0 ? "Change to hand over" : "Exact amount paid"}
+                      </div>
+                    </div>
+                    <div className="text-base font-black tracking-tight">
+                      {formatCurrency ? formatCurrency(changeToReturn) : changeToReturn}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between pt-0.5">
+                  <label className={`font-semibold text-xs shrink-0 ${isDark ? "text-slate-400" : "text-gray-500"}`}>Received</label>
                   <input
                     type="text"
                     name="total_receive"
@@ -1919,7 +2051,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                       }));
                     }}
                     autoComplete="off"
-                    className={`w-28 h-8 border rounded-lg px-2 text-right font-semibold text-[12px] ${
+                    className={`w-24 h-6.5 border rounded-md px-2 text-right font-semibold text-xs ${
                       isDark 
                         ? "border-slate-600 bg-slate-700 text-slate-200" 
                         : "border-gray-200 text-gray-800"
@@ -1928,25 +2060,34 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Remaining</label>
+                  <label className={`font-semibold text-xs shrink-0 ${isDark ? "text-slate-400" : "text-gray-500"}`}>Remaining Due</label>
                   <span
-                    className={`text-lg font-extrabold ${
-                      Number(form.total || 0) - Number(form.total_receive || 0) > 0
+                    className={`text-base font-extrabold ${
+                      remainingDue > 0
                         ? "text-amber-500"
                         : (isDark ? "text-emerald-400" : "text-emerald-600")
                     }`}
                   >
-                    {Math.round(Number(form.total || 0)) - Math.round(Number(form.total_receive || 0))}
+                    {remainingDue}
                   </span>
                 </div>
+
+                {form.invoice_type === "credit" && excessCredit > 0 && (
+                  <div className="flex items-center justify-between pt-0.5">
+                    <label className={`font-semibold text-xs shrink-0 ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>Ledger Credit</label>
+                    <span className={`text-sm font-extrabold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>
+                      +{excessCredit}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="px-4 py-3 shrink-0 border-t" style={{ borderColor: isDark ? "rgba(71,85,105,0.5)" : "rgba(229,231,235,0.8)" }}>
+            <div className="px-2.5 py-1.5 shrink-0 border-t" style={{ borderColor: isDark ? "rgba(71,85,105,0.5)" : "rgba(229,231,235,0.8)" }}>
               <button
                 type="button"
                 onClick={handleSubmit}
-                className={`w-full h-11 text-[13px] font-bold transition-all duration-200 ${btnPrimary.className}`}
+                className={`w-full h-8 text-xs font-bold transition-all duration-200 ${btnPrimary.className}`}
                 style={btnPrimary.style}
               >
                 {saleId ? "Edit Sale" : "Create Sale"}

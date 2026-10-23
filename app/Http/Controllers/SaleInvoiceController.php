@@ -276,6 +276,11 @@ class SaleInvoiceController extends Controller
             // Create customer ledger entry ONLY for credit sales
             $invoiceType = $data['invoice_type'] ?? 'debit';
             if ($invoiceType === 'credit') {
+                $invTotal = (float)$data['total'];
+                $totalRecv = (float)($data['total_receive'] ?? 0);
+                $recvOnInv = min($totalRecv, $invTotal);
+                $excessRecv = max(0.0, $totalRecv - $invTotal);
+
                 $ledger = new CustomerLedger();
                 $ledger->customer_id       = $data['customer_id'];
                 $ledger->sale_invoice_id   = $invoice->id;
@@ -283,14 +288,33 @@ class SaleInvoiceController extends Controller
                 $ledger->is_manual         = false;
                 $ledger->entry_date        = $data['date'];
                 $ledger->posted_number     = $posted;
-                $ledger->invoice_total     = $data['total'];
-                $ledger->total_received    = $data['total_receive'] ?? 0;
-                $ledger->balance_remaining = max((float)$data['total'] - (float)($data['total_receive'] ?? 0), 0);
+                $ledger->invoice_total     = $invTotal;
+                $ledger->total_received    = $recvOnInv;
+                $ledger->balance_remaining = max($invTotal - $recvOnInv, 0);
                 $ledger->credited_amount   = 0;
                 $ledger->payment_ref       = null;
                 $ledger->description       = 'Sale invoice ' . $posted;
                 $ledger->created_by        = $request->user()->id;
                 $ledger->save();
+
+                // If customer paid more than invoice total, credit excess to customer ledger as payment received
+                if ($excessRecv > 0) {
+                    $excessEntry = new CustomerLedger();
+                    $excessEntry->customer_id       = $data['customer_id'];
+                    $excessEntry->sale_invoice_id   = null;
+                    $excessEntry->entry_type        = 'payment';
+                    $excessEntry->is_manual         = false;
+                    $excessEntry->entry_date        = $data['date'];
+                    $excessEntry->posted_number     = $posted;
+                    $excessEntry->invoice_total     = 0;
+                    $excessEntry->total_received    = 0;
+                    $excessEntry->balance_remaining = 0;
+                    $excessEntry->credited_amount   = $excessRecv;
+                    $excessEntry->payment_ref       = 'Inv #' . $posted;
+                    $excessEntry->description       = 'Payment received on invoice ' . $posted;
+                    $excessEntry->created_by        = $request->user()->id;
+                    $excessEntry->save();
+                }
             }
 
             if ($draft) {
@@ -439,39 +463,56 @@ class SaleInvoiceController extends Controller
             if ($oldInvoiceType === 'credit' && $newInvoiceType !== 'credit') {
                 // Remove existing ledger entry for this invoice
                 CustomerLedger::where('sale_invoice_id', $invoice->id)->delete();
+                CustomerLedger::where('customer_id', $invoice->customer_id)
+                    ->where('payment_ref', 'Inv #' . $invoice->posted_number)
+                    ->where('entry_type', 'payment')
+                    ->delete();
             }
             // If invoice is now credit, create or update ledger entry
             elseif ($newInvoiceType === 'credit') {
-                // Check if a ledger entry already exists for this invoice
-                $existingLedger = CustomerLedger::where('sale_invoice_id', $invoice->id)->first();
-                
-                if ($existingLedger) {
-                    // Update existing ledger entry
-                    $existingLedger->update([
-                        'customer_id'       => $data['customer_id'],
-                        'entry_date'        => $data['date'],
-                        'invoice_total'     => $data['total'],
-                        'total_received'    => $data['total_receive'] ?? 0,
-                        'balance_remaining' => max((float)$data['total'] - (float)($data['total_receive'] ?? 0), 0),
-                        'description'       => 'Sale invoice ' . $data['posted_number'],
-                    ]);
-                } else {
-                    // Create new ledger entry
-                    $ledger = new CustomerLedger();
-                    $ledger->customer_id       = $data['customer_id'];
-                    $ledger->sale_invoice_id   = $invoice->id;
-                    $ledger->entry_type        = 'invoice';
-                    $ledger->is_manual         = false;
-                    $ledger->entry_date        = $data['date'];
-                    $ledger->posted_number     = $data['posted_number'];
-                    $ledger->invoice_total     = $data['total'];
-                    $ledger->total_received    = $data['total_receive'] ?? 0;
-                    $ledger->balance_remaining = max((float)$data['total'] - (float)($data['total_receive'] ?? 0), 0);
-                    $ledger->credited_amount   = 0;
-                    $ledger->payment_ref       = null;
-                    $ledger->description       = 'Sale invoice ' . $data['posted_number'];
-                    $ledger->created_by        = optional(Auth::user())->id;
-                    $ledger->save();
+                CustomerLedger::where('sale_invoice_id', $invoice->id)->delete();
+                CustomerLedger::where('customer_id', $invoice->customer_id)
+                    ->where('payment_ref', 'Inv #' . $invoice->posted_number)
+                    ->where('entry_type', 'payment')
+                    ->delete();
+
+                $invTotal = (float)$data['total'];
+                $totalRecv = (float)($data['total_receive'] ?? 0);
+                $recvOnInv = min($totalRecv, $invTotal);
+                $excessRecv = max(0.0, $totalRecv - $invTotal);
+
+                $ledger = new CustomerLedger();
+                $ledger->customer_id       = $data['customer_id'];
+                $ledger->sale_invoice_id   = $invoice->id;
+                $ledger->entry_type        = 'invoice';
+                $ledger->is_manual         = false;
+                $ledger->entry_date        = $data['date'];
+                $ledger->posted_number     = $data['posted_number'];
+                $ledger->invoice_total     = $invTotal;
+                $ledger->total_received    = $recvOnInv;
+                $ledger->balance_remaining = max($invTotal - $recvOnInv, 0);
+                $ledger->credited_amount   = 0;
+                $ledger->payment_ref       = null;
+                $ledger->description       = 'Sale invoice ' . $data['posted_number'];
+                $ledger->created_by        = optional(Auth::user())->id;
+                $ledger->save();
+
+                if ($excessRecv > 0) {
+                    $excessEntry = new CustomerLedger();
+                    $excessEntry->customer_id       = $data['customer_id'];
+                    $excessEntry->sale_invoice_id   = null;
+                    $excessEntry->entry_type        = 'payment';
+                    $excessEntry->is_manual         = false;
+                    $excessEntry->entry_date        = $data['date'];
+                    $excessEntry->posted_number     = $data['posted_number'];
+                    $excessEntry->invoice_total     = 0;
+                    $excessEntry->total_received    = 0;
+                    $excessEntry->balance_remaining = 0;
+                    $excessEntry->credited_amount   = $excessRecv;
+                    $excessEntry->payment_ref       = 'Inv #' . $data['posted_number'];
+                    $excessEntry->description       = 'Payment received on invoice ' . $data['posted_number'];
+                    $excessEntry->created_by        = optional(Auth::user())->id;
+                    $excessEntry->save();
                 }
             }
 
@@ -511,6 +552,10 @@ class SaleInvoiceController extends Controller
             // If credit sale, remove or balance customer ledger entry
             if ($invoice->invoice_type === 'credit') {
                 CustomerLedger::where('sale_invoice_id', $invoice->id)->delete();
+                CustomerLedger::where('customer_id', $invoice->customer_id)
+                    ->where('payment_ref', 'Inv #' . $invoice->posted_number)
+                    ->where('entry_type', 'payment')
+                    ->delete();
             }
 
             $invoice->status = 'reversed';
@@ -552,8 +597,12 @@ class SaleInvoiceController extends Controller
             $isCreditInvoice = ($invoice->invoice_type ?? 'debit') === 'credit';
 
             if ($isCreditInvoice) {
-                // Delete the original ledger entry for this invoice
+                // Delete the original ledger entry and any excess payment for this invoice
                 CustomerLedger::where('sale_invoice_id', $invoice->id)->delete();
+                CustomerLedger::where('customer_id', $invoice->customer_id)
+                    ->where('payment_ref', 'Inv #' . $invoice->posted_number)
+                    ->where('entry_type', 'payment')
+                    ->delete();
 
                 $customerId   = (int)$invoice->customer_id;
                 $postedNumber = $invoice->posted_number;
