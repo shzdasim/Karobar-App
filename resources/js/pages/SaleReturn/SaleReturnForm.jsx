@@ -9,6 +9,7 @@ import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
 import CustomerSearch from "../../components/CustomerSearch.jsx";
 import SaleInvoiceSearch from "../../components/SaleInvoiceSearch.jsx";
+import PreShiftDrawerPromptModal from "@/components/PreShiftDrawerPromptModal.jsx";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 
@@ -166,6 +167,8 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
     gross_total: 0,
     total: 0,
   });
+  const [drawerPrompt, setDrawerPrompt] = useState(null);
+  const originalReturnMetaRef = useRef(null);
   const invoiceErrors = useInvoiceErrors(form.items);
 
   const [customers, setCustomers] = useState([]);
@@ -287,12 +290,12 @@ const [saleInvoices, setSaleInvoices] = useState([]);
         setProducts(catalog);
 
 
-        if (customersArr.length) {
-          // Select customer with lowest ID (not highest)
+        if (!returnId && customersArr.length) {
+          // Select customer with lowest ID (not highest) only for new return
           const sortedCustomers = [...customersArr].sort((a, b) => a.id - b.id);
           const firstId = sortedCustomers[0]?.id;
-          setForm((prev) => ({ ...prev, customer_id: firstId }));
-          await fetchSaleInvoices(firstId);
+          setForm((prev) => (prev.customer_id ? prev : { ...prev, customer_id: firstId }));
+          if (firstId) await fetchSaleInvoices(firstId);
         }
 
         if (!returnId) setTimeout(() => saleInvoiceRef.current?.focus?.(), 50);
@@ -368,6 +371,12 @@ const [saleInvoices, setSaleInvoices] = useState([]);
           total: toNum(data.total),
         };
 
+        originalReturnMetaRef.current = {
+          created_at: data.created_at,
+          date: data.date,
+          total: toNum(data.total),
+        };
+
         setForm((prev) => recalcFooter({ ...prev, ...normalized }));
 
         if (normalized.customer_id) await fetchSaleInvoices(normalized.customer_id);
@@ -410,6 +419,10 @@ const loadInvoice = async (invoiceId) => {
       const res = await axios.get(`/api/sale-invoices/${invoiceId}`, { params: { exclude_return_id: returnId || undefined } });
       const data = res.data || {};
       setSelectedInvoiceObj(data);
+      if (data.customer_id) {
+        setForm((prev) => ({ ...prev, customer_id: data.customer_id, sale_invoice_id: invoiceId }));
+        fetchSaleInvoices(data.customer_id);
+      }
       const items = Array.isArray(data?.items) ? data.items : [];
       setInvoiceItems(items);
 
@@ -548,7 +561,12 @@ const handleSelectChange = async (field, value) => {
       return;
     }
     if (field === "sale_invoice_id") {
-      setForm((prev) => ({ ...prev, sale_invoice_id: v }));
+      const invCustomerId = value?.customer_id;
+      setForm((prev) => ({
+        ...prev,
+        sale_invoice_id: v,
+        ...(invCustomerId ? { customer_id: invCustomerId } : {}),
+      }));
       if (v) {
         await loadInvoice(v);
         // Fetch the full invoice to display its number and sync customer
@@ -813,13 +831,22 @@ const handleSelectChange = async (field, value) => {
         }
       }
 
+      // If an invoice is linked, ensure effective customer ID matches the invoice
+      const effectiveCustomerId =
+        form.sale_invoice_id &&
+        (selectedInvoiceObj?.customer_id ||
+          (saleInvoices || []).find((inv) => String(inv.id) === String(form.sale_invoice_id))?.customer_id)
+          ? selectedInvoiceObj?.customer_id ||
+            (saleInvoices || []).find((inv) => String(inv.id) === String(form.sale_invoice_id))?.customer_id
+          : form.customer_id;
+
       // Build payload - on CREATE: don't send posted_number (let server generate)
       // On UPDATE: send posted_number (preserve existing)
       const payloadToSend = returnId
         ? {
             posted_number: form.posted_number,
             date: form.date,
-            customer_id: form.customer_id,
+            customer_id: effectiveCustomerId,
             sale_invoice_id: form.sale_invoice_id || null,
             discount_percentage: toNum(form.discount_percentage),
             discount_amount: toNum(form.discount_amount),
@@ -843,7 +870,7 @@ const handleSelectChange = async (field, value) => {
         : {
             // Exclude posted_number on create - let server assign it
             date: form.date,
-            customer_id: form.customer_id,
+            customer_id: effectiveCustomerId,
             sale_invoice_id: form.sale_invoice_id || null,
             discount_percentage: toNum(form.discount_percentage),
             discount_amount: toNum(form.discount_amount),
@@ -865,19 +892,61 @@ const handleSelectChange = async (field, value) => {
               })),
           };
 
+      const doSave = async (dataPayload) => {
+        try {
+          if (returnId) {
+            await axios.put(`/api/sale-returns/${returnId}`, dataPayload);
+            window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+            try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+            toast.success("Sale return updated");
+            onSuccess?.(returnId);
+          } else {
+            const { data: saved } = await axios.post(`/api/sale-returns`, dataPayload);
+            window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+            try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+            setForm((prev) => ({ ...prev, posted_number: saved?.posted_number || prev.posted_number }));
+            toast.success(`Sale return created: ${saved?.posted_number || ""}`);
+            if (saved?.id) {
+              onSuccess?.(saved.id);
+            } else {
+              onSuccess?.();
+            }
+          }
+        } catch (e) {
+          console.error(e);
+          invoiceErrors.showError(e);
+        }
+      };
+
       if (returnId) {
-        await axios.put(`/api/sale-returns/${returnId}`, payloadToSend);
-        toast.success("Sale return updated");
-      } else {
-        const { data: saved } = await axios.post(`/api/sale-returns`, payloadToSend);
-        setForm((prev) => ({ ...prev, posted_number: saved?.posted_number || prev.posted_number }));
-        toast.success(`Sale return created: ${saved?.posted_number || ""}`);
-        if (saved?.id) {
-          onSuccess?.(saved.id);
-        } else {
-          onSuccess?.();
+        const orig = originalReturnMetaRef.current || {};
+        const oldCash = Number(orig.total ?? 0);
+        const newCash = toNum(form.total);
+        const cashDelta = Math.round((newCash - oldCash) * 100) / 100;
+
+        if (Math.abs(cashDelta) > 0.001) {
+          try {
+            const drawerRes = await axios.get("/api/cash-drawer/current");
+            if (drawerRes.data?.is_open && drawerRes.data?.session) {
+              const returnTime = new Date(orig.created_at || orig.date).getTime();
+              const shiftTime = new Date(drawerRes.data.session.opened_at).getTime();
+
+              if (returnTime < shiftTime) {
+                setDrawerPrompt({
+                  isOpen: true,
+                  oldCash,
+                  newCash,
+                  cashDelta,
+                  execute: (updateDrawer) => doSave({ ...payloadToSend, update_drawer_if_pre_shift: updateDrawer }),
+                });
+                return;
+              }
+            }
+          } catch (e) {}
         }
       }
+
+      await doSave(payloadToSend);
     } catch (e) {
       console.error(e);
       invoiceErrors.showError(e);
@@ -1398,9 +1467,24 @@ const handleSelectChange = async (field, value) => {
         <SaleInvoiceSearch
           isOpen={invoiceSearchOpen}
           onClose={() => setInvoiceSearchOpen(false)}
+          customerId={form.customer_id || undefined}
           onSelect={(invoice) => {
-            handleSelectChange("sale_invoice_id", { value: invoice?.id });
+            handleSelectChange("sale_invoice_id", { value: invoice?.id, customer_id: invoice?.customer_id });
           }}
+        />
+
+        {/* Pre-Shift Edit Cash Drawer Prompt */}
+        <PreShiftDrawerPromptModal
+          isOpen={!!drawerPrompt?.isOpen}
+          onClose={() => setDrawerPrompt(null)}
+          onConfirm={(updateDrawer) => {
+            const fn = drawerPrompt?.execute;
+            setDrawerPrompt(null);
+            if (fn) fn(updateDrawer);
+          }}
+          oldCash={drawerPrompt?.oldCash}
+          newCash={drawerPrompt?.newCash}
+          cashDelta={drawerPrompt?.cashDelta}
         />
       </form>
     </div>

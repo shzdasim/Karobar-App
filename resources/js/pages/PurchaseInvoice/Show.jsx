@@ -11,6 +11,7 @@ import PurchaseInvoiceSearch from "@/components/PurchaseInvoiceSearch.jsx";
 import DocumentHistoryModal from "@/components/DocumentHistoryModal.jsx";
 import VoidInvoiceModal from "@/components/VoidInvoiceModal.jsx";
 import RecordPaymentModal from "@/components/RecordPaymentModal.jsx";
+import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -46,11 +47,30 @@ export default function PurchaseInvoiceShow() {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [isReversing, setIsReversing] = useState(false);
 
+  // Held Invoices & Drafts state
+  const [isDraftsOpen, setIsDraftsOpen] = useState(false);
+  const [draftsList, setDraftsList] = useState([]);
+
+  const fetchDrafts = async () => {
+    try {
+      const res = await axios.get("/api/invoice-drafts", { params: { status: "draft" } });
+      const purchaseDrafts = (res.data || []).filter((d) => d.type === "purchase");
+      setDraftsList(purchaseDrafts);
+    } catch {}
+  };
+
+  useEffect(() => {
+    fetchDrafts();
+  }, []);
+
   const handleConfirmVoid = async (reason) => {
     try {
       setIsReversing(true);
       await axios.post(`/api/purchase-invoices/${id}/reverse`, { reason });
       toast.success(`Purchase Invoice ${inv?.posted_number || inv?.invoice_number || ""} reversed successfully`);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      }
       setVoidModalOpen(false);
       const { data } = await axios.get(`/api/purchase-invoices/${id}`);
       setInv(data);
@@ -199,6 +219,9 @@ export default function PurchaseInvoiceShow() {
       await axios.post("/api/auth/confirm-password", { password });
       await axios.delete(`/api/purchase-invoices/${id}`);
       toast.success("Purchase invoice deleted");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      }
       await goToPrevOrIndex(id);
       closeDeleteModal();
     } catch (e) {
@@ -235,6 +258,10 @@ export default function PurchaseInvoiceShow() {
         if (!can.create) return;
         e.preventDefault();
         navigate("/purchase-invoices/create");
+      }
+      if (k === "h") {
+        e.preventDefault();
+        setIsDraftsOpen((prev) => !prev);
       }
     };
     document.addEventListener("keydown", onKey);
@@ -340,6 +367,24 @@ return (
               >
                 <ClockIcon className="w-4 h-4" aria-hidden="true" />
                 <span>History</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  fetchDrafts();
+                  setIsDraftsOpen(true);
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-200 ${btnSecondary.className} relative flex items-center gap-1.5`}
+                style={btnSecondary.style}
+                title="Open Held Invoices (Alt+H)"
+              >
+                <ClockIcon className="w-4 h-4 text-amber-400" aria-hidden="true" />
+                <span>Held Invoices</span>
+                {draftsList.length > 0 && (
+                  <span className="inline-flex items-center justify-center px-1.5 py-0.2 text-[10px] font-bold leading-none text-white bg-amber-500 rounded-full">
+                    {draftsList.length}
+                  </span>
+                )}
               </button>
               <Guard when={can.delete}>
                 {inv.status !== 'reversed' && (
@@ -672,6 +717,29 @@ return (
           const { data } = await axios.get(`/api/purchase-invoices/${id}`);
           setInv(data);
         }}
+      />
+
+      {/* Held Invoices Modal */}
+      <InvoiceDraftsModal
+        isOpen={isDraftsOpen}
+        onClose={() => setIsDraftsOpen(false)}
+        drafts={draftsList}
+        onResumeDraft={(draftId) => {
+          navigate(`/purchase-invoices/create?draft_id=${draftId}`);
+        }}
+        onDiscardDraft={async (draftId) => {
+          try {
+            await axios.delete(`/api/invoice-drafts/${draftId}`);
+            toast.success("Draft discarded");
+            fetchDrafts();
+          } catch {
+            toast.error("Failed to discard draft");
+          }
+        }}
+        onStartBlank={() => {
+          navigate("/purchase-invoices/create");
+        }}
+        type="purchase"
       />
     </div>
   );

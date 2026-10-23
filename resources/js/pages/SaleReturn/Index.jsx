@@ -214,6 +214,9 @@ export default function SaleReturnsIndex() {
       await axios.post("/api/auth/confirm-password", { password });
       await axios.delete(`/api/sale-returns/${deletingReturn.id}`);
       toast.success("Sale return deleted");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      }
       closeDeleteModal();
 
       if (controllerRef.current) controllerRef.current.abort();

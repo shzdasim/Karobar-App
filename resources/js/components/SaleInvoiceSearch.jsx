@@ -118,7 +118,7 @@ function ResultRow({ invoice, active, onHover, onOpen, rowRef }) {
 }
 
 /* ─────────────── Main Component ─────────────── */
-export default function SaleInvoiceSearch({ isOpen, onClose, onSelect }) {
+export default function SaleInvoiceSearch({ isOpen, onClose, onSelect, customerId }) {
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -178,7 +178,8 @@ export default function SaleInvoiceSearch({ isOpen, onClose, onSelect }) {
         params: { 
           q: searchTerm, 
           page: pageNum,
-          per_page: 20 
+          per_page: 20,
+          customer_id: customerId || undefined
         },
         signal,
       });
@@ -209,7 +210,7 @@ export default function SaleInvoiceSearch({ isOpen, onClose, onSelect }) {
         setLoading(false);
       }
     }
-  }, []);
+  }, [customerId]);
 
   // Fetch recent invoices when modal opens
   useEffect(() => {
@@ -218,7 +219,7 @@ export default function SaleInvoiceSearch({ isOpen, onClose, onSelect }) {
     const searchTerm = q.trim();
     setLastSearchTerm(searchTerm);
     fetchInvoices(searchTerm, 1, false);
-  }, [isOpen]);
+  }, [isOpen, customerId]);
 
   // Close on Escape
   useEffect(() => {

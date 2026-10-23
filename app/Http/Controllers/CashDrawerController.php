@@ -146,5 +146,19 @@ class CashDrawerController extends Controller
 
         return response()->json($sessions);
     }
+
+    /**
+     * Get complete details of a specific cash drawer session for detailed reporting.
+     */
+    public function show(Request $request, $id)
+    {
+        $session = CashDrawerSession::with(['user', 'transactions.user'])->findOrFail($id);
+
+        return response()->json([
+            'session'      => $session,
+            'summary'      => $this->cashDrawerService->getSessionSummary($session),
+            'transactions' => $session->transactions()->with(['user'])->orderBy('id', 'asc')->get(),
+        ]);
+    }
 }
 

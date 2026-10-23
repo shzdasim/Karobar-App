@@ -16,6 +16,7 @@ import useRowDragAndDrop from "./useRowDragAndDrop.jsx";
 import { useInvoiceDraft } from "@/hooks/useInvoiceDraft.js";
 import InvoiceDraftIndicator from "@/components/InvoiceDraftIndicator.jsx";
 import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
+import PreShiftDrawerPromptModal from "@/components/PreShiftDrawerPromptModal.jsx";
 import { BuildingStorefrontIcon, TrashIcon, PlusCircleIcon } from "@heroicons/react/24/solid";
 
 // Six-dot grip shown on drag handles
@@ -85,6 +86,8 @@ function showAxiosError(err) {
 }
 
 export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, initialData }) {
+  const [drawerPrompt, setDrawerPrompt] = useState(null);
+  const originalInvoiceMetaRef = useRef(null);
   const [form, setForm] = useState({
     invoice_type: "debit", // "debit" = pay now, "credit" = pay later
     supplier_id: "",
@@ -370,6 +373,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
 
   const fetchInvoice = async () => {
     const res = await axios.get(`/api/purchase-invoices/${invoiceId}`);
+    originalInvoiceMetaRef.current = res.data;
     let next = recalcFooter(res.data, "init");
     // 🔗 Keep total_paid linked to total_amount on edit load
     next.total_paid = next.total_amount ?? "";
@@ -1002,35 +1006,94 @@ const contRect = container.getBoundingClientRect();
         }
       }
 
-      // If onSubmit prop is provided, use it for API calls
-      if (onSubmit) {
-        const result = await onSubmit(payloadToSend);
-        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
-        try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
-        draftHook.resetToNew();
-        onSuccess && onSuccess();
-        return result;
+      const doSave = async (dataPayload) => {
+        try {
+          // If onSubmit prop is provided, use it for API calls
+          if (onSubmit) {
+            const result = await onSubmit(dataPayload);
+            window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+            try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+            draftHook.resetToNew();
+            onSuccess && onSuccess();
+            return result;
+          }
+
+          // Original logic when onSubmit is not provided
+          if (invoiceId) {
+            await axios.put(`/api/purchase-invoices/${invoiceId}`, dataPayload);
+            window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+            try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+            toast.success("Invoice updated successfully");
+            onSuccess && onSuccess();
+          } else {
+            const { data: saved } = await axios.post("/api/purchase-invoices", dataPayload);
+            window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+            try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+            draftHook.resetToNew();
+            // Server returns created invoice with posted_number assigned — reflect it locally.
+            setForm((prev) => ({ ...prev, posted_number: saved?.posted_number || prev.posted_number }));
+            toast.success(`Invoice created: ${saved?.posted_number || "(number assigned)"}`);
+            onSuccess && onSuccess();
+          }
+        } catch (err) {
+          invoiceErrors.showError(err, submittedRowIndices);
+        } finally {
+          savingRef.current = false;
+          setSaving(false);
+        }
+      };
+
+      if (invoiceId) {
+        const orig = originalInvoiceMetaRef.current || {};
+        const oldPayMethod = orig.payment_method || "cash";
+        const oldInvType = orig.invoice_type || "debit";
+        let oldPaid = Number(orig.total_paid ?? 0);
+        if (oldInvType === "debit" && oldPaid <= 0) {
+          oldPaid = Number(orig.total_amount ?? 0);
+        }
+        const oldCash = oldPayMethod === "cash" ? oldPaid : 0;
+
+        const newPayMethod = payloadToSend.payment_method || "cash";
+        const newInvType = payloadToSend.invoice_type || "debit";
+        let newPaid = Number(payloadToSend.total_paid ?? 0);
+        if (newInvType === "debit" && newPaid <= 0) {
+          newPaid = Number(payloadToSend.total_amount ?? 0);
+        }
+        const newCash = newPayMethod === "cash" ? newPaid : 0;
+        const cashDelta = Math.round((newCash - oldCash) * 100) / 100;
+
+        if (Math.abs(cashDelta) > 0.001) {
+          try {
+            const drawerRes = await axios.get("/api/cash-drawer/current");
+            if (drawerRes.data?.is_open && drawerRes.data?.session) {
+              const invoiceTime = new Date(orig.created_at || orig.posted_date || orig.date).getTime();
+              const shiftTime = new Date(drawerRes.data.session.opened_at).getTime();
+
+              if (invoiceTime < shiftTime) {
+                savingRef.current = false;
+                setSaving(false);
+                setDrawerPrompt({
+                  isOpen: true,
+                  oldCash,
+                  newCash,
+                  cashDelta,
+                  execute: (updateDrawer) => doSave({ ...payloadToSend, update_drawer_if_pre_shift: updateDrawer }),
+                });
+                return;
+              }
+            }
+          } catch (e) {
+            // ignore drawer check error and proceed
+          }
+        }
       }
 
-      // Original logic when onSubmit is not provided
-      if (invoiceId) {
-        await axios.put(`/api/purchase-invoices/${invoiceId}`, payloadToSend);
-        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
-        try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
-        toast.success("Invoice updated successfully");
-        onSuccess && onSuccess();
-      } else {
-        const { data: saved } = await axios.post("/api/purchase-invoices", payloadToSend);
-        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
-        try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
-        draftHook.resetToNew();
-        // Server returns created invoice with posted_number assigned — reflect it locally.
-        setForm((prev) => ({ ...prev, posted_number: saved?.posted_number || prev.posted_number }));
-        toast.success(`Invoice created: ${saved?.posted_number || "(number assigned)"}`);
-        onSuccess && onSuccess();
-      }
-    } catch (err) { invoiceErrors.showError(err, submittedRowIndices); }
-    finally { savingRef.current = false; setSaving(false); }
+      await doSave(payloadToSend);
+    } catch (err) {
+      invoiceErrors.showError(err, submittedRowIndices);
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
   // Common anti-autofill props to spread on inputs
@@ -2082,6 +2145,20 @@ const contRect = container.getBoundingClientRect();
           type="purchase"
         />
       )}
+
+      {/* Pre-Shift Edit Cash Drawer Prompt */}
+      <PreShiftDrawerPromptModal
+        isOpen={!!drawerPrompt?.isOpen}
+        onClose={() => setDrawerPrompt(null)}
+        onConfirm={(updateDrawer) => {
+          const fn = drawerPrompt?.execute;
+          setDrawerPrompt(null);
+          if (fn) fn(updateDrawer);
+        }}
+        oldCash={drawerPrompt?.oldCash}
+        newCash={drawerPrompt?.newCash}
+        cashDelta={drawerPrompt?.cashDelta}
+      />
     </form>
   );
 }

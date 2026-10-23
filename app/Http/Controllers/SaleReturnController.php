@@ -195,7 +195,7 @@ class SaleReturnController extends Controller
             abort(401, 'Unauthenticated: user_id is required');
         }
 
-        return DB::transaction(function () use ($data, $userId) {
+        return DB::transaction(function () use ($data, $userId, $request) {
             app(\App\Services\ReturnEntitlement::class)->validate('sale', $data);
             // Generate posted_number server-side (concurrency-safe)
             $last = SaleReturn::lockForUpdate()->orderByDesc('id')->first();
@@ -218,6 +218,9 @@ class SaleReturnController extends Controller
             ]);
 
             $this->createItemsAndIncrease($sr, $data['items']);
+
+            // Cash drawer integration
+            app(\App\Services\CashDrawerService::class)->handleSaleReturnCreation($sr, Auth::user());
 
             return $sr->load(['customer', 'items.product']);
         });
@@ -258,7 +261,8 @@ class SaleReturnController extends Controller
             abort(401, 'Unauthenticated: user_id is required');
         }
 
-        return DB::transaction(function () use ($saleReturn, $data, $userId) {
+        return DB::transaction(function () use ($saleReturn, $data, $userId, $request) {
+            $oldTotal = (float) $saleReturn->total;
             app(\App\Services\ReturnEntitlement::class)->validate('sale', $data, $saleReturn);
             $originalItems = (int) $saleReturn->sale_invoice_id === (int) ($data['sale_invoice_id'] ?? 0)
                 && (int) $saleReturn->customer_id === (int) $data['customer_id'] ? $saleReturn->items()->get() : collect();
@@ -284,6 +288,15 @@ class SaleReturnController extends Controller
 
             $this->createItemsAndIncrease($saleReturn, $data['items'], $originalItems);
 
+            // Cash drawer integration
+            app(\App\Services\CashDrawerService::class)->syncSaleReturnUpdate(
+                $saleReturn,
+                $oldTotal,
+                (float) $saleReturn->total,
+                $request->has('update_drawer_if_pre_shift') ? $request->boolean('update_drawer_if_pre_shift') : null,
+                Auth::user()
+            );
+
             return $saleReturn->load(['customer', 'items.product']);
         });
     }
@@ -295,6 +308,10 @@ class SaleReturnController extends Controller
 
         return DB::transaction(function () use ($saleReturn) {
             app(\App\Services\ReturnEntitlement::class)->lockSource('sale', $saleReturn);
+
+            // Cash drawer integration
+            app(\App\Services\CashDrawerService::class)->handleSaleReturnDeletion($saleReturn, Auth::user());
+
             $this->revertItems($saleReturn);
             $saleReturn->items()->delete();
             $saleReturn->delete();

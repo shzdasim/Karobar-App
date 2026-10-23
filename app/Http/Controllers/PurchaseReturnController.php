@@ -173,7 +173,7 @@ public function index(Request $request)
             'items.*.sub_total'                     => 'nullable|numeric',
         ]);
 
-        return DB::transaction(function () use ($data) {
+        return DB::transaction(function () use ($data, $request) {
             app(\App\Services\ReturnEntitlement::class)->validate('purchase', $data);
             // Generate posted_number server-side (concurrency-safe)
             $last = PurchaseReturn::lockForUpdate()->orderByDesc('id')->first();
@@ -195,6 +195,9 @@ public function index(Request $request)
             ]);
 
             $this->createItemsAndReduce($pr, $data['items']);
+
+            // Cash drawer integration
+            app(\App\Services\CashDrawerService::class)->handlePurchaseReturnCreation($pr, \Illuminate\Support\Facades\Auth::user());
 
             return $pr->load(['supplier', 'purchaseInvoice', 'items.product']);
         });
@@ -231,7 +234,8 @@ public function index(Request $request)
             'items.*.sub_total'                     => 'nullable|numeric',
         ]);
 
-        return DB::transaction(function () use ($purchaseReturn, $data) {
+        return DB::transaction(function () use ($purchaseReturn, $data, $request) {
+            $oldTotal = (float) $purchaseReturn->total;
             app(\App\Services\ReturnEntitlement::class)->validate('purchase', $data, $purchaseReturn);
             // Revert previous stock effects
             $this->revertItems($purchaseReturn);
@@ -257,6 +261,15 @@ public function index(Request $request)
             // Apply new items
             $this->createItemsAndReduce($purchaseReturn, $data['items']);
 
+            // Cash drawer integration
+            app(\App\Services\CashDrawerService::class)->syncPurchaseReturnUpdate(
+                $purchaseReturn,
+                $oldTotal,
+                (float) $purchaseReturn->total,
+                $request->has('update_drawer_if_pre_shift') ? $request->boolean('update_drawer_if_pre_shift') : null,
+                \Illuminate\Support\Facades\Auth::user()
+            );
+
             return $purchaseReturn->load(['supplier', 'purchaseInvoice', 'items.product']);
         });
     }
@@ -266,6 +279,10 @@ public function index(Request $request)
         $this->authorize('delete', $purchaseReturn);
         return DB::transaction(function () use ($purchaseReturn) {
             app(\App\Services\ReturnEntitlement::class)->lockSource('purchase', $purchaseReturn);
+
+            // Cash drawer integration
+            app(\App\Services\CashDrawerService::class)->handlePurchaseReturnDeletion($purchaseReturn, \Illuminate\Support\Facades\Auth::user());
+
             $this->revertItems($purchaseReturn);
             $purchaseReturn->items()->delete();
             $purchaseReturn->delete();

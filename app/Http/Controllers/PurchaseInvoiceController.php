@@ -311,7 +311,7 @@ if ($invoiceType === 'credit') {
         ]);
 
         try {
-            return DB::transaction(function () use ($purchaseInvoice, $data, $auditService, $beforeSnapshot) {
+            return DB::transaction(function () use ($purchaseInvoice, $data, $auditService, $beforeSnapshot, $request) {
                 $order = $purchaseInvoice->purchase_order_id
                     ? PurchaseOrder::lockForUpdate()->findOrFail($purchaseInvoice->purchase_order_id) : null;
                 if ($order) {
@@ -327,6 +327,12 @@ if ($invoiceType === 'credit') {
 
                 // Store old invoice type before update
                 $oldInvoiceType = $purchaseInvoice->invoice_type ?? 'debit';
+                $oldPayMethod = $purchaseInvoice->payment_method ?? 'cash';
+                $oldPaid = (float)($purchaseInvoice->total_paid ?? 0);
+                if ($oldInvoiceType === 'debit' && $oldPaid <= 0) {
+                    $oldPaid = (float)$purchaseInvoice->total_amount;
+                }
+                $oldCashPaid = ($oldPayMethod === 'cash') ? $oldPaid : 0.0;
                 $newInvoiceType = $data['invoice_type'] ?? $oldInvoiceType;
 
                 $purchaseInvoice->load('items');
@@ -410,7 +416,7 @@ if ($invoiceType === 'credit') {
 
                 // Mark pending user demands for these products as ordered
                 $productIds = collect($data['items'])->pluck('product_id')->filter()->unique()->all();
-                if (!empty($productIds)) {
+                if (\Illuminate\Support\Facades\Schema::hasTable('user_demands') && !empty($productIds)) {
                     UserDemand::whereIn('product_id', $productIds)
                         ->whereIn('status', ['pending'])
                         ->update(['status' => 'ordered']);
@@ -463,6 +469,23 @@ if ($invoiceType === 'credit') {
                     app(SupplierProductSorting::class)->remember((int) $order->supplier_id, array_column($data['items'], 'product_id'));
                 }
 
+                // Sync with active cash drawer if applicable
+                $newPayMethod = $data['payment_method'] ?? $purchaseInvoice->payment_method ?? 'cash';
+                $newPaid = (float)($data['total_paid'] ?? 0);
+                if ($newInvoiceType === 'debit' && $newPaid <= 0) {
+                    $newPaid = (float)$data['total_amount'];
+                }
+                $newCashPaid = ($newPayMethod === 'cash') ? $newPaid : 0.0;
+                $updateDrawerFlag = $request->has('update_drawer') ? $request->boolean('update_drawer') : true;
+
+                app(\App\Services\CashDrawerService::class)->syncPurchaseInvoiceUpdate(
+                    $purchaseInvoice,
+                    $oldCashPaid,
+                    $newCashPaid,
+                    $updateDrawerFlag,
+                    Auth::user()
+                );
+
                 $auditService->recordUpdate($purchaseInvoice->fresh(['items.product', 'supplier']), $beforeSnapshot, Auth::user(), $data['reason'] ?? 'Purchase invoice updated');
 
                 return response()->json($purchaseInvoice->load('items.product', 'supplier', 'purchaseOrder'));
@@ -497,6 +520,12 @@ if ($invoiceType === 'credit') {
                 foreach ($purchaseInvoice->items as $item) {
                     $this->revertItem($item, true, true);
                 }
+
+                // Adjust cash drawer for deleted purchase invoice
+                app(\App\Services\CashDrawerService::class)->handlePurchaseInvoiceDeletion(
+                    $purchaseInvoice,
+                    Auth::user()
+                );
 
                 $purchaseInvoice->items()->delete();
                 $purchaseInvoice->delete();
@@ -567,6 +596,13 @@ if ($invoiceType === 'credit') {
             $purchaseInvoice->reversal_reason = $validated['reason'];
             $purchaseInvoice->save();
 
+            // Adjust cash drawer for reversed purchase invoice (supplier refund)
+            app(\App\Services\CashDrawerService::class)->handlePurchaseInvoiceReversal(
+                $purchaseInvoice,
+                $validated['reason'],
+                $request->user()
+            );
+
             app(\App\Services\DocumentAuditService::class)->recordReversal($purchaseInvoice, $request->user(), $validated['reason']);
 
             return response()->json([
@@ -617,7 +653,7 @@ if ($invoiceType === 'credit') {
             }
 
             // Mark pending user demands for this product as ordered
-            if (!empty($item['product_id'])) {
+            if (!empty($item['product_id']) && \Illuminate\Support\Facades\Schema::hasTable('user_demands')) {
                 UserDemand::where('product_id', $item['product_id'])
                     ->whereIn('status', ['pending'])
                     ->update(['status' => 'ordered']);

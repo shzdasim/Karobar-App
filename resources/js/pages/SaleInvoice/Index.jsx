@@ -165,6 +165,9 @@ export default function SaleInvoicesIndex() {
       setIsReversing(true);
       await axios.post(`/api/sale-invoices/${voidingInvoice.id}/reverse`, { reason });
       toast.success(`Invoice ${voidingInvoice.posted_number || ""} reversed successfully`);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      }
       setVoidModalOpen(false);
       setVoidingInvoice(null);
       fetchInvoices();
@@ -407,6 +410,9 @@ export default function SaleInvoicesIndex() {
       await axios.post("/api/auth/confirm-password", { password });
       await axios.delete(`/api/sale-invoices/${deletingInvoice.id}`);
       toast.success("Sale invoice deleted");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      }
       closeDeleteModal();
 
       if (controllerRef.current) controllerRef.current.abort();

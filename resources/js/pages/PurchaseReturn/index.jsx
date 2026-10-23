@@ -232,6 +232,9 @@ export default function PurchaseReturnsIndex() {
       await axios.post("/api/auth/confirm-password", { password });
       await axios.delete(`/api/purchase-returns/${deletingReturn.id}`);
       toast.success("Return deleted successfully");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      }
       closeDeleteModal();
 
       if (controllerRef.current) controllerRef.current.abort();

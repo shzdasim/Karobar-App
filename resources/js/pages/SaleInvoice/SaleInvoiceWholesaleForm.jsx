@@ -17,6 +17,7 @@ import { useInvoiceDraft } from "@/hooks/useInvoiceDraft.js";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import InvoiceDraftIndicator from "@/components/InvoiceDraftIndicator.jsx";
 import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
+import PreShiftDrawerPromptModal from "@/components/PreShiftDrawerPromptModal.jsx";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -166,6 +167,8 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
   // Store original invoice quantities for edit mode
   const [originalInvoiceQuantities, setOriginalInvoiceQuantities] = useState({});
+  const [drawerPrompt, setDrawerPrompt] = useState(null);
+  const originalInvoiceMetaRef = useRef(null);
   const navigate = useNavigate();
 
   const handleStartBlank = () => {
@@ -531,6 +534,14 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
 
   const fetchSale = async () => {
     const res = await axios.get(`/api/sale-invoices/${saleId}`);
+    originalInvoiceMetaRef.current = {
+      created_at: res.data.created_at,
+      date: res.data.date,
+      payment_method: res.data.payment_method,
+      invoice_type: res.data.invoice_type,
+      total_receive: res.data.total_receive,
+      total: res.data.total,
+    };
     const loaded = normalizeFormLoaded(res.data);
     const tr = Math.round(Number(loaded?.total_receive ?? 0));
     const tt = Math.round(Number(loaded?.total ?? 0));
@@ -1260,29 +1271,83 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
     };
     delete payload.cash_given;
 
-    try {
-      if (saleId) {
-        const res = await axios.put(`/api/sale-invoices/${saleId}`, payload);
-        const id = res?.data?.id ?? saleId;
-        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
-        try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
-        toast.success("Sale invoice updated");
-        navigate(`/sale-invoices/${id}`);
-      } else {
-        if (draftHook.activeDraftId) {
-          payload.draft_id = draftHook.activeDraftId;
+    const executeSave = async (dataPayload, updateDrawer = null) => {
+      try {
+        if (saleId) {
+          if (updateDrawer !== null) {
+            dataPayload.update_drawer = updateDrawer;
+          }
+          const res = await axios.put(`/api/sale-invoices/${saleId}`, dataPayload);
+          const id = res?.data?.id ?? saleId;
+          window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+          try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+          toast.success("Sale invoice updated");
+          navigate(`/sale-invoices/${id}`);
+        } else {
+          if (draftHook.activeDraftId) {
+            dataPayload.draft_id = draftHook.activeDraftId;
+          }
+          const res = await axios.post("/api/sale-invoices", dataPayload);
+          const id = res?.data?.id;
+          window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+          try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+          draftHook.resetToNew();
+          toast.success("Sale invoice created");
+          if (id) navigate(`/sale-invoices/${id}`);
+          else invoiceErrors.showMessage("Missing invoice ID from server response.");
         }
-        const res = await axios.post("/api/sale-invoices", payload);
-        const id = res?.data?.id;
-        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
-        try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
-        draftHook.resetToNew();
-        toast.success("Sale invoice created");
-        if (id) navigate(`/sale-invoices/${id}`);
-        else invoiceErrors.showMessage("Missing invoice ID from server response.");
+      } catch (err) {
+        invoiceErrors.showError(err);
       }
-    } catch (err) {
-      invoiceErrors.showError(err);
+    };
+
+    if (saleId) {
+      // Calculate cash difference
+      const orig = originalInvoiceMetaRef.current || {};
+      const oldPayMethod = orig.payment_method || "cash";
+      const oldInvType = orig.invoice_type || "debit";
+      let oldReceived = Number(orig.total_receive ?? 0);
+      if (oldInvType === "debit" && oldReceived <= 0) {
+        oldReceived = Number(orig.total ?? 0);
+      }
+      const oldCash = oldPayMethod === "cash" ? oldReceived : 0;
+
+      const newPayMethod = payload.payment_method || "cash";
+      const newInvType = payload.invoice_type || "debit";
+      let newReceived = Number(payload.total_receive ?? 0);
+      if (newInvType === "debit" && newReceived <= 0) {
+        newReceived = Number(payload.total ?? 0);
+      }
+      const newCash = newPayMethod === "cash" ? newReceived : 0;
+      const cashDelta = Math.round((newCash - oldCash) * 100) / 100;
+
+      if (Math.abs(cashDelta) > 0.001) {
+        try {
+          const drawerRes = await axios.get("/api/cash-drawer/current");
+          if (drawerRes.data?.is_open && drawerRes.data?.session) {
+            const invoiceTime = new Date(orig.created_at || orig.date).getTime();
+            const shiftTime = new Date(drawerRes.data.session.opened_at).getTime();
+
+            if (invoiceTime < shiftTime) {
+              setDrawerPrompt({
+                isOpen: true,
+                oldCash,
+                newCash,
+                cashDelta,
+                invoiceCreatedAt: orig.created_at || orig.date,
+                shiftOpenedAt: drawerRes.data.session.opened_at,
+                payload,
+                execute: (upd) => executeSave(payload, upd),
+              });
+              return;
+            }
+          }
+        } catch {}
+      }
+
+      await executeSave(payload, true);
+    } else {
+      await executeSave(payload);
     }
   };
 
@@ -2162,6 +2227,22 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
         onDiscardDraft={(id) => draftHook.discardDraft(id)}
         onStartBlank={handleStartBlank}
         type="sale_wholesale"
+      />
+
+      {/* Pre-Shift Edit Cash Drawer Prompt */}
+      <PreShiftDrawerPromptModal
+        isOpen={!!drawerPrompt?.isOpen}
+        onClose={() => setDrawerPrompt(null)}
+        onConfirm={(updateDrawer) => {
+          const fn = drawerPrompt?.execute;
+          setDrawerPrompt(null);
+          if (fn) fn(updateDrawer);
+        }}
+        oldCash={drawerPrompt?.oldCash}
+        newCash={drawerPrompt?.newCash}
+        cashDelta={drawerPrompt?.cashDelta}
+        invoiceCreatedAt={drawerPrompt?.invoiceCreatedAt}
+        shiftOpenedAt={drawerPrompt?.shiftOpenedAt}
       />
     </>
   );

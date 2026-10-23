@@ -379,6 +379,7 @@ class SaleInvoiceController extends Controller
         // keep posted_number unique on update (user may not change it)
         $data = $request->validate([
             'reason'              => 'nullable|string|max:500',
+            'update_drawer'       => 'nullable|boolean',
             'customer_id'         => 'required|exists:customers,id',
             'invoice_type'        => 'nullable|string|in:credit,debit',
             'payment_method'      => 'nullable|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
@@ -422,6 +423,15 @@ class SaleInvoiceController extends Controller
             $costs = app(\App\Services\SaleCostSnapshot::class)->productCosts($data['items']);
             $this->revertItems($invoice);
             $invoice->items()->delete();
+
+            // Capture old cash state before update
+            $oldPayMethod = $invoice->payment_method ?? 'cash';
+            $oldInvoiceType = $invoice->invoice_type ?? 'debit';
+            $oldReceived = (float)($invoice->total_receive ?? 0);
+            if ($oldInvoiceType === 'debit' && $oldReceived <= 0) {
+                $oldReceived = (float)$invoice->total;
+            }
+            $oldCash = ($oldPayMethod === 'cash') ? $oldReceived : 0.0;
 
             // Store old invoice type and sale type before update
             $oldInvoiceType = $invoice->invoice_type ?? 'debit';
@@ -532,6 +542,23 @@ class SaleInvoiceController extends Controller
                 }
             }
 
+            // Sync with active cash drawer if applicable
+            $newPayMethod = $invoice->payment_method ?? 'cash';
+            $newReceived = (float)($invoice->total_receive ?? 0);
+            if ($newInvoiceType === 'debit' && $newReceived <= 0) {
+                $newReceived = (float)$invoice->total;
+            }
+            $newCash = ($newPayMethod === 'cash') ? $newReceived : 0.0;
+            $updateDrawerFlag = array_key_exists('update_drawer', $data) ? (bool)$data['update_drawer'] : null;
+
+            app(\App\Services\CashDrawerService::class)->syncSaleInvoiceUpdate(
+                $invoice,
+                $oldCash,
+                $newCash,
+                $updateDrawerFlag,
+                $request->user()
+            );
+
             $auditService->recordUpdate($invoice->fresh(['items.product', 'customer']), $beforeSnapshot, $request->user(), $data['reason'] ?? 'Sale invoice updated');
 
             return response()->json(['message' => 'Sale Invoice updated', 'id' => $invoice->id]);
@@ -580,6 +607,13 @@ class SaleInvoiceController extends Controller
             $invoice->reversal_reason = $validated['reason'];
             $invoice->save();
 
+            // Reversal refund recorded in cash drawer if cash was received
+            app(\App\Services\CashDrawerService::class)->handleSaleInvoiceReversal(
+                $invoice,
+                $validated['reason'],
+                $request->user()
+            );
+
             app(\App\Services\DocumentAuditService::class)->recordReversal($invoice, $request->user(), $validated['reason']);
 
             return response()->json([
@@ -603,7 +637,7 @@ class SaleInvoiceController extends Controller
         $received = (float)($invoice->total_receive ?? $invoice->total_recieve ?? $invoice->received ?? 0);
         $remaining = max($invTotal - $received, 0);
 
-        return DB::transaction(function () use ($invoice, $mode, $invTotal, $received, $remaining) {
+        return DB::transaction(function () use ($invoice, $mode, $invTotal, $received, $remaining, $request) {
             $invoice = SaleInvoice::lockForUpdate()->findOrFail($invoice->id);
             app(\App\Services\SaleStockAvailability::class)->validate([], $invoice->items()->get());
             $this->revertItems($invoice);
@@ -647,6 +681,13 @@ class SaleInvoiceController extends Controller
                 // mode 'refund' = Refund (delete everything, no ledger entries)
                 // No additional ledger entries created - just delete the original entry
             }
+
+            // Adjust cash drawer for deleted invoice
+            app(\App\Services\CashDrawerService::class)->handleSaleInvoiceDeletion(
+                $invoice,
+                $mode,
+                $request->user()
+            );
 
             $invoice->items()->delete();
             $invoice->delete();
@@ -742,16 +783,20 @@ class SaleInvoiceController extends Controller
         $this->authorize('viewAny', SaleInvoice::class);
 
         $q = trim((string) $request->query('q', ''));
+        $customerId = $request->query('customer_id');
         
         // Pagination parameters
         $page = (int) $request->query('page', 1);
         $perPage = (int) $request->query('per_page', 20);
 
+        $query = SaleInvoice::with(['customer'])->orderByDesc('id');
+        if ($customerId) {
+            $query->where('customer_id', $customerId);
+        }
+
         // If no search query, return recent invoices
         if (strlen($q) < 1) {
-            $results = SaleInvoice::with(['customer'])
-                ->orderByDesc('id')
-                ->paginate($perPage, ['*'], 'page', $page);
+            $results = $query->paginate($perPage, ['*'], 'page', $page);
 
             // Add computed fields
             $results->getCollection()->transform(function ($invoice) {
@@ -764,9 +809,6 @@ class SaleInvoiceController extends Controller
 
             return response()->json($results);
         }
-
-        $query = SaleInvoice::with(['customer'])
-            ->orderByDesc('id');
 
         // Search by posted_number or customer name
         $query->where(function ($sub) use ($q) {

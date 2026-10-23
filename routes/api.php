@@ -174,6 +174,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
 
     // Cash Drawer Register Management
     Route::get('cash-drawer/current',             [CashDrawerController::class, 'current']);
+    Route::get('cash-drawer/session/{id}',        [CashDrawerController::class, 'show']);
     Route::post('cash-drawer/open',               [CashDrawerController::class, 'open']);
     Route::post('cash-drawer/transaction',        [CashDrawerController::class, 'recordTransaction']);
     Route::post('cash-drawer/close',              [CashDrawerController::class, 'close']);

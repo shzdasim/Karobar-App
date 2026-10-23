@@ -11,6 +11,7 @@ import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
 import SupplierSearch from "../../components/SupplierSearch.jsx";
 import PurchaseInvoiceSearch from "../../components/PurchaseInvoiceSearch.jsx";
+import PreShiftDrawerPromptModal from "@/components/PreShiftDrawerPromptModal.jsx";
 import { recalcItem, recalcFooter } from "../../Formula/PurchaseReturn.js";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
@@ -64,6 +65,8 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
     tax_amount: 0,
     total: 0,
   });
+  const [drawerPrompt, setDrawerPrompt] = useState(null);
+  const originalReturnMetaRef = useRef(null);
   const invoiceErrors = useInvoiceErrors(form.items);
 
   const [suppliers, setSuppliers] = useState([]);
@@ -421,6 +424,11 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
           discount_amount: toNum(data.discount_amount),
           tax_percentage: toNum(data.tax_percentage),
           tax_amount: toNum(data.tax_amount),
+          total: toNum(data.total),
+        };
+        originalReturnMetaRef.current = {
+          created_at: data.created_at,
+          date: data.date,
           total: toNum(data.total),
         };
         setForm((prev) => recalcFooter({ ...prev, ...normalized }, "init"));
@@ -1221,19 +1229,61 @@ const handleSelectChange = async (field, value) => {
               })),
           };
 
+      const doSave = async (dataPayload) => {
+        try {
+          if (returnId) {
+            await axios.put(`/api/purchase-returns/${returnId}`, dataPayload);
+            window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+            try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+            toast.success("Purchase return updated");
+            onSuccess?.(returnId);
+          } else {
+            const { data: saved } = await axios.post(`/api/purchase-returns`, dataPayload);
+            window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+            try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+            setForm((prev) => ({ ...prev, posted_number: saved?.posted_number || prev.posted_number }));
+            toast.success(`Purchase return created: ${saved?.posted_number || ""}`);
+            if (saved?.id) {
+              onSuccess?.(saved.id);
+            } else {
+              onSuccess?.();
+            }
+          }
+        } catch (err) {
+          console.error(err);
+          invoiceErrors.showError(err);
+        }
+      };
+
       if (returnId) {
-        await axios.put(`/api/purchase-returns/${returnId}`, payloadToSend);
-        toast.success("Purchase return updated");
-      } else {
-        const { data: saved } = await axios.post(`/api/purchase-returns`, payloadToSend);
-        setForm((prev) => ({ ...prev, posted_number: saved?.posted_number || prev.posted_number }));
-        toast.success(`Purchase return created: ${saved?.posted_number || ""}`);
-        if (saved?.id) {
-          onSuccess?.(saved.id);
-        } else {
-          onSuccess?.();
+        const orig = originalReturnMetaRef.current || {};
+        const oldCash = Number(orig.total ?? 0);
+        const newCash = toNum(form.total);
+        const cashDelta = Math.round((newCash - oldCash) * 100) / 100;
+
+        if (Math.abs(cashDelta) > 0.001) {
+          try {
+            const drawerRes = await axios.get("/api/cash-drawer/current");
+            if (drawerRes.data?.is_open && drawerRes.data?.session) {
+              const returnTime = new Date(orig.created_at || orig.date).getTime();
+              const shiftTime = new Date(drawerRes.data.session.opened_at).getTime();
+
+              if (returnTime < shiftTime) {
+                setDrawerPrompt({
+                  isOpen: true,
+                  oldCash,
+                  newCash,
+                  cashDelta,
+                  execute: (updateDrawer) => doSave({ ...payloadToSend, update_drawer_if_pre_shift: updateDrawer }),
+                });
+                return;
+              }
+            }
+          } catch (e) {}
         }
       }
+
+      await doSave(payloadToSend);
     } catch (err) {
       console.error(err);
       invoiceErrors.showError(err);
@@ -1877,6 +1927,20 @@ const handleSelectChange = async (field, value) => {
           onSelect={(invoice) => {
             handleSelectChange("purchase_invoice_id", { value: invoice?.id });
           }}
+        />
+
+        {/* Pre-Shift Edit Cash Drawer Prompt */}
+        <PreShiftDrawerPromptModal
+          isOpen={!!drawerPrompt?.isOpen}
+          onClose={() => setDrawerPrompt(null)}
+          onConfirm={(updateDrawer) => {
+            const fn = drawerPrompt?.execute;
+            setDrawerPrompt(null);
+            if (fn) fn(updateDrawer);
+          }}
+          oldCash={drawerPrompt?.oldCash}
+          newCash={drawerPrompt?.newCash}
+          cashDelta={drawerPrompt?.cashDelta}
         />
       </form>
     </div>

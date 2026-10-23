@@ -191,6 +191,9 @@ export default function PurchaseInvoicesIndex() {
       setIsReversing(true);
       await axios.post(`/api/purchase-invoices/${voidingInvoice.id}/reverse`, { reason });
       toast.success(`Purchase Invoice ${voidingInvoice.posted_number || voidingInvoice.invoice_number || ""} reversed successfully`);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      }
       setVoidModalOpen(false);
       setVoidingInvoice(null);
       fetchInvoices();
@@ -324,6 +327,9 @@ export default function PurchaseInvoicesIndex() {
       await axios.post("/api/auth/confirm-password", { password });
       await axios.delete(`/api/purchase-invoices/${deletingInvoice.id}`);
       toast.success("Invoice deleted");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      }
       closeDeleteModal();
 
       if (controllerRef.current) controllerRef.current.abort();
