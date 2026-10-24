@@ -279,6 +279,7 @@ class SaleInvoiceController extends Controller
             'due_date'            => 'nullable|date',
             'credit_override'     => 'nullable|boolean',
             'discount_override'   => 'nullable|boolean',
+            'expired_override'    => 'nullable|boolean',
             'remarks'             => 'nullable|string',
             'doctor_name'         => 'nullable|string',
             'patient_name'        => 'nullable|string',
@@ -339,7 +340,12 @@ class SaleInvoiceController extends Controller
                 }
             }
 
-            app(\App\Services\SaleStockAvailability::class)->validate($data['items']);
+            app(\App\Services\SaleStockAvailability::class)->validate(
+                $data['items'],
+                null,
+                $request->user(),
+                $request->boolean('expired_override')
+            );
             // 🔐 Concurrency-safe numbering: lock last row, compute next
             $last = SaleInvoice::lockForUpdate()->orderByDesc('id')->first();
             $next = $last ? ($last->id + 1) : 1;
@@ -526,6 +532,7 @@ class SaleInvoiceController extends Controller
             'due_date'            => 'nullable|date',
             'credit_override'     => 'nullable|boolean',
             'discount_override'   => 'nullable|boolean',
+            'expired_override'    => 'nullable|boolean',
             'remarks'             => 'nullable|string',
             'doctor_name'         => 'nullable|string',
             'patient_name'        => 'nullable|string',
@@ -576,7 +583,12 @@ class SaleInvoiceController extends Controller
         return DB::transaction(function () use ($invoice, $data, $request, $auditService, $beforeSnapshot, $dueDate) {
             $invoice = SaleInvoice::lockForUpdate()->findOrFail($invoice->id);
             $originalItems = $invoice->items()->get();
-            app(\App\Services\SaleStockAvailability::class)->validate($data['items'], $originalItems);
+            app(\App\Services\SaleStockAvailability::class)->validate(
+                $data['items'],
+                $originalItems,
+                $request->user(),
+                $request->boolean('expired_override')
+            );
             $costs = app(\App\Services\SaleCostSnapshot::class)->productCosts($data['items']);
             $this->revertItems($invoice);
             $invoice->items()->delete();

@@ -6,6 +6,7 @@ import axios from "axios";
 import Select from "react-select";
 import toast from "react-hot-toast";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
+import BatchSearchInput from "../../components/BatchSearchInput.jsx";
 import { recalcItem, recalcFooter } from "../../Formula/PurchaseInvoice.js";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
@@ -251,12 +252,19 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
         upsertProducts(responseData.products);
       }
       let next = recalcFooter(loadedPayload, "init");
+      if (Array.isArray(next.items)) {
+        next.items = next.items.map((it) => ({
+          ...it,
+          is_unbatched: Boolean(it.is_unbatched || !it?.batch || String(it.batch).trim() === ""),
+        }));
+      }
       setForm(next);
       if (next.supplier_id) {
         const sup = suppliers.find((s) => String(s.id) === String(next.supplier_id));
         if (sup) setSelectedSupplier(sup);
       }
       await ensureProductsForItems(next?.items || []);
+      await ensureBatchesForItems(next?.items || []);
 
       setSupplierSearchOpen(false);
       // Close product search modal if open
@@ -300,6 +308,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
   // productSearchRefs will hold container DOM nodes (wrapping ProductSearchInput)
   const productSearchRefs = useRef([]);
   const batchRefs = useRef([]);
+  const expiryRefs = useRef([]);
   const packQuantityRefs = useRef([]);
   const packPurchasePriceRefs = useRef([]);
   const itemDiscountRefs = useRef([]);
@@ -308,6 +317,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
   const wholeSalePackPriceRefs = useRef([]);
   const wholeSaleUnitPriceRefs = useRef([]);
 
+  const [batchesByProduct, setBatchesByProduct] = useState({});
+
   useEffect(() => {
     fetchSuppliers().catch(showAxiosError);
     if (initialData) {
@@ -315,9 +326,16 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
       const next = recalcFooter({ ...form, ...initialData, items }, "init");
       next.invoice_amount = next.total_amount;
       next.total_paid = next.total_amount;
+      if (Array.isArray(next.items)) {
+        next.items = next.items.map((it) => ({
+          ...it,
+          is_unbatched: Boolean(!it?.batch || String(it.batch).trim() === ""),
+        }));
+      }
       setForm(next);
       setSelectedSupplier(initialData.supplier);
       setProducts(initialData.items.map(item => item.product));
+      ensureBatchesForItems(next.items);
     } else fetchProducts().catch(showAxiosError);
     if (invoiceId) {
       fetchInvoice();
@@ -370,18 +388,28 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
     upsertProducts(Array.isArray(data) ? data : (data?.data || []));
   };
 
-  // Fetch batches for a product and return the most recent batch (sorted by expiry descending)
+  // Fetch all batches for a product (including unbatched units) for batch selector
   const fetchProductBatches = async (productId) => {
+    if (!productId) return [];
+    const key = String(productId);
+    if (batchesByProduct[key]) return batchesByProduct[key];
     try {
-      const { data } = await axios.get(`/api/products/${productId}/batches`);
-      // Sort by expiry date descending to get the most recent/furthest expiring batch first
-      const sorted = Array.isArray(data) 
-        ? data.sort((a, b) => new Date(b.expiry_date || '1970-01-01') - new Date(a.expiry_date || '1970-01-01'))
-        : [];
-      return sorted.length > 0 ? sorted[0] : null;
+      const { data } = await axios.get(`/api/products/${productId}/batches?include_unbatched=1`);
+      const list = Array.isArray(data) ? data : [];
+      setBatchesByProduct((prev) => ({ ...prev, [key]: list }));
+      return list;
     } catch (err) {
       console.error('Failed to fetch batches:', err);
-      return null;
+      return [];
+    }
+  };
+
+  const ensureBatchesForItems = async (items = []) => {
+    const productIds = Array.from(new Set(items.map((it) => it.product_id).filter(Boolean)));
+    for (const pid of productIds) {
+      try {
+        await fetchProductBatches(pid);
+      } catch {}
     }
   };
 
@@ -393,6 +421,12 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
     next.total_paid = next.total_amount ?? "";
     next.payment_method = res.data?.payment_method || "cash";
     next.account_id = res.data?.account_id || null;
+    if (Array.isArray(next.items)) {
+      next.items = next.items.map((it) => ({
+        ...it,
+        is_unbatched: Boolean(!it?.batch || String(it.batch).trim() === ""),
+      }));
+    }
     setForm(next);
     setPaidTouched(false);
     if (res.data?.purchase_order_id) setArrangement('original');
@@ -402,6 +436,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
       setSelectedSupplier(sup || { id: next.supplier_id, name: next.supplier_name || `Supplier #${next.supplier_id}` });
     }
     await ensureProductsForItems(next?.items || []);
+    await ensureBatchesForItems(next?.items || []);
   };
 
   const handleChange = (e) => {
@@ -745,6 +780,13 @@ const contRect = container.getBoundingClientRect();
             setCurrentRowIndex(rowIndex);
           }
           break;
+        case "expiry":
+          if (expiryRefs.current[rowIndex]) {
+            focusAndSelect(expiryRefs.current[rowIndex]);
+            setCurrentField("expiry");
+            setCurrentRowIndex(rowIndex);
+          }
+          break;
         case "pack_quantity":
           if (packQuantityRefs.current[rowIndex]) {
             focusAndSelect(packQuantityRefs.current[rowIndex]);
@@ -832,6 +874,15 @@ const contRect = container.getBoundingClientRect();
           }
           break;
         case "batch":
+          if (form.items[rowIndex]?.batch && !form.items[rowIndex]?.expiry && expiryRefs.current[rowIndex]) {
+            focusAndSelect(expiryRefs.current[rowIndex]);
+            setCurrentField("expiry");
+          } else if (packQuantityRefs.current[rowIndex]) {
+            packQuantityRefs.current[rowIndex].focus();
+            setCurrentField("pack_quantity");
+          }
+          break;
+        case "expiry":
           if (packQuantityRefs.current[rowIndex]) {
             packQuantityRefs.current[rowIndex].focus();
             setCurrentField("pack_quantity");
@@ -886,6 +937,11 @@ const contRect = container.getBoundingClientRect();
   };
 
   const handleKeyDown = (e, field, rowIndex = 0) => {
+    // In batch field, never navigate rows or add a new row on ArrowDown or ArrowUp
+    if (field === "batch" && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      return;
+    }
+
     if (e.key === "Enter") {
       e.preventDefault();
       navigateToNextField(field, rowIndex);
@@ -940,6 +996,64 @@ const contRect = container.getBoundingClientRect();
     setTimeout(() => {
       if (typeof el.select === "function") el.select();
     }, 0);
+  };
+
+  const handleBatchSelect = (rowIndex, val, batchObj = null) => {
+    const newItems = [...form.items];
+    const currentItem = newItems[rowIndex];
+    if (!currentItem) return;
+
+    if (batchObj?.is_unbatched || val === "" || val === "__unbatched__") {
+      newItems[rowIndex] = {
+        ...currentItem,
+        batch: "",
+        expiry: "",
+        is_unbatched: true,
+      };
+      setForm({ ...form, items: newItems });
+      setTimeout(() => {
+        if (packQuantityRefs.current[rowIndex]) {
+          packQuantityRefs.current[rowIndex].focus();
+          setCurrentField("pack_quantity");
+          setCurrentRowIndex(rowIndex);
+        }
+      }, 40);
+      return;
+    }
+
+    if (batchObj?.is_new) {
+      newItems[rowIndex] = {
+        ...currentItem,
+        batch: val,
+        is_unbatched: false,
+      };
+      setForm({ ...form, items: newItems });
+      setTimeout(() => {
+        if (expiryRefs.current[rowIndex]) {
+          expiryRefs.current[rowIndex].focus();
+          setCurrentField("expiry");
+          setCurrentRowIndex(rowIndex);
+        }
+      }, 40);
+      return;
+    }
+
+    // Existing batch selected
+    const batchExpiry = batchObj?.expiry_date || batchObj?.expiry || currentItem.expiry || "";
+    newItems[rowIndex] = {
+      ...currentItem,
+      batch: val,
+      expiry: batchExpiry,
+      is_unbatched: false,
+    };
+    setForm({ ...form, items: newItems });
+    setTimeout(() => {
+      if (packQuantityRefs.current[rowIndex]) {
+        packQuantityRefs.current[rowIndex].focus();
+        setCurrentField("pack_quantity");
+        setCurrentRowIndex(rowIndex);
+      }
+    }, 40);
   };
 
   const handleSubmit = async (e) => {
@@ -1001,11 +1115,49 @@ const contRect = container.getBoundingClientRect();
       return;
     }
 
+    // 3) Validate batch & expiry requirements and batch uniqueness per product
+    const seenProductBatches = new Set();
+    for (let i = 0; i < form.items.length; i++) {
+      const it = form.items[i];
+      if (!it.product_id) continue;
+      const pId = String(it.product_id);
+      const product = products.find((p) => String(p.id) === pId);
+      const productName = product?.name || `Product #${pId}`;
+
+      // If batch is entered, expiry is required
+      if (it.batch && String(it.batch).trim() !== "" && (!it.expiry || String(it.expiry).trim() === "")) {
+        invoiceErrors.showMessage(
+          `Row ${i + 1}: Expiry date is required for batch "${it.batch}" of "${productName}".`,
+          i
+        );
+        return;
+      }
+
+      const batchKey = it.batch && String(it.batch).trim() !== "" ? `batch:${String(it.batch).trim()}` : "unbatched";
+      const uniqueKey = `${pId}::${batchKey}`;
+
+      if (seenProductBatches.has(uniqueKey)) {
+        if (batchKey === "unbatched") {
+          invoiceErrors.showMessage(
+            `Row ${i + 1}: Unassigned stock for "${productName}" can only be added once per invoice.`,
+            i
+          );
+        } else {
+          invoiceErrors.showMessage(
+            `Row ${i + 1}: Duplicate batch "${it.batch}" for "${productName}". Each batch can only be selected once per invoice.`,
+            i
+          );
+        }
+        return;
+      }
+      seenProductBatches.add(uniqueKey);
+    }
+
     savingRef.current = true;
     setSaving(true);
     let submittedRowIndices = null;
     try {
-      // 3) Duplicate invoice number check per supplier
+      // 4) Duplicate invoice number check per supplier
       const checkRes = await axios.get("/api/purchase-invoices/check-unique", {
         params: {
           supplier_id: form.supplier_id,
@@ -1031,7 +1183,14 @@ const contRect = container.getBoundingClientRect();
         ? sortedRows.filter(row => hasDeliveredRow(row.item))
         : sortedRows;
       submittedRowIndices = effectiveRows.map(row => row.index);
-      const payloadToSend = { ...payload, items: effectiveRows.map(row => row.item) };
+      const payloadToSend = {
+        ...payload,
+        items: effectiveRows.map((row) => ({
+          ...row.item,
+          batch: row.item.batch ? String(row.item.batch).trim() : null,
+          expiry: row.item.expiry ? String(row.item.expiry).trim() : null,
+        })),
+      };
       if (!invoiceId) {
         // Do NOT send posted_number on CREATE; server will atomically generate it.
         delete payloadToSend.posted_number;
@@ -1552,8 +1711,8 @@ const contRect = container.getBoundingClientRect();
 
             <tr>
               <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">PSize</th>
-              <th className="border w-16 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Batch</th>
-              <th className="border w-20 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Exp</th>
+              <th className="border min-w-[130px] w-32 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Batch</th>
+              <th className="border w-24 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Exp</th>
               <th className="border w-12 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Pack.Q</th>
               <th className="border w-12 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Unit.Q</th>
               <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Pack.P</th>
@@ -1651,10 +1810,16 @@ const contRect = container.getBoundingClientRect();
                         const margin = get(selectedProduct, ["margin","margin_percentage","marginPercent"], "");
                         const avg = get(selectedProduct, ["avg_price","average_price","avgPrice"], "");
 
-                        // Fetch batches for the selected product and auto-populate if exists
-                        const batchData = await fetchProductBatches(selectedProduct?.id);
-                        const batch = batchData?.batch_number || "";
-                        const expiry = batchData?.expiry_date || "";
+                        // Fetch batches for the selected product into batchesByProduct
+                        if (selectedProduct?.id) {
+                          fetchProductBatches(selectedProduct.id);
+                        }
+
+                        // Do not auto-force a batch; preserve if re-selecting same product, else leave blank
+                        const isSameProduct = String(form.items[i]?.product_id) === String(selectedProduct?.id);
+                        const batch = isSameProduct ? form.items[i]?.batch || "" : "";
+                        const expiry = isSameProduct ? form.items[i]?.expiry || "" : "";
+                        const isUnbatched = isSameProduct ? Boolean(form.items[i]?.is_unbatched) : false;
 
                         const newItems = [...form.items];
                         const prepared = {
@@ -1671,6 +1836,7 @@ const contRect = container.getBoundingClientRect();
                           whole_sale_margin: "",
                           batch: batch,
                           expiry: expiry,
+                          is_unbatched: isUnbatched,
                           pack_quantity: "",
                           unit_quantity: "",
                           pack_bonus: "",
@@ -1688,19 +1854,15 @@ const contRect = container.getBoundingClientRect();
                         if (!paidTouched) nextForm.total_paid = nextForm.total_amount ?? "";
                         setForm(nextForm);
                         
-                        // Navigate to next field - if batch has data, focus on batch, otherwise go to pack_quantity
-                        if (batch) {
-                          navigateToNextField("product", i);
-                        } else {
-                          // No batch, navigate directly to pack_quantity
-                          setTimeout(() => {
-                            if (packQuantityRefs.current[i]) {
-                              packQuantityRefs.current[i].focus();
-                              setCurrentField("pack_quantity");
-                              setCurrentRowIndex(i);
-                            }
-                          }, 50);
-                        }
+                        // Focus on batch field and open menu so user can add new batch, select existing, or choose unassigned
+                        setTimeout(() => {
+                          if (batchRefs.current[i]) {
+                            batchRefs.current[i].focus();
+                            batchRefs.current[i].openMenu?.();
+                            setCurrentField("batch");
+                            setCurrentRowIndex(i);
+                          }
+                        }, 50);
                       }}
                       onKeyDown={(e) => handleProductKeyDown(e, i)}
                       products={products}
@@ -1721,47 +1883,36 @@ const contRect = container.getBoundingClientRect();
                 </td>
 
                 {/* Batch */}
-                <td className="border w-16">
-                  <input
+                <td className="border min-w-[130px] w-32">
+                  <BatchSearchInput
                     ref={(el) => (batchRefs.current[i] = el)}
-                    type="text"
-                    value={item.batch ?? ""}
-                    onChange={(e) => {
-                      const newBatch = e.target.value;
-                      const duplicateIndex = form.items.findIndex((it, idx) => {
-                        if (idx === i) return false;
-                        if (it.product_id !== item.product_id) return false;
-                        if (it.batch && it.batch.trim() !== "") {
-                          return it.batch === newBatch;
-                        }
-                        return !newBatch;
-                      });
-
-                      if (duplicateIndex !== -1) {
-                        invoiceErrors.showMessage(
-                          newBatch
-                            ? `Product "${products.find((p) => p.id === item.product_id)?.name}" with batch "${newBatch}" already exists in row ${duplicateIndex + 1}`
-                            : `Product "${products.find((p) => p.id === item.product_id)?.name}" without batch already exists in row ${duplicateIndex + 1}`
-                        );
-                        return;
-                      }
-
-                      const newItems = [...form.items];
-                      newItems[i] = { ...newItems[i], batch: newBatch };
-                      setForm({ ...form, items: newItems });
-                    }}
+                    mode="purchase"
+                    allowNew={true}
+                    value={
+                      item.batch
+                        ? item.batch
+                        : item.is_unbatched
+                        ? "[Unassigned Stock]"
+                        : ""
+                    }
+                    batches={batchesByProduct[item.product_id] || []}
+                    usedBatches={form.items
+                      .filter((it, idx) => idx !== i && String(it.product_id) === String(item.product_id))
+                      .map((it) => (it.batch ? String(it.batch).trim() : it.is_unbatched ? "__unbatched__" : ""))}
+                    onChange={(val, batchObj) => handleBatchSelect(i, val, batchObj)}
                     onKeyDown={(e) => handleKeyDown(e, "batch", i)}
-                    className="border w-full h-6 text-[11px] px-1 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                    {...antiFill}
+                    placeholder="Batch or unassigned..."
                   />
                 </td>
 
                 {/* Expiry */}
-                <td className="border w-20">
+                <td className="border w-24">
                   <input
+                    ref={(el) => (expiryRefs.current[i] = el)}
                     type="date"
                     value={item.expiry ?? ""}
                     onChange={(e) => handleItemChange(i, "expiry", e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, "expiry", i)}
                     className="border w-full h-6 text-[11px] px-1 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                     {...antiFill}
                   />

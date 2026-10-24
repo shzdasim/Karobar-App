@@ -139,7 +139,11 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     // Products & batches
     Route::get('products/new-code',                [ProductController::class, 'generateNewCode']);
     Route::get('products/{product}/batches',      [BatchController::class, 'index']);
+    Route::post('products/{product}/batches',     [BatchController::class, 'store']);
+    Route::put('batches/{batch}',                 [BatchController::class, 'update']);
+    Route::delete('batches/{batch}',              [BatchController::class, 'destroy']);
     Route::get('products/available-quantity',     [ProductController::class, 'availableQuantity']);
+    Route::get('products/{product}/available-quantity', [ProductController::class, 'availableQuantity']);
     Route::get('/products/search',                [ProductController::class, 'search']);
     Route::get('/products/by-ids',               [ProductController::class, 'search']);
         // Optional extra endpoints (if you rely on them)

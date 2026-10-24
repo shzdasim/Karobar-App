@@ -64,22 +64,37 @@ class ProductSearchTest extends TestCase
 
     public function test_search_matches_partial_names_brands_and_suppliers_independently(): void
     {
-        foreach (['supplement' => 1, 'medicines' => 2, 'distributor' => 3] as $term => $id) {
+        foreach (['Vitamin' => 1, 'Pain' => 2, 'First' => 3, 'Acme' => 2, 'Central' => 3] as $term => $id) {
             $this->assertSame([$id], array_column($this->listing(['q' => $term])['data'], 'id'));
         }
         $this->assertSame([], $this->listing(['q' => 'unknown'])['data']);
         $this->assertSame(3, $this->listing(['q' => '   '])['total']);
     }
 
+    public function test_search_matches_prefix_from_start_and_not_middle(): void
+    {
+        DB::table('products')->insert([
+            ['id' => 10, 'name' => 'xyx product', 'product_code' => 'P10', 'brand_id' => null, 'supplier_id' => null, 'quantity' => 10, 'pack_size' => 1],
+            ['id' => 11, 'name' => 'axt product', 'product_code' => 'P11', 'brand_id' => null, 'supplier_id' => null, 'quantity' => 10, 'pack_size' => 1],
+        ]);
+
+        // Searching 'x' must only return 'xyx product' (starts with x), NOT 'axt product' (contains x)
+        $results = $this->listing(['q' => 'x']);
+        $matchedIds = array_column($results['data'], 'id');
+
+        $this->assertContains(10, $matchedIds);
+        $this->assertNotContains(11, $matchedIds);
+    }
+
     public function test_stock_filter_constrains_supplier_and_brand_matches(): void
     {
-        $this->assertSame([], $this->listing(['q' => 'medicines', 'low_stock' => 1])['data']);
-        $this->assertSame([3], array_column($this->listing(['q' => 'distributor', 'low_stock' => 1])['data'], 'id'));
+        $this->assertSame([], $this->listing(['q' => 'Acme', 'low_stock' => 1])['data']);
+        $this->assertSame([3], array_column($this->listing(['q' => 'Central', 'low_stock' => 1])['data'], 'id'));
     }
 
     public function test_pagination_and_legacy_filters_remain_supported(): void
     {
-        $page = $this->listing(['q' => 'i', 'per_page' => 1, 'page' => 2]);
+        $page = $this->listing(['per_page' => 1, 'page' => 2]);
         $this->assertSame(3, $page['total']);
         $this->assertSame(2, $page['current_page']);
         $this->assertCount(1, $page['data']);
@@ -90,6 +105,6 @@ class ProductSearchTest extends TestCase
     {
         Gate::before(fn () => false);
         $this->expectException(AuthorizationException::class);
-        app(ProductController::class)->index(Request::create('/api/products', 'GET', ['q' => 'medicines']));
+        app(ProductController::class)->index(Request::create('/api/products', 'GET', ['q' => 'Pain']));
     }
 }

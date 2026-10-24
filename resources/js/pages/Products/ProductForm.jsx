@@ -11,7 +11,10 @@ import {
   ArrowLeftIcon,
   PencilSquareIcon,
   CubeIcon,
+  PlusIcon,
+  TrashIcon,
 } from "@heroicons/react/24/solid";
+import { getThemeButtonClasses } from "@/utils/buttonStyles";
 
 // FilePond
 import { FilePond, registerPlugin } from "react-filepond";
@@ -355,7 +358,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
 
   const [isLoaded, setIsLoaded] = useState(false);
 
-  const { isDark, theme } = useTheme();
+  const { isDark, theme, buttonStyle } = useTheme();
 
   // Memoize theme colors for performance
   const themeColors = useMemo(() => {
@@ -378,6 +381,77 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
       secondaryLight: theme.secondary_light || '#ede9fe',
     };
   }, [theme]);
+
+  const themeButtonClasses = useMemo(
+    () => getThemeButtonClasses(buttonStyle, themeColors, isDark),
+    [buttonStyle, themeColors, isDark]
+  );
+
+  const [newBatch, setNewBatch] = useState({
+    batch_number: "",
+    expiry_date: "",
+    quantity: "",
+  });
+  const [addingBatch, setAddingBatch] = useState(false);
+  const [deletingBatchId, setDeletingBatchId] = useState(null);
+
+  const realBatches = useMemo(
+    () => (batches || []).filter((b) => !b.is_unbatched && b.batch_number && b.id != null),
+    [batches]
+  );
+  const totalStock = parseInt(form.quantity, 10) || 0;
+  const batchedStock = realBatches.reduce((acc, b) => acc + (parseInt(b.quantity, 10) || 0), 0);
+  const unassignedStock = Math.max(0, totalStock - batchedStock);
+
+  const handleAddBatch = async (e) => {
+    e.preventDefault();
+    if (!newBatch.batch_number.trim() || !newBatch.expiry_date) {
+      toast.error("Please enter both Batch # and Expiry date");
+      return;
+    }
+    const requestedQty = newBatch.quantity ? parseInt(newBatch.quantity, 10) : 0;
+    if (totalStock > 0 && requestedQty > unassignedStock) {
+      toast.error(`Cannot assign ${requestedQty} units. Only ${unassignedStock} unassigned units are available.`);
+      return;
+    }
+
+    setAddingBatch(true);
+    try {
+      await axios.post(`/api/products/${initialData.id}/batches`, {
+        batch_number: newBatch.batch_number.trim(),
+        expiry_date: newBatch.expiry_date,
+        quantity: requestedQty,
+      });
+      toast.success("Batch added / updated successfully");
+      setNewBatch({ batch_number: "", expiry_date: "", quantity: "" });
+      const bRes = await axios.get(`/api/products/${initialData.id}/batches`);
+      setBatches(bRes.data);
+      const realTotalUnits = (bRes.data || [])
+        .filter((b) => !b.is_unbatched && b.batch_number && b.id != null)
+        .reduce((acc, b) => acc + (parseInt(b.quantity, 10) || 0), 0);
+      setForm((prev) => ({ ...prev, quantity: Math.max(parseInt(prev.quantity, 10) || 0, realTotalUnits) }));
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Failed to save batch";
+      toast.error(msg);
+    } finally {
+      setAddingBatch(false);
+    }
+  };
+
+  const handleDeleteBatch = async (batchId) => {
+    if (!window.confirm("Are you sure you want to delete this batch? (Allocated units will return to unassigned stock)")) return;
+    setDeletingBatchId(batchId);
+    try {
+      await axios.delete(`/api/batches/${batchId}`);
+      toast.success("Batch removed (units returned to unassigned stock)");
+      const bRes = await axios.get(`/api/products/${initialData.id}/batches`);
+      setBatches(bRes.data);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Cannot delete batch");
+    } finally {
+      setDeletingBatchId(null);
+    }
+  };
 
   // Calculate text color based on background brightness
   const primaryTextColor = useMemo(() => 
@@ -545,8 +619,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
   });
 
   // ===== Dynamic Button styles using theme colors =====
-  // Get button style from theme
-  const buttonStyle = theme?.button_style || 'modern';
+  // Get button style classes and styles based on theme button_style
   
   // Get button style classes and styles based on theme button_style
   const getButtonClasses = useMemo(() => {
@@ -743,34 +816,153 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
         <GlassCard className="product-form-panel product-form-batches">
           <div className="product-form-batches-heading">
             <div className="flex items-center justify-between">
-              <h2>Batches</h2>
-              <span className="text-xs text-gray-500 dark:text-slate-400">{batches.length} items</span>
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">Batches & Expiry (FEFO)</h2>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 font-medium">
+                {realBatches.length} {realBatches.length === 1 ? "batch" : "batches"}
+              </span>
             </div>
+            <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">
+              Earliest expiry allocated first in POS. Multiple batches may share expiry dates.
+            </p>
           </div>
-          <div className="p-3">
-            {batches.length > 0 ? (
-              <div className="product-form-batch-scroll">
+
+          <div className="p-3 space-y-4">
+            {/* Stock Breakdown: Total, Batched, Unassigned */}
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="p-2 rounded-lg bg-gray-100/70 dark:bg-slate-700/60 border border-gray-200/50 dark:border-slate-600/50">
+                <span className="block text-[10px] uppercase font-bold text-gray-500 dark:text-slate-400">Total Stock</span>
+                <span className="font-mono font-bold text-gray-900 dark:text-white text-sm">{totalStock}</span>
+              </div>
+              <div className="p-2 rounded-lg bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200/50 dark:border-blue-900/50">
+                <span className="block text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400">Batched</span>
+                <span className="font-mono font-bold text-blue-700 dark:text-blue-300 text-sm">{batchedStock}</span>
+              </div>
+              <div className="p-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/50 dark:border-emerald-900/50">
+                <span className="block text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400">Unassigned</span>
+                <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300 text-sm">{unassignedStock}</span>
+              </div>
+            </div>
+
+            {isEdit ? (
+              <form onSubmit={handleAddBatch} className="p-3 rounded-xl bg-gray-50/70 dark:bg-slate-800/50 border border-gray-200/60 dark:border-slate-700/60 space-y-2.5">
+                <div className="text-xs font-semibold text-gray-700 dark:text-slate-200 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <PlusIcon className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Add or Update Batch</span>
+                  </div>
+                  {totalStock > 0 && (
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                      Assigns from unassigned stock ({unassignedStock} avail)
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[10px] text-gray-500 dark:text-slate-400 block mb-0.5">Batch # *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. B-101"
+                      value={newBatch.batch_number}
+                      onChange={(e) => setNewBatch((p) => ({ ...p, batch_number: e.target.value }))}
+                      className="w-full text-xs px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-500 dark:text-slate-400 block mb-0.5">Expiry Date *</label>
+                    <input
+                      type="date"
+                      value={newBatch.expiry_date}
+                      onChange={(e) => setNewBatch((p) => ({ ...p, expiry_date: e.target.value }))}
+                      className="w-full text-xs px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-500 dark:text-slate-400 block mb-0.5">Batch Quantity</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max={totalStock > 0 ? unassignedStock : undefined}
+                      placeholder={totalStock > 0 ? `Max: ${unassignedStock}` : "0"}
+                      value={newBatch.quantity}
+                      onChange={(e) => setNewBatch((p) => ({ ...p, quantity: e.target.value }))}
+                      className="w-full text-xs px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="submit"
+                    disabled={addingBatch}
+                    className={`${themeButtonClasses.primary} text-xs px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50`}
+                  >
+                    <PlusIcon className="w-3.5 h-3.5" />
+                    {addingBatch ? "Saving..." : "Save Batch"}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="p-3 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-900/60 text-xs text-blue-700 dark:text-blue-300">
+                Save the product first to add and configure specific batches and expiry dates.
+              </div>
+            )}
+
+            {realBatches.length > 0 ? (
+              <div className="product-form-batch-scroll overflow-hidden rounded-xl border border-gray-200/70 dark:border-slate-700/70">
                 <table className="w-full text-xs">
-                  <thead className="bg-white/80 dark:bg-slate-600/80 backdrop-blur-xs border-b border-gray-200/70 dark:border-slate-500/70 text-left">
+                  <thead className="bg-gray-50/90 dark:bg-slate-700/80 border-b border-gray-200/70 dark:border-slate-600/70 text-left">
                     <tr>
-                      <th className="p-2 dark:text-slate-200">Batch #</th>
-                      <th className="p-2 dark:text-slate-200">Expiry</th>
-                      <th className="p-2 text-right dark:text-slate-200">Qty</th>
+                      <th className="p-2.5 font-semibold text-gray-700 dark:text-slate-200">Batch #</th>
+                      <th className="p-2.5 font-semibold text-gray-700 dark:text-slate-200">Expiry</th>
+                      <th className="p-2.5 text-right font-semibold text-gray-700 dark:text-slate-200">Qty</th>
+                      {isEdit && <th className="p-2.5 text-center font-semibold text-gray-700 dark:text-slate-200 w-12">Action</th>}
                     </tr>
                   </thead>
-                  <tbody>
-                    {batches.map((batch, i) => (
-                      <tr key={batch.id} className={`text-gray-900 dark:text-slate-200 ${i % 2 ? "bg-white/70 dark:bg-slate-700/70" : "bg-white/90 dark:bg-slate-600/90"}`}>
-                        <td className="p-2 font-medium">{batch.batch_number}</td>
-                        <td className="p-2 text-gray-600 dark:text-slate-400">{batch.expiry_date}</td>
-                        <td className="p-2 text-right">{batch.quantity}</td>
+                  <tbody className="divide-y divide-gray-100 dark:divide-slate-700/50">
+                    {realBatches.map((batch, i) => (
+                      <tr key={batch.id || i} className={`text-gray-900 dark:text-slate-200 transition-colors ${i % 2 ? "bg-white/50 dark:bg-slate-800/40" : "bg-white/90 dark:bg-slate-800/80"} hover:bg-blue-50/40 dark:hover:bg-slate-700/40`}>
+                        <td className="p-2.5 font-medium">
+                          <div className="flex items-center gap-1.5">
+                            <span>{batch.batch_number}</span>
+                            {batch.is_fefo_recommended && (
+                              <span className="px-1.5 py-0.2 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300/50 text-[9px] font-bold rounded-sm uppercase tracking-wider">
+                                FEFO
+                              </span>
+                            )}
+                            {batch.is_expired && (
+                              <span className="px-1.5 py-0.2 bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 border border-red-300/50 text-[9px] font-bold rounded-sm uppercase tracking-wider">
+                                Expired
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-2.5 text-gray-600 dark:text-slate-300">
+                          {batch.expiry_date}
+                        </td>
+                        <td className="p-2.5 text-right font-mono font-semibold">
+                          {batch.quantity}
+                        </td>
+                        {isEdit && (
+                          <td className="p-2.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteBatch(batch.id)}
+                              disabled={deletingBatchId === batch.id}
+                              className="p-1 rounded-md text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
+                              title="Delete batch"
+                            >
+                              <TrashIcon className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             ) : (
-              <p className="text-gray-600 dark:text-slate-400 text-sm text-center py-4">No batches available</p>
+              <p className="text-gray-500 dark:text-slate-400 text-xs text-center py-4 bg-gray-50/50 dark:bg-slate-800/30 rounded-xl border border-dashed border-gray-200 dark:border-slate-700">
+                No batches created yet for this product.
+              </p>
             )}
           </div>
         </GlassCard>

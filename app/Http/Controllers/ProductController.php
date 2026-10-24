@@ -77,32 +77,44 @@ class ProductController extends Controller
         ]);
     }
 
-    public function availableQuantity(Request $request)
+    public function availableQuantity(Request $request, ?Product $product = null)
     {
         $this->authorize('viewAny', Product::class);
-        $productId = $request->query('product_id');
-        $batch     = $request->query('batch');
+        $productId = $product ? $product->id : $request->query('product_id');
+        $batch     = trim((string)$request->query('batch', ''));
 
         if (!$productId) {
             return response()->json(['message' => 'product_id is required'], 422);
         }
 
+        $product = $product ?: \App\Models\Product::find($productId);
+        if (!$product) {
+            return response()->json(['message' => 'Product not found'], 404);
+        }
+
+        $totalQty = (int) ($product->quantity ?? 0);
+        $batches = \App\Models\Batch::where('product_id', $productId)->get();
+        $totalBatched = (int) $batches->sum('quantity');
+        $unbatchedQty = max(0, $totalQty - $totalBatched);
+
         $available = 0;
 
-        if ($batch) {
-            $record = \App\Models\Batch::where('product_id', $productId)
-                ->where('batch_number', $batch)
-                ->first();
+        if ($batch !== '' && $batch !== '__unbatched__') {
+            $record = $batches->firstWhere('batch_number', $batch);
             $available = (int) ($record->quantity ?? 0);
         } else {
-            $product = \App\Models\Product::find($productId);
-            $available = (int) ($product->quantity ?? 0);
+            // When no batch is selected, user is selling unbatched stock if batches exist,
+            // or entire product stock if product has no batches.
+            $available = $batches->isNotEmpty() ? $unbatchedQty : $totalQty;
         }
 
         return response()->json([
             'product_id'      => (int) $productId,
             'batch'           => $batch,
             'available_units' => $available,
+            'unbatched_units' => $unbatchedQty,
+            'batched_units'   => $totalBatched,
+            'total_units'     => $totalQty,
         ]);
     }
 
@@ -130,11 +142,12 @@ class ProductController extends Controller
             ])
             ->withCount('batches');
 
-        // Group OR matches so stock and legacy filters still constrain the results.
+        // Starts-with (prefix) matching: searches products from the start (e.g. 'x' matches 'xyx' but not 'axt')
         if ($search !== '') {
-            $pattern = '%'.$search.'%';
+            $pattern = $search.'%';
             $q->where(function (Builder $matches) use ($pattern) {
                 $matches->where('name', 'like', $pattern)
+                    ->orWhere('product_code', 'like', $pattern)
                     ->orWhereHas('brand', fn(Builder $brand) => $brand->where('name', 'like', $pattern))
                     ->orWhereHas('supplier', fn(Builder $supplier) => $supplier->where('name', 'like', $pattern));
             });

@@ -13,6 +13,31 @@ class Batch extends Model
         'quantity',
     ];
 
+    protected $appends = [
+        'expiry',
+        'available_units',
+        'is_expired',
+        'days_remaining',
+    ];
+
+    public function getIsExpiredAttribute(): bool
+    {
+        if (!$this->expiry_date) {
+            return false;
+        }
+        return substr((string) $this->expiry_date, 0, 10) < now()->toDateString();
+    }
+
+    public function getDaysRemainingAttribute(): ?int
+    {
+        if (!$this->expiry_date) {
+            return null;
+        }
+        $expiry = \Carbon\Carbon::parse($this->expiry_date)->startOfDay();
+        $today = now()->startOfDay();
+        return (int) $today->diffInDays($expiry, false);
+    }
+
     // Map DB column names to frontend-friendly names
     public function getExpiryDateAttribute($value)
     {
