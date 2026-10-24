@@ -63,6 +63,7 @@ export default function DashboardLayout({ children }) {
     "/expenses": "Operating Expenses",
     "/reports/net-profit": "Profit & Loss Statement",
     "/stock-adjustments": "Stock Adjustments",
+    "/backups": "Backups & Offsite Storage",
   };
 
   const currentPath = location.pathname;

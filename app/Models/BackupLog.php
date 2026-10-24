@@ -16,6 +16,12 @@ class BackupLog extends Model
         'path',
         'metadata',
         'created_by',
+        'is_automated',
+        'storage_destination',
+        'remote_path',
+        'remote_file_id',
+        'remote_status',
+        'remote_error',
         'status',
         'error_message',
         'expires_at',
@@ -24,6 +30,7 @@ class BackupLog extends Model
     protected $casts = [
         'metadata' => 'array',
         'size' => 'integer',
+        'is_automated' => 'boolean',
         'expires_at' => 'datetime',
         'created_at' => 'datetime',
     ];

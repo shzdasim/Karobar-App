@@ -48,17 +48,24 @@ class BackupService
     /**
      * Create a new backup
      */
-    public function createBackup(string $type, ?int $userId = null): BackupLog
+    public function createBackup(string $type, ?int $userId = null, bool $isAutomated = false, ?string $customBackupPath = null): BackupLog
     {
         $timestamp = now()->format('Y-m-d_His');
         $filename = "backup_{$type}_{$timestamp}";
         
+        $schedule = \App\Models\BackupSchedule::getSchedule();
+        $destinationPath = $customBackupPath ?? $schedule->custom_backup_path;
+        $destinationType = !empty($destinationPath) ? 'custom_folder' : 'local';
+
         $backupLog = BackupLog::create([
             'filename' => $filename,
             'type' => $type,
             'size' => 0,
             'path' => '',
             'created_by' => $userId,
+            'is_automated' => $isAutomated,
+            'storage_destination' => $destinationType,
+            'remote_status' => !empty($destinationPath) ? 'pending' : 'skipped',
             'status' => 'pending',
         ]);
 
@@ -77,8 +84,13 @@ class BackupService
             }
 
             $backupLog->refresh();
+
+            // Copy to user's custom backup folder if configured
+            if (!empty($destinationPath)) {
+                $this->copyToCustomFolder($backupLog, $destinationPath);
+            }
             
-            // Clean up old backups
+            // Clean up old backups based on retention settings
             $this->cleanupOldBackups();
 
             return $backupLog;
@@ -90,6 +102,85 @@ class BackupService
             ]);
             
             throw $e;
+        }
+    }
+
+    /**
+     * Copy backup archive to custom local / network / drive folder
+     */
+    public function copyToCustomFolder(BackupLog $backupLog, string $destinationDir): void
+    {
+        $destinationDir = trim($destinationDir);
+        if (empty($destinationDir)) {
+            return;
+        }
+
+        try {
+            if (!File::exists($destinationDir)) {
+                File::makeDirectory($destinationDir, 0755, true, true);
+            }
+
+            if (!is_writable($destinationDir)) {
+                throw new \Exception("The destination folder [{$destinationDir}] is not writable. Please check folder permissions.");
+            }
+
+            $localFile = $this->getBackupFilePath($backupLog->filename, $backupLog->type);
+            if (!File::exists($localFile)) {
+                throw new \Exception("Source backup file [{$localFile}] not found.");
+            }
+
+            $targetFile = rtrim($destinationDir, DIRECTORY_SEPARATOR . '/\\') . DIRECTORY_SEPARATOR . basename($localFile);
+            File::copy($localFile, $targetFile);
+
+            $backupLog->update([
+                'storage_destination' => 'custom_folder',
+                'remote_path' => $targetFile,
+                'remote_status' => 'success',
+                'remote_error' => null,
+            ]);
+
+            // Prune old backups in the custom folder
+            $schedule = \App\Models\BackupSchedule::getSchedule();
+            $maxKeep = $schedule->max_backups_keep ?? $this->maxBackups;
+            $retentionDays = $schedule->retention_days ?? $this->retentionDays;
+            $this->pruneCustomFolder($destinationDir, $maxKeep, $retentionDays);
+
+        } catch (\Exception $e) {
+            Log::error("Copying backup to custom folder failed: " . $e->getMessage());
+            $backupLog->update([
+                'storage_destination' => 'custom_folder',
+                'remote_status' => 'failed',
+                'remote_error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Prune old backup files in the custom folder according to retention rules
+     */
+    public function pruneCustomFolder(string $destinationDir, int $maxKeep, int $retentionDays): void
+    {
+        if (!File::isDirectory($destinationDir)) {
+            return;
+        }
+
+        $files = File::glob(rtrim($destinationDir, DIRECTORY_SEPARATOR . '/\\') . DIRECTORY_SEPARATOR . 'backup_*');
+        if (empty($files)) {
+            return;
+        }
+
+        // Sort files by modified time descending (newest first)
+        usort($files, function ($a, $b) {
+            return filemtime($b) <=> filemtime($a);
+        });
+
+        $expiredTimestamp = now()->subDays($retentionDays)->timestamp;
+
+        foreach ($files as $index => $filepath) {
+            $mtime = filemtime($filepath);
+            if ($index >= $maxKeep || $mtime < $expiredTimestamp) {
+                @unlink($filepath);
+            }
         }
     }
 
@@ -106,16 +197,12 @@ class BackupService
         
         $sqlContent = '';
         
-        if ($driver === 'sqlite' && $config['database'] ?? false) {
-            // For SQLite, copy the database file content
+        if ($driver === 'sqlite' && !empty($config['database']) && file_exists($config['database'])) {
+            // For SQLite file on disk, copy the raw binary database file content directly without text headers
             $dbPath = $config['database'];
-            if (file_exists($dbPath)) {
-                $sqlContent = "-- SQLite Database Export\n";
-                $sqlContent .= "-- File: " . $dbPath . "\n\n";
-                $sqlContent .= file_get_contents($dbPath);
-            }
+            $sqlContent = file_get_contents($dbPath);
         } else {
-            // For MySQL/MariaDB/PostgreSQL, generate SQL dump
+            // For in-memory SQLite (:memory:), MySQL, MariaDB, or PostgreSQL, generate SQL dump
             $sqlContent = $this->generateSqlDump();
         }
         
@@ -286,7 +373,8 @@ class BackupService
             
             foreach ($tables as $table) {
                 $tableName = $table->name;
-                $output .= "-- Table: $tableName\n\n";
+                $output .= "-- Table: $tableName\n";
+                $output .= "DELETE FROM `$tableName`;\n";
                 
                 try {
                     $rows = DB::table($tableName)->get();
@@ -375,11 +463,11 @@ class BackupService
         $dbContent = '';
         if ($driver === 'sqlite') {
             $config = config('database.connections.sqlite');
-            if ($config['database'] ?? false) {
+            if (!empty($config['database']) && file_exists($config['database'])) {
                 $dbPath = $config['database'];
-                if (file_exists($dbPath)) {
-                    $dbContent = file_get_contents($dbPath);
-                }
+                $dbContent = file_get_contents($dbPath);
+            } else {
+                $dbContent = $this->generateSqlDump();
             }
         } else {
             $dbContent = $this->generateSqlDump();
@@ -458,6 +546,11 @@ class BackupService
                     'size' => $backup->size,
                     'formatted_size' => $backup->formatted_size,
                     'status' => $backup->status,
+                    'is_automated' => (bool)$backup->is_automated,
+                    'storage_destination' => $backup->storage_destination ?? 'local',
+                    'remote_path' => $backup->remote_path,
+                    'remote_status' => $backup->remote_status ?? 'skipped',
+                    'remote_error' => $backup->remote_error,
                     'created_at' => $backup->created_at,
                     'created_at_formatted' => $backup->created_at->format('M d, Y h:i A'),
                     'error_message' => $backup->error_message,
@@ -474,7 +567,7 @@ class BackupService
     {
         $backup = BackupLog::find($id);
         
-        if (!$backup || $backup->status !== 'completed') {
+        if (!$backup || !in_array($backup->status, ['completed', 'restored', 'pending'])) {
             return null;
         }
         
@@ -506,7 +599,7 @@ class BackupService
     {
         $backup = BackupLog::find($id);
         
-        if (!$backup || $backup->status !== 'completed') {
+        if (!$backup || !in_array($backup->status, ['completed', 'restored', 'pending'])) {
             throw new \Exception('Backup not found or invalid');
         }
         
@@ -534,19 +627,24 @@ class BackupService
                     break;
             }
             
-            // Update backup log status to 'restored' after successful restore
-            $backup->update([
-                'status' => 'restored',
-            ]);
+            // Update backup log status if it exists in restored database
+            try {
+                BackupLog::where('id', $backup->id)->update([
+                    'status' => 'restored',
+                ]);
+            } catch (\Exception $ignored) {
+                // Ignore if the backup record was created after the restored snapshot
+            }
             
             return true;
             
         } catch (\Exception $e) {
-            // Update backup log status to 'failed' with error message
-            $backup->update([
-                'status' => 'failed',
-                'error_message' => 'Restore failed: ' . $e->getMessage(),
-            ]);
+            try {
+                $backup->update([
+                    'status' => 'failed',
+                    'error_message' => 'Restore failed: ' . $e->getMessage(),
+                ]);
+            } catch (\Exception $ignored) {}
             
             throw new \Exception('Restore failed: ' . $e->getMessage());
         }
@@ -559,27 +657,59 @@ class BackupService
     {
         // Decompress
         $compressed = file_get_contents($filepath);
-        $sqlContent = gzdecode($compressed);
+        $sqlContent = @gzdecode($compressed);
         
         if ($sqlContent === false) {
-            throw new \Exception('Failed to decompress backup file');
+            $sqlContent = $compressed;
+        }
+
+        if (empty($sqlContent)) {
+            throw new \Exception('Failed to read or decompress backup file');
         }
         
         $driver = config('database.default');
         
         if ($driver === 'sqlite') {
-            // For SQLite, check if it's a raw database file or SQL statements
             $config = config('database.connections.sqlite');
             $dbPath = $config['database'] ?? null;
+            if (!$dbPath) {
+                throw new \Exception('SQLite database path is not configured.');
+            }
             
-            if ($dbPath && str_starts_with($sqlContent, 'SQLite format 3')) {
-                // Raw SQLite database file
-                $backupPath = $dbPath . '.bak.' . time();
-                if (copy($dbPath, $backupPath)) {
-                    file_put_contents($dbPath, $sqlContent);
-                } else {
-                    throw new \Exception('Failed to create backup of current database');
+            // Check if this backup contains a raw binary SQLite database and target is a file on disk
+            // (even if an older backup had a text header prepended, locate "SQLite format 3")
+            $sqliteMagicPos = strpos($sqlContent, 'SQLite format 3');
+            
+            if ($sqliteMagicPos !== false && $dbPath !== ':memory:') {
+                $rawDbContent = substr($sqlContent, $sqliteMagicPos);
+                
+                // Disconnect SQLite PDO to release active file locks
+                DB::disconnect('sqlite');
+                DB::purge('sqlite');
+
+                // Safety backup of current database
+                if (file_exists($dbPath)) {
+                    @copy($dbPath, $dbPath . '.bak.' . time());
                 }
+
+                // Remove WAL journal files if present to prevent stale transaction replay
+                if (file_exists($dbPath . '-wal')) {
+                    @unlink($dbPath . '-wal');
+                }
+                if (file_exists($dbPath . '-shm')) {
+                    @unlink($dbPath . '-shm');
+                }
+
+                $written = file_put_contents($dbPath, $rawDbContent);
+                if ($written === false) {
+                    throw new \Exception("Failed to write to database file [{$dbPath}]. Check file permissions.");
+                }
+
+                // Reconnect to restored database
+                DB::purge('sqlite');
+                DB::reconnect('sqlite');
+
+                return;
             } else {
                 // SQL statements
                 $this->executeSqlStatements($sqlContent, $dbPath);
@@ -595,33 +725,49 @@ class BackupService
      */
     protected function executeSqlStatements(string $sqlContent, ?string $dbPath = null): void
     {
+        $driver = config('database.default');
+
+        if ($driver === 'sqlite') {
+            DB::statement('PRAGMA foreign_keys = OFF;');
+        } elseif ($driver === 'mysql') {
+            DB::statement('SET FOREIGN_KEY_CHECKS = 0;');
+        }
+
         // Remove comments
         $lines = explode("\n", $sqlContent);
         $cleanLines = [];
         foreach ($lines as $line) {
             $trimmed = trim($line);
-            if (!str_starts_with($trimmed, '--') && !empty(trim($line))) {
+            if (!str_starts_with($trimmed, '--') && !str_starts_with($trimmed, '/*') && !empty($trimmed)) {
                 $cleanLines[] = $line;
             }
         }
         $cleanSql = implode("\n", $cleanLines);
         
         // Split by semicolons
-        $statements = array_filter(array_map('trim', explode(';', $cleanSql)));
+        $statements = array_filter(array_map('trim', explode(";\n", $cleanSql)));
+        if (empty($statements)) {
+            $statements = array_filter(array_map('trim', explode(';', $cleanSql)));
+        }
         
         DB::transaction(function () use ($statements) {
             foreach ($statements as $statement) {
                 $statement = trim($statement);
                 if (!empty($statement)) {
                     try {
-                        DB::statement($statement);
+                        DB::unprepared($statement);
                     } catch (\Exception $e) {
-                        // Log but continue - some operations might fail due to existing data
                         Log::warning('SQL execution warning: ' . $e->getMessage());
                     }
                 }
             }
         });
+
+        if ($driver === 'sqlite') {
+            DB::statement('PRAGMA foreign_keys = ON;');
+        } elseif ($driver === 'mysql') {
+            DB::statement('SET FOREIGN_KEY_CHECKS = 1;');
+        }
     }
 
     /**
@@ -707,25 +853,29 @@ class BackupService
      */
     protected function cleanupOldBackups(): void
     {
+        $schedule = \App\Models\BackupSchedule::getSchedule();
+        $maxKeep = $schedule->max_backups_keep ?? $this->maxBackups;
+        $retentionDays = $schedule->retention_days ?? $this->retentionDays;
+
         // Remove by count
-        $backups = BackupLog::orderByDesc('created_at')->skip($this->maxBackups)->take(100)->get();
+        $backups = BackupLog::orderByDesc('created_at')->skip($maxKeep)->take(100)->get();
         
         foreach ($backups as $backup) {
             $filepath = $this->getBackupFilePath($backup->filename, $backup->type);
             if (file_exists($filepath)) {
-                unlink($filepath);
+                @unlink($filepath);
             }
             $backup->delete();
         }
         
         // Remove by age
-        $expiredDate = now()->subDays($this->retentionDays);
+        $expiredDate = now()->subDays($retentionDays);
         $oldBackups = BackupLog::where('created_at', '<', $expiredDate)->get();
         
         foreach ($oldBackups as $backup) {
             $filepath = $this->getBackupFilePath($backup->filename, $backup->type);
             if (file_exists($filepath)) {
-                unlink($filepath);
+                @unlink($filepath);
             }
             $backup->delete();
         }

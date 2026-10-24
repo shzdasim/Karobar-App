@@ -12,3 +12,7 @@ Artisan::command('inspire', function () {
 // Users see pending demands whenever they open notifications; this command
 // marks them as "notified" once per day so reminders are tracked.
 Schedule::command('demands:notify')->dailyAt('09:00');
+
+// Automated Scheduled Backups & Off-Server Storage
+// Checks hourly if backup is due according to BackupSchedule frequency and time_of_day
+Schedule::command('backup:run-scheduled')->hourly();

@@ -197,6 +197,10 @@ Route::get('/print/a4-preview/{template}', function ($template) {
 // (add any other Blade/PDF routes here)
 // Route::get('/reports/sale-detail/pdf', ...);
 
-// --- React SPA catch-all LAST and excluding /print/* ---
+// --- Cloud Backup OAuth Callbacks ---
+Route::get('/api/backups/oauth/google/callback', [\App\Http\Controllers\BackupOAuthController::class, 'handleGoogleCallback']);
+Route::get('/api/backups/oauth/dropbox/callback', [\App\Http\Controllers\BackupOAuthController::class, 'handleDropboxCallback']);
+
+// --- React SPA catch-all LAST and excluding /print/* and /privacy-policy etc ---
 Route::view('/{path?}', 'index')
-    ->where('path', '^(?!print/).*$');
+    ->where('path', '^(?!print/|privacy-policy|terms-of-service|api/backups/oauth/).*$');

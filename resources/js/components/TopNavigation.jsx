@@ -29,6 +29,7 @@ import {
   CalculatorIcon,
   ClipboardDocumentListIcon as ReportIcon,
   ClockIcon,
+  ServerIcon,
 } from "@heroicons/react/24/outline";
 import { usePermissions } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
@@ -143,6 +144,7 @@ export default function TopNavigation() {
       icon: <Cog6ToothIcon className="w-5 h-5" />,
       items: [
         { name: "Settings", path: "/settings", icon: <Cog6ToothIcon className="w-5 h-5" />, perm: "settings.view" },
+        { name: "Backups & Storage", path: "/backups", icon: <ServerIcon className="w-5 h-5" />, perm: "backup.view" },
         { name: "Users", path: "/users", icon: <UserGroupIcon className="w-5 h-5" />, perm: "user.view" },
         { name: "Roles", path: "/roles", icon: <KeyIcon className="w-5 h-5" />, perm: "role.view" },
       ]

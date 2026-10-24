@@ -32,6 +32,7 @@ CalculatorIcon,
   ClipboardDocumentListIcon as ReportIcon,
   ClockIcon,
   HandRaisedIcon,
+  ServerIcon,
 } from "@heroicons/react/24/outline";
 import { usePermissions } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
@@ -125,6 +126,7 @@ export default function ClassicSidebar({ appName, logoUrl }) {
     { name: "Low Stock & Reorder", path: "/reports/reorder", icon: <CubeIcon className="w-5 h-5" />, perm: "report.current-stock.view", parent: "reports" },
     { type: "section", name: "System", key: "system", icon: <Cog6ToothIcon className="w-5 h-5" /> },
     { name: "Settings", path: "/settings", icon: <Cog6ToothIcon className="w-5 h-5" />, perm: "settings.view", parent: "system" },
+    { name: "Backups & Storage", path: "/backups", icon: <ServerIcon className="w-5 h-5" />, perm: "backup.view", parent: "system" },
     { name: "Users", path: "/users", icon: <UserGroupIcon className="w-5 h-5" />, perm: "user.view", parent: "system" },
     { name: "Roles", path: "/roles", icon: <KeyIcon className="w-5 h-5" />, perm: "role.view", parent: "system" },
   ], []);

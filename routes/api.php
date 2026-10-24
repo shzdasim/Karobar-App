@@ -279,8 +279,14 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::put('/theme-settings/{id}/activate',  [ThemeSettingController::class, 'activate']);
     Route::delete('/theme-settings/{id}',        [ThemeSettingController::class, 'destroy']);
 
-    // Backups
+    // Backups & Storage Destination
     Route::get('/backups/stats',                  [BackupController::class, 'stats']);
+    Route::get('/backups/schedule',               [BackupController::class, 'getSchedule']);
+    Route::post('/backups/schedule',              [BackupController::class, 'updateSchedule']);
+    Route::post('/backups/test-destination',      [BackupController::class, 'testDestination']);
+    Route::get('/backups/browse-directories',     [BackupController::class, 'browseDirectories']);
+    Route::post('/backups/create-directory',      [BackupController::class, 'createDirectory']);
+    Route::post('/backups/run-now',               [BackupController::class, 'runScheduledNow']);
     Route::get('/backups',                        [BackupController::class, 'index']);
     Route::post('/backups',                       [BackupController::class, 'store']);
     Route::get('/backups/{id}/download',          [BackupController::class, 'download']);

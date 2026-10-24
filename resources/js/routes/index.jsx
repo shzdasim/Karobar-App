@@ -50,6 +50,7 @@ const NetProfitReport = lazy(() => import("../pages/Reports/NetProfitReport.jsx"
 const ExpensesIndex = lazy(() => import("../pages/Expenses/index.jsx"));
 const MissingReports = lazy(() => import("../pages/Reports/MissingReports.jsx"));
 const Setting = lazy(() => import("../pages/Setting.jsx"));
+const BackupsIndex = lazy(() => import("../pages/Backups/Index.jsx"));
 const StockAdjustmentsIndex = lazy(() => import("../pages/stock-adjustments/index.jsx"));
 const CreateStockAdjustment = lazy(() => import("../pages/stock-adjustments/Create.jsx"));
 const EditStockAdjustment = lazy(() => import("../pages/stock-adjustments/Edit.jsx"));
@@ -497,6 +498,17 @@ export default function AppRoutes() {
         <ProtectedRoute>
           <DashboardLayout>
             <Setting />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      {/* Backups & Offsite Storage */}
+      <Route
+      path="backups"
+      element= {
+        <ProtectedRoute>
+          <DashboardLayout>
+            <BackupsIndex />
           </DashboardLayout>
         </ProtectedRoute>
       }

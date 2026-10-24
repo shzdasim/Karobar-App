@@ -29,7 +29,6 @@ import SaleSystemSetting from "@/components/settings/SaleSystemSetting.jsx";
 import ThemeSetting from "@/components/settings/ThemeSetting.jsx";
 import PrinterSetting from "@/components/settings/PrinterSetting.jsx";
 import LicenseSetting from "@/components/settings/LicenseSetting.jsx";
-import BackupRestoreSetting from "@/components/settings/BackupRestoreSetting.jsx";
 
 registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);
 
@@ -49,7 +48,6 @@ const SETTINGS_TABS = [
   { id: "sale", label: "Sale System", icon: ShoppingCartIcon },
   { id: "navigation", label: "Theme Setting", icon: Bars3Icon },
   { id: "printer", label: "Printer Setting", icon: PrinterIcon },
-  { id: "backup", label: "Backup and restore", icon: ServerIcon },
   { id: "license", label: "License", icon: DocumentTextIcon },
 ];
 
@@ -456,14 +454,6 @@ export default function Setting() {
             fetchLicenseStatus={fetchLicenseStatus}
             themeColors={themeColors}
             primaryTextColor={primaryTextColor}
-          />
-        )}
-
-        {activeTab === "backup" && (
-          <BackupRestoreSetting
-            themeColors={themeColors}
-            primaryTextColor={primaryTextColor}
-            emeraldTextColor={emeraldTextColor}
           />
         )}
       </div>
