@@ -959,6 +959,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     let isCustomPrice = false;
 
     const batchList = await fetchBatches(productId);
+    const assignedBatches = (batchList || []).filter(
+      (b) => !b.is_unbatched && b.batch_number && String(b.batch_number).trim() !== ""
+    );
+    const hasAssignedBatches = assignedBatches.length > 0;
     const hasBatches = Array.isArray(batchList) && batchList.length > 0;
 
     const usedOnOtherRowsPre = (form.items || [])
@@ -1034,9 +1038,15 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
            availableBatches[0] ||
            batchList[0])
         : null;
-      const allocatedBatchNumber = shouldPreserveBatch ? existingBatchNumber : (fefoBatch && !fefoBatch.is_unbatched ? fefoBatch.batch_number : "");
-      const allocatedExpiry = shouldPreserveBatch ? existingExpiry : (fefoBatch && !fefoBatch.is_unbatched ? (fefoBatch.expiry || fefoBatch.expiry_date || "") : "");
-      const allocatedIsUnbatched = shouldPreserveBatch ? existingIsUnbatched : Boolean(fefoBatch?.is_unbatched);
+      const allocatedBatchNumber = shouldPreserveBatch
+        ? existingBatchNumber
+        : (!hasAssignedBatches ? "" : (fefoBatch && !fefoBatch.is_unbatched ? fefoBatch.batch_number : ""));
+      const allocatedExpiry = shouldPreserveBatch
+        ? existingExpiry
+        : (!hasAssignedBatches ? "" : (fefoBatch && !fefoBatch.is_unbatched ? (fefoBatch.expiry || fefoBatch.expiry_date || "") : ""));
+      const allocatedIsUnbatched = shouldPreserveBatch
+        ? existingIsUnbatched
+        : (!hasAssignedBatches ? true : Boolean(fefoBatch?.is_unbatched));
       const batchAvailable = fefoBatch?.available_units ?? displayAvailable;
       
       items[rowIndex] = recalcItem(
@@ -1067,7 +1077,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     });
 
     setTimeout(() => {
-      if (hasBatches) {
+      if (hasAssignedBatches) {
         batchRefs.current[rowIndex]?.querySelector?.("input")?.focus?.();
       } else {
         qtyRefs.current[rowIndex]?.focus?.();

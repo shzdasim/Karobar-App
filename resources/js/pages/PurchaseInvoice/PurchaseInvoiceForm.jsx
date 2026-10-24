@@ -1811,15 +1811,23 @@ const contRect = container.getBoundingClientRect();
                         const avg = get(selectedProduct, ["avg_price","average_price","avgPrice"], "");
 
                         // Fetch batches for the selected product into batchesByProduct
+                        let fetchedBatches = [];
                         if (selectedProduct?.id) {
-                          fetchProductBatches(selectedProduct.id);
+                          fetchedBatches = await fetchProductBatches(selectedProduct.id);
                         }
 
-                        // Do not auto-force a batch; preserve if re-selecting same product, else leave blank
+                        const assignedBatches = (fetchedBatches || []).filter(
+                          (b) => !b.is_unbatched && b.batch_number && String(b.batch_number).trim() !== ""
+                        );
+                        const hasAssignedBatches = assignedBatches.length > 0;
+
+                        // Preserve if re-selecting same product; if product has no assigned batches, auto-select unassigned
                         const isSameProduct = String(form.items[i]?.product_id) === String(selectedProduct?.id);
                         const batch = isSameProduct ? form.items[i]?.batch || "" : "";
                         const expiry = isSameProduct ? form.items[i]?.expiry || "" : "";
-                        const isUnbatched = isSameProduct ? Boolean(form.items[i]?.is_unbatched) : false;
+                        const isUnbatched = isSameProduct
+                          ? Boolean(form.items[i]?.is_unbatched)
+                          : (!hasAssignedBatches);
 
                         const newItems = [...form.items];
                         const prepared = {
@@ -1854,13 +1862,21 @@ const contRect = container.getBoundingClientRect();
                         if (!paidTouched) nextForm.total_paid = nextForm.total_amount ?? "";
                         setForm(nextForm);
                         
-                        // Focus on batch field and open menu so user can add new batch, select existing, or choose unassigned
+                        // Focus on batch field if product has assigned batches, else shift directly to quantity
                         setTimeout(() => {
-                          if (batchRefs.current[i]) {
-                            batchRefs.current[i].focus();
-                            batchRefs.current[i].openMenu?.();
-                            setCurrentField("batch");
-                            setCurrentRowIndex(i);
+                          if (hasAssignedBatches) {
+                            if (batchRefs.current[i]) {
+                              batchRefs.current[i].focus();
+                              batchRefs.current[i].openMenu?.();
+                              setCurrentField("batch");
+                              setCurrentRowIndex(i);
+                            }
+                          } else {
+                            if (packQuantityRefs.current[i]) {
+                              packQuantityRefs.current[i].focus();
+                              setCurrentField("pack_quantity");
+                              setCurrentRowIndex(i);
+                            }
                           }
                         }, 50);
                       }}

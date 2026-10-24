@@ -850,11 +850,14 @@ const handleSelectChange = async (field, value) => {
     if (!isInvoiceMode) {
       // OPEN RETURN
       const openBatches = await fetchBatchesForOpenReturn(selectedId);
+      const assignedBatchesOpen = (openBatches || []).filter(
+        (b) => !b.is_unbatched && b.batch_number && String(b.batch_number).trim() !== ""
+      );
       const usedOnOtherRows = form.items
         .filter((it, idx) => idx !== index && eqPid(it.product_id, selectedId))
         .map((it) => (it.batch ? String(it.batch).trim() : (it.is_unbatched ? "__unbatched__" : "")));
 
-      if (openBatches.length === 0) {
+      if (openBatches.length === 0 || assignedBatchesOpen.length === 0) {
         if (usedOnOtherRows.length > 0) {
           invoiceErrors.showMessage(`Duplicate product "${productNameById(selectedId)}" already used in row ${findDuplicateProductIndex(selectedId, index) + 1}.`);
           setRowError(index, "product");
@@ -864,13 +867,17 @@ const handleSelectChange = async (field, value) => {
           clearRowError(index, "product");
         }
 
-        // No batches → product-level availability
-        const totalAvail = await fetchAvailableUnits(selectedId, null);
+        // No assigned batches → auto-select unassigned and use available stock
+        const unbatchedItem = (openBatches || []).find((b) => b.is_unbatched);
+        const totalAvail = unbatchedItem?.available_units != null
+          ? Number(unbatchedItem.available_units)
+          : await fetchAvailableUnits(selectedId, null);
         newItems[index] = recalcItem(
-          { ...newItems[index], is_unbatched: true, available_units: toNum(totalAvail) },
+          { ...newItems[index], batch: "", expiry: "", is_unbatched: true, available_units: toNum(totalAvail) },
           "set_available_units_no_batch_open"
         );
-        setBatchesForRow(index, []);
+        clearRowError(index, "batch");
+        setBatchesForRow(index, openBatches || []);
         setForm((prev) => recalcFooter({ ...prev, items: newItems }, "items"));
         focusOnField("pack_quantity", index);
         return;
@@ -924,11 +931,14 @@ const handleSelectChange = async (field, value) => {
     }
 
     // INVOICE MODE
+    const assignedBatchesInv = batchOptsInvoice.filter(
+      (b) => !b.is_unbatched && b.batch_number && String(b.batch_number).trim() !== ""
+    );
     const usedOnOtherRowsInv = form.items
       .filter((it, idx) => idx !== index && eqPid(it.product_id, selectedId))
       .map((it) => (it.batch ? String(it.batch).trim() : (it.is_unbatched ? "__unbatched__" : "")));
 
-    if (batchOptsInvoice.length === 0) {
+    if (batchOptsInvoice.length === 0 || assignedBatchesInv.length === 0) {
       if (usedOnOtherRowsInv.length > 0) {
         invoiceErrors.showMessage(`Duplicate product "${productNameById(selectedId)}" already used in row ${findDuplicateProductIndex(selectedId, index) + 1}.`);
         setRowError(index, "product");
@@ -938,13 +948,28 @@ const handleSelectChange = async (field, value) => {
         clearRowError(index, "product");
       }
 
-      // No batches for this product on invoice → use units purchased on that invoice
-      const totalUnits = unitsOnInvoiceForProduct(selectedId);
+      // No assigned batches for this product on invoice → use unassigned units purchased on that invoice
+      const unbatchedOpt = batchOptsInvoice.find((b) => b.is_unbatched);
+      const totalUnits = unbatchedOpt
+        ? unitsOnInvoiceForProductBatch(selectedId, "")
+        : unitsOnInvoiceForProduct(selectedId);
       newItems[index] = recalcItem(
-        { ...newItems[index], is_unbatched: true, available_units: toNum(totalUnits) },
+        {
+          ...newItems[index],
+          batch: "",
+          expiry: "",
+          is_unbatched: true,
+          available_units: toNum(totalUnits),
+          pack_size: toNum(firstDefined(unbatchedOpt?.pack_size, newItems[index].pack_size)),
+          pack_purchased_quantity: toNum(unbatchedOpt?.pack_quantity),
+          pack_purchase_price: toNum(firstDefined(unbatchedOpt?.pack_purchase_price, newItems[index].pack_purchase_price)),
+          unit_purchase_price: toNum(firstDefined(unbatchedOpt?.unit_purchase_price, newItems[index].unit_purchase_price)),
+          item_discount_percentage: toNum(unbatchedOpt?.item_discount_percentage),
+        },
         "set_available_units_no_batch_invoice_unitsPurchased"
       );
-      setBatchesForRow(index, []);
+      clearRowError(index, "batch");
+      setBatchesForRow(index, batchOptsInvoice);
       setForm((prev) => recalcFooter({ ...prev, items: newItems }, "items"));
       focusOnField("pack_quantity", index);
       return;

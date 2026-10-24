@@ -708,11 +708,14 @@ const handleSelectChange = async (field, value) => {
     if (isInvoiceMode) {
       const candidates = invoiceItems.filter((it) => eqId(it.product_id, pid));
       const batchOptsInvoice = buildBatchOptionsForInvoice(candidates);
+      const assignedBatchesInv = batchOptsInvoice.filter(
+        (b) => !b.is_unbatched && b.batch_number && String(b.batch_number).trim() !== ""
+      );
       const usedOnOtherRows = form.items
         .filter((it, idx) => idx !== row && eqId(it.product_id, pid))
         .map((it) => (it.batch_number ? String(it.batch_number).trim() : (it.is_unbatched ? "__unbatched__" : "")));
 
-      if (batchOptsInvoice.length === 0) {
+      if (batchOptsInvoice.length === 0 || assignedBatchesInv.length === 0) {
         if (usedOnOtherRows.length > 0) {
           invoiceErrors.showMessage(`Product "${productNameById(pid)}" already used in row ${findDuplicateProductIndex(pid, row) + 1}.`);
           resetRow(row);
@@ -720,8 +723,13 @@ const handleSelectChange = async (field, value) => {
           return;
         }
 
-        unit_sale_price = candidates.length ? extractUnitPrice(candidates[0]) : await fetchProductUnitPrice(pid);
-        item_discount_percentage = candidates.length ? extractItemDiscPct(candidates[0]) : 0;
+        const unbatchedCandidate = candidates.find((c) => c.is_unbatched || !c.batch_number);
+        unit_sale_price = unbatchedCandidate
+          ? extractUnitPrice(unbatchedCandidate)
+          : (candidates.length ? extractUnitPrice(candidates[0]) : await fetchProductUnitPrice(pid));
+        item_discount_percentage = unbatchedCandidate
+          ? extractItemDiscPct(unbatchedCandidate)
+          : (candidates.length ? extractItemDiscPct(candidates[0]) : 0);
         unit_sale_quantity = candidates.reduce((s, c) => s + extractUnitSaleQty(c), 0);
 
         newItems[row] = recalcItem({
@@ -738,7 +746,7 @@ const handleSelectChange = async (field, value) => {
         setForm((prev) => recalcFooter({ ...prev, items: newItems }));
         setRowBatches((prev) => {
           const next = prev.slice();
-          next[row] = [];
+          next[row] = batchOptsInvoice;
           return next;
         });
         setTimeout(() => qtyRefs.current[row]?.focus?.(), 60);
@@ -806,11 +814,14 @@ const handleSelectChange = async (field, value) => {
     item_discount_percentage = toNum(newItems[row]?.item_discount_percentage);
 
     const openBatches = await fetchBatchesForOpenReturn(pid);
+    const assignedBatchesOpen = (openBatches || []).filter(
+      (b) => !b.is_unbatched && b.batch_number && String(b.batch_number).trim() !== ""
+    );
     const usedOnOtherRows = form.items
       .filter((it, idx) => idx !== row && eqId(it.product_id, pid))
       .map((it) => (it.batch_number ? String(it.batch_number).trim() : (it.is_unbatched ? "__unbatched__" : "")));
 
-    if (openBatches.length === 0) {
+    if (openBatches.length === 0 || assignedBatchesOpen.length === 0) {
       if (usedOnOtherRows.length > 0) {
         invoiceErrors.showMessage(`Product "${productNameById(pid)}" already used in row ${findDuplicateProductIndex(pid, row) + 1}.`);
         resetRow(row);
@@ -818,7 +829,11 @@ const handleSelectChange = async (field, value) => {
         return;
       }
 
-      unit_sale_quantity = await fetchProductAvailableQty(pid);
+      const unbatchedItem = (openBatches || []).find((b) => b.is_unbatched);
+      unit_sale_quantity = unbatchedItem?.available_units != null
+        ? Number(unbatchedItem.available_units)
+        : await fetchProductAvailableQty(pid);
+
       newItems[row] = recalcItem({
         ...newItems[row],
         product_id: pid,
@@ -833,7 +848,7 @@ const handleSelectChange = async (field, value) => {
       setForm((prev) => recalcFooter({ ...prev, items: newItems }));
       setRowBatches((prev) => {
         const next = prev.slice();
-        next[row] = [];
+        next[row] = openBatches;
         return next;
       });
       setTimeout(() => qtyRefs.current[row]?.focus?.(), 60);
