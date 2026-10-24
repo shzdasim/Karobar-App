@@ -29,6 +29,7 @@ class Product extends Model
         'margin',
         'narcotic',
         'max_discount',
+        'expiry_warning_days',
         'category_id',
         'brand_id',
         'supplier_id',

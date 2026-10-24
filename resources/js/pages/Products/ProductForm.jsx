@@ -295,6 +295,7 @@ const ProductFormFields = forwardRef(({
                 <th className="px-2 py-1.5 dark:text-slate-200">Avg</th>
                 <th className="px-2 py-1.5 dark:text-slate-200">Mrg%</th>
                 <th className="px-2 py-1.5 w-16 dark:text-slate-200">Max.Disc</th>
+                <th className="px-2 py-1.5 w-20 dark:text-slate-200" title="Custom Expiry Warning Days (Leave empty to use store default)">Exp.Warn(d)</th>
               </tr>
             </thead>
             <tbody>
@@ -329,6 +330,17 @@ const ProductFormFields = forwardRef(({
                     value={form.max_discount || ""}
                     onChange={handleChange}
                     className="h-7 w-full text-center appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none dark:bg-slate-600/70 dark:text-slate-200"
+                  />
+                </td>
+                <td className="px-1 py-1">
+                  <GlassInput
+                    type="number"
+                    name="expiry_warning_days"
+                    value={form.expiry_warning_days ?? ""}
+                    onChange={handleChange}
+                    placeholder="Default"
+                    title="Custom Expiry Warning Days (leave blank to use default)"
+                    className="h-7 w-full text-center appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none dark:bg-slate-600/70 dark:text-slate-200 placeholder:text-[10px]"
                   />
                 </td>
               </tr>

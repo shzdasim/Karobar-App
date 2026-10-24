@@ -45,6 +45,7 @@ const CurrentStockReport = lazy(() => import("../pages/Reports/CurrentStockRepor
 const StockAdjustmentReport = lazy(() => import("../pages/Reports/StockAdjustmentReport.jsx"));
 const ProductComprehensiveReport = lazy(() => import("../pages/Reports/ProductComprehensiveReport.jsx"));
 const NearExpiryProductReport = lazy(() => import("../pages/Reports/NearExpiryProductReport.jsx"));
+const BatchExpiryTracking = lazy(() => import("../pages/BatchExpiry/BatchExpiryTracking.jsx"));
 const NetProfitReport = lazy(() => import("../pages/Reports/NetProfitReport.jsx"));
 const ExpensesIndex = lazy(() => import("../pages/Expenses/index.jsx"));
 const MissingReports = lazy(() => import("../pages/Reports/MissingReports.jsx"));
@@ -478,6 +479,17 @@ export default function AppRoutes() {
       
       {/* Operating Expenses */}
       <Route path="expenses" element={<ProtectedRoute><DashboardLayout><ExpensesIndex /></DashboardLayout></ProtectedRoute>} />
+      {/* Batch Expiry & Tracking */}
+      <Route
+        path="batch-expiry"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <BatchExpiryTracking />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
       {/* Settings */}
       <Route
       path="settings"

@@ -24,6 +24,7 @@ class Setting extends Model
         'currency_symbol',
         'currency_position',
         'currency_decimal_places',
+        'expiry_warning_days',
     ];
     protected $appends = ['logo_url'];
 

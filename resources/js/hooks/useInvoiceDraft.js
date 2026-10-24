@@ -52,15 +52,11 @@ export function useInvoiceDraft({ type, form, setForm, enabled = true, onDraftLo
     latestFormRef.current = form;
   }, [form]);
 
-  // Determine if form has business data worth saving
+  // Determine if form has business data worth saving (must have at least one product selected)
   const hasMeaningfulData = useCallback((formData) => {
     if (!formData) return false;
-    const hasItems = Array.isArray(formData.items) && formData.items.some((it) => Boolean(it?.product_id));
-    if (type === "purchase") {
-      return hasItems || Boolean(formData.supplier_id) || Boolean(formData.invoice_number);
-    }
-    return hasItems || Boolean(formData.customer_id) || Boolean(formData.remarks);
-  }, [type]);
+    return Array.isArray(formData.items) && formData.items.some((it) => Boolean(it?.product_id));
+  }, []);
 
   // Refresh active drafts list from API
   const refreshDrafts = useCallback(async () => {
@@ -155,13 +151,17 @@ export function useInvoiceDraft({ type, form, setForm, enabled = true, onDraftLo
   const saveDraft = useCallback(
     async (title = null) => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (!hasMeaningfulData(latestFormRef.current)) {
+        toast.error("Cannot hold invoice with zero products selected. Please add at least one product.", { icon: "⚠️" });
+        return null;
+      }
       const res = await performSave(latestFormRef.current, title);
       if (res) {
         toast.success(`Saved as held draft: "${res.title || "Draft"}"`);
       }
       return res;
     },
-    [performSave]
+    [performSave, hasMeaningfulData]
   );
 
   // Hold current invoice and reset to clean blank form for next customer (Alt+H)
@@ -169,7 +169,7 @@ export function useInvoiceDraft({ type, form, setForm, enabled = true, onDraftLo
     async (title = null) => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       if (!hasMeaningfulData(latestFormRef.current)) {
-        toast("Current invoice is empty. Nothing to hold.", { icon: "ℹ️" });
+        toast.error("Cannot hold invoice with zero products selected. Please add at least one product.", { icon: "⚠️" });
         return null;
       }
       const res = await performSave(latestFormRef.current, title);

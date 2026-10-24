@@ -208,6 +208,13 @@ class InvoiceDraftController extends Controller
         $uuid = $validated['uuid'] ?? (string)Str::uuid();
         $payload = $validated['payload'];
 
+        $validItems = collect($payload['items'] ?? [])->filter(fn($it) => !empty($it['product_id']));
+        if ($validItems->isEmpty()) {
+            throw ValidationException::withMessages([
+                'items' => ['Cannot hold invoice with zero products selected. Please add at least one product.'],
+            ]);
+        }
+
         // If draft with this UUID already exists for this user in draft status, redirect to update
         $existing = InvoiceDraft::where('uuid', $uuid)->first();
         if ($existing) {
@@ -219,7 +226,7 @@ class InvoiceDraftController extends Controller
 
         $partyName = $this->extractPartyName($validated['type'], $payload);
         $totalAmount = $this->extractTotalAmount($validated['type'], $payload);
-        $itemsCount = count($payload['items'] ?? []);
+        $itemsCount = $validItems->count();
 
         $title = $validated['title'] ?? null;
         if (empty($title)) {
@@ -268,9 +275,16 @@ class InvoiceDraftController extends Controller
         }
 
         $payload = $validated['payload'];
+        $validItems = collect($payload['items'] ?? [])->filter(fn($it) => !empty($it['product_id']));
+        if ($validItems->isEmpty()) {
+            throw ValidationException::withMessages([
+                'items' => ['Cannot hold invoice with zero products selected. Please add at least one product.'],
+            ]);
+        }
+
         $partyName = $this->extractPartyName($draft->type, $payload);
         $totalAmount = $this->extractTotalAmount($draft->type, $payload);
-        $itemsCount = count($payload['items'] ?? []);
+        $itemsCount = $validItems->count();
 
         $draft->payload      = $payload;
         $draft->party_name   = $partyName;

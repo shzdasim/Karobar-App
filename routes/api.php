@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\MeController;
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BatchController;
+use App\Http\Controllers\BatchExpiryController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\BrandController;
 use App\Http\Controllers\BrandImportController;
@@ -226,8 +227,14 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
 
 // Notifications
     Route::get('/notifications/low-stock',        [NotificationController::class, 'lowStock']);
+    Route::get('/notifications/expiry-alerts',    [BatchExpiryController::class, 'expiryAlerts']);
     Route::post('/notifications/dismiss',         [NotificationController::class, 'dismiss']);
     Route::post('/notifications/dismiss-all',     [NotificationController::class, 'dismissAll']);
+
+    // Batch Expiry Tracking & Warning System
+    Route::get('/batch-expiry',                           [BatchExpiryController::class, 'index']);
+    Route::put('/batch-expiry/product-warning/{product}', [BatchExpiryController::class, 'updateProductWarning']);
+    Route::put('/batch-expiry/global-warning',            [BatchExpiryController::class, 'updateGlobalWarning']);
 
     // User Demands
     Route::get('/user-demands/count',             [UserDemandController::class, 'count']);

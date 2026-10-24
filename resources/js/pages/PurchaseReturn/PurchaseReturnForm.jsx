@@ -421,6 +421,58 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
 
   useEffect(() => {
     if (!returnId) {
+      if (initialData) {
+        (async () => {
+          try {
+            const rawItems = Array.isArray(initialData.items) && initialData.items.length
+              ? initialData.items
+              : [{ ...defaultItem }];
+            const items = rawItems.map((it) => ({
+              ...defaultItem,
+              ...it,
+              is_unbatched: Boolean(it.is_unbatched || !it.batch || String(it.batch).trim() === ""),
+            }));
+
+            const normalized = {
+              posted_number: "",
+              date: initialData.date || new Date().toISOString().slice(0, 10),
+              supplier_id: initialData.supplier_id || "",
+              purchase_invoice_id: initialData.purchase_invoice_id || "",
+              remarks: initialData.remarks || "",
+              items,
+              gross_total: toNum(initialData.gross_total),
+              discount_percentage: toNum(initialData.discount_percentage),
+              discount_amount: toNum(initialData.discount_amount),
+              tax_percentage: toNum(initialData.tax_percentage),
+              tax_amount: toNum(initialData.tax_amount),
+              total: toNum(initialData.total),
+            };
+
+            if (normalized.supplier_id) {
+              await fetchInvoices(normalized.supplier_id);
+              try {
+                const sRes = await axios.get(`/api/suppliers/${normalized.supplier_id}`);
+                setSelectedSupplierObj(sRes.data || null);
+              } catch (e) {}
+            }
+
+            const batchesArray = await Promise.all(
+              normalized.items.map(async (it) => {
+                if (!it.product_id) return [];
+                return fetchBatchesForOpenReturn(it.product_id);
+              })
+            );
+            setRowBatches(batchesArray);
+
+            setForm((prev) => recalcFooter({ ...prev, ...normalized }, "init"));
+          } catch (e) {
+            console.error(e);
+          } finally {
+            setIsEditModeLoaded(true);
+          }
+        })();
+        return;
+      }
       setIsEditModeLoaded(true);
       return;
     }

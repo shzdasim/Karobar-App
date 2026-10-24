@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import PurchaseReturnForm from "./PurchaseReturnForm";
@@ -7,6 +7,7 @@ import { usePermissions } from "@/api/usePermissions.js";
 
 export default function CreatePurchaseReturn() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { loading: permsLoading, canFor } = usePermissions();
   const can = useMemo(
     () => (typeof canFor === "function" ? canFor("purchase-return") : {
@@ -34,9 +35,13 @@ export default function CreatePurchaseReturn() {
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.create) return <div className="p-6 text-sm text-gray-700">You don’t have permission to create purchase returns.</div>;
 
-return (
+  return (
     <div className="w-full h-full">
-      <PurchaseReturnForm onSubmit={onSubmit} onSuccess={() => navigate("/purchase-returns")} />
+      <PurchaseReturnForm
+        initialData={location.state?.initialData}
+        onSubmit={onSubmit}
+        onSuccess={() => navigate("/purchase-returns")}
+      />
     </div>
   );
 }

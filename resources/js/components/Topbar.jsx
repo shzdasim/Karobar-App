@@ -119,14 +119,16 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
     let cancelled = false;
     const fetchCount = async () => {
       try {
-        const [lowStockRes, demandsRes] = await Promise.allSettled([
+        const [lowStockRes, demandsRes, expiryRes] = await Promise.allSettled([
           axios.get("/api/notifications/low-stock", { params: { limit: 1 } }),
           axios.get("/api/user-demands", { params: { status: "pending", limit: 1 } }),
+          axios.get("/api/notifications/expiry-alerts", { params: { limit: 1 } }),
         ]);
         if (cancelled) return;
         const lowStockCount = lowStockRes.status === "fulfilled" ? Number(lowStockRes.value.data?.count || 0) : 0;
         const demandCount = demandsRes.status === "fulfilled" ? Number(demandsRes.value.data?.pending_count || 0) : 0;
-        setNotifCount(lowStockCount + demandCount);
+        const expiryCount = expiryRes.status === "fulfilled" ? Number(expiryRes.value.data?.count || 0) : 0;
+        setNotifCount(lowStockCount + demandCount + expiryCount);
       } catch {
         if (!cancelled) setNotifCount(0);
       }

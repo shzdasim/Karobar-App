@@ -1,0 +1,374 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Batch;
+use App\Models\Product;
+use App\Models\Setting;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+class BatchExpiryController extends Controller
+{
+    /**
+     * Get the active global warning days setting.
+     */
+    private function getGlobalWarningDays(): int
+    {
+        $setting = Setting::first();
+        return (int) ($setting?->expiry_warning_days ?? 90);
+    }
+
+    /**
+     * GET /api/batch-expiry
+     *
+     * List batches with expiry analysis, status categorization, days remaining,
+     * financial value at risk, and summary metrics.
+     */
+    public function index(Request $request)
+    {
+        $this->authorize('viewAny', Product::class);
+
+        $globalWarningDays = $this->getGlobalWarningDays();
+        $statusFilter = $request->query('status', 'all'); // all, expired, critical, warning, safe
+        $search = trim((string) $request->query('search', ''));
+        $supplierId = $request->query('supplier_id');
+        $brandId = $request->query('brand_id');
+        $categoryId = $request->query('category_id');
+        $hasCustom = $request->query('has_custom_warning');
+        $sortBy = $request->query('sort_by', 'expiry_date');
+        $sortDir = strtolower($request->query('sort_dir', 'asc')) === 'desc' ? 'desc' : 'asc';
+        $perPage = max(1, min((int) $request->query('per_page', 25), 500));
+        $page = max(1, (int) $request->query('page', 1));
+
+        $today = now()->startOfDay();
+        $todayStr = $today->toDateString();
+
+        // Base query: only batches with quantity > 0 and expiry_date set
+        $query = DB::table('batches as b')
+            ->join('products as p', 'p.id', '=', 'b.product_id')
+            ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
+            ->leftJoin('brands as br', 'br.id', '=', 'p.brand_id')
+            ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
+            ->whereNotNull('b.expiry_date')
+            ->where('b.quantity', '>', 0);
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('p.name', 'like', "%{$search}%")
+                  ->orWhere('p.product_code', 'like', "%{$search}%")
+                  ->orWhere('p.barcode', 'like', "%{$search}%")
+                  ->orWhere('b.batch_number', 'like', "%{$search}%");
+            });
+        }
+
+        if (!empty($supplierId)) {
+            $query->where('p.supplier_id', $supplierId);
+        }
+        if (!empty($brandId)) {
+            $query->where('p.brand_id', $brandId);
+        }
+        if (!empty($categoryId)) {
+            $query->where('p.category_id', $categoryId);
+        }
+        if ($hasCustom === '1' || $hasCustom === 'true') {
+            $query->whereNotNull('p.expiry_warning_days');
+        } elseif ($hasCustom === '0' || $hasCustom === 'false') {
+            $query->whereNull('p.expiry_warning_days');
+        }
+
+        $allRows = $query->select(
+            'b.id as batch_id',
+            'b.batch_number',
+            'b.expiry_date',
+            'b.quantity',
+            'b.created_at as batch_created_at',
+            'p.id as product_id',
+            'p.product_code',
+            'p.barcode',
+            'p.name as product_name',
+            'p.pack_size',
+            'p.unit_purchase_price',
+            'p.pack_purchase_price',
+            'p.unit_sale_price',
+            'p.avg_price',
+            'p.expiry_warning_days as product_warning_days',
+            'p.supplier_id',
+            'p.brand_id',
+            'p.category_id',
+            DB::raw('COALESCE(s.name, "") as supplier_name'),
+            DB::raw('COALESCE(s.phone, "") as supplier_phone'),
+            DB::raw('COALESCE(br.name, "") as brand_name'),
+            DB::raw('COALESCE(c.name, "") as category_name')
+        )->get();
+
+        // Process rows in memory for accurate date math, financial value, and summary KPIs
+        $summary = [
+            'total_batches_tracked' => 0,
+            'total_expired_batches' => 0,
+            'total_expired_qty' => 0,
+            'total_expired_value' => 0.0,
+            'total_critical_batches' => 0,
+            'total_critical_qty' => 0,
+            'total_critical_value' => 0.0,
+            'total_warning_batches' => 0,
+            'total_warning_qty' => 0,
+            'total_warning_value' => 0.0,
+            'total_stock_value_at_risk' => 0.0,
+            'global_warning_days' => $globalWarningDays,
+        ];
+
+        $enriched = [];
+
+        foreach ($allRows as $row) {
+            $expiry = Carbon::parse($row->expiry_date)->startOfDay();
+            $daysRemaining = (int) $today->diffInDays($expiry, false);
+
+            $warningDays = $row->product_warning_days !== null
+                ? (int) $row->product_warning_days
+                : $globalWarningDays;
+
+            // Determine status
+            if ($daysRemaining < 0) {
+                $status = 'expired';
+            } elseif ($daysRemaining <= 30) {
+                $status = 'critical';
+            } elseif ($daysRemaining <= $warningDays) {
+                $status = 'warning';
+            } else {
+                $status = 'safe';
+            }
+
+            // Estimate unit cost
+            $packSize = max(1, (int) ($row->pack_size ?? 1));
+            $unitCost = (float) ($row->unit_purchase_price ?? 0);
+            if ($unitCost <= 0 && !empty($row->avg_price)) {
+                $unitCost = (float) $row->avg_price;
+            }
+            if ($unitCost <= 0 && !empty($row->pack_purchase_price)) {
+                $unitCost = (float) $row->pack_purchase_price / $packSize;
+            }
+
+            $qty = (int) $row->quantity;
+            $valueAtRisk = round($qty * $unitCost, 2);
+            $retailValue = round($qty * (float) ($row->unit_sale_price ?? 0), 2);
+
+            // Update global metrics (for all batches matching query filters before status tab)
+            $summary['total_batches_tracked']++;
+            $summary['total_stock_value_at_risk'] += $valueAtRisk;
+
+            if ($status === 'expired') {
+                $summary['total_expired_batches']++;
+                $summary['total_expired_qty'] += $qty;
+                $summary['total_expired_value'] += $valueAtRisk;
+            } elseif ($status === 'critical') {
+                $summary['total_critical_batches']++;
+                $summary['total_critical_qty'] += $qty;
+                $summary['total_critical_value'] += $valueAtRisk;
+            }
+
+            if ($daysRemaining <= $warningDays) {
+                $summary['total_warning_batches']++;
+                $summary['total_warning_qty'] += $qty;
+                $summary['total_warning_value'] += $valueAtRisk;
+            }
+
+            $item = (array) $row;
+            $item['days_remaining'] = $daysRemaining;
+            $item['effective_warning_days'] = $warningDays;
+            $item['has_custom_warning'] = $row->product_warning_days !== null;
+            $item['status'] = $status;
+            $item['unit_cost'] = round($unitCost, 2);
+            $item['value_at_risk'] = $valueAtRisk;
+            $item['retail_value'] = $retailValue;
+            $item['packs_count'] = floor($qty / $packSize);
+            $item['loose_units'] = $qty % $packSize;
+
+            $enriched[] = $item;
+        }
+
+        // Apply status tab filter
+        if ($statusFilter === 'expired') {
+            $filtered = array_filter($enriched, fn($i) => $i['status'] === 'expired');
+        } elseif ($statusFilter === 'critical') {
+            $filtered = array_filter($enriched, fn($i) => $i['status'] === 'critical');
+        } elseif ($statusFilter === 'warning') {
+            $filtered = array_filter($enriched, fn($i) => in_array($i['status'], ['expired', 'critical', 'warning']));
+        } elseif ($statusFilter === 'safe') {
+            $filtered = array_filter($enriched, fn($i) => $i['status'] === 'safe');
+        } else {
+            $filtered = $enriched;
+        }
+
+        // Sort items
+        usort($filtered, function ($a, $b) use ($sortBy, $sortDir) {
+            $valA = $a[$sortBy] ?? null;
+            $valB = $b[$sortBy] ?? null;
+
+            if ($sortBy === 'days_remaining' || $sortBy === 'quantity' || $sortBy === 'value_at_risk') {
+                $cmp = ($valA <=> $valB);
+            } else {
+                $cmp = strcmp((string)$valA, (string)$valB);
+            }
+
+            return $sortDir === 'desc' ? -$cmp : $cmp;
+        });
+
+        // Paginate in memory
+        $total = count($filtered);
+        $offset = ($page - 1) * $perPage;
+        $paginatedRows = array_slice($filtered, $offset, $perPage);
+
+        return response()->json([
+            'rows' => array_values($paginatedRows),
+            'total' => $total,
+            'page' => $page,
+            'per_page' => $perPage,
+            'last_page' => (int) ceil($total / $perPage),
+            'summary' => $summary,
+            'filters' => [
+                'status' => $statusFilter,
+                'search' => $search,
+                'supplier_id' => $supplierId,
+                'brand_id' => $brandId,
+                'category_id' => $categoryId,
+                'has_custom_warning' => $hasCustom,
+                'sort_by' => $sortBy,
+                'sort_dir' => $sortDir,
+            ],
+        ]);
+    }
+
+    /**
+     * PUT /api/batch-expiry/product-warning/{productId}
+     *
+     * Set or clear a specific product's expiry warning days.
+     */
+    public function updateProductWarning(Request $request, $productId)
+    {
+        $this->authorize('update', Product::class);
+
+        $product = Product::findOrFail($productId);
+
+        $validated = $request->validate([
+            'expiry_warning_days' => 'nullable|integer|min:1|max:3650',
+        ]);
+
+        $days = $validated['expiry_warning_days'] ?? null;
+        $product->expiry_warning_days = $days !== null ? (int) $days : null;
+        $product->save();
+
+        return response()->json([
+            'message' => 'Product warning threshold updated successfully.',
+            'product_id' => $product->id,
+            'expiry_warning_days' => $product->expiry_warning_days,
+            'effective_warning_days' => $product->expiry_warning_days ?? $this->getGlobalWarningDays(),
+        ]);
+    }
+
+    /**
+     * PUT /api/batch-expiry/global-warning
+     *
+     * Set the global store default expiry warning days.
+     */
+    public function updateGlobalWarning(Request $request)
+    {
+        $this->authorize('update', Setting::class);
+
+        $validated = $request->validate([
+            'expiry_warning_days' => 'required|integer|min:1|max:3650',
+        ]);
+
+        $setting = Setting::firstOrCreate(['id' => 1]);
+        $setting->expiry_warning_days = (int) $validated['expiry_warning_days'];
+        $setting->save();
+
+        return response()->json([
+            'message' => 'Global expiry warning window updated successfully.',
+            'expiry_warning_days' => $setting->expiry_warning_days,
+        ]);
+    }
+
+    /**
+     * GET /api/notifications/expiry-alerts
+     *
+     * Returns top urgent alerts (expired, critical <= 30d, warning <= custom/global days)
+     * for real-time notification badge and popup drawer.
+     */
+    public function expiryAlerts(Request $request)
+    {
+        $this->authorize('viewAny', Product::class);
+
+        $limit = max(1, min((int) $request->query('limit', 15), 100));
+        $globalWarningDays = $this->getGlobalWarningDays();
+        $today = now()->startOfDay();
+
+        $rows = DB::table('batches as b')
+            ->join('products as p', 'p.id', '=', 'b.product_id')
+            ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
+            ->whereNotNull('b.expiry_date')
+            ->where('b.quantity', '>', 0)
+            ->select(
+                'b.id as batch_id',
+                'b.batch_number',
+                'b.expiry_date',
+                'b.quantity',
+                'p.id as product_id',
+                'p.name as product_name',
+                'p.product_code',
+                'p.pack_size',
+                'p.expiry_warning_days as product_warning_days',
+                'p.supplier_id',
+                DB::raw('COALESCE(s.name, "") as supplier_name')
+            )
+            ->get();
+
+        $expiredList = [];
+        $criticalList = [];
+        $warningList = [];
+
+        foreach ($rows as $row) {
+            $expiry = Carbon::parse($row->expiry_date)->startOfDay();
+            $daysRemaining = (int) $today->diffInDays($expiry, false);
+            $warningDays = $row->product_warning_days !== null
+                ? (int) $row->product_warning_days
+                : $globalWarningDays;
+
+            $item = (array) $row;
+            $item['days_remaining'] = $daysRemaining;
+            $item['effective_warning_days'] = $warningDays;
+
+            if ($daysRemaining < 0) {
+                $item['status'] = 'expired';
+                $expiredList[] = $item;
+            } elseif ($daysRemaining <= 30) {
+                $item['status'] = 'critical';
+                $criticalList[] = $item;
+            } elseif ($daysRemaining <= $warningDays) {
+                $item['status'] = 'warning';
+                $warningList[] = $item;
+            }
+        }
+
+        // Sort: expired first (most expired first), then critical (lowest days first), then warning
+        usort($expiredList, fn($a, $b) => $a['days_remaining'] <=> $b['days_remaining']);
+        usort($criticalList, fn($a, $b) => $a['days_remaining'] <=> $b['days_remaining']);
+        usort($warningList, fn($a, $b) => $a['days_remaining'] <=> $b['days_remaining']);
+
+        $combined = array_merge($expiredList, $criticalList, $warningList);
+        $topItems = array_slice($combined, 0, $limit);
+
+        $totalAlerts = count($expiredList) + count($criticalList) + count($warningList);
+
+        return response()->json([
+            'count' => $totalAlerts,
+            'expired_count' => count($expiredList),
+            'critical_count' => count($criticalList),
+            'warning_count' => count($warningList),
+            'global_warning_days' => $globalWarningDays,
+            'rows' => $topItems,
+        ]);
+    }
+}
+

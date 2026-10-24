@@ -40,6 +40,7 @@ import { useTheme } from "@/context/ThemeContext";
 const SECTION_CONFIG = {
   dashboard: { key: 'primary' },
   core: { key: 'secondary' },
+  batch_tracking: { key: 'primary' },
   invoices: { key: 'tertiary' },
   returns: { key: 'primary' },
   transactions: { key: 'secondary' },
@@ -61,6 +62,24 @@ export default function ClassicSidebar({ appName, logoUrl }) {
   const navigate = useNavigate();
   const { theme } = useTheme();
   const { loading: permsLoading, has } = usePermissions();
+  const [expiryAlertCount, setExpiryAlertCount] = useState(0);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchAlertCount = async () => {
+      try {
+        const { data } = await axios.get("/api/notifications/expiry-alerts", { params: { limit: 1 } });
+        if (mounted) setExpiryAlertCount(Number(data?.count || 0));
+      } catch (e) {}
+    };
+    fetchAlertCount();
+    const onChanged = () => fetchAlertCount();
+    window.addEventListener("notifications-changed", onChanged);
+    return () => {
+      mounted = false;
+      window.removeEventListener("notifications-changed", onChanged);
+    };
+  }, []);
 
   const brandName = appName && appName !== "ERP" ? appName : "Karobar App";
   const logoCandidates = [...new Set([logoUrl, "/storage/logos/logo.png", "/logo.png"].filter(Boolean))];
@@ -73,6 +92,8 @@ export default function ClassicSidebar({ appName, logoUrl }) {
     { name: "Brands", path: "/brands", icon: <TagIcon className="w-5 h-5" />, perm: "brand.view", parent: "core" },
     { name: "Suppliers", path: "/suppliers", icon: <TruckIcon className="w-5 h-5" />, perm: "supplier.view", parent: "core" },
     { name: "Customers", path: "/customers", icon: <UserPlusIcon className="w-5 h-5" />, perm: "customer.view", parent: "core" },
+    { type: "section", name: "Batch & Expiry", key: "batch_tracking", icon: <ClockIcon className="w-5 h-5" /> },
+    { name: "Expiry & Tracking", path: "/batch-expiry", icon: <ClockIcon className="w-5 h-5" />, perm: "product.view", parent: "batch_tracking" },
     { type: "section", name: "Invoices", key: "invoices", icon: <DocumentTextIcon className="w-5 h-5" /> },
     { name: "Purchase Invoice", path: "/purchase-invoices", icon: <ClipboardDocumentListIcon className="w-5 h-5" />, perm: "purchase-invoice.view", parent: "invoices" },
     { name: "Sale Invoice", path: "/sale-invoices", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, perm: "sale-invoice.view", parent: "invoices" },
@@ -260,12 +281,20 @@ export default function ClassicSidebar({ appName, logoUrl }) {
                 onMouseEnter={() => setHoveredSection(item.path)}
                 onMouseLeave={() => setHoveredSection(null)}
               >
-                <span className={["shrink-0", active ? "" : "text-gray-500 dark:text-gray-400"].join(" ")}
+                <span className={["shrink-0 relative", active ? "" : "text-gray-500 dark:text-gray-400"].join(" ")}
                   style={{ color: active ? sectionConfig.baseColor : undefined }}>
                   {React.cloneElement(item.icon, { className: "w-5 h-5" })}
+                  {collapsed && item.path === "/batch-expiry" && expiryAlertCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-white dark:ring-slate-800" />
+                  )}
                 </span>
-                <span className={`whitespace-nowrap transition-all duration-200 ${collapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
+                <span className={`whitespace-nowrap transition-all duration-200 flex items-center justify-between flex-1 ${collapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
                   {!collapsed && item.name}
+                  {!collapsed && item.path === "/batch-expiry" && expiryAlertCount > 0 && (
+                    <span className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-xs">
+                      {expiryAlertCount}
+                    </span>
+                  )}
                 </span>
               </Link>
             );

@@ -24,6 +24,7 @@ class SettingController extends Controller
             'currency_symbol' => 'Rs.',
             'currency_position' => 'before',
             'currency_decimal_places' => 2,
+            'expiry_warning_days' => 90,
         ]);
 
         return response()->json($setting);
@@ -83,6 +84,7 @@ class SettingController extends Controller
             'currency_symbol'         => ['nullable', 'string', 'max:15'],
             'currency_position'       => ['nullable', Rule::in(['before', 'after'])],
             'currency_decimal_places' => ['nullable', 'integer', 'min:0', 'max:4'],
+            'expiry_warning_days'     => ['nullable', 'integer', 'min:1', 'max:3650'],
             'logo'                    => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],
         ]);
 

@@ -522,4 +522,77 @@ class InvoiceDraftWorkflowTest extends TestCase
         $this->assertSame('Panadol 500mg', $drafts[0]['items_summary'][0]['name']);
         $this->assertSame(5, $drafts[0]['items_summary'][0]['quantity']);
     }
+
+    public function test_cannot_hold_sale_invoice_draft_with_zero_products(): void
+    {
+        $controller = app(InvoiceDraftController::class);
+        $uuid = (string)Str::uuid();
+
+        $req = $this->request([
+            'uuid' => $uuid,
+            'type' => 'sale_retail',
+            'title' => 'Empty Sale Cart',
+            'payload' => [
+                'customer_id' => 1,
+                'remarks' => 'Walk-in customer with no items yet',
+                'items' => [
+                    ['product_id' => '', 'quantity' => 1],
+                ],
+            ],
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $controller->store($req);
+    }
+
+    public function test_cannot_hold_purchase_invoice_draft_with_zero_products(): void
+    {
+        $controller = app(InvoiceDraftController::class);
+        $uuid = (string)Str::uuid();
+
+        $req = $this->request([
+            'uuid' => $uuid,
+            'type' => 'purchase',
+            'title' => 'Empty Purchase Cart',
+            'payload' => [
+                'supplier_id' => 1,
+                'invoice_number' => 'INV-001',
+                'items' => [],
+            ],
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $controller->store($req);
+    }
+
+    public function test_cannot_update_draft_to_zero_products(): void
+    {
+        $controller = app(InvoiceDraftController::class);
+        $uuid = (string)Str::uuid();
+
+        $createReq = $this->request([
+            'uuid' => $uuid,
+            'type' => 'sale_retail',
+            'title' => 'Cart with item',
+            'payload' => [
+                'customer_id' => 1,
+                'items' => [
+                    ['product_id' => 1, 'quantity' => 2],
+                ],
+            ],
+        ]);
+        $resp = $controller->store($createReq);
+        $draft = $resp->getData();
+
+        $updateReq = $this->request([
+            'expected_version' => 1,
+            'payload' => [
+                'customer_id' => 1,
+                'items' => [],
+            ],
+        ], 'PUT');
+
+        $this->expectException(ValidationException::class);
+        $controller->update($updateReq, $draft->id);
+    }
 }

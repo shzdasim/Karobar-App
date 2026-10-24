@@ -12,6 +12,7 @@ import {
   BellSlashIcon,
   HandRaisedIcon,
   PlusCircleIcon,
+  ClockIcon,
 } from "@heroicons/react/24/outline";
 
 const fmtNumber = (v) =>
@@ -54,6 +55,12 @@ export default function NotificationCenter({ open, onClose }) {
   const [demandCount, setDemandCount] = useState(0);
   const [demandsLoading, setDemandsLoading] = useState(false);
 
+  // Expiry alerts tab state
+  const [expiryBatches, setExpiryBatches] = useState([]);
+  const [expiryCount, setExpiryCount] = useState(0);
+  const [expiryLoading, setExpiryLoading] = useState(false);
+  const [expiryError, setExpiryError] = useState("");
+
   const fetchLowStock = useCallback(async () => {
     setLoading(true);
     setStockError("");
@@ -92,13 +99,33 @@ export default function NotificationCenter({ open, onClose }) {
     }
   }, []);
 
+  const fetchExpiryAlerts = useCallback(async () => {
+    setExpiryLoading(true);
+    setExpiryError("");
+    try {
+      const { data } = await axios.get("/api/notifications/expiry-alerts", {
+        params: { limit: 50 },
+      });
+      setExpiryBatches(Array.isArray(data?.rows) ? data.rows : []);
+      setExpiryCount(Number(data?.count || 0));
+    } catch (err) {
+      console.error("Failed to fetch expiry alerts:", err);
+      setExpiryError("Expiry alerts could not be loaded. Please try again.");
+      setExpiryBatches([]);
+      setExpiryCount(0);
+    } finally {
+      setExpiryLoading(false);
+    }
+  }, []);
+
   // Fetch when opened
   useEffect(() => {
     if (open) {
       fetchLowStock();
       fetchDemands();
+      fetchExpiryAlerts();
     }
-  }, [open, fetchLowStock, fetchDemands]);
+  }, [open, fetchLowStock, fetchDemands, fetchExpiryAlerts]);
 
   // Close on Escape
   useEffect(() => {
@@ -130,6 +157,11 @@ export default function NotificationCenter({ open, onClose }) {
   const goToDemands = () => {
     onClose();
     navigate("/user-demands");
+  };
+
+  const goToExpiry = () => {
+    onClose();
+    navigate("/batch-expiry");
   };
 
   // Notify Toolbar/topbar listeners that the notification count changed
@@ -170,10 +202,10 @@ export default function NotificationCenter({ open, onClose }) {
     }
   };
 
-  const activeLoading = tab === "demands" ? demandsLoading : loading;
-  const activeError = tab === "demands" ? demandError : stockError;
-  const refresh = tab === "demands" ? fetchDemands : fetchLowStock;
-  const activeCount = tab === "demands" ? demandCount : count;
+  const activeLoading = tab === "demands" ? demandsLoading : tab === "expiry" ? expiryLoading : loading;
+  const activeError = tab === "demands" ? demandError : tab === "expiry" ? expiryError : stockError;
+  const refresh = tab === "demands" ? fetchDemands : tab === "expiry" ? fetchExpiryAlerts : fetchLowStock;
+  const activeCount = tab === "demands" ? demandCount : tab === "expiry" ? expiryCount : count;
 
   return createPortal(
     <div className="activity-center-layer" hidden={!open}>
@@ -186,7 +218,7 @@ export default function NotificationCenter({ open, onClose }) {
             <span className="activity-center-mark" aria-hidden="true"><BellIcon className="h-6 w-6" /></span>
             <div className="activity-center-header-actions">
               <button type="button" onClick={refresh} disabled={activeLoading} className="activity-icon-button"
-                aria-label={tab === "demands" ? "Refresh demands" : "Refresh stock alerts"} title="Refresh">
+                aria-label={tab === "demands" ? "Refresh demands" : tab === "expiry" ? "Refresh expiry alerts" : "Refresh stock alerts"} title="Refresh">
                 <ArrowPathIcon className={`h-5 w-5 ${activeLoading ? "motion-safe:animate-spin" : ""}`} aria-hidden="true" />
               </button>
               <button type="button" onClick={onClose} className="activity-icon-button" aria-label="Close notification center" title="Close (Esc)">
@@ -196,13 +228,14 @@ export default function NotificationCenter({ open, onClose }) {
           </div>
           <p className="activity-eyebrow">Your workspace inbox</p>
           <h2>Notification center</h2>
-          <p id="activity-center-description" className="activity-muted">Stock alerts and product requests, in one place.</p>
+          <p id="activity-center-description" className="activity-muted">Stock alerts, product requests, and expiry warnings.</p>
         </header>
 
         <div className="activity-tabs" role="tablist" aria-label="Notification category">
           {[
             { id: "low-stock", label: "Low stock", icon: ExclamationTriangleIcon, total: count },
             { id: "demands", label: "Demands", icon: HandRaisedIcon, total: demandCount },
+            { id: "expiry", label: "Expiry", icon: ClockIcon, total: expiryCount },
           ].map(({ id, label, icon: Icon, total }) => (
             <button key={id} id={`activity-tab-${id}`} type="button" role="tab"
               aria-selected={tab === id} aria-controls="activity-tab-panel" tabIndex={tab === id ? 0 : -1}
@@ -210,7 +243,10 @@ export default function NotificationCenter({ open, onClose }) {
               onKeyDown={(event) => {
                 if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
                   event.preventDefault();
-                  const next = event.key === "Home" ? "low-stock" : event.key === "End" ? "demands" : tab === "demands" ? "low-stock" : "demands";
+                  const tabs = ["low-stock", "demands", "expiry"];
+                  const curIdx = tabs.indexOf(tab);
+                  const nextIdx = event.key === "Home" ? 0 : event.key === "End" ? 2 : event.key === "ArrowRight" ? (curIdx + 1) % 3 : (curIdx - 1 + 3) % 3;
+                  const next = tabs[nextIdx];
                   setTab(next); document.getElementById(`activity-tab-${next}`)?.focus();
                 }
               }}>
@@ -262,6 +298,51 @@ export default function NotificationCenter({ open, onClose }) {
                 ))}
               </ul>
             )
+          ) : tab === "expiry" ? (
+            expiryBatches.length === 0 ? (
+              <div className="activity-empty">
+                <span className="activity-empty-mark"><CheckCircleIcon className="h-8 w-8" aria-hidden="true" /></span>
+                <h3>No expiry alerts</h3>
+                <p className="activity-muted">All active batches are within safe shelf-life windows. Expiry warnings will appear here.</p>
+                <button type="button" onClick={goToExpiry} className="activity-secondary-button">
+                  <ClockIcon className="h-5 w-5" aria-hidden="true" /><span>Open batch tracking</span>
+                </button>
+              </div>
+            ) : (
+              <ul className="activity-list">
+                {expiryBatches.map((b) => {
+                  const isExp = b.days_remaining < 0;
+                  const isCrit = !isExp && b.days_remaining <= 30;
+                  return (
+                    <li key={b.batch_id} className="activity-card">
+                      <div className="activity-card-topline">
+                        <span className={`activity-status ${isExp ? "activity-danger" : isCrit ? "text-orange-600 bg-orange-50 dark:bg-orange-950/40" : "text-amber-600 bg-amber-50 dark:bg-amber-950/40"}`}>
+                          <ClockIcon className="h-4 w-4" aria-hidden="true" />
+                          {isExp ? `Expired ${Math.abs(b.days_remaining)}d ago` : `${b.days_remaining} days left`}
+                        </span>
+                        <span className="text-[11px] font-mono text-slate-500">Batch: {b.batch_number}</span>
+                      </div>
+                      <button type="button" onClick={goToExpiry} className="activity-product-link text-left w-full">
+                        <h3>{b.product_name}</h3>
+                        <p className="activity-muted">{b.product_code} · {b.supplier_name || "No supplier"}</p>
+                      </button>
+                      <div className="activity-stock-values">
+                        <span>Quantity <strong>{fmtNumber(b.quantity)}</strong> units</span>
+                        <span>Exp <strong>{b.expiry_date}</strong></span>
+                      </div>
+                      <p className="activity-stock-caption">
+                        <span className={isExp ? "activity-danger" : "text-amber-600"}>
+                          {isExp ? "Immediate return required" : `Warning window: ${b.effective_warning_days}d`}
+                        </span>
+                        <button type="button" onClick={goToExpiry}>
+                          View batch <ArrowRightIcon className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      </p>
+                    </li>
+                  );
+                })}
+              </ul>
+            )
           ) : rows.length === 0 ? (
             <div className="activity-empty">
               <span className="activity-empty-mark"><CheckCircleIcon className="h-8 w-8" aria-hidden="true" /></span>
@@ -295,8 +376,8 @@ export default function NotificationCenter({ open, onClose }) {
           {tab === "low-stock" && rows.length > 0 && !activeError && (
             <button type="button" onClick={dismissAll} disabled={dismissBusy} className="activity-dismiss-all theme-btn-tertiary"><BellSlashIcon className="h-4 w-4" aria-hidden="true" /><span>{dismissBusy ? "Dismissing…" : "Dismiss all alerts"}</span></button>
           )}
-          <button type="button" onClick={tab === "demands" ? goToDemands : goToProducts} className="activity-primary-button">
-            <span>{tab === "demands" ? "View all demands" : "View all products"}</span><ArrowRightIcon className="h-5 w-5" aria-hidden="true" />
+          <button type="button" onClick={tab === "demands" ? goToDemands : tab === "expiry" ? goToExpiry : goToProducts} className="activity-primary-button">
+            <span>{tab === "demands" ? "View all demands" : tab === "expiry" ? "View expiry tracking" : "View all products"}</span><ArrowRightIcon className="h-5 w-5" aria-hidden="true" />
           </button>
         </footer>
       </aside>
