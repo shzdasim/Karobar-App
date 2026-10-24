@@ -181,12 +181,14 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
   const findDuplicateProductIndex = (pid, exceptIndex = -1) =>
     form.items.findIndex((it, idx) => idx !== exceptIndex && eqPid(it?.product_id, pid));
 
-  const findDuplicateProductBatchIndex = (pid, batch, exceptIndex = -1) =>
+  const findDuplicateProductBatchIndex = (pid, batch, exceptIndex = -1, isUnbatched = false) =>
     form.items.findIndex(
       (it, idx) =>
         idx !== exceptIndex &&
         eqPid(it?.product_id, pid) &&
-        String(it?.batch ?? "") === String(batch ?? "")
+        (isUnbatched
+          ? Boolean(it?.is_unbatched || (!it?.batch && String(it?.batch ?? "").trim() === ""))
+          : String(it?.batch ?? "").trim() === String(batch ?? "").trim() && !it?.is_unbatched)
     );
 
   const sumBy = (rows, get) => rows.reduce((s, r) => s + toNum(get(r)), 0);
@@ -284,6 +286,21 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
           pack_purchase_price: toNum(it.pack_purchase_price),
           unit_purchase_price: toNum(it.unit_purchase_price),
           item_discount_percentage: toNum(it.item_discount_percentage),
+          available_units: unitsFromInvoiceItem(it),
+        });
+      } else if (!b && !seen.has("__unbatched__")) {
+        seen.add("__unbatched__");
+        opts.push({
+          batch_number: "",
+          is_unbatched: true,
+          display_label: "Unassigned Stock",
+          expiry: "",
+          pack_quantity: toNum(it.pack_quantity),
+          pack_size: toNum(it.pack_size),
+          pack_purchase_price: toNum(it.pack_purchase_price),
+          unit_purchase_price: toNum(it.unit_purchase_price),
+          item_discount_percentage: toNum(it.item_discount_percentage),
+          available_units: unitsFromInvoiceItem(it),
         });
       }
     }
@@ -418,7 +435,11 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
           supplier_id: data.supplier_id || "",
           purchase_invoice_id: data.purchase_invoice_id || "",
           remarks: data.remarks || "",
-          items: items.map((it) => ({ ...defaultItem, ...it })),
+          items: items.map((it) => ({
+            ...defaultItem,
+            ...it,
+            is_unbatched: Boolean(it.is_unbatched || !it.batch || String(it.batch).trim() === ""),
+          })),
           gross_total: toNum(data.gross_total),
           discount_percentage: toNum(data.discount_percentage),
           discount_amount: toNum(data.discount_amount),
@@ -569,16 +590,18 @@ const loadInvoice = async (invoiceId) => {
 
   // ===== OPEN RETURN: batch fetcher =====
   const normalizeOpenBatch = (src) => ({
+    ...src,
     batch_number: String(firstDefined(src?.batch_number, src?.batch, src?.code, src?.number, "")).trim(),
     expiry: firstDefined(src?.expiry, src?.expiration_date, src?.expiry_date, "") || "",
     available_units: toNum(firstDefined(src?.available_units, src?.quantity, src?.available_quantity, src?.units)),
     pack_size: toNum(firstDefined(src?.pack_size, src?.product?.pack_size, 0)),
+    is_unbatched: Boolean(src?.is_unbatched),
   });
 
   const fetchBatchesForOpenReturn = async (productId) => {
     try {
-      const res = await axios.get(`/api/products/${productId}/batches`);
-      const list = Array.isArray(res.data) ? res.data.map(normalizeOpenBatch).filter(b => b.batch_number) : [];
+      const res = await axios.get(`/api/products/${productId}/batches?include_unbatched=1`);
+      const list = Array.isArray(res.data) ? res.data.map(normalizeOpenBatch).filter(b => b.batch_number || b.is_unbatched) : [];
       productBatchCache.current.set(String(productId), list);
       return list;
     } catch (e) {
@@ -775,12 +798,13 @@ const handleSelectChange = async (field, value) => {
     if (!isInvoiceMode) {
       // OPEN RETURN
       const openBatches = await fetchBatchesForOpenReturn(selectedId);
+      const usedOnOtherRows = form.items
+        .filter((it, idx) => idx !== index && eqPid(it.product_id, selectedId))
+        .map((it) => (it.batch ? String(it.batch).trim() : (it.is_unbatched ? "__unbatched__" : "")));
 
       if (openBatches.length === 0) {
-        // uniqueness (no batch scenario)
-        const dupPI = findDuplicateProductIndex(selectedId, index);
-        if (dupPI !== -1) {
-          invoiceErrors.showMessage(`Duplicate product "${productNameById(selectedId)}" already used in row ${dupPI + 1}.`);
+        if (usedOnOtherRows.length > 0) {
+          invoiceErrors.showMessage(`Duplicate product "${productNameById(selectedId)}" already used in row ${findDuplicateProductIndex(selectedId, index) + 1}.`);
           setRowError(index, "product");
           focusProductSearch(index);
           return;
@@ -791,7 +815,7 @@ const handleSelectChange = async (field, value) => {
         // No batches → product-level availability
         const totalAvail = await fetchAvailableUnits(selectedId, null);
         newItems[index] = recalcItem(
-          { ...newItems[index], available_units: toNum(totalAvail) },
+          { ...newItems[index], is_unbatched: true, available_units: toNum(totalAvail) },
           "set_available_units_no_batch_open"
         );
         setBatchesForRow(index, []);
@@ -801,24 +825,33 @@ const handleSelectChange = async (field, value) => {
       }
 
       // Has batches in open mode
+      const availableBatches = openBatches.filter((b) => {
+        const key = b.is_unbatched ? "__unbatched__" : String(b.batch_number).trim();
+        return !usedOnOtherRows.includes(key);
+      });
+
+      if (availableBatches.length === 0 && usedOnOtherRows.length > 0) {
+        invoiceErrors.showMessage(`All batches and unassigned stock for "${productNameById(selectedId)}" are already added on earlier rows.`);
+        setRowError(index, "product");
+        focusProductSearch(index);
+        return;
+      }
+
       clearRowError(index, "product");
       setBatchesForRow(index, openBatches);
-      if (openBatches.length === 1) {
-        const b = openBatches[0];
-        const dupPB = findDuplicateProductBatchIndex(selectedId, b.batch_number, index);
-        if (dupPB !== -1) {
-          invoiceErrors.showMessage(`Row ${dupPB + 1} already has "${productNameById(selectedId)}" with batch "${b.batch_number}".`);
-          setRowError(index, "batch");
-          focusProductSearch(index);
-          return;
-        }
-        const availUnits = toNum(firstDefined(b.available_units, await fetchAvailableUnits(selectedId, b.batch_number)));
+      if (availableBatches.length === 1) {
+        const b = availableBatches[0];
+        const isUnb = Boolean(b.is_unbatched);
+        const availUnits = isUnb
+          ? toNum(firstDefined(b.available_units, await fetchAvailableUnits(selectedId, null)))
+          : toNum(firstDefined(b.available_units, await fetchAvailableUnits(selectedId, b.batch_number)));
         newItems[index] = recalcItem(
           {
             ...newItems[index],
             product_id: selectedId,
-            batch: b.batch_number,
-            expiry: b.expiry || "",
+            batch: isUnb ? "" : b.batch_number,
+            expiry: isUnb ? "" : (b.expiry || ""),
+            is_unbatched: isUnb,
             pack_size: toNum(firstDefined(newItems[index].pack_size, b.pack_size, 0)),
             available_units: availUnits,
           },
@@ -839,11 +872,13 @@ const handleSelectChange = async (field, value) => {
     }
 
     // INVOICE MODE
+    const usedOnOtherRowsInv = form.items
+      .filter((it, idx) => idx !== index && eqPid(it.product_id, selectedId))
+      .map((it) => (it.batch ? String(it.batch).trim() : (it.is_unbatched ? "__unbatched__" : "")));
+
     if (batchOptsInvoice.length === 0) {
-      // uniqueness (no batch on invoice)
-      const dupPI2 = findDuplicateProductIndex(selectedId, index);
-      if (dupPI2 !== -1) {
-        invoiceErrors.showMessage(`Duplicate product "${productNameById(selectedId)}" already used in row ${dupPI2 + 1}.`);
+      if (usedOnOtherRowsInv.length > 0) {
+        invoiceErrors.showMessage(`Duplicate product "${productNameById(selectedId)}" already used in row ${findDuplicateProductIndex(selectedId, index) + 1}.`);
         setRowError(index, "product");
         focusProductSearch(index);
         return;
@@ -854,7 +889,7 @@ const handleSelectChange = async (field, value) => {
       // No batches for this product on invoice → use units purchased on that invoice
       const totalUnits = unitsOnInvoiceForProduct(selectedId);
       newItems[index] = recalcItem(
-        { ...newItems[index], available_units: toNum(totalUnits) },
+        { ...newItems[index], is_unbatched: true, available_units: toNum(totalUnits) },
         "set_available_units_no_batch_invoice_unitsPurchased"
       );
       setBatchesForRow(index, []);
@@ -863,27 +898,33 @@ const handleSelectChange = async (field, value) => {
       return;
     }
 
+    const availableBatchesInv = batchOptsInvoice.filter((b) => {
+      const key = b.is_unbatched ? "__unbatched__" : String(b.batch_number).trim();
+      return !usedOnOtherRowsInv.includes(key);
+    });
+
+    if (availableBatchesInv.length === 0 && usedOnOtherRowsInv.length > 0) {
+      invoiceErrors.showMessage(`All batches and unassigned stock for "${productNameById(selectedId)}" on this invoice are already added on earlier rows.`);
+      setRowError(index, "product");
+      focusProductSearch(index);
+      return;
+    }
+
     setBatchesForRow(index, batchOptsInvoice);
     clearRowError(index, "product");
 
-    if (batchOptsInvoice.length === 1) {
-      const b = batchOptsInvoice[0];
-      const dupPB = findDuplicateProductBatchIndex(selectedId, b.batch_number, index);
-      if (dupPB !== -1) {
-        invoiceErrors.showMessage(`Row ${dupPB + 1} already has product "${productNameById(selectedId)}" with batch "${b.batch_number}". Choose a different row or batch.`);
-        setRowError(index, "batch");
-        focusProductSearch(index);
-        return;
-      }
-
-      const avail = unitsOnInvoiceForProductBatch(selectedId, b.batch_number);
+    if (availableBatchesInv.length === 1) {
+      const b = availableBatchesInv[0];
+      const isUnb = Boolean(b.is_unbatched);
+      const avail = unitsOnInvoiceForProductBatch(selectedId, isUnb ? "" : b.batch_number);
       const upd3 = [...form.items];
       upd3[index] = recalcItem(
         {
           ...upd3[index],
           product_id: selectedId,
-          batch: b.batch_number,
-          expiry: b.expiry || "",
+          batch: isUnb ? "" : b.batch_number,
+          expiry: isUnb ? "" : (b.expiry || ""),
+          is_unbatched: isUnb,
           pack_size: toNum(firstDefined(b.pack_size, upd3[index].pack_size)),
           pack_purchased_quantity: toNum(b.pack_quantity), // reference only
           available_units: toNum(avail),                   // used for validation
@@ -906,32 +947,45 @@ const handleSelectChange = async (field, value) => {
     setCurrentRowIndex(index);
   };
 
-  const handleBatchSelect = async (index, valueObjOrString) => {
+  const handleBatchSelect = async (index, val, batchObj = null) => {
     const rowItem = form.items[index];
     let ensurePid = rowItem?.product_id;
 
-    const batchNumber =
-      typeof valueObjOrString === "string"
-        ? valueObjOrString
-        : valueObjOrString?.value ?? valueObjOrString?.batch ?? valueObjOrString?.batch_number ?? "";
+    const isUnbatched = Boolean(
+      batchObj?.is_unbatched ||
+      val === "__unbatched__" ||
+      val === "[Unassigned Stock]" ||
+      val === "[Unbatched Stock]"
+    );
 
-    const bn = String(batchNumber ?? "").trim();
+    const batchNumber = isUnbatched ? "" : (
+      typeof val === "string"
+        ? val
+        : val?.value ?? val?.batch ?? val?.batch_number ?? batchObj?.batch_number ?? ""
+    );
+
+    const bn = isUnbatched ? "" : String(batchNumber ?? "").trim();
 
     if ((!ensurePid || String(ensurePid).trim() === "") && form.purchase_invoice_id) {
-      const matches = invoiceItems.filter((it) => String(it.batch ?? "") === bn);
+      const matches = isUnbatched
+        ? invoiceItems.filter((it) => !String(it.batch ?? "").trim())
+        : invoiceItems.filter((it) => String(it.batch ?? "") === bn);
       const uniquePids = Array.from(new Set(matches.map((m) => m.product_id))).filter((x) => x !== undefined && x !== null);
       if (uniquePids.length === 1) { ensurePid = uniquePids[0]; }
     }
 
-    // If selecting a batch that duplicates (product+batch) in another row, block.
-    if (ensurePid && bn) {
-      const dupIndex2 = findDuplicateProductBatchIndex(ensurePid, bn, index);
+    if (ensurePid) {
+      const dupIndex2 = findDuplicateProductBatchIndex(ensurePid, bn, index, isUnbatched);
       if (dupIndex2 !== -1) {
-        invoiceErrors.showMessage(`Duplicate (product + batch) in row ${dupIndex2 + 1}. Use a unique batch for the same product.`);
+        invoiceErrors.showMessage(
+          isUnbatched
+            ? `Row ${dupIndex2 + 1} already has unassigned stock for "${productNameById(ensurePid)}". Each batch (or unassigned stock) can only be selected once per product.`
+            : `Duplicate (product + batch) in row ${dupIndex2 + 1}. Use a unique batch for the same product.`
+        );
         setRowError(index, "batch");
         const updDup = [...form.items];
         updDup[index] = recalcItem(
-          { ...updDup[index], batch: "", expiry: "", available_units: 0 },
+          { ...updDup[index], batch: "", expiry: "", is_unbatched: false, available_units: 0 },
           "duplicate_product_batch_from_batch"
         );
         setForm((prev) => recalcFooter({ ...prev, items: updDup }, "items"));
@@ -941,6 +995,49 @@ const handleSelectChange = async (field, value) => {
       }
     }
 
+    if (isUnbatched) {
+      clearRowError(index, "batch");
+      const upd = [...form.items];
+      if (form.purchase_invoice_id) {
+        const matched = invoiceItems.find(
+          (it) => eqPid(it.product_id, ensurePid) && !String(it.batch ?? "").trim()
+        );
+        const avail = unitsOnInvoiceForProductBatch(ensurePid, "");
+        upd[index] = recalcItem(
+          {
+            ...upd[index],
+            product_id: ensurePid,
+            batch: "",
+            expiry: "",
+            is_unbatched: true,
+            pack_size: toNum(firstDefined(matched?.pack_size, upd[index].pack_size)),
+            pack_purchased_quantity: toNum(matched?.pack_quantity),
+            available_units: toNum(avail),
+            pack_purchase_price: toNum(firstDefined(matched?.pack_purchase_price, upd[index].pack_purchase_price)),
+            unit_purchase_price: toNum(firstDefined(matched?.unit_purchase_price, upd[index].unit_purchase_price)),
+            item_discount_percentage: toNum(firstDefined(matched?.item_discount_percentage, 0)),
+          },
+          "unbatched_selected_invoice"
+        );
+      } else {
+        const totalAvail = toNum(firstDefined(batchObj?.available_units, await fetchAvailableUnits(ensurePid, null)));
+        upd[index] = recalcItem(
+          {
+            ...upd[index],
+            product_id: ensurePid,
+            batch: "",
+            expiry: "",
+            is_unbatched: true,
+            available_units: totalAvail,
+          },
+          "unbatched_selected_open"
+        );
+      }
+      setForm((prev) => recalcFooter({ ...prev, items: upd }, "items"));
+      focusOnField("pack_quantity", index);
+      return;
+    }
+
     if (!bn) {
       // Clearing batch
       clearRowError(index, "batch");
@@ -948,18 +1045,18 @@ const handleSelectChange = async (field, value) => {
       if (form.purchase_invoice_id) {
         const hasB = productHasBatches(ensurePid);
         if (hasB) {
-          upd[index] = recalcItem({ ...upd[index], batch: "", expiry: "", available_units: 0 }, "batch_cleared_invoice_has_batches");
+          upd[index] = recalcItem({ ...upd[index], batch: "", expiry: "", is_unbatched: false, available_units: 0 }, "batch_cleared_invoice_has_batches");
         } else {
           const totalAvail = await fetchAvailableUnits(ensurePid, null);
-          upd[index] = recalcItem({ ...upd[index], batch: "", expiry: "", available_units: toNum(totalAvail) }, "batch_cleared_invoice_no_batches");
+          upd[index] = recalcItem({ ...upd[index], batch: "", expiry: "", is_unbatched: true, available_units: toNum(totalAvail) }, "batch_cleared_invoice_no_batches");
         }
       } else {
         const cached = productBatchCache.current.get(String(ensurePid)) || [];
         if (cached.length > 0) {
-          upd[index] = recalcItem({ ...upd[index], batch: "", expiry: "", available_units: 0 }, "batch_cleared_open_has_batches");
+          upd[index] = recalcItem({ ...upd[index], batch: "", expiry: "", is_unbatched: false, available_units: 0 }, "batch_cleared_open_has_batches");
         } else {
           const totalAvail = await fetchAvailableUnits(ensurePid, null);
-          upd[index] = recalcItem({ ...upd[index], batch: "", expiry: "", available_units: toNum(totalAvail) }, "batch_cleared_open_no_batches");
+          upd[index] = recalcItem({ ...upd[index], batch: "", expiry: "", is_unbatched: true, available_units: toNum(totalAvail) }, "batch_cleared_open_no_batches");
         }
       }
       setForm((prev) => recalcFooter({ ...prev, items: upd }, "items"));
@@ -984,6 +1081,7 @@ const handleSelectChange = async (field, value) => {
           product_id: ensurePid,
           batch: bn,
           expiry: matched.expiry || "",
+          is_unbatched: false,
           pack_size: toNum(firstDefined(matched.pack_size, upd[index].pack_size)),
           pack_purchased_quantity: toNum(matched.pack_quantity),
           available_units: toNum(avail), // ✅ units purchased (qty + bonus) for that batch
@@ -1009,6 +1107,7 @@ const handleSelectChange = async (field, value) => {
           product_id: ensurePid,
           batch: bn,
           expiry: matchedOpen.expiry || "",
+          is_unbatched: false,
           pack_size: toNum(firstDefined(upd[index]?.pack_size, matchedOpen.pack_size, 0)),
           available_units: avail,
         },
@@ -1115,20 +1214,18 @@ const handleSelectChange = async (field, value) => {
           const it = form.items[i];
           const pid = it?.product_id;
           if (!pid) continue;
-          const hasBatches = productHasBatches(pid);
-          const batchKey = String(it.batch ?? "");
-          const key = hasBatches ? `${pid}::${batchKey}` : `${pid}::__NO_BATCH__`;
+          const batchKey = it.batch && String(it.batch).trim() !== "" ? `batch:${String(it.batch).trim()}` : "unbatched";
+          const key = `${pid}::${batchKey}`;
           if (seen.has(key)) {
             const firstRow = seen.get(key);
-            if (hasBatches && batchKey) {
-              invoiceErrors.showMessage(`Duplicate product & batch in rows ${firstRow + 1} and ${i + 1}. Use a unique batch for the same product.`);
-              setRowError(i, "batch");
-              setCurrentField("batch"); setCurrentRowIndex(i);
+            const pName = productNameById(pid);
+            if (batchKey === "unbatched") {
+              invoiceErrors.showMessage(`Unassigned stock for "${pName}" is selected on both row ${firstRow + 1} and row ${i + 1}. Unassigned stock can only be added once.`);
             } else {
-              invoiceErrors.showMessage(`Duplicate product without batch in rows ${firstRow + 1} and ${i + 1}. This product can only appear once when no batch is available.`);
-              setRowError(i, "product");
-              focusProductSearch(i);
+              invoiceErrors.showMessage(`Duplicate batch "${it.batch}" for "${pName}" on rows ${firstRow + 1} and ${i + 1}. Each batch can only be selected once per return.`);
             }
+            setRowError(i, "batch");
+            setCurrentField("batch"); setCurrentRowIndex(i);
             return;
           }
           seen.set(key, i);
@@ -1141,17 +1238,20 @@ const handleSelectChange = async (field, value) => {
         if (!it.product_id) continue;
 
         const returnedUnits = toNum(it.return_unit_quantity);
+        const isUnbatched = Boolean(it.is_unbatched || (!it.batch && String(it.batch ?? "").trim() === ""));
 
         let available = toNum(it.available_units);
         if (productHasBatches(it.product_id)) {
-          if (!it.batch) {
-            invoiceErrors.showMessage(`Row ${i + 1}: Please pick a batch for this product.`);
+          if (!it.batch && !isUnbatched) {
+            invoiceErrors.showMessage(`Row ${i + 1}: Please pick a batch or unassigned stock for this product.`);
             setRowError(i, "batch");
             setCurrentField("batch"); setCurrentRowIndex(i);
             return;
           }
           if (!available) {
-            available = await getBatchAvailability(it.product_id, it.batch);
+            available = isUnbatched
+              ? await fetchAvailableUnits(it.product_id, null)
+              : await getBatchAvailability(it.product_id, it.batch);
           }
         } else {
           if (!available) {
@@ -1702,12 +1802,24 @@ const handleSelectChange = async (field, value) => {
                             setTimeout(() => el.focus(), 50);
                           }
                         }}
-                        value={item.batch}
+                        mode="purchase"
+                        value={
+                          item.batch
+                            ? item.batch
+                            : item.is_unbatched
+                            ? "[Unassigned Stock]"
+                            : ""
+                        }
                         batches={rowBatches[i] || []}
-                        onChange={(batchNumber) => handleBatchSelect(i, { value: batchNumber })}
+                        usedBatches={form.items
+                          .filter((it, idx) => idx !== i && eqPid(it.product_id, item.product_id))
+                          .map((it) => (it.batch ? String(it.batch).trim() : (it.is_unbatched ? "__unbatched__" : "")))
+                          .filter(Boolean)}
+                        onChange={(val, batchObj) => handleBatchSelect(i, val, batchObj)}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter" && item.batch) {
+                          if (e.key === "Enter" && (item.batch || item.is_unbatched)) {
                             e.preventDefault();
+                            focusOnField("pack_quantity", i);
                           }
                         }}
                       />

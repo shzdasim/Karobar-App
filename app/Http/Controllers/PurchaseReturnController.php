@@ -35,6 +35,7 @@ class PurchaseReturnController extends Controller
 
         $restored = $originalItems->groupBy('product_id')->map(fn ($rows) => $rows->sum('return_unit_quantity'));
         $batchRestored = [];
+        $unbatchedRestored = [];
         foreach ($originalItems as $old) {
             $batchNo = trim((string)($old->batch ?? ''));
             if ($batchNo !== '') {
@@ -42,11 +43,14 @@ class PurchaseReturnController extends Controller
                 if ($b) {
                     $batchRestored[$b->id] = ($batchRestored[$b->id] ?? 0) + (int)$old->return_unit_quantity;
                 }
+            } else {
+                $unbatchedRestored[(int)$old->product_id] = ($unbatchedRestored[(int)$old->product_id] ?? 0) + (int)$old->return_unit_quantity;
             }
         }
 
         $requested = [];
         $batchRequested = [];
+        $unbatchedRequested = [];
 
         foreach ($items as $index => $row) {
             $productId = (int)($row['product_id'] ?? 0);
@@ -77,6 +81,18 @@ class PurchaseReturnController extends Controller
                     if ($batchRequested[$b->id] > $batchAvailable) {
                         throw \Illuminate\Validation\ValidationException::withMessages([
                             "items.$index.return_unit_quantity" => "Only {$batchAvailable} units remain available in batch {$b->batch_number} for {$product->name}. Insufficient stock (requested: {$batchRequested[$b->id]} units)."
+                        ]);
+                    }
+                }
+            } else {
+                $productBatches = $batches->where('product_id', $productId);
+                if ($productBatches->isNotEmpty()) {
+                    $totalBatched = (int) $productBatches->sum('quantity');
+                    $unbatchedAvailable = max(0, (int)($product->quantity ?? 0) - $totalBatched) + (int)($unbatchedRestored[$productId] ?? 0);
+                    $unbatchedRequested[$productId] = ($unbatchedRequested[$productId] ?? 0) + $returnQty;
+                    if ($unbatchedRequested[$productId] > $unbatchedAvailable) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            "items.$index.return_unit_quantity" => "Only {$unbatchedAvailable} unassigned units remain available on hand for {$product->name}. Insufficient unassigned stock (requested: {$unbatchedRequested[$productId]} units)."
                         ]);
                     }
                 }

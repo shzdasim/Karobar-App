@@ -147,6 +147,7 @@ export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
     product_id: "",
     batch_number: "",
     expiry: "",
+    is_unbatched: false,
     unit_sale_quantity: 0, // READONLY, from invoice; available qty in open return
     unit_sale_price: 0, // READONLY, from invoice OR product
     unit_return_quantity: 0,
@@ -350,18 +351,23 @@ const [saleInvoices, setSaleInvoices] = useState([]);
           customer_id: data.customer_id || "",
           sale_invoice_id: data.sale_invoice_id || "",
           items: items.length
-            ? items.map((it) => ({
-                ...defaultItem,
-                product_id: it.product_id,
-                batch_number: it.batch_number || it.batch || "",
-                expiry: it.expiry || "",
-                unit_sale_quantity: toNum(it.unit_sale_quantity),
-                unit_sale_price: toNum(it.unit_sale_price),
-                unit_return_quantity: toNum(it.unit_return_quantity),
-                item_discount_percentage: toNum(it.item_discount_percentage),
-                sub_total: toNum(it.sub_total),
-                id: Date.now() + Math.random(),
-              }))
+            ? items.map((it) => {
+                const b = it.batch_number || it.batch || "";
+                const isUnb = Boolean(it.is_unbatched || (!b && String(b).trim() === ""));
+                return {
+                  ...defaultItem,
+                  product_id: it.product_id,
+                  batch_number: isUnb ? "" : b,
+                  expiry: isUnb ? "" : (it.expiry || ""),
+                  is_unbatched: isUnb,
+                  unit_sale_quantity: toNum(it.unit_sale_quantity),
+                  unit_sale_price: toNum(it.unit_sale_price),
+                  unit_return_quantity: toNum(it.unit_return_quantity),
+                  item_discount_percentage: toNum(it.item_discount_percentage),
+                  sub_total: toNum(it.sub_total),
+                  id: Date.now() + Math.random(),
+                };
+              })
             : [{ ...defaultItem }],
           discount_percentage: toNum(data.discount_percentage),
           discount_amount: toNum(data.discount_amount),
@@ -380,7 +386,23 @@ const [saleInvoices, setSaleInvoices] = useState([]);
         setForm((prev) => recalcFooter({ ...prev, ...normalized }));
 
         if (normalized.customer_id) await fetchSaleInvoices(normalized.customer_id);
-        if (normalized.sale_invoice_id) await loadInvoice(normalized.sale_invoice_id);
+        let currentInvItems = [];
+        if (normalized.sale_invoice_id) {
+          currentInvItems = await loadInvoice(normalized.sale_invoice_id);
+        }
+
+        // Populate rowBatches for edit mode
+        const batchesList = await Promise.all(
+          normalized.items.map(async (it) => {
+            if (!it.product_id) return [];
+            if (normalized.sale_invoice_id && Array.isArray(currentInvItems) && currentInvItems.length) {
+              const itemsForProduct = currentInvItems.filter((x) => eqId(x.product_id, it.product_id));
+              return buildBatchOptionsForInvoice(itemsForProduct);
+            }
+            return fetchBatchesForOpenReturn(it.product_id);
+          })
+        );
+        setRowBatches(batchesList);
       } catch (e) {
         console.error(e);
       }
@@ -414,7 +436,43 @@ const [saleInvoices, setSaleInvoices] = useState([]);
     }
   };
 
-const loadInvoice = async (invoiceId) => {
+  const buildBatchOptionsForInvoice = (itemsForProduct) => {
+    const seen = new Set();
+    const opts = [];
+    for (const it of itemsForProduct) {
+      const b = (it.batch_number ?? it.batch ?? "").toString().trim();
+      const isUnbatched = Boolean(it.is_unbatched || (!b && String(b).trim() === ""));
+      if (isUnbatched) {
+        if (!seen.has("__unbatched__")) {
+          seen.add("__unbatched__");
+          opts.push({
+            batch_number: "",
+            expiry: "",
+            unit_sale_quantity: extractUnitSaleQty(it),
+            available_units: extractUnitSaleQty(it),
+            unit_sale_price: extractUnitPrice(it),
+            item_discount_percentage: extractItemDiscPct(it),
+            is_unbatched: true,
+            label: `[Unbatched Stock] (${extractUnitSaleQty(it)} units)`,
+          });
+        }
+      } else if (b && !seen.has(b)) {
+        seen.add(b);
+        opts.push({
+          batch_number: b,
+          expiry: it.expiry || "",
+          unit_sale_quantity: extractUnitSaleQty(it),
+          available_units: extractUnitSaleQty(it),
+          unit_sale_price: extractUnitPrice(it),
+          item_discount_percentage: extractItemDiscPct(it),
+          is_unbatched: false,
+        });
+      }
+    }
+    return opts;
+  };
+
+  const loadInvoice = async (invoiceId) => {
     try {
       const res = await axios.get(`/api/sale-invoices/${invoiceId}`, { params: { exclude_return_id: returnId || undefined } });
       const data = res.data || {};
@@ -455,24 +513,29 @@ const loadInvoice = async (invoiceId) => {
       });
 
       setProducts(merged.length ? merged : catalogProducts);
+      return items;
     } catch (e) {
       console.error(e);
       setInvoiceItems([]);
       setProducts(catalogProducts);
+      return [];
     }
   };
 
+  const normalizeOpenBatch = (src) => ({
+    batch_number: String(src?.batch_number ?? src?.batch ?? src?.code ?? "").trim(),
+    expiry: String(src?.expiry ?? src?.expiry_date ?? "").trim(),
+    available_units: extractBatchQty(src),
+    is_unbatched: Boolean(src?.is_unbatched),
+  });
+
   const fetchBatchesForOpenReturn = async (productId) => {
     try {
-      const res = await axios.get(`/api/products/${productId}/batches`);
+      const res = await axios.get(`/api/products/${productId}/batches?include_unbatched=1`);
       const rows = Array.isArray(res.data) ? res.data : [];
       const normalized = rows
-        .map((b) => ({
-          batch_number: String(b.batch_number ?? b.batch ?? b.code ?? "").trim(),
-          expiry: String(b.expiry ?? b.expiry_date ?? "").trim(),
-          available_units: extractBatchQty(b),
-        }))
-        .filter((b) => b.batch_number);
+        .map(normalizeOpenBatch)
+        .filter((b) => b.batch_number || b.is_unbatched);
       productBatchCache.current.set(String(productId), normalized);
       return normalized;
     } catch (e) {
@@ -613,86 +676,245 @@ const handleSelectChange = async (field, value) => {
     });
   };
 
+  const productNameById = (pid) => {
+    const p = products.find((x) => eqId(x.id ?? x.value, pid)) || catalogProducts.find((x) => eqId(x.id ?? x.value, pid));
+    return p?.name || (pid ? `#${pid}` : "");
+  };
+
+  const findDuplicateProductIndex = (pid, exceptIndex = -1) =>
+    form.items.findIndex((it, idx) => idx !== exceptIndex && eqId(it?.product_id, pid));
+
+  const findDuplicateProductBatchIndex = (pid, batch, exceptIndex = -1, isUnbatched = false) =>
+    form.items.findIndex(
+      (it, idx) =>
+        idx !== exceptIndex &&
+        eqId(it?.product_id, pid) &&
+        (isUnbatched
+          ? Boolean(it?.is_unbatched || (!it?.batch_number && String(it?.batch_number ?? "").trim() === ""))
+          : String(it?.batch_number ?? "").trim() === String(batch ?? "").trim() && !it?.is_unbatched)
+    );
+
   const handleProductSelect = async (row, productObj) => {
     const pid = resolveProductId(productObj);
     if (!pid) return;
-
-    // Prevent duplicate product across rows
-    const dupIndex = form.items.findIndex((it, idx) => idx !== row && eqId(it.product_id, pid));
-    if (dupIndex !== -1) {
-      invoiceErrors.showMessage(`Product already selected in row ${dupIndex + 1}. Each product can be used only once.`);
-      resetRow(row);
-      setTimeout(() => productRefs.current[row]?.querySelector("input")?.focus?.(), 40);
-      return;
-    }
 
     const newItems = [...form.items];
     let unit_sale_price = 0;
     let item_discount_percentage = 0;
     let unit_sale_quantity = 0;
 
-    if (form.sale_invoice_id) {
-      const candidates = invoiceItems.filter((it) => String(it.product_id) === String(pid));
-      if (candidates.length) {
-        unit_sale_price = extractUnitPrice(candidates[0]);
-        item_discount_percentage = extractItemDiscPct(candidates[0]);
-        unit_sale_quantity = extractUnitSaleQty(candidates[0]);
-      } else {
-        unit_sale_price = await fetchProductUnitPrice(pid);
+    const isInvoiceMode = !!form.sale_invoice_id;
+
+    if (isInvoiceMode) {
+      const candidates = invoiceItems.filter((it) => eqId(it.product_id, pid));
+      const batchOptsInvoice = buildBatchOptionsForInvoice(candidates);
+      const usedOnOtherRows = form.items
+        .filter((it, idx) => idx !== row && eqId(it.product_id, pid))
+        .map((it) => (it.batch_number ? String(it.batch_number).trim() : (it.is_unbatched ? "__unbatched__" : "")));
+
+      if (batchOptsInvoice.length === 0) {
+        if (usedOnOtherRows.length > 0) {
+          invoiceErrors.showMessage(`Product "${productNameById(pid)}" already used in row ${findDuplicateProductIndex(pid, row) + 1}.`);
+          resetRow(row);
+          setTimeout(() => productRefs.current[row]?.querySelector("input")?.focus?.(), 40);
+          return;
+        }
+
+        unit_sale_price = candidates.length ? extractUnitPrice(candidates[0]) : await fetchProductUnitPrice(pid);
+        item_discount_percentage = candidates.length ? extractItemDiscPct(candidates[0]) : 0;
+        unit_sale_quantity = candidates.reduce((s, c) => s + extractUnitSaleQty(c), 0);
+
+        newItems[row] = recalcItem({
+          ...newItems[row],
+          product_id: pid,
+          unit_sale_price,
+          item_discount_percentage,
+          unit_sale_quantity,
+          batch_number: "",
+          expiry: "",
+          is_unbatched: true,
+          unit_return_quantity: 0,
+        });
+        setForm((prev) => recalcFooter({ ...prev, items: newItems }));
+        setRowBatches((prev) => {
+          const next = prev.slice();
+          next[row] = [];
+          return next;
+        });
+        setTimeout(() => qtyRefs.current[row]?.focus?.(), 60);
+        return;
       }
-    } else {
-      // open mode
-      unit_sale_price = await fetchProductUnitPrice(pid);
-      item_discount_percentage = toNum(newItems[row]?.item_discount_percentage);
-      unit_sale_quantity = await fetchProductAvailableQty(pid); // Available Qty (just for reference)
+
+      const availableBatches = batchOptsInvoice.filter((b) => {
+        const key = b.is_unbatched ? "__unbatched__" : String(b.batch_number).trim();
+        return !usedOnOtherRows.includes(key);
+      });
+
+      if (availableBatches.length === 0 && usedOnOtherRows.length > 0) {
+        invoiceErrors.showMessage(`All batches and unassigned stock for "${productNameById(pid)}" on this invoice are already added on earlier rows.`);
+        resetRow(row);
+        setTimeout(() => productRefs.current[row]?.querySelector("input")?.focus?.(), 40);
+        return;
+      }
+
+      setRowBatches((prev) => {
+        const next = prev.slice();
+        next[row] = batchOptsInvoice;
+        return next;
+      });
+
+      if (availableBatches.length === 1) {
+        const b = availableBatches[0];
+        const isUnb = Boolean(b.is_unbatched);
+        newItems[row] = recalcItem({
+          ...newItems[row],
+          product_id: pid,
+          batch_number: isUnb ? "" : b.batch_number,
+          expiry: isUnb ? "" : (b.expiry || ""),
+          is_unbatched: isUnb,
+          unit_sale_price: b.unit_sale_price ?? (candidates.length ? extractUnitPrice(candidates[0]) : 0),
+          item_discount_percentage: b.item_discount_percentage ?? (candidates.length ? extractItemDiscPct(candidates[0]) : 0),
+          unit_sale_quantity: b.unit_sale_quantity ?? 0,
+          unit_return_quantity: 0,
+        });
+        setForm((prev) => recalcFooter({ ...prev, items: newItems }));
+        setTimeout(() => qtyRefs.current[row]?.focus?.(), 60);
+        return;
+      }
+
+      // Multiple batches available
+      unit_sale_price = candidates.length ? extractUnitPrice(candidates[0]) : await fetchProductUnitPrice(pid);
+      item_discount_percentage = candidates.length ? extractItemDiscPct(candidates[0]) : 0;
+      newItems[row] = recalcItem({
+        ...newItems[row],
+        product_id: pid,
+        unit_sale_price,
+        item_discount_percentage,
+        unit_sale_quantity: 0,
+        batch_number: "",
+        expiry: "",
+        is_unbatched: false,
+        unit_return_quantity: 0,
+      });
+      setForm((prev) => recalcFooter({ ...prev, items: newItems }));
+      setTimeout(() => batchRefs.current[row]?.querySelector("input")?.focus?.(), 60);
+      return;
     }
 
+    // OPEN MODE (No invoice selected)
+    unit_sale_price = await fetchProductUnitPrice(pid);
+    item_discount_percentage = toNum(newItems[row]?.item_discount_percentage);
+
+    const openBatches = await fetchBatchesForOpenReturn(pid);
+    const usedOnOtherRows = form.items
+      .filter((it, idx) => idx !== row && eqId(it.product_id, pid))
+      .map((it) => (it.batch_number ? String(it.batch_number).trim() : (it.is_unbatched ? "__unbatched__" : "")));
+
+    if (openBatches.length === 0) {
+      if (usedOnOtherRows.length > 0) {
+        invoiceErrors.showMessage(`Product "${productNameById(pid)}" already used in row ${findDuplicateProductIndex(pid, row) + 1}.`);
+        resetRow(row);
+        setTimeout(() => productRefs.current[row]?.querySelector("input")?.focus?.(), 40);
+        return;
+      }
+
+      unit_sale_quantity = await fetchProductAvailableQty(pid);
+      newItems[row] = recalcItem({
+        ...newItems[row],
+        product_id: pid,
+        unit_sale_price,
+        item_discount_percentage,
+        unit_sale_quantity,
+        batch_number: "",
+        expiry: "",
+        is_unbatched: true,
+        unit_return_quantity: 0,
+      });
+      setForm((prev) => recalcFooter({ ...prev, items: newItems }));
+      setRowBatches((prev) => {
+        const next = prev.slice();
+        next[row] = [];
+        return next;
+      });
+      setTimeout(() => qtyRefs.current[row]?.focus?.(), 60);
+      return;
+    }
+
+    const availableBatches = openBatches.filter((b) => {
+      const key = b.is_unbatched ? "__unbatched__" : String(b.batch_number).trim();
+      return !usedOnOtherRows.includes(key);
+    });
+
+    if (availableBatches.length === 0 && usedOnOtherRows.length > 0) {
+      invoiceErrors.showMessage(`All batches and unassigned stock for "${productNameById(pid)}" are already added on earlier rows.`);
+      resetRow(row);
+      setTimeout(() => productRefs.current[row]?.querySelector("input")?.focus?.(), 40);
+      return;
+    }
+
+    setRowBatches((prev) => {
+      const next = prev.slice();
+      next[row] = openBatches;
+      return next;
+    });
+
+    if (availableBatches.length === 1) {
+      const b = availableBatches[0];
+      const isUnb = Boolean(b.is_unbatched);
+      newItems[row] = recalcItem({
+        ...newItems[row],
+        product_id: pid,
+        batch_number: isUnb ? "" : b.batch_number,
+        expiry: isUnb ? "" : (b.expiry || ""),
+        is_unbatched: isUnb,
+        unit_sale_price,
+        item_discount_percentage,
+        unit_sale_quantity: toNum(b.available_units),
+        unit_return_quantity: 0,
+      });
+      setForm((prev) => recalcFooter({ ...prev, items: newItems }));
+      setTimeout(() => qtyRefs.current[row]?.focus?.(), 60);
+      return;
+    }
+
+    // Multiple batches in open mode
     newItems[row] = recalcItem({
       ...newItems[row],
       product_id: pid,
       unit_sale_price,
       item_discount_percentage,
-      unit_sale_quantity,
+      unit_sale_quantity: 0,
       batch_number: "",
       expiry: "",
+      is_unbatched: false,
       unit_return_quantity: 0,
     });
     setForm((prev) => recalcFooter({ ...prev, items: newItems }));
-
-    const batches = await fetchBatchesForOpenReturn(pid);
-      setRowBatches((prev) => {
-        const next = prev.slice();
-        next[row] = batches;
-        return next;
-      });
-
-      // 🔥 DECIDE BASED ON ACTUAL FETCH RESULT (not state)
-      setTimeout(() => {
-        if (Array.isArray(batches) && batches.length > 0) {
-          // product has batches → jump to batch
-          const el = batchRefs.current[row];
-          el?.querySelector("input")?.focus?.();
-        } else {
-          // no batches → jump to return qty
-          qtyRefs.current[row]?.focus?.();
-        }
-      }, 60);
+    setTimeout(() => batchRefs.current[row]?.querySelector("input")?.focus?.(), 60);
   };
 
-  const handleBatchSelect = (row, batchVal) => {
-    const bn = typeof batchVal === "string" ? batchVal : batchVal?.value ?? batchVal?.batch_number ?? "";
+  const handleBatchSelect = (row, batchVal, batchObj = null) => {
+    const isUnbatched = Boolean(
+      batchObj?.is_unbatched ||
+      batchVal === "__unbatched__" ||
+      batchVal === "[Unbatched Stock]" ||
+      batchVal?.is_unbatched
+    );
+    const rawVal = typeof batchVal === "string" ? batchVal : batchVal?.value ?? batchVal?.batch_number ?? batchObj?.batch_number ?? "";
+    const bn = isUnbatched ? "" : String(rawVal).trim();
+    const pid = form.items[row].product_id;
 
-    // Prevent duplicate product+batch pairs
-    if (bn) {
-      const duplicate = form.items.findIndex(
-        (it, idx) => idx !== row && eqId(it.product_id, form.items[row].product_id) && eqId(it.batch_number, bn)
-      );
+    if (pid) {
+      const duplicate = findDuplicateProductBatchIndex(pid, bn, row, isUnbatched);
       if (duplicate !== -1) {
-        invoiceErrors.showMessage(`Same Product & Batch already used in row ${duplicate + 1}.`);
-        // clear batch in this row and refocus
+        invoiceErrors.showMessage(
+          isUnbatched
+            ? `Row ${duplicate + 1} already has unassigned stock for "${productNameById(pid)}". Each batch (or unassigned stock) can only be selected once per product.`
+            : `Same Product & Batch already used in row ${duplicate + 1}. Use a unique batch for the same product.`
+        );
         setForm((prev) => {
           const items = [...prev.items];
-          items[row] = { ...items[row], batch_number: "" };
+          items[row] = { ...items[row], batch_number: "", expiry: "", is_unbatched: false };
           return recalcFooter({ ...prev, items });
         });
         setTimeout(() => batchRefs.current[row]?.querySelector("input")?.focus?.(), 40);
@@ -702,11 +924,6 @@ const handleSelectChange = async (field, value) => {
 
     const newItems = [...form.items];
     let expiry = "";
-
-    const cached = productBatchCache.current.get(String(newItems[row].product_id)) || [];
-    const matchedOpen = cached.find((b) => b.batch_number === bn);
-    if (matchedOpen) expiry = matchedOpen.expiry || "";
-
     let unit_sale_quantity = newItems[row].unit_sale_quantity || 0;
     let unit_sale_price = newItems[row].unit_sale_price || 0;
     let item_discount_percentage = newItems[row].item_discount_percentage || 0;
@@ -714,31 +931,40 @@ const handleSelectChange = async (field, value) => {
     if (form.sale_invoice_id) {
       const matchedInv = invoiceItems.find(
         (it) =>
-          String(it.product_id) === String(newItems[row].product_id) &&
-          String(it.batch_number ?? it.batch ?? "") === String(bn)
+          eqId(it.product_id, pid) &&
+          (isUnbatched
+            ? Boolean(it.is_unbatched || (!it.batch_number && !it.batch))
+            : String(it.batch_number ?? it.batch ?? "").trim() === bn)
       );
       if (matchedInv) {
+        expiry = isUnbatched ? "" : (matchedInv.expiry || "");
         unit_sale_quantity = extractUnitSaleQty(matchedInv);
         unit_sale_price = extractUnitPrice(matchedInv) || unit_sale_price;
         item_discount_percentage = extractItemDiscPct(matchedInv);
       }
     } else {
-      // open mode: if batch has available_units, prefer it for available quantity display
-      const matchedOpen2 = cached.find((b) => b.batch_number === bn);
-      if (matchedOpen2 && toNum(matchedOpen2.available_units) > 0) {
-        unit_sale_quantity = toNum(matchedOpen2.available_units);
+      // open mode
+      const cached = productBatchCache.current.get(String(pid)) || [];
+      const matchedOpen = cached.find((b) => (isUnbatched ? b.is_unbatched : b.batch_number === bn));
+      if (matchedOpen) {
+        expiry = isUnbatched ? "" : (matchedOpen.expiry || "");
+        if (toNum(matchedOpen.available_units) > 0) {
+          unit_sale_quantity = toNum(matchedOpen.available_units);
+        }
       }
     }
 
     newItems[row] = recalcItem({
       ...newItems[row],
-      batch_number: bn || "",
+      batch_number: bn,
       expiry,
+      is_unbatched: isUnbatched,
       unit_sale_quantity,
       unit_sale_price,
       item_discount_percentage,
     });
     setForm((prev) => recalcFooter({ ...prev, items: newItems }));
+    setTimeout(() => qtyRefs.current[row]?.focus?.(), 40);
   };
 
   const handleItemChange = (row, field, raw) => {
@@ -764,6 +990,7 @@ const handleSelectChange = async (field, value) => {
       ...prev,
       items: [...prev.items, { ...defaultItem, id: Date.now() + Math.random() }],
     }));
+    setRowBatches((prev) => [...prev, []]);
     setTimeout(
       () => productRefs.current[form.items.length]?.querySelector("input")?.focus?.(),
       50
@@ -773,6 +1000,7 @@ const handleSelectChange = async (field, value) => {
   const removeItem = (row) => {
     if (form.items.length <= 1) return;
     const next = form.items.filter((_, i) => i !== row);
+    setRowBatches((prev) => prev.filter((_, i) => i !== row));
     setForm((prev) => recalcFooter({ ...prev, items: next }));
   };
 
@@ -796,29 +1024,36 @@ const handleSelectChange = async (field, value) => {
       }
 
       // Validations: duplicates & qty (qty cap only for invoice-based returns)
-      const seenProducts = new Set();
       const seenPairs = new Set();
       for (let i = 0; i < form.items.length; i++) {
         const it = form.items[i];
         if (!it.product_id) continue; // skip empty rows
 
-        // duplicate product
         const keyP = String(it.product_id);
-        if (seenProducts.has(keyP)) {
-          invoiceErrors.showMessage(`Duplicate product detected at row ${i + 1}. Each product only once.`);
+        const isUnb = Boolean(it.is_unbatched || (!it.batch_number && String(it.batch_number || "").trim() === ""));
+        const batchKey = isUnb ? "__unbatched__" : String(it.batch_number || "").trim();
+        const keyPB = `${keyP}::${batchKey}`;
+
+        if (seenPairs.has(keyPB)) {
+          invoiceErrors.showMessage(
+            isUnb
+              ? `Row ${i + 1}: Unassigned stock for product "${productNameById(it.product_id)}" is already added on another row.`
+              : `Row ${i + 1}: Duplicate product + batch "${it.batch_number}". Each batch can be selected only once.`
+          );
           return;
         }
-        seenProducts.add(keyP);
+        seenPairs.add(keyPB);
 
-        // duplicate product+batch (only when batch present)
-        const bn = String(it.batch_number || "");
-        if (bn) {
-          const keyPB = `${keyP}__${bn}`;
-          if (seenPairs.has(keyPB)) {
-            invoiceErrors.showMessage(`Duplicate Product + Batch at row ${i + 1}.`);
-            return;
-          }
-          seenPairs.add(keyPB);
+        // Batch selection check: if row has batches options, require batch or unbatched
+        const rowBatchesForThis = rowBatches[i] || [];
+        if (rowBatchesForThis.length > 0 && !it.batch_number && !it.is_unbatched) {
+          invoiceErrors.showMessage(`Row ${i + 1}: Please select a batch or unbatched stock.`);
+          return;
+        }
+
+        if (toNum(it.unit_return_quantity) <= 0) {
+          invoiceErrors.showMessage(`Row ${i + 1}: Return quantity must be greater than 0.`);
+          return;
         }
 
         // qty > allowed — enforce only for invoice mode
@@ -858,8 +1093,9 @@ const handleSelectChange = async (field, value) => {
               .filter((it) => it.product_id)
               .map((it) => ({
                 product_id: it.product_id,
-                batch_number: it.batch_number || null,
-                expiry: it.expiry || null,
+                batch_number: it.is_unbatched ? null : (it.batch_number || null),
+                expiry: it.is_unbatched ? null : (it.expiry || null),
+                is_unbatched: Boolean(it.is_unbatched),
                 unit_sale_quantity: toNum(it.unit_sale_quantity),
                 unit_sale_price: toNum(it.unit_sale_price),
                 unit_return_quantity: toNum(it.unit_return_quantity),
@@ -882,8 +1118,9 @@ const handleSelectChange = async (field, value) => {
               .filter((it) => it.product_id)
               .map((it) => ({
                 product_id: it.product_id,
-                batch_number: it.batch_number || null,
-                expiry: it.expiry || null,
+                batch_number: it.is_unbatched ? null : (it.batch_number || null),
+                expiry: it.is_unbatched ? null : (it.expiry || null),
+                is_unbatched: Boolean(it.is_unbatched),
                 unit_sale_quantity: toNum(it.unit_sale_quantity),
                 unit_sale_price: toNum(it.unit_sale_price),
                 unit_return_quantity: toNum(it.unit_return_quantity),
@@ -1239,11 +1476,14 @@ const handleSelectChange = async (field, value) => {
                     <td className="text-center">
                       <div ref={(el) => (batchRefs.current[i] = el)}>
                         <BatchSearchInput
-                          value={item.batch_number}
+                          value={item.batch_number ? item.batch_number : (item.is_unbatched ? "[Unbatched Stock]" : "")}
                           batches={(rowBatches[i] || []).map(b => ({ ...b, batch_number: b.batch_number || b.batch }))}
-                          usedBatches={form.items.filter((row, index) => index !== i && eqId(row.product_id, item.product_id)).map(row => row.batch_number).filter(Boolean)}
+                          usedBatches={form.items
+                            .filter((row, index) => index !== i && eqId(row.product_id, item.product_id))
+                            .map((row) => (row.batch_number ? String(row.batch_number).trim() : (row.is_unbatched ? "__unbatched__" : "")))
+                            .filter(Boolean)}
                           inputProps={{ autoComplete: "off", autoCapitalize: "off", autoCorrect: "off", spellCheck: false }}
-                          onChange={(v) => handleBatchSelect(i, v)}
+                          onChange={(v, obj) => handleBatchSelect(i, v, obj)}
                           onKeyDown={(e) => onKeyNav(e, i, "batch")}
                         />
                       </div>
