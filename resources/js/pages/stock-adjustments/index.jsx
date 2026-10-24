@@ -6,7 +6,6 @@ import toast from "react-hot-toast";
 import {
   MagnifyingGlassIcon,
   PlusCircleIcon,
-  PencilSquareIcon,
   TrashIcon,
   ArrowPathIcon,
   DocumentTextIcon,
@@ -291,8 +290,8 @@ export default function StockAdjustmentsIndex() {
     return `${day} ${month} ${year}`;
   };
 
-  // Check if has actions
-  const hasActions = can.update || can.delete;
+  // Check if has actions (edit disabled - adjustments are immutable audit records)
+  const hasActions = can.delete;
 
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view stock adjustments.</div>;
@@ -507,18 +506,6 @@ export default function StockAdjustmentsIndex() {
                     {hasActions && (
                       <td className="px-3 py-3">
                         <div className="flex items-center gap-1.5 justify-center">
-                          {/* Edit Action */}
-                          <Guard when={can.update}>
-                            <Link
-                              to={`/stock-adjustments/${r.id}/edit`}
-                              className="products-row-action"
-                              aria-label={`Edit adjustment ${r.posted_number}`}
-                              title="Edit"
-                            >
-                              <PencilSquareIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                            </Link>
-                          </Guard>
-
                           {/* Delete Action */}
                           <Guard when={can.delete}>
                             <button

@@ -146,17 +146,18 @@ export default function PurchaseInvoicesIndex() {
     fetchDrafts();
   }, [fetchDrafts]);
 
-  // Alt+D to open Held Drafts modal
+  // Alt+H or Alt+D to open Held Drafts modal
   useEffect(() => {
     const onKeyDown = (e) => {
-      if (e.altKey && (e.key || "").toLowerCase() === "d") {
+      if (e.altKey && ["d", "h"].includes((e.key || "").toLowerCase())) {
         e.preventDefault();
+        fetchDrafts();
         setIsDraftsOpen(true);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [fetchDrafts]);
 
   const handleResumeDraft = (draftId) => {
     if (typeof window !== "undefined") {
@@ -393,7 +394,7 @@ export default function PurchaseInvoicesIndex() {
                   fetchDrafts();
                   setIsDraftsOpen(true);
                 }}
-                title="View Held Invoices & Drafts (Alt+D)"
+                title="View Held Invoices & Drafts (Alt+H / Alt+D)"
                 className="products-action theme-btn-secondary relative"
               >
                 <ClockIcon className="w-3.5 h-3.5 shrink-0" />
