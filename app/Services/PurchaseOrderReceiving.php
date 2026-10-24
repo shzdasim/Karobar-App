@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\UserDemand;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 
 class PurchaseOrderReceiving
@@ -58,8 +59,8 @@ class PurchaseOrderReceiving
 
         $order->update([
             'status' => $status,
-            'received_by' => $hasInvoices ? ($order->received_by ?? auth()->id()) : null,
-            'updated_by' => auth()->id(),
+            'received_by' => $hasInvoices ? ($order->received_by ?? Auth::id()) : null,
+            'updated_by' => Auth::id(),
             'received_at' => $hasInvoices ? ($order->received_at ?? now()) : null,
         ]);
 
@@ -116,7 +117,7 @@ class PurchaseOrderReceiving
             } else {
                 UserDemand::create([
                     'product_id' => $line->product_id,
-                    'requested_by' => auth()->id() ?? $order->created_by,
+                    'requested_by' => Auth::id() ?? $order->created_by,
                     'requested_name' => $productName,
                     'requested_quantity' => $remainingUnits,
                     'notes' => $note,

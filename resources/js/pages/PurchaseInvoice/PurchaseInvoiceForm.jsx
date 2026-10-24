@@ -329,7 +329,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
       if (Array.isArray(next.items)) {
         next.items = next.items.map((it) => ({
           ...it,
-          is_unbatched: Boolean(!it?.batch || String(it.batch).trim() === ""),
+          is_unbatched: Boolean(it.is_unbatched ?? (!it?.batch || String(it.batch).trim() === "")),
         }));
       }
       setForm(next);

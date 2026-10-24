@@ -32,6 +32,8 @@ class PurchaseInvoiceBatchTest extends TestCase
         Permission::firstOrCreate(['name' => 'purchase-invoice.view', 'guard_name' => 'sanctum']);
         Permission::firstOrCreate(['name' => 'purchase-invoice.update', 'guard_name' => 'sanctum']);
         Permission::firstOrCreate(['name' => 'purchase-invoice.delete', 'guard_name' => 'sanctum']);
+        Permission::firstOrCreate(['name' => 'purchase-order.view', 'guard_name' => 'sanctum']);
+        Permission::firstOrCreate(['name' => 'purchase-order.create', 'guard_name' => 'sanctum']);
         Permission::firstOrCreate(['name' => 'product.view', 'guard_name' => 'sanctum']);
         Permission::firstOrCreate(['name' => 'product.update', 'guard_name' => 'sanctum']);
 
@@ -379,5 +381,147 @@ class PurchaseInvoiceBatchTest extends TestCase
 
         $this->assertEquals(70, $this->product->fresh()->quantity);
         $this->assertEquals(0, Batch::where('product_id', $this->product->id)->count());
+    }
+
+    public function test_receive_purchase_order_assigns_most_recent_batch_for_batched_product_and_unassigns_for_unbatched_product(): void
+    {
+        // 1. Batched product: Has two batches (old and recent)
+        $batchedProduct = $this->product;
+        Batch::create([
+            'product_id' => $batchedProduct->id,
+            'batch_number' => 'BATCH-OLD',
+            'expiry_date' => '2026-01-01',
+            'quantity' => 20,
+        ]);
+        $recentBatch = Batch::create([
+            'product_id' => $batchedProduct->id,
+            'batch_number' => 'BATCH-RECENT',
+            'expiry_date' => '2027-05-15',
+            'quantity' => 10,
+        ]);
+
+        // 2. Unbatched product: Has no batches
+        $category = Category::first();
+        $brand = Brand::first();
+        $unbatchedProduct = Product::create([
+            'name' => 'Paracetamol 500mg',
+            'product_code' => 'PCM-500',
+            'barcode' => '9876543210987',
+            'category_id' => $category->id,
+            'brand_id' => $brand->id,
+            'supplier_id' => $this->supplier->id,
+            'pack_size' => 10,
+            'quantity' => 0,
+            'unit_purchase_price' => 5,
+            'pack_purchase_price' => 50,
+            'unit_sale_price' => 8,
+            'pack_sale_price' => 80,
+            'avg_price' => 5,
+        ]);
+
+        // 3. Create a purchase order with both products
+        $order = \App\Models\PurchaseOrder::create([
+            'supplier_id' => $this->supplier->id,
+            'date' => now()->toDateString(),
+            'expected_received_date' => now()->addDays(2)->toDateString(),
+            'status' => 'ordered',
+            'created_by' => $this->user->id,
+            'updated_by' => $this->user->id,
+        ]);
+        $order->items()->createMany([
+            [
+                'product_id' => $batchedProduct->id,
+                'pack_size' => 10,
+                'ordered_quantity' => 50,
+                'unit_purchase_price' => 10,
+                'unit_bonus' => 0,
+            ],
+            [
+                'product_id' => $unbatchedProduct->id,
+                'pack_size' => 10,
+                'ordered_quantity' => 30,
+                'unit_purchase_price' => 5,
+                'unit_bonus' => 0,
+            ],
+        ]);
+
+        // 4. Call receive order endpoint
+        $res = $this->actingAs($this->user)->postJson("/api/purchase-orders/{$order->id}/receive");
+        $res->assertStatus(200);
+
+        $items = $res->json('items');
+        $this->assertCount(2, $items);
+
+        $batchedItem = collect($items)->firstWhere('product_id', $batchedProduct->id);
+        $unbatchedItem = collect($items)->firstWhere('product_id', $unbatchedProduct->id);
+
+        // Batched item must have the most recent batch and its expiry assigned, and is_unbatched = false
+        $this->assertNotNull($batchedItem);
+        $this->assertSame('BATCH-RECENT', $batchedItem['batch']);
+        $this->assertSame('2027-05-15', $batchedItem['expiry']);
+        $this->assertFalse($batchedItem['is_unbatched']);
+
+        // Unbatched item must have empty batch/expiry and is_unbatched = true
+        $this->assertNotNull($unbatchedItem);
+        $this->assertSame('', $unbatchedItem['batch']);
+        $this->assertSame('', $unbatchedItem['expiry']);
+        $this->assertTrue($unbatchedItem['is_unbatched']);
+
+        // 5. Complete receiving into purchase invoice
+        $invoiceRes = $this->actingAs($this->user)->postJson('/api/purchase-invoices', [
+            'purchase_order_id' => $order->id,
+            'receipt_key' => $res->json('receipt_key'),
+            'supplier_id' => $this->supplier->id,
+            'invoice_number' => 'PO-REC-INV-1',
+            'invoice_amount' => 650,
+            'posted_date' => now()->toDateString(),
+            'total_amount' => 650,
+            'total_paid' => 650,
+            'items' => [
+                [
+                    'purchase_order_item_id' => $batchedItem['purchase_order_item_id'],
+                    'product_id' => $batchedProduct->id,
+                    'pack_size' => 10,
+                    'batch' => $batchedItem['batch'],
+                    'expiry' => $batchedItem['expiry'],
+                    'pack_quantity' => 5,
+                    'unit_quantity' => 50,
+                    'pack_purchase_price' => 100,
+                    'unit_purchase_price' => 10,
+                    'pack_sale_price' => 150,
+                    'unit_sale_price' => 15,
+                    'margin' => 50,
+                    'sub_total' => 500,
+                    'avg_price' => 10,
+                    'quantity' => 50,
+                ],
+                [
+                    'purchase_order_item_id' => $unbatchedItem['purchase_order_item_id'],
+                    'product_id' => $unbatchedProduct->id,
+                    'pack_size' => 10,
+                    'batch' => null,
+                    'expiry' => null,
+                    'pack_quantity' => 3,
+                    'unit_quantity' => 30,
+                    'pack_purchase_price' => 50,
+                    'unit_purchase_price' => 5,
+                    'pack_sale_price' => 80,
+                    'unit_sale_price' => 8,
+                    'margin' => 37.5,
+                    'sub_total' => 150,
+                    'avg_price' => 5,
+                    'quantity' => 30,
+                ],
+            ],
+        ]);
+        $invoiceRes->assertStatus(201);
+
+        // Verify recent batch quantity increased by 50 (from 10 to 60)
+        $this->assertEquals(60, $recentBatch->fresh()->quantity);
+        // Verify unbatched product quantity is 30 and has no batches
+        $this->assertEquals(30, $unbatchedProduct->fresh()->quantity);
+        $this->assertEquals(0, Batch::where('product_id', $unbatchedProduct->id)->count());
+        // Verify purchase order is now received
+        $this->assertSame('received', $order->fresh()->status);
     }
 }

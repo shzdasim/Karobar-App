@@ -6,6 +6,7 @@ use App\Authorizables\PurchaseOrderForecast;
 use App\Services\SupplierProductSorting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 
 class PurchaseOrderController extends Controller
@@ -119,7 +120,7 @@ class PurchaseOrderController extends Controller
         $data = $this->validateOrder($request);
         return DB::transaction(function () use ($data) {
             $order = \App\Models\PurchaseOrder::create(array_merge($data, [
-                'status' => 'ordered', 'created_by' => auth()->id(), 'updated_by' => auth()->id(),
+                'status' => 'ordered', 'created_by' => Auth::id(), 'updated_by' => Auth::id(),
             ]));
             // The database ID provides a race-safe sequence, including the first order.
             $order->number = 'PO-' . str_pad($order->id, 5, '0', STR_PAD_LEFT);
@@ -141,7 +142,7 @@ class PurchaseOrderController extends Controller
             if ((int) $order->supplier_id !== (int) $data['supplier_id']) {
                 throw \Illuminate\Validation\ValidationException::withMessages(['supplier_id' => 'The submitted Purchase Order supplier is finalized.']);
             }
-            $order->update(array_merge($data, ['updated_by' => auth()->id()]));
+            $order->update(array_merge($data, ['updated_by' => Auth::id()]));
             $order->items()->delete();
             $order->items()->createMany($data['items']);
             return $order->load('supplier', 'items.product.brand');
@@ -154,7 +155,7 @@ class PurchaseOrderController extends Controller
         return DB::transaction(function () use ($purchaseOrder) {
             $order = \App\Models\PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
             if ($order->status !== 'ordered' || $order->invoices()->exists()) abort(409, 'Only unreceived orders can be cancelled.');
-            $order->update(['status' => 'cancelled', 'updated_by' => auth()->id()]);
+            $order->update(['status' => 'cancelled', 'updated_by' => Auth::id()]);
             return $order;
         });
     }
@@ -179,7 +180,12 @@ class PurchaseOrderController extends Controller
         return DB::transaction(function () use ($purchaseOrder) {
             $order = \App\Models\PurchaseOrder::lockForUpdate()->findOrFail($purchaseOrder->id);
             if (!in_array($order->status, ['ordered', 'partially_received'], true)) abort(409, 'This order cannot be received.');
-            $order->load('supplier', 'items.product.brand', 'items.invoiceItems');
+            $order->load([
+                'supplier',
+                'items.product.brand',
+                'items.product.batches' => fn ($q) => $q->orderByDesc('id'),
+                'items.invoiceItems',
+            ]);
             return response()->json([
                 'purchase_order_id' => $order->id,
                 'receipt_key' => (string) \Illuminate\Support\Str::uuid(),
@@ -195,6 +201,26 @@ class PurchaseOrderController extends Controller
                     $p = $line->product;
                     $remaining = max(0, $line->ordered_quantity - $line->invoiceItems->sum('unit_quantity'));
                     $bonus = max(0, $line->unit_bonus - $line->invoiceItems->sum('unit_bonus'));
+
+                    // Find most recent batch if product already had a batch
+                    $recentBatch = $p && $p->batches ? $p->batches->first(fn ($b) => trim((string) $b->batch_number) !== '') : null;
+                    $batchNumber = $recentBatch ? trim((string) $recentBatch->batch_number) : '';
+                    $batchExpiry = $recentBatch && $recentBatch->expiry_date ? \Carbon\Carbon::parse($recentBatch->expiry_date)->toDateString() : '';
+
+                    if ($batchNumber === '' && $p) {
+                        $lastPiItem = \App\Models\PurchaseInvoiceItem::where('product_id', $p->id)
+                            ->whereNotNull('batch')
+                            ->where('batch', '!=', '')
+                            ->latest('id')
+                            ->first();
+                        if ($lastPiItem) {
+                            $batchNumber = trim((string) $lastPiItem->batch);
+                            $batchExpiry = $lastPiItem->expiry ? \Carbon\Carbon::parse($lastPiItem->expiry)->toDateString() : '';
+                        }
+                    }
+
+                    $hasBatch = $batchNumber !== '';
+
                     return [
                         'purchase_order_item_id' => $line->id, 'product_id' => $p->id,
                         'pack_size' => $line->pack_size,
@@ -207,7 +233,10 @@ class PurchaseOrderController extends Controller
                         'whole_sale_unit_price' => $p->whole_sale_unit_price ?? 0,
                         'whole_sale_pack_price' => ($p->whole_sale_unit_price ?? 0) * $line->pack_size,
                         'item_discount_percentage' => $line->item_discount_percentage,
-                        'unit_bonus' => $bonus, 'pack_bonus' => $bonus / $line->pack_size, 'batch' => '', 'expiry' => '',
+                        'unit_bonus' => $bonus, 'pack_bonus' => $bonus / $line->pack_size,
+                        'batch' => $hasBatch ? $batchNumber : '',
+                        'expiry' => $hasBatch ? $batchExpiry : '',
+                        'is_unbatched' => !$hasBatch,
                         'product' => $p,
                     ];
                 }),
