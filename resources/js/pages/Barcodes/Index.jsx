@@ -29,6 +29,8 @@ import {
   XMarkIcon,
   DocumentArrowDownIcon,
   BookmarkSquareIcon,
+  ClipboardDocumentListIcon,
+  CheckIcon,
 } from "@heroicons/react/24/solid";
 
 const TABS = [
@@ -118,6 +120,148 @@ export default function BarcodeIndex() {
   useEffect(() => {
     fetchProducts("");
   }, [fetchProducts]);
+
+  // Suppliers & Brands list for filtering purchase orders
+  const [suppliersList, setSuppliersList] = useState([]);
+  const [brandsList, setBrandsList] = useState([]);
+  const [selectedSupplierOpt, setSelectedSupplierOpt] = useState({ value: null, label: "🏢 All Suppliers" });
+  const [selectedBrandOpt, setSelectedBrandOpt] = useState({ value: null, label: "🏷️ All Brands" });
+
+  // Purchase Orders list and selection
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [loadingPoList, setLoadingPoList] = useState(false);
+  const [selectedPoOpt, setSelectedPoOpt] = useState(null);
+  const [selectedPoData, setSelectedPoData] = useState(null);
+  const [poQtyMode, setPoQtyMode] = useState("units"); // "units" | "packs"
+  const [poItemSelections, setPoItemSelections] = useState([]);
+
+  // Fetch suppliers and brands on mount
+  useEffect(() => {
+    const loadFilters = async () => {
+      try {
+        const [supRes, brandRes] = await Promise.all([
+          axios.get("/api/suppliers/search", { params: { limit: 100 } }),
+          axios.get("/api/brands/search", { params: { limit: 100 } }),
+        ]);
+        setSuppliersList(Array.isArray(supRes.data) ? supRes.data : []);
+        setBrandsList(Array.isArray(brandRes.data) ? brandRes.data : []);
+      } catch {
+        // silent
+      }
+    };
+    loadFilters();
+  }, []);
+
+  // Fetch purchase orders matching supplier and brand
+  const fetchPurchaseOrders = useCallback(async (supplierId = null, brandId = null) => {
+    try {
+      setLoadingPoList(true);
+      const params = {};
+      if (supplierId) params.supplier_id = supplierId;
+      if (brandId) params.brand_id = brandId;
+      const { data } = await axios.get("/api/barcodes/purchase-orders", { params });
+      setPurchaseOrders(data.purchase_orders || []);
+    } catch {
+      setPurchaseOrders([]);
+    } finally {
+      setLoadingPoList(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPurchaseOrders(selectedSupplierOpt?.value, selectedBrandOpt?.value);
+  }, [fetchPurchaseOrders, selectedSupplierOpt, selectedBrandOpt]);
+
+  // Options for Supplier, Brand and PO Selects
+  const supplierOptions = useMemo(() => [
+    { value: null, label: "🏢 All Suppliers" },
+    ...suppliersList.map((s) => ({ value: s.id, label: s.name })),
+  ], [suppliersList]);
+
+  const brandOptions = useMemo(() => [
+    { value: null, label: "🏷️ All Brands" },
+    ...brandsList.map((b) => ({ value: b.id, label: b.name })),
+  ], [brandsList]);
+
+  const poSelectOptions = useMemo(() => {
+    return purchaseOrders.map((po) => {
+      const dateStr = po.date ? ` — ${po.date}` : "";
+      const supStr = po.supplier?.name ? ` — ${po.supplier.name}` : "";
+      const itemsCount = po.items_count || po.items?.length || 0;
+      const unitsCount =
+        po.items_sum_ordered_quantity ||
+        (po.items || []).reduce((acc, i) => acc + Number(i.ordered_quantity || 0), 0);
+      return {
+        value: po.id,
+        label: `${po.number || `PO #${po.id}`}${dateStr}${supStr} (${itemsCount} items, ${unitsCount} units)`,
+        po,
+      };
+    });
+  }, [purchaseOrders]);
+
+  // Select a PO and initialize its items for import
+  const handleSelectPo = (opt) => {
+    setSelectedPoOpt(opt);
+    if (!opt || !opt.po) {
+      setSelectedPoData(null);
+      setPoItemSelections([]);
+      return;
+    }
+    const po = opt.po;
+    setSelectedPoData(po);
+
+    const items = (po.items || []).map((it) => {
+      const p = it.product || {};
+      const orderedUnits = Number(it.ordered_quantity) || 0;
+      const packSize = Math.max(1, Number(it.pack_size || p.pack_size || 1));
+      const orderedPacks = Math.max(1, Math.round(orderedUnits / packSize));
+
+      return {
+        id: it.id,
+        product_id: it.product_id,
+        product_name: p.name || `Product #${it.product_id}`,
+        barcode: p.barcode || p.product_code || "",
+        brand_name: p.brand?.name || "—",
+        pack_size: packSize,
+        ordered_units: orderedUnits,
+        ordered_packs: orderedPacks,
+        import_quantity: poQtyMode === "packs" ? orderedPacks : orderedUnits,
+        selected: true,
+        product: p,
+      };
+    });
+
+    setPoItemSelections(items);
+  };
+
+  // Toggle PO Quantity mode (units vs packs)
+  const handleTogglePoQtyMode = (mode) => {
+    setPoQtyMode(mode);
+    setPoItemSelections((prev) =>
+      prev.map((item) => ({
+        ...item,
+        import_quantity: mode === "packs" ? item.ordered_packs : item.ordered_units,
+      }))
+    );
+  };
+
+  // Import selected PO items into queue
+  const handleImportPoToQueue = () => {
+    const selected = poItemSelections.filter((item) => item.selected && item.import_quantity > 0);
+    if (selected.length === 0) {
+      toast.error("Please select at least one item to import");
+      return;
+    }
+
+    selected.forEach((item) => {
+      addProductToQueue(item.product, item.import_quantity);
+    });
+
+    toast.success(`Imported ${selected.length} product(s) from ${selectedPoData?.number || "Purchase Order"} into queue`);
+    setSelectedPoOpt(null);
+    setSelectedPoData(null);
+    setPoItemSelections([]);
+  };
 
   // React-Select custom styles matching Karobar theme & dark mode
   const batchSelectStyles = useMemo(
@@ -236,11 +380,31 @@ export default function BarcodeIndex() {
     fetchTemplates();
   }, [fetchTemplates]);
 
-  // Handle URL query parameters (e.g. ?product_id=12 or ?product_ids=1,2,3)
+  // Handle URL query parameters (e.g. ?purchase_order_id=5 or ?product_id=12 or ?product_ids=1,2,3)
   useEffect(() => {
     const productId = searchParams.get("product_id");
     const productIds = searchParams.get("product_ids");
-    if (productId || productIds) {
+    const poId = searchParams.get("purchase_order_id");
+
+    if (poId) {
+      axios
+        .get("/api/barcodes/purchase-orders", { params: { id: poId } })
+        .then(({ data }) => {
+          const po = data.purchase_order;
+          if (po && po.items && po.items.length > 0) {
+            po.items.forEach((it) => {
+              if (it.product) {
+                const qty = Number(it.ordered_quantity) || 1;
+                addProductToQueue(it.product, qty);
+              }
+            });
+            toast.success(`Loaded ${po.items.length} product(s) from ${po.number || "Purchase Order"} into print queue`);
+          }
+        })
+        .catch(() => {
+          toast.error("Failed to load purchase order for barcode printing");
+        });
+    } else if (productId || productIds) {
       axios
         .get("/api/barcodes/products-search", {
           params: { product_ids: productIds || productId },
@@ -1175,6 +1339,261 @@ export default function BarcodeIndex() {
                     Clear All
                   </button>
                 </div>
+              </div>
+
+              {/* Find & Load Saved Purchase Orders Section */}
+              <div className="rounded-2xl border border-blue-200/80 dark:border-blue-900/40 bg-gradient-to-br from-blue-50/60 via-indigo-50/30 to-slate-50/60 dark:from-slate-900/80 dark:via-blue-950/20 dark:to-slate-900/80 p-4 shadow-xs space-y-3.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20">
+                      <ClipboardDocumentListIcon className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                        <span>Find &amp; Load Saved Purchase Orders</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
+                          {purchaseOrders.length} Order{purchaseOrders.length === 1 ? "" : "s"}
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Filter by brand and supplier to quickly load all ordered products and quantities into your print queue.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filters: Supplier, Brand, and Purchase Order */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Supplier Select */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                      <BuildingStorefrontIcon className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Filter by Supplier</span>
+                    </label>
+                    <Select
+                      value={selectedSupplierOpt}
+                      onChange={(opt) => setSelectedSupplierOpt(opt || { value: null, label: "🏢 All Suppliers" })}
+                      options={supplierOptions}
+                      styles={batchSelectStyles}
+                      isSearchable
+                      placeholder="Filter by Supplier…"
+                      menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                      menuPosition="fixed"
+                    />
+                  </div>
+
+                  {/* Brand Select */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                      <TagIcon className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Filter by Brand</span>
+                    </label>
+                    <Select
+                      value={selectedBrandOpt}
+                      onChange={(opt) => setSelectedBrandOpt(opt || { value: null, label: "🏷️ All Brands" })}
+                      options={brandOptions}
+                      styles={batchSelectStyles}
+                      isSearchable
+                      placeholder="Filter by Brand…"
+                      menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                      menuPosition="fixed"
+                    />
+                  </div>
+
+                  {/* Purchase Order Select */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                      <ClipboardDocumentListIcon className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>Select Purchase Order</span>
+                    </label>
+                    <Select
+                      value={selectedPoOpt}
+                      onChange={handleSelectPo}
+                      options={poSelectOptions}
+                      styles={batchSelectStyles}
+                      isLoading={loadingPoList}
+                      isSearchable
+                      placeholder={
+                        loadingPoList
+                          ? "Loading orders…"
+                          : poSelectOptions.length === 0
+                          ? "No orders found"
+                          : "Choose an order to print…"
+                      }
+                      menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                      menuPosition="fixed"
+                      noOptionsMessage={() => "No purchase orders match your filters"}
+                    />
+                  </div>
+                </div>
+
+                {/* Selected Purchase Order Items Preview & Import Box */}
+                {selectedPoData && poItemSelections.length > 0 && (
+                  <div className="mt-2 p-3.5 rounded-xl bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-700 pb-2.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-xs text-slate-800 dark:text-slate-100">
+                          {selectedPoData.number || `PO #${selectedPoData.id}`}
+                        </span>
+                        <span className="text-[11px] text-slate-400">•</span>
+                        <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+                          {selectedPoData.supplier?.name || "Supplier"}
+                        </span>
+                        <span className="text-[11px] text-slate-400">•</span>
+                        <span className="text-[11px] text-slate-400">{selectedPoData.date}</span>
+                        {selectedPoData.reference && (
+                          <>
+                            <span className="text-[11px] text-slate-400">•</span>
+                            <span className="text-[10px] font-mono bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-300">
+                              Ref: {selectedPoData.reference}
+                            </span>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Quantity Mode Switcher: Units vs Packs */}
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                          Quantity:
+                        </span>
+                        <div className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 bg-slate-50 dark:bg-slate-900">
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePoQtyMode("units")}
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+                              poQtyMode === "units"
+                                ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs"
+                                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                            }`}
+                          >
+                            Units ({poItemSelections.reduce((sum, it) => sum + it.ordered_units, 0)})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePoQtyMode("packs")}
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+                              poQtyMode === "packs"
+                                ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs"
+                                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                            }`}
+                          >
+                            Packs ({poItemSelections.reduce((sum, it) => sum + it.ordered_packs, 0)})
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* PO Items Mini Table */}
+                    <div className="max-h-56 overflow-y-auto border border-slate-100 dark:border-slate-700/60 rounded-lg">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50/80 dark:bg-slate-900/50 text-slate-500 uppercase text-[10px] font-semibold sticky top-0">
+                          <tr>
+                            <th className="p-2 w-8 text-center">
+                              <input
+                                type="checkbox"
+                                checked={poItemSelections.length > 0 && poItemSelections.every((i) => i.selected)}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  setPoItemSelections((prev) => prev.map((i) => ({ ...i, selected: checked })));
+                                }}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                              />
+                            </th>
+                            <th className="p-2">Product</th>
+                            <th className="p-2">Brand</th>
+                            <th className="p-2 text-right">Pack Size</th>
+                            <th className="p-2 text-right">Ordered</th>
+                            <th className="p-2 text-right w-24">Sticker Qty</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {poItemSelections.map((it, idx) => (
+                            <tr key={it.id || idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                              <td className="p-2 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={it.selected}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setPoItemSelections((prev) =>
+                                      prev.map((item, i) => (i === idx ? { ...item, selected: checked } : item))
+                                    );
+                                  }}
+                                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                />
+                              </td>
+                              <td className="p-2">
+                                <div className="font-semibold text-slate-800 dark:text-slate-100">
+                                  {it.product_name}
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-mono">
+                                  {it.barcode || "No Barcode"}
+                                </div>
+                              </td>
+                              <td className="p-2 text-slate-600 dark:text-slate-300">{it.brand_name}</td>
+                              <td className="p-2 text-right text-slate-600 dark:text-slate-300">
+                                {it.pack_size}
+                              </td>
+                              <td className="p-2 text-right font-medium text-slate-700 dark:text-slate-200">
+                                {it.ordered_units} units ({it.ordered_packs} packs)
+                              </td>
+                              <td className="p-2 text-right">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={it.import_quantity}
+                                  onChange={(e) => {
+                                    const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                                    setPoItemSelections((prev) =>
+                                      prev.map((item, i) =>
+                                        i === idx ? { ...item, import_quantity: val } : item
+                                      )
+                                    );
+                                  }}
+                                  className="w-16 px-1.5 py-1 text-xs text-right font-bold rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100"
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Action Footer */}
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Selected: {poItemSelections.filter((i) => i.selected).length} of{" "}
+                        {poItemSelections.length} items (
+                        {poItemSelections
+                          .filter((i) => i.selected)
+                          .reduce((sum, i) => sum + (i.import_quantity || 0), 0)}{" "}
+                        stickers)
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedPoOpt(null);
+                            setSelectedPoData(null);
+                            setPoItemSelections([]);
+                          }}
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+                        >
+                          Clear
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleImportPoToQueue}
+                          disabled={poItemSelections.filter((i) => i.selected).length === 0}
+                          className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          <PlusIcon className="w-3.5 h-3.5" />
+                          <span>Add Selected Items to Queue</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Product Search Input using ProductSearchInput component */}

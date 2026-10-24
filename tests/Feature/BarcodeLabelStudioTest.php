@@ -217,4 +217,144 @@ class BarcodeLabelStudioTest extends TestCase
         $this->assertEquals('PRD8837192', $products[0]['barcode']);
         $this->assertEquals('BN-9021', $products[0]['batches'][0]['batch_number']);
     }
+
+    public function test_can_fetch_purchase_orders_for_barcode_printing(): void
+    {
+        $supplier = Supplier::create(['name' => 'Abbott Laboratories']);
+        $brand = Brand::create(['name' => 'Brufen']);
+        $category = Category::create(['name' => 'Analgesics']);
+
+        $product = Product::create([
+            'name' => 'Brufen 400mg Tablets',
+            'product_code' => 'BRU-400',
+            'barcode' => '8901234567890',
+            'category_id' => $category->id,
+            'brand_id' => $brand->id,
+            'supplier_id' => $supplier->id,
+            'unit_sale_price' => 12.0,
+            'whole_sale_unit_price' => 10.0,
+            'quantity' => 100,
+            'pack_size' => 10,
+        ]);
+
+        $po = \App\Models\PurchaseOrder::create([
+            'date' => '2026-10-24',
+            'supplier_id' => $supplier->id,
+            'status' => 'ordered',
+            'reference' => 'PO-REF-001',
+        ]);
+
+        \App\Models\PurchaseOrderItem::create([
+            'purchase_order_id' => $po->id,
+            'product_id' => $product->id,
+            'ordered_quantity' => 50,
+            'pack_size' => 10,
+            'unit_purchase_price' => 8.0,
+        ]);
+
+        $response = $this->getJson('/api/barcodes/purchase-orders');
+
+        $response->assertStatus(200)
+            ->assertJsonStructure([
+                'purchase_orders' => [
+                    '*' => [
+                        'id',
+                        'number',
+                        'date',
+                        'supplier' => ['id', 'name'],
+                        'items' => [
+                            '*' => [
+                                'id',
+                                'product_id',
+                                'ordered_quantity',
+                                'product' => [
+                                    'id',
+                                    'name',
+                                    'barcode',
+                                    'brand' => ['id', 'name'],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ]);
+
+        $pos = $response->json('purchase_orders');
+        $this->assertNotEmpty($pos);
+        $this->assertEquals($po->id, $pos[0]['id']);
+        $this->assertEquals('Abbott Laboratories', $pos[0]['supplier']['name']);
+        $this->assertEquals('Brufen', $pos[0]['items'][0]['product']['brand']['name']);
+        $this->assertEquals(50, $pos[0]['items'][0]['ordered_quantity']);
+    }
+
+    public function test_can_filter_purchase_orders_by_supplier_and_brand_for_barcode_printing(): void
+    {
+        $supplier1 = Supplier::create(['name' => 'GSK Pakistan']);
+        $supplier2 = Supplier::create(['name' => 'Pfizer']);
+        $brand1 = Brand::create(['name' => 'Panadol']);
+        $brand2 = Brand::create(['name' => 'Ponstan']);
+        $category = Category::create(['name' => 'Medicines']);
+
+        $p1 = Product::create([
+            'name' => 'Panadol 500mg',
+            'product_code' => 'PAN-500',
+            'barcode' => '111222333',
+            'category_id' => $category->id,
+            'brand_id' => $brand1->id,
+            'supplier_id' => $supplier1->id,
+            'unit_sale_price' => 5.0,
+            'quantity' => 200,
+            'pack_size' => 10,
+        ]);
+
+        $p2 = Product::create([
+            'name' => 'Ponstan Forte',
+            'product_code' => 'PON-FORTE',
+            'barcode' => '444555666',
+            'category_id' => $category->id,
+            'brand_id' => $brand2->id,
+            'supplier_id' => $supplier2->id,
+            'unit_sale_price' => 15.0,
+            'quantity' => 150,
+            'pack_size' => 10,
+        ]);
+
+        $po1 = \App\Models\PurchaseOrder::create([
+            'date' => '2026-10-24',
+            'supplier_id' => $supplier1->id,
+            'status' => 'ordered',
+        ]);
+        \App\Models\PurchaseOrderItem::create([
+            'purchase_order_id' => $po1->id,
+            'product_id' => $p1->id,
+            'ordered_quantity' => 100,
+            'pack_size' => 1,
+            'unit_purchase_price' => 3.5,
+        ]);
+
+        $po2 = \App\Models\PurchaseOrder::create([
+            'date' => '2026-10-24',
+            'supplier_id' => $supplier2->id,
+            'status' => 'ordered',
+        ]);
+        \App\Models\PurchaseOrderItem::create([
+            'purchase_order_id' => $po2->id,
+            'product_id' => $p2->id,
+            'ordered_quantity' => 40,
+            'pack_size' => 1,
+            'unit_purchase_price' => 10.0,
+        ]);
+
+        // Filter by supplier1
+        $resSup = $this->getJson("/api/barcodes/purchase-orders?supplier_id={$supplier1->id}");
+        $resSup->assertStatus(200);
+        $this->assertCount(1, $resSup->json('purchase_orders'));
+        $this->assertEquals($po1->id, $resSup->json('purchase_orders.0.id'));
+
+        // Filter by brand2
+        $resBrand = $this->getJson("/api/barcodes/purchase-orders?brand_id={$brand2->id}");
+        $resBrand->assertStatus(200);
+        $this->assertCount(1, $resBrand->json('purchase_orders'));
+        $this->assertEquals($po2->id, $resBrand->json('purchase_orders.0.id'));
+    }
 }

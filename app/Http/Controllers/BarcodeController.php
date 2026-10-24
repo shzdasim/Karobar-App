@@ -180,5 +180,79 @@ class BarcodeController extends Controller
             'products' => $products,
         ]);
     }
+
+    /**
+     * List purchase orders with items, products, brands, and suppliers for barcode printing
+     * GET /api/barcodes/purchase-orders
+     */
+    public function getPurchaseOrders(Request $request)
+    {
+        $id = $request->input('id');
+        $supplierId = $request->input('supplier_id');
+        $brandId = $request->input('brand_id');
+        $search = trim((string) $request->input('search', ''));
+        $limit = max(1, min((int) $request->input('limit', 50), 100));
+
+        $query = \App\Models\PurchaseOrder::with([
+            'supplier:id,name',
+            'items.product' => function ($pq) {
+                $pq->select([
+                    'id',
+                    'name',
+                    'product_code',
+                    'barcode',
+                    'unit_sale_price',
+                    'whole_sale_unit_price',
+                    'quantity',
+                    'pack_size',
+                    'brand_id',
+                    'supplier_id',
+                ])
+                ->with([
+                    'brand:id,name',
+                    'supplier:id,name',
+                    'batches' => function ($bq) {
+                        $bq->orderBy('expiry_date', 'asc');
+                    },
+                ]);
+            },
+        ])
+        ->withCount('items')
+        ->withSum('items', 'ordered_quantity');
+
+        if (!empty($id)) {
+            $po = $query->find($id);
+            if (!$po) {
+                return response()->json(['message' => 'Purchase order not found'], 404);
+            }
+            return response()->json(['purchase_order' => $po]);
+        }
+
+        if (!empty($supplierId)) {
+            $query->where('supplier_id', $supplierId);
+        }
+
+        if (!empty($brandId)) {
+            $query->whereHas('items.product', function ($q) use ($brandId) {
+                $q->where('brand_id', $brandId);
+            });
+        }
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('reference', 'like', "%{$search}%")
+                  ->orWhere('id', 'like', "%{$search}%")
+                  ->orWhereHas('supplier', function ($sq) use ($search) {
+                      $sq->where('name', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        $orders = $query->orderByDesc('id')->limit($limit)->get();
+
+        return response()->json([
+            'purchase_orders' => $orders,
+        ]);
+    }
 }
 

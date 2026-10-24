@@ -10,6 +10,13 @@ class PurchaseOrder extends Model
 
     protected $casts = ['received_at' => 'datetime', 'total_amount' => 'float'];
 
+    protected $appends = ['number'];
+
+    public function getNumberAttribute(): string
+    {
+        return 'PO-' . str_pad((string) $this->id, 5, '0', STR_PAD_LEFT);
+    }
+
     public function supplier()
     {
         return $this->belongsTo(Supplier::class);

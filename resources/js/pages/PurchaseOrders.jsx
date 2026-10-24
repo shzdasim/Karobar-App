@@ -4,7 +4,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import { usePermissions } from "@/api/usePermissions";
 import ProductSearchInput from "../components/ProductSearchInput";
-import { ClipboardDocumentListIcon, PlusIcon, TrashIcon, EyeIcon, PencilSquareIcon, ArrowDownTrayIcon, DocumentTextIcon, BuildingStorefrontIcon, MagnifyingGlassIcon, ArrowsUpDownIcon } from "@heroicons/react/24/outline";
+import { ClipboardDocumentListIcon, PlusIcon, TrashIcon, EyeIcon, PencilSquareIcon, ArrowDownTrayIcon, DocumentTextIcon, BuildingStorefrontIcon, MagnifyingGlassIcon, ArrowsUpDownIcon, QrCodeIcon } from "@heroicons/react/24/outline";
 import SupplierSearch from "../components/SupplierSearch";
 
 const blank = () => ({ date: new Date().toLocaleDateString('en-CA'), expected_received_date: '', notes: '', reference: '', supplier_id: '', items: [] });
@@ -318,6 +318,7 @@ export default function PurchaseOrders() {
             {has('purchase-order.cancel') && <button className="g-btn-ghost theme-btn-danger inline-flex items-center justify-center gap-2" disabled={busy} onClick={cancel}>Cancel Order</button>}
           </>}
           {order.status === 'ordered' && has('purchase-invoice.create') && <button className="g-btn-primary theme-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={receive}>{busy ? 'Preparing Purchase Invoice…' : 'Receive Order'}</button>}
+          <Link className="g-btn-ghost theme-btn-secondary inline-flex items-center justify-center gap-2 disabled:opacity-50" to={`/barcode-labels?purchase_order_id=${order.id}`} title="Print Barcode Labels for this order"><QrCodeIcon className="w-4 h-4" /><span>Print Barcodes</span></Link>
           <button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" onClick={() => window.print()}>Print Order</button>
         </div>
       </> : listing && <>
@@ -361,6 +362,7 @@ export default function PurchaseOrders() {
                 <td data-label="Status" className="px-3 py-2.5"><span className="purchase-order-status" data-status={po.status}>{statusLabel(po.status)}</span></td>
                 <td data-label="Actions" className="px-3 py-2.5"><div className="purchase-order-index-actions">
                   <Link className="purchase-order-action theme-btn-tertiary" to={`/purchase-orders/${po.id}`} title={`View / Print ${po.number}`} aria-label={`View Purchase Order ${po.number}`}><EyeIcon aria-hidden="true" className="w-4 h-4" /><span>View / Print</span></Link>
+                  <Link className="purchase-order-action theme-btn-tertiary" to={`/barcode-labels?purchase_order_id=${po.id}`} title={`Print Barcodes for ${po.number}`} aria-label={`Print Barcodes for ${po.number}`}><QrCodeIcon aria-hidden="true" className="w-4 h-4" /><span>Barcodes</span></Link>
                   {po.status === 'ordered' && !po.invoices?.length && <>
                     {has('purchase-order.update') && <Link className="purchase-order-action theme-btn-secondary" to={`/purchase-orders/${po.id}/edit`} title={`Edit ${po.number}`} aria-label={`Edit Purchase Order ${po.number}`}><PencilSquareIcon aria-hidden="true" className="w-4 h-4" /><span>Edit</span></Link>}
                   </>}
