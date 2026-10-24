@@ -51,6 +51,7 @@ const ExpensesIndex = lazy(() => import("../pages/Expenses/index.jsx"));
 const MissingReports = lazy(() => import("../pages/Reports/MissingReports.jsx"));
 const Setting = lazy(() => import("../pages/Setting.jsx"));
 const BackupsIndex = lazy(() => import("../pages/Backups/Index.jsx"));
+const BarcodeIndex = lazy(() => import("../pages/Barcodes/Index.jsx"));
 const StockAdjustmentsIndex = lazy(() => import("../pages/stock-adjustments/index.jsx"));
 const CreateStockAdjustment = lazy(() => import("../pages/stock-adjustments/Create.jsx"));
 const EditStockAdjustment = lazy(() => import("../pages/stock-adjustments/Edit.jsx"));
@@ -509,6 +510,17 @@ export default function AppRoutes() {
         <ProtectedRoute>
           <DashboardLayout>
             <BackupsIndex />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      {/* Barcode Studio & Label Printing */}
+      <Route
+      path="barcode-labels"
+      element= {
+        <ProtectedRoute>
+          <DashboardLayout>
+            <BarcodeIndex />
           </DashboardLayout>
         </ProtectedRoute>
       }

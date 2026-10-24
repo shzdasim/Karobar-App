@@ -30,6 +30,7 @@ import {
   ClipboardDocumentListIcon as ReportIcon,
   ClockIcon,
   ServerIcon,
+  QrCodeIcon,
 } from "@heroicons/react/24/outline";
 import { usePermissions } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
@@ -82,6 +83,7 @@ export default function TopNavigation() {
       icon: <CubeIcon className="w-5 h-5" />,
       items: [
         { name: "Products", path: "/products", icon: <CubeIcon className="w-5 h-5" />, perm: "product.view" },
+        { name: "Barcode Studio", path: "/barcode-labels", icon: <QrCodeIcon className="w-5 h-5" />, perm: "product.view" },
         { name: "Categories", path: "/categories", icon: <Squares2X2Icon className="w-5 h-5" />, perm: "category.view" },
         { name: "Brands", path: "/brands", icon: <TagIcon className="w-5 h-5" />, perm: "brand.view" },
         { name: "Suppliers", path: "/suppliers", icon: <TruckIcon className="w-5 h-5" />, perm: "supplier.view" },

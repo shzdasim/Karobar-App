@@ -24,7 +24,7 @@ class ProductController extends Controller
         $limit = max(1, min((int)$req->input('limit', 30), 1000));
 
         $query = Product::select([
-                'id','name','product_code','pack_size',
+                'id','name','product_code','barcode','pack_size',
                 'unit_purchase_price','unit_sale_price',
                 'pack_purchase_price','pack_sale_price',
                 'whole_sale_pack_price','whole_sale_unit_price',

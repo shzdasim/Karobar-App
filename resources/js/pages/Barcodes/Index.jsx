@@ -1,0 +1,2202 @@
+// resources/js/pages/Barcodes/Index.jsx
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import axios from "axios";
+import toast from "react-hot-toast";
+import Select from "react-select";
+import { useSearchParams } from "react-router-dom";
+import { useTheme } from "@/context/ThemeContext";
+import { useCurrency } from "@/context/CurrencyContext";
+import { getThemeButtonClasses } from "@/utils/buttonStyles";
+import { BarcodeSvg, generateBarcodeSvgString } from "@/utils/barcode";
+import ProductSearchInput from "@/components/ProductSearchInput.jsx";
+import {
+  QrCodeIcon,
+  PrinterIcon,
+  Cog6ToothIcon,
+  PlusIcon,
+  TrashIcon,
+  ArrowPathIcon,
+  CheckCircleIcon,
+  AdjustmentsHorizontalIcon,
+  DocumentDuplicateIcon,
+  EyeIcon,
+  CalendarDaysIcon,
+  TagIcon,
+  BuildingStorefrontIcon,
+  SparklesIcon,
+  Squares2X2Icon,
+  MagnifyingGlassIcon,
+  XMarkIcon,
+  DocumentArrowDownIcon,
+  BookmarkSquareIcon,
+} from "@heroicons/react/24/solid";
+
+const TABS = [
+  { id: "queue", label: "Print Queue & Items", icon: DocumentDuplicateIcon },
+  { id: "designer", label: "Label Content & Styling", icon: AdjustmentsHorizontalIcon },
+  { id: "paper", label: "Paper & Grid Setup", icon: Squares2X2Icon },
+];
+
+export default function BarcodeIndex() {
+  const { theme, isDark } = useTheme();
+  const { formatCurrency, currencySymbol } = useCurrency();
+  const [searchParams] = useSearchParams();
+
+  // Navigation tab
+  const [activeTab, setActiveTab] = useState("queue");
+
+  // Templates & Store Settings from API
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+  const [storeInfo, setStoreInfo] = useState({
+    store_name: "My Store",
+    phone_number: "",
+    currency_symbol: "Rs.",
+  });
+  const [loadingTemplates, setLoadingTemplates] = useState(true);
+
+  // Template Form & Layout state
+  const [layout, setLayout] = useState({
+    name: "Custom Label",
+    paper_type: "roll", // "roll" | "sheet"
+    width_mm: 50.0,
+    height_mm: 25.0,
+    orientation: "landscape",
+    columns: 1,
+    rows: 1,
+    gap_x_mm: 0,
+    gap_y_mm: 3.0,
+    margin_top_mm: 1.0,
+    margin_left_mm: 1.0,
+    margin_right_mm: 1.0,
+    margin_bottom_mm: 1.0,
+    options: {
+      show_store_name: true,
+      store_name_override: "",
+      show_product_name: true,
+      name_lines: 2,
+      show_product_code: false,
+      show_barcode: true,
+      barcode_height: 28,
+      bar_width: 1.3,
+      show_barcode_text: true,
+      show_price: true,
+      price_type: "retail", // "retail" | "wholesale"
+      price_prefix: "MRP:",
+      show_batch: true,
+      show_expiry: true,
+      expiry_format: "MM/YY", // "MM/YY" | "MM/YYYY" | "DD-MM-YYYY"
+      custom_footer: "",
+      font_scale: 10,
+      text_align: "center", // "center" | "left"
+    },
+  });
+
+  // Print Queue
+  const [printQueue, setPrintQueue] = useState([]);
+  const [skipLabelsCount, setSkipLabelsCount] = useState(0);
+
+  // Products catalog for ProductSearchInput
+  const [products, setProducts] = useState([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+
+  // Fetch products for ProductSearchInput modal
+  const fetchProducts = useCallback(async (q = "") => {
+    try {
+      setLoadingProducts(true);
+      const { data } = await axios.get("/api/products/search", {
+        params: { q: q || "", limit: 30 },
+      });
+      setProducts(Array.isArray(data) ? data : []);
+    } catch {
+      setProducts([]);
+    } finally {
+      setLoadingProducts(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchProducts("");
+  }, [fetchProducts]);
+
+  // React-Select custom styles matching Karobar theme & dark mode
+  const batchSelectStyles = useMemo(
+    () => ({
+      control: (base, state) => ({
+        ...base,
+        minHeight: "34px",
+        borderRadius: "0.55rem",
+        backgroundColor: isDark ? "rgba(30, 41, 59, 0.9)" : "#ffffff",
+        borderColor: state.isFocused
+          ? (theme?.primary_color || "#3b82f6")
+          : isDark
+          ? "rgba(51, 65, 85, 0.8)"
+          : "rgba(209, 213, 219, 0.8)",
+        boxShadow: state.isFocused ? `0 0 0 2px ${theme?.primary_color || "#3b82f6"}33` : "none",
+        fontSize: "0.72rem",
+        color: isDark ? "#f8fafc" : "#1e293b",
+        transition: "all 0.15s ease",
+        "&:hover": {
+          borderColor: theme?.primary_color || "#3b82f6",
+        },
+      }),
+      valueContainer: (base) => ({
+        ...base,
+        padding: "0 8px",
+      }),
+      input: (base) => ({
+        ...base,
+        color: isDark ? "#f8fafc" : "#1e293b",
+        margin: 0,
+        padding: 0,
+        fontSize: "0.72rem",
+      }),
+      placeholder: (base) => ({
+        ...base,
+        color: isDark ? "rgba(148, 163, 184, 0.7)" : "rgba(156, 163, 175, 0.8)",
+        fontSize: "0.72rem",
+      }),
+      singleValue: (base) => ({
+        ...base,
+        color: isDark ? "#f8fafc" : "#1e293b",
+        fontSize: "0.72rem",
+        fontWeight: "500",
+        maxWidth: "100%",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      }),
+      dropdownIndicator: (base) => ({
+        ...base,
+        padding: "2px 6px",
+        color: isDark ? "rgba(148, 163, 184, 0.7)" : "rgba(156, 163, 175, 0.8)",
+      }),
+      indicatorSeparator: () => ({ display: "none" }),
+      menuPortal: (base) => ({ ...base, zIndex: 99999 }),
+      menu: (base) => ({
+        ...base,
+        backgroundColor: isDark ? "rgba(15, 23, 42, 0.98)" : "#ffffff",
+        border: isDark ? "1px solid rgba(51, 65, 85, 0.8)" : "1px solid rgba(226, 232, 240, 0.9)",
+        boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.35), 0 8px 10px -6px rgba(0, 0, 0, 0.3)",
+        borderRadius: "0.65rem",
+        overflow: "hidden",
+        minWidth: "270px",
+      }),
+      option: (base, state) => ({
+        ...base,
+        backgroundColor: state.isSelected
+          ? (theme?.primary_color || "#3b82f6")
+          : state.isFocused
+          ? isDark
+            ? "rgba(51, 65, 85, 0.7)"
+            : "rgba(239, 246, 255, 1)"
+          : "transparent",
+        color: state.isSelected ? "#ffffff" : isDark ? "#f8fafc" : "#1e293b",
+        fontSize: "0.72rem",
+        cursor: "pointer",
+        padding: "7px 10px",
+        transition: "background-color 0.1s ease",
+      }),
+    }),
+    [isDark, theme]
+  );
+
+  // Preview & Modal state
+  const [previewZoom, setPreviewZoom] = useState(150);
+  const [previewItemIndex, setPreviewItemIndex] = useState(0);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+
+  // Load Templates & Store Info
+  const fetchTemplates = useCallback(async () => {
+    try {
+      setLoadingTemplates(true);
+      const { data } = await axios.get("/api/barcodes/templates");
+      setTemplates(data.templates || []);
+      if (data.store_info) {
+        setStoreInfo(data.store_info);
+      }
+
+      // Select default template if none selected yet
+      if (data.templates && data.templates.length > 0) {
+        const defaultTpl = data.templates.find((t) => t.is_default) || data.templates[0];
+        setSelectedTemplateId(defaultTpl.id);
+        applyTemplate(defaultTpl);
+      }
+    } catch (err) {
+      toast.error("Failed to load barcode templates");
+    } finally {
+      setLoadingTemplates(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTemplates();
+  }, [fetchTemplates]);
+
+  // Handle URL query parameters (e.g. ?product_id=12 or ?product_ids=1,2,3)
+  useEffect(() => {
+    const productId = searchParams.get("product_id");
+    const productIds = searchParams.get("product_ids");
+    if (productId || productIds) {
+      axios
+        .get("/api/barcodes/products-search", {
+          params: { product_ids: productIds || productId },
+        })
+        .then(({ data }) => {
+          if (data.products && data.products.length > 0) {
+            data.products.forEach((p) => addProductToQueue(p, 1));
+            toast.success(`Added ${data.products.length} product(s) to barcode print queue`);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [searchParams]);
+
+  // Apply template values to state
+  const applyTemplate = (tpl) => {
+    if (!tpl) return;
+    setLayout({
+      name: tpl.name,
+      paper_type: tpl.paper_type || "roll",
+      width_mm: Number(tpl.width_mm) || 50,
+      height_mm: Number(tpl.height_mm) || 25,
+      orientation: tpl.orientation || "landscape",
+      columns: Number(tpl.columns) || 1,
+      rows: Number(tpl.rows) || 1,
+      gap_x_mm: Number(tpl.gap_x_mm) || 0,
+      gap_y_mm: Number(tpl.gap_y_mm) || 0,
+      margin_top_mm: Number(tpl.margin_top_mm) || 0,
+      margin_left_mm: Number(tpl.margin_left_mm) || 0,
+      margin_right_mm: Number(tpl.margin_right_mm) || 0,
+      margin_bottom_mm: Number(tpl.margin_bottom_mm) || 0,
+      options: {
+        show_store_name: tpl.layout_options?.show_store_name ?? true,
+        store_name_override: tpl.layout_options?.store_name_override ?? "",
+        show_product_name: tpl.layout_options?.show_product_name ?? true,
+        name_lines: tpl.layout_options?.name_lines ?? 2,
+        show_product_code: tpl.layout_options?.show_product_code ?? false,
+        show_barcode: tpl.layout_options?.show_barcode ?? true,
+        barcode_height: Number(tpl.layout_options?.barcode_height) || 28,
+        bar_width: Number(tpl.layout_options?.bar_width) || 1.3,
+        show_barcode_text: tpl.layout_options?.show_barcode_text ?? true,
+        show_price: tpl.layout_options?.show_price ?? true,
+        price_type: tpl.layout_options?.price_type || "retail",
+        price_prefix: tpl.layout_options?.price_prefix ?? "MRP:",
+        show_batch: tpl.layout_options?.show_batch ?? true,
+        show_expiry: tpl.layout_options?.show_expiry ?? true,
+        expiry_format: tpl.layout_options?.expiry_format || "MM/YY",
+        custom_footer: tpl.layout_options?.custom_footer ?? "",
+        font_scale: Number(tpl.layout_options?.font_scale) || 10,
+        text_align: tpl.layout_options?.text_align || "center",
+      },
+    });
+  };
+
+  // Add product to queue and fetch batch options + unassigned quantity
+  const addProductToQueue = async (product, initialQty = 1) => {
+    if (!product || !product.id) return;
+
+    // Check if already in queue
+    const existingIndex = printQueue.findIndex((item) => item.product_id === product.id);
+    if (existingIndex > -1) {
+      setPrintQueue((prev) =>
+        prev.map((item, idx) =>
+          idx === existingIndex
+            ? { ...item, print_quantity: item.print_quantity + (initialQty || 1) }
+            : item
+        )
+      );
+      toast.success(`Increased print quantity for "${product.name}"`);
+      return;
+    }
+
+    const itemUid = `${product.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const productStock = Number(product.quantity ?? product.stock ?? 0);
+
+    // Initial placeholder item in queue
+    const newItem = {
+      uid: itemUid,
+      product_id: product.id,
+      product_name: product.name,
+      barcode: product.barcode || product.product_code || "000000",
+      product_code: product.product_code || "",
+      retail_price: Number(product.unit_sale_price) || 0,
+      wholesale_price: Number(product.whole_sale_unit_price) || 0,
+      stock: productStock,
+      selected_batch_type: "unassigned", // "batch" | "unassigned" | "custom"
+      selected_batch_id: null,
+      batch_number: "",
+      expiry_date: "",
+      custom_batch_number: "",
+      custom_expiry_date: "",
+      print_quantity: Math.max(1, initialQty || 1),
+      batches: [],
+      unassigned_quantity: productStock,
+      loading_batches: true,
+    };
+
+    setPrintQueue((prev) => [...prev, newItem]);
+    toast.success(`Added "${product.name}" to print queue`);
+
+    // Fetch batches and unassigned quantity from API
+    try {
+      const { data, headers } = await axios.get(`/api/products/${product.id}/batches`, {
+        params: { include_unbatched: 1 },
+      });
+
+      const batchList = Array.isArray(data) ? data : [];
+      // Real batches (not virtual unbatched)
+      const realBatches = batchList.filter((b) => !b.is_unbatched && b.id != null);
+
+      // Unbatched / unassigned quantity
+      const unbatchedItem = batchList.find((b) => b.is_unbatched);
+      let unassignedUnits = unbatchedItem ? Number(unbatchedItem.quantity || 0) : 0;
+      if (!unbatchedItem) {
+        if (headers["x-unbatched-units"] !== undefined) {
+          unassignedUnits = Number(headers["x-unbatched-units"]) || 0;
+        } else {
+          const batchedSum = realBatches.reduce((acc, b) => acc + Number(b.quantity || 0), 0);
+          unassignedUnits = Math.max(0, productStock - batchedSum);
+        }
+      }
+
+      // Choose initial batch selection:
+      // Prefer first FEFO batch with stock, else first active batch, else unassigned
+      const fefoBatch =
+        realBatches.find((b) => b.is_fefo_recommended && Number(b.quantity) > 0) ||
+        realBatches.find((b) => !b.is_expired && Number(b.quantity) > 0) ||
+        realBatches[0];
+
+      let initialType = "unassigned";
+      let initialBatchId = null;
+      let initialBatchNo = "";
+      let initialExp = "";
+
+      if (fefoBatch) {
+        initialType = "batch";
+        initialBatchId = fefoBatch.id;
+        initialBatchNo = fefoBatch.batch_number;
+        initialExp = fefoBatch.expiry_date || "";
+      }
+
+      setPrintQueue((prev) =>
+        prev.map((item) => {
+          if (item.uid !== itemUid) return item;
+          return {
+            ...item,
+            loading_batches: false,
+            batches: realBatches,
+            unassigned_quantity: unassignedUnits,
+            selected_batch_type: initialType,
+            selected_batch_id: initialBatchId,
+            batch_number: initialBatchNo,
+            expiry_date: initialExp,
+          };
+        })
+      );
+    } catch (err) {
+      setPrintQueue((prev) =>
+        prev.map((item) =>
+          item.uid === itemUid ? { ...item, loading_batches: false } : item
+        )
+      );
+    }
+  };
+
+  // Change batch selection via React-Select
+  const handleBatchSelectChange = (itemUid, selectedOption) => {
+    if (!selectedOption) return;
+    setPrintQueue((prev) =>
+      prev.map((item) => {
+        if (item.uid !== itemUid) return item;
+
+        if (selectedOption.type === "batch") {
+          return {
+            ...item,
+            selected_batch_type: "batch",
+            selected_batch_id: selectedOption.batch_id,
+            batch_number: selectedOption.batch_number,
+            expiry_date: selectedOption.expiry_date,
+          };
+        }
+
+        if (selectedOption.type === "unassigned") {
+          return {
+            ...item,
+            selected_batch_type: "unassigned",
+            selected_batch_id: null,
+            batch_number: "",
+            expiry_date: "",
+          };
+        }
+
+        if (selectedOption.type === "custom") {
+          return {
+            ...item,
+            selected_batch_type: "custom",
+            selected_batch_id: "custom",
+            batch_number: item.custom_batch_number || "",
+            expiry_date: item.custom_expiry_date || "",
+          };
+        }
+
+        return item;
+      })
+    );
+  };
+
+  // Update custom batch number
+  const handleCustomBatchChange = (itemUid, val) => {
+    setPrintQueue((prev) =>
+      prev.map((item) =>
+        item.uid === itemUid
+          ? { ...item, custom_batch_number: val, batch_number: val }
+          : item
+      )
+    );
+  };
+
+  // Update custom expiry date
+  const handleCustomExpiryChange = (itemUid, val) => {
+    setPrintQueue((prev) =>
+      prev.map((item) =>
+        item.uid === itemUid
+          ? { ...item, custom_expiry_date: val, expiry_date: val }
+          : item
+      )
+    );
+  };
+
+  // Update item quantity
+  const handleQtyChange = (itemUid, newQty) => {
+    const qty = Math.max(1, parseInt(newQty, 10) || 1);
+    setPrintQueue((prev) =>
+      prev.map((item) => (item.uid === itemUid ? { ...item, print_quantity: qty } : item))
+    );
+  };
+
+  // Remove from queue
+  const handleRemoveItem = (itemUid) => {
+    setPrintQueue((prev) => prev.filter((item) => item.uid !== itemUid));
+  };
+
+  // Bulk queue operations
+  const handleSetAllToStock = () => {
+    if (printQueue.length === 0) return;
+    setPrintQueue((prev) =>
+      prev.map((item) => ({
+        ...item,
+        print_quantity: item.stock > 0 ? item.stock : 1,
+      }))
+    );
+    toast.success("Set all print quantities to current stock count");
+  };
+
+  const handleSetAllTo1 = () => {
+    if (printQueue.length === 0) return;
+    setPrintQueue((prev) => prev.map((item) => ({ ...item, print_quantity: 1 })));
+    toast.success("Set all quantities to 1");
+  };
+
+  const handleClearQueue = () => {
+    setPrintQueue([]);
+  };
+
+  // Format Expiry Date helper
+  const formatExpiryDisplay = (dateStr, format) => {
+    if (!dateStr) return "";
+    try {
+      const parts = dateStr.slice(0, 10).split("-"); // YYYY-MM-DD
+      if (parts.length < 2) return dateStr;
+      const year = parts[0];
+      const month = parts[1];
+      const day = parts[2] || "01";
+
+      if (format === "MM/YY") return `${month}/${year.slice(2)}`;
+      if (format === "MM/YYYY") return `${month}/${year}`;
+      if (format === "DD-MM-YYYY") return `${day}-${month}-${year}`;
+      return `${month}/${year.slice(2)}`;
+    } catch {
+      return dateStr;
+    }
+  };
+
+  // Calculate total labels in queue
+  const totalLabelsToPrint = useMemo(() => {
+    return printQueue.reduce((sum, item) => sum + (item.print_quantity || 1), 0);
+  }, [printQueue]);
+
+  // Preview Item (fallback sample if queue is empty)
+  const currentPreviewItem = useMemo(() => {
+    if (printQueue.length > 0) {
+      const idx = Math.min(previewItemIndex, printQueue.length - 1);
+      return printQueue[idx] || printQueue[0];
+    }
+    return {
+      product_name: "Panadol Extra 500mg Tablets",
+      barcode: "PRD1029384",
+      product_code: "PND-500",
+      retail_price: 185.0,
+      wholesale_price: 165.0,
+      batch_number: "BN-4029",
+      expiry_date: "2027-11-30",
+    };
+  }, [printQueue, previewItemIndex]);
+
+  // Save Custom Template
+  const handleSaveTemplateSubmit = async (e) => {
+    e.preventDefault();
+    if (!newTemplateName.trim()) {
+      toast.error("Please enter a template name");
+      return;
+    }
+
+    try {
+      setSavingTemplate(true);
+      const payload = {
+        name: newTemplateName.trim(),
+        paper_type: layout.paper_type,
+        width_mm: layout.width_mm,
+        height_mm: layout.height_mm,
+        orientation: layout.orientation,
+        columns: layout.columns,
+        rows: layout.rows,
+        gap_x_mm: layout.gap_x_mm,
+        gap_y_mm: layout.gap_y_mm,
+        margin_top_mm: layout.margin_top_mm,
+        margin_left_mm: layout.margin_left_mm,
+        margin_right_mm: layout.margin_right_mm,
+        margin_bottom_mm: layout.margin_bottom_mm,
+        layout_options: layout.options,
+        is_default: false,
+      };
+
+      const { data } = await axios.post("/api/barcodes/templates", payload);
+      toast.success("Barcode template saved!");
+      setShowSaveModal(false);
+      setNewTemplateName("");
+      await fetchTemplates();
+      if (data.template) {
+        setSelectedTemplateId(data.template.id);
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || "Failed to save template";
+      toast.error(msg);
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
+  // High-Precision Print Handler
+  const handlePrint = () => {
+    if (printQueue.length === 0) {
+      toast.error("Please add at least one product to the print queue.");
+      return;
+    }
+
+    setIsPrinting(true);
+
+    try {
+      // Build flattened list of individual label objects according to quantities
+      const flatLabels = [];
+
+      // Add blanks if skipLabelsCount > 0 (for sheet paper)
+      if (layout.paper_type === "sheet" && skipLabelsCount > 0) {
+        for (let i = 0; i < skipLabelsCount; i++) {
+          flatLabels.push({ isBlank: true });
+        }
+      }
+
+      printQueue.forEach((item) => {
+        const qty = item.print_quantity || 1;
+        for (let i = 0; i < qty; i++) {
+          flatLabels.push({
+            isBlank: false,
+            product_name: item.product_name,
+            barcode: item.barcode,
+            product_code: item.product_code,
+            price:
+              layout.options.price_type === "wholesale"
+                ? item.wholesale_price
+                : item.retail_price,
+            batch_number: item.batch_number,
+            expiry_date: item.expiry_date,
+          });
+        }
+      });
+
+      const storeName =
+        layout.options.store_name_override.trim() ||
+        storeInfo.store_name ||
+        "Karobar Store";
+
+      // Open print window
+      const printWindow = window.open("", "_blank", "width=850,height=700");
+      if (!printWindow) {
+        toast.error("Popup blocked! Please allow popups for this site to print labels.");
+        setIsPrinting(false);
+        return;
+      }
+
+      // Generate HTML content for printing
+      const isRoll = layout.paper_type === "roll";
+      const wMm = layout.width_mm;
+      const hMm = layout.height_mm;
+      const fontPt = layout.options.font_scale || 10;
+      const textAlign = layout.options.text_align || "center";
+
+      let labelsHtml = "";
+
+      if (isRoll) {
+        // Direct thermal roll printing
+        labelsHtml = flatLabels
+          .map((label) => {
+            if (label.isBlank) return "";
+            const barcodeSvgStr = generateBarcodeSvgString(label.barcode, {
+              height: layout.options.barcode_height,
+              barWidth: layout.options.bar_width,
+              showText: layout.options.show_barcode_text,
+              fontSize: 10,
+            });
+
+            const expFormatted = formatExpiryDisplay(
+              label.expiry_date,
+              layout.options.expiry_format
+            );
+
+            return `
+              <div class="roll-label" style="width:${wMm}mm; height:${hMm}mm; padding:${layout.margin_top_mm}mm ${layout.margin_right_mm}mm ${layout.margin_bottom_mm}mm ${layout.margin_left_mm}mm;">
+                ${
+                  layout.options.show_store_name
+                    ? `<div class="lbl-store" style="font-size:${fontPt - 1}pt;">${escapeHtml(storeName)}</div>`
+                    : ""
+                }
+                ${
+                  layout.options.show_product_name
+                    ? `<div class="lbl-name" style="font-size:${fontPt}pt; -webkit-line-clamp:${layout.options.name_lines};">${escapeHtml(label.product_name)}</div>`
+                    : ""
+                }
+                ${
+                  layout.options.show_barcode
+                    ? `<div class="lbl-barcode">${barcodeSvgStr}</div>`
+                    : ""
+                }
+                <div class="lbl-footer" style="font-size:${fontPt - 2}pt;">
+                  ${
+                    layout.options.show_batch && label.batch_number
+                      ? `<span>B:${escapeHtml(label.batch_number)}</span>`
+                      : ""
+                  }
+                  ${
+                    layout.options.show_expiry && expFormatted
+                      ? `<span>Exp:${escapeHtml(expFormatted)}</span>`
+                      : ""
+                  }
+                  ${
+                    layout.options.show_price
+                      ? `<span class="lbl-price">${escapeHtml(layout.options.price_prefix)} ${storeInfo.currency_symbol} ${Number(label.price).toFixed(storeInfo.currency_decimal_places || 2)}</span>`
+                      : ""
+                  }
+                </div>
+                ${
+                  layout.options.custom_footer
+                    ? `<div class="lbl-promo" style="font-size:${fontPt - 3}pt;">${escapeHtml(layout.options.custom_footer)}</div>`
+                    : ""
+                }
+              </div>
+            `;
+          })
+          .join("");
+      } else {
+        // Multi-label sheet printing (A4 / Letter grid)
+        const cols = layout.columns || 3;
+        const rows = layout.rows || 10;
+        const totalPerSheet = cols * rows;
+
+        // Chunk labels into separate sheets
+        const sheets = [];
+        for (let i = 0; i < flatLabels.length; i += totalPerSheet) {
+          sheets.push(flatLabels.slice(i, i + totalPerSheet));
+        }
+
+        labelsHtml = sheets
+          .map((sheetItems) => {
+            const sheetLabels = sheetItems
+              .map((label) => {
+                if (label.isBlank) {
+                  return `<div class="sheet-label-blank" style="width:${wMm}mm; height:${hMm}mm;"></div>`;
+                }
+
+                const barcodeSvgStr = generateBarcodeSvgString(label.barcode, {
+                  height: layout.options.barcode_height,
+                  barWidth: layout.options.bar_width,
+                  showText: layout.options.show_barcode_text,
+                  fontSize: 10,
+                });
+
+                const expFormatted = formatExpiryDisplay(
+                  label.expiry_date,
+                  layout.options.expiry_format
+                );
+
+                return `
+                  <div class="sheet-label" style="width:${wMm}mm; height:${hMm}mm;">
+                    ${
+                      layout.options.show_store_name
+                        ? `<div class="lbl-store" style="font-size:${fontPt - 1}pt;">${escapeHtml(storeName)}</div>`
+                        : ""
+                    }
+                    ${
+                      layout.options.show_product_name
+                        ? `<div class="lbl-name" style="font-size:${fontPt}pt; -webkit-line-clamp:${layout.options.name_lines};">${escapeHtml(label.product_name)}</div>`
+                        : ""
+                    }
+                    ${
+                      layout.options.show_barcode
+                        ? `<div class="lbl-barcode">${barcodeSvgStr}</div>`
+                        : ""
+                    }
+                    <div class="lbl-footer" style="font-size:${fontPt - 2}pt;">
+                      ${
+                        layout.options.show_batch && label.batch_number
+                          ? `<span>B:${escapeHtml(label.batch_number)}</span>`
+                          : ""
+                      }
+                      ${
+                        layout.options.show_expiry && expFormatted
+                          ? `<span>Exp:${escapeHtml(expFormatted)}</span>`
+                          : ""
+                      }
+                      ${
+                        layout.options.show_price
+                          ? `<span class="lbl-price">${escapeHtml(layout.options.price_prefix)} ${storeInfo.currency_symbol} ${Number(label.price).toFixed(storeInfo.currency_decimal_places || 2)}</span>`
+                          : ""
+                      }
+                    </div>
+                  </div>
+                `;
+              })
+              .join("");
+
+            return `
+              <div class="sheet-page" style="padding-top:${layout.margin_top_mm}mm; padding-left:${layout.margin_left_mm}mm; padding-right:${layout.margin_right_mm}mm; padding-bottom:${layout.margin_bottom_mm}mm;">
+                <div class="sheet-grid" style="grid-template-columns: repeat(${cols}, ${wMm}mm); column-gap:${layout.gap_x_mm}mm; row-gap:${layout.gap_y_mm}mm;">
+                  ${sheetLabels}
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+      }
+
+      const pageSizeCss = isRoll
+        ? `@page { size: ${wMm}mm ${hMm}mm; margin: 0; }`
+        : `@page { size: A4 portrait; margin: 0; }`;
+
+      const fullHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Print Barcode Labels - Karobar</title>
+          <style>
+            ${pageSizeCss}
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #fff; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+            /* Roll container */
+            .roll-label {
+              page-break-after: always;
+              break-after: page;
+              overflow: hidden;
+              display: flex;
+              flex-direction: column;
+              justify-content: space-between;
+              text-align: ${textAlign};
+            }
+
+            /* Sheet container */
+            .sheet-page {
+              page-break-after: always;
+              break-after: page;
+              width: 210mm;
+              height: 297mm;
+              overflow: hidden;
+            }
+            .sheet-grid {
+              display: grid;
+            }
+            .sheet-label {
+              overflow: hidden;
+              display: flex;
+              flex-direction: column;
+              justify-content: space-between;
+              text-align: ${textAlign};
+              padding: 1.5mm;
+            }
+            .sheet-label-blank {
+              visibility: hidden;
+            }
+
+            .lbl-store {
+              font-weight: 700;
+              text-transform: uppercase;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              line-height: 1.1;
+            }
+            .lbl-name {
+              font-weight: 600;
+              display: -webkit-box;
+              -webkit-box-orient: vertical;
+              overflow: hidden;
+              line-height: 1.15;
+            }
+            .lbl-barcode {
+              display: flex;
+              justify-content: ${textAlign === "left" ? "flex-start" : "center"};
+              align-items: center;
+              margin: 0.5mm 0;
+            }
+            .lbl-barcode svg {
+              max-width: 100%;
+              height: auto;
+            }
+            .lbl-footer {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              font-weight: 600;
+              line-height: 1.1;
+              white-space: nowrap;
+            }
+            .lbl-price {
+              font-weight: 800;
+            }
+            .lbl-promo {
+              font-style: italic;
+              color: #444;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+          </style>
+        </head>
+        <body>
+          ${labelsHtml}
+          <script>
+            window.onload = function() {
+              window.print();
+              setTimeout(function() { window.close(); }, 500);
+            };
+          </script>
+        </body>
+        </html>
+      `;
+
+      printWindow.document.open();
+      printWindow.document.write(fullHtml);
+      printWindow.document.close();
+    } catch (err) {
+      toast.error("Failed to generate print layout");
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
+  const escapeHtml = (str) => {
+    return String(str || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  };
+
+  // React-select options for presets
+  const templateOptions = useMemo(() => {
+    return templates.map((t) => ({
+      value: t.id,
+      label: `${t.name} (${t.width_mm}×${t.height_mm}mm)`,
+      data: t,
+    }));
+  }, [templates]);
+
+  // Select Styles matching App Theme
+  const selectStyles = useMemo(
+    () => ({
+      control: (base, state) => ({
+        ...base,
+        minHeight: "38px",
+        borderRadius: "0.75rem",
+        backgroundColor: isDark ? "rgba(30, 41, 59, 0.85)" : "#ffffff",
+        borderColor: state.isFocused
+          ? theme?.primary_color || "#3b82f6"
+          : isDark
+          ? "rgba(51, 65, 85, 0.8)"
+          : "rgba(209, 213, 219, 0.8)",
+        boxShadow: state.isFocused ? `0 0 0 2px ${theme?.primary_color || "#3b82f6"}33` : "none",
+        fontSize: "0.8125rem",
+        color: isDark ? "#f8fafc" : "#1e293b",
+        "&:hover": { borderColor: theme?.primary_color || "#3b82f6" },
+      }),
+      valueContainer: (base) => ({ ...base, padding: "2px 10px" }),
+      input: (base) => ({ ...base, color: isDark ? "#f8fafc" : "#1e293b" }),
+      singleValue: (base) => ({ ...base, color: isDark ? "#f8fafc" : "#1e293b", fontSize: "0.8125rem" }),
+      menuPortal: (base) => ({ ...base, zIndex: 99999 }),
+      menu: (base) => ({
+        ...base,
+        backgroundColor: isDark ? "rgba(15, 23, 42, 0.98)" : "#ffffff",
+        border: isDark ? "1px solid rgba(51, 65, 85, 0.8)" : "1px solid rgba(226, 232, 240, 0.9)",
+        boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.25)",
+        borderRadius: "0.75rem",
+        overflow: "hidden",
+      }),
+      option: (base, state) => ({
+        ...base,
+        backgroundColor: state.isSelected
+          ? theme?.primary_color || "#3b82f6"
+          : state.isFocused
+          ? isDark
+            ? "rgba(51, 65, 85, 0.7)"
+            : "rgba(239, 246, 255, 1)"
+          : "transparent",
+        color: state.isSelected ? "#ffffff" : isDark ? "#f8fafc" : "#1e293b",
+        fontSize: "0.8125rem",
+        cursor: "pointer",
+        padding: "8px 12px",
+      }),
+    }),
+    [isDark, theme]
+  );
+
+  return (
+    <div className="space-y-6 max-w-7xl mx-auto pb-16">
+      {/* ===== Header & Action Studio Hero ===== */}
+      <div className="products-panel bg-white/70 dark:bg-slate-900/70 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-sm p-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 shrink-0">
+              <QrCodeIcon className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">
+                  Barcode Label Studio &amp; Printing
+                </h1>
+                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                  Thermal &amp; Sheet
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Design custom sticker tags, select batches with expiry dates, and print to thermal roll or A4 sticker sheets.
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setShowSaveModal(true)}
+              className="products-action theme-btn-secondary"
+              title="Save current layout as a reusable preset"
+            >
+              <BookmarkSquareIcon className="w-4 h-4" />
+              <span>Save As Preset</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePrint}
+              disabled={isPrinting || printQueue.length === 0}
+              className="products-action theme-btn-primary"
+              title="Print stickers now"
+            >
+              <PrinterIcon className={`w-4 h-4 ${isPrinting ? "animate-pulse" : ""}`} />
+              <span>
+                {isPrinting
+                  ? "Generating…"
+                  : `Print ${totalLabelsToPrint} Sticker${totalLabelsToPrint === 1 ? "" : "s"}`}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Preset Selector Banner */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-5 border-t border-slate-200/60 dark:border-slate-800/60 items-center">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Active Template Preset:
+            </label>
+            <Select
+              value={templateOptions.find((o) => o.value === selectedTemplateId)}
+              onChange={(opt) => {
+                if (opt && opt.data) {
+                  setSelectedTemplateId(opt.value);
+                  applyTemplate(opt.data);
+                  toast.success(`Loaded "${opt.data.name}"`);
+                }
+              }}
+              options={templateOptions}
+              styles={selectStyles}
+              isSearchable={false}
+              menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+              menuPosition="fixed"
+            />
+          </div>
+
+          <div className="p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 text-xs flex items-center justify-between">
+            <div>
+              <span className="text-[11px] text-slate-400 uppercase tracking-wider block">Target Dimensions</span>
+              <span className="font-bold text-slate-800 dark:text-slate-100">
+                {layout.width_mm}mm × {layout.height_mm}mm ({layout.paper_type === "roll" ? "Thermal Roll" : `Sheet ${layout.columns}×${layout.rows}`})
+              </span>
+            </div>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
+              {layout.orientation.toUpperCase()}
+            </span>
+          </div>
+
+          <div className="p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 text-xs flex items-center justify-between">
+            <div>
+              <span className="text-[11px] text-slate-400 uppercase tracking-wider block">Print Queue Summary</span>
+              <span className="font-bold text-slate-800 dark:text-slate-100">
+                {printQueue.length} Products ({totalLabelsToPrint} Labels Total)
+              </span>
+            </div>
+            {totalLabelsToPrint > 0 && (
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ===== Modern Segmented Tab Bar ===== */}
+      <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl border border-slate-200/80 dark:border-slate-800/80 p-2 shadow-sm">
+        <div role="tablist" className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                id={`barcode-tab-${tab.id}`}
+                aria-selected={isActive}
+                onClick={() => setActiveTab(tab.id)}
+                style={
+                  isActive
+                    ? {
+                        backgroundColor: theme?.primary_color || "#2563eb",
+                        color: "#ffffff",
+                      }
+                    : undefined
+                }
+                className={`group relative flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer ${
+                  isActive
+                    ? "shadow-md shadow-blue-500/25 dark:shadow-blue-900/40"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60"
+                }`}
+              >
+                <Icon
+                  className={`w-4 h-4 transition-transform duration-200 group-hover:scale-110 ${
+                    isActive ? "text-white" : "text-slate-400 dark:text-slate-500 group-hover:text-blue-500"
+                  }`}
+                />
+                <span>{tab.label}</span>
+
+                {tab.id === "queue" && (
+                  <span
+                    className={`ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition-colors ${
+                      isActive
+                        ? "bg-white/25 text-white"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                    }`}
+                  >
+                    {printQueue.length}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ======================================================== */}
+      {/* MAIN STUDIO GRID (Controls + Live Preview)                */}
+      {/* ======================================================== */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left Column: Active Tab Content (7 Cols) */}
+        <div className="lg:col-span-7 space-y-6">
+          {/* TAB 1: PRINT QUEUE & ITEMS */}
+          {activeTab === "queue" && (
+            <div className="products-panel bg-white/70 dark:bg-slate-900/70 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                    <DocumentDuplicateIcon className="w-4 h-4 text-blue-500" />
+                    Products to Print
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Search and select items, pick their batch and expiry date, and specify sticker quantities.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSetAllToStock}
+                    disabled={printQueue.length === 0}
+                    className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium text-slate-700 dark:text-slate-300 transition-colors disabled:opacity-40"
+                    title="Set quantity to current stock level for each item"
+                  >
+                    Fill Stock Qty
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSetAllTo1}
+                    disabled={printQueue.length === 0}
+                    className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium text-slate-700 dark:text-slate-300 transition-colors disabled:opacity-40"
+                  >
+                    All to 1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearQueue}
+                    disabled={printQueue.length === 0}
+                    className="text-xs px-2.5 py-1.5 rounded-lg border border-rose-200 dark:border-rose-900/50 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-medium transition-colors disabled:opacity-40"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              </div>
+
+              {/* Product Search Input using ProductSearchInput component */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <MagnifyingGlassIcon className="w-4 h-4 text-blue-500" />
+                    <span>Search &amp; Add Products to Print Queue</span>
+                  </label>
+                  <span className="text-[11px] text-slate-400">
+                    Click to open product picker modal
+                  </span>
+                </div>
+                <ProductSearchInput
+                  value={null}
+                  onChange={(selected) => {
+                    if (selected) {
+                      addProductToQueue(selected, 1);
+                    }
+                  }}
+                  products={products}
+                  onRefreshProducts={fetchProducts}
+                  className="h-10 text-xs px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-inner"
+                />
+              </div>
+
+              {/* Partial Sheet Reuse (Skip N labels) */}
+              {layout.paper_type === "sheet" && (
+                <div className="p-3 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-semibold text-amber-900 dark:text-amber-200 block">
+                      Partial Sheet Reuse (Skip Already Used Stickers)
+                    </span>
+                    <span className="text-amber-700 dark:text-amber-400 text-[11px]">
+                      If your sheet already has stickers peeled off, offset printing to start on an empty sticker position.
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[11px] font-medium text-amber-800 dark:text-amber-300">
+                      Skip First:
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      max={layout.columns * layout.rows - 1}
+                      value={skipLabelsCount}
+                      onChange={(e) => setSkipLabelsCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      className="w-16 px-2 py-1 text-xs rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-center font-bold"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Queue Items Table */}
+              {printQueue.length === 0 ? (
+                <div className="text-center py-12 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                  <QrCodeIcon className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                    Your Print Queue is empty
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+                    Use the product picker above to add products, select their batch and expiry dates, and print labels.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 uppercase text-[10px] tracking-wider font-semibold border-b border-slate-200 dark:border-slate-800">
+                      <tr>
+                        <th className="px-3.5 py-2.5">Item &amp; Barcode</th>
+                        <th className="px-3.5 py-2.5 min-w-[280px]">Batch &amp; Expiry Selection</th>
+                        <th className="px-3.5 py-2.5 text-right">Price</th>
+                        <th className="px-3.5 py-2.5 text-center">Print Qty</th>
+                        <th className="px-3.5 py-2.5 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {printQueue.map((item, idx) => {
+                        // Construct react-select batch options
+                        const batchOptions = [];
+
+                        // 1. All real batches
+                        if (item.batches && item.batches.length > 0) {
+                          item.batches.forEach((b) => {
+                            const isFefo = b.is_fefo_recommended;
+                            const isExpired = b.is_expired;
+                            const expStr = b.expiry_date
+                              ? formatExpiryDisplay(b.expiry_date, layout.options.expiry_format || "MM/YY")
+                              : "No Exp";
+                            batchOptions.push({
+                              value: `batch_${b.id}`,
+                              type: "batch",
+                              batch_id: b.id,
+                              batch_number: b.batch_number,
+                              expiry_date: b.expiry_date || "",
+                              quantity: Number(b.quantity || 0),
+                              label: `🏷️ ${b.batch_number || "Batch"} (Exp: ${expStr}) — ${b.quantity} stock${
+                                isFefo ? " ⭐ FEFO" : ""
+                              }${isExpired ? " ⚠️ Expired" : ""}`,
+                            });
+                          });
+                        }
+
+                        // 2. Unassigned Stock
+                        const unassignedQty =
+                          item.unassigned_quantity !== undefined
+                            ? item.unassigned_quantity
+                            : Math.max(
+                                0,
+                                item.stock -
+                                  (item.batches || []).reduce(
+                                    (sum, b) => sum + Number(b.quantity || 0),
+                                    0
+                                  )
+                              );
+
+                        batchOptions.push({
+                          value: "unassigned",
+                          type: "unassigned",
+                          batch_id: null,
+                          batch_number: "",
+                          expiry_date: "",
+                          quantity: unassignedQty,
+                          label: `📦 Unassigned Stock (${unassignedQty} unit${unassignedQty === 1 ? "" : "s"})`,
+                        });
+
+                        // 3. Custom Batch & Expiry Entry
+                        batchOptions.push({
+                          value: "custom",
+                          type: "custom",
+                          batch_id: "custom",
+                          batch_number: item.custom_batch_number || "",
+                          expiry_date: item.custom_expiry_date || "",
+                          label: "✏️ Custom Batch & Expiry Entry…",
+                        });
+
+                        // Determine current selected option
+                        let selectedOption = null;
+                        if (item.selected_batch_type === "custom") {
+                          selectedOption = batchOptions.find((o) => o.value === "custom");
+                        } else if (item.selected_batch_type === "batch" && item.selected_batch_id) {
+                          selectedOption = batchOptions.find(
+                            (o) => o.value === `batch_${item.selected_batch_id}`
+                          );
+                        } else if (item.selected_batch_type === "unassigned") {
+                          selectedOption = batchOptions.find((o) => o.value === "unassigned");
+                        }
+
+                        if (!selectedOption) {
+                          selectedOption = batchOptions[0] || null;
+                        }
+
+                        return (
+                          <tr
+                            key={item.uid}
+                            className={`hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors ${
+                              previewItemIndex === idx ? "bg-blue-50/30 dark:bg-blue-950/20" : ""
+                            }`}
+                          >
+                            <td className="px-3.5 py-3">
+                              <div className="font-semibold text-slate-800 dark:text-slate-100 max-w-xs truncate">
+                                {item.product_name}
+                              </div>
+                              <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                                <span className="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.2 rounded text-[10px]">
+                                  {item.barcode}
+                                </span>
+                                <span>•</span>
+                                <span>Stock: {item.stock}</span>
+                              </div>
+                            </td>
+
+                            <td className="px-3.5 py-3 min-w-[280px] max-w-[340px]">
+                              <Select
+                                value={selectedOption}
+                                onChange={(opt) => handleBatchSelectChange(item.uid, opt)}
+                                options={batchOptions}
+                                styles={batchSelectStyles}
+                                isLoading={item.loading_batches}
+                                isSearchable={batchOptions.length > 4}
+                                menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                                menuPosition="fixed"
+                                placeholder={item.loading_batches ? "Loading batches…" : "Select batch or stock…"}
+                              />
+
+                              {/* Custom Batch & Expiry Inline Inputs */}
+                              {item.selected_batch_type === "custom" && (
+                                <div className="flex items-center gap-1.5 mt-1.5">
+                                  <input
+                                    type="text"
+                                    placeholder="Custom Batch No"
+                                    value={item.custom_batch_number || ""}
+                                    onChange={(e) => handleCustomBatchChange(item.uid, e.target.value)}
+                                    className="w-1/2 px-2 py-1 text-[11px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  />
+                                  <input
+                                    type="date"
+                                    value={item.custom_expiry_date || ""}
+                                    onChange={(e) => handleCustomExpiryChange(item.uid, e.target.value)}
+                                    className="w-1/2 px-2 py-1 text-[11px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  />
+                                </div>
+                              )}
+
+                              {/* Subtitle / Stock Info & Quick Print Action */}
+                              {item.selected_batch_type === "batch" && selectedOption?.quantity !== undefined && (
+                                <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1 px-0.5">
+                                  <span>
+                                    Batch stock:{" "}
+                                    <strong className="text-slate-600 dark:text-slate-300">
+                                      {selectedOption.quantity}
+                                    </strong>{" "}
+                                    units
+                                  </span>
+                                  {selectedOption.quantity > 0 && selectedOption.quantity !== item.print_quantity && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleQtyChange(item.uid, selectedOption.quantity)}
+                                      className="text-blue-500 hover:text-blue-600 dark:hover:text-blue-400 hover:underline font-medium"
+                                    >
+                                      Print All ({selectedOption.quantity})
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+
+                              {item.selected_batch_type === "unassigned" && (
+                                <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1 px-0.5">
+                                  <span>
+                                    Unassigned stock:{" "}
+                                    <strong className="text-slate-600 dark:text-slate-300">
+                                      {unassignedQty}
+                                    </strong>{" "}
+                                    units
+                                  </span>
+                                  {unassignedQty > 0 && unassignedQty !== item.print_quantity && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleQtyChange(item.uid, unassignedQty)}
+                                      className="text-blue-500 hover:text-blue-600 dark:hover:text-blue-400 hover:underline font-medium"
+                                    >
+                                      Print All ({unassignedQty})
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+
+                          <td className="px-3.5 py-3 text-right font-medium text-slate-700 dark:text-slate-200 whitespace-nowrap">
+                            {storeInfo.currency_symbol}{" "}
+                            {Number(
+                              layout.options.price_type === "wholesale"
+                                ? item.wholesale_price
+                                : item.retail_price
+                            ).toFixed(2)}
+                          </td>
+
+                          <td className="px-3.5 py-3 text-center">
+                            <div className="inline-flex items-center rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-800">
+                              <button
+                                type="button"
+                                onClick={() => handleQtyChange(item.uid, item.print_quantity - 1)}
+                                className="px-2 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.print_quantity}
+                                onChange={(e) => handleQtyChange(item.uid, e.target.value)}
+                                className="w-12 text-center text-xs py-1 border-0 focus:outline-none bg-transparent font-bold text-slate-800 dark:text-slate-100"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleQtyChange(item.uid, item.print_quantity + 1)}
+                                className="px-2 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </td>
+
+                          <td className="px-3.5 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setPreviewItemIndex(idx)}
+                                title="Show preview of this label"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors"
+                              >
+                                <EyeIcon className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItem(item.uid)}
+                                title="Remove from queue"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 transition-colors"
+                              >
+                                <TrashIcon className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: LABEL CONTENT & STYLING */}
+          {activeTab === "designer" && (
+            <div className="products-panel bg-white/70 dark:bg-slate-900/70 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm space-y-5">
+              <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <AdjustmentsHorizontalIcon className="w-4 h-4 text-blue-500" />
+                  Sticker Field Toggles &amp; Layout
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Select which commercial and pharmaceutical details appear on the physical label.
+                </p>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                {/* Store Header */}
+                <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-2.5">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <BuildingStorefrontIcon className="w-4 h-4 text-slate-400" />
+                      Show Business / Store Name
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={layout.options.show_store_name}
+                      onChange={(e) =>
+                        setLayout({
+                          ...layout,
+                          options: { ...layout.options, show_store_name: e.target.checked },
+                        })
+                      }
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  </label>
+                  {layout.options.show_store_name && (
+                    <input
+                      type="text"
+                      placeholder={`Default: ${storeInfo.store_name}`}
+                      value={layout.options.store_name_override}
+                      onChange={(e) =>
+                        setLayout({
+                          ...layout,
+                          options: { ...layout.options, store_name_override: e.target.value },
+                        })
+                      }
+                      className="w-full text-xs px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                    />
+                  )}
+                </div>
+
+                {/* Product Name */}
+                <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-2.5">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <TagIcon className="w-4 h-4 text-slate-400" />
+                      Show Product Name
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={layout.options.show_product_name}
+                      onChange={(e) =>
+                        setLayout({
+                          ...layout,
+                          options: { ...layout.options, show_product_name: e.target.checked },
+                        })
+                      }
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  </label>
+                  {layout.options.show_product_name && (
+                    <div className="flex items-center gap-4 text-[11px] text-slate-500">
+                      <span>Max lines:</span>
+                      <label className="flex items-center gap-1 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="name_lines"
+                          checked={layout.options.name_lines === 1}
+                          onChange={() =>
+                            setLayout({
+                              ...layout,
+                              options: { ...layout.options, name_lines: 1 },
+                            })
+                          }
+                        />
+                        <span>1 Line (Truncate)</span>
+                      </label>
+                      <label className="flex items-center gap-1 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="name_lines"
+                          checked={layout.options.name_lines === 2}
+                          onChange={() =>
+                            setLayout({
+                              ...layout,
+                              options: { ...layout.options, name_lines: 2 },
+                            })
+                          }
+                        />
+                        <span>2 Lines (Wrap)</span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                {/* Barcode Graphic & Text */}
+                <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-3">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <QrCodeIcon className="w-4 h-4 text-slate-400" />
+                      Show Vector Barcode Bars
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={layout.options.show_barcode}
+                      onChange={(e) =>
+                        setLayout({
+                          ...layout,
+                          options: { ...layout.options, show_barcode: e.target.checked },
+                        })
+                      }
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  </label>
+
+                  {layout.options.show_barcode && (
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <span className="text-[11px] text-slate-500 block mb-1">
+                          Barcode Height: {layout.options.barcode_height}px
+                        </span>
+                        <input
+                          type="range"
+                          min="16"
+                          max="50"
+                          value={layout.options.barcode_height}
+                          onChange={(e) =>
+                            setLayout({
+                              ...layout,
+                              options: {
+                                ...layout.options,
+                                barcode_height: parseInt(e.target.value, 10),
+                              },
+                            })
+                          }
+                          className="w-full accent-blue-600"
+                        />
+                      </div>
+                      <div className="flex items-center">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={layout.options.show_barcode_text}
+                            onChange={(e) =>
+                              setLayout({
+                                ...layout,
+                                options: {
+                                  ...layout.options,
+                                  show_barcode_text: e.target.checked,
+                                },
+                              })
+                            }
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-[11px] text-slate-700 dark:text-slate-300">
+                            Show Code Digits Under Bars
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Price Display */}
+                <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-2.5">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <span>🏷️</span> Show Price Tag
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={layout.options.show_price}
+                      onChange={(e) =>
+                        setLayout({
+                          ...layout,
+                          options: { ...layout.options, show_price: e.target.checked },
+                        })
+                      }
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  </label>
+                  {layout.options.show_price && (
+                    <div className="grid grid-cols-2 gap-3 text-[11px]">
+                      <div>
+                        <label className="block text-slate-500 mb-1">Price Source</label>
+                        <select
+                          value={layout.options.price_type}
+                          onChange={(e) =>
+                            setLayout({
+                              ...layout,
+                              options: { ...layout.options, price_type: e.target.value },
+                            })
+                          }
+                          className="w-full py-1.5 px-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                        >
+                          <option value="retail">Retail (Sale Price)</option>
+                          <option value="wholesale">Wholesale Unit Price</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-slate-500 mb-1">Prefix Label</label>
+                        <input
+                          type="text"
+                          value={layout.options.price_prefix}
+                          onChange={(e) =>
+                            setLayout({
+                              ...layout,
+                              options: { ...layout.options, price_prefix: e.target.value },
+                            })
+                          }
+                          placeholder="e.g. MRP:"
+                          className="w-full py-1.5 px-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Batch & Expiry (Pharmacy Requirement) */}
+                <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <CalendarDaysIcon className="w-4 h-4 text-emerald-500" />
+                      Pharmaceutical Batch &amp; Expiry
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-1 text-[11px] cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={layout.options.show_batch}
+                          onChange={(e) =>
+                            setLayout({
+                              ...layout,
+                              options: { ...layout.options, show_batch: e.target.checked },
+                            })
+                          }
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>Batch No</span>
+                      </label>
+                      <label className="flex items-center gap-1 text-[11px] cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={layout.options.show_expiry}
+                          onChange={(e) =>
+                            setLayout({
+                              ...layout,
+                              options: { ...layout.options, show_expiry: e.target.checked },
+                            })
+                          }
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>Expiry Date</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {layout.options.show_expiry && (
+                    <div className="flex items-center gap-2 pt-1 text-[11px]">
+                      <span className="text-slate-500">Expiry Format:</span>
+                      <select
+                        value={layout.options.expiry_format}
+                        onChange={(e) =>
+                          setLayout({
+                            ...layout,
+                            options: { ...layout.options, expiry_format: e.target.value },
+                          })
+                        }
+                        className="py-1 px-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                      >
+                        <option value="MM/YY">MM/YY (e.g. 11/27)</option>
+                        <option value="MM/YYYY">MM/YYYY (e.g. 11/2027)</option>
+                        <option value="DD-MM-YYYY">DD-MM-YYYY (e.g. 30-11-2027)</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {/* Typography & Alignment */}
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div>
+                    <label className="block text-slate-600 dark:text-slate-300 mb-1 font-medium">
+                      Base Font Scale: {layout.options.font_scale}pt
+                    </label>
+                    <input
+                      type="range"
+                      min="8"
+                      max="14"
+                      value={layout.options.font_scale}
+                      onChange={(e) =>
+                        setLayout({
+                          ...layout,
+                          options: {
+                            ...layout.options,
+                            font_scale: parseInt(e.target.value, 10),
+                          },
+                        })
+                      }
+                      className="w-full accent-blue-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 dark:text-slate-300 mb-1 font-medium">
+                      Text Alignment
+                    </label>
+                    <div className="flex rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setLayout({
+                            ...layout,
+                            options: { ...layout.options, text_align: "center" },
+                          })
+                        }
+                        className={`flex-1 py-1.5 text-center font-medium ${
+                          layout.options.text_align === "center"
+                            ? "bg-blue-600 text-white"
+                            : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                        }`}
+                      >
+                        Center
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setLayout({
+                            ...layout,
+                            options: { ...layout.options, text_align: "left" },
+                          })
+                        }
+                        className={`flex-1 py-1.5 text-center font-medium ${
+                          layout.options.text_align === "left"
+                            ? "bg-blue-600 text-white"
+                            : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                        }`}
+                      >
+                        Left
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: PAPER & GRID SETUP */}
+          {activeTab === "paper" && (
+            <div className="products-panel bg-white/70 dark:bg-slate-900/70 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm space-y-5">
+              <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <Squares2X2Icon className="w-4 h-4 text-blue-500" />
+                  Paper Media &amp; Dimension Calibration
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Calibrate exact sticker physical widths, heights, margins, and columns.
+                </p>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                {/* Media Type */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div
+                    onClick={() => setLayout({ ...layout, paper_type: "roll" })}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                      layout.paper_type === "roll"
+                        ? "border-blue-600 bg-blue-50/60 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 ring-2 ring-blue-500/20"
+                        : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    <div className="font-bold flex items-center gap-2">
+                      <span>🏷️</span> Thermal Roll Printer
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                      Continuous die-cut roll (Xprinter, Zebra, TSC, Rongta, Dymo)
+                    </div>
+                  </div>
+
+                  <div
+                    onClick={() => setLayout({ ...layout, paper_type: "sheet" })}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                      layout.paper_type === "sheet"
+                        ? "border-blue-600 bg-blue-50/60 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 ring-2 ring-blue-500/20"
+                        : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    <div className="font-bold flex items-center gap-2">
+                      <span>📄</span> A4 / Letter Sticker Sheet
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                      Office laser &amp; inkjet printers (Avery 5160, 24-up, 40-up sheets)
+                    </div>
+                  </div>
+                </div>
+
+                {/* Width & Height Dimensions */}
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">
+                      Label Width (mm)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="15"
+                      max="200"
+                      value={layout.width_mm}
+                      onChange={(e) =>
+                        setLayout({
+                          ...layout,
+                          width_mm: parseFloat(e.target.value) || 50,
+                        })
+                      }
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">
+                      Label Height (mm)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="10"
+                      max="200"
+                      value={layout.height_mm}
+                      onChange={(e) =>
+                        setLayout({
+                          ...layout,
+                          height_mm: parseFloat(e.target.value) || 25,
+                        })
+                      }
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    />
+                  </div>
+                </div>
+
+                {/* Sheet Grid Settings (if sheet) */}
+                {layout.paper_type === "sheet" && (
+                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 space-y-3">
+                    <span className="font-bold text-slate-800 dark:text-slate-200 block">
+                      Sheet Grid Matrix
+                    </span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div>
+                        <label className="block text-slate-500 text-[11px] mb-1">Columns</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="10"
+                          value={layout.columns}
+                          onChange={(e) =>
+                            setLayout({
+                              ...layout,
+                              columns: parseInt(e.target.value, 10) || 1,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-500 text-[11px] mb-1">Rows</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="30"
+                          value={layout.rows}
+                          onChange={(e) =>
+                            setLayout({
+                              ...layout,
+                              rows: parseInt(e.target.value, 10) || 1,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-500 text-[11px] mb-1">Gap X (mm)</label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          value={layout.gap_x_mm}
+                          onChange={(e) =>
+                            setLayout({
+                              ...layout,
+                              gap_x_mm: parseFloat(e.target.value) || 0,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-500 text-[11px] mb-1">Gap Y (mm)</label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          value={layout.gap_y_mm}
+                          onChange={(e) =>
+                            setLayout({
+                              ...layout,
+                              gap_y_mm: parseFloat(e.target.value) || 0,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right Column: Real-Time Calibrated WYSIWYG Live Preview (5 Cols) */}
+        <div className="lg:col-span-5 sticky top-6 space-y-4">
+          <div className="products-panel bg-white/70 dark:bg-slate-900/70 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <EyeIcon className="w-4 h-4 text-blue-500" />
+                Live Sticker Preview
+              </h3>
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-[11px] text-slate-400">Zoom:</span>
+                {[100, 150, 200].map((z) => (
+                  <button
+                    key={z}
+                    type="button"
+                    onClick={() => setPreviewZoom(z)}
+                    className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${
+                      previewZoom === z
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
+                    }`}
+                  >
+                    {z}%
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Simulated Sticker Workspace */}
+            <div className="my-5 flex items-center justify-center p-6 bg-slate-100/70 dark:bg-slate-950/60 rounded-xl overflow-hidden border border-slate-200/60 dark:border-slate-800/60">
+              {/* Millimeter Scaled Die-Cut Sticker Card */}
+              <div
+                style={{
+                  // 1mm ~ 3.7795px at 96 DPI screen
+                  width: `${(layout.width_mm * 3.78 * (previewZoom / 100)).toFixed(0)}px`,
+                  minHeight: `${(layout.height_mm * 3.78 * (previewZoom / 100)).toFixed(0)}px`,
+                  fontSize: `${((layout.options.font_scale * 1.3 * previewZoom) / 100).toFixed(1)}px`,
+                  padding: `${Math.max(4, (layout.margin_top_mm * 3.78 * (previewZoom / 100)) / 2)}px`,
+                }}
+                className="bg-white text-slate-900 rounded-lg shadow-xl border border-slate-300 flex flex-col justify-between transition-all select-none overflow-hidden"
+              >
+                {/* Store Name Header */}
+                {layout.options.show_store_name && (
+                  <div
+                    style={{
+                      textAlign: layout.options.text_align,
+                      fontSize: `${((layout.options.font_scale * 1.1 * previewZoom) / 100).toFixed(1)}px`,
+                    }}
+                    className="font-bold tracking-tight uppercase truncate leading-none pb-0.5"
+                  >
+                    {layout.options.store_name_override.trim() || storeInfo.store_name}
+                  </div>
+                )}
+
+                {/* Product Name */}
+                {layout.options.show_product_name && (
+                  <div
+                    style={{
+                      textAlign: layout.options.text_align,
+                      display: "-webkit-box",
+                      WebkitBoxOrient: "vertical",
+                      WebkitLineClamp: layout.options.name_lines,
+                      fontSize: `${((layout.options.font_scale * 1.15 * previewZoom) / 100).toFixed(1)}px`,
+                    }}
+                    className="font-semibold leading-tight overflow-hidden text-slate-900"
+                  >
+                    {currentPreviewItem.product_name}
+                  </div>
+                )}
+
+                {/* Barcode Vector Graphic */}
+                {layout.options.show_barcode && (
+                  <div
+                    className={`py-1 flex ${
+                      layout.options.text_align === "left" ? "justify-start" : "justify-center"
+                    }`}
+                  >
+                    <BarcodeSvg
+                      value={currentPreviewItem.barcode}
+                      height={layout.options.barcode_height * (previewZoom / 100)}
+                      barWidth={layout.options.bar_width * (previewZoom / 100)}
+                      showText={layout.options.show_barcode_text}
+                      fontSize={Math.max(8, (10 * previewZoom) / 100)}
+                    />
+                  </div>
+                )}
+
+                {/* Batch, Expiry, & Price Footer */}
+                <div className="flex items-center justify-between font-semibold leading-tight pt-0.5 border-t border-slate-200 text-slate-800">
+                  <div className="flex items-center gap-1.5 text-[0.8em]">
+                    {layout.options.show_batch && currentPreviewItem.batch_number && (
+                      <span>B:{currentPreviewItem.batch_number}</span>
+                    )}
+                    {layout.options.show_expiry && currentPreviewItem.expiry_date && (
+                      <span>
+                        Exp:
+                        {formatExpiryDisplay(
+                          currentPreviewItem.expiry_date,
+                          layout.options.expiry_format
+                        )}
+                      </span>
+                    )}
+                  </div>
+
+                  {layout.options.show_price && (
+                    <div className="font-bold text-[0.9em] whitespace-nowrap">
+                      {layout.options.price_prefix} {storeInfo.currency_symbol}{" "}
+                      {Number(
+                        layout.options.price_type === "wholesale"
+                          ? currentPreviewItem.wholesale_price
+                          : currentPreviewItem.retail_price
+                      ).toFixed(storeInfo.currency_decimal_places || 2)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Calibration Dimensions Footer */}
+            <div className="flex items-center justify-between text-[11px] text-slate-400">
+              <span>Actual Dimensions: {layout.width_mm}mm × {layout.height_mm}mm</span>
+              <span>Previewing: {currentPreviewItem.product_name?.slice(0, 18)}…</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ===== SAVE TEMPLATE MODAL ===== */}
+      {showSaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <BookmarkSquareIcon className="w-5 h-5 text-blue-500" />
+                Save Custom Barcode Template
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowSaveModal(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTemplateSubmit} className="p-5 space-y-4 text-xs">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Template Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Front Shelf Tag 50x25mm"
+                  value={newTemplateName}
+                  onChange={(e) => setNewTemplateName(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 text-[11px] text-slate-500 space-y-1">
+                <div>Dimensions: {layout.width_mm}mm × {layout.height_mm}mm</div>
+                <div>Media Type: {layout.paper_type === "roll" ? "Thermal Roll" : "Sticker Sheet"}</div>
+                <div>Elements: Store Name, Product Name, Barcode, Price, Batch/Expiry</div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowSaveModal(false)}
+                  className="products-action theme-btn-tertiary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingTemplate}
+                  className="products-action theme-btn-primary"
+                >
+                  <span>{savingTemplate ? "Saving…" : "Save Preset"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+

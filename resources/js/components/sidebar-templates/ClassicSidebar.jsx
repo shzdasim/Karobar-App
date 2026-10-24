@@ -33,6 +33,7 @@ CalculatorIcon,
   ClockIcon,
   HandRaisedIcon,
   ServerIcon,
+  QrCodeIcon,
 } from "@heroicons/react/24/outline";
 import { usePermissions } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
@@ -89,6 +90,7 @@ export default function ClassicSidebar({ appName, logoUrl }) {
     { name: "Dashboard", path: "/dashboard", icon: <HomeIcon className="w-5 h-5" />, standalone: true },
     { type: "section", name: "Management", key: "core", icon: <CubeIcon className="w-5 h-5" /> },
     { name: "Products", path: "/products", icon: <CubeIcon className="w-5 h-5" />, perm: "product.view", parent: "core" },
+    { name: "Barcode Studio", path: "/barcode-labels", icon: <QrCodeIcon className="w-5 h-5" />, perm: "product.view", parent: "core" },
     { name: "Categories", path: "/categories", icon: <Squares2X2Icon className="w-5 h-5" />, perm: "category.view", parent: "core" },
     { name: "Brands", path: "/brands", icon: <TagIcon className="w-5 h-5" />, perm: "brand.view", parent: "core" },
     { name: "Suppliers", path: "/suppliers", icon: <TruckIcon className="w-5 h-5" />, perm: "supplier.view", parent: "core" },

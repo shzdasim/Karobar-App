@@ -350,4 +350,11 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::delete('/customer-ledger/{customerLedger}', [CustomerLedgerController::class, 'destroy']);
     Route::post('/customer-ledger/rebuild',       [CustomerLedgerController::class, 'rebuild']);
     Route::post('/customer-ledger/settle-invoice', [CustomerLedgerController::class, 'settleInvoice']);
+
+    // Barcode Designer & Label Printing
+    Route::get('/barcodes/templates',              [\App\Http\Controllers\BarcodeController::class, 'getTemplates']);
+    Route::post('/barcodes/templates',             [\App\Http\Controllers\BarcodeController::class, 'saveTemplate']);
+    Route::put('/barcodes/templates/{id}',         [\App\Http\Controllers\BarcodeController::class, 'updateTemplate']);
+    Route::delete('/barcodes/templates/{id}',      [\App\Http\Controllers\BarcodeController::class, 'deleteTemplate']);
+    Route::get('/barcodes/products-search',        [\App\Http\Controllers\BarcodeController::class, 'searchProducts']);
 });

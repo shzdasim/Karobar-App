@@ -13,6 +13,7 @@ import {
   CubeIcon,
   ExclamationTriangleIcon,
   XMarkIcon,
+  QrCodeIcon,
 } from "@heroicons/react/24/solid";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 
@@ -437,6 +438,16 @@ useEffect(() => {
               </button>
             </Guard>
 
+            {/* Barcode Studio Shortcut */}
+            <Link
+              to={selectedIds.size > 0 ? `/barcode-labels?product_ids=${Array.from(selectedIds).join(",")}` : "/barcode-labels"}
+              title="Print Barcode Labels"
+              className="products-action theme-btn-secondary"
+            >
+              <QrCodeIcon className="w-3.5 h-3.5" />
+              <span>{selectedIds.size > 0 ? `Print Labels (${selectedIds.size})` : "Barcode Studio"}</span>
+            </Link>
+
             {/* Primary action */}
             <Guard when={can.create}>
               <Link
@@ -697,6 +708,16 @@ useEffect(() => {
                     {hasActions && (
                       <td className={`rounded-r-2xl pr-3 ${cellBg}`}>
                         <div className="flex items-center justify-end gap-1">
+                          {/* Print Barcode Label */}
+                          <Link
+                            to={`/barcode-labels?product_id=${p.id}`}
+                            title={`Print Barcode Sticker for ${p.name}`}
+                            aria-label={`Print Barcode for ${p.name}`}
+                            className="products-row-action text-slate-500 hover:text-blue-600"
+                          >
+                            <QrCodeIcon className="h-4 w-4" />
+                          </Link>
+
                           {/* Edit */}
                           <Guard when={can.update}>
                             <Link
