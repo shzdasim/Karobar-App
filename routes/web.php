@@ -19,6 +19,11 @@ Route::get('/supplier-ledger/print', [SupplierLedgerController::class, 'print'])
 
 Route::get('/customer-ledger/print', [CustomerLedgerController::class, 'print']);
 
+// Signed public PDF route for WhatsApp / external document sharing
+Route::get('/print/shared-pdf/{type}', [\App\Http\Controllers\DocumentShareController::class, 'publicPdf'])
+    ->middleware('signed')
+    ->name('public.documents.pdf');
+
     // Thermal template preview route
 Route::get('/print/thermal-preview/{template}', function ($template) {
     $validTemplates = ['standard', 'minimal', 'detailed', 'compact', 'bold', 'barcode'];

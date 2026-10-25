@@ -27,7 +27,7 @@ import { getThemeButtonClasses } from "@/utils/buttonStyles";
 
 export default function Suppliers() {
   const [suppliers, setSuppliers] = useState([]);
-  const [form, setForm] = useState({ name: "", address: "", phone: "", credit_limit: "", credit_days: "" });
+  const [form, setForm] = useState({ name: "", address: "", phone: "", email: "", credit_limit: "", credit_days: "" });
   const [editingId, setEditingId] = useState(null);
 
   const [loading, setLoading] = useState(false);
@@ -151,7 +151,7 @@ export default function Suppliers() {
   };
 
   const resetForm = () => {
-    setForm({ name: "", address: "", phone: "", credit_limit: "", credit_days: "" });
+    setForm({ name: "", address: "", phone: "", email: "", credit_limit: "", credit_days: "" });
     setEditingId(null);
     setTimeout(() => nameRef.current?.focus(), 0);
   };
@@ -194,6 +194,7 @@ export default function Suppliers() {
       name: s.name || "",
       address: s.address || "",
       phone: s.phone || "",
+      email: s.email || "",
       credit_limit: s.credit_limit ?? "",
       credit_days: s.credit_days ?? "",
     });
@@ -387,11 +388,22 @@ return (
                 <label className="block text-xs font-medium mb-1">Phone</label>
                 <GlassInput
                   type="text"
-                  placeholder="Phone number"
+                  placeholder="Phone number (e.g. 0300-1234567)"
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                   onKeyDown={(e) => onEnterFocusNext(e, saveBtnRef)}
                   ref={phoneRef}
+                  className="w-full h-9"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium mb-1">Email (Optional)</label>
+                <GlassInput
+                  type="email"
+                  placeholder="supplier@example.com"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
                   className="w-full h-9"
                 />
               </div>
@@ -512,7 +524,10 @@ return (
                           <span className="font-medium text-gray-900 dark:text-gray-100">{s.name}</span>
                         </td>
                         <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">{s.address}</td>
-                        <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">{s.phone}</td>
+                        <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">
+                          <div>{s.phone}</div>
+                          {s.email && <div className="text-[11px] text-gray-400 dark:text-gray-500">{s.email}</div>}
+                        </td>
                         <td className="px-3 py-2.5 text-xs text-gray-700 dark:text-gray-300 font-mono">
                           {Number(s.credit_limit) > 0 ? `Rs. ${Number(s.credit_limit).toLocaleString()}` : "Unlimited"}
                         </td>

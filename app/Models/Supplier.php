@@ -10,6 +10,7 @@ class Supplier extends Model
         'name',
         'address',
         'phone',
+        'email',
         'credit_limit',
         'credit_days',
     ];

@@ -374,4 +374,12 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::patch('/stocktake-sessions/{id}/cancel',     [\App\Http\Controllers\StocktakeController::class, 'cancel']);
     Route::get('/stocktake-sessions/{id}/items',        [\App\Http\Controllers\StocktakeController::class, 'items']);
     Route::patch('/stocktake-items/{item}',             [\App\Http\Controllers\StocktakeController::class, 'recordCount']);
+
+    // -------------------------------------------------------------------------
+    // Outbound Document Sharing (WhatsApp & Email PDF)
+    // -------------------------------------------------------------------------
+    Route::get('/share/metadata',  [\App\Http\Controllers\DocumentShareController::class, 'metadata']);
+    Route::get('/share/pdf',       [\App\Http\Controllers\DocumentShareController::class, 'pdf']);
+    Route::post('/share/email',    [\App\Http\Controllers\DocumentShareController::class, 'sendEmail']);
+    Route::post('/share/whatsapp', [\App\Http\Controllers\DocumentShareController::class, 'sendWhatsApp']);
 });

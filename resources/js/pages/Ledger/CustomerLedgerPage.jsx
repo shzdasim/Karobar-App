@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import CustomerSearch from "../../components/CustomerSearch.jsx";
 import RecordPaymentModal from "@/components/RecordPaymentModal.jsx";
 import PaymentHistoryModal from "@/components/PaymentHistoryModal.jsx";
+import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
@@ -32,6 +33,7 @@ import {
   ChevronRightIcon,
   ChevronDoubleLeftIcon,
   ChevronDoubleRightIcon,
+  ShareIcon,
 } from "@heroicons/react/24/solid";
 
 // Helper to determine text color based on background brightness
@@ -81,6 +83,7 @@ const [customers, setCustomers] = useState([]);
   // Payment modals state
   const [recordPaymentOpen, setRecordPaymentOpen] = useState(false);
   const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
 
   const selectedCustomer = useMemo(
     () => customers.find((c) => String(c.id) === String(customerId)),
@@ -784,7 +787,7 @@ return (
               </Guard>
             </div>
 
-            {/* Primary Print Button */}
+            {/* Primary Print & Share Buttons */}
             <button
               onClick={() => handlePrint()}
               disabled={!customerId}
@@ -792,6 +795,15 @@ return (
             >
               <PrinterIcon className="w-4 h-4" />
               <span>Print</span>
+            </button>
+            <button
+              onClick={() => setShareModalOpen(true)}
+              disabled={!customerId}
+              title="Share statement via WhatsApp or Email PDF"
+              className="products-action theme-btn-secondary"
+            >
+              <ShareIcon className="w-4 h-4" />
+              <span>Share / PDF</span>
             </button>
           </div>
         </div>
@@ -1419,6 +1431,14 @@ return (
         partyType="customer"
         partyId={customerId}
         partyName={selectedCustomer?.name || ""}
+      />
+
+      {/* Outbound Document Share Modal (WhatsApp / Email PDF) */}
+      <ShareDocumentModal
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        documentType="customer_ledger"
+        queryParams={{ customer_id: customerId }}
       />
 
       {/* print + portal helpers */}

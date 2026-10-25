@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import SupplierSearch from "../../components/SupplierSearch.jsx";
 import RecordPaymentModal from "@/components/RecordPaymentModal.jsx";
 import PaymentHistoryModal from "@/components/PaymentHistoryModal.jsx";
+import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
@@ -33,6 +34,7 @@ import {
   ChevronRightIcon,
   ChevronDoubleLeftIcon,
   ChevronDoubleRightIcon,
+  ShareIcon,
 } from "@heroicons/react/24/solid";
 
 // Helper to determine text color based on background brightness
@@ -82,6 +84,7 @@ const [suppliers, setSuppliers] = useState([]);
   // Payment modals state
   const [recordPaymentOpen, setRecordPaymentOpen] = useState(false);
   const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
 
   const selectedSupplier = useMemo(
     () => suppliers.find((s) => String(s.id) === String(supplierId)),
@@ -803,7 +806,7 @@ return (
               </Guard>
             </div>
 
-            {/* Primary Print Button */}
+            {/* Primary Print & Share Buttons */}
             <button
               onClick={() => handlePrint()}
               disabled={!supplierId}
@@ -811,6 +814,15 @@ return (
             >
               <PrinterIcon className="w-4 h-4" />
               <span>Print</span>
+            </button>
+            <button
+              onClick={() => setShareModalOpen(true)}
+              disabled={!supplierId}
+              title="Share statement via WhatsApp or Email PDF"
+              className="products-action theme-btn-secondary"
+            >
+              <ShareIcon className="w-4 h-4" />
+              <span>Share / PDF</span>
             </button>
           </div>
         </div>
@@ -1438,6 +1450,14 @@ return (
         partyType="supplier"
         partyId={supplierId}
         partyName={selectedSupplier?.name || ""}
+      />
+
+      {/* Outbound Document Share Modal (WhatsApp / Email PDF) */}
+      <ShareDocumentModal
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        documentType="supplier_ledger"
+        queryParams={{ supplier_id: supplierId }}
       />
 
       {/* print + portal helpers */}

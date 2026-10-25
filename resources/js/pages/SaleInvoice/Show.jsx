@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { MagnifyingGlassIcon, PrinterIcon, PencilSquareIcon, TrashIcon, PlusIcon, ArrowLeftIcon, ClockIcon, ArrowUturnLeftIcon, BanknotesIcon } from "@heroicons/react/24/outline";
+import { MagnifyingGlassIcon, PrinterIcon, PencilSquareIcon, TrashIcon, PlusIcon, ArrowLeftIcon, ClockIcon, ArrowUturnLeftIcon, BanknotesIcon, ShareIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 // 🔒 permissions
 import { usePermissions, Guard } from "@/api/usePermissions.js";
@@ -14,6 +14,7 @@ import DocumentHistoryModal from "@/components/DocumentHistoryModal.jsx";
 import VoidInvoiceModal from "@/components/VoidInvoiceModal.jsx";
 import RecordPaymentModal from "@/components/RecordPaymentModal.jsx";
 import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
+import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 
 // Helper to determine text color based on background brightness
@@ -47,6 +48,7 @@ export default function SaleInvoiceShow() {
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [voidModalOpen, setVoidModalOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
   const [isReversing, setIsReversing] = useState(false);
 
   // Held Invoices & Drafts state
@@ -514,6 +516,16 @@ export default function SaleInvoiceShow() {
             >
               <PrinterIcon className="w-4 h-4" aria-hidden="true" />
               <span>Print</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShareModalOpen(true)}
+              className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnPrimary.className}`}
+              style={btnPrimary.style}
+              title="Share via WhatsApp, Email PDF, or Download PDF"
+            >
+              <ShareIcon className="w-4 h-4" aria-hidden="true" />
+              <span>Share / PDF</span>
             </button>
             {invoiceDue > 0.01 && inv?.status !== 'reversed' && (
               <button
@@ -1127,6 +1139,14 @@ export default function SaleInvoiceShow() {
         }}
         onStartBlank={() => navigate("/sale-invoices/create/retail")}
         type="sale_retail"
+      />
+
+      {/* Outbound Document Share Modal (WhatsApp / Email PDF) */}
+      <ShareDocumentModal
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        documentType="sale_invoice"
+        documentId={id}
       />
     </div>
   );

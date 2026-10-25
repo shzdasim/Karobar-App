@@ -4,8 +4,9 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import { usePermissions } from "@/api/usePermissions";
 import ProductSearchInput from "../components/ProductSearchInput";
-import { ClipboardDocumentListIcon, PlusIcon, TrashIcon, EyeIcon, PencilSquareIcon, ArrowDownTrayIcon, DocumentTextIcon, BuildingStorefrontIcon, MagnifyingGlassIcon, ArrowsUpDownIcon, QrCodeIcon } from "@heroicons/react/24/outline";
+import { ClipboardDocumentListIcon, PlusIcon, TrashIcon, EyeIcon, PencilSquareIcon, ArrowDownTrayIcon, DocumentTextIcon, BuildingStorefrontIcon, MagnifyingGlassIcon, ArrowsUpDownIcon, QrCodeIcon, ShareIcon } from "@heroicons/react/24/outline";
 import SupplierSearch from "../components/SupplierSearch";
+import ShareDocumentModal from "../components/ShareDocumentModal";
 
 const blank = () => ({ date: new Date().toLocaleDateString('en-CA'), expected_received_date: '', notes: '', reference: '', supplier_id: '', items: [] });
 const orderRow = (row) => ({ ...row,
@@ -48,6 +49,7 @@ export default function PurchaseOrders() {
   const [products, setProducts] = useState([]);
   const [supplier, setSupplier] = useState(null);
   const [supplierOpen, setSupplierOpen] = useState(false);
+  const [sharingPoId, setSharingPoId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -319,6 +321,7 @@ export default function PurchaseOrders() {
           </>}
           {order.status === 'ordered' && has('purchase-invoice.create') && <button className="g-btn-primary theme-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={receive}>{busy ? 'Preparing Purchase Invoice…' : 'Receive Order'}</button>}
           <Link className="g-btn-ghost theme-btn-secondary inline-flex items-center justify-center gap-2 disabled:opacity-50" to={`/barcode-labels?purchase_order_id=${order.id}`} title="Print Barcode Labels for this order"><QrCodeIcon className="w-4 h-4" /><span>Print Barcodes</span></Link>
+          <button type="button" className="g-btn-secondary theme-btn-secondary inline-flex items-center justify-center gap-2 disabled:opacity-50" onClick={() => setSharingPoId(order.id)}><ShareIcon className="w-4 h-4" /><span>Share / Email PDF</span></button>
           <button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" onClick={() => window.print()}>Print Order</button>
         </div>
       </> : listing && <>
@@ -362,6 +365,7 @@ export default function PurchaseOrders() {
                 <td data-label="Status" className="px-3 py-2.5"><span className="purchase-order-status" data-status={po.status}>{statusLabel(po.status)}</span></td>
                 <td data-label="Actions" className="px-3 py-2.5"><div className="purchase-order-index-actions">
                   <Link className="purchase-order-action theme-btn-tertiary" to={`/purchase-orders/${po.id}`} title={`View / Print ${po.number}`} aria-label={`View Purchase Order ${po.number}`}><EyeIcon aria-hidden="true" className="w-4 h-4" /><span>View / Print</span></Link>
+                  <button type="button" className="purchase-order-action theme-btn-secondary" onClick={() => setSharingPoId(po.id)} title={`Share ${po.number} via WhatsApp or Email PDF`} aria-label={`Share Purchase Order ${po.number}`}><ShareIcon aria-hidden="true" className="w-4 h-4" /><span>Share / PDF</span></button>
                   <Link className="purchase-order-action theme-btn-tertiary" to={`/barcode-labels?purchase_order_id=${po.id}`} title={`Print Barcodes for ${po.number}`} aria-label={`Print Barcodes for ${po.number}`}><QrCodeIcon aria-hidden="true" className="w-4 h-4" /><span>Barcodes</span></Link>
                   {po.status === 'ordered' && !po.invoices?.length && <>
                     {has('purchase-order.update') && <Link className="purchase-order-action theme-btn-secondary" to={`/purchase-orders/${po.id}/edit`} title={`Edit ${po.number}`} aria-label={`Edit Purchase Order ${po.number}`}><PencilSquareIcon aria-hidden="true" className="w-4 h-4" /><span>Edit</span></Link>}
@@ -378,6 +382,12 @@ export default function PurchaseOrders() {
         <div className="purchase-entry-footer flex gap-3 items-center px-5 py-4"><button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={page <= 1} onClick={() => setPage(page-1)}>Previous</button><span>Page {listing.current_page} of {listing.last_page}</span><button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={page >= listing.last_page} onClick={() => setPage(page+1)}>Next</button></div>
       </>}
     </div>
+    <ShareDocumentModal
+      isOpen={Boolean(sharingPoId)}
+      onClose={() => setSharingPoId(null)}
+      documentType="purchase_order"
+      documentId={sharingPoId}
+    />
     <style>{`@media print { body * { visibility: hidden; } .purchase-order-documents, .purchase-order-documents * { visibility: visible; } .purchase-order-documents { position: absolute; left: 0; top: 0; width: 100%; color: black; background: white; } .purchase-order-documents .print\\:hidden, .purchase-order-documents .print\\:hidden * { display: none; } .purchase-order-documents .g-card { background: white; box-shadow: none; backdrop-filter: none; } }`}</style>
   </div>;
 }

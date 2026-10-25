@@ -18,10 +18,12 @@ import {
   ClockIcon,
   ArrowUturnLeftIcon,
   QrCodeIcon,
+  ShareIcon,
 } from "@heroicons/react/24/solid";
 import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
 import DocumentHistoryModal from "@/components/DocumentHistoryModal.jsx";
 import VoidInvoiceModal from "@/components/VoidInvoiceModal.jsx";
+import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
@@ -160,6 +162,8 @@ export default function SaleInvoicesIndex() {
     setVoidingInvoice(invoice);
     setVoidModalOpen(true);
   };
+
+  const [sharingInvoiceId, setSharingInvoiceId] = useState(null);
 
   const handleConfirmVoid = async (reason) => {
     if (!voidingInvoice) return;
@@ -828,6 +832,16 @@ export default function SaleInvoicesIndex() {
                           <PrinterIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
                         </button>
 
+                        {/* Share (WhatsApp / Email PDF) Action */}
+                        <button
+                          onClick={() => setSharingInvoiceId(invoice.id)}
+                          className="products-row-action text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+                          title="Share via WhatsApp or Email PDF"
+                          aria-label="Share sale invoice"
+                        >
+                          <ShareIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
+                        </button>
+
                         {/* Audit History Action */}
                         <button
                           onClick={() => handleOpenHistory(invoice)}
@@ -991,6 +1005,14 @@ export default function SaleInvoicesIndex() {
         onConfirm={handleConfirmVoid}
         invoice={voidingInvoice}
         isReversing={isReversing}
+      />
+
+      {/* Outbound Document Share Modal (WhatsApp / Email PDF) */}
+      <ShareDocumentModal
+        isOpen={Boolean(sharingInvoiceId)}
+        onClose={() => setSharingInvoiceId(null)}
+        documentType="sale_invoice"
+        documentId={sharingInvoiceId}
       />
     </div>
   );

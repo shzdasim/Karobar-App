@@ -22,6 +22,7 @@ import {
   ArrowTrendingUpIcon,
   ArrowTrendingDownIcon,
   DocumentTextIcon,
+  ShareIcon,
 } from "@heroicons/react/24/solid";
 import { useTheme } from "@/context/ThemeContext";
 import { useCurrency } from "@/context/CurrencyContext";
@@ -29,6 +30,7 @@ import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { GlassCard, GlassSectionHeader, GlassInput, GlassToolbar } from "@/components";
 import PaymentReceiptModal from "@/components/PaymentReceiptModal.jsx";
 import RecordPaymentModal from "@/components/RecordPaymentModal.jsx";
+import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 import CustomerSearch from "@/components/CustomerSearch.jsx";
 import SupplierSearch from "@/components/SupplierSearch.jsx";
 
@@ -110,6 +112,7 @@ export default function PaymentsPage() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(15);
   const [total, setTotal] = useState(0);
+  const [sharingPaymentId, setSharingPaymentId] = useState(null);
 
   // Filters
   const [q, setQ] = useState("");
@@ -230,10 +233,10 @@ export default function PaymentsPage() {
           <div className="flex items-center gap-2.5">
             <button
               onClick={fetchPayments}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg ${btnSecondary.className}`}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium ${btnSecondary.className}`}
               style={btnSecondary.style}
             >
-              <ArrowPathIcon className="w-3.5 h-3.5" />
+              <ArrowPathIcon className="w-4 h-4" />
               Refresh
             </button>
             <button
@@ -243,7 +246,7 @@ export default function PaymentsPage() {
                 setPickerPartyName("");
                 setShowPartyPicker(true);
               }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg ${btnPrimary.className}`}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold ${btnPrimary.className}`}
               style={btnPrimary.style}
             >
               <PlusCircleIcon className="w-4 h-4" />
@@ -500,6 +503,15 @@ export default function PaymentsPage() {
                             <PrinterIcon className="w-4 h-4" />
                           </button>
 
+                          {/* Share (WhatsApp / Email PDF) */}
+                          <button
+                            onClick={() => setSharingPaymentId(payment.id)}
+                            className={`p-1.5 rounded-lg transition-colors ${isDark ? "hover:bg-slate-700 text-emerald-400 hover:text-emerald-300" : "hover:bg-emerald-50 text-emerald-600 hover:text-emerald-700"}`}
+                            title="Share via WhatsApp or Email PDF"
+                          >
+                            <ShareIcon className="w-4 h-4" />
+                          </button>
+
                           {/* Reverse */}
                           {!isReversed && (
                             <button
@@ -538,13 +550,13 @@ export default function PaymentsPage() {
       {/* ── Reversal Confirmation Modal ─────────────────────────────────── */}
       {reversingPayment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) setReversingPayment(null); }}>
-          <GlassCard className="w-full max-w-md shadow-2xl">
-            <div className={`flex items-center justify-between px-6 py-4 border-b ${isDark ? "border-slate-700" : "border-slate-200"}`}>
+          <GlassCard className={`w-full max-w-md border shadow-2xl rounded-2xl overflow-hidden ${isDark ? "bg-slate-900 border-slate-700 text-slate-100" : "bg-white border-gray-200 text-gray-900"}`}>
+            <div className={`flex items-center justify-between px-6 py-4 border-b ${isDark ? "border-slate-700 bg-slate-800/50" : "border-gray-200 bg-gray-50"}`}>
               <div className="flex items-center gap-2">
                 <ArrowUturnLeftIcon className="w-5 h-5 text-red-500" />
-                <h3 className={`font-bold text-base ${isDark ? "text-slate-100" : "text-slate-800"}`}>Reverse Payment</h3>
+                <h3 className={`font-bold text-base ${isDark ? "text-slate-100" : "text-gray-900"}`}>Reverse Payment</h3>
               </div>
-              <button onClick={() => setReversingPayment(null)} className={`p-1.5 rounded-lg transition-colors ${isDark ? "hover:bg-slate-700 text-slate-400" : "hover:bg-slate-100 text-slate-500"}`}>
+              <button onClick={() => setReversingPayment(null)} className={`p-1.5 rounded-lg transition-colors ${isDark ? "hover:bg-slate-700 text-slate-400" : "hover:bg-gray-200/70 text-gray-500"}`}>
                 <XMarkIcon className="w-5 h-5" />
               </button>
             </div>
@@ -557,7 +569,7 @@ export default function PaymentsPage() {
                 </p>
               </div>
               <div>
-                <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-gray-700"}`}>
                   Reason for Reversal *
                 </label>
                 <textarea
@@ -565,20 +577,21 @@ export default function PaymentsPage() {
                   onChange={e => setReversalReason(e.target.value)}
                   rows={3}
                   placeholder="Explain why this payment is being reversed…"
-                  className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 transition-colors ${isDark ? "bg-slate-800 border-slate-600 text-slate-100 focus:ring-red-500/40 placeholder-slate-500" : "bg-white border-slate-300 text-slate-900 focus:ring-red-500/40 placeholder-slate-400"}`}
+                  className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 transition-colors ${isDark ? "bg-slate-800 border-slate-600 text-slate-100 focus:ring-red-500/40 placeholder-slate-500" : "bg-white border-gray-300 text-gray-900 focus:ring-red-500/40 placeholder-gray-400"}`}
                 />
               </div>
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setReversingPayment(null)}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${isDark ? "bg-slate-700 hover:bg-slate-600 text-slate-300" : "bg-slate-100 hover:bg-slate-200 text-slate-600"}`}
+                  className={`px-4 py-2.5 text-sm font-semibold ${btnSecondary.className}`}
+                  style={btnSecondary.style}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleConfirmReverse}
                   disabled={reversing || reversalReason.trim().length < 3}
-                  className={`px-5 py-2 text-sm font-semibold rounded-lg disabled:opacity-60 ${btnDanger.className}`}
+                  className={`px-4 py-2.5 text-sm font-semibold disabled:opacity-60 ${btnDanger.className}`}
                   style={btnDanger.style}
                 >
                   {reversing ? "Reversing…" : "Confirm Reversal"}
@@ -599,19 +612,19 @@ export default function PaymentsPage() {
       {/* ── Party Picker Modal → then opens RecordPaymentModal ──────────── */}
       {showPartyPicker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) setShowPartyPicker(false); }}>
-          <GlassCard className="w-full max-w-sm shadow-2xl">
-            <div className={`flex items-center justify-between px-6 py-4 border-b ${isDark ? "border-slate-700" : "border-slate-200"}`}>
+          <GlassCard className={`w-full max-w-sm border shadow-2xl rounded-2xl overflow-hidden ${isDark ? "bg-slate-900 border-slate-700 text-slate-100" : "bg-white border-gray-200 text-gray-900"}`}>
+            <div className={`flex items-center justify-between px-6 py-4 border-b ${isDark ? "border-slate-700 bg-slate-800/50" : "border-gray-200 bg-gray-50"}`}>
               <div className="flex items-center gap-2">
                 <BanknotesIcon className="w-5 h-5 text-blue-500" />
-                <h3 className={`font-bold text-base ${isDark ? "text-slate-100" : "text-slate-800"}`}>New Payment</h3>
+                <h3 className={`font-bold text-base ${isDark ? "text-slate-100" : "text-gray-900"}`}>New Payment</h3>
               </div>
-              <button onClick={() => setShowPartyPicker(false)} className={`p-1.5 rounded-lg transition-colors ${isDark ? "hover:bg-slate-700 text-slate-400" : "hover:bg-slate-100 text-slate-500"}`}>
+              <button onClick={() => setShowPartyPicker(false)} className={`p-1.5 rounded-lg transition-colors ${isDark ? "hover:bg-slate-700 text-slate-400" : "hover:bg-gray-200/70 text-gray-500"}`}>
                 <XMarkIcon className="w-5 h-5" />
               </button>
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className={`block text-sm font-medium mb-2 ${isDark ? "text-slate-300" : "text-slate-700"}`}>Payment Type</label>
+                <label className={`block text-sm font-medium mb-2 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Payment Type</label>
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     { value: "customer", label: "Customer Receipt", desc: "Money received from customer" },
@@ -623,19 +636,19 @@ export default function PaymentsPage() {
                       onClick={() => { setPickerPartyType(opt.value); setPickerPartyId(null); setPickerPartyName(""); }}
                       className={`p-3 rounded-xl border text-left transition-colors ${
                         pickerPartyType === opt.value
-                          ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30"
-                          : isDark ? "border-slate-600 hover:bg-slate-700" : "border-slate-200 hover:bg-slate-50"
+                          ? isDark ? "border-blue-500 bg-blue-900/30" : "border-blue-500 bg-blue-50"
+                          : isDark ? "border-slate-600 hover:bg-slate-800" : "border-gray-200 hover:bg-gray-50"
                       }`}
                     >
-                      <p className={`text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>{opt.label}</p>
-                      <p className={`text-xs mt-0.5 ${isDark ? "text-slate-400" : "text-slate-500"}`}>{opt.desc}</p>
+                      <p className={`text-sm font-semibold ${isDark ? "text-slate-200" : "text-gray-800"}`}>{opt.label}</p>
+                      <p className={`text-xs mt-0.5 ${isDark ? "text-slate-400" : "text-gray-500"}`}>{opt.desc}</p>
                     </button>
                   ))}
                 </div>
               </div>
 
               <div>
-                <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-gray-700"}`}>
                   Select {pickerPartyType === "customer" ? "Customer" : "Supplier"} *
                 </label>
                 <button
@@ -644,10 +657,10 @@ export default function PaymentsPage() {
                     if (pickerPartyType === "customer") setShowCustomerSearch(true);
                     else setShowSupplierSearch(true);
                   }}
-                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm text-left transition-colors ${
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm text-left transition-colors ${
                     pickerPartyId
                       ? isDark ? "border-blue-600 bg-blue-900/20 text-blue-300" : "border-blue-400 bg-blue-50 text-blue-700"
-                      : isDark ? "border-slate-600 text-slate-400 hover:bg-slate-700" : "border-slate-300 text-slate-500 hover:bg-slate-50"
+                      : isDark ? "border-slate-600 text-slate-400 hover:bg-slate-800" : "border-gray-300 text-gray-500 hover:bg-gray-50"
                   }`}
                 >
                   {pickerPartyId
@@ -658,7 +671,12 @@ export default function PaymentsPage() {
               </div>
 
               <div className="flex justify-end gap-3 pt-1">
-                <button type="button" onClick={() => setShowPartyPicker(false)} className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${isDark ? "bg-slate-700 hover:bg-slate-600 text-slate-300" : "bg-slate-100 hover:bg-slate-200 text-slate-600"}`}>
+                <button
+                  type="button"
+                  onClick={() => setShowPartyPicker(false)}
+                  className={`px-4 py-2.5 text-sm font-semibold ${btnSecondary.className}`}
+                  style={btnSecondary.style}
+                >
                   Cancel
                 </button>
                 <button
@@ -671,7 +689,7 @@ export default function PaymentsPage() {
                     setRecordPartyType(pickerPartyType);
                     setShowRecordModal(true);
                   }}
-                  className={`px-5 py-2 text-sm font-semibold rounded-lg disabled:opacity-50 ${btnPrimary.className}`}
+                  className={`px-4 py-2.5 text-sm font-semibold disabled:opacity-50 ${btnPrimary.className}`}
                   style={btnPrimary.style}
                 >
                   Continue
@@ -717,6 +735,14 @@ export default function PaymentsPage() {
           }}
         />
       )}
+
+      {/* ── Share Document Modal (WhatsApp / Email PDF) ─────────────────── */}
+      <ShareDocumentModal
+        isOpen={Boolean(sharingPaymentId)}
+        onClose={() => setSharingPaymentId(null)}
+        documentType="payment"
+        documentId={sharingPaymentId}
+      />
     </div>
   );
 }

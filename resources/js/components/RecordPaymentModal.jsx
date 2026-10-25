@@ -16,6 +16,7 @@ import {
 import { GlassCard, GlassInput } from "@/components/Glass.jsx";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
+import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import PaymentAccountSelector from "./PaymentAccountSelector.jsx";
 
 const PAYMENT_METHODS = [
@@ -38,6 +39,26 @@ export default function RecordPaymentModal({
 }) {
   const { formatCurrency } = useCurrency();
   const { isDark, theme } = useTheme();
+
+  const buttonStyle = theme?.button_style || "modern";
+  const themeColors = useMemo(() => ({
+    primary: theme?.primary_color || "#3b82f6",
+    primaryHover: theme?.primary_hover || "#2563eb",
+    secondary: theme?.secondary_color || "#8b5cf6",
+    secondaryHover: theme?.secondary_hover || "#7c3aed",
+    tertiary: theme?.tertiary_color || "#06b6d4",
+    tertiaryHover: theme?.tertiary_hover || "#0891b2",
+    emerald: theme?.success_color || "#10b981",
+    emeraldHover: "#059669",
+  }), [theme]);
+
+  const buttonClasses = useMemo(
+    () => getThemeButtonClasses(buttonStyle, themeColors, isDark),
+    [buttonStyle, themeColors, isDark]
+  );
+  const btnPrimary = buttonClasses.primary;
+  const btnSecondary = buttonClasses.secondary;
+  const btnEmerald = buttonClasses.emerald;
 
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -266,24 +287,63 @@ export default function RecordPaymentModal({
       }}
     >
       <div className="relative w-full max-w-3xl my-8">
-        <GlassCard className="border border-slate-700/80 shadow-2xl rounded-2xl overflow-hidden bg-slate-900/95 text-white">
+        <GlassCard
+          className={`border shadow-2xl rounded-2xl overflow-hidden transition-colors ${
+            isDark
+              ? "bg-slate-900/95 border-slate-700/80 text-slate-100"
+              : "bg-white border-gray-200 text-gray-900"
+          }`}
+        >
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/80 bg-slate-800/50">
+          <div
+            className={`flex items-center justify-between px-6 py-4 border-b ${
+              isDark
+                ? "border-slate-700/80 bg-slate-800/50"
+                : "border-gray-200 bg-gray-50"
+            }`}
+          >
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              <div
+                className={`p-2 rounded-xl border ${
+                  isDark
+                    ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                    : "bg-emerald-50 text-emerald-600 border-emerald-200"
+                }`}
+              >
                 <BanknotesIcon className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white">{title}</h3>
-                <p className="text-xs text-slate-400">
-                  Party: <span className="font-semibold text-slate-200">{partyName || `#${partyId}`}</span>
+                <h3
+                  className={`text-base font-bold ${
+                    isDark ? "text-white" : "text-gray-900"
+                  }`}
+                >
+                  {title}
+                </h3>
+                <p
+                  className={`text-xs ${
+                    isDark ? "text-slate-400" : "text-gray-500"
+                  }`}
+                >
+                  Party:{" "}
+                  <span
+                    className={`font-semibold ${
+                      isDark ? "text-slate-200" : "text-gray-800"
+                    }`}
+                  >
+                    {partyName || `#${partyId}`}
+                  </span>
                 </p>
               </div>
             </div>
             <button
               onClick={onClose}
               disabled={submitting}
-              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/60 transition-colors"
+              className={`p-1.5 rounded-lg transition-colors ${
+                isDark
+                  ? "text-slate-400 hover:text-white hover:bg-slate-700/60"
+                  : "text-gray-500 hover:text-gray-900 hover:bg-gray-200/70"
+              }`}
             >
               <XMarkIcon className="w-5 h-5" />
             </button>
@@ -293,7 +353,11 @@ export default function RecordPaymentModal({
             {/* Top Row: Date, Amount, Method */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                <label
+                  className={`block text-xs font-semibold mb-1 ${
+                    isDark ? "text-slate-300" : "text-gray-700"
+                  }`}
+                >
                   Payment Date *
                 </label>
                 <GlassInput
@@ -307,7 +371,11 @@ export default function RecordPaymentModal({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                <label
+                  className={`block text-xs font-semibold mb-1 ${
+                    isDark ? "text-slate-300" : "text-gray-700"
+                  }`}
+                >
                   Payment Amount *
                 </label>
                 <GlassInput
@@ -319,7 +387,9 @@ export default function RecordPaymentModal({
                   placeholder="0.00"
                   required
                   disabled={submitting}
-                  className="w-full text-sm h-10 font-mono font-bold text-emerald-400"
+                  className={`w-full text-sm h-10 font-mono font-bold ${
+                    isDark ? "text-emerald-400" : "text-emerald-600"
+                  }`}
                 />
               </div>
 
@@ -342,7 +412,11 @@ export default function RecordPaymentModal({
             {/* Middle Row: Reference, Notes */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                <label
+                  className={`block text-xs font-semibold mb-1 ${
+                    isDark ? "text-slate-300" : "text-gray-700"
+                  }`}
+                >
                   Reference / Cheque #
                 </label>
                 <GlassInput
@@ -356,7 +430,11 @@ export default function RecordPaymentModal({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                <label
+                  className={`block text-xs font-semibold mb-1 ${
+                    isDark ? "text-slate-300" : "text-gray-700"
+                  }`}
+                >
                   Notes / Remarks
                 </label>
                 <GlassInput
@@ -374,10 +452,18 @@ export default function RecordPaymentModal({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="text-sm font-semibold text-slate-200">
+                  <h4
+                    className={`text-sm font-semibold ${
+                      isDark ? "text-slate-200" : "text-gray-900"
+                    }`}
+                  >
                     Open Invoices Allocation
                   </h4>
-                  <p className="text-xs text-slate-400">
+                  <p
+                    className={`text-xs ${
+                      isDark ? "text-slate-400" : "text-gray-500"
+                    }`}
+                  >
                     Allocate amount to specific open invoices or leave excess as unapplied advance.
                   </p>
                 </div>
@@ -386,50 +472,96 @@ export default function RecordPaymentModal({
                     type="button"
                     onClick={handleAutoAllocate}
                     disabled={submitting}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 border border-blue-500/40 transition-colors"
+                    className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold ${btnSecondary.className}`}
+                    style={btnSecondary.style}
                   >
-                    <SparklesIcon className="w-4 h-4 text-blue-400" />
+                    <SparklesIcon className="w-4 h-4" />
                     <span>Auto-Allocate (Oldest First)</span>
                   </button>
                 )}
               </div>
 
               {loading ? (
-                <div className="p-8 text-center text-sm text-slate-400">
+                <div
+                  className={`p-8 text-center text-sm ${
+                    isDark ? "text-slate-400" : "text-gray-500"
+                  }`}
+                >
                   Loading open invoices...
                 </div>
               ) : openInvoices.length === 0 ? (
-                <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/60 text-center text-xs text-slate-400">
+                <div
+                  className={`p-4 rounded-xl border text-center text-xs ${
+                    isDark
+                      ? "bg-slate-800/40 border-slate-700/60 text-slate-400"
+                      : "bg-gray-50 border-gray-200 text-gray-500"
+                  }`}
+                >
                   No unpaid credit invoices found. Entire amount will be saved as unapplied credit / advance.
                 </div>
               ) : (
-                <div className="rounded-xl border border-slate-700/80 overflow-hidden max-h-56 overflow-y-auto">
+                <div
+                  className={`rounded-xl border overflow-hidden max-h-56 overflow-y-auto ${
+                    isDark ? "border-slate-700/80" : "border-gray-200"
+                  }`}
+                >
                   <table className="w-full text-left text-xs">
-                    <thead className="sticky top-0 bg-slate-800 text-slate-300 border-b border-slate-700">
+                    <thead
+                      className={`sticky top-0 border-b ${
+                        isDark
+                          ? "bg-slate-800 text-slate-300 border-slate-700"
+                          : "bg-gray-50 text-gray-600 border-gray-200"
+                      }`}
+                    >
                       <tr>
-                        <th className="px-3 py-2 font-semibold">Invoice #</th>
-                        <th className="px-3 py-2 font-semibold">Date</th>
-                        <th className="px-3 py-2 font-semibold text-right">Total</th>
-                        <th className="px-3 py-2 font-semibold text-right">Remaining Due</th>
-                        <th className="px-3 py-2 font-semibold text-right w-36">Allocate</th>
-                        <th className="px-3 py-2 text-center w-24">Action</th>
+                        <th className="px-3 py-2.5 font-semibold">Invoice #</th>
+                        <th className="px-3 py-2.5 font-semibold">Date</th>
+                        <th className="px-3 py-2.5 font-semibold text-right">Total</th>
+                        <th className="px-3 py-2.5 font-semibold text-right">Remaining Due</th>
+                        <th className="px-3 py-2.5 font-semibold text-right w-36">Allocate</th>
+                        <th className="px-3 py-2.5 text-center w-24">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-700/50">
+                    <tbody
+                      className={`divide-y ${
+                        isDark ? "divide-slate-700/50" : "divide-gray-100"
+                      }`}
+                    >
                       {openInvoices.map((inv) => {
                         const curAlloc = allocations[inv.id] || "";
                         return (
-                          <tr key={inv.id} className="hover:bg-slate-800/30 transition-colors">
-                            <td className="px-3 py-2.5 font-medium text-slate-200">
+                          <tr
+                            key={inv.id}
+                            className={`transition-colors ${
+                              isDark ? "hover:bg-slate-800/30" : "hover:bg-gray-50"
+                            }`}
+                          >
+                            <td
+                              className={`px-3 py-2.5 font-medium ${
+                                isDark ? "text-slate-200" : "text-gray-900"
+                              }`}
+                            >
                               {inv.posted_number}
                             </td>
-                            <td className="px-3 py-2.5 text-slate-400">
+                            <td
+                              className={`px-3 py-2.5 ${
+                                isDark ? "text-slate-400" : "text-gray-600"
+                              }`}
+                            >
                               {inv.date}
                             </td>
-                            <td className="px-3 py-2.5 text-right text-slate-300 font-mono">
+                            <td
+                              className={`px-3 py-2.5 text-right font-mono ${
+                                isDark ? "text-slate-300" : "text-gray-700"
+                              }`}
+                            >
                               {formatCurrency(inv.total)}
                             </td>
-                            <td className="px-3 py-2.5 text-right font-semibold text-amber-400 font-mono">
+                            <td
+                              className={`px-3 py-2.5 text-right font-semibold font-mono ${
+                                isDark ? "text-amber-400" : "text-amber-600"
+                              }`}
+                            >
                               {formatCurrency(inv.due)}
                             </td>
                             <td className="px-3 py-2 text-right">
@@ -450,7 +582,11 @@ export default function RecordPaymentModal({
                                 type="button"
                                 onClick={() => handlePayInFull(inv)}
                                 disabled={submitting}
-                                className="px-2 py-1 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors"
+                                className={`px-2.5 py-1 rounded text-[11px] font-semibold border transition-colors ${
+                                  isDark
+                                    ? "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border-emerald-500/30"
+                                    : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200"
+                                }`}
                               >
                                 Full
                               </button>
@@ -465,47 +601,85 @@ export default function RecordPaymentModal({
             </div>
 
             {/* Settlement Summary Strip */}
-            <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700 flex flex-wrap items-center justify-between gap-4">
+            <div
+              className={`p-4 rounded-xl border flex flex-wrap items-center justify-between gap-4 ${
+                isDark
+                  ? "bg-slate-800/60 border-slate-700"
+                  : "bg-gray-50 border-gray-200"
+              }`}
+            >
               <div className="flex items-center gap-6">
                 <div>
-                  <span className="text-[11px] uppercase tracking-wider text-slate-400 block font-medium">
+                  <span
+                    className={`text-[11px] uppercase tracking-wider block font-medium ${
+                      isDark ? "text-slate-400" : "text-gray-500"
+                    }`}
+                  >
                     Payment Total
                   </span>
-                  <span className="text-base font-bold text-white font-mono">
+                  <span
+                    className={`text-base font-bold font-mono ${
+                      isDark ? "text-white" : "text-gray-900"
+                    }`}
+                  >
                     {formatCurrency(numAmount)}
                   </span>
                 </div>
                 <div>
-                  <span className="text-[11px] uppercase tracking-wider text-slate-400 block font-medium">
+                  <span
+                    className={`text-[11px] uppercase tracking-wider block font-medium ${
+                      isDark ? "text-slate-400" : "text-gray-500"
+                    }`}
+                  >
                     Allocated
                   </span>
-                  <span className="text-base font-bold text-blue-400 font-mono">
+                  <span
+                    className={`text-base font-bold font-mono ${
+                      isDark ? "text-blue-400" : "text-blue-600"
+                    }`}
+                  >
                     {formatCurrency(totalAllocated)}
                   </span>
                 </div>
                 <div>
-                  <span className="text-[11px] uppercase tracking-wider text-slate-400 block font-medium">
+                  <span
+                    className={`text-[11px] uppercase tracking-wider block font-medium ${
+                      isDark ? "text-slate-400" : "text-gray-500"
+                    }`}
+                  >
                     Unapplied Advance
                   </span>
-                  <span className={`text-base font-bold font-mono ${unappliedCredit > 0 ? "text-emerald-400" : "text-slate-400"}`}>
+                  <span
+                    className={`text-base font-bold font-mono ${
+                      unappliedCredit > 0
+                        ? isDark
+                          ? "text-emerald-400"
+                          : "text-emerald-600"
+                        : isDark
+                        ? "text-slate-400"
+                        : "text-gray-400"
+                    }`}
+                  >
                     {formatCurrency(unappliedCredit)}
                   </span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <button
                   type="button"
                   onClick={onClose}
                   disabled={submitting}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 transition-colors"
+                  className={`px-4 py-2.5 text-sm font-semibold ${btnSecondary.className}`}
+                  style={btnSecondary.style}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting || numAmount <= 0}
-                  className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 transition-colors shadow-lg shadow-emerald-900/40"
+                  className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold disabled:opacity-50 ${btnEmerald.className}`}
+                  style={btnEmerald.style}
                 >
                   <CheckIcon className="w-4 h-4" />
                   <span>{submitting ? "Posting..." : "Confirm & Post Payment"}</span>

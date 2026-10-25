@@ -17,7 +17,7 @@ class SupplierController extends Controller
         $limit = max(1, min((int)$req->input('limit', 20), 100));
         $page  = (int)$req->input('page', 0);
 
-        $query = Supplier::select('id','name','address','phone')->orderBy('name');
+        $query = Supplier::select('id','name','address','phone','email')->orderBy('name');
 
         if ($q !== '') {
             $query->where('name','like',"%{$q}%");
@@ -57,6 +57,7 @@ class SupplierController extends Controller
             'name'         => 'required|string|max:150|unique:suppliers,name',
             'address'      => 'nullable|string|max:255',
             'phone'        => 'nullable|string|max:50',
+            'email'        => 'nullable|email|max:150',
             'credit_limit' => 'nullable|numeric|min:0',
             'credit_days'  => 'nullable|integer|min:0|max:365',
         ]);
@@ -129,6 +130,7 @@ class SupplierController extends Controller
             'name'         => 'required|string|max:150|unique:suppliers,name,' . $supplier->id,
             'address'      => 'nullable|string|max:255',
             'phone'        => 'nullable|string|max:50',
+            'email'        => 'nullable|email|max:150',
             'credit_limit' => 'nullable|numeric|min:0',
             'credit_days'  => 'nullable|integer|min:0|max:365',
         ]);
