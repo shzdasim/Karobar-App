@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import {
@@ -134,6 +134,11 @@ export default function MissingReports({ type }) {
   const [workQueueSearch, setWorkQueueSearch] = useState("");
   const [workQueueMinOverdue, setWorkQueueMinOverdue] = useState("");
 
+  useEffect(() => {
+    setPayload(null);
+    setWorkQueuePayload(null);
+  }, [type]);
+
   const selectedPartyType = partyType === "customers" && !has("customer-ledger.view") ? "suppliers" : partyType;
   const rows = useMemo(() => {
     if (type === "outstanding-aging") {
@@ -144,6 +149,20 @@ export default function MissingReports({ type }) {
     }
     return payload?.rows || [];
   }, [payload, workQueuePayload, selectedPartyType, type, agingTab]);
+
+  // Compute work queue summary KPIs (must be before any early return to follow Rules of Hooks)
+  const workQueueKPIs = useMemo(() => {
+    if (type !== "outstanding-aging" || agingTab !== "work_queue") return {};
+    const parties = workQueuePayload?.parties || [];
+    const critical = parties.filter((p) => (p.max_days_overdue || 0) > 60).length;
+    const maxDays = parties.reduce((m, p) => Math.max(m, p.max_days_overdue || 0), 0);
+    return {
+      total_overdue_sum: workQueuePayload?.total_overdue_sum || 0,
+      total_parties: workQueuePayload?.total_parties || parties.length,
+      critical_count: critical,
+      max_overdue_days: maxDays,
+    };
+  }, [type, agingTab, workQueuePayload]);
 
   if (!report) return <div className="report-page"><section className="products-panel"><p className="report-state">Unknown report.</p></section></div>;
 
@@ -345,19 +364,6 @@ export default function MissingReports({ type }) {
         ]
       : []);
 
-  // Compute work queue summary KPIs
-  const workQueueKPIs = useMemo(() => {
-    if (type !== "outstanding-aging" || agingTab !== "work_queue") return {};
-    const parties = workQueuePayload?.parties || [];
-    const critical = parties.filter((p) => (p.max_days_overdue || 0) > 60).length;
-    const maxDays = parties.reduce((m, p) => Math.max(m, p.max_days_overdue || 0), 0);
-    return {
-      total_overdue_sum: workQueuePayload?.total_overdue_sum || 0,
-      total_parties: workQueuePayload?.total_parties || parties.length,
-      critical_count: critical,
-      max_overdue_days: maxDays,
-    };
-  }, [type, agingTab, workQueuePayload]);
   return (
     <div className="report-page">
       <section className="products-panel">
