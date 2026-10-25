@@ -358,4 +358,5 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::delete('/barcodes/templates/{id}',      [\App\Http\Controllers\BarcodeController::class, 'deleteTemplate']);
     Route::get('/barcodes/products-search',        [\App\Http\Controllers\BarcodeController::class, 'searchProducts']);
     Route::get('/barcodes/purchase-orders',        [\App\Http\Controllers\BarcodeController::class, 'getPurchaseOrders']);
+    Route::get('/barcodes/scan',                   [\App\Http\Controllers\BarcodeController::class, 'scanProduct']);
 });

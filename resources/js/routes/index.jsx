@@ -27,6 +27,7 @@ const EditPurchaseReturn = lazy(() => import("../pages/PurchaseReturn/Edit.jsx")
 const IndexSaleInvoice = lazy(() => import("../pages/SaleInvoice/Index.jsx"));
 const CreateSaleInvoiceRetail = lazy(() => import("../pages/SaleInvoice/CreateRetail.jsx"));
 const CreateSaleInvoiceWholesale = lazy(() => import("../pages/SaleInvoice/CreateWholesale.jsx"));
+const BarcodePos = lazy(() => import("../pages/SaleInvoice/BarcodePos.jsx"));
 const EditSaleInvoice = lazy(() => import("../pages/SaleInvoice/Edit.jsx"));
 const ShowSaleInvoice = lazy(() => import("../pages/SaleInvoice/Show.jsx"));
 const IndexSaleReturn = lazy(() => import("../pages/SaleReturn/Index.jsx"));
@@ -283,6 +284,22 @@ export default function AppRoutes() {
       }
       />
       <Route 
+      path="sale-invoices/pos"
+      element={
+        <ProtectedRoute>
+          <BarcodePos />
+        </ProtectedRoute>
+      }
+      />
+      <Route 
+      path="sale-invoices/barcode-pos"
+      element={
+        <ProtectedRoute>
+          <BarcodePos />
+        </ProtectedRoute>
+      }
+      />
+      <Route 
       path="sale-invoices/create/retail"
       element={
         <ProtectedRoute>
@@ -293,7 +310,29 @@ export default function AppRoutes() {
       }
       />
       <Route 
+      path="sale-invoices/create-retail"
+      element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <CreateSaleInvoiceRetail />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      <Route 
       path="sale-invoices/create/wholesale"
+      element={
+        <ProtectedRoute>
+          <SaleSystemGuard requiredSaleSystem="wholesale">
+            <DashboardLayout>
+              <CreateSaleInvoiceWholesale />
+            </DashboardLayout>
+          </SaleSystemGuard>
+        </ProtectedRoute>
+      }
+      />
+      <Route 
+      path="sale-invoices/create-wholesale"
       element={
         <ProtectedRoute>
           <SaleSystemGuard requiredSaleSystem="wholesale">

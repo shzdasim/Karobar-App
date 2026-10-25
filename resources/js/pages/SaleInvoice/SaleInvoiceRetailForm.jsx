@@ -1,10 +1,10 @@
 import { useInvoiceErrors, InvoiceErrorSummary, InvoiceRowError } from "../../components/InvoiceErrors";
 // /src/pages/sales/SaleInvoiceRetailForm.jsx - Retail Sale Invoice Form (hardcoded retail mode)
 import { useEffect, useRef, useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
 import Select from "react-select";
-import { TrashIcon, PlusIcon, CubeIcon, HashtagIcon, CheckIcon } from "@heroicons/react/24/outline";
+import { TrashIcon, PlusIcon, CubeIcon, HashtagIcon, CheckIcon, QrCodeIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
@@ -1646,6 +1646,15 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                 );
               })}
             </div>
+
+            <Link
+              to="/sale-invoices/pos"
+              title="Switch to High-Speed Hands-Free Barcode POS Mode"
+              className="px-3 py-1.5 text-[11px] font-bold rounded-lg border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 transition-colors"
+            >
+              <QrCodeIcon className="w-4 h-4" />
+              <span>⚡ Barcode POS</span>
+            </Link>
 
             <button
               type="button"

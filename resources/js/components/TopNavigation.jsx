@@ -97,6 +97,7 @@ export default function TopNavigation() {
       items: [
         { name: "Purchase Invoice", path: "/purchase-invoices", icon: <ClipboardDocumentListIcon className="w-5 h-5" />, perm: "purchase-invoice.view" },
         { name: "Sale Invoice", path: "/sale-invoices", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, perm: "sale-invoice.view" },
+        { name: "⚡ Barcode POS", path: "/sale-invoices/pos", icon: <QrCodeIcon className="w-5 h-5" />, perm: "sale-invoice.create" },
       ]
     },
     {

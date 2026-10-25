@@ -17,6 +17,7 @@ import {
   CurrencyDollarIcon,
   ClockIcon,
   ArrowUturnLeftIcon,
+  QrCodeIcon,
 } from "@heroicons/react/24/solid";
 import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
 import DocumentHistoryModal from "@/components/DocumentHistoryModal.jsx";
@@ -574,6 +575,15 @@ export default function SaleInvoicesIndex() {
                   </span>
                 )}
               </button>
+
+              <Link
+                to="/sale-invoices/pos"
+                title="Open High-Speed Barcode Scanning POS Mode"
+                className="products-action theme-btn-secondary"
+              >
+                <QrCodeIcon className="w-4 h-4 text-emerald-500" />
+                <span>⚡ Barcode POS</span>
+              </Link>
 
               <Link
                 to="/sale-invoices/create/retail"

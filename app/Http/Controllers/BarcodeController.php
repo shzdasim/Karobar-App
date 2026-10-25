@@ -254,5 +254,129 @@ class BarcodeController extends Controller
             'purchase_orders' => $orders,
         ]);
     }
+
+    /**
+     * High-speed barcode scanner lookup for POS mode
+     * GET /api/barcodes/scan
+     */
+    public function scanProduct(Request $request)
+    {
+        $code = trim((string) ($request->input('barcode') ?? $request->input('code') ?? ''));
+        $productId = $request->input('product_id');
+
+        if (empty($productId) && $code === '') {
+            return response()->json([
+                'found' => false,
+                'message' => 'Please provide a barcode, product code, or product ID',
+            ], 422);
+        }
+
+        $batchQuery = function ($bq) {
+            $today = now()->toDateString();
+            $bq->orderByRaw("CASE WHEN expiry_date IS NOT NULL AND expiry_date >= '{$today}' THEN 0 ELSE 1 END")
+               ->orderBy('expiry_date', 'asc')
+               ->orderBy('id', 'asc');
+        };
+
+        if (!empty($productId)) {
+            $product = Product::with([
+                'brand:id,name',
+                'category:id,name',
+                'batches' => $batchQuery,
+            ])->find($productId);
+        } else {
+            // Exact match on barcode or product_code
+            $product = Product::with([
+                'brand:id,name',
+                'category:id,name',
+                'batches' => $batchQuery,
+            ])
+            ->where(function ($q) use ($code) {
+                $q->where('barcode', $code)
+                  ->orWhere('product_code', $code);
+            })
+            ->first();
+        }
+
+        if (!$product) {
+            $identifier = !empty($productId) ? "ID '{$productId}'" : "barcode '{$code}'";
+            return response()->json([
+                'found' => false,
+                'barcode' => $code,
+                'message' => "Product with {$identifier} not found",
+            ], 404);
+        }
+
+        // Determine FEFO recommended batch
+        $today = now()->toDateString();
+        $batches = $product->batches;
+        $fefoBatch = $batches->first(function ($b) use ($today) {
+            $isNotExpired = empty($b->expiry_date) || $b->expiry_date >= $today;
+            return $isNotExpired && (int) $b->quantity > 0;
+        });
+
+        // Calculate unassigned stock
+        $totalProductQty = (int) ($product->quantity ?? 0);
+        $totalBatchedQty = (int) $batches->sum('quantity');
+        $unbatchedQty = max(0, $totalProductQty - $totalBatchedQty);
+
+        $selectedBatch = null;
+        if ($fefoBatch) {
+            $selectedBatch = [
+                'id' => $fefoBatch->id,
+                'batch_number' => $fefoBatch->batch_number,
+                'expiry_date' => $fefoBatch->expiry_date,
+                'quantity' => (int) $fefoBatch->quantity,
+                'is_expired' => $fefoBatch->is_expired ?? false,
+                'is_fefo' => true,
+            ];
+        } elseif ($unbatchedQty > 0 || $batches->isEmpty()) {
+            $selectedBatch = [
+                'id' => null,
+                'batch_number' => '',
+                'expiry_date' => null,
+                'quantity' => $unbatchedQty,
+                'is_expired' => false,
+                'is_unbatched' => true,
+            ];
+        } elseif ($batches->isNotEmpty()) {
+            $first = $batches->first();
+            $selectedBatch = [
+                'id' => $first->id,
+                'batch_number' => $first->batch_number,
+                'expiry_date' => $first->expiry_date,
+                'quantity' => (int) $first->quantity,
+                'is_expired' => $first->is_expired ?? false,
+                'is_fefo' => false,
+            ];
+        }
+
+        return response()->json([
+            'found' => true,
+            'product' => [
+                'id' => $product->id,
+                'name' => $product->name,
+                'product_code' => $product->product_code,
+                'barcode' => $product->barcode,
+                'pack_size' => (int) ($product->pack_size ?? 1),
+                'unit_sale_price' => (float) ($product->unit_sale_price ?? 0),
+                'whole_sale_unit_price' => (float) ($product->whole_sale_unit_price ?? 0),
+                'quantity' => $totalProductQty,
+                'max_discount' => (float) ($product->max_discount ?? 100),
+                'is_narcotic' => (bool) ($product->is_narcotic ?? false),
+                'brand' => $product->brand,
+                'category' => $product->category,
+                'unassigned_quantity' => $unbatchedQty,
+                'selected_batch' => $selectedBatch,
+                'batches' => $batches->map(fn ($b) => [
+                    'id' => $b->id,
+                    'batch_number' => $b->batch_number,
+                    'expiry_date' => $b->expiry_date,
+                    'quantity' => (int) $b->quantity,
+                    'is_expired' => $b->is_expired ?? false,
+                ]),
+            ],
+        ]);
+    }
 }
 
