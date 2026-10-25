@@ -21,13 +21,20 @@ class PurchaseReturn extends Model
         'tax_percentage',
         'tax_amount',
         'total',
+        'settlement_mode',
         'payment_method',
         'account_id',
+        'credited_amount',
     ];
 
     public function account()
     {
         return $this->belongsTo(Account::class);
+    }
+
+    public function supplierLedgerEntry()
+    {
+        return $this->hasOne(SupplierLedger::class, 'purchase_return_id');
     }
 
     protected $casts = [

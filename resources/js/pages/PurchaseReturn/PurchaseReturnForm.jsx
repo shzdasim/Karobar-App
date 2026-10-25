@@ -56,6 +56,9 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
     date: new Date().toISOString().slice(0, 10),
     supplier_id: "",
     purchase_invoice_id: "",
+    settlement_mode: "cash_refund",
+    payment_method: "cash",
+    account_id: "",
     remarks: "",
     items: [{ ...defaultItem }],
     gross_total: 0,
@@ -65,6 +68,7 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
     tax_amount: 0,
     total: 0,
   });
+  const [accounts, setAccounts] = useState([]);
   const [drawerPrompt, setDrawerPrompt] = useState(null);
   const originalReturnMetaRef = useRef(null);
   const invoiceErrors = useInvoiceErrors(form.items);
@@ -392,6 +396,7 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
         const requests = [
           axios.get("/api/suppliers"),
           axios.get("/api/products/search", { params: { q: "", limit: 30 } }),
+          axios.get("/api/accounts", { params: { active_only: 1 } }).catch(() => ({ data: [] })),
         ];
         
         
@@ -400,6 +405,8 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
         const catalog = Array.isArray(results[1]?.data?.data) ? results[1].data.data : Array.isArray(results[1]?.data) ? results[1].data : [];
         setCatalogProducts(catalog);
         setProducts(catalog); // until an invoice is chosen
+        const accountsArr = Array.isArray(results[2]?.data?.data) ? results[2].data.data : Array.isArray(results[2]?.data) ? results[2].data : [];
+        setAccounts(accountsArr);
         
       } catch (err) { console.error(err); }
     })();
@@ -486,6 +493,11 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
           date: data.date || new Date().toISOString().slice(0, 10),
           supplier_id: data.supplier_id || "",
           purchase_invoice_id: data.purchase_invoice_id || "",
+          settlement_mode:
+            data.settlement_mode ||
+            (data.purchase_invoice?.invoice_type === "credit" ? "credit_note" : "cash_refund"),
+          payment_method: data.payment_method || "cash",
+          account_id: data.account_id || "",
           remarks: data.remarks || "",
           items: items.map((it) => ({
             ...defaultItem,
@@ -503,6 +515,10 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
           created_at: data.created_at,
           date: data.date,
           total: toNum(data.total),
+          settlement_mode:
+            data.settlement_mode ||
+            (data.purchase_invoice?.invoice_type === "credit" ? "credit_note" : "cash_refund"),
+          payment_method: data.payment_method || "cash",
         };
         setForm((prev) => recalcFooter({ ...prev, ...normalized }, "init"));
         if (normalized.supplier_id) {
@@ -765,8 +781,14 @@ const handleSelectChange = async (field, value) => {
           const invRes = await axios.get(`/api/purchase-invoices/${id}`);
           const inv = invRes.data || {};
           setSelectedInvoiceObj(inv);
+          const autoSettlementMode = inv.invoice_type === "credit" ? "credit_note" : "cash_refund";
+          setForm((prev) => ({
+            ...prev,
+            ...(inv.supplier_id ? { supplier_id: inv.supplier_id } : {}),
+            purchase_invoice_id: id,
+            settlement_mode: autoSettlementMode,
+          }));
           if (inv.supplier_id) {
-            setForm((prev) => ({ ...prev, supplier_id: inv.supplier_id, purchase_invoice_id: id }));
             const supplierObj = (suppliers || []).find((s) => String(s.id) === String(inv.supplier_id)) || null;
             setSelectedSupplierObj(supplierObj);
           }
@@ -777,6 +799,7 @@ const handleSelectChange = async (field, value) => {
         setSelectedInvoiceObj(null);
         setInvoiceItems([]);
         setProducts(catalogProducts);
+        setForm((prev) => ({ ...prev, settlement_mode: "cash_refund" }));
       }
       setRowErrors([]);
       productBatchCache.current = new Map();
@@ -1358,6 +1381,9 @@ const handleSelectChange = async (field, value) => {
       const payloadToSend = returnId
         ? {
             ...form,
+            settlement_mode: form.settlement_mode || "cash_refund",
+            payment_method: form.payment_method || "cash",
+            account_id: form.account_id ? Number(form.account_id) : null,
             purchase_invoice_id:
               form.purchase_invoice_id && String(form.purchase_invoice_id).trim() !== "" ? form.purchase_invoice_id : null,
             items: form.items
@@ -1381,6 +1407,9 @@ const handleSelectChange = async (field, value) => {
             supplier_id: form.supplier_id,
             purchase_invoice_id:
               form.purchase_invoice_id && String(form.purchase_invoice_id).trim() !== "" ? form.purchase_invoice_id : null,
+            settlement_mode: form.settlement_mode || "cash_refund",
+            payment_method: form.payment_method || "cash",
+            account_id: form.account_id ? Number(form.account_id) : null,
             remarks: form.remarks,
             gross_total: form.gross_total,
             discount_percentage: form.discount_percentage,
@@ -1438,8 +1467,14 @@ const handleSelectChange = async (field, value) => {
 
       if (returnId) {
         const orig = originalReturnMetaRef.current || {};
-        const oldCash = Number(orig.total ?? 0);
-        const newCash = toNum(form.total);
+        const origIsCashDrawer =
+          (orig.settlement_mode || "cash_refund") === "cash_refund" &&
+          (orig.payment_method || "cash") === "cash";
+        const newIsCashDrawer =
+          (form.settlement_mode || "cash_refund") === "cash_refund" &&
+          (form.payment_method || "cash") === "cash";
+        const oldCash = origIsCashDrawer ? Number(orig.total ?? 0) : 0;
+        const newCash = newIsCashDrawer ? toNum(form.total) : 0;
         const cashDelta = Math.round((newCash - oldCash) * 100) / 100;
 
         if (Math.abs(cashDelta) > 0.001) {
@@ -2083,23 +2118,89 @@ const handleSelectChange = async (field, value) => {
             </div>
           </div>
 
-          <div className="mt-2 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={handleCancel}
-              className={`px-6 py-3 text-sm font-medium transition-all duration-200 ${btnTertiary.className}`}
-              style={btnTertiary.style}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              className={`px-8 py-3 text-sm font-semibold transition-all duration-200 ${btnPrimary.className}`}
-              style={btnPrimary.style}
-            >
-              {form.returnId || returnId ? "Update Return" : "Create Return"}
-            </button>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+            {/* Settlement Outcome Selector */}
+            <div className={`flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-lg border text-xs ${isDark ? "border-slate-700 bg-slate-700/40" : "border-gray-200 bg-gray-50"}`}>
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-slate-300" : "text-gray-700"}`}>
+                Settlement Outcome:
+              </span>
+              <button
+                type="button"
+                onClick={() => setForm((prev) => ({ ...prev, settlement_mode: "credit_note" }))}
+                className={`px-2.5 py-1 rounded-md border text-[11px] font-semibold transition-all ${
+                  form.settlement_mode === "credit_note" || form.settlement_mode === "invoice_offset"
+                    ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-200"
+                    : isDark
+                      ? "border-slate-600 bg-slate-700 text-slate-300"
+                      : "border-gray-300 bg-white text-gray-700"
+                }`}
+              >
+                Adjust Supplier Ledger (Debit Note)
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm((prev) => ({ ...prev, settlement_mode: "cash_refund" }))}
+                className={`px-2.5 py-1 rounded-md border text-[11px] font-semibold transition-all ${
+                  form.settlement_mode === "cash_refund"
+                    ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-200"
+                    : isDark
+                      ? "border-slate-600 bg-slate-700 text-slate-300"
+                      : "border-gray-300 bg-white text-gray-700"
+                }`}
+              >
+                Instant Refund (Cash / Bank / Wallet)
+              </button>
+
+              {form.settlement_mode === "cash_refund" && (
+                <>
+                  <select
+                    value={form.payment_method || "cash"}
+                    onChange={(e) => setForm((prev) => ({ ...prev, payment_method: e.target.value, account_id: "" }))}
+                    className={`h-7 rounded border px-2 text-[11px] ${
+                      isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-300 bg-white text-gray-800"
+                    }`}
+                  >
+                    <option value="cash">Cash (Drawer)</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="card">Card / POS</option>
+                    <option value="mobile_wallet">Mobile Wallet</option>
+                  </select>
+                  <select
+                    value={form.account_id || ""}
+                    onChange={(e) => setForm((prev) => ({ ...prev, account_id: e.target.value }))}
+                    className={`h-7 rounded border px-2 text-[11px] ${
+                      isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-300 bg-white text-gray-800"
+                    }`}
+                  >
+                    <option value="">Auto ({form.payment_method || "cash"})</option>
+                    {accounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.name}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleCancel}
+                className={`px-6 py-3 text-sm font-medium transition-all duration-200 ${btnTertiary.className}`}
+                style={btnTertiary.style}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                className={`px-8 py-3 text-sm font-semibold transition-all duration-200 ${btnPrimary.className}`}
+                style={btnPrimary.style}
+              >
+                {form.returnId || returnId ? "Update Return" : "Create Return"}
+              </button>
+            </div>
           </div>
         </div>
 

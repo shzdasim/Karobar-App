@@ -239,6 +239,9 @@ public function index(Request $request)
             'tax_percentage'        => 'nullable|numeric',
             'tax_amount'            => 'nullable|numeric',
             'total'                 => 'required|numeric',
+            'settlement_mode'       => 'nullable|string|in:cash_refund,credit_note,invoice_offset',
+            'payment_method'        => 'nullable|string|in:cash,bank_transfer,card,mobile_wallet',
+            'account_id'            => 'nullable|integer|exists:accounts,id',
 
             'items'                                 => 'required|array|min:1',
             'items.*.product_id'                    => 'required|exists:products,id',
@@ -278,23 +281,15 @@ public function index(Request $request)
 
             $this->createItemsAndReduce($pr, $data['items']);
 
-            // Cash drawer integration
-            app(\App\Services\CashDrawerService::class)->handlePurchaseReturnCreation($pr, \Illuminate\Support\Facades\Auth::user());
+            $settlementService = app(\App\Services\ReturnSettlementService::class);
+            $pr->settlement_mode = $settlementService->resolvePurchaseSettlementMode(
+                $data['settlement_mode'] ?? null,
+                isset($data['purchase_invoice_id']) ? (int) $data['purchase_invoice_id'] : null
+            );
+            $pr->payment_method = $data['payment_method'] ?? 'cash';
+            $pr->account_id = $data['account_id'] ?? null;
 
-            // Financial account refund deposit
-            if ((float)$pr->total > 0) {
-                $account = app(\App\Services\AccountService::class)->resolveAccount($pr->account_id, $pr->payment_method ?? 'cash');
-                if ($account) {
-                    app(\App\Services\AccountService::class)->deposit(
-                        $account,
-                        (float)$pr->total,
-                        'purchase_return',
-                        $pr->id,
-                        "Supplier refund for Purchase Return #{$pr->posted_number}",
-                        \Illuminate\Support\Facades\Auth::user()
-                    );
-                }
-            }
+            $settlementService->applyPurchaseReturnSettlement($pr, \Illuminate\Support\Facades\Auth::user());
 
             return $pr->load(['supplier', 'purchaseInvoice', 'items.product']);
         });
@@ -316,6 +311,9 @@ public function index(Request $request)
             'tax_percentage'        => 'nullable|numeric',
             'tax_amount'            => 'nullable|numeric',
             'total'                 => 'required|numeric',
+            'settlement_mode'       => 'nullable|string|in:cash_refund,credit_note,invoice_offset',
+            'payment_method'        => 'nullable|string|in:cash,bank_transfer,card,mobile_wallet',
+            'account_id'            => 'nullable|integer|exists:accounts,id',
 
             'items'                                 => 'required|array|min:1',
             'items.*.product_id'                    => 'required|exists:products,id',
@@ -334,7 +332,12 @@ public function index(Request $request)
         return DB::transaction(function () use ($purchaseReturn, $data, $request) {
             $purchaseReturn->load('items');
             $this->validateStockAvailability($data['items'], $purchaseReturn->items);
-            $oldTotal = (float) $purchaseReturn->total;
+            $oldSnapshot = [
+                'total'           => (float) $purchaseReturn->total,
+                'settlement_mode' => $purchaseReturn->settlement_mode ?: 'cash_refund',
+                'payment_method'  => $purchaseReturn->payment_method ?: 'cash',
+                'account_id'      => $purchaseReturn->account_id,
+            ];
             app(\App\Services\ReturnEntitlement::class)->validate('purchase', $data, $purchaseReturn);
             // Revert previous stock effects
             $this->revertItems($purchaseReturn);
@@ -360,27 +363,23 @@ public function index(Request $request)
             // Apply new items
             $this->createItemsAndReduce($purchaseReturn, $data['items']);
 
-            // Cash drawer integration
-            app(\App\Services\CashDrawerService::class)->syncPurchaseReturnUpdate(
+            $settlementService = app(\App\Services\ReturnSettlementService::class);
+            $purchaseReturn->settlement_mode = $settlementService->resolvePurchaseSettlementMode(
+                $data['settlement_mode'] ?? null,
+                isset($data['purchase_invoice_id']) ? (int) $data['purchase_invoice_id'] : null,
+                $oldSnapshot['settlement_mode']
+            );
+            $purchaseReturn->payment_method = $data['payment_method'] ?? ($oldSnapshot['payment_method'] ?: 'cash');
+            if (array_key_exists('account_id', $data)) {
+                $purchaseReturn->account_id = $data['account_id'];
+            }
+
+            $settlementService->syncPurchaseReturnSettlementUpdate(
                 $purchaseReturn,
-                $oldTotal,
-                (float) $purchaseReturn->total,
+                $oldSnapshot,
                 $request->has('update_drawer_if_pre_shift') ? $request->boolean('update_drawer_if_pre_shift') : null,
                 \Illuminate\Support\Facades\Auth::user()
             );
-
-            // Financial account update
-            $delta = round((float)$purchaseReturn->total - $oldTotal, 2);
-            if (abs($delta) > 0.001) {
-                $account = app(\App\Services\AccountService::class)->resolveAccount($purchaseReturn->account_id, $purchaseReturn->payment_method ?? 'cash');
-                if ($account) {
-                    if ($delta > 0) {
-                        app(\App\Services\AccountService::class)->deposit($account, $delta, 'purchase_return_update', $purchaseReturn->id, "Purchase Return update #{$purchaseReturn->posted_number} (extra refund {$delta})", \Illuminate\Support\Facades\Auth::user());
-                    } else {
-                        app(\App\Services\AccountService::class)->withdraw($account, abs($delta), 'purchase_return_update', $purchaseReturn->id, "Purchase Return update #{$purchaseReturn->posted_number} (refund reduced {$delta})", \Illuminate\Support\Facades\Auth::user());
-                    }
-                }
-            }
 
             return $purchaseReturn->load(['supplier', 'purchaseInvoice', 'items.product']);
         });
@@ -392,23 +391,10 @@ public function index(Request $request)
         return DB::transaction(function () use ($purchaseReturn) {
             app(\App\Services\ReturnEntitlement::class)->lockSource('purchase', $purchaseReturn);
 
-            // Cash drawer integration
-            app(\App\Services\CashDrawerService::class)->handlePurchaseReturnDeletion($purchaseReturn, \Illuminate\Support\Facades\Auth::user());
-
-            // Financial account recovery
-            if ((float)$purchaseReturn->total > 0) {
-                $account = app(\App\Services\AccountService::class)->resolveAccount($purchaseReturn->account_id, $purchaseReturn->payment_method ?? 'cash');
-                if ($account) {
-                    app(\App\Services\AccountService::class)->withdraw(
-                        $account,
-                        (float)$purchaseReturn->total,
-                        'purchase_return_deletion',
-                        $purchaseReturn->id,
-                        "Reversal for deleted purchase return #{$purchaseReturn->posted_number}",
-                        \Illuminate\Support\Facades\Auth::user()
-                    );
-                }
-            }
+            app(\App\Services\ReturnSettlementService::class)->revertPurchaseReturnSettlement(
+                $purchaseReturn,
+                \Illuminate\Support\Facades\Auth::user()
+            );
 
             $this->revertItems($purchaseReturn);
             $purchaseReturn->items()->delete();

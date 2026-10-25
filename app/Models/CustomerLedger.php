@@ -11,6 +11,7 @@ class CustomerLedger extends Model
     protected $fillable = [
         'customer_id',
         'sale_invoice_id',
+        'sale_return_id',
         'payment_id',
         'entry_date',
         'due_date',
@@ -75,5 +76,10 @@ class CustomerLedger extends Model
     public function saleInvoice(): BelongsTo
     {
         return $this->belongsTo(SaleInvoice::class);
+    }
+
+    public function saleReturn(): BelongsTo
+    {
+        return $this->belongsTo(SaleReturn::class, 'sale_return_id');
     }
 }

@@ -137,6 +137,7 @@ class CustomerLedgerController extends Controller
                 'id'                => $r->id,
                 'customer_id'       => $r->customer_id,
                 'sale_invoice_id'   => $r->sale_invoice_id,
+                'sale_return_id'    => $r->sale_return_id,
                 'entry_type'        => $r->entry_type, // payment | manual
                 'is_manual'         => (bool)$r->is_manual,
                 'entry_date'        => optional($r->entry_date)->format('Y-m-d'),
@@ -306,6 +307,9 @@ class CustomerLedgerController extends Controller
         $this->authorize('delete', $customerLedger);
         if ($customerLedger->entry_type === 'invoice' && !$customerLedger->is_manual) {
             return response()->json(['message' => 'Cannot delete invoice row'], 422);
+        }
+        if (!empty($customerLedger->sale_return_id)) {
+            return response()->json(['message' => 'Cannot delete auto-synced return credit note row. Delete or edit the Sale Return instead.'], 422);
         }
         $customerLedger->delete();
         return response()->json(['status' => 'ok']);

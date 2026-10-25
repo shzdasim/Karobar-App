@@ -155,6 +155,9 @@ class SupplierLedgerController extends Controller
         if (!$row->is_manual && $row->entry_type === 'invoice') {
             return response()->json(['message' => 'Cannot delete auto-synced invoice row.'], 422);
         }
+        if (!empty($row->purchase_return_id)) {
+            return response()->json(['message' => 'Cannot delete auto-synced return debit note row. Delete or edit the Purchase Return instead.'], 422);
+        }
         $row->delete();
         return response()->json(['status' => 'ok']);
     }

@@ -146,7 +146,7 @@ class SaleReturnController extends Controller
         $qPosted   = trim((string) $request->query('posted'));
         $qCustomer = trim((string) $request->query('customer'));
 
-        $query = \App\Models\SaleReturn::with(['customer'])->latest();
+        $query = \App\Models\SaleReturn::with(['customer', 'saleInvoice'])->latest();
 
         if ($qPosted !== '') {
             $query->where('posted_number', 'like', '%' . $qPosted . '%');
@@ -185,6 +185,9 @@ class SaleReturnController extends Controller
             'tax_percentage'      => 'nullable|numeric',
             'tax_amount'          => 'nullable|numeric',
             'total'               => 'required|numeric',
+            'settlement_mode'     => 'nullable|string|in:cash_refund,credit_note,invoice_offset',
+            'payment_method'      => 'nullable|string|in:cash,bank_transfer,card,mobile_wallet',
+            'account_id'          => 'nullable|integer|exists:accounts,id',
 
             'items'                             => 'required|array|min:1',
             'items.*.product_id'                => 'required|exists:products,id',
@@ -226,25 +229,17 @@ class SaleReturnController extends Controller
 
             $this->createItemsAndIncrease($sr, $data['items']);
 
-            // Cash drawer integration
-            app(\App\Services\CashDrawerService::class)->handleSaleReturnCreation($sr, Auth::user());
+            $settlementService = app(\App\Services\ReturnSettlementService::class);
+            $sr->settlement_mode = $settlementService->resolveSaleSettlementMode(
+                $data['settlement_mode'] ?? null,
+                isset($data['sale_invoice_id']) ? (int) $data['sale_invoice_id'] : null
+            );
+            $sr->payment_method = $data['payment_method'] ?? 'cash';
+            $sr->account_id = $data['account_id'] ?? null;
 
-            // Financial account refund withdrawal
-            if ((float)$sr->total > 0) {
-                $account = app(\App\Services\AccountService::class)->resolveAccount($sr->account_id, $sr->payment_method ?? 'cash');
-                if ($account) {
-                    app(\App\Services\AccountService::class)->withdraw(
-                        $account,
-                        (float)$sr->total,
-                        'sale_return',
-                        $sr->id,
-                        "Refund for Sale Return #{$sr->posted_number}",
-                        Auth::user()
-                    );
-                }
-            }
+            $settlementService->applySaleReturnSettlement($sr, Auth::user());
 
-            return $sr->load(['customer', 'items.product']);
+            return $sr->load(['customer', 'saleInvoice', 'items.product']);
         });
     }
 
@@ -266,6 +261,9 @@ class SaleReturnController extends Controller
             'tax_percentage'      => 'nullable|numeric',
             'tax_amount'          => 'nullable|numeric',
             'total'               => 'required|numeric',
+            'settlement_mode'     => 'nullable|string|in:cash_refund,credit_note,invoice_offset',
+            'payment_method'      => 'nullable|string|in:cash,bank_transfer,card,mobile_wallet',
+            'account_id'          => 'nullable|integer|exists:accounts,id',
 
             'items'                             => 'required|array|min:1',
             'items.*.product_id'                => 'required|exists:products,id',
@@ -284,7 +282,12 @@ class SaleReturnController extends Controller
         }
 
         return DB::transaction(function () use ($saleReturn, $data, $userId, $request) {
-            $oldTotal = (float) $saleReturn->total;
+            $oldSnapshot = [
+                'total'           => (float) $saleReturn->total,
+                'settlement_mode' => $saleReturn->settlement_mode ?: 'cash_refund',
+                'payment_method'  => $saleReturn->payment_method ?: 'cash',
+                'account_id'      => $saleReturn->account_id,
+            ];
             app(\App\Services\ReturnEntitlement::class)->validate('sale', $data, $saleReturn);
             $originalItems = (int) $saleReturn->sale_invoice_id === (int) ($data['sale_invoice_id'] ?? 0)
                 && (int) $saleReturn->customer_id === (int) $data['customer_id'] ? $saleReturn->items()->get() : collect();
@@ -310,29 +313,25 @@ class SaleReturnController extends Controller
 
             $this->createItemsAndIncrease($saleReturn, $data['items'], $originalItems);
 
-            // Cash drawer integration
-            app(\App\Services\CashDrawerService::class)->syncSaleReturnUpdate(
+            $settlementService = app(\App\Services\ReturnSettlementService::class);
+            $saleReturn->settlement_mode = $settlementService->resolveSaleSettlementMode(
+                $data['settlement_mode'] ?? null,
+                isset($data['sale_invoice_id']) ? (int) $data['sale_invoice_id'] : null,
+                $oldSnapshot['settlement_mode']
+            );
+            $saleReturn->payment_method = $data['payment_method'] ?? ($oldSnapshot['payment_method'] ?: 'cash');
+            if (array_key_exists('account_id', $data)) {
+                $saleReturn->account_id = $data['account_id'];
+            }
+
+            $settlementService->syncSaleReturnSettlementUpdate(
                 $saleReturn,
-                $oldTotal,
-                (float) $saleReturn->total,
+                $oldSnapshot,
                 $request->has('update_drawer_if_pre_shift') ? $request->boolean('update_drawer_if_pre_shift') : null,
                 Auth::user()
             );
 
-            // Financial account update
-            $delta = round((float)$saleReturn->total - $oldTotal, 2);
-            if (abs($delta) > 0.001) {
-                $account = app(\App\Services\AccountService::class)->resolveAccount($saleReturn->account_id, $saleReturn->payment_method ?? 'cash');
-                if ($account) {
-                    if ($delta > 0) {
-                        app(\App\Services\AccountService::class)->withdraw($account, $delta, 'sale_return_update', $saleReturn->id, "Sale Return update #{$saleReturn->posted_number} (extra refund {$delta})", Auth::user());
-                    } else {
-                        app(\App\Services\AccountService::class)->deposit($account, abs($delta), 'sale_return_update', $saleReturn->id, "Sale Return update #{$saleReturn->posted_number} (refund reduced +{$delta})", Auth::user());
-                    }
-                }
-            }
-
-            return $saleReturn->load(['customer', 'items.product']);
+            return $saleReturn->load(['customer', 'saleInvoice', 'items.product']);
         });
     }
 
@@ -344,23 +343,7 @@ class SaleReturnController extends Controller
         return DB::transaction(function () use ($saleReturn) {
             app(\App\Services\ReturnEntitlement::class)->lockSource('sale', $saleReturn);
 
-            // Cash drawer integration
-            app(\App\Services\CashDrawerService::class)->handleSaleReturnDeletion($saleReturn, Auth::user());
-
-            // Financial account recovery
-            if ((float)$saleReturn->total > 0) {
-                $account = app(\App\Services\AccountService::class)->resolveAccount($saleReturn->account_id, $saleReturn->payment_method ?? 'cash');
-                if ($account) {
-                    app(\App\Services\AccountService::class)->deposit(
-                        $account,
-                        (float)$saleReturn->total,
-                        'sale_return_deletion',
-                        $saleReturn->id,
-                        "Recovery for deleted sale return #{$saleReturn->posted_number}",
-                        Auth::user()
-                    );
-                }
-            }
+            app(\App\Services\ReturnSettlementService::class)->revertSaleReturnSettlement($saleReturn, Auth::user());
 
             $this->revertItems($saleReturn);
             $saleReturn->items()->delete();

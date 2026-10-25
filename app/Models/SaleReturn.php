@@ -9,11 +9,15 @@ class SaleReturn extends Model
     protected $fillable = [
         'sale_invoice_id', 'user_id', 'customer_id', 'posted_number', 'date',
         'discount_percentage', 'discount_amount', 'tax_percentage', 'tax_amount',
-        'total', 'gross_total', 'payment_method', 'account_id'
+        'total', 'gross_total', 'settlement_mode', 'payment_method', 'account_id', 'credited_amount'
     ];
 
     public function account(){
         return $this->belongsTo(Account::class);
+    }
+
+    public function customerLedgerEntry(){
+        return $this->hasOne(CustomerLedger::class, 'sale_return_id');
     }
 
     public function user(){

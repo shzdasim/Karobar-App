@@ -12,6 +12,7 @@ class SupplierLedger extends Model
     protected $fillable = [
         'supplier_id',
         'purchase_invoice_id',
+        'purchase_return_id',
         'payment_id',
         'entry_type',          // 'invoice' | 'payment' | 'manual'
         'entry_date',
@@ -46,5 +47,10 @@ class SupplierLedger extends Model
     public function purchaseInvoice()
     {
         return $this->belongsTo(PurchaseInvoice::class);
+    }
+
+    public function purchaseReturn()
+    {
+        return $this->belongsTo(PurchaseReturn::class, 'purchase_return_id');
     }
 }
