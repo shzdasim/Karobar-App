@@ -35,6 +35,7 @@ CalculatorIcon,
   ServerIcon,
   QrCodeIcon,
   BuildingLibraryIcon,
+  ShieldExclamationIcon,
 } from "@heroicons/react/24/outline";
 import { usePermissions } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
@@ -98,6 +99,7 @@ export default function ClassicSidebar({ appName, logoUrl }) {
     { name: "Customers", path: "/customers", icon: <UserPlusIcon className="w-5 h-5" />, perm: "customer.view", parent: "core" },
     { type: "section", name: "Batch & Expiry", key: "batch_tracking", icon: <ClockIcon className="w-5 h-5" /> },
     { name: "Expiry & Tracking", path: "/batch-expiry", icon: <ClockIcon className="w-5 h-5" />, perm: "product.view", parent: "batch_tracking" },
+    { name: "Quarantine & Disposal", path: "/stock-disposals", icon: <ShieldExclamationIcon className="w-5 h-5" />, perm: "product.view", parent: "batch_tracking" },
     { type: "section", name: "Invoices", key: "invoices", icon: <DocumentTextIcon className="w-5 h-5" /> },
     { name: "Purchase Invoice", path: "/purchase-invoices", icon: <ClipboardDocumentListIcon className="w-5 h-5" />, perm: "purchase-invoice.view", parent: "invoices" },
     { name: "Sale Invoice", path: "/sale-invoices", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, perm: "sale-invoice.view", parent: "invoices" },

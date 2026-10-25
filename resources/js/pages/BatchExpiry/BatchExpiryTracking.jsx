@@ -419,6 +419,20 @@ export default function BatchExpiryTracking() {
     });
   };
 
+  // Navigate to Quarantine / Stock Disposal creation with prefilled batch data
+  const handleDisposeBatch = (row) => {
+    const params = new URLSearchParams({
+      product_id: String(row.product_id || ""),
+      batch_id: String(row.batch_id || ""),
+      batch_number: String(row.batch_number || ""),
+      expiry_date: String(row.expiry_date || ""),
+      qty: String(row.quantity || 1),
+      unit_cost: String(row.unit_cost || 0),
+      cause: "shelf_expiry",
+    });
+    navigate(`/stock-disposals/create?${params.toString()}`);
+  };
+
   const fmtCurrency = (v) =>
     Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtNumber = (v) =>
@@ -946,18 +960,30 @@ export default function BatchExpiryTracking() {
                         </div>
                       </td>
 
-                      {/* Actions: Theme Return Button */}
+                      {/* Actions: Theme Return & Quarantine/Dispose Buttons */}
                       <td className="py-3 px-3.5 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleReturnToSupplier(row)}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold theme-btn-primary ${btnPrimary.className}`}
-                          style={btnPrimary.style}
-                          title="Create purchase return for this batch"
-                        >
-                          <ArrowUturnDownIcon className="w-3 h-3" />
-                          <span>Return</span>
-                        </button>
+                        <div className="inline-flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleReturnToSupplier(row)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold theme-btn-primary ${btnPrimary.className}`}
+                            style={btnPrimary.style}
+                            title="Create purchase return for this batch"
+                          >
+                            <ArrowUturnDownIcon className="w-3 h-3" />
+                            <span>Return</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDisposeBatch(row)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold theme-btn-secondary ${btnSecondary.className}`}
+                            style={btnSecondary.style}
+                            title="Quarantine or dispose of this expired/near-expiry batch"
+                          >
+                            <ShieldExclamationIcon className="w-3.5 h-3.5 text-rose-500" />
+                            <span>Quarantine / Dispose</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

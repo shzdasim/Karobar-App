@@ -382,4 +382,14 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/share/pdf',       [\App\Http\Controllers\DocumentShareController::class, 'pdf']);
     Route::post('/share/email',    [\App\Http\Controllers\DocumentShareController::class, 'sendEmail']);
     Route::post('/share/whatsapp', [\App\Http\Controllers\DocumentShareController::class, 'sendWhatsApp']);
+
+    // -------------------------------------------------------------------------
+    // Quarantine & Scrap Stock Disposals
+    // -------------------------------------------------------------------------
+    Route::get('/stock-disposals/new-code',         [\App\Http\Controllers\StockDisposalController::class, 'newCode']);
+    Route::get('/stock-disposals',                  [\App\Http\Controllers\StockDisposalController::class, 'index']);
+    Route::post('/stock-disposals',                 [\App\Http\Controllers\StockDisposalController::class, 'store']);
+    Route::get('/stock-disposals/{id}',             [\App\Http\Controllers\StockDisposalController::class, 'show']);
+    Route::post('/stock-disposals/{id}/dispose',    [\App\Http\Controllers\StockDisposalController::class, 'dispose']);
+    Route::post('/stock-disposals/{id}/restore',    [\App\Http\Controllers\StockDisposalController::class, 'restore']);
 });

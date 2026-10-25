@@ -66,6 +66,15 @@ class RolesAndPermissionsSeeder extends Seeder
         $stockModules = ['stock-adjustment'];
         $stockActions = ['view','create','update','delete'];
 
+        // Stock Disposal & Quarantine
+        $disposalPerms = [
+            'stock-disposal.view',
+            'stock-disposal.create',
+            'stock-disposal.dispose',
+            'stock-disposal.restore',
+            'stock-disposal.delete',
+        ];
+
         // Settings – usually view/update only
         $settingsModules = ['settings'];
         $settingsActions = ['view','update'];
@@ -90,6 +99,8 @@ class RolesAndPermissionsSeeder extends Seeder
         foreach ($stockModules as $m) {
             foreach ($stockActions as $a) $perms[] = "{$m}.{$a}";
         }
+
+        foreach ($disposalPerms as $p) $perms[] = $p;
 
         foreach ($settingsModules as $m) {
             foreach ($settingsActions as $a) $perms[] = "{$m}.{$a}";

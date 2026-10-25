@@ -61,6 +61,9 @@ const StocktakeIndex = lazy(() => import("../pages/stocktake/index.jsx"));
 const CreateStocktake = lazy(() => import("../pages/stocktake/Create.jsx"));
 const StocktakeSession = lazy(() => import("../pages/stocktake/Session.jsx"));
 const StocktakeReview = lazy(() => import("../pages/stocktake/Review.jsx"));
+// Stock Disposals & Quarantine
+const StockDisposalsIndex = lazy(() => import("../pages/StockDisposals/index.jsx"));
+const CreateStockDisposal = lazy(() => import("../pages/StockDisposals/Create.jsx"));
 // Financial Accounts & Payment Vouchers
 const AccountsPage = lazy(() => import("../pages/Accounts/index.jsx"));
 const PaymentsPage = lazy(() => import("../pages/Payments/index.jsx"));
@@ -642,6 +645,27 @@ export default function AppRoutes() {
         <ProtectedRoute>
           <DashboardLayout>
             <StocktakeReview />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      {/* Stock Disposals & Quarantine */}
+      <Route
+      path="stock-disposals"
+      element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <StockDisposalsIndex />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      <Route
+      path="stock-disposals/create"
+      element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <CreateStockDisposal />
           </DashboardLayout>
         </ProtectedRoute>
       }
