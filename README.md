@@ -197,7 +197,8 @@ Depending on your store configuration, Sale Invoices support two tailored modes:
 * **Hold & Resume Drafts (`Alt+H` / `Alt+D`):** Put an unfinished bill on hold if a customer steps away, serve other customers, and resume the held draft anytime with live stock re-verification.
 * **Smart Overpayment Handling:** If a credit customer pays more than the current bill total, the extra amount is automatically credited to their **Customer Ledger** to reduce their previous dues.
 
-![Sale Invoice](Screenshots/SaleInvoice.png)
+![Sale Invoices List](Screenshots/Sale-Invoice-Index.png)
+![Add Sale Invoice](Screenshots/Add-Sale-Invoice-page.png)
 
 #### 4.3 ⚡ Barcode POS (Fast Checkout Terminal)
 A dedicated, full-screen, distraction-free counter terminal built for high-speed barcode scanning and keyboard-only operation.
@@ -206,7 +207,7 @@ A dedicated, full-screen, distraction-free counter terminal built for high-speed
 * **Visual Product Grid & Quick Search (`F2`):** Search by name or click product cards when an item doesn't have a barcode.
 * **Instant Cash & Change Calculator:** Enter cash received, see large-font customer change due, and press `Enter` or `Alt+S` to save and auto-print a 78mm thermal receipt in one step.
 
-![Barcode POS](Screenshots/BarcodePOS.png)
+![High-Speed Barcode POS](Screenshots/High-Speed-Barcode-POS.png)
 
 ---
 
@@ -217,13 +218,15 @@ Handle customer refunds and supplier returns accurately without messing up your 
 * **Return Stock to Suppliers:** Select the supplier and original purchase invoice (or batch) to return expired, near-expiry, damaged, or excess goods.
 * **Automatic Stock & Ledger Update:** Deducts the returned quantities from the exact batch and automatically reduces your payable balance in the **Supplier Ledger** (or records a cash refund).
 
-![Purchase Return](Screenshots/PurchaseReturn.png)
+![Purchase Returns List](Screenshots/Purchase-return-index.png)
+![Add Purchase Return](Screenshots/Add-Purchase-return-page.png)
 
 #### 5.2 Sale Return
 * **Customer Returns & Refunds:** Look up the original sale invoice (by invoice number or barcode scan) or select items returned by a customer.
 * **Batch Restoration & Refund Settlement:** Puts returned items back into their original inventory batch and either refunds cash from the **Cash Drawer** or credits the customer's **Khata (Ledger)** balance.
 
-![Sale Return](Screenshots/SaleReturn.png)
+![Sale Returns List](Screenshots/Sale-Return-Index.png)
+![Add Sale Return](Screenshots/Add-Sale-Return-Page.png)
 
 ---
 
@@ -234,18 +237,22 @@ Proactive inventory planning, shortage tracking, and physical stock auditing too
 * **Demand Forecasting Engine:** Analyzes your historical sales velocity and current stock levels to recommend exactly which products to order and in what quantities.
 * **Supplier Purchase Orders (PO):** Generate formal Purchase Orders for suppliers, track order status (*Draft, Sent, Partially Received, Completed*), and convert received orders into Purchase Invoices.
 
-![Purchase Orders](Screenshots/PurchaseOrders.png)
+![Purchase Orders List](Screenshots/Purchase-Order-Index.png)
+![Add Purchase Order](Screenshots/Add-Purchase-Order.png)
+![Purchase Order Forecast](Screenshots/Purchase-Order-Forcast.png)
 
 #### 6.2 User Demands (Shortbook / Wanted Items)
 * **Daily Counter Shortbook:** When a customer asks for an item that is out of stock or not yet carried in your shop, cashiers can log it in **User Demands** in seconds.
 * **Never Miss Sales Again:** At ordering time, review your User Demands list to turn customer requests into supplier orders.
 
-![User Demands](Screenshots/UserDemands.png)
+![User Demands List](Screenshots/User-Demands.png)
+![Request Product Demand](Screenshots/User-Demand-Request-Product.png)
 
 #### 6.3 Stock Adjustments
 * **Quick Count Corrections:** Make authorized manual additions or deductions to product batches when you find minor count differences, sample giveaways, or unpackaged units, with mandatory reason notes for full accountability.
 
-![Stock Adjustments](Screenshots/StockAdjustments.png)
+![Stock Adjustments List](Screenshots/Stock-Adjustment.png)
+![Add Stock Adjustment](Screenshots/Add-Stock-Adjustment.png)
 
 #### 6.4 Stocktake Sessions (Physical Inventory Audit)
 A structured multi-step workflow for conducting full-store or shelf-by-shelf physical stock counts:
@@ -254,7 +261,9 @@ A structured multi-step workflow for conducting full-store or shelf-by-shelf phy
 3. **Variance Review (`Pending Review`):** Managers review a side-by-side comparison of **System Expected Stock** vs. **Physical Counted Stock**, highlighting shortages and overages with their exact financial value.
 4. **Finalize & Sync (`Finalized`):** With one click, approve the session to automatically update all batch quantities to match the real physical count.
 
-![Stocktake Sessions](Screenshots/StocktakeSessions.png)
+![Stocktake Sessions](Screenshots/StockTake-Session.png)
+![New Stocktake Session](Screenshots/New%20StockIntake-Session.png)
+![Start Stocktake Session](Screenshots/StockTakeSessionStart.png)
 
 ---
 
@@ -265,31 +274,31 @@ Complete double-entry financial control covering customer credit (*Udhaar*), sup
 * **Complete Accounts Payable Khata:** Select any supplier to view a chronological statement of all Purchase Invoices, Purchase Returns, Cash/Bank Payments, and the running balance you owe them.
 * **Printable Statements:** Filter by date range and print or export A4 Supplier Account Statements.
 
-![Supplier Ledger](Screenshots/SupplierLedger.png)
+![Supplier Ledger](Screenshots/Supplier-Ledger.png)
 
 #### 7.2 Customer Ledger
 * **Digital Customer Khata (Udhaar Register):** Track every credit customer's invoices, partial payments, advance deposits, sale returns, and net outstanding balance.
 * **Quick Settlement & Statements:** Settle individual open bills with one click or record lump-sum payments, and print clean A4 Customer Statements to share with buyers.
 
-![Customer Ledger](Screenshots/CustomerLedger.png)
+![Customer Ledger](Screenshots/Customer-Ledger.png)
 
 #### 7.3 Financial Accounts
 * **Multi-Account Treasury:** Track real-time balances across all your business money channels—**Cash in Hand**, **Bank Accounts**, **Card / POS Terminals**, and **Mobile Wallets** (e.g., JazzCash, Easypaisa, SadaPay).
 * **Deposits, Withdrawals & Inter-Account Transfers:** Record bank deposits, owner drawings, or transfers from the Cash Drawer to the Bank with full statement history for every account.
 
-![Financial Accounts](Screenshots/FinancialAccounts.png)
+![Financial Accounts](Screenshots/Financial-Accounts.png)
 
 #### 7.4 Payment Vouchers
 * **Unified Receipt & Payment Register:** A dedicated register for all incoming **Customer Receipts** and outgoing **Supplier Payments** across Cash, Bank Transfer, Cheque, Card, or Mobile Wallet.
 * **Smart Multi-Invoice Allocation:** When a customer or supplier payment is recorded, automatically allocate the payment across oldest open invoices (`FIFO`) or pick specific bills to settle, and print or share a formal **Payment Voucher Receipt**.
 
-![Payment Vouchers](Screenshots/PaymentVouchers.png)
+![Payment Vouchers](Screenshots/Payment%20Voucers.png)
 
 #### 7.5 Operating Expenses
 * **Daily Shop Expense (Kharcha) Tracking:** Log all day-to-day shop overheads across standard categories (*Shop Rent, Staff Salaries, Electricity/WAPDA, Generator Fuel, Tea & Refreshments, Packaging, Freight/Delivery, Maintenance*).
 * **Direct Cash Drawer & Bank Deduction:** Choose whether the expense was paid from the active **Cash Drawer** or a **Bank / Wallet Account**, keeping your cash count and Net Profit report 100% accurate.
 
-![Operating Expenses](Screenshots/OperatingExpenses.png)
+![Operating Expenses](Screenshots/Operating%20Expenses.png)
 
 #### 7.6 Cash Drawer
 Eliminate end-of-day cash confusion with shift-based counter reconciliation:
@@ -297,7 +306,7 @@ Eliminate end-of-day cash confusion with shift-based counter reconciliation:
 * **Live Shift Activity Log:** Every cash sale, customer recovery, cash refund, petty cash expense (`Cash Out`), and float top-up (`Cash In`) is logged automatically in real time—accessible anytime from the top navigation bar widget.
 * **Close Shift & Variance Check:** At shift end, the cashier enters the physical cash counted in the drawer. The system compares **Expected Cash** vs. **Counted Cash**, highlights any **Shortage or Overage**, and saves the closed shift report for the owner.
 
-![Cash Drawer](Screenshots/CashDrawer.png)
+![Cash Drawer](Screenshots/Cash%20drawer.png)
 
 ---
 
@@ -321,7 +330,16 @@ Eliminate end-of-day cash confusion with shift-based counter reconciliation:
 | **13. Outstanding Aging** | Breaks down unpaid customer receivables and supplier payables by age (*0–30, 31–60, 61–90, and 90+ days overdue*) to speed up recoveries. |
 | **14. Low Stock & Reorder** | Lists all products that have fallen below their minimum stock threshold so you can reorder before running out. |
 
-![Reports](Screenshots/Reports.png)
+#### Report Screenshots
+![Net Profit & Loss Report](Screenshots/Profit-Loss-Report.png)
+![Current Stock Report](Screenshots/Current-Stock-Report.png)
+![Cost of Sale Report](Screenshots/Cost%20of%20Sale%20Report.png)
+![Cost of Sale Detail Report](Screenshots/Cost-Of-Sale%20Report%20Detail.png)
+![Purchase Detail Report](Screenshots/Purchase-Detail-Report.png)
+![Sale Detail Report](Screenshots/Sale-Detail-Report.png)
+![Stock Adjustment Report](Screenshots/Stock-adjustment-report.png)
+![Product Comprehensive Report](Screenshots/Product-Comprehesive-Report.png)
+![Near Expiry Product Report](Screenshots/Near-Expiry%20Report.png)
 
 ---
 
@@ -336,7 +354,11 @@ Organized into 5 easy configuration tabs:
 * **Printer Settings:** Choose between **78mm Thermal Receipt Printer** and **A4 Full-Page Printer**, and pick from 6 thermal templates (*Standard, Compact, Detailed, Bold, Minimal, Barcode*) and custom A4 invoice templates.
 * **License Settings:** View your software license status, validity, and activation details.
 
-![Settings](Screenshots/Settings.png)
+![General Settings](Screenshots/General-Settings.png)
+![Sale System Settings](Screenshots/Sale-System.png)
+![Theme Settings](Screenshots/Theme-Setting.png)
+![Printer Settings](Screenshots/Printer-Settings.png)
+![License Settings](Screenshots/LIcense.png)
 
 #### 9.2 Backups & Storage
 Protect your business data against computer crashes or accidental deletion:
@@ -344,11 +366,11 @@ Protect your business data against computer crashes or accidental deletion:
 * **Automated Scheduled Backups:** Schedule daily, weekly, or monthly automatic backups with retention limits so old backups are cleaned up automatically.
 * **Local & Cloud Offsite Sync:** Store backups in a local folder or sync them offsite, download archives to a USB drive, or restore your system from any backup point.
 
-![Backups & Storage](Screenshots/Backups.png)
+![Backups & Storage](Screenshots/Backup-Storage.png)
 
 #### 9.3 Users & Roles (Staff Access Control)
 * **Users:** Create individual login accounts for cashiers, pharmacists, storekeepers, accountants, and managers.
 * **Roles & Granular Permissions:** Define custom roles and tick exactly which screens and actions each role is allowed to access (e.g., allow a Cashier to create POS bills and view products, while hiding Net Profit reports, purchase costs, and invoice deletion).
 
-![Users](Screenshots/Users.png)
-![Roles](Screenshots/Roles.png)
+![Users](Screenshots/Users-Page.png)
+![Roles](Screenshots/Roles-Page.png)
