@@ -374,3 +374,104 @@ Protect your business data against computer crashes or accidental deletion:
 
 ![Users](Screenshots/Users-Page.png)
 ![Roles](Screenshots/Roles-Page.png)
+
+---
+
+## ⌨️ POS & Billing Keyboard Shortcuts
+
+Speed up counter checkouts without touching the mouse:
+
+| Shortcut | Action | Description |
+| :--- | :--- | :--- |
+| <kbd>Alt</kbd> + <kbd>S</kbd> | **Save / Complete Bill** | Validates and saves the current sale or purchase invoice. |
+| <kbd>Alt</kbd> + <kbd>P</kbd> | **Print Invoice** | Prints the thermal (78mm) or A4 receipt for the current bill. |
+| <kbd>Alt</kbd> + <kbd>N</kbd> | **New Bill** | Clears the counter screen and starts a fresh invoice. |
+| <kbd>Alt</kbd> + <kbd>H</kbd> | **Hold / Draft Bill** | Puts the current customer's bill on hold so you can serve the next person in line. |
+| <kbd>Alt</kbd> + <kbd>D</kbd> | **Open Held Drafts** | Opens the held bills window to resume a paused customer transaction. |
+| <kbd>Alt</kbd> + <kbd>C</kbd> | **Customer Search** | Quickly searches or creates a customer account on the fly. |
+| <kbd>F2</kbd> | **Product Search** | Jumps straight to the product search box in the active row. |
+| <kbd>Alt</kbd> + <kbd>A</kbd> | **Add Item Row** | Appends a new item line to the billing table. |
+| <kbd>Enter</kbd> *(in Cash Given)* | **Instant Checkout** | Submits the bill and triggers printing immediately after entering cash received. |
+
+---
+
+## 🛠️ Technology Stack
+
+| Layer | Technology | Purpose |
+| :--- | :--- | :--- |
+| **Backend** | Laravel 11 (PHP 8.2+) | REST API, business logic, double-entry ledgers, batch inventory & audit engine |
+| **Authentication & RBAC** | Laravel Sanctum & Spatie Permission | Token security, session expiry, and granular role-based permissions |
+| **Frontend** | React 19 + Vite | Fast, responsive Single Page Application (SPA) with instant screen transitions |
+| **Styling & Charts** | Tailwind CSS 4 + Recharts | Modern glassmorphism UI, full Light/Dark themes, and interactive financial charts |
+| **Database** | MySQL 8+ / MariaDB / SQLite | Transactional relational storage with foreign-key integrity |
+| **Testing** | PHPUnit | Automated feature and unit test suites for billing, ledgers, and cash drawers |
+
+---
+
+## ⚙️ Installation & Setup
+
+### Prerequisites
+* **PHP** >= 8.2
+* **Composer** >= 2.x
+* **Node.js** >= 18.x & **NPM**
+* **MySQL** >= 8.0 / **MariaDB** / **SQLite**
+
+### Step-by-Step Setup
+
+1. **Clone the Repository**
+   ```bash
+   git clone https://github.com/shzdasim/Karobar-App.git
+   cd Karobar-App
+   ```
+
+2. **Install Backend & Frontend Dependencies**
+   ```bash
+   composer install
+   npm install
+   ```
+
+3. **Configure Environment**
+   ```bash
+   cp .env.example .env
+   php artisan key:generate
+   ```
+   *(Update your database credentials inside `.env` as needed.)*
+
+4. **Run Database Migrations & Seed Default Data**
+   ```bash
+   php artisan migrate --seed
+   ```
+
+5. **Build Frontend Assets & Start the Server**
+   ```bash
+   npm run build
+   php artisan serve
+   ```
+   Open **`http://localhost:8000`** in your browser.
+
+---
+
+## 🧪 Testing
+
+Run the automated test suite to verify billing, ledgers, stock batches, and cash drawer calculations:
+
+```bash
+php artisan test
+```
+
+---
+
+## 📜 License & Author
+
+This project is open-source software licensed under the **[MIT License](LICENSE)**.
+
+**Muhammad Asim Shahzad**
+* **GitHub:** [@shzdasim](https://github.com/shzdasim)
+* **Repository:** [https://github.com/shzdasim/Karobar-App](https://github.com/shzdasim/Karobar-App)
+
+---
+
+<div align="center">
+  <b>💼 Karobar-App (کاروبار) — Simplifying Business, Empowering Growth.</b>
+</div>
+
