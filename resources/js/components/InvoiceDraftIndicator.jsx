@@ -25,53 +25,53 @@ export default function InvoiceDraftIndicator({
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   };
 
+  const showStatusBadge =
+    saveStatus === "saving" ||
+    saveStatus === "conflict" ||
+    saveStatus === "error" ||
+    Boolean(activeDraftTitle);
+
   return (
     <div className="flex items-center gap-1.5 text-xs select-none shrink-0">
-      {/* Save Status Indicator */}
-      <div
-        className={`hidden lg:flex items-center h-8 px-2.5 rounded-lg border gap-1.5 shrink-0 transition-colors ${
-          isDark
-            ? "bg-slate-800/80 border-slate-700 text-slate-300"
-            : "bg-gray-100/90 border-gray-200 text-gray-700"
-        }`}
-      >
-        {saveStatus === "saving" && (
-          <>
-            <ArrowPathIcon className={`w-3.5 h-3.5 animate-spin shrink-0 ${isDark ? "text-blue-400" : "text-blue-600"}`} />
-            <span className={`font-medium whitespace-nowrap ${isDark ? "text-blue-300" : "text-blue-700"}`}>Saving…</span>
-          </>
-        )}
-        {saveStatus === "saved" && (
-          <>
-            <CheckCircleIcon className={`w-3.5 h-3.5 shrink-0 ${isDark ? "text-emerald-400" : "text-emerald-600"}`} />
-            <span className={`font-medium whitespace-nowrap ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>
-              Saved {lastSavedAt ? formatTime(lastSavedAt) : ""}
-            </span>
-          </>
-        )}
-        {saveStatus === "conflict" && (
-          <>
-            <ExclamationCircleIcon className={`w-3.5 h-3.5 shrink-0 ${isDark ? "text-amber-400" : "text-amber-600"}`} />
-            <span className={`font-medium whitespace-nowrap ${isDark ? "text-amber-300" : "text-amber-700"}`}>Conflict</span>
-          </>
-        )}
-        {saveStatus === "error" && (
-          <>
-            <ExclamationCircleIcon className={`w-3.5 h-3.5 shrink-0 ${isDark ? "text-rose-400" : "text-rose-600"}`} />
-            <span className={`font-medium whitespace-nowrap ${isDark ? "text-rose-300" : "text-rose-700"}`} title={saveError || "Save failed"}>
-              Save failed
-            </span>
-          </>
-        )}
-        {saveStatus === "idle" && (
-          <>
-            <ClockIcon className={`w-3.5 h-3.5 shrink-0 ${isDark ? "text-slate-400" : "text-gray-400"}`} />
-            <span className={`font-normal whitespace-nowrap ${isDark ? "text-slate-400" : "text-gray-500"}`}>
-              {activeDraftTitle ? `Draft: ${activeDraftTitle}` : "Draft ready"}
-            </span>
-          </>
-        )}
-      </div>
+      {/* Active Resumed Draft / Hold Status Indicator */}
+      {showStatusBadge && (
+        <div
+          className={`hidden lg:flex items-center h-8 px-2.5 rounded-lg border gap-1.5 shrink-0 transition-colors ${
+            isDark
+              ? "bg-slate-800/80 border-slate-700 text-slate-300"
+              : "bg-gray-100/90 border-gray-200 text-gray-700"
+          }`}
+        >
+          {saveStatus === "saving" && (
+            <>
+              <ArrowPathIcon className={`w-3.5 h-3.5 animate-spin shrink-0 ${isDark ? "text-blue-400" : "text-blue-600"}`} />
+              <span className={`font-medium whitespace-nowrap ${isDark ? "text-blue-300" : "text-blue-700"}`}>Holding…</span>
+            </>
+          )}
+          {saveStatus === "conflict" && (
+            <>
+              <ExclamationCircleIcon className={`w-3.5 h-3.5 shrink-0 ${isDark ? "text-amber-400" : "text-amber-600"}`} />
+              <span className={`font-medium whitespace-nowrap ${isDark ? "text-amber-300" : "text-amber-700"}`}>Conflict</span>
+            </>
+          )}
+          {saveStatus === "error" && (
+            <>
+              <ExclamationCircleIcon className={`w-3.5 h-3.5 shrink-0 ${isDark ? "text-rose-400" : "text-rose-600"}`} />
+              <span className={`font-medium whitespace-nowrap ${isDark ? "text-rose-300" : "text-rose-700"}`} title={saveError || "Hold failed"}>
+                Hold failed
+              </span>
+            </>
+          )}
+          {(saveStatus === "idle" || saveStatus === "saved") && activeDraftTitle && (
+            <>
+              <CheckCircleIcon className={`w-3.5 h-3.5 shrink-0 ${isDark ? "text-emerald-400" : "text-emerald-600"}`} />
+              <span className={`font-medium whitespace-nowrap ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>
+                Resumed: {activeDraftTitle} {lastSavedAt ? `(${formatTime(lastSavedAt)})` : ""}
+              </span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Manual Hold/Save Draft Button (Alt+H) */}
       <button

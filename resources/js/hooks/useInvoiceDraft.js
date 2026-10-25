@@ -164,7 +164,7 @@ export function useInvoiceDraft({ type, form, setForm, enabled = true, onDraftLo
     [performSave, hasMeaningfulData]
   );
 
-  // Hold current invoice and reset to clean blank form for next customer (Alt+H)
+  // Hold current invoice and reset to clean blank form for next customer (Alt+H or Hold button)
   const holdAndNew = useCallback(
     async (title = null) => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -186,23 +186,8 @@ export function useInvoiceDraft({ type, form, setForm, enabled = true, onDraftLo
     [performSave, hasMeaningfulData, onStartBlank, resetToNew]
   );
 
-  // Auto-save debounce watcher
-  useEffect(() => {
-    if (!enabled || isResumingRef.current) return;
-    if (!hasMeaningfulData(form)) return;
-
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-
-    saveTimeoutRef.current = setTimeout(() => {
-      performSave(form);
-    }, 1500);
-
-    return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    };
-  }, [form, enabled, hasMeaningfulData, performSave]);
+  // NOTE: Automatic background holding is disabled per user workflow.
+  // Invoices are only held when the user explicitly clicks the Hold button or presses Alt+H.
 
   // Resume / Load a saved draft into the form
   const loadDraft = useCallback(
