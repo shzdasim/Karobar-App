@@ -26,207 +26,561 @@ Karobar-App is built to fit both **Retail** (selling single units to walk-in cus
 
 ## 🗺️ App Features Diagram
 
-Below is a complete visual map of every module and function available inside **Karobar-App**:
+Below is a complete visual map of every sidebar section and function available inside **Karobar-App**:
 
 ```mermaid
 flowchart LR
     ROOT(("💼 Karobar-App"))
 
-    %% Main Pillars
-    ROOT --> SALES["🛒 Sales & POS"]
-    ROOT --> PURCHASES["🚚 Purchases & Ordering"]
-    ROOT --> INVENTORY["📦 Inventory & Stock Control"]
-    ROOT --> FINANCE["💵 Accounts, Khata & Cash"]
-    ROOT --> REPORTS["📊 Reports & Business Insights"]
-    ROOT --> ADMIN["⚙️ Admin, Security & Setup"]
-
-    %% 1. Sales & POS
-    subgraph SG_SALES["🛒 Sales & Point of Sale (POS)"]
-        direction TB
-        S1["⚡ Barcode POS Terminal (Fast Walk-in Checkout)"]
-        S2["🏪 Retail Billing (Unit Sales & Prescriptions)"]
-        S3["📦 Wholesale Billing (Packs, Cartons & Bonus Schemes)"]
-        S4["⏸️ Hold & Resume Customer Draft Bills"]
-        S5["↩️ Sale Returns & Customer Refunds"]
-        S6["🖨️ Thermal (78mm) & A4 Invoice Printing"]
+    subgraph SG_DASH["🏠 Dashboard"]
+        D1["📊 Live Sales, Profit, Stock & Expiry Overview"]
     end
-    SALES --> SG_SALES
 
-    %% 2. Purchases & Ordering
-    subgraph SG_PURCHASES["🚚 Purchases & Procurement"]
-        direction TB
-        P1["📝 Customer Demands / Shortbook (Wanted Items)"]
-        P2["📈 Smart Purchase Orders & Reorder Forecasting"]
-        P3["📥 Purchase Invoices (Stock Inward, Batches & Pricing)"]
-        P4["📤 Purchase Returns (Supplier Debit Notes)"]
+    subgraph SG_CORE["📦 1. Management"]
+        M1["🏷️ Products Catalog"]
+        M2["🖨️ Barcode Studio & Labels"]
+        M3["🗂️ Categories & Brands"]
+        M4["🚚 Suppliers Directory"]
+        M5["👥 Customers Directory"]
     end
-    PURCHASES --> SG_PURCHASES
 
-    %% 3. Inventory & Stock Control
-    subgraph SG_INVENTORY["📦 Products & Inventory Management"]
-        direction TB
-        I1["🏷️ Products, Categories & Brands Catalog"]
-        I2["⏳ Batch & Expiry Tracking (FEFO & Expiry Alerts)"]
-        I3["🏷️ Barcode Studio & Custom Sticker Printing"]
-        I4["📋 Stocktake Sessions (Physical Count & Review)"]
-        I5["⚖️ Stock Adjustments (Count Corrections)"]
-        I6["🗑️ Stock Disposals & Quarantine (Damaged / Expired)"]
+    subgraph SG_BATCH["⏳ 2. Batch & Expiry"]
+        B1["⏰ Expiry & Batch Tracking"]
+        B2["🛡️ Quarantine & Stock Disposal"]
     end
-    INVENTORY --> SG_INVENTORY
 
-    %% 4. Accounts, Khata & Cash
-    subgraph SG_FINANCE["💵 Accounts, Khata (Ledgers) & Cash"]
-        direction TB
-        F1["📒 Customer Ledger (Credit Dues & Statements)"]
-        F2["📒 Supplier Ledger (Payables & Balances)"]
-        F3["🗄️ Cash Drawer Shifts (Opening Float to Closing Count)"]
-        F4["🏦 Financial Accounts (Cash, Bank & Digital Wallets)"]
-        F5["🧾 Payment Vouchers & Multi-Bill Settlements"]
-        F6["💸 Daily Operating Expenses (Rent, Bills, Salaries)"]
+    subgraph SG_INV["🧾 3. Invoices"]
+        I1["📥 Purchase Invoice (Stock In)"]
+        I2["🛍️ Sale Invoice (Retail & Wholesale)"]
+        I3["⚡ Barcode POS Terminal"]
     end
-    FINANCE --> SG_FINANCE
 
-    %% 5. Reports & Business Insights
-    subgraph SG_REPORTS["📊 Business Reports & Analytics"]
-        direction TB
-        R1["🖥️ Live Executive Dashboard"]
-        R2["💰 Net Profit & Loss (P&L) Statement"]
-        R3["📈 Cost of Sale & Item Profit Margin Reports"]
-        R4["📑 Detailed Sales, Purchase & Returns Reports"]
-        R5["📦 Current Stock, Reorder & Product History Reports"]
-        R6["⚠️ Near-Expiry & Customer Aging Dues Reports"]
+    subgraph SG_RET["↩️ 4. Returns"]
+        RT1["📤 Purchase Return (To Supplier)"]
+        RT2["🔄 Sale Return (From Customer)"]
     end
-    REPORTS --> SG_REPORTS
 
-    %% 6. Admin, Security & Setup
-    subgraph SG_ADMIN["⚙️ Administration, Security & System"]
-        direction TB
-        A1["👥 Staff Accounts & Role Permissions"]
-        A2["🎨 Store Settings, Currency & Print Templates"]
-        A3["☁️ Automated Backups & Cloud Offsite Storage"]
-        A4["🔐 Software License Activation & Security"]
+    subgraph SG_TXN["🛒 5. Transactions"]
+        T1["📋 Purchase Orders & Forecasting"]
+        T2["✋ User Demands (Shortbook)"]
+        T3["⚖️ Stock Adjustments"]
+        T4["🔍 Stocktake Sessions (Physical Audit)"]
     end
-    ADMIN --> SG_ADMIN
 
-    %% Styling for Visual Clarity
+    subgraph SG_FIN["💵 6. Finance"]
+        F1["📒 Supplier Ledger (Payables)"]
+        F2["📒 Customer Ledger (Receivables)"]
+        F3["🏦 Financial Accounts (Cash, Bank, Wallets)"]
+        F4["🧾 Payment Vouchers"]
+        F5["💸 Operating Expenses"]
+        F6["🗄️ Cash Drawer Shifts"]
+    end
+
+    subgraph SG_REP["📊 7. Reports"]
+        RP1["💰 Net Profit (P&L) & Cost of Sale"]
+        RP2["📦 Current Stock, Low Stock & Near Expiry"]
+        RP3["📑 Sale, Purchase & Return Detail Reports"]
+        RP4["⏳ Outstanding Aging & Product History"]
+    end
+
+    subgraph SG_SYS["⚙️ 8. System"]
+        SY1["🎨 Store, Sale, Theme & Printer Settings"]
+        SY2["☁️ Backups & Cloud Offsite Storage"]
+        SY3["🔐 Staff Users, Roles & Permissions"]
+    end
+
+    ROOT --> SG_DASH
+    ROOT --> SG_CORE
+    ROOT --> SG_BATCH
+    ROOT --> SG_INV
+    ROOT --> SG_RET
+    ROOT --> SG_TXN
+    ROOT --> SG_FIN
+    ROOT --> SG_REP
+    ROOT --> SG_SYS
+
     classDef rootStyle fill:#1e293b,stroke:#0f172a,stroke-width:3px,color:#ffffff,font-weight:bold
-    classDef salesStyle fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
-    classDef purchaseStyle fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f
-    classDef inventoryStyle fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d
-    classDef financeStyle fill:#f3e8ff,stroke:#9333ea,stroke-width:2px,color:#581c87
-    classDef reportStyle fill:#ffe4e6,stroke:#e11d48,stroke-width:2px,color:#881337
-    classDef adminStyle fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0c4a6e
-
     class ROOT rootStyle
-    class SALES,S1,S2,S3,S4,S5,S6 salesStyle
-    class PURCHASES,P1,P2,P3,P4 purchaseStyle
-    class INVENTORY,I1,I2,I3,I4,I5,I6 inventoryStyle
-    class FINANCE,F1,F2,F3,F4,F5,F6 financeStyle
-    class REPORTS,R1,R2,R3,R4,R5,R6 reportStyle
-    class ADMIN,A1,A2,A3,A4 adminStyle
 ```
 
 ---
 
-## 🗺️ App Features Diagram
+## 🧭 Detailed Module Guide (Sidebar Walkthrough)
 
-Below is a complete visual map of every module and function available inside **Karobar-App**:
+Below is a complete walkthrough of every module in **Karobar-App**, following the exact order of the left navigation sidebar.
 
-```mermaid
-flowchart LR
-    ROOT(("💼 Karobar-App"))
+---
 
-    %% Main Pillars
-    ROOT --> SALES["🛒 Sales & POS"]
-    ROOT --> PURCHASES["🚚 Purchases & Ordering"]
-    ROOT --> INVENTORY["📦 Inventory & Stock Control"]
-    ROOT --> FINANCE["💵 Accounts, Khata & Cash"]
-    ROOT --> REPORTS["📊 Reports & Business Insights"]
-    ROOT --> ADMIN["⚙️ Admin, Security & Setup"]
+### 🏠 1. Dashboard
+The **Dashboard** is your daily business command center. As soon as you log in, it gives you an instant health check of your shop without digging through menus.
 
-    %% 1. Sales & POS
-    subgraph SG_SALES["🛒 Sales & Point of Sale (POS)"]
-        direction TB
-        S1["⚡ Barcode POS Terminal (Fast Walk-in Checkout)"]
-        S2["🏪 Retail Billing (Unit Sales & Prescriptions)"]
-        S3["📦 Wholesale Billing (Packs, Cartons & Bonus Schemes)"]
-        S4["⏸️ Hold & Resume Customer Draft Bills"]
-        S5["↩️ Sale Returns & Customer Refunds"]
-        S6["🖨️ Thermal (78mm) & A4 Invoice Printing"]
-    end
-    SALES --> SG_SALES
+* **Live KPI Cards:** View today's, this month's, or custom date-range **Gross Sales**, **Purchases**, **Sale & Purchase Returns**, **Net Profit**, **Customer Receivables (Dues)**, and **Supplier Payables**.
+* **Interactive Sales & Profit Charts:** Visual trend charts comparing daily or monthly sales against purchases and returns so you can spot busy days and seasonal growth.
+* **Expiry & Low-Stock Alerts:** Immediate warning badges showing how many batches are nearing expiry or already expired, and which fast-moving items need reordering.
+* **Top Selling Products & Recent Activity:** See your best-performing products and recent bills at a glance.
 
-    %% 2. Purchases & Ordering
-    subgraph SG_PURCHASES["🚚 Purchases & Procurement"]
-        direction TB
-        P1["📝 Customer Demands / Shortbook (Wanted Items)"]
-        P2["📈 Smart Purchase Orders & Reorder Forecasting"]
-        P3["📥 Purchase Invoices (Stock Inward, Batches & Pricing)"]
-        P4["📤 Purchase Returns (Supplier Debit Notes)"]
-    end
-    PURCHASES --> SG_PURCHASES
+> 📸 **Screenshot – Dashboard**
+> `![Dashboard Overview](docs/screenshots/dashboard.png)`
 
-    %% 3. Inventory & Stock Control
-    subgraph SG_INVENTORY["📦 Products & Inventory Management"]
-        direction TB
-        I1["🏷️ Products, Categories & Brands Catalog"]
-        I2["⏳ Batch & Expiry Tracking (FEFO & Expiry Alerts)"]
-        I3["🏷️ Barcode Studio & Custom Sticker Printing"]
-        I4["📋 Stocktake Sessions (Physical Count & Review)"]
-        I5["⚖️ Stock Adjustments (Count Corrections)"]
-        I6["🗑️ Stock Disposals & Quarantine (Damaged / Expired)"]
-    end
-    INVENTORY --> SG_INVENTORY
+---
 
-    %% 4. Accounts, Khata & Cash
-    subgraph SG_FINANCE["💵 Accounts, Khata (Ledgers) & Cash"]
-        direction TB
-        F1["📒 Customer Ledger (Credit Dues & Statements)"]
-        F2["📒 Supplier Ledger (Payables & Balances)"]
-        F3["🗄️ Cash Drawer Shifts (Opening Float to Closing Count)"]
-        F4["🏦 Financial Accounts (Cash, Bank & Digital Wallets)"]
-        F5["🧾 Payment Vouchers & Multi-Bill Settlements"]
-        F6["💸 Daily Operating Expenses (Rent, Bills, Salaries)"]
-    end
-    FINANCE --> SG_FINANCE
+### 📦 2. Management
+The **Management** section holds all your master records—products, barcode labels, categories, brands, suppliers, and customers.
 
-    %% 5. Reports & Business Insights
-    subgraph SG_REPORTS["📊 Business Reports & Analytics"]
-        direction TB
-        R1["🖥️ Live Executive Dashboard"]
-        R2["💰 Net Profit & Loss (P&L) Statement"]
-        R3["📈 Cost of Sale & Item Profit Margin Reports"]
-        R4["📑 Detailed Sales, Purchase & Returns Reports"]
-        R5["📦 Current Stock, Reorder & Product History Reports"]
-        R6["⚠️ Near-Expiry & Customer Aging Dues Reports"]
-    end
-    REPORTS --> SG_REPORTS
+#### 2.1 Products
+* **Complete Product Setup:** Add products with item name, generic/formula name, product code, barcode, category, brand, preferred supplier, rack/shelf location, and product image.
+* **Pack & Unit Pricing:** Define **Pack Size** (e.g., 1 box = 10 strips or 30 tablets), **Pack Purchase Price**, **Pack Sale Price**, **Unit Purchase Price**, **Unit Sale Price**, and **Wholesale / Discount Rules**.
+* **Stock & Narcotics Controls:** Set minimum stock alert levels (`reorder level`) and mark restricted/prescription medicines (`Narcotic / Prescription Required`) so the POS automatically asks for Doctor and Patient details during billing.
+* **Bulk Import & Quick Search:** Search thousands of items instantaneously by name, barcode, generic formula, or category.
 
-    %% 6. Admin, Security & Setup
-    subgraph SG_ADMIN["⚙️ Administration, Security & System"]
-        direction TB
-        A1["👥 Staff Accounts & Role Permissions"]
-        A2["🎨 Store Settings, Currency & Print Templates"]
-        A3["☁️ Automated Backups & Cloud Offsite Storage"]
-        A4["🔐 Software License Activation & Security"]
-    end
-    ADMIN --> SG_ADMIN
+> 📸 **Screenshot – Products Catalog**
+> `![Products Catalog](docs/screenshots/products.png)`
 
-    %% Styling for Visual Clarity
-    classDef rootStyle fill:#1e293b,stroke:#0f172a,stroke-width:3px,color:#ffffff,font-weight:bold
-    classDef salesStyle fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
-    classDef purchaseStyle fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f
-    classDef inventoryStyle fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d
-    classDef financeStyle fill:#f3e8ff,stroke:#9333ea,stroke-width:2px,color:#581c87
-    classDef reportStyle fill:#ffe4e6,stroke:#e11d48,stroke-width:2px,color:#881337
-    classDef adminStyle fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0c4a6e
+#### 2.2 Barcode Studio
+A built-in label designer and barcode printing studio so you can tag products that arrive without manufacturer barcodes or print custom price stickers for your shelves.
 
-    class ROOT rootStyle
-    class SALES,S1,S2,S3,S4,S5,S6 salesStyle
-    class PURCHASES,P1,P2,P3,P4 purchaseStyle
-    class INVENTORY,I1,I2,I3,I4,I5,I6 inventoryStyle
-    class FINANCE,F1,F2,F3,F4,F5,F6 financeStyle
-    class REPORTS,R1,R2,R3,R4,R5,R6 reportStyle
-    class ADMIN,A1,A2,A3,A4 adminStyle
-```
+* **Print Queue & Batch Selection:** Add one or multiple products to the print queue, pick specific batch numbers, and set exact label quantities per item.
+* **Custom Label Designer:** Toggle what appears on the sticker—**Store Name**, **Product Name** (1 or 2 lines), **Product Code**, **Sale Price (MRP)**, **Batch Number**, **Manufacturing/Expiry Date**, and **Code-128 Barcode**.
+* **Thermal Roll & A4 Sheet Layouts:** Supports single/double-column thermal sticker rolls (e.g., 50x25mm, 38x25mm) as well as multi-column A4 sticker sheets with customizable margins, gaps, and saved templates.
+
+> 📸 **Screenshot – Barcode Studio**
+> `![Barcode Studio](docs/screenshots/barcode-studio.png)`
+
+#### 2.3 Categories & Brands
+* **Categories:** Organize your inventory into logical groups (e.g., *Antibiotics, Syrups, Surgical, Groceries, Cosmetics, Hardware*) for faster filtering and category-wise sales analysis.
+* **Brands / Companies:** Record manufacturer or brand names (e.g., *GSK, Abbott, Unilever, Nestle*) to track brand performance and filter stock or purchase orders by company.
+
+#### 2.4 Suppliers
+* **Supplier Directory:** Maintain complete contact records for distributors, wholesalers, and company bookers—including contact person, phone number, address, tax/license numbers, and opening payable balance.
+* **Direct Ledger Link:** View how much you owe any supplier and jump straight to their purchase history or ledger statement.
+
+#### 2.5 Customers
+* **Customer Directory:** Save regular retail and wholesale buyers with their phone number, address, credit limit, custom discount percentage, and opening balance.
+* **Custom Wholesale Pricing:** Remembers customer-specific negotiated pack prices for repeat wholesale buyers.
+
+> 📸 **Screenshot – Suppliers & Customers**
+> `![Customers Management](docs/screenshots/customers.png)`
+
+---
+
+### ⏳ 3. Batch & Expiry
+Built specifically for pharmacies, grocery stores, and perishable goods businesses where batch tracking and shelf-life control protect your profit.
+
+#### 3.1 Expiry & Tracking
+* **Color-Coded Expiry Monitor:** Automatically groups all stock batches into **Expired**, **Expiring Soon (30 / 60 / 90 / 180 days)**, and **Safe Stock**.
+* **Filter by Supplier or Brand:** Quickly pull up all expiring items from a specific distributor so you can hand them back to the supplier's order booker before their return window closes.
+* **One-Click Actions:** Directly initiate a **Purchase Return** to the supplier or move expired stock to **Quarantine & Disposal** right from the expiry screen.
+
+> 📸 **Screenshot – Batch & Expiry Tracking**
+> `![Batch Expiry Tracking](docs/screenshots/batch-expiry.png)`
+
+#### 3.2 Quarantine & Disposal
+When stock is expired, broken, spoiled, or recalled and cannot be returned to a supplier, **Quarantine & Disposal** ensures it is removed from saleable stock cleanly and recorded as an audited business write-off.
+
+* **Quarantine Holding Bay:** Move questionable or expired batches out of POS saleable stock into quarantine so cashiers cannot accidentally sell them.
+* **Cause & Disposal Method Tracking:** Log the exact reason (*Shelf Expiry, Physical Breakage, Cold-Chain Spoilage, Defective Return, Manufacturer Recall, Pest/Water Damage*) and disposal method (*Incineration, Chemical Neutralization, Municipal Waste, Handed to Supplier*).
+* **Official Disposal Certificate:** Generate and print a formal **Stock Destruction / Disposal Certificate** for regulatory or tax audits.
+
+> 📸 **Screenshot – Quarantine & Disposal**
+> `![Quarantine and Disposal](docs/screenshots/stock-disposals.png)`
+
+---
+
+### 🧾 4. Invoices
+The core billing engine of Karobar-App, supporting inward supplier stock and three specialized sales workflows.
+
+#### 4.1 Purchase Invoice
+* **Stock Inward & Batch Creation:** Enter supplier bills to immediately add stock into your inventory. Record **Batch Number**, **Expiry Date**, **Pack/Unit Quantities**, **Bonus/Free Units**, **Purchase Price**, **Discount %**, **Tax**, and **Sale Price (MRP)**.
+* **Automatic Margin & Cost Calculation:** Calculates effective net unit cost (factoring in bonus units and discounts) and updates product pricing automatically.
+* **Cash or Credit Settlement:** Pay the supplier immediately from your Cash Drawer / Bank Account, or post the bill on credit to the **Supplier Ledger**.
+
+> 📸 **Screenshot – Purchase Invoice**
+> `![Purchase Invoice](docs/screenshots/purchase-invoice.png)`
+
+#### 4.2 Sale Invoice (Retail & Wholesale Modes)
+Depending on your store configuration, Sale Invoices support two tailored modes:
+* **Retail Sale Invoice:** Built for selling individual units or packs to walk-in or credit customers, complete with batch selection (FEFO—First Expiring, First Out), instant stock checks, item/invoice discounts, and doctor/patient fields for restricted items.
+* **Wholesale Sale Invoice:** Built for distributors and wholesale counters—supports pack/carton quantities, loose units, bonus/free schemes, bulk discounts, previous customer balance visibility on the bill, and A4 invoice printing.
+* **Hold & Resume Drafts (`Alt+H` / `Alt+D`):** Put an unfinished bill on hold if a customer steps away, serve other customers, and resume the held draft anytime with live stock re-verification.
+* **Smart Overpayment Handling:** If a credit customer pays more than the current bill total, the extra amount is automatically credited to their **Customer Ledger** to reduce their previous dues.
+
+> 📸 **Screenshot – Retail & Wholesale Sale Invoice**
+> `![Sale Invoice](docs/screenshots/sale-invoice.png)`
+
+#### 4.3 ⚡ Barcode POS (Fast Checkout Terminal)
+A dedicated, full-screen, distraction-free counter terminal built for high-speed barcode scanning and keyboard-only operation.
+
+* **Scan & Go Checkout:** Scan product barcodes continuously—each scan adds or increments the item immediately with audio feedback.
+* **Visual Product Grid & Quick Search (`F2`):** Search by name or click product cards when an item doesn't have a barcode.
+* **Instant Cash & Change Calculator:** Enter cash received, see large-font customer change due, and press `Enter` or `Alt+S` to save and auto-print a 78mm thermal receipt in one step.
+
+> 📸 **Screenshot – Barcode POS Terminal**
+> `![Barcode POS Terminal](docs/screenshots/barcode-pos.png)`
+
+---
+
+### ↩️ 5. Returns
+Handle customer refunds and supplier returns accurately without messing up your inventory counts or ledgers.
+
+#### 5.1 Purchase Return
+* **Return Stock to Suppliers:** Select the supplier and original purchase invoice (or batch) to return expired, near-expiry, damaged, or excess goods.
+* **Automatic Stock & Ledger Update:** Deducts the returned quantities from the exact batch and automatically reduces your payable balance in the **Supplier Ledger** (or records a cash refund).
+
+#### 5.2 Sale Return
+* **Customer Returns & Refunds:** Look up the original sale invoice (by invoice number or barcode scan) or select items returned by a customer.
+* **Batch Restoration & Refund Settlement:** Puts returned items back into their original inventory batch and either refunds cash from the **Cash Drawer** or credits the customer's **Khata (Ledger)** balance.
+
+> 📸 **Screenshot – Purchase & Sale Returns**
+> `![Sale and Purchase Returns](docs/screenshots/returns.png)`
+
+---
+
+### 🛒 6. Transactions
+Proactive inventory planning, shortage tracking, and physical stock auditing tools.
+
+#### 6.1 Purchase Orders & Smart Reorder Forecasting
+* **Demand Forecasting Engine:** Analyzes your historical sales velocity and current stock levels to recommend exactly which products to order and in what quantities.
+* **Supplier Purchase Orders (PO):** Generate formal Purchase Orders for suppliers, track order status (*Draft, Sent, Partially Received, Completed*), and convert received orders into Purchase Invoices.
+
+> 📸 **Screenshot – Purchase Orders & Forecasting**
+> `![Purchase Orders](docs/screenshots/purchase-orders.png)`
+
+#### 6.2 User Demands (Shortbook / Wanted Items)
+* **Daily Counter Shortbook:** When a customer asks for an item that is out of stock or not yet carried in your shop, cashiers can log it in **User Demands** in seconds.
+* **Never Miss Sales Again:** At ordering time, review your User Demands list to turn customer requests into supplier orders.
+
+#### 6.3 Stock Adjustments
+* **Quick Count Corrections:** Make authorized manual additions or deductions to product batches when you find minor count differences, sample giveaways, or unpackaged units, with mandatory reason notes for full accountability.
+
+#### 6.4 Stocktake Sessions (Physical Inventory Audit)
+A structured multi-step workflow for conducting full-store or shelf-by-shelf physical stock counts:
+1. **Start Session:** Create a stocktake session for the whole store, a specific category, or a specific brand.
+2. **Physical Counting:** Staff enter the actual physical quantities counted on the shelves (`In Progress`).
+3. **Variance Review (`Pending Review`):** Managers review a side-by-side comparison of **System Expected Stock** vs. **Physical Counted Stock**, highlighting shortages and overages with their exact financial value.
+4. **Finalize & Sync (`Finalized`):** With one click, approve the session to automatically update all batch quantities to match the real physical count.
+
+> 📸 **Screenshot – Stocktake Sessions**
+> `![Stocktake Sessions](docs/screenshots/stocktake-sessions.png)`
+
+---
+
+### 💵 7. Finance
+Complete double-entry financial control covering customer credit (*Udhaar*), supplier payables, bank/wallet accounts, expenses, and cash drawer shifts.
+
+#### 7.1 Supplier Ledger
+* **Complete Accounts Payable Khata:** Select any supplier to view a chronological statement of all Purchase Invoices, Purchase Returns, Cash/Bank Payments, and the running balance you owe them.
+* **Printable Statements:** Filter by date range and print or export A4 Supplier Account Statements.
+
+#### 7.2 Customer Ledger
+* **Digital Customer Khata (Udhaar Register):** Track every credit customer's invoices, partial payments, advance deposits, sale returns, and net outstanding balance.
+* **Quick Settlement & Statements:** Settle individual open bills with one click or record lump-sum payments, and print clean A4 Customer Statements to share with buyers.
+
+> 📸 **Screenshot – Customer & Supplier Ledgers**
+> `![Customer Ledger](docs/screenshots/customer-ledger.png)`
+
+#### 7.3 Financial Accounts
+* **Multi-Account Treasury:** Track real-time balances across all your business money channels—**Cash in Hand**, **Bank Accounts**, **Card / POS Terminals**, and **Mobile Wallets** (e.g., JazzCash, Easypaisa, SadaPay).
+* **Deposits, Withdrawals & Inter-Account Transfers:** Record bank deposits, owner drawings, or transfers from the Cash Drawer to the Bank with full statement history for every account.
+
+> 📸 **Screenshot – Financial Accounts**
+> `![Financial Accounts](docs/screenshots/financial-accounts.png)`
+
+#### 7.4 Payment Vouchers
+* **Unified Receipt & Payment Register:** A dedicated register for all incoming **Customer Receipts** and outgoing **Supplier Payments** across Cash, Bank Transfer, Cheque, Card, or Mobile Wallet.
+* **Smart Multi-Invoice Allocation:** When a customer or supplier payment is recorded, automatically allocate the payment across oldest open invoices (`FIFO`) or pick specific bills to settle, and print or share a formal **Payment Voucher Receipt**.
+
+> 📸 **Screenshot – Payment Vouchers**
+> `![Payment Vouchers](docs/screenshots/payment-vouchers.png)`
+
+#### 7.5 Operating Expenses
+* **Daily Shop Expense (Kharcha) Tracking:** Log all day-to-day shop overheads across standard categories (*Shop Rent, Staff Salaries, Electricity/WAPDA, Generator Fuel, Tea & Refreshments, Packaging, Freight/Delivery, Maintenance*).
+* **Direct Cash Drawer & Bank Deduction:** Choose whether the expense was paid from the active **Cash Drawer** or a **Bank / Wallet Account**, keeping your cash count and Net Profit report 100% accurate.
+
+> 📸 **Screenshot – Operating Expenses**
+> `![Operating Expenses](docs/screenshots/operating-expenses.png)`
+
+#### 7.6 Cash Drawer
+Eliminate end-of-day cash confusion with shift-based counter reconciliation:
+* **Open Shift with Starting Float:** Cashiers start their shift by entering the opening cash float in the drawer.
+* **Live Shift Activity Log:** Every cash sale, customer recovery, cash refund, petty cash expense (`Cash Out`), and float top-up (`Cash In`) is logged automatically in real time—accessible anytime from the top navigation bar widget.
+* **Close Shift & Variance Check:** At shift end, the cashier enters the physical cash counted in the drawer. The system compares **Expected Cash** vs. **Counted Cash**, highlights any **Shortage or Overage**, and saves the closed shift report for the owner.
+
+> 📸 **Screenshot – Cash Drawer Management**
+> `![Cash Drawer](docs/screenshots/cash-drawer.png)`
+
+---
+
+### 📊 8. Reports
+14 specialized business, inventory, and financial reports—each with date/category/party filters, print-ready layouts, and exports.
+
+| Report Name | What It Tells You |
+| :--- | :--- |
+| **1. Net Profit (P&L)** | Complete Profit & Loss statement showing Gross Sales, Returns, Cost of Goods Sold (COGS), Gross Profit, itemized Operating Expenses, Net Profit, and Net Profit Margin %. |
+| **2. Current Stock** | Real-time stock valuation report showing available packs/units, purchase value, and retail sale value across your entire inventory. |
+| **3. Cost of Sale** | Summary of total sales revenue vs. historical cost of goods sold and gross profit earned over any date range. |
+| **4. Cost of Sale Detail** | Invoice-by-invoice and item-by-item breakdown of sale price, exact batch cost at the time of sale, and profit margin per transaction. |
+| **5. Purchase Detail** | Itemized report of all stock purchased, filtered by date, supplier, product, or batch. |
+| **6. Sale Detail** | Itemized report of all products sold, filtered by date, customer, cashier/user, category, or brand. |
+| **7. Stock Adjustment** | Audit report of all manual stock additions, deductions, and physical count adjustments with staff reasons. |
+| **8. Product Comprehensive** | Complete lifecycle history (stock card) of a single product—showing every purchase, sale, return, and adjustment from day one. |
+| **9. Near Expiry Product** | Printable list of batches expiring within your chosen timeframe so you can discount or return them before loss occurs. |
+| **10. Purchase Returns** | Detailed register of all goods returned to suppliers and the corresponding credit/refund amounts. |
+| **11. Sale Returns** | Detailed register of all customer returns and refunds issued at the counter. |
+| **12. Purchase Summary** | High-level supplier-wise and date-wise summary of total procurement spend. |
+| **13. Outstanding Aging** | Breaks down unpaid customer receivables and supplier payables by age (*0–30, 31–60, 61–90, and 90+ days overdue*) to speed up recoveries. |
+| **14. Low Stock & Reorder** | Lists all products that have fallen below their minimum stock threshold so you can reorder before running out. |
+
+> 📸 **Screenshot – Net Profit (P&L) & Business Reports**
+> `![Business Reports](docs/screenshots/reports.png)`
+
+---
+
+### ⚙️ 9. System
+Configure your store identity, billing rules, visual appearance, receipt templates, backups, and staff permissions.
+
+#### 9.1 Settings
+Organized into 5 easy configuration tabs:
+* **General Settings:** Set your Store Name, Logo, Phone Number, Address, Tax/License Number, Receipt Footer Note, and **Currency Formatting** (Currency Code, Symbol like `Rs.` or `$`, symbol position, and decimal places).
+* **Sale System Settings:** Choose your store's operating mode (**Retail Only**, **Wholesale Only**, or **Both Retail & Wholesale**) and shop type (e.g., Pharmacy, General Store).
+* **Theme Settings:** Customize the app's visual appearance—toggle **Light / Dark Mode**, pick custom **Primary, Secondary, and Tertiary brand colors**, and choose button styles.
+* **Printer Settings:** Choose between **78mm Thermal Receipt Printer** and **A4 Full-Page Printer**, and pick from 6 thermal templates (*Standard, Compact, Detailed, Bold, Minimal, Barcode*) and custom A4 invoice templates.
+* **License Settings:** View your software license status, validity, and activation details.
+
+> 📸 **Screenshot – Store, Theme & Printer Settings**
+> `![System Settings](docs/screenshots/settings.png)`
+
+#### 9.2 Backups & Storage
+Protect your business data against computer crashes or accidental deletion:
+* **One-Click Manual Backups:** Create an instant **Full Backup** (Database + Settings + Uploaded Files), **Database Only (SQL)**, or **Settings Only (JSON)** archive at any time.
+* **Automated Scheduled Backups:** Schedule daily, weekly, or monthly automatic backups with retention limits so old backups are cleaned up automatically.
+* **Local & Cloud Offsite Sync:** Store backups in a local folder or sync them offsite, download archives to a USB drive, or restore your system from any backup point.
+
+> 📸 **Screenshot – Backups & Storage**
+> `![Backups and Storage](docs/screenshots/backups.png)`
+
+#### 9.3 Users & Roles (Staff Access Control)
+* **Users:** Create individual login accounts for cashiers, pharmacists, storekeepers, accountants, and managers.
+* **Roles & Granular Permissions:** Define custom roles and tick exactly which screens and actions each role is allowed to access (e.g., allow a Cashier to create POS bills and view products, while hiding Net Profit reports, purchase costs, and invoice deletion).
+
+> 📸 **Screenshot – Users & Role Permissions**
+> `![Users and Roles](docs/screenshots/users-roles.png)`
+
+#### 2.3 Categories & Brands
+* **Categories:** Organize your inventory into logical groups (e.g., *Antibiotics, Syrups, Surgical, Groceries, Cosmetics, Hardware*) for faster filtering and category-wise sales analysis.
+* **Brands / Companies:** Record manufacturer or brand names (e.g., *GSK, Abbott, Unilever, Nestle*) to track brand performance and filter stock or purchase orders by company.
+
+#### 2.4 Suppliers
+* **Supplier Directory:** Maintain complete contact records for distributors, wholesalers, and company bookers—including contact person, phone number, address, tax/license numbers, and opening payable balance.
+* **Direct Ledger Link:** View how much you owe any supplier and jump straight to their purchase history or ledger statement.
+
+#### 2.5 Customers
+* **Customer Directory:** Save regular retail and wholesale buyers with their phone number, address, credit limit, custom discount percentage, and opening balance.
+* **Custom Wholesale Pricing:** Remembers customer-specific negotiated pack prices for repeat wholesale buyers.
+
+> 📸 **Screenshot – Suppliers & Customers**
+> `![Customers Management](docs/screenshots/customers.png)`
+
+---
+
+### ⏳ 3. Batch & Expiry
+Built specifically for pharmacies, grocery stores, and perishable goods businesses where batch tracking and shelf-life control protect your profit.
+
+#### 3.1 Expiry & Tracking
+* **Color-Coded Expiry Monitor:** Automatically groups all stock batches into **Expired**, **Expiring Soon (30 / 60 / 90 / 180 days)**, and **Safe Stock**.
+* **Filter by Supplier or Brand:** Quickly pull up all expiring items from a specific distributor so you can hand them back to the supplier's order booker before their return window closes.
+* **One-Click Actions:** Directly initiate a **Purchase Return** to the supplier or move expired stock to **Quarantine & Disposal** right from the expiry screen.
+
+> 📸 **Screenshot – Batch & Expiry Tracking**
+> `![Batch Expiry Tracking](docs/screenshots/batch-expiry.png)`
+
+#### 3.2 Quarantine & Disposal
+When stock is expired, broken, spoiled, or recalled and cannot be returned to a supplier, **Quarantine & Disposal** ensures it is removed from saleable stock cleanly and recorded as an audited business write-off.
+
+* **Quarantine Holding Bay:** Move questionable or expired batches out of POS saleable stock into quarantine so cashiers cannot accidentally sell them.
+* **Cause & Disposal Method Tracking:** Log the exact reason (*Shelf Expiry, Physical Breakage, Cold-Chain Spoilage, Defective Return, Manufacturer Recall, Pest/Water Damage*) and disposal method (*Incineration, Chemical Neutralization, Municipal Waste, Handed to Supplier*).
+* **Official Disposal Certificate:** Generate and print a formal **Stock Destruction / Disposal Certificate** for regulatory or tax audits.
+
+> 📸 **Screenshot – Quarantine & Disposal**
+> `![Quarantine and Disposal](docs/screenshots/stock-disposals.png)`
+
+---
+
+### 🧾 4. Invoices
+The core billing engine of Karobar-App, supporting inward supplier stock and three specialized sales workflows.
+
+#### 4.1 Purchase Invoice
+* **Stock Inward & Batch Creation:** Enter supplier bills to immediately add stock into your inventory. Record **Batch Number**, **Expiry Date**, **Pack/Unit Quantities**, **Bonus/Free Units**, **Purchase Price**, **Discount %**, **Tax**, and **Sale Price (MRP)**.
+* **Automatic Margin & Cost Calculation:** Calculates effective net unit cost (factoring in bonus units and discounts) and updates product pricing automatically.
+* **Cash or Credit Settlement:** Pay the supplier immediately from your Cash Drawer / Bank Account, or post the bill on credit to the **Supplier Ledger**.
+
+> 📸 **Screenshot – Purchase Invoice**
+> `![Purchase Invoice](docs/screenshots/purchase-invoice.png)`
+
+#### 4.2 Sale Invoice (Retail & Wholesale Modes)
+Depending on your store configuration, Sale Invoices support two tailored modes:
+* **Retail Sale Invoice:** Built for selling individual units or packs to walk-in or credit customers, complete with batch selection (FEFO—First Expiring, First Out), instant stock checks, item/invoice discounts, and doctor/patient fields for restricted items.
+* **Wholesale Sale Invoice:** Built for distributors and wholesale counters—supports pack/carton quantities, loose units, bonus/free schemes, bulk discounts, previous customer balance visibility on the bill, and A4 invoice printing.
+* **Hold & Resume Drafts (`Alt+H` / `Alt+D`):** Put an unfinished bill on hold if a customer steps away, serve other customers, and resume the held draft anytime with live stock re-verification.
+* **Smart Overpayment Handling:** If a credit customer pays more than the current bill total, the extra amount is automatically credited to their **Customer Ledger** to reduce their previous dues.
+
+> 📸 **Screenshot – Retail & Wholesale Sale Invoice**
+> `![Sale Invoice](docs/screenshots/sale-invoice.png)`
+
+#### 4.3 ⚡ Barcode POS (Fast Checkout Terminal)
+A dedicated, full-screen, distraction-free counter terminal built for high-speed barcode scanning and keyboard-only operation.
+
+* **Scan & Go Checkout:** Scan product barcodes continuously—each scan adds or increments the item immediately with audio feedback.
+* **Visual Product Grid & Quick Search (`F2`):** Search by name or click product cards when an item doesn't have a barcode.
+* **Instant Cash & Change Calculator:** Enter cash received, see large-font customer change due, and press `Enter` or `Alt+S` to save and auto-print a 78mm thermal receipt in one step.
+
+> 📸 **Screenshot – Barcode POS Terminal**
+> `![Barcode POS Terminal](docs/screenshots/barcode-pos.png)`
+
+---
+
+### ↩️ 5. Returns
+Handle customer refunds and supplier returns accurately without messing up your inventory counts or ledgers.
+
+#### 5.1 Purchase Return
+* **Return Stock to Suppliers:** Select the supplier and original purchase invoice (or batch) to return expired, near-expiry, damaged, or excess goods.
+* **Automatic Stock & Ledger Update:** Deducts the returned quantities from the exact batch and automatically reduces your payable balance in the **Supplier Ledger** (or records a cash refund).
+
+#### 5.2 Sale Return
+* **Customer Returns & Refunds:** Look up the original sale invoice (by invoice number or barcode scan) or select items returned by a customer.
+* **Batch Restoration & Refund Settlement:** Puts returned items back into their original inventory batch and either refunds cash from the **Cash Drawer** or credits the customer's **Khata (Ledger)** balance.
+
+> 📸 **Screenshot – Purchase & Sale Returns**
+> `![Sale and Purchase Returns](docs/screenshots/returns.png)`
+
+---
+
+### 🛒 6. Transactions
+Proactive inventory planning, shortage tracking, and physical stock auditing tools.
+
+#### 6.1 Purchase Orders & Smart Reorder Forecasting
+* **Demand Forecasting Engine:** Analyzes your historical sales velocity and current stock levels to recommend exactly which products to order and in what quantities.
+* **Supplier Purchase Orders (PO):** Generate formal Purchase Orders for suppliers, track order status (*Draft, Sent, Partially Received, Completed*), and convert received orders into Purchase Invoices.
+
+> 📸 **Screenshot – Purchase Orders & Forecasting**
+> `![Purchase Orders](docs/screenshots/purchase-orders.png)`
+
+#### 6.2 User Demands (Shortbook / Wanted Items)
+* **Daily Counter Shortbook:** When a customer asks for an item that is out of stock or not yet carried in your shop, cashiers can log it in **User Demands** in seconds.
+* **Never Miss Sales Again:** At ordering time, review your User Demands list to turn customer requests into supplier orders.
+
+#### 6.3 Stock Adjustments
+* **Quick Count Corrections:** Make authorized manual additions or deductions to product batches when you find minor count differences, sample giveaways, or unpackaged units, with mandatory reason notes for full accountability.
+
+#### 6.4 Stocktake Sessions (Physical Inventory Audit)
+A structured multi-step workflow for conducting full-store or shelf-by-shelf physical stock counts:
+1. **Start Session:** Create a stocktake session for the whole store, a specific category, or a specific brand.
+2. **Physical Counting:** Staff enter the actual physical quantities counted on the shelves (`In Progress`).
+3. **Variance Review (`Pending Review`):** Managers review a side-by-side comparison of **System Expected Stock** vs. **Physical Counted Stock**, highlighting shortages and overages with their exact financial value.
+4. **Finalize & Sync (`Finalized`):** With one click, approve the session to automatically update all batch quantities to match the real physical count.
+
+> 📸 **Screenshot – Stocktake Sessions**
+> `![Stocktake Sessions](docs/screenshots/stocktake-sessions.png)`
+
+---
+
+### 💵 7. Finance
+Complete double-entry financial control covering customer credit (*Udhaar*), supplier payables, bank/wallet accounts, expenses, and cash drawer shifts.
+
+#### 7.1 Supplier Ledger
+* **Complete Accounts Payable Khata:** Select any supplier to view a chronological statement of all Purchase Invoices, Purchase Returns, Cash/Bank Payments, and the running balance you owe them.
+* **Printable Statements:** Filter by date range and print or export A4 Supplier Account Statements.
+
+#### 7.2 Customer Ledger
+* **Digital Customer Khata (Udhaar Register):** Track every credit customer's invoices, partial payments, advance deposits, sale returns, and net outstanding balance.
+* **Quick Settlement & Statements:** Settle individual open bills with one click or record lump-sum payments, and print clean A4 Customer Statements to share with buyers.
+
+> 📸 **Screenshot – Customer & Supplier Ledgers**
+> `![Customer Ledger](docs/screenshots/customer-ledger.png)`
+
+#### 7.3 Financial Accounts
+* **Multi-Account Treasury:** Track real-time balances across all your business money channels—**Cash in Hand**, **Bank Accounts**, **Card / POS Terminals**, and **Mobile Wallets** (e.g., JazzCash, Easypaisa, SadaPay).
+* **Deposits, Withdrawals & Inter-Account Transfers:** Record bank deposits, owner drawings, or transfers from the Cash Drawer to the Bank with full statement history for every account.
+
+> 📸 **Screenshot – Financial Accounts**
+> `![Financial Accounts](docs/screenshots/financial-accounts.png)`
+
+#### 7.4 Payment Vouchers
+* **Unified Receipt & Payment Register:** A dedicated register for all incoming **Customer Receipts** and outgoing **Supplier Payments** across Cash, Bank Transfer, Cheque, Card, or Mobile Wallet.
+* **Smart Multi-Invoice Allocation:** When a customer or supplier payment is recorded, automatically allocate the payment across oldest open invoices (`FIFO`) or pick specific bills to settle, and print or share a formal **Payment Voucher Receipt**.
+
+> 📸 **Screenshot – Payment Vouchers**
+> `![Payment Vouchers](docs/screenshots/payment-vouchers.png)`
+
+#### 7.5 Operating Expenses
+* **Daily Shop Expense (Kharcha) Tracking:** Log all day-to-day shop overheads across standard categories (*Shop Rent, Staff Salaries, Electricity/WAPDA, Generator Fuel, Tea & Refreshments, Packaging, Freight/Delivery, Maintenance*).
+* **Direct Cash Drawer & Bank Deduction:** Choose whether the expense was paid from the active **Cash Drawer** or a **Bank / Wallet Account**, keeping your cash count and Net Profit report 100% accurate.
+
+> 📸 **Screenshot – Operating Expenses**
+> `![Operating Expenses](docs/screenshots/operating-expenses.png)`
+
+#### 7.6 Cash Drawer
+Eliminate end-of-day cash confusion with shift-based counter reconciliation:
+* **Open Shift with Starting Float:** Cashiers start their shift by entering the opening cash float in the drawer.
+* **Live Shift Activity Log:** Every cash sale, customer recovery, cash refund, petty cash expense (`Cash Out`), and float top-up (`Cash In`) is logged automatically in real time—accessible anytime from the top navigation bar widget.
+* **Close Shift & Variance Check:** At shift end, the cashier enters the physical cash counted in the drawer. The system compares **Expected Cash** vs. **Counted Cash**, highlights any **Shortage or Overage**, and saves the closed shift report for the owner.
+
+> 📸 **Screenshot – Cash Drawer Management**
+> `![Cash Drawer](docs/screenshots/cash-drawer.png)`
+
+---
+
+### 📊 8. Reports
+14 specialized business, inventory, and financial reports—each with date/category/party filters, print-ready layouts, and exports.
+
+| Report Name | What It Tells You |
+| :--- | :--- |
+| **1. Net Profit (P&L)** | Complete Profit & Loss statement showing Gross Sales, Returns, Cost of Goods Sold (COGS), Gross Profit, itemized Operating Expenses, Net Profit, and Net Profit Margin %. |
+| **2. Current Stock** | Real-time stock valuation report showing available packs/units, purchase value, and retail sale value across your entire inventory. |
+| **3. Cost of Sale** | Summary of total sales revenue vs. historical cost of goods sold and gross profit earned over any date range. |
+| **4. Cost of Sale Detail** | Invoice-by-invoice and item-by-item breakdown of sale price, exact batch cost at the time of sale, and profit margin per transaction. |
+| **5. Purchase Detail** | Itemized report of all stock purchased, filtered by date, supplier, product, or batch. |
+| **6. Sale Detail** | Itemized report of all products sold, filtered by date, customer, cashier/user, category, or brand. |
+| **7. Stock Adjustment** | Audit report of all manual stock additions, deductions, and physical count adjustments with staff reasons. |
+| **8. Product Comprehensive** | Complete lifecycle history (stock card) of a single product—showing every purchase, sale, return, and adjustment from day one. |
+| **9. Near Expiry Product** | Printable list of batches expiring within your chosen timeframe so you can discount or return them before loss occurs. |
+| **10. Purchase Returns** | Detailed register of all goods returned to suppliers and the corresponding credit/refund amounts. |
+| **11. Sale Returns** | Detailed register of all customer returns and refunds issued at the counter. |
+| **12. Purchase Summary** | High-level supplier-wise and date-wise summary of total procurement spend. |
+| **13. Outstanding Aging** | Breaks down unpaid customer receivables and supplier payables by age (*0–30, 31–60, 61–90, and 90+ days overdue*) to speed up recoveries. |
+| **14. Low Stock & Reorder** | Lists all products that have fallen below their minimum stock threshold so you can reorder before running out. |
+
+> 📸 **Screenshot – Net Profit (P&L) & Business Reports**
+> `![Business Reports](docs/screenshots/reports.png)`
+
+---
+
+### ⚙️ 9. System
+Configure your store identity, billing rules, visual appearance, receipt templates, backups, and staff permissions.
+
+#### 9.1 Settings
+Organized into 5 easy configuration tabs:
+* **General Settings:** Set your Store Name, Logo, Phone Number, Address, Tax/License Number, Receipt Footer Note, and **Currency Formatting** (Currency Code, Symbol like `Rs.` or `$`, symbol position, and decimal places).
+* **Sale System Settings:** Choose your store's operating mode (**Retail Only**, **Wholesale Only**, or **Both Retail & Wholesale**) and shop type (e.g., Pharmacy, General Store).
+* **Theme Settings:** Customize the app's visual appearance—toggle **Light / Dark Mode**, pick custom **Primary, Secondary, and Tertiary brand colors**, and choose button styles.
+* **Printer Settings:** Choose between **78mm Thermal Receipt Printer** and **A4 Full-Page Printer**, and pick from 6 thermal templates (*Standard, Compact, Detailed, Bold, Minimal, Barcode*) and custom A4 invoice templates.
+* **License Settings:** View your software license status, validity, and activation details.
+
+> 📸 **Screenshot – Store, Theme & Printer Settings**
+> `![System Settings](docs/screenshots/settings.png)`
+
+#### 9.2 Backups & Storage
+Protect your business data against computer crashes or accidental deletion:
+* **One-Click Manual Backups:** Create an instant **Full Backup** (Database + Settings + Uploaded Files), **Database Only (SQL)**, or **Settings Only (JSON)** archive at any time.
+* **Automated Scheduled Backups:** Schedule daily, weekly, or monthly automatic backups with retention limits so old backups are cleaned up automatically.
+* **Local & Cloud Offsite Sync:** Store backups in a local folder or sync them offsite, download archives to a USB drive, or restore your system from any backup point.
+
+> 📸 **Screenshot – Backups & Storage**
+> `![Backups and Storage](docs/screenshots/backups.png)`
+
+#### 9.3 Users & Roles (Staff Access Control)
+* **Users:** Create individual login accounts for cashiers, pharmacists, storekeepers, accountants, and managers.
+* **Roles & Granular Permissions:** Define custom roles and tick exactly which screens and actions each role is allowed to access (e.g., allow a Cashier to create POS bills and view products, while hiding Net Profit reports, purchase costs, and invoice deletion).
+
+> 📸 **Screenshot – Users & Role Permissions**
+> `![Users and Roles](docs/screenshots/users-roles.png)`
 
