@@ -34,6 +34,7 @@ CalculatorIcon,
   HandRaisedIcon,
   ServerIcon,
   QrCodeIcon,
+  BuildingLibraryIcon,
 } from "@heroicons/react/24/outline";
 import { usePermissions } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
@@ -112,7 +113,10 @@ export default function ClassicSidebar({ appName, logoUrl }) {
     { type: "section", name: "Finance", key: "finance", icon: <CurrencyDollarIcon className="w-5 h-5" /> },
     { name: "Supplier Ledger", path: "/supplier-ledger", icon: <BuildingStorefrontIcon className="w-5 h-5" />, perm: "ledger.supplier.view", parent: "finance" },
     { name: "Customer Ledger", path: "/customer-ledger", icon: <UsersIcon className="w-5 h-5" />, perm: "ledger.customer.view", parent: "finance" },
-    { name: "Operating Expenses", path: "/expenses", icon: <BanknotesIcon className="w-5 h-5" />, perm: "expense.view", parent: "finance" },
+    { name: "Financial Accounts", path: "/accounts", icon: <BuildingLibraryIcon className="w-5 h-5" />, parent: "finance" },
+    { name: "Payment Vouchers", path: "/payments", icon: <BanknotesIcon className="w-5 h-5" />, perm: "payment.view", parent: "finance" },
+    { name: "Operating Expenses", path: "/expenses", icon: <CurrencyDollarIcon className="w-5 h-5" />, perm: "expense.view", parent: "finance" },
+    { name: "Cash Drawer", path: "/cash-drawer", icon: <BanknotesIcon className="w-5 h-5" />, parent: "finance" },
     { type: "section", name: "Reports", key: "reports", icon: <ChartBarIcon className="w-5 h-5" /> },
     { name: "Net Profit (P&L)", path: "/reports/net-profit", icon: <CalculatorIcon className="w-5 h-5" />, perm: "report.cost-of-sale.view", parent: "reports" },
     { name: "Current Stock", path: "/reports/current-stock", icon: <CubeIcon className="w-5 h-5" />, perm: "report.current-stock.view", parent: "reports" },

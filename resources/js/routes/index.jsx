@@ -61,6 +61,11 @@ const StocktakeIndex = lazy(() => import("../pages/stocktake/index.jsx"));
 const CreateStocktake = lazy(() => import("../pages/stocktake/Create.jsx"));
 const StocktakeSession = lazy(() => import("../pages/stocktake/Session.jsx"));
 const StocktakeReview = lazy(() => import("../pages/stocktake/Review.jsx"));
+// Financial Accounts & Payment Vouchers
+const AccountsPage = lazy(() => import("../pages/Accounts/index.jsx"));
+const PaymentsPage = lazy(() => import("../pages/Payments/index.jsx"));
+// Cash Drawer
+const CashDrawerPage = lazy(() => import("../pages/CashDrawer/index.jsx"));
 const SupplierLedgerPage = lazy(() => import("../pages/Ledger/SupplierLedgerPage.jsx"));
 const CustomerLedgerPage = lazy(() => import("../pages/Ledger/CustomerLedgerPage.jsx"));
 const UsersIndex = lazy(() => import("../pages/users/index.jsx"));
@@ -641,10 +646,42 @@ export default function AppRoutes() {
         </ProtectedRoute>
       }
       />
-      {/* Supplier Ledger */}
+      {/* Financial Accounts */}
       <Route
-      path="/supplier-ledger"
-      element= {
+      path="/accounts"
+      element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <AccountsPage />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      {/* Payment Vouchers */}
+      <Route
+      path="/payments"
+      element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <PaymentsPage />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      {/* Cash Drawer */}
+      <Route
+      path="/cash-drawer"
+      element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <CashDrawerPage />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+            {/* Supplier Ledger */}
+      <Route
+      path="/supplier-ledger"      element= {
         <ProtectedRoute>
           <DashboardLayout>
             <SupplierLedgerPage />
