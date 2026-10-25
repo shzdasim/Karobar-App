@@ -26,81 +26,104 @@ Karobar-App is built to fit both **Retail** (selling single units to walk-in cus
 
 ## 🗺️ App Features Diagram
 
-Below is a complete visual map of every sidebar section and function available inside **Karobar-App**:
+Below is a complete visual map of every module and function available inside **Karobar-App**:
 
 ```mermaid
 flowchart LR
     ROOT(("💼 Karobar-App"))
 
-    subgraph SG_DASH["🏠 Dashboard"]
-        D1["📊 Live Sales, Profit, Stock & Expiry Overview"]
+    %% Main Pillars
+    ROOT --> SALES["🛒 Sales & POS"]
+    ROOT --> PURCHASES["🚚 Purchases & Ordering"]
+    ROOT --> INVENTORY["📦 Inventory & Stock Control"]
+    ROOT --> FINANCE["💵 Accounts, Khata & Cash"]
+    ROOT --> REPORTS["📊 Reports & Business Insights"]
+    ROOT --> ADMIN["⚙️ Admin, Security & Setup"]
+
+    %% 1. Sales & POS
+    subgraph SG_SALES["🛒 Sales & Point of Sale (POS)"]
+        direction TB
+        S1["⚡ Barcode POS Terminal (Fast Walk-in Checkout)"]
+        S2["🏪 Retail Billing (Unit Sales & Prescriptions)"]
+        S3["📦 Wholesale Billing (Packs, Cartons & Bonus Schemes)"]
+        S4["⏸️ Hold & Resume Customer Draft Bills"]
+        S5["↩️ Sale Returns & Customer Refunds"]
+        S6["🖨️ Thermal (78mm) & A4 Invoice Printing"]
     end
+    SALES --> SG_SALES
 
-    subgraph SG_CORE["📦 1. Management"]
-        M1["🏷️ Products Catalog"]
-        M2["🖨️ Barcode Studio & Labels"]
-        M3["🗂️ Categories & Brands"]
-        M4["🚚 Suppliers Directory"]
-        M5["👥 Customers Directory"]
+    %% 2. Purchases & Ordering
+    subgraph SG_PURCHASES["🚚 Purchases & Procurement"]
+        direction TB
+        P1["📝 Customer Demands / Shortbook (Wanted Items)"]
+        P2["📈 Smart Purchase Orders & Reorder Forecasting"]
+        P3["📥 Purchase Invoices (Stock Inward, Batches & Pricing)"]
+        P4["📤 Purchase Returns (Supplier Debit Notes)"]
     end
+    PURCHASES --> SG_PURCHASES
 
-    subgraph SG_BATCH["⏳ 2. Batch & Expiry"]
-        B1["⏰ Expiry & Batch Tracking"]
-        B2["🛡️ Quarantine & Stock Disposal"]
+    %% 3. Inventory & Stock Control
+    subgraph SG_INVENTORY["📦 Products & Inventory Management"]
+        direction TB
+        I1["🏷️ Products, Categories & Brands Catalog"]
+        I2["⏳ Batch & Expiry Tracking (FEFO & Expiry Alerts)"]
+        I3["🏷️ Barcode Studio & Custom Sticker Printing"]
+        I4["📋 Stocktake Sessions (Physical Count & Review)"]
+        I5["⚖️ Stock Adjustments (Count Corrections)"]
+        I6["🗑️ Stock Disposals & Quarantine (Damaged / Expired)"]
     end
+    INVENTORY --> SG_INVENTORY
 
-    subgraph SG_INV["🧾 3. Invoices"]
-        I1["📥 Purchase Invoice (Stock In)"]
-        I2["🛍️ Sale Invoice (Retail & Wholesale)"]
-        I3["⚡ Barcode POS Terminal"]
+    %% 4. Accounts, Khata & Cash
+    subgraph SG_FINANCE["💵 Accounts, Khata (Ledgers) & Cash"]
+        direction TB
+        F1["📒 Customer Ledger (Credit Dues & Statements)"]
+        F2["📒 Supplier Ledger (Payables & Balances)"]
+        F3["🗄️ Cash Drawer Shifts (Opening Float to Closing Count)"]
+        F4["🏦 Financial Accounts (Cash, Bank & Digital Wallets)"]
+        F5["🧾 Payment Vouchers & Multi-Bill Settlements"]
+        F6["💸 Daily Operating Expenses (Rent, Bills, Salaries)"]
     end
+    FINANCE --> SG_FINANCE
 
-    subgraph SG_RET["↩️ 4. Returns"]
-        RT1["📤 Purchase Return (To Supplier)"]
-        RT2["🔄 Sale Return (From Customer)"]
+    %% 5. Reports & Business Insights
+    subgraph SG_REPORTS["📊 Business Reports & Analytics"]
+        direction TB
+        R1["🖥️ Live Executive Dashboard"]
+        R2["💰 Net Profit & Loss (P&L) Statement"]
+        R3["📈 Cost of Sale & Item Profit Margin Reports"]
+        R4["📑 Detailed Sales, Purchase & Returns Reports"]
+        R5["📦 Current Stock, Reorder & Product History Reports"]
+        R6["⚠️ Near-Expiry & Customer Aging Dues Reports"]
     end
+    REPORTS --> SG_REPORTS
 
-    subgraph SG_TXN["🛒 5. Transactions"]
-        T1["📋 Purchase Orders & Forecasting"]
-        T2["✋ User Demands (Shortbook)"]
-        T3["⚖️ Stock Adjustments"]
-        T4["🔍 Stocktake Sessions (Physical Audit)"]
+    %% 6. Admin, Security & System
+    subgraph SG_ADMIN["⚙️ Administration, Security & System"]
+        direction TB
+        A1["👥 Staff Accounts & Role Permissions"]
+        A2["🎨 Store Settings, Currency & Print Templates"]
+        A3["☁️ Automated Backups & Cloud Offsite Storage"]
+        A4["🔐 Software License Activation & Security"]
     end
+    ADMIN --> SG_ADMIN
 
-    subgraph SG_FIN["💵 6. Finance"]
-        F1["📒 Supplier Ledger (Payables)"]
-        F2["📒 Customer Ledger (Receivables)"]
-        F3["🏦 Financial Accounts (Cash, Bank, Wallets)"]
-        F4["🧾 Payment Vouchers"]
-        F5["💸 Operating Expenses"]
-        F6["🗄️ Cash Drawer Shifts"]
-    end
-
-    subgraph SG_REP["📊 7. Reports"]
-        RP1["💰 Net Profit (P&L) & Cost of Sale"]
-        RP2["📦 Current Stock, Low Stock & Near Expiry"]
-        RP3["📑 Sale, Purchase & Return Detail Reports"]
-        RP4["⏳ Outstanding Aging & Product History"]
-    end
-
-    subgraph SG_SYS["⚙️ 8. System"]
-        SY1["🎨 Store, Sale, Theme & Printer Settings"]
-        SY2["☁️ Backups & Cloud Offsite Storage"]
-        SY3["🔐 Staff Users, Roles & Permissions"]
-    end
-
-    ROOT --> SG_DASH
-    ROOT --> SG_CORE
-    ROOT --> SG_BATCH
-    ROOT --> SG_INV
-    ROOT --> SG_RET
-    ROOT --> SG_TXN
-    ROOT --> SG_FIN
-    ROOT --> SG_REP
-    ROOT --> SG_SYS
-
+    %% Styling for Visual Clarity
     classDef rootStyle fill:#1e293b,stroke:#0f172a,stroke-width:3px,color:#ffffff,font-weight:bold
+    classDef salesStyle fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
+    classDef purchaseStyle fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f
+    classDef inventoryStyle fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d
+    classDef financeStyle fill:#f3e8ff,stroke:#9333ea,stroke-width:2px,color:#581c87
+    classDef reportStyle fill:#ffe4e6,stroke:#e11d48,stroke-width:2px,color:#881337
+    classDef adminStyle fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0c4a6e
+
     class ROOT rootStyle
+    class SALES,S1,S2,S3,S4,S5,S6 salesStyle
+    class PURCHASES,P1,P2,P3,P4 purchaseStyle
+    class INVENTORY,I1,I2,I3,I4,I5,I6 inventoryStyle
+    class FINANCE,F1,F2,F3,F4,F5,F6 financeStyle
+    class REPORTS,R1,R2,R3,R4,R5,R6 reportStyle
+    class ADMIN,A1,A2,A3,A4 adminStyle
 ```
 
 ---
