@@ -56,6 +56,11 @@ const BarcodeIndex = lazy(() => import("../pages/Barcodes/Index.jsx"));
 const StockAdjustmentsIndex = lazy(() => import("../pages/stock-adjustments/index.jsx"));
 const CreateStockAdjustment = lazy(() => import("../pages/stock-adjustments/Create.jsx"));
 const EditStockAdjustment = lazy(() => import("../pages/stock-adjustments/Edit.jsx"));
+// Stocktake Sessions
+const StocktakeIndex = lazy(() => import("../pages/stocktake/index.jsx"));
+const CreateStocktake = lazy(() => import("../pages/stocktake/Create.jsx"));
+const StocktakeSession = lazy(() => import("../pages/stocktake/Session.jsx"));
+const StocktakeReview = lazy(() => import("../pages/stocktake/Review.jsx"));
 const SupplierLedgerPage = lazy(() => import("../pages/Ledger/SupplierLedgerPage.jsx"));
 const CustomerLedgerPage = lazy(() => import("../pages/Ledger/CustomerLedgerPage.jsx"));
 const UsersIndex = lazy(() => import("../pages/users/index.jsx"));
@@ -591,6 +596,47 @@ export default function AppRoutes() {
         <ProtectedRoute>
           <DashboardLayout>
             <EditStockAdjustment />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      {/* Stocktake Sessions */}
+      <Route
+      path="stocktake-sessions"
+      element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <StocktakeIndex />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      <Route
+      path="stocktake-sessions/create"
+      element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <CreateStocktake />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      <Route
+      path="stocktake-sessions/:id"
+      element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <StocktakeSession />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      <Route
+      path="stocktake-sessions/:id/review"
+      element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <StocktakeReview />
           </DashboardLayout>
         </ProtectedRoute>
       }

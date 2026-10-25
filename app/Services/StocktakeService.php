@@ -1,0 +1,401 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Batch;
+use App\Models\Product;
+use App\Models\StockAdjustment;
+use App\Models\StockAdjustmentItem;
+use App\Models\StocktakeItem;
+use App\Models\StocktakeSession;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+
+class StocktakeService
+{
+    // ===== Reference Number =====
+
+    /**
+     * Generate next reference number like "ST-202610-001".
+     */
+    public function generateReferenceNo(): string
+    {
+        $prefix = 'ST-' . now()->format('Ym') . '-';
+
+        $last = StocktakeSession::where('reference_no', 'like', $prefix . '%')
+            ->orderByDesc('id')
+            ->value('reference_no');
+
+        $next = 1;
+        if ($last && preg_match('/^' . preg_quote($prefix, '/') . '(\d+)$/', $last, $m)) {
+            $next = ((int) $m[1]) + 1;
+        }
+
+        return $prefix . sprintf('%03d', $next);
+    }
+
+    // ===== Session Lifecycle =====
+
+    /**
+     * Create a new stocktake session (stays in draft).
+     */
+    public function createSession(array $data, User $user): StocktakeSession
+    {
+        return StocktakeSession::create([
+            'reference_no' => $data['reference_no'] ?? $this->generateReferenceNo(),
+            'session_type' => $data['session_type'],
+            'is_blind'     => $data['is_blind'] ?? true,
+            'status'       => 'draft',
+            'scope_type'   => $data['scope_type'] ?? null,
+            'scope_id'     => $data['scope_id'] ?? null,
+            'notes'        => $data['notes'] ?? null,
+            'user_id'      => $user->id,
+        ]);
+    }
+
+    /**
+     * Snapshot current stock quantities into stocktake_items.
+     * Called when transitioning draft → in_progress.
+     */
+    public function snapshotItems(StocktakeSession $session): void
+    {
+        // Delete any previous snapshot (allow re-snapshotting)
+        $session->items()->delete();
+
+        $products = $this->resolveProducts($session);
+
+        $rows = [];
+        $now  = now();
+
+        foreach ($products as $product) {
+            $batches = Batch::where('product_id', $product->id)->get();
+
+            if ($batches->isNotEmpty()) {
+                // One item per batch
+                foreach ($batches as $batch) {
+                    $rows[] = [
+                        'stocktake_session_id' => $session->id,
+                        'product_id'           => $product->id,
+                        'batch_number'         => $batch->batch_number,
+                        'expiry_date'          => $batch->expiry_date,
+                        'system_qty'           => (float) ($batch->quantity ?? 0),
+                        'counted_qty'          => null,
+                        'variance_qty'         => 0,
+                        'variance_value'       => 0,
+                        'unit_purchase_price'  => (float) ($product->unit_purchase_price ?? 0),
+                        'status'               => 'pending',
+                        'discrepancy_reason'   => null,
+                        'counted_by'           => null,
+                        'counted_at'           => null,
+                        'created_at'           => $now,
+                        'updated_at'           => $now,
+                    ];
+                }
+
+                // Unbatched pool: product-level qty minus sum of batch qtys
+                $batchSum   = $batches->sum('quantity');
+                $unbatched  = (float) ($product->quantity ?? 0) - (float) $batchSum;
+                if ($unbatched > 0) {
+                    $rows[] = [
+                        'stocktake_session_id' => $session->id,
+                        'product_id'           => $product->id,
+                        'batch_number'         => null,
+                        'expiry_date'          => null,
+                        'system_qty'           => $unbatched,
+                        'counted_qty'          => null,
+                        'variance_qty'         => 0,
+                        'variance_value'       => 0,
+                        'unit_purchase_price'  => (float) ($product->unit_purchase_price ?? 0),
+                        'status'               => 'pending',
+                        'discrepancy_reason'   => null,
+                        'counted_by'           => null,
+                        'counted_at'           => null,
+                        'created_at'           => $now,
+                        'updated_at'           => $now,
+                    ];
+                }
+            } else {
+                // No batches — single item at product level
+                $rows[] = [
+                    'stocktake_session_id' => $session->id,
+                    'product_id'           => $product->id,
+                    'batch_number'         => null,
+                    'expiry_date'          => null,
+                    'system_qty'           => (float) ($product->quantity ?? 0),
+                    'counted_qty'          => null,
+                    'variance_qty'         => 0,
+                    'variance_value'       => 0,
+                    'unit_purchase_price'  => (float) ($product->unit_purchase_price ?? 0),
+                    'status'               => 'pending',
+                    'discrepancy_reason'   => null,
+                    'counted_by'           => null,
+                    'counted_at'           => null,
+                    'created_at'           => $now,
+                    'updated_at'           => $now,
+                ];
+            }
+        }
+
+        // Bulk insert for performance
+        foreach (array_chunk($rows, 500) as $chunk) {
+            StocktakeItem::insert($chunk);
+        }
+    }
+
+    /**
+     * Start the session: draft → in_progress, take snapshot, record started_at.
+     */
+    public function startSession(StocktakeSession $session): StocktakeSession
+    {
+        if ($session->status !== 'draft') {
+            throw new \RuntimeException("Only draft sessions can be started. Current status: {$session->status}");
+        }
+
+        $this->snapshotItems($session);
+
+        $session->update([
+            'status'     => 'in_progress',
+            'started_at' => now(),
+        ]);
+
+        return $session->fresh();
+    }
+
+    /**
+     * Record a physical count for one item.
+     */
+    public function recordCount(
+        StocktakeItem $item,
+        float $countedQty,
+        ?string $reason,
+        ?int $userId
+    ): StocktakeItem {
+        $varianceQty   = $countedQty - $item->system_qty;
+        $varianceValue = abs($varianceQty) * $item->unit_purchase_price;
+
+        $item->update([
+            'counted_qty'        => $countedQty,
+            'variance_qty'       => $varianceQty,
+            'variance_value'     => $varianceValue,
+            'status'             => 'counted',
+            'discrepancy_reason' => $reason,
+            'counted_by'         => $userId,
+            'counted_at'         => now(),
+        ]);
+
+        return $item->fresh();
+    }
+
+    /**
+     * Move session to pending_review. All items must be counted first.
+     */
+    public function submitForReview(StocktakeSession $session): StocktakeSession
+    {
+        if ($session->status !== 'in_progress') {
+            throw new \RuntimeException("Only in-progress sessions can be submitted for review.");
+        }
+
+        $pendingCount = $session->items()->where('status', 'pending')->count();
+        if ($pendingCount > 0) {
+            throw new \RuntimeException("All items must be counted before submitting for review. {$pendingCount} item(s) still pending.");
+        }
+
+        $session->update(['status' => 'pending_review']);
+
+        return $session->fresh();
+    }
+
+    /**
+     * Finalize the session: apply stock adjustments and mark as finalized.
+     */
+    public function finalizeSession(StocktakeSession $session, User $user): StocktakeSession
+    {
+        if ($session->status !== 'pending_review') {
+            throw new \RuntimeException("Only sessions in pending_review can be finalized.");
+        }
+
+        $pendingCount = $session->items()->where('status', 'pending')->count();
+        if ($pendingCount > 0) {
+            throw new \RuntimeException("All items must be counted before finalizing. {$pendingCount} item(s) still pending.");
+        }
+
+        return DB::transaction(function () use ($session, $user) {
+            // 1. Create the StockAdjustment header
+            $adj = StockAdjustment::create([
+                'posted_number' => 'STOCKTAKE-' . $session->reference_no,
+                'posted_date'   => now()->toDateString(),
+                'note'          => "Stocktake finalization for session {$session->reference_no}",
+                'total_worth'   => 0,
+                'user_id'       => $user->id,
+            ]);
+
+            $totalWorth      = 0.0;
+            $touchedProducts = [];
+
+            $items = $session->items()->with('product')->get();
+
+            foreach ($items as $item) {
+                // Only process items with a non-zero variance
+                if ($item->variance_qty == 0) {
+                    continue;
+                }
+
+                /** @var Product $product */
+                $product = Product::lockForUpdate()->findOrFail($item->product_id);
+
+                $unitCost = $item->unit_purchase_price ?: (float) ($product->unit_purchase_price ?? 0);
+                $worth    = abs($item->variance_qty) * $unitCost;
+
+                // Create StockAdjustmentItem record
+                StockAdjustmentItem::create([
+                    'stock_adjustment_id' => $adj->id,
+                    'product_id'          => $item->product_id,
+                    'batch_number'        => $item->batch_number,
+                    'expiry'              => $item->expiry_date,
+                    'pack_size'           => null,
+                    'previous_qty'        => $item->system_qty,
+                    'actual_qty'          => $item->counted_qty,
+                    'diff_qty'            => $item->variance_qty,
+                    'unit_purchase_price' => $unitCost,
+                    'worth_adjusted'      => $worth,
+                ]);
+
+                $totalWorth += $worth;
+
+                // Apply stock change
+                if ($item->batch_number) {
+                    $batch = Batch::lockForUpdate()
+                        ->where('product_id', $item->product_id)
+                        ->where('batch_number', $item->batch_number)
+                        ->first();
+
+                    if ($batch) {
+                        $batch->quantity = max(0, (float) ($batch->quantity ?? 0) + $item->variance_qty);
+                        $batch->save();
+                    }
+                } else {
+                    $product->quantity = max(0, (float) ($product->quantity ?? 0) + $item->variance_qty);
+                    // If qty hits zero, reset avg_price and margins
+                    if ($product->quantity <= 0) {
+                        $product->avg_price         = 0;
+                        $product->margin            = 0;
+                        $product->whole_sale_margin = 0;
+                    }
+                    $product->save();
+                }
+
+                $touchedProducts[$product->id] = true;
+            }
+
+            // Sync product-level qty from batch sums for all touched batched products
+            foreach (array_keys($touchedProducts) as $pid) {
+                /** @var Product $p */
+                $p          = Product::lockForUpdate()->findOrFail($pid);
+                $batchCount = Batch::where('product_id', $pid)->count();
+                if ($batchCount > 0) {
+                    $this->setProductQty($p, $this->sumBatches($p));
+                }
+            }
+
+            // Update StockAdjustment total
+            $adj->update(['total_worth' => $totalWorth]);
+
+            // Mark session as finalized
+            $session->update([
+                'status'              => 'finalized',
+                'completed_at'        => now(),
+                'stock_adjustment_id' => $adj->id,
+            ]);
+
+            return $session->fresh();
+        });
+    }
+
+    /**
+     * Cancel a session (draft or in_progress only).
+     */
+    public function cancelSession(StocktakeSession $session): StocktakeSession
+    {
+        if (!in_array($session->status, ['draft', 'in_progress'])) {
+            throw new \RuntimeException("Only draft or in-progress sessions can be cancelled. Current status: {$session->status}");
+        }
+
+        $session->update(['status' => 'cancelled']);
+
+        return $session->fresh();
+    }
+
+    // ===== Private Helpers =====
+
+    /**
+     * Resolve the set of products to snapshot based on session scope.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<Product>
+     */
+    private function resolveProducts(StocktakeSession $session)
+    {
+        $query = Product::query();
+
+        if ($session->session_type === 'full') {
+            // All products with quantity > 0 OR that have batches with quantity > 0
+            $query->where(function ($q) {
+                $q->where('quantity', '>', 0)
+                  ->orWhereHas('batches', fn($b) => $b->where('quantity', '>', 0));
+            });
+        } else {
+            // Cycle count — filter by scope
+            switch ($session->scope_type) {
+                case 'category':
+                    $query->where('category_id', $session->scope_id);
+                    break;
+                case 'brand':
+                    $query->where('brand_id', $session->scope_id);
+                    break;
+                case 'supplier':
+                    $query->where('supplier_id', $session->scope_id);
+                    break;
+            }
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * Read the authoritative stock qty for a product.
+     */
+    private function getProductQty(Product $p): float
+    {
+        return (float) ($p->available_units ?? $p->quantity_on_hand ?? $p->quantity ?? 0);
+    }
+
+    /**
+     * Set the authoritative stock qty for a product and save.
+     */
+    private function setProductQty(Product $p, float $qty): void
+    {
+        if ($p->offsetExists('available_units')) {
+            $p->available_units = $qty;
+        } elseif ($p->offsetExists('quantity_on_hand')) {
+            $p->quantity_on_hand = $qty;
+        } else {
+            $p->quantity = $qty;
+        }
+
+        if ($qty <= 0) {
+            $p->avg_price         = 0;
+            $p->margin            = 0;
+            $p->whole_sale_margin = 0;
+        }
+
+        $p->save();
+    }
+
+    /**
+     * Sum all batch quantities for a product.
+     */
+    private function sumBatches(Product $p): float
+    {
+        return (float) Batch::where('product_id', $p->id)
+            ->sum(DB::raw('COALESCE(quantity, 0)'));
+    }
+}

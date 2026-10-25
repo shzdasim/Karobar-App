@@ -359,4 +359,19 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/barcodes/products-search',        [\App\Http\Controllers\BarcodeController::class, 'searchProducts']);
     Route::get('/barcodes/purchase-orders',        [\App\Http\Controllers\BarcodeController::class, 'getPurchaseOrders']);
     Route::get('/barcodes/scan',                   [\App\Http\Controllers\BarcodeController::class, 'scanProduct']);
+
+    // -------------------------------------------------------------------------
+    // Stocktake Sessions (Physical Cycle Count & Blind Audits)
+    // -------------------------------------------------------------------------
+    Route::get('/stocktake-sessions/new-code',          [\App\Http\Controllers\StocktakeController::class, 'newCode']);
+    Route::get('/stocktake-sessions',                   [\App\Http\Controllers\StocktakeController::class, 'index']);
+    Route::post('/stocktake-sessions',                  [\App\Http\Controllers\StocktakeController::class, 'store']);
+    Route::get('/stocktake-sessions/{id}',              [\App\Http\Controllers\StocktakeController::class, 'show']);
+    Route::delete('/stocktake-sessions/{id}',           [\App\Http\Controllers\StocktakeController::class, 'destroy']);
+    Route::patch('/stocktake-sessions/{id}/start',      [\App\Http\Controllers\StocktakeController::class, 'start']);
+    Route::patch('/stocktake-sessions/{id}/submit-review', [\App\Http\Controllers\StocktakeController::class, 'submitForReview']);
+    Route::post('/stocktake-sessions/{id}/finalize',    [\App\Http\Controllers\StocktakeController::class, 'finalize']);
+    Route::patch('/stocktake-sessions/{id}/cancel',     [\App\Http\Controllers\StocktakeController::class, 'cancel']);
+    Route::get('/stocktake-sessions/{id}/items',        [\App\Http\Controllers\StocktakeController::class, 'items']);
+    Route::patch('/stocktake-items/{item}',             [\App\Http\Controllers\StocktakeController::class, 'recordCount']);
 });

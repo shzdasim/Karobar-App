@@ -108,6 +108,7 @@ export default function ClassicSidebar({ appName, logoUrl }) {
 { name: "Purchase Orders", path: "/purchase-orders", icon: <ClipboardDocumentCheckIcon className="w-5 h-5" />, perm: "purchase-order.view", parent: "transactions" },
     { name: "User Demands", path: "/user-demands", icon: <HandRaisedIcon className="w-5 h-5" />, perm: "user-demands.view", parent: "transactions" },
     { name: "Stock Adjustments", path: "/stock-adjustments", icon: <ArrowsRightLeftIcon className="w-5 h-5" />, perm: "stock-adjustment.view", parent: "transactions" },
+    { name: "Stocktake Sessions", path: "/stocktake-sessions", icon: <ClipboardDocumentCheckIcon className="w-5 h-5" />, perm: "stocktake.view", parent: "transactions" },
     { type: "section", name: "Finance", key: "finance", icon: <CurrencyDollarIcon className="w-5 h-5" /> },
     { name: "Supplier Ledger", path: "/supplier-ledger", icon: <BuildingStorefrontIcon className="w-5 h-5" />, perm: "ledger.supplier.view", parent: "finance" },
     { name: "Customer Ledger", path: "/customer-ledger", icon: <UsersIcon className="w-5 h-5" />, perm: "ledger.customer.view", parent: "finance" },
