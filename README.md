@@ -135,26 +135,26 @@ A built-in label designer and barcode printing studio so you can tag products th
 * **Custom Label Designer:** Toggle what appears on the sticker—**Store Name**, **Product Name** (1 or 2 lines), **Product Code**, **Sale Price (MRP)**, **Batch Number**, **Manufacturing/Expiry Date**, and **Code-128 Barcode**.
 * **Thermal Roll & A4 Sheet Layouts:** Supports single/double-column thermal sticker rolls (e.g., 50x25mm, 38x25mm) as well as multi-column A4 sticker sheets with customizable margins, gaps, and saved templates.
 
-![Barcode Studio](Screenshots/BarcodeStudio.png)
+![Barcode Studio](Screenshots/Barcode-Studio-page.png)
 
 #### 2.3 Categories & Brands
 * **Categories:** Organize your inventory into logical groups (e.g., *Antibiotics, Syrups, Surgical, Groceries, Cosmetics, Hardware*) for faster filtering and category-wise sales analysis.
 * **Brands / Companies:** Record manufacturer or brand names (e.g., *GSK, Abbott, Unilever, Nestle*) to track brand performance and filter stock or purchase orders by company.
 
-![Categories](Screenshots/Categories.png)
-![Brands](Screenshots/Brands.png)
+![Categories](Screenshots/Categories-Page.png)
+![Brands](Screenshots/Brands-Page.png)
 
 #### 2.4 Suppliers
 * **Supplier Directory:** Maintain complete contact records for distributors, wholesalers, and company bookers—including contact person, phone number, address, tax/license numbers, and opening payable balance.
 * **Direct Ledger Link:** View how much you owe any supplier and jump straight to their purchase history or ledger statement.
 
-![Suppliers](Screenshots/Suppliers.png)
+![Suppliers](Screenshots/Suppliers-Page.png)
 
 #### 2.5 Customers
 * **Customer Directory:** Save regular retail and wholesale buyers with their phone number, address, credit limit, custom discount percentage, and opening balance.
 * **Custom Wholesale Pricing:** Remembers customer-specific negotiated pack prices for repeat wholesale buyers.
 
-![Customers](Screenshots/Customers.png)
+![Customers](Screenshots/Customers-Page.png)
 
 ---
 
@@ -166,7 +166,7 @@ Built specifically for pharmacies, grocery stores, and perishable goods business
 * **Filter by Supplier or Brand:** Quickly pull up all expiring items from a specific distributor so you can hand them back to the supplier's order booker before their return window closes.
 * **One-Click Actions:** Directly initiate a **Purchase Return** to the supplier or move expired stock to **Quarantine & Disposal** right from the expiry screen.
 
-![Expiry & Tracking](Screenshots/ExpiryTracking.png)
+![Expiry & Tracking](Screenshots/BatchExpiryandTracking.png)
 
 #### 3.2 Quarantine & Disposal
 When stock is expired, broken, spoiled, or recalled and cannot be returned to a supplier, **Quarantine & Disposal** ensures it is removed from saleable stock cleanly and recorded as an audited business write-off.
@@ -175,7 +175,7 @@ When stock is expired, broken, spoiled, or recalled and cannot be returned to a 
 * **Cause & Disposal Method Tracking:** Log the exact reason (*Shelf Expiry, Physical Breakage, Cold-Chain Spoilage, Defective Return, Manufacturer Recall, Pest/Water Damage*) and disposal method (*Incineration, Chemical Neutralization, Municipal Waste, Handed to Supplier*).
 * **Official Disposal Certificate:** Generate and print a formal **Stock Destruction / Disposal Certificate** for regulatory or tax audits.
 
-![Quarantine & Disposal](Screenshots/QuarantineDisposal.png)
+![Quarantine & Disposal](Screenshots/Quarantine-and-disposal.png)
 
 ---
 
@@ -187,7 +187,8 @@ The core billing engine of Karobar-App, supporting inward supplier stock and thr
 * **Automatic Margin & Cost Calculation:** Calculates effective net unit cost (factoring in bonus units and discounts) and updates product pricing automatically.
 * **Cash or Credit Settlement:** Pay the supplier immediately from your Cash Drawer / Bank Account, or post the bill on credit to the **Supplier Ledger**.
 
-![Purchase Invoice](Screenshots/PurchaseInvoice.png)
+![Purchase Invoices List](Screenshots/Purchase-Invoice-Page.png)
+![Add Purchase Invoice](Screenshots/Add-Purchase-Invoice.png)
 
 #### 4.2 Sale Invoice (Retail & Wholesale Modes)
 Depending on your store configuration, Sale Invoices support two tailored modes:
