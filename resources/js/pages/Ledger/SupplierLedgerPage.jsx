@@ -444,6 +444,10 @@ const [suppliers, setSuppliers] = useState([]);
         toast.error("Cannot delete invoice row");
       } else if (r.id) {
         await axios.delete(`/api/supplier-ledger/${r.id}`);
+        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+        window.dispatchEvent(new CustomEvent("accounts-changed"));
+        try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+        try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
         toast.success("Row deleted");
         await fetchData();
       } else {
@@ -598,7 +602,8 @@ const [suppliers, setSuppliers] = useState([]);
   const openSettle = (r) => {
     if (!can.update) return toast.error("You don't have permission to update invoices.");
     if (!r.purchase_invoice_id) return toast.error("This row is not linked to a purchase invoice.");
-    if (Number(r.credit_remaining || 0) <= 0) return toast.error("This invoice is already fully paid.");
+    const due = Number(r.invoice_due ?? r.credit_remaining ?? 0);
+    if (due <= 0) return toast.error("This invoice is already fully paid.");
     setSettleTarget(r);
   };
   const closeSettle = () => {
@@ -617,8 +622,15 @@ const [suppliers, setSuppliers] = useState([]);
       });
       const ref = data?.posted_number || settleTarget.posted_number || "";
       const amount = Number(data?.settled || 0);
-      if (amount > 0) toast.success(`Invoice ${ref} marked as paid (${fmt(amount)})`);
-      else toast("Invoice was already fully paid", { icon: "✅" });
+      if (amount > 0) {
+        toast.success(`Invoice ${ref} marked as paid (${fmt(amount)})`);
+        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+        window.dispatchEvent(new CustomEvent("accounts-changed"));
+        try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+        try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
+      } else {
+        toast("Invoice was already fully paid", { icon: "✅" });
+      }
       setSettleTarget(null);
       await fetchData();
     } catch (err) {
@@ -762,18 +774,6 @@ return (
                 <DocumentTextIcon className="w-3.5 h-3.5" />
                 <span>Payment Vouchers</span>
               </button>
-
-              <Guard when={can.create}>
-                <button
-                  onClick={openAddPayment}
-                  disabled={!supplierId}
-                  title="Add an inline payment row"
-                  className="products-action theme-btn-secondary"
-                >
-                  <PlusCircleIcon className="w-3.5 h-3.5" />
-                  <span>Inline payment</span>
-                </button>
-              </Guard>
 
 
               <Guard when={can.create}>
@@ -947,9 +947,10 @@ return (
                     const isPayment = r.entry_type === "payment";
                     const isManual = r.entry_type === "manual";
                     const pending = isPendingRow(r);
-                    const editable = !isInvoice;
-                    // Invoice rows are generated from purchases and cannot be edited/removed
-                    const locked = isInvoice && !r.is_manual;
+                    const editable = !isInvoice && !isPayment;
+                    // Invoice rows are generated from purchases and payment rows come from Payment Vouchers
+                    const locked = (isInvoice && !r.is_manual) || Boolean(r.payment_id);
+                    const invoiceDue = Number(r.invoice_due ?? r.credit_remaining ?? 0);
 
                     const accent = isInvoice ? themeColors.primary : isPayment ? themeColors.emerald : themeColors.tertiary;
                     const accentHover = isInvoice ? themeColors.primaryHover : isPayment ? themeColors.emeraldHover : themeColors.tertiaryHover;
@@ -973,14 +974,14 @@ return (
                           {r.purchase_invoice_id ? (
                             <button
                               onClick={() => openSettle(r)}
-                              disabled={settling || Number(r.credit_remaining || 0) <= 0}
+                              disabled={settling || invoiceDue <= 0}
                               title={
-                                Number(r.credit_remaining || 0) <= 0
+                                invoiceDue <= 0
                                   ? `${r.posted_number || "Invoice"} is fully paid`
                                   : `Mark ${r.posted_number || "invoice"} as fully paid`
                               }
                               className={`products-row-action ledger-row-action inline-flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-200 ${
-                                Number(r.credit_remaining || 0) <= 0
+                                invoiceDue <= 0
                                   ? "text-green-500 dark:text-green-400 bg-green-500/10 cursor-default"
                                   : isDark
                                   ? "text-slate-200 bg-slate-700 hover:bg-emerald-600 hover:text-white"
@@ -1098,17 +1099,9 @@ return (
                         {/* Payment */}
                         <td className="px-2 py-1.5 text-right">
                           {isPayment ? (
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={getInput(r, "debited_amount")}
-                              onChange={(e) => setInput(r.__i, "debited_amount", e.target.value)}
-                              onBlur={() => commitNumber(r.__i, "debited_amount")}
-                              onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-                              placeholder="0"
-                              className={`${cellInput} font-semibold`}
-                              style={{ color: themeColors.emerald }}
-                            />
+                            <span className="font-semibold px-1.5 py-1 inline-block" style={{ color: themeColors.emerald }}>
+                              {fmt(r.debited_amount ?? 0)}
+                            </span>
                           ) : (
                             <span className="text-gray-300 dark:text-slate-600">—</span>
                           )}
@@ -1160,8 +1153,8 @@ return (
                     <div className="flex flex-col items-center gap-2">
                       <CubeIcon className="w-8 h-8 text-gray-400" />
                       <p className="text-sm">
-                        No entries yet. Use <b className={isDark ? "text-slate-300" : "text-gray-700"}>Load</b> to pull
-                        invoices, or add a Payment / Manual row — new rows appear at the top.
+                        No entries yet. Use <b className={isDark ? "text-slate-300" : "text-gray-700"}>Load entries</b> to pull
+                        invoices, or use <b className={isDark ? "text-slate-300" : "text-gray-700"}>Record Payment</b> / add a Manual row.
                       </p>
                     </div>
                   </td>
@@ -1245,11 +1238,11 @@ return (
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-gray-500 dark:text-gray-400">Already paid</span>
-                    <span className="font-semibold text-gray-800 dark:text-gray-100">{fmt(settleTarget.total_paid || 0)}</span>
+                    <span className="font-semibold text-gray-800 dark:text-gray-100">{fmt(settleTarget.invoice_settled ?? settleTarget.total_paid ?? 0)}</span>
                   </div>
                   <div className={`flex items-center justify-between border-t pt-1.5 ${isDark ? "border-slate-600" : "border-gray-200"}`}>
                     <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Amount to settle</span>
-                    <span className="font-bold" style={{ color: themeColors.emerald }}>{fmt(settleTarget.credit_remaining || 0)}</span>
+                    <span className="font-bold" style={{ color: themeColors.emerald }}>{fmt(settleTarget.invoice_due ?? settleTarget.credit_remaining ?? 0)}</span>
                   </div>
                 </div>
 
@@ -1450,6 +1443,9 @@ return (
         partyType="supplier"
         partyId={supplierId}
         partyName={selectedSupplier?.name || ""}
+        onPaymentReversed={() => {
+          fetchData();
+        }}
       />
 
       {/* Outbound Document Share Modal (WhatsApp / Email PDF) */}

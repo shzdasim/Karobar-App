@@ -521,6 +521,7 @@ class SaleInvoiceController extends Controller
         $data = $request->validate([
             'reason'              => 'nullable|string|max:500',
             'update_drawer'       => 'nullable|boolean',
+            'update_drawer_if_pre_shift' => 'nullable|boolean',
             'customer_id'         => 'required|exists:customers,id',
             'invoice_type'        => 'nullable|string|in:credit,debit',
             'payment_method'      => 'nullable|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
@@ -630,7 +631,7 @@ class SaleInvoiceController extends Controller
             ];
 
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'due_date')) {
-                $invoiceData['due_date'] = $dueDate;
+                $updateData['due_date'] = $dueDate;
             }
 
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'payment_method')) {
@@ -726,7 +727,12 @@ class SaleInvoiceController extends Controller
                 $newReceived = (float)$invoice->total;
             }
             $newCash = ($newPayMethod === 'cash') ? $newReceived : 0.0;
-            $updateDrawerFlag = array_key_exists('update_drawer', $data) ? (bool)$data['update_drawer'] : null;
+            $updateDrawerFlag = null;
+            if (array_key_exists('update_drawer', $data) && $data['update_drawer'] !== null) {
+                $updateDrawerFlag = (bool)$data['update_drawer'];
+            } elseif (array_key_exists('update_drawer_if_pre_shift', $data) && $data['update_drawer_if_pre_shift'] !== null) {
+                $updateDrawerFlag = (bool)$data['update_drawer_if_pre_shift'];
+            }
 
             app(\App\Services\CashDrawerService::class)->syncSaleInvoiceUpdate(
                 $invoice,
@@ -896,8 +902,8 @@ class SaleInvoiceController extends Controller
                 $request->user()
             );
 
-            // Adjust financial accounts for deleted invoice if refund mode
-            if ($mode === 'refund') {
+            // Adjust financial accounts for deleted invoice if refund mode or debit invoice
+            if ($mode === 'refund' || ($invoice->invoice_type ?? 'debit') === 'debit') {
                 $delAmount = (float)($invoice->total_receive ?? 0);
                 if (($invoice->invoice_type ?? 'debit') === 'debit' && $delAmount <= 0) {
                     $delAmount = (float)$invoice->total;

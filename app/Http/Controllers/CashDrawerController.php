@@ -94,6 +94,30 @@ class CashDrawerController extends Controller
             $request->user()
         );
 
+        $cashAccount = app(\App\Services\AccountService::class)->getDefaultAccount('cash');
+        if ($cashAccount && $txn) {
+            if ($data['type'] === 'cash_in') {
+                app(\App\Services\AccountService::class)->deposit(
+                    $cashAccount,
+                    (float) $data['amount'],
+                    'cash_drawer_manual',
+                    $txn->id,
+                    "Manual Cash In: {$data['notes']}",
+                    $request->user()
+                );
+            } else {
+                app(\App\Services\AccountService::class)->withdraw(
+                    $cashAccount,
+                    (float) $data['amount'],
+                    'cash_drawer_manual',
+                    $txn->id,
+                    "Manual Cash Out: {$data['notes']}",
+                    $request->user()
+                );
+            }
+            $this->cashDrawerService->recalculateExpectedBalance($session->fresh());
+        }
+
         return response()->json([
             'message'     => ($data['type'] === 'cash_in' ? 'Cash in' : 'Cash out') . ' recorded successfully.',
             'transaction' => $txn,
@@ -141,6 +165,16 @@ class CashDrawerController extends Controller
 
         $sessions = CashDrawerSession::with(['user'])
             ->withCount('transactions')
+            ->withSum([
+                'transactions as total_cash_in' => fn($q) => $q->whereIn('type', [
+                    'cash_sale', 'customer_payment', 'purchase_return', 'cash_in',
+                ]),
+            ], 'amount')
+            ->withSum([
+                'transactions as total_cash_out' => fn($q) => $q->whereIn('type', [
+                    'cash_purchase', 'supplier_payment', 'cash_return', 'expense', 'cash_out',
+                ]),
+            ], 'amount')
             ->orderBy('id', 'desc')
             ->paginate($limit);
 

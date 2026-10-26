@@ -252,6 +252,16 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
         upsertProducts(responseData.products);
       }
       let next = recalcFooter(loadedPayload, "init");
+      if (next.invoice_type === "credit") {
+        next.total_paid = loadedPayload?.total_paid ?? "";
+        setPaidTouched(true);
+      } else if (loadedPayload?.total_paid !== undefined && loadedPayload?.total_paid !== "" && Number(loadedPayload.total_paid) !== Number(next.total_amount)) {
+        next.total_paid = loadedPayload.total_paid;
+        setPaidTouched(true);
+      } else {
+        next.total_paid = next.total_amount ?? "";
+        setPaidTouched(false);
+      }
       if (Array.isArray(next.items)) {
         next.items = next.items.map((it) => ({
           ...it,
@@ -325,7 +335,13 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
       const items = initialData.items.map(item => recalcItem(item));
       const next = recalcFooter({ ...form, ...initialData, items }, "init");
       next.invoice_amount = next.total_amount;
-      next.total_paid = next.total_amount;
+      if (next.invoice_type === "credit") {
+        next.total_paid = initialData.total_paid ?? "";
+        setPaidTouched(true);
+      } else {
+        next.total_paid = next.total_amount;
+        setPaidTouched(false);
+      }
       if (Array.isArray(next.items)) {
         next.items = next.items.map((it) => ({
           ...it,
@@ -417,8 +433,21 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
     const res = await axios.get(`/api/purchase-invoices/${invoiceId}`);
     originalInvoiceMetaRef.current = res.data;
     let next = recalcFooter(res.data, "init");
-    // 🔗 Keep total_paid linked to total_amount on edit load
-    next.total_paid = next.total_amount ?? "";
+    if (res.data?.invoice_type === "credit") {
+      const existingPaid = Number(res.data?.total_paid ?? 0);
+      next.total_paid = existingPaid > 0 ? existingPaid.toFixed(2) : "";
+      setPaidTouched(true);
+    } else if (
+      res.data?.total_paid !== undefined &&
+      res.data?.total_paid !== null &&
+      Math.abs(Number(res.data.total_paid) - Number(next.total_amount || 0)) > 0.009
+    ) {
+      next.total_paid = to2(res.data.total_paid).toFixed(2);
+      setPaidTouched(true);
+    } else {
+      next.total_paid = next.total_amount ?? "";
+      setPaidTouched(false);
+    }
     next.payment_method = res.data?.payment_method || "cash";
     next.account_id = res.data?.account_id || null;
     if (Array.isArray(next.items)) {
@@ -428,7 +457,6 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
       }));
     }
     setForm(next);
-    setPaidTouched(false);
     if (res.data?.purchase_order_id) setArrangement('original');
     // Reflect the invoice's supplier in the search button display
     if (next.supplier_id) {
@@ -462,7 +490,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
     let nextForm = recalcFooter(tempForm, name);
     nextForm[name] = newValue;
 
-    if (!paidTouched) {
+    if (!paidTouched && nextForm.invoice_type !== "credit") {
       nextForm.total_paid = nextForm.total_amount ?? "";
     }
 
@@ -588,7 +616,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
     let newForm = { ...form, items: newItems };
     newForm = recalcFooter(newForm, "items");
 
-    if (!paidTouched) {
+    if (!paidTouched && newForm.invoice_type !== "credit") {
       newForm.total_paid = newForm.total_amount ?? "";
     }
 
@@ -636,7 +664,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
     if (form.items.length > 1) {
       const newItems = form.items.filter((_, i) => i !== index);
       let nextForm = recalcFooter({ ...form, items: newItems }, "items");
-      if (!paidTouched) {
+      if (!paidTouched && nextForm.invoice_type !== "credit") {
         nextForm.total_paid = nextForm.total_amount ?? "";
       }
       setForm(nextForm);
@@ -1172,10 +1200,12 @@ const contRect = container.getBoundingClientRect();
         return;
       }
 
-      // 🔒 Final guard: keep linked if user never changed it
+      // 🔒 Final guard: keep linked if user never changed it (for debit invoices only)
       const payload = {
         ...form,
-        total_paid: paidTouched ? form.total_paid : (form.total_amount ?? ""),
+        total_paid: (paidTouched || form.invoice_type === "credit")
+          ? (form.total_paid === "" || form.total_paid == null ? 0 : form.total_paid)
+          : (form.total_amount ?? 0),
       };
 
       const sortedRows = arrangement === 'custom' ? arrangedRows : arrangePurchaseInvoiceRows(payload.items, products, arrangement);
@@ -1276,7 +1306,7 @@ const contRect = container.getBoundingClientRect();
                   oldCash,
                   newCash,
                   cashDelta,
-                  execute: (updateDrawer) => doSave({ ...payloadToSend, update_drawer_if_pre_shift: updateDrawer }),
+                  execute: (updateDrawer) => doSave({ ...payloadToSend, update_drawer: updateDrawer, update_drawer_if_pre_shift: updateDrawer }),
                 });
                 return;
               }
@@ -1859,7 +1889,7 @@ const contRect = container.getBoundingClientRect();
                         newItems[i] = recalcItem(prepared, "product");
                         let nextForm = { ...form, items: newItems };
                         nextForm = recalcFooter(nextForm, "items");
-                        if (!paidTouched) nextForm.total_paid = nextForm.total_amount ?? "";
+                        if (!paidTouched && nextForm.invoice_type !== "credit") nextForm.total_paid = nextForm.total_amount ?? "";
                         setForm(nextForm);
                         
                         // Focus on batch field if product has assigned batches, else shift directly to quantity
@@ -2296,7 +2326,7 @@ const contRect = container.getBoundingClientRect();
                         setForm((prev) => {
                           const normalized = prev.total_paid === "" ? "" : to2(prev.total_paid).toFixed(2);
                           const amt = prev.total_amount === "" || prev.total_amount == null ? "" : to2(prev.total_amount).toFixed(2);
-                          if (normalized !== "" && normalized === amt) {
+                          if (prev.invoice_type !== "credit" && normalized !== "" && normalized === amt) {
                             setPaidTouched(false);
                           }
                           return { ...prev, total_paid: normalized };

@@ -115,6 +115,8 @@ class PurchaseInvoiceController extends Controller
             'discount_amount'      => 'nullable|numeric',
             'total_amount'         => 'required|numeric|min:0',
             'total_paid'           => 'nullable|numeric|min:0',
+            'update_drawer'              => 'nullable|boolean',
+            'update_drawer_if_pre_shift' => 'nullable|boolean',
 
             'items'                                => 'required|array|min:1',
             'items.*.purchase_order_item_id'        => 'nullable|integer|exists:purchase_order_items,id',
@@ -150,8 +152,9 @@ class PurchaseInvoiceController extends Controller
         $data['total_amount']        = $calculated['total_amount'];
         $data['items']               = $calculated['items'];
 
+        $invoiceType = $data['invoice_type'] ?? 'debit';
         if (!array_key_exists('total_paid', $data) || $data['total_paid'] === null || $data['total_paid'] === '') {
-            $data['total_paid'] = $data['total_amount'] ?? 0;
+            $data['total_paid'] = $invoiceType === 'credit' ? 0 : ($data['total_amount'] ?? 0);
         }
 
         try {
@@ -336,6 +339,8 @@ class PurchaseInvoiceController extends Controller
             'discount_amount'      => 'nullable|numeric',
             'total_amount'         => 'required|numeric|min:0',
             'total_paid'           => 'nullable|numeric|min:0',
+            'update_drawer'              => 'nullable|boolean',
+            'update_drawer_if_pre_shift' => 'nullable|boolean',
 
             'items'                                => 'required|array|min:1',
             'items.*.purchase_order_item_id'        => 'nullable|integer|exists:purchase_order_items,id',
@@ -396,6 +401,10 @@ class PurchaseInvoiceController extends Controller
                 }
                 $oldCashPaid = ($oldPayMethod === 'cash') ? $oldPaid : 0.0;
                 $newInvoiceType = $data['invoice_type'] ?? $oldInvoiceType;
+
+                if (!array_key_exists('total_paid', $data) || $data['total_paid'] === null || $data['total_paid'] === '') {
+                    $data['total_paid'] = $newInvoiceType === 'credit' ? 0 : ($data['total_amount'] ?? 0);
+                }
 
                 $purchaseInvoice->load('items');
                 $oldItemsByKey = $this->groupPurchaseItemsByStockKey(
@@ -549,7 +558,12 @@ class PurchaseInvoiceController extends Controller
                     $newPaid = (float)$data['total_amount'];
                 }
                 $newCashPaid = ($newPayMethod === 'cash') ? $newPaid : 0.0;
-                $updateDrawerFlag = $request->has('update_drawer') ? $request->boolean('update_drawer') : true;
+                $updateDrawerFlag = null;
+                if ($request->has('update_drawer')) {
+                    $updateDrawerFlag = $request->boolean('update_drawer');
+                } elseif ($request->has('update_drawer_if_pre_shift')) {
+                    $updateDrawerFlag = $request->boolean('update_drawer_if_pre_shift');
+                }
 
                 app(\App\Services\CashDrawerService::class)->syncPurchaseInvoiceUpdate(
                     $purchaseInvoice,

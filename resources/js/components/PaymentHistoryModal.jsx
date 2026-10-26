@@ -20,6 +20,7 @@ export default function PaymentHistoryModal({
   partyType = "customer",
   partyId,
   partyName = "",
+  onPaymentReversed,
 }) {
   const { formatCurrency } = useCurrency();
   const { isDark, theme } = useTheme();
@@ -97,10 +98,13 @@ export default function PaymentHistoryModal({
       });
       toast.success(`Payment ${reversingPayment.payment_number} reversed successfully`);
       window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      window.dispatchEvent(new CustomEvent("accounts-changed"));
       try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+      try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
       setReversingPayment(null);
       setReversalReason("");
       fetchPayments();
+      onPaymentReversed && onPaymentReversed();
     } catch (err) {
       toast.error(err?.response?.data?.message || "Failed to reverse payment");
     } finally {

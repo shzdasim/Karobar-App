@@ -81,7 +81,19 @@ class CustomerLedgerController extends Controller
                 'total_receive', 'total_recieve', 'received', 'amount_received',
             ]);
 
-        $invoiceRows = $invoices->map(function ($inv) use ($customerId) {
+        $allocatedByInvoice = collect();
+        $invoiceIds = $invoices->pluck('id')->all();
+        if (!empty($invoiceIds) && Schema::hasTable('payment_allocations') && Schema::hasTable('payments')) {
+            $allocatedByInvoice = \App\Models\PaymentAllocation::query()
+                ->where('invoice_type', 'sale_invoice')
+                ->whereIn('invoice_id', $invoiceIds)
+                ->whereHas('payment', fn($q) => $q->where('status', 'posted'))
+                ->selectRaw('invoice_id, SUM(amount) as total_allocated')
+                ->groupBy('invoice_id')
+                ->pluck('total_allocated', 'invoice_id');
+        }
+
+        $invoiceRows = $invoices->map(function ($inv) use ($customerId, $allocatedByInvoice) {
             // Invoice Total - pick the first that exists on your model
             $invoiceTotal = $this->num(
                 $inv->invoice_total ?? null,
@@ -99,10 +111,14 @@ class CustomerLedgerController extends Controller
                 $inv->received ?? null,
                 $inv->amount_received ?? null
             );
-            $receivedOnInv = min($rawReceived, $invoiceTotal);
+            $allocated = (float) ($allocatedByInvoice[$inv->id] ?? 0);
+            $receivedOnInv = max(0.0, min($rawReceived - $allocated, $invoiceTotal));
 
-            // Balance remaining for this invoice (what's still owed)
+            // Balance remaining for this invoice row (excluding separate allocated payment rows)
             $balanceRemaining = max($invoiceTotal - $receivedOnInv, 0);
+            // Actual remaining unpaid balance on the invoice itself (including allocated payments)
+            $invoiceSettled = min($rawReceived, $invoiceTotal);
+            $invoiceDue = max($invoiceTotal - $invoiceSettled, 0);
 
             // Use 'date' column from sale_invoices (not invoice_date which doesn't exist)
             $entryDate = $inv->date ? Carbon::parse($inv->date)->format('Y-m-d') : null;
@@ -116,12 +132,14 @@ class CustomerLedgerController extends Controller
                 'entry_date'        => $entryDate,
                 'posted_number'     => $this->str($inv->posted_number),
                 'invoice_total'     => $invoiceTotal,
-                'total_received'    => $receivedOnInv,
+                'total_received'    => round($receivedOnInv, 2),
                 // Payment (Credit) shows the remaining balance for this invoice
                 'credited_amount'   => $balanceRemaining,
                 'payment_ref'       => '',
                 // Balance Remaining is the same as credited_amount for invoice rows
                 'balance_remaining' => round($balanceRemaining, 2),
+                'invoice_settled'   => round($invoiceSettled, 2),
+                'invoice_due'       => round($invoiceDue, 2),
                 'description'       => 'Sale Invoice ' . $this->str($inv->posted_number),
             ];
         });
@@ -138,6 +156,7 @@ class CustomerLedgerController extends Controller
                 'customer_id'       => $r->customer_id,
                 'sale_invoice_id'   => $r->sale_invoice_id,
                 'sale_return_id'    => $r->sale_return_id,
+                'payment_id'        => $r->payment_id,
                 'entry_type'        => $r->entry_type, // payment | manual
                 'is_manual'         => (bool)$r->is_manual,
                 'entry_date'        => optional($r->entry_date)->format('Y-m-d'),
@@ -311,6 +330,17 @@ class CustomerLedgerController extends Controller
         if (!empty($customerLedger->sale_return_id)) {
             return response()->json(['message' => 'Cannot delete auto-synced return credit note row. Delete or edit the Sale Return instead.'], 422);
         }
+        if (!empty($customerLedger->payment_id) && Schema::hasTable('payments')) {
+            $payment = \App\Models\Payment::find($customerLedger->payment_id);
+            if ($payment && $payment->status !== 'reversed') {
+                app(\App\Services\PaymentService::class)->reversePayment(
+                    $payment,
+                    'Deleted from Customer Ledger',
+                    Auth::user()
+                );
+                return response()->json(['status' => 'ok']);
+            }
+        }
         $customerLedger->delete();
         return response()->json(['status' => 'ok']);
     }
@@ -320,6 +350,7 @@ class CustomerLedgerController extends Controller
      * Mark a credit sale invoice as fully paid and sync the ledger in one shot:
      *   1) sale_invoices.total_receive = invoice total (invoice side)
      *   2) customer_ledgers invoice row: total_received = total, balance_remaining = 0
+     *   3) deposit settled amount into cash/selected account & active cash drawer
      * ================================ */
     public function settleInvoice(Request $request)
     {
@@ -328,6 +359,8 @@ class CustomerLedgerController extends Controller
         $data = $request->validate([
             'sale_invoice_id' => ['required','integer','exists:sale_invoices,id'],
             'entry_date'      => ['nullable','date'],
+            'payment_method'  => ['nullable','string'],
+            'account_id'      => ['nullable','integer','exists:accounts,id'],
         ]);
 
         $result = DB::transaction(function () use ($data) {
@@ -350,7 +383,7 @@ class CustomerLedgerController extends Controller
                 $invoice->amount_received ?? null
             );
 
-            $balance = max($invoiceTotal - $received, 0);
+            $balance = round(max($invoiceTotal - $received, 0), 2);
 
             if ($balance <= 0) {
                 return ['already_paid' => true, 'settled' => 0.0, 'invoice' => $invoice];
@@ -362,6 +395,16 @@ class CustomerLedgerController extends Controller
 
             // ---- (2) Ledger side: keep the invoice row consistent ----
             $postedNumber = $this->str($invoice->posted_number ?? null, $invoice->invoice_no ?? null);
+            $allocated = 0.0;
+            if (Schema::hasTable('payment_allocations') && Schema::hasTable('payments')) {
+                $allocated = (float) \App\Models\PaymentAllocation::query()
+                    ->where('invoice_type', 'sale_invoice')
+                    ->where('invoice_id', $invoice->id)
+                    ->whereHas('payment', fn($q) => $q->where('status', 'posted'))
+                    ->sum('amount');
+            }
+            $recvOnInv = max(0.0, $invoiceTotal - $allocated);
+            $balOnInv  = max(0.0, $invoiceTotal - $recvOnInv);
 
             $ledgerRow = CustomerLedger::where('sale_invoice_id', $invoice->id)
                 ->where('entry_type', 'invoice')
@@ -369,8 +412,8 @@ class CustomerLedgerController extends Controller
                 ->first();
 
             if ($ledgerRow) {
-                $ledgerRow->total_received    = $invoiceTotal;
-                $ledgerRow->balance_remaining = 0;
+                $ledgerRow->total_received    = $recvOnInv;
+                $ledgerRow->balance_remaining = $balOnInv;
                 $ledgerRow->save();
             } else {
                 // Legacy credit invoice that never got a ledger row — create one so the
@@ -383,13 +426,39 @@ class CustomerLedgerController extends Controller
                 $ledgerRow->entry_date        = $data['entry_date'] ?? ($invoice->date ?: now()->toDateString());
                 $ledgerRow->posted_number     = $postedNumber;
                 $ledgerRow->invoice_total     = $invoiceTotal;
-                $ledgerRow->total_received    = $invoiceTotal;
-                $ledgerRow->balance_remaining = 0;
+                $ledgerRow->total_received    = $recvOnInv;
+                $ledgerRow->balance_remaining = $balOnInv;
                 $ledgerRow->credited_amount   = 0;
                 $ledgerRow->payment_ref       = null;
                 $ledgerRow->description       = 'Sale invoice ' . ($postedNumber ?? $invoice->id) . ' (marked paid)';
                 $ledgerRow->created_by        = Auth::id();
                 $ledgerRow->save();
+            }
+
+            // ---- (3) Financial account & Cash Drawer sync ----
+            $payMethod = $data['payment_method'] ?? 'cash';
+            $account = app(\App\Services\AccountService::class)->resolveAccount($data['account_id'] ?? null, $payMethod);
+            if ($account) {
+                app(\App\Services\AccountService::class)->deposit(
+                    $account,
+                    $balance,
+                    'customer_payment',
+                    $invoice->id,
+                    "Settled Sale Invoice " . ($postedNumber ?? "#{$invoice->id}"),
+                    Auth::user()
+                );
+            }
+
+            if (($account && $account->type === 'cash') || $payMethod === 'cash') {
+                app(\App\Services\CashDrawerService::class)->recordTransaction(
+                    null,
+                    'customer_payment',
+                    $balance,
+                    'sale_invoice',
+                    $invoice->id,
+                    "Settled Sale Invoice " . ($postedNumber ?? "#{$invoice->id}"),
+                    Auth::user()
+                );
             }
 
             return ['already_paid' => false, 'settled' => round($balance, 2), 'invoice' => $invoice];
@@ -433,6 +502,18 @@ class CustomerLedgerController extends Controller
                     'total_receive','total_recieve','received','amount_received',
                 ]);
 
+            $allocatedByInvoice = collect();
+            $invIds = $invoices->pluck('id')->all();
+            if (!empty($invIds) && Schema::hasTable('payment_allocations') && Schema::hasTable('payments')) {
+                $allocatedByInvoice = \App\Models\PaymentAllocation::query()
+                    ->where('invoice_type', 'sale_invoice')
+                    ->whereIn('invoice_id', $invIds)
+                    ->whereHas('payment', fn($q) => $q->where('status', 'posted'))
+                    ->selectRaw('invoice_id, SUM(amount) as total_allocated')
+                    ->groupBy('invoice_id')
+                    ->pluck('total_allocated', 'invoice_id');
+            }
+
             foreach ($invoices as $inv) {
                 $invTotal = $this->num(
                     $inv->invoice_total ?? null,
@@ -442,12 +523,14 @@ class CustomerLedgerController extends Controller
                     $inv->gross_amount ?? null,
                     $inv->sub_total ?? null
                 );
-                $recv = $this->num(
+                $rawRecv = $this->num(
                     $inv->total_receive ?? null,
                     $inv->total_recieve ?? null,
                     $inv->received ?? null,
                     $inv->amount_received ?? null
                 );
+                $allocated = (float) ($allocatedByInvoice[$inv->id] ?? 0);
+                $recv = max(0.0, $rawRecv - $allocated);
                 $recvOnInv = min($recv, $invTotal);
                 $excess = max(0.0, $recv - $invTotal);
 
@@ -567,19 +650,33 @@ class CustomerLedgerController extends Controller
 
     // -------- 1) Read-through INVOICE rows from sale_invoices --------
     // Only include credit invoices in the ledger
-    $invoices = \App\Models\SaleInvoice::query()
+    $rawInvoices = \App\Models\SaleInvoice::query()
         ->where('customer_id', $customer->id)
         ->where('invoice_type', 'credit')
         ->when($from, fn($q) => $q->whereDate($dateColumn, '>=', $from))
         ->when($to,   fn($q) => $q->whereDate($dateColumn, '<=', $to))
         ->orderBy($dateColumn)
         ->orderBy('id')
-        ->get($selectCols)
-        ->map(function ($inv) use ($hasInvoiceDate, $hasInvoiceNo) {
+        ->get($selectCols);
+
+    $allocatedByInvoice = collect();
+    $invIds = $rawInvoices->pluck('id')->all();
+    if (!empty($invIds) && Schema::hasTable('payment_allocations') && Schema::hasTable('payments')) {
+        $allocatedByInvoice = \App\Models\PaymentAllocation::query()
+            ->where('invoice_type', 'sale_invoice')
+            ->whereIn('invoice_id', $invIds)
+            ->whereHas('payment', fn($q) => $q->where('status', 'posted'))
+            ->selectRaw('invoice_id, SUM(amount) as total_allocated')
+            ->groupBy('invoice_id')
+            ->pluck('total_allocated', 'invoice_id');
+    }
+
+    $invoices = $rawInvoices->map(function ($inv) use ($hasInvoiceDate, $hasInvoiceNo, $allocatedByInvoice) {
             // robust totals
             $t = (float) ($inv->invoice_total ?? $inv->total ?? $inv->grand_total ?? $inv->net_total ?? $inv->gross_amount ?? $inv->sub_total ?? 0);
             $rawR = (float) ($inv->total_receive ?? $inv->total_recieve ?? $inv->received ?? $inv->amount_received ?? 0);
-            $r = min($rawR, $t);
+            $allocated = (float) ($allocatedByInvoice[$inv->id] ?? 0);
+            $r = max(0.0, min($rawR - $allocated, $t));
 
             // entry date
             $rawDate   = $hasInvoiceDate ? ($inv->invoice_date ?? $inv->date) : $inv->date;

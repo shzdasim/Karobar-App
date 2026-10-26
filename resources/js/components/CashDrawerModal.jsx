@@ -340,6 +340,9 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
       await fetchCurrentDrawer();
       setActiveTab("overview");
       window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      window.dispatchEvent(new CustomEvent("accounts-changed"));
+      try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+      try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
       if (onSessionUpdated) onSessionUpdated(res.data?.session);
     } catch (err) {
       setErrorMsg(err.response?.data?.message || err.response?.data?.errors?.session?.[0] || "Could not open drawer.");
@@ -373,6 +376,9 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
       await fetchCurrentDrawer();
       setActiveTab("overview");
       window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      window.dispatchEvent(new CustomEvent("accounts-changed"));
+      try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+      try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
     } catch (err) {
       setErrorMsg(err.response?.data?.message || "Failed to record cash transaction.");
     } finally {
@@ -401,6 +407,9 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
       await fetchCurrentDrawer();
       setActiveTab("overview");
       window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      window.dispatchEvent(new CustomEvent("accounts-changed"));
+      try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+      try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
       if (onSessionUpdated) onSessionUpdated(null);
     } catch (err) {
       setErrorMsg(err.response?.data?.message || err.response?.data?.errors?.session?.[0] || "Failed to close drawer.");
@@ -681,8 +690,16 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                       <span className="font-semibold">-{formatCurrency(summary.cash_purchases)}</span>
                     </div>
                     <div className="flex justify-between">
+                      <span className={isDark ? "text-slate-400" : "text-gray-600"}>Sale Returns / Refunds:</span>
+                      <span className="font-semibold">-{formatCurrency(summary.cash_returns || 0)}</span>
+                    </div>
+                    <div className="flex justify-between">
                       <span className={isDark ? "text-slate-400" : "text-gray-600"}>Supplier Payments:</span>
                       <span className="font-semibold">-{formatCurrency(summary.supplier_payments)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className={isDark ? "text-slate-400" : "text-gray-600"}>Expenses:</span>
+                      <span className="font-semibold">-{formatCurrency(summary.expenses || 0)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className={isDark ? "text-slate-400" : "text-gray-600"}>Manual Cash Out:</span>
@@ -1134,7 +1151,11 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                               <span className="font-semibold">-{formatCurrency(repSummary.supplier_payments)}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className={isDark ? "text-slate-400" : "text-gray-600"}>Manual Cash Out / Expenses:</span>
+                              <span className={isDark ? "text-slate-400" : "text-gray-600"}>Expenses:</span>
+                              <span className="font-semibold">-{formatCurrency(repSummary.expenses || 0)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className={isDark ? "text-slate-400" : "text-gray-600"}>Manual Cash Out:</span>
                               <span className="font-semibold">-{formatCurrency(repSummary.manual_cash_out)}</span>
                             </div>
                           </div>

@@ -7,7 +7,9 @@ use App\Models\PurchaseInvoice;
 use App\Models\Setting;
 use App\Models\Supplier;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
 class SupplierLedgerController extends Controller
@@ -23,13 +25,44 @@ class SupplierLedgerController extends Controller
             'to'          => ['nullable','date'],
         ]);
 
-        $q = SupplierLedger::with(['purchaseInvoice:id,invoice_number,posted_number'])
+        $q = SupplierLedger::with(['purchaseInvoice:id,invoice_number,posted_number,total_amount,total_paid'])
             ->where('supplier_id', $validated['supplier_id']);
 
         if ($request->filled('from')) $q->whereDate('entry_date', '>=', $request->get('from'));
         if ($request->filled('to'))   $q->whereDate('entry_date', '<=', $request->get('to'));
 
         $rows = $q->orderBy('entry_date')->orderBy('id')->get();
+
+        $allocatedByInvoice = collect();
+        $invIds = $rows->pluck('purchase_invoice_id')->filter()->unique()->values()->all();
+        if (!empty($invIds) && Schema::hasTable('payment_allocations') && Schema::hasTable('payments')) {
+            $allocatedByInvoice = \App\Models\PaymentAllocation::query()
+                ->where('invoice_type', 'purchase_invoice')
+                ->whereIn('invoice_id', $invIds)
+                ->whereHas('payment', fn($q) => $q->where('status', 'posted'))
+                ->selectRaw('invoice_id, SUM(amount) as total_allocated')
+                ->groupBy('invoice_id')
+                ->pluck('total_allocated', 'invoice_id');
+        }
+
+        foreach ($rows as $row) {
+            if ($row->entry_type === 'invoice' && $row->purchaseInvoice) {
+                $inv = $row->purchaseInvoice;
+                $invTotal = (float) ($inv->total_amount ?? $row->invoice_total ?? 0);
+                $rawPaid  = (float) ($inv->total_paid ?? $row->total_paid ?? 0);
+                $allocated = (float) ($allocatedByInvoice[$inv->id] ?? 0);
+                $paidOnInv = max(0.0, min($rawPaid - $allocated, $invTotal));
+                $creditRem = max(0.0, round($invTotal - $paidOnInv, 2));
+                $invSettled = min($rawPaid, $invTotal);
+                $invDue    = max(0.0, round($invTotal - $invSettled, 2));
+
+                $row->invoice_total    = $invTotal;
+                $row->total_paid       = $paidOnInv;
+                $row->credit_remaining = $creditRem;
+                $row->invoice_settled  = round($invSettled, 2);
+                $row->invoice_due      = $invDue;
+            }
+        }
 
         $invoiceRows = $rows->whereIn('entry_type', ['invoice', 'manual']);
         $paymentRows = $rows->where('entry_type', 'payment');
@@ -158,6 +191,17 @@ class SupplierLedgerController extends Controller
         if (!empty($row->purchase_return_id)) {
             return response()->json(['message' => 'Cannot delete auto-synced return debit note row. Delete or edit the Purchase Return instead.'], 422);
         }
+        if (!empty($row->payment_id) && Schema::hasTable('payments')) {
+            $payment = \App\Models\Payment::find($row->payment_id);
+            if ($payment && $payment->status !== 'reversed') {
+                app(\App\Services\PaymentService::class)->reversePayment(
+                    $payment,
+                    'Deleted from Supplier Ledger',
+                    Auth::user()
+                );
+                return response()->json(['status' => 'ok']);
+            }
+        }
         $row->delete();
         return response()->json(['status' => 'ok']);
     }
@@ -175,12 +219,28 @@ class SupplierLedgerController extends Controller
         $invoices = PurchaseInvoice::query()
             ->select('id','supplier_id','invoice_number','posted_number','posted_date','total_amount','total_paid')
             ->where('supplier_id', $validated['supplier_id'])
+            ->where('invoice_type', 'credit')
             ->get();
 
-        DB::transaction(function () use ($invoices) {
+        $allocatedByInvoice = collect();
+        $invIds = $invoices->pluck('id')->all();
+        if (!empty($invIds) && Schema::hasTable('payment_allocations') && Schema::hasTable('payments')) {
+            $allocatedByInvoice = \App\Models\PaymentAllocation::query()
+                ->where('invoice_type', 'purchase_invoice')
+                ->whereIn('invoice_id', $invIds)
+                ->whereHas('payment', fn($q) => $q->where('status', 'posted'))
+                ->selectRaw('invoice_id, SUM(amount) as total_allocated')
+                ->groupBy('invoice_id')
+                ->pluck('total_allocated', 'invoice_id');
+        }
+
+        DB::transaction(function () use ($invoices, $allocatedByInvoice) {
             foreach ($invoices as $inv) {
-                $credit = round(($inv->total_amount ?? 0) - ($inv->total_paid ?? 0), 2);
-                if ($credit < 0) $credit = 0;
+                $invTotal = (float) ($inv->total_amount ?? 0);
+                $rawPaid  = (float) ($inv->total_paid ?? 0);
+                $allocated = (float) ($allocatedByInvoice[$inv->id] ?? 0);
+                $paidOnInv = max(0.0, min($rawPaid - $allocated, $invTotal));
+                $credit = max(0.0, round($invTotal - $paidOnInv, 2));
 
                 SupplierLedger::updateOrCreate(
                     [
@@ -193,8 +253,8 @@ class SupplierLedgerController extends Controller
                         'description'      => 'Invoice #'.$inv->invoice_number,
                         'posted_number'    => $inv->posted_number,
                         'invoice_number'   => $inv->invoice_number,
-                        'invoice_total'    => $inv->total_amount ?? 0,
-                        'total_paid'       => $inv->total_paid ?? 0,
+                        'invoice_total'    => $invTotal,
+                        'total_paid'       => $paidOnInv,
                         'debited_amount'   => 0, // not a payment row
                         'credit_remaining' => $credit,
                         'is_manual'        => false,
@@ -211,6 +271,7 @@ class SupplierLedgerController extends Controller
      * Mark a credit purchase invoice as fully paid and sync the ledger in one shot:
      *   1) purchase_invoices.total_paid = invoice total   (invoice side)
      *   2) supplier_ledgers invoice row: total_paid = total, credit_remaining = 0
+     *   3) withdraw settled amount from cash/selected account & active cash drawer
      */
     public function settleInvoice(Request $request)
     {
@@ -219,6 +280,8 @@ class SupplierLedgerController extends Controller
         $data = $request->validate([
             'purchase_invoice_id' => ['required','integer','exists:purchase_invoices,id'],
             'entry_date'          => ['nullable','date'],
+            'payment_method'      => ['nullable','string'],
+            'account_id'          => ['nullable','integer','exists:accounts,id'],
         ]);
 
         $result = DB::transaction(function () use ($data, $request) {
@@ -238,14 +301,25 @@ class SupplierLedgerController extends Controller
             $invoice->save();
 
             // ---- (2) Ledger side: keep the invoice row consistent ----
+            $allocated = 0.0;
+            if (Schema::hasTable('payment_allocations') && Schema::hasTable('payments')) {
+                $allocated = (float) \App\Models\PaymentAllocation::query()
+                    ->where('invoice_type', 'purchase_invoice')
+                    ->where('invoice_id', $invoice->id)
+                    ->whereHas('payment', fn($q) => $q->where('status', 'posted'))
+                    ->sum('amount');
+            }
+            $paidOnInv = max(0.0, $invoiceTotal - $allocated);
+            $creditOnInv = max(0.0, $invoiceTotal - $paidOnInv);
+
             $ledgerRow = SupplierLedger::where('purchase_invoice_id', $invoice->id)
                 ->where('entry_type', 'invoice')
                 ->lockForUpdate()
                 ->first();
 
             if ($ledgerRow) {
-                $ledgerRow->total_paid       = $invoiceTotal;
-                $ledgerRow->credit_remaining = 0;
+                $ledgerRow->total_paid       = $paidOnInv;
+                $ledgerRow->credit_remaining = $creditOnInv;
                 $ledgerRow->save();
             } else {
                 // Legacy credit invoice that never got a ledger row — create one so the
@@ -260,13 +334,40 @@ class SupplierLedgerController extends Controller
                 $ledgerRow->posted_number       = $invoice->posted_number;
                 $ledgerRow->invoice_number      = $invoice->invoice_number;
                 $ledgerRow->invoice_total       = $invoiceTotal;
-                $ledgerRow->total_paid          = $invoiceTotal;
+                $ledgerRow->total_paid          = $paidOnInv;
                 $ledgerRow->debited_amount      = 0;
-                $ledgerRow->credit_remaining    = 0;
+                $ledgerRow->credit_remaining    = $creditOnInv;
                 $ledgerRow->payment_ref         = null;
                 $ledgerRow->description         = 'Purchase invoice ' . ($invoice->posted_number ?? $invoice->id) . ' (marked paid)';
                 $ledgerRow->created_by          = optional($request->user())->id;
                 $ledgerRow->save();
+            }
+
+            // ---- (3) Financial account & Cash Drawer sync ----
+            $payMethod = $data['payment_method'] ?? 'cash';
+            $account = app(\App\Services\AccountService::class)->resolveAccount($data['account_id'] ?? null, $payMethod);
+            $refLabel = $invoice->posted_number ?: ($invoice->invoice_number ?: "#{$invoice->id}");
+            if ($account) {
+                app(\App\Services\AccountService::class)->withdraw(
+                    $account,
+                    $balance,
+                    'supplier_payment',
+                    $invoice->id,
+                    "Settled Purchase Invoice {$refLabel}",
+                    $request->user()
+                );
+            }
+
+            if (($account && $account->type === 'cash') || $payMethod === 'cash') {
+                app(\App\Services\CashDrawerService::class)->recordTransaction(
+                    null,
+                    'supplier_payment',
+                    $balance,
+                    'purchase_invoice',
+                    $invoice->id,
+                    "Settled Purchase Invoice {$refLabel}",
+                    $request->user()
+                );
             }
 
             return ['already_paid' => false, 'settled' => $balance, 'invoice' => $invoice];
@@ -321,7 +422,7 @@ class SupplierLedgerController extends Controller
         $from = $request->query('from');
         $to   = $request->query('to');
 
-        $rows = SupplierLedger::query()
+        $rows = SupplierLedger::with(['purchaseInvoice:id,invoice_number,posted_number,total_amount,total_paid'])
             ->where('supplier_id', $supplier->id)
             ->when($from, fn($q) => $q->whereDate('entry_date', '>=', $from))
             ->when($to,   fn($q) => $q->whereDate('entry_date', '<=', $to))
@@ -329,8 +430,29 @@ class SupplierLedgerController extends Controller
             ->orderBy('id')
             ->get();
 
+        $allocatedByInvoice = collect();
+        $invIds = $rows->pluck('purchase_invoice_id')->filter()->unique()->values()->all();
+        if (!empty($invIds) && Schema::hasTable('payment_allocations') && Schema::hasTable('payments')) {
+            $allocatedByInvoice = \App\Models\PaymentAllocation::query()
+                ->where('invoice_type', 'purchase_invoice')
+                ->whereIn('invoice_id', $invIds)
+                ->whereHas('payment', fn($q) => $q->where('status', 'posted'))
+                ->selectRaw('invoice_id, SUM(amount) as total_allocated')
+                ->groupBy('invoice_id')
+                ->pluck('total_allocated', 'invoice_id');
+        }
+
         $balance = 0;
-        $mapped = $rows->map(function ($r) use (&$balance) {
+        $mapped = $rows->map(function ($r) use (&$balance, $allocatedByInvoice) {
+            if ($r->entry_type === 'invoice' && $r->purchaseInvoice) {
+                $inv = $r->purchaseInvoice;
+                $invTotal = (float) ($inv->total_amount ?? $r->invoice_total ?? 0);
+                $rawPaid  = (float) ($inv->total_paid ?? $r->total_paid ?? 0);
+                $allocated = (float) ($allocatedByInvoice[$inv->id] ?? 0);
+                $r->invoice_total = $invTotal;
+                $r->total_paid    = max(0.0, min($rawPaid - $allocated, $invTotal));
+            }
+
             $invoiceTotal = (float) ($r->invoice_total ?? 0);
             $paidOnInv    = (float) ($r->total_paid ?? 0);
             $payment      = (float) ($r->debited_amount ?? 0);

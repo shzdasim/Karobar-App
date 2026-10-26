@@ -438,6 +438,15 @@ class PaymentService
                 }
             }
 
+            // Reverse cash drawer transaction if payment method is cash
+            if (($account && $account->type === 'cash') || $payment->payment_method === 'cash') {
+                app(CashDrawerService::class)->handlePaymentReversal(
+                    $payment,
+                    $reason,
+                    $user
+                );
+            }
+
             // Record audit
             $this->auditService->recordReversal(
                 $payment,

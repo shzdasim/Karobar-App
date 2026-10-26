@@ -201,7 +201,7 @@ function SessionLedger({ session, summary, transactions, formatCurrency, isDark 
             <td className="px-4 py-3" />
             <td className="px-4 py-3" />
             <td className="px-4 py-3 text-right font-bold">{formatCurrency(session.opening_balance)}</td>
-            <td className="px-4 py-3 text-xs text-slate-400">{session.opened_by?.name || "—"}</td>
+            <td className="px-4 py-3 text-xs text-slate-400">{session.user?.name || session.opened_by?.name || "—"}</td>
           </tr>
 
           {/* Transaction rows */}
@@ -258,7 +258,7 @@ function SessionLedger({ session, summary, transactions, formatCurrency, isDark 
                   </span>
                 </div>
               </td>
-              <td className="px-4 py-3 text-xs text-slate-400">{session.closed_by?.name || "—"}</td>
+              <td className="px-4 py-3 text-xs text-slate-400">{session.closed_by?.name || session.user?.name || "—"}</td>
             </tr>
           )}
         </tbody>
@@ -645,7 +645,7 @@ function HistoryRow({ session, formatCurrency, isDark, selectStyles }) {
       >
         <td className="px-4 py-3 text-xs text-slate-400 font-mono">#{session.id}</td>
         <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">{fmtDate(session.opened_at)}</td>
-        <td className="px-4 py-3 text-xs text-slate-500">{session.opened_by?.name || "—"}</td>
+        <td className="px-4 py-3 text-xs text-slate-500">{session.user?.name || session.opened_by?.name || "—"}</td>
         <td className="px-4 py-3 text-right text-sm font-medium text-slate-700 dark:text-slate-200">
           {formatCurrency(session.opening_balance)}
         </td>
@@ -795,6 +795,12 @@ export default function CashDrawerPage() {
   useEffect(() => {
     fetchCurrent();
     fetchHistory(1);
+    const onDrawerChange = () => {
+      fetchCurrent();
+      fetchHistory(1);
+    };
+    window.addEventListener("cash-drawer-changed", onDrawerChange);
+    return () => window.removeEventListener("cash-drawer-changed", onDrawerChange);
   }, [fetchCurrent, fetchHistory]);
 
   function handleActionSuccess() {
@@ -803,6 +809,10 @@ export default function CashDrawerPage() {
     setShowCloseModal(false);
     fetchCurrent();
     fetchHistory(1);
+    window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+    window.dispatchEvent(new CustomEvent("accounts-changed"));
+    try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+    try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
   }
 
   // ── Derived state ──────────────────────────────────────────────────────────
@@ -895,7 +905,7 @@ export default function CashDrawerPage() {
               <span className="font-bold text-base">OPEN</span>
               <span className="text-slate-500 dark:text-slate-400 font-normal">
                 — Opened {fmtDateTime(session?.opened_at)}
-                {session?.opened_by?.name ? ` by ${session.opened_by.name}` : ""}
+                {(session?.user?.name || session?.opened_by?.name) ? ` by ${session.user?.name || session.opened_by?.name}` : ""}
               </span>
             </>
           ) : (
@@ -935,7 +945,7 @@ export default function CashDrawerPage() {
           />
           <KpiCard
             label="Expected Balance"
-            value={formatCurrency(summary?.expected_closing_balance ?? (parseFloat(session.opening_balance) + (summary?.total_cash_in ?? 0) - (summary?.total_cash_out ?? 0)))}
+            value={formatCurrency(summary?.expected_balance ?? summary?.expected_closing_balance ?? (parseFloat(session.opening_balance) + (summary?.total_cash_in ?? 0) - (summary?.total_cash_out ?? 0)))}
             sub={isOpen ? "Current drawer balance" : `Actual: ${formatCurrency(session.closing_balance_actual)}`}
             color="text-blue-600 dark:text-blue-400"
             icon={CurrencyDollarIcon}
@@ -1078,7 +1088,7 @@ export default function CashDrawerPage() {
           btnSecondary={btnSecondary}
           btnDanger={btnDanger}
           formatCurrency={formatCurrency}
-          expectedBalance={summary?.expected_closing_balance ?? 0}
+          expectedBalance={summary?.expected_balance ?? summary?.expected_closing_balance ?? 0}
           onClose={() => setShowCloseModal(false)}
           onSuccess={handleActionSuccess}
         />

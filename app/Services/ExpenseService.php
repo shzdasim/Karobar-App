@@ -43,9 +43,12 @@ class ExpenseService
 
             // Resolve target account
             $account = null;
-            if (!empty($data['account_id'])) {
+            if ($paymentMethod === 'cash') {
+                $account = $this->accountService->getDefaultAccount('cash');
+            } elseif (!empty($data['account_id'])) {
                 $account = Account::find($data['account_id']);
-            } elseif ($paymentMethod !== 'cash') {
+            }
+            if (!$account) {
                 $account = $this->accountService->getDefaultAccount($paymentMethod);
             }
 
@@ -73,6 +76,16 @@ class ExpenseService
             ]);
 
             // Apply financial deductions
+            if ($account) {
+                $this->accountService->withdraw(
+                    $account,
+                    $amount,
+                    Expense::class,
+                    $expense->id,
+                    "Expense: {$category->name} - {$expense->expense_number}" . ($expense->payee ? " ({$expense->payee})" : ""),
+                    $user
+                );
+            }
             if ($paymentMethod === 'cash' && $drawerSession) {
                 $this->cashDrawerService->recordTransaction(
                     $drawerSession,
@@ -84,15 +97,6 @@ class ExpenseService
                     $user
                 );
                 $this->accountService->syncCashDrawerBalance($drawerSession);
-            } elseif ($account && $paymentMethod !== 'cash') {
-                $this->accountService->withdraw(
-                    $account,
-                    $amount,
-                    Expense::class,
-                    $expense->id,
-                    "Expense: {$category->name} - {$expense->expense_number}" . ($expense->payee ? " ({$expense->payee})" : ""),
-                    $user
-                );
             }
 
             return $expense->load(['category', 'account', 'user', 'drawerSession']);
@@ -121,12 +125,28 @@ class ExpenseService
                 ? ExpenseCategory::findOrFail($data['expense_category_id']) 
                 : $expense->category;
 
-            $newAccount = $newAccountId ? Account::find($newAccountId) : null;
-            if (!$newAccount && $newMethod !== 'cash') {
+            $newAccount = null;
+            if ($newMethod === 'cash') {
+                $newAccount = $this->accountService->getDefaultAccount('cash');
+            } elseif ($newAccountId) {
+                $newAccount = Account::find($newAccountId);
+            }
+            if (!$newAccount) {
                 $newAccount = $this->accountService->getDefaultAccount($newMethod);
             }
 
             // 1. Unwind old financial effects
+            $oldAcc = $oldAccountId ? Account::find($oldAccountId) : ($oldMethod === 'cash' ? $this->accountService->getDefaultAccount('cash') : null);
+            if ($oldAcc) {
+                $this->accountService->deposit(
+                    $oldAcc,
+                    $oldAmount,
+                    Expense::class,
+                    $expense->id,
+                    "Adjustment / Reversal of prior expense {$expense->expense_number}",
+                    $user
+                );
+            }
             if ($oldMethod === 'cash' && $oldSessionId) {
                 $oldTx = CashDrawerTransaction::where('session_id', $oldSessionId)
                     ->where('reference_type', Expense::class)
@@ -139,18 +159,6 @@ class ExpenseService
                         $this->cashDrawerService->recalculateExpectedBalance($session);
                         $this->accountService->syncCashDrawerBalance($session);
                     }
-                }
-            } elseif ($oldAccountId && $oldMethod !== 'cash') {
-                $oldAcc = Account::find($oldAccountId);
-                if ($oldAcc) {
-                    $this->accountService->deposit(
-                        $oldAcc,
-                        $oldAmount,
-                        Expense::class,
-                        $expense->id,
-                        "Adjustment / Reversal of prior expense {$expense->expense_number}",
-                        $user
-                    );
                 }
             }
 
@@ -177,6 +185,16 @@ class ExpenseService
             ]);
 
             // 4. Apply new financial effects
+            if ($newAccount) {
+                $this->accountService->withdraw(
+                    $newAccount,
+                    $newAmount,
+                    Expense::class,
+                    $expense->id,
+                    "Expense: {$category->name} - {$expense->expense_number}" . ($expense->payee ? " ({$expense->payee})" : ""),
+                    $user
+                );
+            }
             if ($newMethod === 'cash' && $newSession) {
                 $this->cashDrawerService->recordTransaction(
                     $newSession,
@@ -188,15 +206,6 @@ class ExpenseService
                     $user
                 );
                 $this->accountService->syncCashDrawerBalance($newSession);
-            } elseif ($newAccount && $newMethod !== 'cash') {
-                $this->accountService->withdraw(
-                    $newAccount,
-                    $newAmount,
-                    Expense::class,
-                    $expense->id,
-                    "Expense: {$category->name} - {$expense->expense_number}" . ($expense->payee ? " ({$expense->payee})" : ""),
-                    $user
-                );
             }
 
             return $expense->load(['category', 'account', 'user', 'drawerSession']);
@@ -209,6 +218,19 @@ class ExpenseService
     public function deleteExpense(Expense $expense, ?User $user = null): bool
     {
         return DB::transaction(function () use ($expense, $user) {
+            // Restore account balance
+            $acc = $expense->account_id ? Account::find($expense->account_id) : ($expense->payment_method === 'cash' ? $this->accountService->getDefaultAccount('cash') : null);
+            if ($acc) {
+                $this->accountService->deposit(
+                    $acc,
+                    (float) $expense->amount,
+                    Expense::class,
+                    $expense->id,
+                    "Reversal of deleted expense {$expense->expense_number}",
+                    $user
+                );
+            }
+
             // Restore drawer balance if applicable
             if ($expense->payment_method === 'cash' && $expense->cash_drawer_session_id) {
                 $tx = CashDrawerTransaction::where('session_id', $expense->cash_drawer_session_id)
@@ -237,18 +259,6 @@ class ExpenseService
                             $this->accountService->syncCashDrawerBalance($activeSession);
                         }
                     }
-                }
-            } elseif ($expense->account_id && $expense->payment_method !== 'cash') {
-                $acc = Account::find($expense->account_id);
-                if ($acc) {
-                    $this->accountService->deposit(
-                        $acc,
-                        (float) $expense->amount,
-                        Expense::class,
-                        $expense->id,
-                        "Reversal of deleted expense {$expense->expense_number}",
-                        $user
-                    );
                 }
             }
 

@@ -224,10 +224,15 @@ class CashDrawerService
         $customerPayments = (float) $transactions->where('type', 'customer_payment')->sum('amount');
         $supplierPayments = (float) $transactions->where('type', 'supplier_payment')->sum('amount');
         $cashIn = (float) $transactions->where('type', 'cash_in')->sum('amount');
-        $cashOut = (float) $transactions->where('type', 'cash_out')->sum('amount');
+        $expenses = (float) $transactions->filter(function ($t) {
+            return $t->type === 'expense' || ($t->type === 'cash_out' && ($t->reference_type === \App\Models\Expense::class || $t->reference_type === 'expense'));
+        })->sum('amount');
+        $cashOut = (float) $transactions->filter(function ($t) {
+            return $t->type === 'cash_out' && $t->reference_type !== \App\Models\Expense::class && $t->reference_type !== 'expense';
+        })->sum('amount');
 
         $totalCashIn = $cashSales + $customerPayments + $purchaseReturns + $cashIn;
-        $totalCashOut = $cashPurchases + $cashReturns + $supplierPayments + $cashOut;
+        $totalCashOut = $cashPurchases + $cashReturns + $supplierPayments + $expenses + $cashOut;
         $expected = round((float) $session->opening_balance + $totalCashIn - $totalCashOut, 2);
 
         return [
@@ -246,6 +251,7 @@ class CashDrawerService
             'purchase_returns'  => $purchaseReturns,
             'customer_payments' => $customerPayments,
             'supplier_payments' => $supplierPayments,
+            'expenses'          => $expenses,
             'manual_cash_in'    => $cashIn,
             'manual_cash_out'   => $cashOut,
             'total_cash_in'     => $totalCashIn,
@@ -734,7 +740,14 @@ class CashDrawerService
         }
 
         return DB::transaction(function () use ($session, $saleReturn, $oldTotal, $newTotal, $updateDrawerIfPreShift, $user) {
-            $isPreShift = $saleReturn->created_at && Carbon::parse($saleReturn->created_at)->lt(Carbon::parse($session->opened_at));
+            $existingTxn = CashDrawerTransaction::where('session_id', $session->id)
+                ->where('reference_type', 'sale_return')
+                ->where('reference_id', $saleReturn->id)
+                ->first();
+
+            $isPreShift = $saleReturn->created_at
+                && Carbon::parse($saleReturn->created_at)->lt(Carbon::parse($session->opened_at))
+                && !$existingTxn;
 
             if ($isPreShift) {
                 if ($updateDrawerIfPreShift === false) {
@@ -770,11 +783,6 @@ class CashDrawerService
             }
 
             // Same shift
-            $existingTxn = CashDrawerTransaction::where('session_id', $session->id)
-                ->where('reference_type', 'sale_return')
-                ->where('reference_id', $saleReturn->id)
-                ->first();
-
             if ($existingTxn) {
                 if ($newTotal > 0) {
                     $existingTxn->amount = $newTotal;
@@ -891,7 +899,14 @@ class CashDrawerService
         }
 
         return DB::transaction(function () use ($session, $purchaseReturn, $oldTotal, $newTotal, $updateDrawerIfPreShift, $user) {
-            $isPreShift = $purchaseReturn->created_at && Carbon::parse($purchaseReturn->created_at)->lt(Carbon::parse($session->opened_at));
+            $existingTxn = CashDrawerTransaction::where('session_id', $session->id)
+                ->where('reference_type', 'purchase_return')
+                ->where('reference_id', $purchaseReturn->id)
+                ->first();
+
+            $isPreShift = $purchaseReturn->created_at
+                && Carbon::parse($purchaseReturn->created_at)->lt(Carbon::parse($session->opened_at))
+                && !$existingTxn;
 
             if ($isPreShift) {
                 if ($updateDrawerIfPreShift === false) {
@@ -927,11 +942,6 @@ class CashDrawerService
             }
 
             // Same shift
-            $existingTxn = CashDrawerTransaction::where('session_id', $session->id)
-                ->where('reference_type', 'purchase_return')
-                ->where('reference_id', $purchaseReturn->id)
-                ->first();
-
             if ($existingTxn) {
                 if ($newTotal > 0) {
                     $existingTxn->amount = $newTotal;
@@ -999,6 +1009,57 @@ class CashDrawerService
                 'purchase_return',
                 $purchaseReturn->id,
                 "Cash refunded back to supplier for deleted pre-shift purchase return #{$purchaseReturn->posted_number}",
+                $user
+            );
+        });
+    }
+
+    /**
+     * Handle cash drawer reversal when a cash customer or supplier payment is reversed.
+     */
+    public function handlePaymentReversal(
+        \App\Models\Payment $payment,
+        string $reason,
+        ?User $user = null
+    ): ?CashDrawerTransaction {
+        $amount = (float) ($payment->amount ?? 0);
+        if ($amount <= 0) {
+            return null;
+        }
+
+        return DB::transaction(function () use ($payment, $amount, $reason, $user) {
+            // 1. Check if the payment was recorded in an open drawer session
+            $existingTxn = CashDrawerTransaction::where('reference_type', 'payment')
+                ->where('reference_id', $payment->id)
+                ->whereHas('session', fn($q) => $q->where('status', 'open'))
+                ->first();
+
+            if ($existingTxn) {
+                $openSession = CashDrawerSession::find($existingTxn->session_id);
+                $existingTxn->delete();
+                if ($openSession) {
+                    $this->recalculateExpectedBalance($openSession);
+                }
+                return null;
+            }
+
+            // 2. Otherwise, if the current user (or store) has an active open session,
+            // record a compensating cash_out (for customer payment reversal) or cash_in (for supplier payment reversal)
+            $session = $this->getCurrentSession($user);
+            if (!$session) {
+                return null;
+            }
+
+            $reversalType = $payment->party_type === 'customer' ? 'cash_out' : 'cash_in';
+            $partyLabel = $payment->party_type === 'customer' ? 'Customer' : 'Supplier';
+
+            return $this->recordTransaction(
+                $session,
+                $reversalType,
+                $amount,
+                'payment',
+                $payment->id,
+                "Reversal of {$partyLabel} Payment {$payment->payment_number}: {$reason}",
                 $user
             );
         });

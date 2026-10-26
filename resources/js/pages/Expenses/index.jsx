@@ -240,7 +240,7 @@ export default function ExpensesIndex() {
       setSummary(sumRes.data);
       setCategories(catRes.data || []);
       setAccounts(accRes.data.accounts || []);
-      setActiveDrawer(drawerRes.data.active ? drawerRes.data.session : null);
+      setActiveDrawer((drawerRes.data?.is_open || drawerRes.data?.active) ? drawerRes.data.session : null);
     } catch {
       toast.error("Failed to load expenses.");
     } finally {
@@ -299,6 +299,10 @@ export default function ExpensesIndex() {
         toast.success("Expense recorded successfully.");
       }
       setIsRecordModalOpen(false);
+      window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      window.dispatchEvent(new CustomEvent("accounts-changed"));
+      try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+      try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
       fetchData(pagination.current_page);
     } catch (err) {
       toast.error(err?.response?.data?.message || "Failed to save expense.");
@@ -322,6 +326,10 @@ export default function ExpensesIndex() {
     try {
       await axios.delete(`/api/expenses/${exp.id}`);
       toast.success("Expense deleted and balances restored.");
+      window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+      window.dispatchEvent(new CustomEvent("accounts-changed"));
+      try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
+      try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
       fetchData(pagination.current_page);
     } catch (err) {
       toast.error(err?.response?.data?.message || "Failed to delete expense.");
@@ -605,9 +613,9 @@ export default function ExpensesIndex() {
                         <span className="capitalize font-medium text-gray-800 dark:text-slate-200">
                           {exp.payment_method.replace("_", " ")}
                         </span>
-                        {exp.drawer_session_id && (
+                        {(exp.cash_drawer_session_id || exp.drawer_session_id) && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 font-mono">
-                            Drawer #{exp.drawer_session_id}
+                            Drawer #{exp.cash_drawer_session_id || exp.drawer_session_id}
                           </span>
                         )}
                       </div>
