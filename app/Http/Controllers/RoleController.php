@@ -105,10 +105,14 @@ public function show(Role $role, Request $request)
             'permissions.*' => ['string'],
         ]);
 
-        // (optional) protect Admin role name if you want
-        // if ($role->name === 'Admin' && $validated['name'] !== 'Admin') {
-        //     return response()->json(['message' => 'Cannot rename Admin role'], 422);
-        // }
+        if ($role->name === 'Admin') {
+            if ($validated['name'] !== 'Admin') {
+                return response()->json(['message' => 'Cannot rename Admin role'], 422);
+            }
+            if (!$request->user()?->hasRole('Admin')) {
+                return response()->json(['message' => 'Only an Admin can modify the Admin role'], 403);
+            }
+        }
 
         $role->name = $validated['name'];
         $role->save();

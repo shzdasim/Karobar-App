@@ -16,11 +16,29 @@ class CashDrawerController extends Controller
         $this->cashDrawerService = $cashDrawerService;
     }
 
+    private function authorizeDrawerAction(string|array $permissions): void
+    {
+        $user = request()->user();
+        if (!$user) {
+            abort(401, 'Unauthenticated.');
+        }
+        if ($user->hasRole(['Admin', 'admin', 'super-admin'])) {
+            return;
+        }
+        foreach ((array) $permissions as $perm) {
+            if ($user->can($perm)) {
+                return;
+            }
+        }
+        abort(403, 'This action is unauthorized.');
+    }
+
     /**
      * Get the active drawer session for the logged-in user / store.
      */
     public function current(Request $request)
     {
+        $this->authorizeDrawerAction(['cash-drawer.view', 'sale-invoice.create']);
         $session = $this->cashDrawerService->getCurrentSession($request->user());
 
         if (!$session) {
@@ -47,6 +65,7 @@ class CashDrawerController extends Controller
      */
     public function open(Request $request)
     {
+        $this->authorizeDrawerAction('cash-drawer.open');
         $data = $request->validate([
             'opening_balance' => 'required|numeric|min:0',
             'notes'           => 'nullable|string|max:500',
@@ -70,6 +89,7 @@ class CashDrawerController extends Controller
      */
     public function recordTransaction(Request $request)
     {
+        $this->authorizeDrawerAction('cash-drawer.transaction');
         $data = $request->validate([
             'type'   => 'required|in:cash_in,cash_out',
             'amount' => 'required|numeric|min:0.01',
@@ -130,6 +150,7 @@ class CashDrawerController extends Controller
      */
     public function close(Request $request)
     {
+        $this->authorizeDrawerAction('cash-drawer.close');
         $data = $request->validate([
             'closing_balance_actual' => 'required|numeric|min:0',
             'notes'                  => 'nullable|string|max:500',
@@ -161,6 +182,7 @@ class CashDrawerController extends Controller
      */
     public function history(Request $request)
     {
+        $this->authorizeDrawerAction('cash-drawer.view');
         $limit = min(max((int) $request->query('per_page', 15), 1), 100);
 
         $sessions = CashDrawerSession::with(['user'])
@@ -186,6 +208,7 @@ class CashDrawerController extends Controller
      */
     public function show(Request $request, $id)
     {
+        $this->authorizeDrawerAction('cash-drawer.view');
         $session = CashDrawerSession::with(['user', 'transactions.user'])->findOrFail($id);
 
         return response()->json([

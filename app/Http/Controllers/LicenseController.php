@@ -18,6 +18,14 @@ class LicenseController extends Controller
 
     public function activate(Request $req, LicenseService $svc)
     {
+        $user = $req->user();
+        $hasAnyAdmins = \Spatie\Permission\Models\Role::where('name', 'Admin')->exists()
+            && \App\Models\User::role('Admin')->exists();
+
+        if ($hasAnyAdmins && (!$user || (!$user->hasRole(['Admin', 'admin', 'super-admin']) && !$user->can('settings.update')))) {
+            return response()->json(['message' => 'Only administrators can activate software licenses.'], 403);
+        }
+
         $req->validate(['license_key' => 'required|string']);
         $key = trim($req->input('license_key'));
 
@@ -44,9 +52,25 @@ class LicenseController extends Controller
         ], $ok ? 200 : 422);
     }
 
-    public function deactivate()
+    public function deactivate(Request $req)
     {
-        // Optional: remove all licenses
+        $user = $req->user();
+        if (!$user || !$user->hasRole(['Admin', 'admin', 'super-admin'])) {
+            return response()->json(['message' => 'Only administrators can deactivate the software license.'], 403);
+        }
+
+        $req->validate([
+            'password' => 'required|string',
+        ]);
+
+        if (!\Illuminate\Support\Facades\Hash::check($req->input('password'), $user->password)) {
+            return response()->json([
+                'message' => 'Invalid password.',
+                'errors'  => ['password' => ['The provided password is incorrect.']],
+            ], 422);
+        }
+
+        // Remove all licenses
         \App\Models\License::query()->delete();
         return response()->json(['ok' => true]);
     }

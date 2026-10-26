@@ -205,6 +205,16 @@ class SaleReturnController extends Controller
             abort(401, 'Unauthenticated: user_id is required');
         }
 
+        // 🛡️ Server-Authoritative Sale Return Totals
+        $calculated = app(\App\Services\InvoiceCalculationService::class)->calculateAndValidateSaleReturn($data, Auth::user());
+        $data['items']               = $calculated['items'];
+        $data['gross_total']         = $calculated['gross_total'];
+        $data['discount_percentage'] = $calculated['discount_percentage'];
+        $data['discount_amount']     = $calculated['discount_amount'];
+        $data['tax_percentage']      = $calculated['tax_percentage'];
+        $data['tax_amount']          = $calculated['tax_amount'];
+        $data['total']               = $calculated['total'];
+
         return DB::transaction(function () use ($data, $userId, $request) {
             app(\App\Services\ReturnEntitlement::class)->validate('sale', $data);
             // Generate posted_number server-side (concurrency-safe)
@@ -280,6 +290,16 @@ class SaleReturnController extends Controller
         if (!$userId) {
             abort(401, 'Unauthenticated: user_id is required');
         }
+
+        // 🛡️ Server-Authoritative Sale Return Totals
+        $calculated = app(\App\Services\InvoiceCalculationService::class)->calculateAndValidateSaleReturn($data, Auth::user());
+        $data['items']               = $calculated['items'];
+        $data['gross_total']         = $calculated['gross_total'];
+        $data['discount_percentage'] = $calculated['discount_percentage'];
+        $data['discount_amount']     = $calculated['discount_amount'];
+        $data['tax_percentage']      = $calculated['tax_percentage'];
+        $data['tax_amount']          = $calculated['tax_amount'];
+        $data['total']               = $calculated['total'];
 
         return DB::transaction(function () use ($saleReturn, $data, $userId, $request) {
             $oldSnapshot = [

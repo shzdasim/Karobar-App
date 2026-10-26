@@ -46,6 +46,12 @@ class RolesAndPermissionsSeeder extends Seeder
             'report.stock-adjustment.view', 'report.stock-adjustment.export',
             'report.product-comprehensive.view', 'report.product-comprehensive.export',
             'report.near-expiry-product.view', 'report.near-expiry-product.export',
+
+            // Financial Accounts, Cash Drawer, Expenses & POS Overrides
+            'account.view', 'account.create', 'account.update', 'account.transfer', 'account.adjust',
+            'cash-drawer.view', 'cash-drawer.open', 'cash-drawer.transaction', 'cash-drawer.close',
+            'expense.view', 'expense.create', 'expense.update', 'expense.delete',
+            'sale-invoice.credit-override', 'sale-invoice.discount-override', 'sale-invoice.expired-override',
         ];
 
         // ---- Domain modules & standard actions ----

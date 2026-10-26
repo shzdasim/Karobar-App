@@ -134,6 +134,14 @@ $query = UserDemand::with(['product:id,name,product_code,quantity,brand_id,suppl
             $product = Product::where('name', $name)->first();
 
             if (!$product) {
+                $canCreateProduct = $user->hasRole(['Admin', 'admin', 'super-admin'])
+                    || $user->can('product.create')
+                    || $user->can('create', Product::class);
+
+                if (!$canCreateProduct) {
+                    abort(403, 'You do not have permission to create new products in the master catalog.');
+                }
+
                 $product = $this->createProductFromDemand($validated);
             }
         }

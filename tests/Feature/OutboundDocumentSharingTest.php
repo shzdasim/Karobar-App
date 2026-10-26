@@ -149,8 +149,11 @@ class OutboundDocumentSharingTest extends TestCase
         $this->assertStringNotContainsString('http://', $metaRes->json('whatsapp_text'));
         $this->assertStringNotContainsString('https://', $metaRes->json('whatsapp_text'));
 
-        // 2. Build & Send actual PDF for WhatsApp (client_file mode + saved PDF in storage)
+        // 2. Build & Send actual PDF for WhatsApp (client_file mode + saved PDF in private local storage)
+        Storage::fake('local');
         Storage::fake('public');
+        Storage::disk('public')->put('shared-pdfs/Legacy_Exposed_File.pdf', 'legacy-pdf');
+
         $waRes = $this->postJson('/api/share/whatsapp', [
             'type'    => 'sale_invoice',
             'id'      => $invoice->id,
@@ -163,7 +166,14 @@ class OutboundDocumentSharingTest extends TestCase
             ->assertJsonPath('normalized_phone', '923007654321');
         $this->assertNotEmpty($waRes->json('pdf_base64'));
         $this->assertStringStartsWith('%PDF-', base64_decode($waRes->json('pdf_base64')));
-        Storage::disk('public')->assertExists('shared-pdfs/Sale_Invoice_SI-000105.pdf');
+
+        // Verify PDF is stored in private local storage with randomized prefix and NOT in public storage
+        $storedPath = $waRes->json('stored_path');
+        $this->assertNotEmpty($storedPath);
+        $this->assertNotSame('shared-pdfs/Sale_Invoice_SI-000105.pdf', $storedPath);
+        Storage::disk('local')->assertExists($storedPath);
+        Storage::disk('public')->assertMissing('shared-pdfs/Sale_Invoice_SI-000105.pdf');
+        Storage::disk('public')->assertMissing('shared-pdfs/Legacy_Exposed_File.pdf');
 
         // 3. Direct WhatsApp Cloud API PDF document dispatch when credentials are configured
         config([

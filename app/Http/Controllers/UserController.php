@@ -10,6 +10,28 @@ use Illuminate\Support\Facades\Gate;
 
 class UserController extends Controller
 {
+    private function isSuperOrAdmin(?User $user): bool
+    {
+        return (bool) ($user && $user->hasRole(['Admin', 'admin', 'super-admin']));
+    }
+
+    private function assertCanTouchAdminRoleOrUser(Request $request, ?User $targetUser = null, array $requestedRoles = []): void
+    {
+        if ($this->isSuperOrAdmin($request->user())) {
+            return;
+        }
+
+        if ($targetUser && $this->isSuperOrAdmin($targetUser)) {
+            abort(403, 'Non-admin users cannot modify or delete an Administrator account.');
+        }
+
+        foreach ($requestedRoles as $roleName) {
+            if (in_array(strtolower((string) $roleName), ['admin', 'super-admin'], true)) {
+                abort(403, 'Non-admin users cannot assign the Admin role.');
+            }
+        }
+    }
+
     public function index(Request $request)
     {
         Gate::authorize('manage-users');
@@ -58,6 +80,8 @@ class UserController extends Controller
             'permissions.*' => ['string','exists:permissions,name'],
         ]);
 
+        $this->assertCanTouchAdminRoleOrUser($request, null, $data['roles'] ?? []);
+
         $user = new User();
         $user->name   = $data['name'];
         $user->email  = $data['email'];
@@ -93,11 +117,17 @@ class UserController extends Controller
             'permissions.*' => ['string','exists:permissions,name'],
         ]);
 
+        $this->assertCanTouchAdminRoleOrUser($request, $user, $data['roles'] ?? []);
+
         $user->name  = $data['name'];
         $user->email = $data['email'];
         if (isset($data['status'])) $user->status = $data['status'];
         if (!empty($data['password'])) $user->password = Hash::make($data['password']);
         $user->save();
+
+        if (($user->status ?? 'active') !== 'active') {
+            $user->tokens()->delete();
+        }
 
         if (array_key_exists('roles', $data))        $user->syncRoles($data['roles'] ?? []);
         if (array_key_exists('permissions', $data))  $user->syncPermissions($data['permissions'] ?? []);
@@ -108,10 +138,12 @@ class UserController extends Controller
     public function destroy(User $user, Request $request)
     {
         Gate::authorize('manage-users');
+        $this->assertCanTouchAdminRoleOrUser($request, $user);
 
         if ($request->user()->id === $user->id) {
             return response()->json(['message' => 'You cannot delete your own account.'], 422);
         }
+        $user->tokens()->delete();
         $user->delete();
         return response()->json(['message' => 'Deleted']);
     }
@@ -125,6 +157,7 @@ class UserController extends Controller
             'roles' => ['array'],
             'roles.*' => ['string','exists:roles,name'],
         ]);
+        $this->assertCanTouchAdminRoleOrUser($request, $user, $data['roles'] ?? []);
         $user->syncRoles($data['roles'] ?? []);
         return $user->load('roles:id,name','permissions:id,name');
     }
@@ -132,6 +165,7 @@ class UserController extends Controller
     public function syncPermissions(Request $request, User $user)
     {
         Gate::authorize('manage-users');
+        $this->assertCanTouchAdminRoleOrUser($request, $user);
 
         $data = $request->validate([
             'permissions' => ['array'],

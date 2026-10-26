@@ -257,6 +257,16 @@ public function index(Request $request)
             'items.*.sub_total'                     => 'nullable|numeric',
         ]);
 
+        // 🛡️ Server-Authoritative Purchase Return Totals
+        $calculated = app(\App\Services\InvoiceCalculationService::class)->calculateAndValidatePurchaseReturn($data, $request->user());
+        $data['items']               = $calculated['items'];
+        $data['gross_total']         = $calculated['gross_total'];
+        $data['discount_percentage'] = $calculated['discount_percentage'];
+        $data['discount_amount']     = $calculated['discount_amount'];
+        $data['tax_percentage']      = $calculated['tax_percentage'];
+        $data['tax_amount']          = $calculated['tax_amount'];
+        $data['total']               = $calculated['total'];
+
         return DB::transaction(function () use ($data, $request) {
             $this->validateStockAvailability($data['items']);
             app(\App\Services\ReturnEntitlement::class)->validate('purchase', $data);
@@ -328,6 +338,16 @@ public function index(Request $request)
             'items.*.item_discount_percentage'      => 'nullable|numeric',
             'items.*.sub_total'                     => 'nullable|numeric',
         ]);
+
+        // 🛡️ Server-Authoritative Purchase Return Totals
+        $calculated = app(\App\Services\InvoiceCalculationService::class)->calculateAndValidatePurchaseReturn($data, $request->user());
+        $data['items']               = $calculated['items'];
+        $data['gross_total']         = $calculated['gross_total'];
+        $data['discount_percentage'] = $calculated['discount_percentage'];
+        $data['discount_amount']     = $calculated['discount_amount'];
+        $data['tax_percentage']      = $calculated['tax_percentage'];
+        $data['tax_amount']          = $calculated['tax_amount'];
+        $data['total']               = $calculated['total'];
 
         return DB::transaction(function () use ($purchaseReturn, $data, $request) {
             $purchaseReturn->load('items');

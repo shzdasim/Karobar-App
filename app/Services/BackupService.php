@@ -106,6 +106,124 @@ class BackupService
     }
 
     /**
+     * Validate that a custom backup or browse directory path is safe and outside application source/webroot and OS system directories.
+     */
+    public function assertSafeBackupDirectory(string $path): void
+    {
+        $trimmed = trim($path);
+        if ($trimmed === '') {
+            return;
+        }
+
+        if (str_contains($trimmed, "\0") || preg_match('#(^|[\\\\/])\.\.([\\\\/]|$)#', $trimmed)) {
+            throw new \InvalidArgumentException('Backup path cannot contain directory traversal sequences.');
+        }
+
+        $resolved = $this->resolvePathForValidation($trimmed);
+        $normalized = rtrim(str_replace('\\', '/', $resolved), '/');
+        $normalizedLower = strtolower($normalized);
+
+        $defaultBackupDir = rtrim(str_replace('\\', '/', realpath($this->backupPath) ?: $this->backupPath), '/');
+        $defaultBackupLower = strtolower($defaultBackupDir);
+
+        // Always allow the default storage/app/backups directory and its subdirectories
+        if ($normalizedLower === $defaultBackupLower || str_starts_with($normalizedLower, $defaultBackupLower . '/')) {
+            return;
+        }
+
+        $publicDir = rtrim(str_replace('\\', '/', realpath(public_path()) ?: public_path()), '/');
+        $publicLower = strtolower($publicDir);
+        if ($normalizedLower === $publicLower || str_starts_with($normalizedLower, $publicLower . '/')) {
+            throw new \InvalidArgumentException('Backup path cannot be inside the public web root.');
+        }
+
+        $baseDir = rtrim(str_replace('\\', '/', realpath(base_path()) ?: base_path()), '/');
+        $baseLower = strtolower($baseDir);
+        if ($normalizedLower === $baseLower || str_starts_with($normalizedLower, $baseLower . '/')) {
+            throw new \InvalidArgumentException('Backup path cannot be inside the application source directory.');
+        }
+
+        $blockedRoots = [
+            '/etc',
+            '/private/etc',
+            '/bin',
+            '/sbin',
+            '/usr',
+            '/system',
+            '/library',
+            '/var/root',
+            '/proc',
+            '/sys',
+            '/dev',
+            'c:/windows',
+            'c:/program files',
+            'c:/program files (x86)',
+        ];
+
+        foreach ($blockedRoots as $root) {
+            if ($normalizedLower === $root || str_starts_with($normalizedLower, $root . '/')) {
+                throw new \InvalidArgumentException('Backup path cannot be inside a protected operating system directory.');
+            }
+        }
+    }
+
+    /**
+     * Resolve a path (even if the leaf folders do not yet exist) by resolving the nearest existing ancestor.
+     */
+    protected function resolvePathForValidation(string $path): string
+    {
+        $real = @realpath($path);
+        if ($real !== false) {
+            return $real;
+        }
+
+        $parts = [];
+        $current = $path;
+        $maxDepth = 40;
+
+        while ($maxDepth-- > 0) {
+            $parent = dirname($current);
+            if ($parent === $current || $parent === '.' || $parent === '') {
+                break;
+            }
+            array_unshift($parts, basename($current));
+            $parentReal = @realpath($parent);
+            if ($parentReal !== false) {
+                return rtrim($parentReal, DIRECTORY_SEPARATOR . '/\\')
+                    . DIRECTORY_SEPARATOR
+                    . implode(DIRECTORY_SEPARATOR, $parts);
+            }
+            $current = $parent;
+        }
+
+        return $path;
+    }
+
+    /**
+     * Quote a string value safely for SQL dump generation using PDO::quote().
+     */
+    protected function quoteSqlValue(string $value): string
+    {
+        try {
+            $pdo = DB::connection()->getPdo();
+            if ($pdo) {
+                $quoted = $pdo->quote($value);
+                if ($quoted !== false) {
+                    return $quoted;
+                }
+            }
+        } catch (\Throwable $e) {
+            // Fall through to manual escaping
+        }
+
+        return "'" . str_replace(
+            ["\\", "\0", "\n", "\r", "'", '"', "\x1a"],
+            ["\\\\", "\\0", "\\n", "\\r", "\\'", '\\"', "\\Z"],
+            $value
+        ) . "'";
+    }
+
+    /**
      * Copy backup archive to custom local / network / drive folder
      */
     public function copyToCustomFolder(BackupLog $backupLog, string $destinationDir): void
@@ -116,6 +234,8 @@ class BackupService
         }
 
         try {
+            $this->assertSafeBackupDirectory($destinationDir);
+
             if (!File::exists($destinationDir)) {
                 File::makeDirectory($destinationDir, 0755, true, true);
             }
@@ -293,9 +413,9 @@ class BackupService
                             } elseif (is_numeric($value)) {
                                 $values[] = $value;
                             } elseif (is_string($value)) {
-                                $values[] = "'" . addslashes($value) . "'";
+                                $values[] = $this->quoteSqlValue($value);
                             } else {
-                                $values[] = "'" . addslashes(json_encode($value)) . "'";
+                                $values[] = $this->quoteSqlValue((string) json_encode($value));
                             }
                         }
                         $output .= "INSERT INTO `$tableName` ($columnList) VALUES (" . implode(', ', $values) . ");\n";
@@ -750,6 +870,17 @@ class BackupService
             $statements = array_filter(array_map('trim', explode(';', $cleanSql)));
         }
         
+        // Validate all statements before executing any of them
+        foreach ($statements as $statement) {
+            $trimmedStmt = trim($statement);
+            if ($trimmedStmt === '') {
+                continue;
+            }
+            if (preg_match('/\b(ATTACH\s+DATABASE|INTO\s+(OUTFILE|DUMPFILE)|LOAD_FILE\s*\(|COPY\s+.*\s+TO\s+PROGRAM)\b/i', $trimmedStmt)) {
+                throw new \Exception('Unsafe SQL statement detected in backup file.');
+            }
+        }
+
         DB::transaction(function () use ($statements) {
             foreach ($statements as $statement) {
                 $statement = trim($statement);
@@ -794,6 +925,22 @@ class BackupService
         $zip = new ZipArchive();
         if ($zip->open($filepath) !== true) {
             throw new \Exception('Could not open backup zip file');
+        }
+
+        // Prevent Zip Slip path traversal prior to extraction
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $entryName = $zip->getNameIndex($i);
+            if (
+                $entryName === false
+                || str_contains($entryName, "\0")
+                || preg_match('#(^|[\\\\/])\.\.([\\\\/]|$)#', $entryName)
+                || str_starts_with($entryName, '/')
+                || str_starts_with($entryName, '\\')
+                || str_contains($entryName, ':')
+            ) {
+                $zip->close();
+                throw new \Exception('Unsafe file path detected inside backup archive.');
+            }
         }
         
         // Extract to temp directory

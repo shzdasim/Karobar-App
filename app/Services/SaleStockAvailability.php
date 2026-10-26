@@ -48,8 +48,12 @@ class SaleStockAvailability
         array $items,
         ?Collection $originalItems = null,
         ?User $user = null,
-        bool $expiredOverride = false
+        bool $expiredOverride = false,
+        array $overrideCredentials = []
     ): void {
+        if ($expiredOverride && !empty($overrideCredentials)) {
+            $user = app(InvoiceCalculationService::class)->resolveAuthorizingUser($user, $overrideCredentials, 'sale-invoice.expired-override');
+        }
         $originalItems ??= collect();
         $ids = collect($items)->pluck('product_id')->merge($originalItems->pluck('product_id'))->unique()->sort()->values();
         $products = Product::whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get()->keyBy('id');

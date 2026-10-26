@@ -18,6 +18,23 @@ class AccountController extends Controller
         $this->accountService = $accountService;
     }
 
+    private function authorizeAccountAction(string|array $permissions): void
+    {
+        $user = request()->user();
+        if (!$user) {
+            abort(401, 'Unauthenticated.');
+        }
+        if ($user->hasRole(['Admin', 'admin', 'super-admin'])) {
+            return;
+        }
+        foreach ((array) $permissions as $perm) {
+            if ($user->can($perm)) {
+                return;
+            }
+        }
+        abort(403, 'This action is unauthorized.');
+    }
+
     public const PAKISTAN_BANKS = [
         ['code' => 'meezan', 'name' => 'Meezan Bank', 'full_name' => 'Meezan Bank Limited (Islamic)', 'type' => 'bank', 'color' => '#005b41', 'icon' => 'meezan'],
         ['code' => 'hbl', 'name' => 'HBL', 'full_name' => 'Habib Bank Limited', 'type' => 'bank', 'color' => '#00835f', 'icon' => 'hbl'],
@@ -58,6 +75,7 @@ class AccountController extends Controller
      */
     public function index(): JsonResponse
     {
+        $this->authorizeAccountAction('account.view');
         $summary = $this->accountService->getSummary();
         return response()->json($summary);
     }
@@ -67,6 +85,7 @@ class AccountController extends Controller
      */
     public function presets(): JsonResponse
     {
+        $this->authorizeAccountAction('account.view');
         return response()->json([
             'banks'   => self::PAKISTAN_BANKS,
             'wallets' => self::PAKISTAN_WALLETS,
@@ -78,6 +97,7 @@ class AccountController extends Controller
      */
     public function seedDefaults(): JsonResponse
     {
+        $this->authorizeAccountAction('account.create');
         $seeded = [];
         $popular = [
             ['code' => 'meezan', 'name' => 'Meezan Bank', 'bank_name' => 'Meezan Bank Limited', 'type' => 'bank', 'icon' => 'meezan', 'color' => '#005b41', 'notes' => 'Primary Islamic bank account'],
@@ -124,6 +144,7 @@ class AccountController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $this->authorizeAccountAction('account.create');
         $validated = $request->validate([
             'name'            => 'required|string|max:100',
             'type'            => ['required', Rule::in(['cash', 'bank', 'card', 'mobile_wallet', 'other'])],
@@ -179,6 +200,7 @@ class AccountController extends Controller
      */
     public function update(Request $request, int $id): JsonResponse
     {
+        $this->authorizeAccountAction('account.update');
         $account = Account::findOrFail($id);
 
         $validated = $request->validate([
@@ -218,6 +240,7 @@ class AccountController extends Controller
      */
     public function transactions(Request $request, int $id): JsonResponse
     {
+        $this->authorizeAccountAction('account.view');
         $account = Account::findOrFail($id);
 
         $query = AccountTransaction::with('user:id,name')
@@ -251,6 +274,7 @@ class AccountController extends Controller
      */
     public function transfer(Request $request): JsonResponse
     {
+        $this->authorizeAccountAction(['account.transfer', 'account.update']);
         $validated = $request->validate([
             'from_account_id' => 'required|integer|exists:accounts,id',
             'to_account_id'   => 'required|integer|exists:accounts,id|different:from_account_id',
@@ -280,6 +304,7 @@ class AccountController extends Controller
      */
     public function adjust(Request $request, int $id): JsonResponse
     {
+        $this->authorizeAccountAction(['account.adjust', 'account.update']);
         $account = Account::findOrFail($id);
 
         $validated = $request->validate([

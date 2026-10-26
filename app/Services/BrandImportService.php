@@ -241,6 +241,9 @@ class BrandImportService
             if ($v === null) { $out[$i] = null; continue; }
             $s = is_string($v) ? trim($v) : (string)$v;
             if ($i === 0) $s = preg_replace('/^\xEF\xBB\xBF/', '', $s); // strip BOM
+            if ($s !== '' && preg_match('/^[=+\-@]/', $s) && !is_numeric($s)) {
+                $s = "'" . $s;
+            }
             $out[$i] = ($s === '') ? null : $s;
         }
         while (!empty($out) && end($out) === null) array_pop($out);
@@ -325,11 +328,56 @@ class BrandImportService
         return (bool) preg_match('/^https?:\/\//i', $s);
     }
 
+    private function isSafePublicUrl(string $url): bool
+    {
+        $parts = @parse_url($url);
+        if (!$parts || empty($parts['scheme']) || empty($parts['host'])) {
+            return false;
+        }
+
+        $scheme = strtolower($parts['scheme']);
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            return false;
+        }
+
+        $host = strtolower(trim($parts['host'], '[]'));
+        if ($host === 'localhost' || str_ends_with($host, '.local') || str_ends_with($host, '.internal')) {
+            return false;
+        }
+
+        // If host is already an IP literal, validate directly
+        if (filter_var($host, FILTER_VALIDATE_IP)) {
+            return filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false;
+        }
+
+        $ips = @gethostbynamel($host);
+        if (empty($ips)) {
+            return false;
+        }
+
+        foreach ($ips as $ip) {
+            if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private function downloadImageFromUrl(string $url): ?string
     {
         try {
-            $resp = Http::timeout(15)->get($url);
+            if (!$this->isSafePublicUrl($url)) {
+                return null;
+            }
+
+            $resp = Http::withoutRedirecting()->timeout(10)->get($url);
             if (!$resp->ok()) return null;
+
+            $body = $resp->body();
+            if (strlen($body) > 5 * 1024 * 1024) {
+                return null; // Reject images larger than 5MB
+            }
 
             $mime = strtolower($resp->header('Content-Type') ?? '');
             if (!str_starts_with($mime, 'image/')) return null;
@@ -347,7 +395,7 @@ class BrandImportService
 
             $filename = Str::uuid().'.'.$ext;
             $path = "{$dir}/{$filename}";
-            Storage::disk($this->publicDisk)->put($path, $resp->body());
+            Storage::disk($this->publicDisk)->put($path, $body);
 
             return $path; // relative (works with /storage/{path})
         } catch (\Throwable $e) {

@@ -16,3 +16,6 @@ Schedule::command('demands:notify')->dailyAt('09:00');
 // Automated Scheduled Backups & Off-Server Storage
 // Checks hourly if backup is due according to BackupSchedule frequency and time_of_day
 Schedule::command('backup:run-scheduled')->hourly();
+
+// Daily cleanup of temporary shared PDF files older than 24 hours
+Schedule::call(fn () => app(\App\Services\DocumentShareService::class)->cleanupExpiredSharedPdfs())->daily();

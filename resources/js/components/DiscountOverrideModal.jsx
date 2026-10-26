@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { ExclamationTriangleIcon, ShieldCheckIcon, TagIcon } from "@heroicons/react/24/outline";
@@ -13,6 +13,7 @@ export default function DiscountOverrideModal({
   requestedDiscount,
 }) {
   const { isDark, theme } = useTheme();
+  const [supervisorPassword, setSupervisorPassword] = useState("");
 
   const themeColors = useMemo(
     () => ({
@@ -84,6 +85,19 @@ export default function DiscountOverrideModal({
           )}
         </div>
 
+        <div className="space-y-1">
+          <label className="block text-xs font-medium text-gray-700 dark:text-slate-300">
+            Supervisor Password (required if current cashier lacks override permission)
+          </label>
+          <input
+            type="password"
+            value={supervisorPassword}
+            onChange={(e) => setSupervisorPassword(e.target.value)}
+            placeholder="Enter supervisor password..."
+            className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+          />
+        </div>
+
         <div className="p-2.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/40 text-[11px] text-amber-800 dark:text-amber-300 flex items-center gap-2">
           <ShieldCheckIcon className="w-4 h-4 shrink-0 text-amber-500" />
           <span>Supervisor override will be logged in the audit trail with this invoice.</span>
@@ -100,7 +114,7 @@ export default function DiscountOverrideModal({
           </button>
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={() => onConfirm({ supervisor_password: supervisorPassword })}
             className={`px-4.5 py-2 text-xs font-semibold theme-btn-primary ${btnPrimary.className}`}
             style={btnPrimary.style}
           >

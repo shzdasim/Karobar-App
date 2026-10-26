@@ -21,6 +21,7 @@ export default function Profile() {
   const [form, setForm] = useState({
     name: "",
     email: "",
+    current_password: "",
     password: "",
     password_confirmation: "",
   });
@@ -133,6 +134,20 @@ export default function Profile() {
                 value={form.email}
                 onChange={handleChange}
                 placeholder="you@example.com"
+              />
+            </div>
+
+            <div className="people-field people-field-wide">
+              <label className="people-label" htmlFor="profile-current-password">
+                Current password (required when changing email or password)
+              </label>
+              <input
+                id="profile-current-password"
+                type="password"
+                name="current_password"
+                value={form.current_password}
+                onChange={handleChange}
+                placeholder="Enter current password to confirm changes"
               />
             </div>
 

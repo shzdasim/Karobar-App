@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 export default function CreditOverrideModal({
   isOpen,
@@ -10,6 +10,8 @@ export default function CreditOverrideModal({
   excessAmount,
   isHold,
 }) {
+  const [supervisorPassword, setSupervisorPassword] = useState('');
+
   if (!isOpen) return null;
 
   return (
@@ -52,6 +54,19 @@ export default function CreditOverrideModal({
           )}
         </div>
 
+        <div className="space-y-1">
+          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+            Supervisor Password (required if current cashier lacks override permission)
+          </label>
+          <input
+            type="password"
+            value={supervisorPassword}
+            onChange={(e) => setSupervisorPassword(e.target.value)}
+            placeholder="Enter supervisor password..."
+            className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+          />
+        </div>
+
         <p className="text-[11px] text-gray-500 dark:text-gray-400 italic">
           Authorizing this sale will proceed with supervisor override and record the transaction to the customer's ledger.
         </p>
@@ -66,7 +81,7 @@ export default function CreditOverrideModal({
           </button>
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={() => onConfirm({ supervisor_password: supervisorPassword })}
             className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition-colors"
           >
             Authorize & Proceed

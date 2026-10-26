@@ -11,12 +11,37 @@ use App\Models\PurchaseReturn;
 
 class DashboardController extends Controller
 {
+    private function authorizeDashboardAction(Request $request, array $permissions): void
+    {
+        $user = $request->user();
+        if (!$user) {
+            abort(401, 'Unauthenticated.');
+        }
+        if ($user->hasRole(['Admin', 'admin', 'super-admin'])) {
+            return;
+        }
+        foreach ($permissions as $perm) {
+            if ($user->can($perm)) {
+                return;
+            }
+        }
+        abort(403, 'This action is unauthorized.');
+    }
+
     /**
      * GET /api/dashboard/summary?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
      * If date_from/date_to are missing, defaults to today (local app timezone).
      */
     public function summary(Request $request)
     {
+        $this->authorizeDashboardAction($request, [
+            'sale-invoice.view',
+            'purchase-invoice.view',
+            'report.sale-detail.view',
+            'report.purchase-detail.view',
+            'report.cost-of-sale.view',
+        ]);
+
         // Default to "today" if user didn't pick dates
         $today = now()->toDateString();
         $from = $request->query('date_from', $today);
@@ -111,6 +136,7 @@ class DashboardController extends Controller
 
 public function nearExpiry(Request $request)
 {
+    $this->authorizeDashboardAction($request, ['product.view', 'report.near-expiry-product.view']);
     $months = (int) $request->query('months', 3);
     if (!in_array($months, [1,3,6,12,18], true)) {
         $months = 3;
@@ -158,8 +184,9 @@ public function nearExpiry(Request $request)
     ]);
 }
 
-public function nearExpiryFilters()
+public function nearExpiryFilters(Request $request)
 {
+    $this->authorizeDashboardAction($request, ['product.view', 'report.near-expiry-product.view']);
     $suppliers = DB::table('suppliers')->select('id','name')->orderBy('name')->get();
     $brands    = DB::table('brands')->select('id','name')->orderBy('name')->get();
     return response()->json(compact('suppliers','brands'));
@@ -169,8 +196,14 @@ public function nearExpiryFilters()
      * GET /api/dashboard/invoice-counts
      * Returns total counts of sale and purchase invoices
      */
-    public function invoiceCounts()
+    public function invoiceCounts(Request $request)
     {
+        $this->authorizeDashboardAction($request, [
+            'sale-invoice.view',
+            'purchase-invoice.view',
+            'report.sale-detail.view',
+            'report.purchase-detail.view',
+        ]);
         $saleCount = SaleInvoice::count();
         $purchaseCount = PurchaseInvoice::count();
         
@@ -187,6 +220,11 @@ public function nearExpiryFilters()
      */
     public function salesByCategory(Request $request)
     {
+        $this->authorizeDashboardAction($request, [
+            'sale-invoice.view',
+            'report.sale-detail.view',
+            'report.cost-of-sale.view',
+        ]);
         $today = now()->toDateString();
         $from = $request->query('date_from', now()->startOfMonth()->toDateString());
         $to = $request->query('date_to', $today);
@@ -215,6 +253,15 @@ public function nearExpiryFilters()
      */
     public function kpiMetrics(Request $request)
     {
+        $this->authorizeDashboardAction($request, [
+            'product.view',
+            'sale-invoice.view',
+            'purchase-invoice.view',
+            'customer.view',
+            'supplier.view',
+            'user.view',
+            'report.current-stock.view',
+        ]);
         $request->validate([
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
@@ -271,9 +318,15 @@ public function nearExpiryFilters()
         // Approx stock on hand (units) and valuation
         $stockUnits = (float) DB::table('products')->sum('quantity');
 
-        $stockValue = (float) DB::table('products')
-            ->selectRaw('COALESCE(SUM(COALESCE(quantity,0) * COALESCE(avg_price, unit_purchase_price, pack_purchase_price, 0)), 0) as value')
-            ->value('value');
+        $canViewValuation = $request->user()?->hasRole(['Admin', 'admin', 'super-admin'])
+            || $request->user()?->can('product.view')
+            || $request->user()?->can('report.current-stock.view');
+
+        $stockValue = $canViewValuation
+            ? (float) DB::table('products')
+                ->selectRaw('COALESCE(SUM(COALESCE(quantity,0) * COALESCE(avg_price, unit_purchase_price, pack_purchase_price, 0)), 0) as value')
+                ->value('value')
+            : null;
 
         return response()->json([
             'active_products'    => $activeProducts,
@@ -302,6 +355,11 @@ public function nearExpiryFilters()
      */
     public function salesByBrands(Request $request)
     {
+        $this->authorizeDashboardAction($request, [
+            'sale-invoice.view',
+            'report.sale-detail.view',
+            'report.cost-of-sale.view',
+        ]);
         $today = now()->toDateString();
         $from = $request->query('date_from', now()->startOfMonth()->toDateString());
         $to = $request->query('date_to', $today);
@@ -330,6 +388,11 @@ public function nearExpiryFilters()
      */
     public function topProducts(Request $request)
     {
+        $this->authorizeDashboardAction($request, [
+            'sale-invoice.view',
+            'report.sale-detail.view',
+            'report.cost-of-sale.view',
+        ]);
         $today = now()->toDateString();
         $from = $request->query('date_from', now()->startOfMonth()->toDateString());
         $to = $request->query('date_to', $today);

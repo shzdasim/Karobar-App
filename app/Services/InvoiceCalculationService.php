@@ -3,13 +3,51 @@
 namespace App\Services;
 
 use App\Models\Product;
+use App\Models\SaleInvoice;
 use App\Models\User;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
 class InvoiceCalculationService
 {
+    /**
+     * Resolve the user authorizing an override (either the current user or a supervisor whose credentials were supplied).
+     */
+    public function resolveAuthorizingUser(?User $currentUser, array $data = [], ?string $permission = null): ?User
+    {
+        $supervisorPassword = (string) ($data['supervisor_password'] ?? '');
+        $supervisorEmail = trim((string) ($data['supervisor_email'] ?? ''));
+
+        if ($supervisorPassword !== '') {
+            if ($supervisorEmail !== '') {
+                $supervisor = User::where('email', $supervisorEmail)->first();
+                if ($supervisor && ($supervisor->status ?? 'active') === 'active' && Hash::check($supervisorPassword, $supervisor->password)) {
+                    return $supervisor;
+                }
+            } else {
+                $candidates = User::query()->get()->filter(function (User $u) use ($permission) {
+                    if (($u->status ?? 'active') !== 'active') {
+                        return false;
+                    }
+                    if ($u->hasRole('Admin') || $u->hasRole('admin') || $u->hasRole('super-admin')) {
+                        return true;
+                    }
+                    return $permission ? $u->can($permission) : false;
+                });
+
+                foreach ($candidates as $candidate) {
+                    if (Hash::check($supervisorPassword, $candidate->password)) {
+                        return $candidate;
+                    }
+                }
+            }
+        }
+
+        return $currentUser;
+    }
+
     /**
      * Check whether the user is authorized to override discount limits.
      */
@@ -24,6 +62,22 @@ class InvoiceCalculationService
         }
 
         return $user->can('sale-invoice.discount-override');
+    }
+
+    /**
+     * Check whether the user is authorized to override customer credit limits / holds.
+     */
+    public function canOverrideCredit(?User $user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        if ($user->hasRole('Admin') || $user->hasRole('admin') || $user->hasRole('super-admin')) {
+            return true;
+        }
+
+        return $user->can('sale-invoice.credit-override');
     }
 
     /**
@@ -46,12 +100,14 @@ class InvoiceCalculationService
             throw ValidationException::withMessages(['items' => ['At least one item is required.']]);
         }
 
+        $authorizingUser = $this->resolveAuthorizingUser($user, $data, 'sale-invoice.discount-override');
         $productIds = collect($items)->pluck('product_id')->filter()->unique();
         $products = Product::whereIn('id', $productIds)->get()->keyBy('id');
 
         $calculatedItems = [];
         $grossSum = 0.0;
         $itemDiscSum = 0.0;
+        $invoiceSaleType = $data['sale_type'] ?? 'retail';
 
         foreach ($items as $idx => $raw) {
             $productId = (int)($raw['product_id'] ?? 0);
@@ -88,28 +144,36 @@ class InvoiceCalculationService
                 ]);
             }
 
-            // Maximum Discount Enforcement per Product
+            // Maximum Discount Enforcement per Product (explicit item discount + manual price reduction for non-override users)
             $maxDiscount = $product->max_discount !== null ? (float)$product->max_discount : null;
-            if ($maxDiscount !== null && $maxDiscount > 0 && $discPct > $maxDiscount) {
+            $itemSaleType = $raw['sale_type'] ?? $invoiceSaleType;
+            $catalogPrice = $itemSaleType === 'retail' ? (float)($product->unit_sale_price ?? 0) : 0.0;
+            $effectiveItemDiscPct = $discPct;
+            if (!$this->canOverrideDiscount($authorizingUser) && $maxDiscount !== null && $maxDiscount > 0 && $catalogPrice > 0 && $price < $catalogPrice) {
+                $effectivePriceAfterItemDisc = $price * (1 - ($discPct / 100));
+                $effectiveItemDiscPct = max($discPct, round((($catalogPrice - $effectivePriceAfterItemDisc) / $catalogPrice) * 100, 2));
+            }
+
+            if ($maxDiscount !== null && $maxDiscount > 0 && $effectiveItemDiscPct > $maxDiscount) {
                 if (!$discountOverride) {
                     throw new HttpResponseException(response()->json([
-                        'message' => "Item discount of {$discPct}% on product '{$product->name}' exceeds maximum allowed limit of {$maxDiscount}%. Requires supervisor override.",
+                        'message' => "Item discount of {$effectiveItemDiscPct}% on product '{$product->name}' exceeds maximum allowed limit of {$maxDiscount}%. Requires supervisor override.",
                         'requires_discount_override' => true,
                         'product_id' => $product->id,
                         'product_name' => $product->name,
                         'max_discount' => $maxDiscount,
-                        'requested_discount' => $discPct,
+                        'requested_discount' => $effectiveItemDiscPct,
                         'item_index' => $idx,
                         'errors' => [
                             "items.{$idx}.item_discount_percentage" => [
-                                "Item discount of {$discPct}% exceeds maximum allowed limit of {$maxDiscount}% for '{$product->name}'."
+                                "Item discount of {$effectiveItemDiscPct}% exceeds maximum allowed limit of {$maxDiscount}% for '{$product->name}'."
                             ],
                         ],
                     ], 422));
                 }
 
                 // If override was requested, verify user authorization
-                if (!$this->canOverrideDiscount($user)) {
+                if (!$this->canOverrideDiscount($authorizingUser)) {
                     throw new HttpResponseException(response()->json([
                         'message' => 'You do not have permission to override maximum discount limits.',
                         'errors' => [
@@ -165,6 +229,42 @@ class InvoiceCalculationService
         if ($billDiscAmt > $maxAllowedBillDisc) {
             $billDiscAmt = $maxAllowedBillDisc;
             $billDiscPct = $grossSum > 0 ? round(($billDiscAmt / $grossSum) * 100, 2) : 0.0;
+        }
+
+        // Enforce combined (item + bill-level) discount against product max_discount for non-override users
+        if ($billDiscAmt > 0 && $grossSum > 0 && !$this->canOverrideDiscount($authorizingUser)) {
+            foreach ($calculatedItems as $idx => $calcItem) {
+                $product = $products->get($calcItem['product_id']);
+                $maxDiscount = ($product && $product->max_discount !== null) ? (float)$product->max_discount : null;
+                if ($maxDiscount !== null && $maxDiscount > 0) {
+                    $combinedPct = round((float)$calcItem['item_discount_percentage'] + $billDiscPct, 2);
+                    if ($combinedPct > $maxDiscount) {
+                        if (!$discountOverride) {
+                            throw new HttpResponseException(response()->json([
+                                'message' => "Combined discount of {$combinedPct}% on product '{$product->name}' exceeds maximum allowed limit of {$maxDiscount}%. Requires supervisor override.",
+                                'requires_discount_override' => true,
+                                'product_id' => $product->id,
+                                'product_name' => $product->name,
+                                'max_discount' => $maxDiscount,
+                                'requested_discount' => $combinedPct,
+                                'item_index' => $idx,
+                                'errors' => [
+                                    'discount_amount' => [
+                                        "Combined discount of {$combinedPct}% exceeds maximum allowed limit of {$maxDiscount}% for '{$product->name}'."
+                                    ],
+                                ],
+                            ], 422));
+                        }
+
+                        throw new HttpResponseException(response()->json([
+                            'message' => 'You do not have permission to override maximum discount limits.',
+                            'errors' => [
+                                'discount_override' => ['User does not have permission to authorize discount overrides.'],
+                            ],
+                        ], 403));
+                    }
+                }
+            }
         }
 
         // Taxable Base
@@ -368,6 +468,217 @@ class InvoiceCalculationService
             'tax_percentage'      => $taxPct,
             'tax_amount'          => $taxAmt,
             'total_amount'        => $totalAmount,
+        ];
+    }
+
+    /**
+     * Authoritatively recalculate and validate a Sale Return payload.
+     */
+    public function calculateAndValidateSaleReturn(array $data, ?User $user = null): array
+    {
+        $items = $data['items'] ?? [];
+        if (empty($items) || !is_array($items)) {
+            throw ValidationException::withMessages(['items' => ['At least one item is required.']]);
+        }
+
+        $sourceInvoice = !empty($data['sale_invoice_id'])
+            ? SaleInvoice::with('items')->find($data['sale_invoice_id'])
+            : null;
+
+        $calculatedItems = [];
+        $rowsTotal = 0.0;
+
+        foreach ($items as $idx => $raw) {
+            $returnQty = (int)($raw['unit_return_quantity'] ?? 0);
+            $unitPrice = (float)($raw['unit_sale_price'] ?? 0);
+            $discPct = (float)($raw['item_discount_percentage'] ?? 0);
+
+            if ($returnQty < 0) {
+                throw ValidationException::withMessages([
+                    "items.{$idx}.unit_return_quantity" => ['Return quantity cannot be negative.'],
+                ]);
+            }
+            if ($unitPrice < 0) {
+                throw ValidationException::withMessages([
+                    "items.{$idx}.unit_sale_price" => ['Unit sale price cannot be negative.'],
+                ]);
+            }
+            if ($discPct < 0 || $discPct > 100) {
+                throw ValidationException::withMessages([
+                    "items.{$idx}.item_discount_percentage" => ['Discount percentage must be between 0 and 100.'],
+                ]);
+            }
+
+            if ($sourceInvoice && $discPct == 0.0 && !array_key_exists('item_discount_percentage', $raw)) {
+                $sourceItem = $sourceInvoice->items->firstWhere('product_id', $raw['product_id'] ?? null);
+                if ($sourceItem && (float)$sourceItem->item_discount_percentage > 0) {
+                    $discPct = (float)$sourceItem->item_discount_percentage;
+                }
+            }
+
+            $lineGross = round($returnQty * $unitPrice, 2);
+            $lineDiscAmt = round(($lineGross * $discPct) / 100, 2);
+            $lineSubTotal = round($lineGross - $lineDiscAmt, 2);
+
+            $rowsTotal += $lineSubTotal;
+
+            $calculatedItem = $raw;
+            $calculatedItem['unit_return_quantity'] = $returnQty;
+            $calculatedItem['unit_sale_price'] = $unitPrice;
+            $calculatedItem['item_discount_percentage'] = $discPct;
+            $calculatedItem['sub_total'] = $lineSubTotal;
+
+            $calculatedItems[] = $calculatedItem;
+        }
+
+        $rowsTotal = round($rowsTotal, 2);
+
+        $billDiscPct = 0.0;
+        $billDiscAmt = 0.0;
+
+        if (isset($data['discount_amount']) && $data['discount_amount'] !== '' && (float)$data['discount_amount'] != 0) {
+            $billDiscAmt = max(0.0, (float)$data['discount_amount']);
+            $billDiscPct = $rowsTotal > 0 ? round(($billDiscAmt / $rowsTotal) * 100, 2) : 0.0;
+        } elseif (isset($data['discount_percentage']) && $data['discount_percentage'] !== '' && (float)$data['discount_percentage'] != 0) {
+            $billDiscPct = max(0.0, min(100.0, (float)$data['discount_percentage']));
+            $billDiscAmt = round(($rowsTotal * $billDiscPct) / 100, 2);
+        }
+
+        if ($billDiscAmt > $rowsTotal) {
+            $billDiscAmt = $rowsTotal;
+            $billDiscPct = $rowsTotal > 0 ? 100.0 : 0.0;
+        }
+
+        $afterDiscount = max(0.0, round($rowsTotal - $billDiscAmt, 2));
+
+        $taxPct = 0.0;
+        $taxAmt = 0.0;
+
+        if (isset($data['tax_amount']) && $data['tax_amount'] !== '' && (float)$data['tax_amount'] != 0) {
+            $taxAmt = max(0.0, (float)$data['tax_amount']);
+            $taxPct = $afterDiscount > 0 ? round(($taxAmt / $afterDiscount) * 100, 2) : 0.0;
+        } elseif (isset($data['tax_percentage']) && $data['tax_percentage'] !== '' && (float)$data['tax_percentage'] != 0) {
+            $taxPct = max(0.0, min(100.0, (float)$data['tax_percentage']));
+            $taxAmt = round(($afterDiscount * $taxPct) / 100, 2);
+        }
+
+        $total = round($afterDiscount + $taxAmt, 2);
+
+        return [
+            'items'               => $calculatedItems,
+            'gross_total'         => $rowsTotal,
+            'discount_percentage' => $billDiscPct,
+            'discount_amount'     => $billDiscAmt,
+            'tax_percentage'      => $taxPct,
+            'tax_amount'          => $taxAmt,
+            'total'               => $total,
+        ];
+    }
+
+    /**
+     * Authoritatively recalculate and validate a Purchase Return payload.
+     */
+    public function calculateAndValidatePurchaseReturn(array $data, ?User $user = null): array
+    {
+        $items = $data['items'] ?? [];
+        if (empty($items) || !is_array($items)) {
+            throw ValidationException::withMessages(['items' => ['At least one item is required.']]);
+        }
+
+        $calculatedItems = [];
+        $rowsTotal = 0.0;
+
+        foreach ($items as $idx => $raw) {
+            $packSize = (int)($raw['pack_size'] ?? 0);
+            $returnPackQty = (float)($raw['return_pack_quantity'] ?? 0);
+            $returnUnitQty = (int)($raw['return_unit_quantity'] ?? 0);
+            $packPurchasePrice = (float)($raw['pack_purchase_price'] ?? 0);
+            $unitPurchasePrice = (float)($raw['unit_purchase_price'] ?? 0);
+            $discPct = (float)($raw['item_discount_percentage'] ?? 0);
+
+            if ($returnUnitQty < 0) {
+                throw ValidationException::withMessages([
+                    "items.{$idx}.return_unit_quantity" => ['Return unit quantity cannot be negative.'],
+                ]);
+            }
+            if ($packPurchasePrice < 0 || $unitPurchasePrice < 0) {
+                throw ValidationException::withMessages([
+                    "items.{$idx}.unit_purchase_price" => ['Purchase price cannot be negative.'],
+                ]);
+            }
+            if ($discPct < 0 || $discPct > 100) {
+                throw ValidationException::withMessages([
+                    "items.{$idx}.item_discount_percentage" => ['Discount percentage must be between 0 and 100.'],
+                ]);
+            }
+
+            if ($packSize > 0) {
+                if ($unitPurchasePrice <= 0 && $packPurchasePrice > 0) {
+                    $unitPurchasePrice = round($packPurchasePrice / $packSize, 4);
+                } elseif ($packPurchasePrice <= 0 && $unitPurchasePrice > 0) {
+                    $packPurchasePrice = round($unitPurchasePrice * $packSize, 2);
+                }
+            }
+
+            $lineGross = round($returnUnitQty * $unitPurchasePrice, 2);
+            $lineDiscAmt = round(($lineGross * $discPct) / 100, 2);
+            $lineSubTotal = round($lineGross - $lineDiscAmt, 2);
+
+            $rowsTotal += $lineSubTotal;
+
+            $calculatedItem = $raw;
+            $calculatedItem['pack_size'] = $packSize;
+            $calculatedItem['return_pack_quantity'] = $returnPackQty;
+            $calculatedItem['return_unit_quantity'] = $returnUnitQty;
+            $calculatedItem['pack_purchase_price'] = $packPurchasePrice;
+            $calculatedItem['unit_purchase_price'] = $unitPurchasePrice;
+            $calculatedItem['item_discount_percentage'] = $discPct;
+            $calculatedItem['sub_total'] = $lineSubTotal;
+
+            $calculatedItems[] = $calculatedItem;
+        }
+
+        $rowsTotal = round($rowsTotal, 2);
+
+        $billDiscPct = 0.0;
+        $billDiscAmt = 0.0;
+
+        if (isset($data['discount_amount']) && $data['discount_amount'] !== '' && (float)$data['discount_amount'] != 0) {
+            $billDiscAmt = max(0.0, (float)$data['discount_amount']);
+            $billDiscPct = $rowsTotal > 0 ? round(($billDiscAmt / $rowsTotal) * 100, 2) : 0.0;
+        } elseif (isset($data['discount_percentage']) && $data['discount_percentage'] !== '' && (float)$data['discount_percentage'] != 0) {
+            $billDiscPct = max(0.0, min(100.0, (float)$data['discount_percentage']));
+            $billDiscAmt = round(($rowsTotal * $billDiscPct) / 100, 2);
+        }
+
+        if ($billDiscAmt > $rowsTotal) {
+            $billDiscAmt = $rowsTotal;
+            $billDiscPct = $rowsTotal > 0 ? 100.0 : 0.0;
+        }
+
+        $afterDiscount = max(0.0, round($rowsTotal - $billDiscAmt, 2));
+
+        $taxPct = 0.0;
+        $taxAmt = 0.0;
+
+        if (isset($data['tax_amount']) && $data['tax_amount'] !== '' && (float)$data['tax_amount'] != 0) {
+            $taxAmt = max(0.0, (float)$data['tax_amount']);
+            $taxPct = $afterDiscount > 0 ? round(($taxAmt / $afterDiscount) * 100, 2) : 0.0;
+        } elseif (isset($data['tax_percentage']) && $data['tax_percentage'] !== '' && (float)$data['tax_percentage'] != 0) {
+            $taxPct = max(0.0, min(100.0, (float)$data['tax_percentage']));
+            $taxAmt = round(($afterDiscount * $taxPct) / 100, 2);
+        }
+
+        $total = round($afterDiscount + $taxAmt, 2);
+
+        return [
+            'items'               => $calculatedItems,
+            'gross_total'         => $rowsTotal,
+            'discount_percentage' => $billDiscPct,
+            'discount_amount'     => $billDiscAmt,
+            'tax_percentage'      => $taxPct,
+            'tax_amount'          => $taxAmt,
+            'total'               => $total,
         ];
     }
 }

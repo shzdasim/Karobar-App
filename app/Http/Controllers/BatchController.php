@@ -19,6 +19,22 @@ class BatchController extends Controller
      */
     public function index(Request $request, Product $product)
     {
+        $user = $request->user();
+        if (
+            !$user
+            || (
+                !$user->hasRole(['Admin', 'admin', 'super-admin'])
+                && !$user->can('product.view')
+                && !$user->can('sale-invoice.create')
+                && !$user->can('purchase-invoice.create')
+                && !$user->can('sale-return.create')
+                && !$user->can('purchase-return.create')
+                && !$user->can('stock-adjustment.create')
+            )
+        ) {
+            abort(403, 'This action is unauthorized.');
+        }
+
         $today = now()->toDateString();
 
         $batches = $product->batches()

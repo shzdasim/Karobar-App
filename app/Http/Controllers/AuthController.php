@@ -44,6 +44,13 @@ class AuthController extends Controller
         /** @var User $user */
         $user = Auth::user();
 
+        if (($user->status ?? 'active') !== 'active') {
+            $user->tokens()->delete();
+            return response()->json([
+                'message' => 'Your account has been deactivated. Please contact an administrator.',
+            ], 403);
+        }
+
         // Check license and auto-revoke if machine changed (software copied to new device)
         $licenseCleared = $this->licenseService->clearLicenseIfMachineChanged();
 
@@ -93,25 +100,49 @@ class AuthController extends Controller
         return $user->load('roles');
     }
     public function updateProfile(Request $request)
-{
-    $user = $request->user();
+    {
+        $user = $request->user();
 
-    $data = $request->validate([
-        'name' => 'required|string|max:255',
-        'email' => 'required|email|unique:users,email,' . $user->id,
-        'password' => 'nullable|confirmed|min:6',
-    ]);
+        $data = $request->validate([
+            'name'             => 'required|string|max:255',
+            'email'            => 'required|email|unique:users,email,' . $user->id,
+            'current_password' => 'nullable|string',
+            'password'         => 'nullable|confirmed|min:6',
+        ]);
 
-    if (!empty($data['password'])) {
-        $data['password'] = bcrypt($data['password']);
-    } else {
-        unset($data['password']);
+        $changingPassword = !empty($data['password']);
+        $changingEmail = isset($data['email']) && strcasecmp($data['email'], $user->email) !== 0;
+
+        if ($changingPassword || $changingEmail) {
+            if (empty($data['current_password']) || !Hash::check($data['current_password'], $user->password)) {
+                return response()->json([
+                    'message' => 'Current password is required and must be valid to change your email or password.',
+                    'errors'  => ['current_password' => ['The provided current password is incorrect.']],
+                ], 422);
+            }
+        }
+
+        unset($data['current_password']);
+
+        if ($changingPassword) {
+            $data['password'] = bcrypt($data['password']);
+        } else {
+            unset($data['password']);
+        }
+
+        $user->update($data);
+
+        if ($changingPassword) {
+            $currentTokenId = $user->currentAccessToken()?->id;
+            if ($currentTokenId) {
+                $user->tokens()->where('id', '!=', $currentTokenId)->delete();
+            } else {
+                $user->tokens()->delete();
+            }
+        }
+
+        return response()->json($user);
     }
-
-    $user->update($data);
-
-    return response()->json($user);
-}
 // AuthController.php
 public function logout(Request $request): \Illuminate\Http\JsonResponse
 {
@@ -185,6 +216,7 @@ public function confirmPassword(Request $request)
                 $user->forceFill([
                     'password' => Hash::make($password)
                 ])->save();
+                $user->tokens()->delete();
             }
         );
 

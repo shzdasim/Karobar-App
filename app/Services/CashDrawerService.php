@@ -1022,6 +1022,10 @@ class CashDrawerService
         string $reason,
         ?User $user = null
     ): ?CashDrawerTransaction {
+        if (!Schema::hasTable('cash_drawer_sessions') || !Schema::hasTable('cash_drawer_transactions')) {
+            return null;
+        }
+
         $amount = (float) ($payment->amount ?? 0);
         if ($amount <= 0) {
             return null;

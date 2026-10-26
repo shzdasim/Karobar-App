@@ -1371,7 +1371,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
             currentBalance: err.response.data.current_balance,
             projectedBalance: err.response.data.projected_balance,
             isHold: err.response.data.credit_status === "on_hold",
-            execute: () => executeSave({ ...dataPayload, credit_override: true }, updateDrawer),
+            execute: (overrideCreds = {}) => executeSave({ ...dataPayload, ...(overrideCreds || {}), credit_override: true }, updateDrawer),
           });
           return;
         }
@@ -1382,7 +1382,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
             productName: err.response.data.product_name,
             maxDiscount: err.response.data.max_discount,
             requestedDiscount: err.response.data.requested_discount,
-            execute: () => executeSave({ ...dataPayload, discount_override: true }, updateDrawer),
+            execute: (overrideCreds = {}) => executeSave({ ...dataPayload, ...(overrideCreds || {}), discount_override: true }, updateDrawer),
           });
           return;
         }
@@ -1390,7 +1390,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
           setExpiredOverridePrompt({
             isOpen: true,
             data: err.response.data,
-            execute: () => executeSave({ ...dataPayload, expired_override: true }, updateDrawer),
+            execute: (overrideCreds = {}) => executeSave({ ...dataPayload, ...(overrideCreds || {}), expired_override: true }, updateDrawer),
           });
           return;
         }
@@ -2385,10 +2385,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       <CreditOverrideModal
         isOpen={!!creditOverridePrompt?.isOpen}
         onClose={() => setCreditOverridePrompt(null)}
-        onConfirm={() => {
+        onConfirm={(overrideCreds) => {
           const fn = creditOverridePrompt?.execute;
           setCreditOverridePrompt(null);
-          if (fn) fn();
+          if (fn) fn(overrideCreds);
         }}
         message={creditOverridePrompt?.message}
         creditLimit={creditOverridePrompt?.creditLimit}
@@ -2401,10 +2401,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       <DiscountOverrideModal
         isOpen={!!discountOverridePrompt?.isOpen}
         onClose={() => setDiscountOverridePrompt(null)}
-        onConfirm={() => {
+        onConfirm={(overrideCreds) => {
           const fn = discountOverridePrompt?.execute;
           setDiscountOverridePrompt(null);
-          if (fn) fn();
+          if (fn) fn(overrideCreds);
         }}
         message={discountOverridePrompt?.message}
         productName={discountOverridePrompt?.productName}
@@ -2417,10 +2417,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         open={!!expiredOverridePrompt?.isOpen}
         onClose={() => setExpiredOverridePrompt(null)}
         data={expiredOverridePrompt?.data}
-        onConfirmOverride={() => {
+        onConfirmOverride={(overrideCreds) => {
           const fn = expiredOverridePrompt?.execute;
           setExpiredOverridePrompt(null);
-          if (fn) fn();
+          if (fn) fn(overrideCreds);
         }}
       />
     </>

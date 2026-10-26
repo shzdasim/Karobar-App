@@ -39,7 +39,7 @@ class StocktakeController extends Controller
 
     // ===== Get single session with items =====
 
-    public function show(int $id): JsonResponse
+    public function show(int $id, Request $request): JsonResponse
     {
         $session = StocktakeSession::with([
             'items.product:id,name,barcode,rack,unit_purchase_price,avg_price,category_id,brand_id,supplier_id',
@@ -48,6 +48,20 @@ class StocktakeController extends Controller
         ])->findOrFail($id);
 
         $this->authorize('view', $session);
+
+        $canReveal = $request->user()?->can('finalize', $session) || $session->status !== 'in_progress';
+        if ($session->is_blind && !$canReveal) {
+            $data = $session->toArray();
+            if (!empty($data['items']) && is_array($data['items'])) {
+                foreach ($data['items'] as &$item) {
+                    $item['system_qty'] = null;
+                    $item['variance_qty'] = null;
+                    $item['unit_cost'] = null;
+                }
+                unset($item);
+            }
+            return response()->json($data);
+        }
 
         return response()->json($session);
     }
@@ -166,11 +180,16 @@ class StocktakeController extends Controller
         $items = $query->orderBy('id')->paginate((int) $request->get('per_page', 100));
 
         // In blind mode, hide the system_qty snapshot from the response
-        // (unless ?reveal=1 is passed — used by the review page to show truth)
-        if ($session->is_blind && !$request->boolean('reveal')) {
+        // (unless ?reveal=1 is passed AND the user is authorized to finalize or the session is no longer in_progress)
+        $canReveal = $request->boolean('reveal') && (
+            $request->user()?->can('finalize', $session) || $session->status !== 'in_progress'
+        );
+        if ($session->is_blind && !$canReveal) {
             $items->getCollection()->transform(function (StocktakeItem $item) {
-                $arr               = $item->toArray();
-                $arr['system_qty'] = null;
+                $arr                 = $item->toArray();
+                $arr['system_qty']   = null;
+                $arr['variance_qty'] = null;
+                $arr['unit_cost']    = null;
                 return $arr;
             });
         }

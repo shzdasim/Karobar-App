@@ -18,11 +18,29 @@ class ExpenseController extends Controller
         $this->expenseService = $expenseService;
     }
 
+    private function authorizeExpenseAction(string|array $permissions): void
+    {
+        $user = request()->user();
+        if (!$user) {
+            abort(401, 'Unauthenticated.');
+        }
+        if ($user->hasRole(['Admin', 'admin', 'super-admin'])) {
+            return;
+        }
+        foreach ((array) $permissions as $perm) {
+            if ($user->can($perm)) {
+                return;
+            }
+        }
+        abort(403, 'This action is unauthorized.');
+    }
+
     /**
      * Display a listing of expenses with filtering.
      */
     public function index(Request $request): JsonResponse
     {
+        $this->authorizeExpenseAction('expense.view');
         $query = Expense::with(['category', 'account', 'user:id,name', 'drawerSession:id,status'])
             ->orderByDesc('date')
             ->orderByDesc('id');
@@ -69,6 +87,7 @@ class ExpenseController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $this->authorizeExpenseAction('expense.create');
         $validated = $request->validate([
             'expense_category_id' => ['required', 'exists:expense_categories,id'],
             'amount'              => ['required', 'numeric', 'min:0.01'],
@@ -96,6 +115,7 @@ class ExpenseController extends Controller
      */
     public function show(Expense $expense): JsonResponse
     {
+        $this->authorizeExpenseAction('expense.view');
         return response()->json($expense->load(['category', 'account', 'user:id,name', 'drawerSession']));
     }
 
@@ -104,6 +124,7 @@ class ExpenseController extends Controller
      */
     public function update(Request $request, Expense $expense): JsonResponse
     {
+        $this->authorizeExpenseAction('expense.update');
         $validated = $request->validate([
             'expense_category_id' => ['required', 'exists:expense_categories,id'],
             'amount'              => ['required', 'numeric', 'min:0.01'],
@@ -131,6 +152,7 @@ class ExpenseController extends Controller
      */
     public function destroy(Expense $expense): JsonResponse
     {
+        $this->authorizeExpenseAction('expense.delete');
         $this->expenseService->deleteExpense($expense, Auth::user());
 
         return response()->json([
@@ -143,6 +165,7 @@ class ExpenseController extends Controller
      */
     public function summary(): JsonResponse
     {
+        $this->authorizeExpenseAction('expense.view');
         $today = Carbon::today()->toDateString();
         $monthStart = Carbon::today()->startOfMonth()->toDateString();
         $monthEnd = Carbon::today()->endOfMonth()->toDateString();

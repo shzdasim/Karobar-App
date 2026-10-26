@@ -13,7 +13,7 @@ use Illuminate\Validation\Rule;
 
 class BackupController extends Controller
 {
-    protected $backupService;
+    protected BackupService $backupService;
 
     public function __construct(BackupService $backupService)
     {
@@ -48,8 +48,19 @@ class BackupController extends Controller
             'type' => ['required', Rule::in(['full', 'database', 'settings'])],
             'custom_backup_path' => ['nullable', 'string', 'max:500'],
         ]);
+
+        if (!empty($validated['custom_backup_path'])) {
+            try {
+                $this->backupService->assertSafeBackupDirectory($validated['custom_backup_path']);
+            } catch (\InvalidArgumentException $e) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'errors' => ['custom_backup_path' => [$e->getMessage()]],
+                ], 422);
+            }
+        }
         
-        $userId = Auth::id();
+        $userId = Auth::id() !== null ? (int) Auth::id() : null;
         
         try {
             $backup = $this->backupService->createBackup(
@@ -184,7 +195,7 @@ class BackupController extends Controller
         $completedBackups = BackupLog::where('status', 'completed')->count();
         $failedBackups = BackupLog::where('status', 'failed')->count();
         
-        $totalSize = BackupLog::where('status', 'completed')->sum('size');
+        $totalSize = (int) BackupLog::where('status', 'completed')->sum('size');
         
         $lastBackup = BackupLog::where('status', 'completed')
             ->orderByDesc('created_at')
@@ -261,7 +272,7 @@ class BackupController extends Controller
             ], 422);
         }
 
-        $userId = Auth::id();
+        $userId = Auth::id() !== null ? (int) Auth::id() : null;
 
         try {
             $backup = $this->backupService->uploadBackup($request->file('file'), $userId);
@@ -380,6 +391,17 @@ class BackupController extends Controller
             'notification_email' => ['nullable', 'email'],
         ]);
 
+        if (!empty($validated['custom_backup_path'])) {
+            try {
+                $this->backupService->assertSafeBackupDirectory($validated['custom_backup_path']);
+            } catch (\InvalidArgumentException $e) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'errors' => ['custom_backup_path' => [$e->getMessage()]],
+                ], 422);
+            }
+        }
+
         $schedule = BackupSchedule::getSchedule();
         $schedule->update($validated);
 
@@ -436,6 +458,8 @@ class BackupController extends Controller
         }
 
         try {
+            $this->backupService->assertSafeBackupDirectory($customPath);
+
             if (!File::exists($customPath)) {
                 File::makeDirectory($customPath, 0755, true, true);
             }
@@ -540,6 +564,16 @@ class BackupController extends Controller
         }
         $shortcuts[] = ['name' => 'Default App Storage', 'path' => $defaultStorage, 'type' => 'app'];
 
+        if ($requestedPath !== null && trim((string) $requestedPath) !== '') {
+            try {
+                $this->backupService->assertSafeBackupDirectory((string) $requestedPath);
+            } catch (\InvalidArgumentException $e) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+        }
+
         // Determine target path
         $currentPath = $requestedPath ? realpath($requestedPath) : null;
         if (!$currentPath || !is_dir($currentPath)) {
@@ -549,7 +583,7 @@ class BackupController extends Controller
             } elseif ($home && is_dir($home)) {
                 $currentPath = $home;
             } else {
-                $currentPath = base_path();
+                $currentPath = $defaultStorage;
             }
         }
 
@@ -605,6 +639,14 @@ class BackupController extends Controller
             'folder_name' => ['required', 'string', 'max:100', 'regex:/^[a-zA-Z0-9_\-\s]+$/'],
         ]);
 
+        try {
+            $this->backupService->assertSafeBackupDirectory($validated['parent_path']);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+
         $parent = realpath($validated['parent_path']);
         if (!$parent || !is_dir($parent)) {
             return response()->json([
@@ -619,6 +661,13 @@ class BackupController extends Controller
         }
 
         $newFolder = rtrim($parent, DIRECTORY_SEPARATOR . '/\\') . DIRECTORY_SEPARATOR . trim($validated['folder_name']);
+        try {
+            $this->backupService->assertSafeBackupDirectory($newFolder);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 422);
+        }
         if (File::exists($newFolder)) {
             return response()->json([
                 'message' => 'Folder already exists.',

@@ -213,6 +213,9 @@ class CustomerImportService
             if ($v===null) { $out[$i]=null; continue; }
             $s = is_string($v) ? trim($v) : (string)$v;
             if ($i===0) $s = preg_replace('/^\xEF\xBB\xBF/', '', $s); // strip BOM
+            if ($s !== '' && preg_match('/^[=+\-@]/', $s) && !is_numeric($s)) {
+                $s = "'" . $s;
+            }
             $out[$i] = ($s==='') ? null : $s;
         }
         while (!empty($out) && end($out)===null) array_pop($out);

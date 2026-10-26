@@ -317,15 +317,31 @@ class ProductImportService
         return $map;
     }
 
+    private function sanitizeCsvFormula($value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $str = trim((string) $value);
+        if ($str === '') {
+            return '';
+        }
+        // Prevent CSV/spreadsheet formula injection when exported or opened in Excel/LibreOffice
+        if (preg_match('/^[=+\-@]/', $str) && !is_numeric($str)) {
+            return "'" . $str;
+        }
+        return $str;
+    }
+
     private function extractRowData(array $row, array $colIdx): array
     {
         $g = fn($k)=> array_key_exists($k,$colIdx) ? ($row[$colIdx[$k]] ?? null) : null;
 
         return [
-            'product_code'        => (string)($g('product_code') ?? ''),
-            'name'                => (string)($g('name') ?? ''),
-            'formulation'         => $g('formulation'),
-            'description'         => $g('description'),
+            'product_code'        => (string)($this->sanitizeCsvFormula($g('product_code')) ?? ''),
+            'name'                => (string)($this->sanitizeCsvFormula($g('name')) ?? ''),
+            'formulation'         => $this->sanitizeCsvFormula($g('formulation')),
+            'description'         => $this->sanitizeCsvFormula($g('description')),
             'pack_size'           => $g('pack_size'),
             'quantity'            => $g('quantity'),
             'pack_purchase_price' => $g('pack_purchase_price'),
@@ -338,11 +354,11 @@ class ProductImportService
             'category_id'         => $g('category_id'),
             'brand_id'            => $g('brand_id'),
             'supplier_id'         => $g('supplier_id'),
-            'category'            => $g('category'),
-            'brand'               => $g('brand'),
-            'supplier'            => $g('supplier'),
-            'rack'                => $g('rack'),
-            'barcode'             => $g('barcode'),
+            'category'            => $this->sanitizeCsvFormula($g('category')),
+            'brand'               => $this->sanitizeCsvFormula($g('brand')),
+            'supplier'            => $this->sanitizeCsvFormula($g('supplier')),
+            'rack'                => $this->sanitizeCsvFormula($g('rack')),
+            'barcode'             => $this->sanitizeCsvFormula($g('barcode')),
         ];
     }
 

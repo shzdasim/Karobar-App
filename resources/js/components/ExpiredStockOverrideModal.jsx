@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { ExclamationTriangleIcon, ShieldExclamationIcon, XMarkIcon, CheckIcon } from "@heroicons/react/24/outline";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
@@ -10,6 +10,7 @@ export default function ExpiredStockOverrideModal({
   onConfirmOverride,
 }) {
   const { isDark, theme, buttonStyle } = useTheme();
+  const [supervisorPassword, setSupervisorPassword] = useState("");
 
   const themeColors = useMemo(() => ({
     primary: theme?.primary_color || "#3b82f6",
@@ -82,6 +83,19 @@ export default function ExpiredStockOverrideModal({
           </div>
         </div>
 
+        <div className="mb-4 space-y-1">
+          <label className="block text-xs font-medium text-gray-700 dark:text-slate-300">
+            Supervisor Password (required if current cashier lacks override permission)
+          </label>
+          <input
+            type="password"
+            value={supervisorPassword}
+            onChange={(e) => setSupervisorPassword(e.target.value)}
+            placeholder="Enter supervisor password..."
+            className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+          />
+        </div>
+
         {/* Actions */}
         <div className="flex items-center justify-end gap-3">
           <button
@@ -93,7 +107,7 @@ export default function ExpiredStockOverrideModal({
           </button>
           <button
             type="button"
-            onClick={onConfirmOverride}
+            onClick={() => onConfirmOverride({ supervisor_password: supervisorPassword })}
             className={`${themeButtonClasses.danger || themeButtonClasses.primary} px-4 py-2 text-sm rounded-xl font-semibold flex items-center gap-2 shadow-lg transition-all cursor-pointer`}
           >
             <CheckIcon className="w-4 h-4" />

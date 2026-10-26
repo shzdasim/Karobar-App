@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\MeController;
 use App\Http\Controllers\AccountController;
@@ -48,14 +49,14 @@ use App\Http\Controllers\UserDemandController;
 | Public/Auth endpoints
 |--------------------------------------------------------------------------
 */
-Route::post('/login', [AuthController::class, 'login']);
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 Route::middleware(['auth:sanctum', 'token.expiry'])->get('/user', [AuthController::class, 'user']);
 Route::middleware(['auth:sanctum', 'token.expiry'])->put('/profile', [AuthController::class, 'updateProfile']);
 Route::middleware(['auth:sanctum', 'token.expiry'])->post('/logout', [AuthController::class, 'logout']);
 
 // Password reset routes (public)
-Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
-Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:10,1');
+Route::post('/reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:10,1');
 
 /*
 |--------------------------------------------------------------------------
@@ -64,7 +65,7 @@ Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 */
 Route::middleware(['auth:sanctum', 'token.expiry'])->group(function () {
     // Password verification (for license management in settings)
-    Route::post('/verify-password', [AuthController::class, 'confirmPassword']);
+    Route::post('/verify-password', [AuthController::class, 'confirmPassword'])->middleware('throttle:10,1');
 
     // License endpoints
     Route::get('/license/status',     [LicenseController::class, 'status']);
@@ -91,7 +92,7 @@ Route::middleware(['auth:sanctum', 'token.expiry'])->group(function () {
 |--------------------------------------------------------------------------
 */
 Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function () {
-    Route::post('/auth/confirm-password', [AuthController::class, 'confirmPassword']);
+    Route::post('/auth/confirm-password', [AuthController::class, 'confirmPassword'])->middleware('throttle:10,1');
 
 // User preferences (window positions, sizes, etc.)
     Route::get('/preferences', [UserPreferenceController::class, 'index']);
@@ -318,7 +319,11 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::post('/customers/import/commit',       [CustomerImportController::class, 'commit'])->middleware('permission:customer.import');
 
     // Customer wholesale prices
-    Route::get('/customers/{customerId}/whole-sale-prices', function ($customerId) {
+    Route::get('/customers/{customerId}/whole-sale-prices', function (Request $request, $customerId) {
+        $user = $request->user();
+        if (!$user || (!$user->hasRole(['Admin', 'admin', 'super-admin']) && !$user->can('customer.view') && !$user->can('sale-invoice.create'))) {
+            abort(403, 'This action is unauthorized.');
+        }
         $prices = \App\Models\CustomerWholeSalePrice::where('customer_id', $customerId)->get();
         return response()->json($prices);
     });

@@ -24,6 +24,15 @@ class CheckTokenExpiry
             return $next($request);
         }
 
+        // Immediately reject deactivated / inactive user accounts and revoke tokens
+        if (($user->status ?? 'active') !== 'active') {
+            $user->tokens()->delete();
+
+            return response()->json([
+                'message' => 'Your account has been deactivated. Please contact an administrator.',
+            ], 403);
+        }
+
         // Check if remember_token_expires_at is set and has passed
         if ($user->remember_token_expires_at && now()->isAfter($user->remember_token_expires_at)) {
             // Token has expired, delete it and return 401

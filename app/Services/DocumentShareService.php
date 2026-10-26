@@ -72,7 +72,7 @@ class DocumentShareService
     }
 
     /**
-     * Build a 7-day cryptographically signed public PDF URL for WhatsApp / external sharing.
+     * Build a 30-minute cryptographically signed public PDF URL for WhatsApp / external sharing.
      */
     public function buildSignedPdfUrl(string $type, array $params): string
     {
@@ -87,7 +87,7 @@ class DocumentShareService
 
         return URL::temporarySignedRoute(
             'public.documents.pdf',
-            now()->addDays(7),
+            now()->addMinutes(30),
             $query
         );
     }
@@ -155,8 +155,14 @@ class DocumentShareService
         $filename = $result['filename'];
         $normalizedPhone = $this->normalizePhone($phone ?: ($result['context']['recipient_phone'] ?? ''));
 
-        // Save built PDF file in public storage so a physical PDF file is persisted
-        Storage::disk('public')->put('shared-pdfs/' . $filename, $pdfBytes);
+        // Clean up any expired temporary shared PDFs (and any legacy public shared-pdfs)
+        $this->cleanupExpiredSharedPdfs();
+
+        // Save built PDF file in private local storage with an unguessable UUID prefix
+        $uniqueName = \Illuminate\Support\Str::uuid()->toString() . '_' . $filename;
+        $storedPath = 'shared-pdfs/' . $uniqueName;
+        Storage::disk('local')->put($storedPath, $pdfBytes);
+        $signedPdfUrl = $this->buildSignedPdfUrl($type, $params);
 
         // If WhatsApp Cloud API credentials are configured and a phone number is provided, upload & send the actual PDF document
         if ($this->isWhatsAppApiConfigured() && $normalizedPhone !== '') {
@@ -199,6 +205,8 @@ class DocumentShareService
                 'mode'             => 'cloud_api',
                 'message'          => "PDF document ({$filename}) sent directly to WhatsApp (+{$normalizedPhone})",
                 'filename'         => $filename,
+                'stored_path'      => $storedPath,
+                'signed_pdf_url'   => $signedPdfUrl,
                 'normalized_phone' => $normalizedPhone,
                 'whatsapp_msg_id'  => $msgResponse->json('messages.0.id'),
             ];
@@ -209,12 +217,48 @@ class DocumentShareService
             'mode'             => 'client_file',
             'message'          => "PDF document ({$filename}) built and ready to send on WhatsApp",
             'filename'         => $filename,
+            'stored_path'      => $storedPath,
+            'signed_pdf_url'   => $signedPdfUrl,
             'mime_type'        => 'application/pdf',
             'size_bytes'       => strlen($pdfBytes),
             'pdf_base64'       => base64_encode($pdfBytes),
             'normalized_phone' => $normalizedPhone,
             'caption'          => $caption,
         ];
+    }
+
+    /**
+     * Purge temporary shared PDFs older than $maxAgeSeconds from private storage
+     * and remove any legacy files from public/shared-pdfs.
+     */
+    public function cleanupExpiredSharedPdfs(int $maxAgeSeconds = 86400): int
+    {
+        $deleted = 0;
+        $cutoff = now()->subSeconds($maxAgeSeconds)->getTimestamp();
+
+        try {
+            $localDisk = Storage::disk('local');
+            foreach ($localDisk->files('shared-pdfs') as $file) {
+                if ($localDisk->lastModified($file) <= $cutoff) {
+                    $localDisk->delete($file);
+                    $deleted++;
+                }
+            }
+        } catch (\Throwable) {
+            // Ignore filesystem errors during opportunistic cleanup
+        }
+
+        try {
+            $publicDisk = Storage::disk('public');
+            foreach ($publicDisk->files('shared-pdfs') as $file) {
+                $publicDisk->delete($file);
+                $deleted++;
+            }
+        } catch (\Throwable) {
+            // Ignore filesystem errors during opportunistic cleanup
+        }
+
+        return $deleted;
     }
 
     /**

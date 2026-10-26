@@ -24,6 +24,7 @@ class BarcodeLabelStudioTest extends TestCase
         parent::setUp();
 
         $this->withoutMiddleware(\App\Http\Middleware\EnsureLicensed::class);
+        \Illuminate\Support\Facades\Gate::before(fn () => true);
 
         $this->user = User::forceCreate([
             'name' => 'Barcode Tester',

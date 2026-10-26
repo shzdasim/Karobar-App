@@ -309,6 +309,9 @@ class SupplierImportService
                 // strip UTF-8 BOM if present
                 $s = preg_replace('/^\xEF\xBB\xBF/', '', $s);
             }
+            if ($s !== '' && preg_match('/^[=+\-@]/', $s) && !is_numeric($s)) {
+                $s = "'" . $s;
+            }
             // normalize empty strings to null
             $out[$i] = ($s === '') ? null : $s;
         }

@@ -39,9 +39,9 @@ class DocumentHistoryController extends Controller
     private function resolveEntityType(string $type): string
     {
         return match (strtolower(trim($type))) {
-            'sale_invoice', 'saleinvoice', 'sale' => SaleInvoice::class,
-            'purchase_invoice', 'purchaseinvoice', 'purchase' => PurchaseInvoice::class,
-            default => class_exists($type) ? $type : abort(400, 'Invalid entity type'),
+            'sale_invoice', 'saleinvoice', 'sale', strtolower(SaleInvoice::class) => SaleInvoice::class,
+            'purchase_invoice', 'purchaseinvoice', 'purchase', strtolower(PurchaseInvoice::class) => PurchaseInvoice::class,
+            default => abort(400, 'Invalid entity type'),
         };
     }
 }

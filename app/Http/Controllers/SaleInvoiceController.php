@@ -151,16 +151,33 @@ class SaleInvoiceController extends Controller
         }
 
         $override = $request->boolean('credit_override');
+        $calcService = app(\App\Services\InvoiceCalculationService::class);
+        $authorizingUser = $calcService->resolveAuthorizingUser(
+            $request->user(),
+            $request->only(['supervisor_email', 'supervisor_password']),
+            'sale-invoice.credit-override'
+        );
 
-        if (($customer->credit_status ?? 'active') === 'on_hold' && !$override) {
-            throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
-                'message' => "Customer {$customer->name} account is on hold. Requires supervisor override.",
-                'requires_override' => true,
-                'credit_status' => 'on_hold',
-                'errors' => [
-                    'credit_status' => ["Customer {$customer->name} account is on hold. Requires supervisor override."],
-                ],
-            ], 422));
+        if (($customer->credit_status ?? 'active') === 'on_hold') {
+            if (!$override) {
+                throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
+                    'message' => "Customer {$customer->name} account is on hold. Requires supervisor override.",
+                    'requires_override' => true,
+                    'credit_status' => 'on_hold',
+                    'errors' => [
+                        'credit_status' => ["Customer {$customer->name} account is on hold. Requires supervisor override."],
+                    ],
+                ], 422));
+            }
+
+            if (!$calcService->canOverrideCredit($authorizingUser)) {
+                throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
+                    'message' => 'You do not have permission to override customer credit holds.',
+                    'errors' => [
+                        'credit_override' => ['User does not have permission to authorize credit overrides.'],
+                    ],
+                ], 403));
+            }
         }
 
         if ($customer->credit_limit !== null && (float)$customer->credit_limit > 0) {
@@ -181,19 +198,30 @@ class SaleInvoiceController extends Controller
             $projected = round($currentNet + $newUnpaid, 2);
             $limit = (float)$customer->credit_limit;
 
-            if ($projected > $limit && !$override) {
-                $excess = round($projected - $limit, 2);
-                throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
-                    'message' => "Customer credit limit of Rs. " . number_format($limit, 2) . " exceeded by Rs. " . number_format($excess, 2) . " (projected balance: Rs. " . number_format($projected, 2) . "). Requires supervisor override.",
-                    'requires_override' => true,
-                    'excess_amount' => $excess,
-                    'credit_limit' => $limit,
-                    'current_balance' => $currentNet,
-                    'projected_balance' => $projected,
-                    'errors' => [
-                        'credit_limit' => ["Customer credit limit of Rs. " . number_format($limit, 2) . " exceeded by Rs. " . number_format($excess, 2) . ". Requires supervisor override."],
-                    ],
-                ], 422));
+            if ($projected > $limit) {
+                if (!$override) {
+                    $excess = round($projected - $limit, 2);
+                    throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
+                        'message' => "Customer credit limit of Rs. " . number_format($limit, 2) . " exceeded by Rs. " . number_format($excess, 2) . " (projected balance: Rs. " . number_format($projected, 2) . "). Requires supervisor override.",
+                        'requires_override' => true,
+                        'excess_amount' => $excess,
+                        'credit_limit' => $limit,
+                        'current_balance' => $currentNet,
+                        'projected_balance' => $projected,
+                        'errors' => [
+                            'credit_limit' => ["Customer credit limit of Rs. " . number_format($limit, 2) . " exceeded by Rs. " . number_format($excess, 2) . ". Requires supervisor override."],
+                        ],
+                    ], 422));
+                }
+
+                if (!$calcService->canOverrideCredit($authorizingUser)) {
+                    throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
+                        'message' => 'You do not have permission to override customer credit limits.',
+                        'errors' => [
+                            'credit_override' => ['User does not have permission to authorize credit overrides.'],
+                        ],
+                    ], 403));
+                }
             }
         }
     }
@@ -280,6 +308,8 @@ class SaleInvoiceController extends Controller
             'credit_override'     => 'nullable|boolean',
             'discount_override'   => 'nullable|boolean',
             'expired_override'    => 'nullable|boolean',
+            'supervisor_email'    => 'nullable|string',
+            'supervisor_password' => 'nullable|string',
             'remarks'             => 'nullable|string',
             'doctor_name'         => 'nullable|string',
             'patient_name'        => 'nullable|string',
@@ -344,7 +374,8 @@ class SaleInvoiceController extends Controller
                 $data['items'],
                 null,
                 $request->user(),
-                $request->boolean('expired_override')
+                $request->boolean('expired_override'),
+                $request->only(['supervisor_email', 'supervisor_password'])
             );
             // 🔐 Concurrency-safe numbering: lock last row, compute next
             $last = SaleInvoice::lockForUpdate()->orderByDesc('id')->first();
@@ -384,9 +415,12 @@ class SaleInvoiceController extends Controller
 
             $this->createItemsAndReduce($invoice, $data['items']);
 
-            // Save customer-specific wholesale prices if any custom prices were used
+            // Save customer-specific wholesale prices if any custom prices were used and user is authorized
             $saleType = $data['sale_type'] ?? 'retail';
-            if ($saleType === 'wholesale' && isset($data['items'])) {
+            $canUpdateWholesalePricing = $request->user()->hasRole(['Admin', 'admin', 'super-admin'])
+                || $request->user()->can('customer.update')
+                || $request->user()->can('product.update');
+            if ($saleType === 'wholesale' && isset($data['items']) && $canUpdateWholesalePricing) {
                 foreach ($data['items'] as $raw) {
                     if (isset($raw['is_custom_price']) && $raw['is_custom_price'] === true) {
                         CustomerWholeSalePrice::updateOrCreate(
@@ -534,6 +568,8 @@ class SaleInvoiceController extends Controller
             'credit_override'     => 'nullable|boolean',
             'discount_override'   => 'nullable|boolean',
             'expired_override'    => 'nullable|boolean',
+            'supervisor_email'    => 'nullable|string',
+            'supervisor_password' => 'nullable|string',
             'remarks'             => 'nullable|string',
             'doctor_name'         => 'nullable|string',
             'patient_name'        => 'nullable|string',
@@ -588,7 +624,8 @@ class SaleInvoiceController extends Controller
                 $data['items'],
                 $originalItems,
                 $request->user(),
-                $request->boolean('expired_override')
+                $request->boolean('expired_override'),
+                $request->only(['supervisor_email', 'supervisor_password'])
             );
             $costs = app(\App\Services\SaleCostSnapshot::class)->productCosts($data['items']);
             $this->revertItems($invoice);
@@ -642,8 +679,11 @@ class SaleInvoiceController extends Controller
 
             $this->createItemsAndReduce($invoice, $data['items'], $originalItems, $costs);
 
-            // Save customer-specific wholesale prices if any custom prices were used
-            if ($newSaleType === 'wholesale' && isset($data['items'])) {
+            // Save customer-specific wholesale prices if any custom prices were used and user is authorized
+            $canUpdateWholesalePricing = $request->user()->hasRole(['Admin', 'admin', 'super-admin'])
+                || $request->user()->can('customer.update')
+                || $request->user()->can('product.update');
+            if ($newSaleType === 'wholesale' && isset($data['items']) && $canUpdateWholesalePricing) {
                 foreach ($data['items'] as $raw) {
                     if (isset($raw['is_custom_price']) && $raw['is_custom_price'] === true) {
                         CustomerWholeSalePrice::updateOrCreate(
