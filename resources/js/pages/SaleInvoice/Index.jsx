@@ -440,14 +440,8 @@ export default function SaleInvoicesIndex() {
   };
 
   // Print popup logic
-  const handlePrint = (id) => {
+  const handlePrint = async (id) => {
     if (!id) return;
-
-    const WEB_BASE =
-      (import.meta.env.VITE_BACKEND_WEB_BASE || "").replace(/\/$/, "") ||
-      window.location.origin;
-
-    const url = `${WEB_BASE}/print/sale-invoices/${id}`;
 
     const width = 900;
     const height = 700;
@@ -473,7 +467,7 @@ export default function SaleInvoicesIndex() {
       "resizable=yes",
     ].join(",");
 
-    const w = window.open(url, "salePrintWin", features);
+    const w = window.open("about:blank", "salePrintWin", features);
     if (!w) {
       toast.error("Popup blocked. Please allow popups to print.");
       return;
@@ -481,18 +475,27 @@ export default function SaleInvoicesIndex() {
 
     try { w.opener = null; } catch {}
 
-    w.onload = () => {
-      try { w.focus(); w.print(); } catch {}
-    };
+    try {
+      const { data } = await axios.get(`/api/sale-invoices/${id}/print-url`);
+      const url = data.url;
+      w.location.replace(url);
 
-    const timer = setInterval(() => {
-      try {
-        if (w.document?.readyState === "complete") {
-          w.focus(); w.print(); clearInterval(timer);
-        }
-      } catch {}
-      if (w.closed) clearInterval(timer);
-    }, 400);
+      w.onload = () => {
+        try { w.focus(); w.print(); } catch {}
+      };
+
+      const timer = setInterval(() => {
+        try {
+          if (w.location?.href !== "about:blank" && w.document?.readyState === "complete") {
+            w.focus(); w.print(); clearInterval(timer);
+          }
+        } catch {}
+        if (w.closed) clearInterval(timer);
+      }, 400);
+    } catch (err) {
+      try { w.close(); } catch {}
+      toast.error(err?.response?.data?.message || "Failed to generate print link.");
+    }
   };
 
   // Format date with alphabetic month (e.g., "1 Jan 2024" or "15 Feb 2024")

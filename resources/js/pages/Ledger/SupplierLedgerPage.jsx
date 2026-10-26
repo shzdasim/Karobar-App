@@ -648,13 +648,21 @@ const [suppliers, setSuppliers] = useState([]);
     (r) => r.id && (r.entry_type === "payment" || r.entry_type === "manual" || r.is_manual)
   ).length;
 
-  const handlePrint = (type /* 'a4'|'thermal' optional */) => {
+  const handlePrint = async (type /* 'a4'|'thermal' optional */) => {
     if (!can.view) return toast.error("You don't have permission to print.");
     if (!supplierId) return toast.error("Select a supplier first");
-    const qs = new URLSearchParams();
-    qs.set("supplier_id", supplierId);
-    if (type) qs.set("type", type);
-    window.open(`/supplier-ledger/print?${qs.toString()}`, "_blank", "noopener");
+    const w = window.open("about:blank", "_blank");
+    if (!w) return toast.error("Popup blocked. Please allow popups to print.");
+    try { w.opener = null; } catch {}
+    try {
+      const { data } = await axios.get("/api/supplier-ledger/print-url", {
+        params: { supplier_id: supplierId, type: type || undefined },
+      });
+      w.location.replace(data.url);
+    } catch (err) {
+      try { w.close(); } catch {}
+      toast.error(err?.response?.data?.message || "Failed to generate print link.");
+    }
   };
 
   // ---------- UI ----------

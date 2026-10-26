@@ -602,6 +602,34 @@ class CustomerLedgerController extends Controller
     }
 
     /** ================================
+     * GET /api/customer-ledger/print-url
+     * ================================ */
+    public function printUrl(Request $request)
+    {
+        $this->authorize('viewAny', CustomerLedger::class);
+
+        $customerId = (int) $request->query('customer_id');
+        abort_if(!$customerId, 422, 'Customer is required');
+
+        $customer = \App\Models\Customer::findOrFail($customerId);
+
+        $params = array_filter([
+            'customer_id' => $customer->id,
+            'type'        => $request->query('type'),
+            'from'        => $request->query('from'),
+            'to'          => $request->query('to'),
+        ], fn ($v) => $v !== null && $v !== '');
+
+        $url = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'customer-ledger.print',
+            now()->addMinutes(5),
+            $params
+        );
+
+        return response()->json(['url' => $url]);
+    }
+
+    /** ================================
      * GET /customer-ledger/print
      * ================================ */
 

@@ -405,6 +405,31 @@ class SupplierLedgerController extends Controller
         return $fallback;
     }
 
+    public function printUrl(Request $request)
+    {
+        $this->authorize('viewAny', SupplierLedger::class);
+
+        $supplierId = (int) $request->query('supplier_id');
+        abort_if(!$supplierId, 422, 'Supplier is required');
+
+        $supplier = Supplier::findOrFail($supplierId);
+
+        $params = array_filter([
+            'supplier_id' => $supplier->id,
+            'type'        => $request->query('type'),
+            'from'        => $request->query('from'),
+            'to'          => $request->query('to'),
+        ], fn ($v) => $v !== null && $v !== '');
+
+        $url = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'supplier-ledger.print',
+            now()->addMinutes(5),
+            $params
+        );
+
+        return response()->json(['url' => $url]);
+    }
+
     public function print(Request $request)
     {
 

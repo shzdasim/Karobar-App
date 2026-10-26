@@ -171,6 +171,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     // Sales
     Route::get('sale-invoices/new-code',          [SaleInvoiceController::class, 'generateNewCode']);
     Route::get('sale-invoices/search',            [SaleInvoiceController::class, 'search']);
+    Route::get('sale-invoices/{saleInvoice}/print-url', [SaleInvoiceController::class, 'printUrl']);
     Route::post('sale-invoices/{id}/reverse',     [SaleInvoiceController::class, 'reverse']);
     Route::apiResource('sale-invoices',           SaleInvoiceController::class);
 
@@ -337,6 +338,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
 
     // Supplier Ledger
     Route::get('/supplier-ledger',                [SupplierLedgerController::class, 'index']);
+    Route::get('/supplier-ledger/print-url',      [SupplierLedgerController::class, 'printUrl']);
     Route::post('/supplier-ledger',               [SupplierLedgerController::class, 'store']);
     Route::put('/supplier-ledger/bulk',           [SupplierLedgerController::class, 'bulkUpdate']);
     Route::delete('/supplier-ledger/{id}',        [SupplierLedgerController::class, 'destroy']);
@@ -345,6 +347,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
 
     // Customer Ledger
     Route::get('/customer-ledger',                [CustomerLedgerController::class, 'index']);
+    Route::get('/customer-ledger/print-url',      [CustomerLedgerController::class, 'printUrl']);
     Route::post('/customer-ledger',               [CustomerLedgerController::class, 'store']);
     Route::put('/customer-ledger/bulk',           [CustomerLedgerController::class, 'bulkUpdate']);
     Route::delete('/customer-ledger/{customerLedger}', [CustomerLedgerController::class, 'destroy']);

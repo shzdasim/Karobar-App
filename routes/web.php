@@ -13,11 +13,15 @@ Route::get('/password/reset/{token}/{email}', function ($token, $email) {
 // --- Server-rendered routes FIRST ---
 Route::get('/print/sale-invoices/{invoice}', [SaleInvoiceController::class, 'print'])
     ->whereNumber('invoice')
+    ->middleware('signed')
     ->name('sale-invoices.print');
 Route::get('/supplier-ledger/print', [SupplierLedgerController::class, 'print'])
-     ->name('supplier-ledger.print');
+    ->middleware('signed')
+    ->name('supplier-ledger.print');
 
-Route::get('/customer-ledger/print', [CustomerLedgerController::class, 'print']);
+Route::get('/customer-ledger/print', [CustomerLedgerController::class, 'print'])
+    ->middleware('signed')
+    ->name('customer-ledger.print');
 
 // Signed public PDF route for WhatsApp / external document sharing
 Route::get('/print/shared-pdf/{type}', [\App\Http\Controllers\DocumentShareController::class, 'publicPdf'])

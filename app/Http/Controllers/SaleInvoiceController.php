@@ -928,6 +928,24 @@ class SaleInvoiceController extends Controller
         });
     }
 
+    public function printUrl(Request $request, SaleInvoice $saleInvoice)
+    {
+        $this->authorize('view', $saleInvoice);
+
+        $params = array_filter([
+            'invoice' => $saleInvoice->id,
+            'type'    => $request->query('type'),
+        ], fn ($v) => $v !== null && $v !== '');
+
+        $url = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'sale-invoices.print',
+            now()->addMinutes(5),
+            $params
+        );
+
+        return response()->json(['url' => $url]);
+    }
+
     public function print(Request $request, SaleInvoice $invoice)
     {
         $invoice->load(['items.product', 'customer', 'user']);

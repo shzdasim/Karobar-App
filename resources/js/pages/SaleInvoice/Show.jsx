@@ -293,14 +293,8 @@ export default function SaleInvoiceShow() {
   };
 
   // Print popup logic
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (!id) return;
-
-    const WEB_BASE =
-      (import.meta.env.VITE_BACKEND_WEB_BASE || "").replace(/\/$/, "") ||
-      window.location.origin;
-
-    const url = `${WEB_BASE}/print/sale-invoices/${id}`;
 
     const width = 900;
     const height = 700;
@@ -341,32 +335,40 @@ export default function SaleInvoiceShow() {
     }
 
     try {
-      w.location.replace(url);
-    } catch {
-      const w2 = window.open(url, "salePrintWin", features);
-      if (!w2) {
-        toast.error("Popup blocked. Please allow popups to print.");
-        return;
-      }
-      try { w2.opener = null; } catch {}
-      popupRef.current = w2;
-      w = w2;
-    }
+      const { data } = await axios.get(`/api/sale-invoices/${id}/print-url`);
+      const url = data.url;
 
-    try {
-      w.onload = () => {
-        try { w.focus(); w.print(); } catch {}
-      };
-    } catch {}
-
-    const timer = setInterval(() => {
       try {
-        if (w.document?.readyState === "complete") {
-          w.focus(); w.print(); clearInterval(timer);
+        w.location.replace(url);
+      } catch {
+        const w2 = window.open(url, "salePrintWin", features);
+        if (!w2) {
+          toast.error("Popup blocked. Please allow popups to print.");
+          return;
         }
+        try { w2.opener = null; } catch {}
+        popupRef.current = w2;
+        w = w2;
+      }
+
+      try {
+        w.onload = () => {
+          try { w.focus(); w.print(); } catch {}
+        };
       } catch {}
-      if (w.closed) clearInterval(timer);
-    }, 400);
+
+      const timer = setInterval(() => {
+        try {
+          if (w.location?.href !== "about:blank" && w.document?.readyState === "complete") {
+            w.focus(); w.print(); clearInterval(timer);
+          }
+        } catch {}
+        if (w.closed) clearInterval(timer);
+      }, 400);
+    } catch (err) {
+      try { w.close(); } catch {}
+      toast.error(err?.response?.data?.message || "Failed to generate print link.");
+    }
   };
 
   // Keyboard shortcuts (mimic form topbar)

@@ -27,10 +27,12 @@
 </head>
 <body onload="window.print()">
   @php
-    function nf($v){
-      $n = (float)$v;
-      if (floor($n) == $n) return number_format($n, 0, '.', ',');
-      return rtrim(rtrim(number_format($n, 2, '.', ','), '0'), '.');
+    if (!function_exists('nf')) {
+      function nf($v){
+        $n = (float)$v;
+        if (floor($n) == $n) return number_format($n, 0, '.', ',');
+        return rtrim(rtrim(number_format($n, 2, '.', ','), '0'), '.');
+      }
     }
     $range = trim(($from ?? '').' — '.($to ?? ''), ' —');
   @endphp
