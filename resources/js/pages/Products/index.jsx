@@ -473,7 +473,7 @@ useEffect(() => {
               <TextSearch
                 value={search}
                 onChange={setSearch}
-                placeholder="Search product name, brand, or supplier…"
+                placeholder="Search name, generic/formula, barcode, code, rack, brand, or supplier…"
                 className="w-full"
                 iconClassName="products-search-icon"
                 inputClassName="products-search-input"
@@ -681,6 +681,25 @@ useEffect(() => {
                           >
                             {p.name}
                           </button>
+                          {(p.formulation || p.barcode || p.product_code || p.rack) && (
+                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-[11px] text-gray-500 dark:text-slate-400">
+                              {p.formulation && (
+                                <span className="font-medium text-blue-600 dark:text-blue-400 truncate max-w-[220px]" title={p.formulation}>
+                                  {p.formulation}
+                                </span>
+                              )}
+                              {(p.barcode || p.product_code) && (
+                                <span className="font-mono text-[10px] text-gray-400 dark:text-slate-500">
+                                  {p.barcode || p.product_code}
+                                </span>
+                              )}
+                              {p.rack && (
+                                <span className="px-1.5 py-0.2 rounded-sm bg-amber-100/80 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 font-semibold text-[10px]">
+                                  Rack: {p.rack}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>

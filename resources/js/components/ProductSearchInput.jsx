@@ -217,12 +217,26 @@ const MIN_WIDTH = 640;
       const includes = (val) => (val ?? "").toString().toLowerCase().includes(q);
 
       const prefixMatches = items.filter(
-        (p) => starts(p?.name) || starts(p?.product_code) || starts(p?.barcode)
+        (p) =>
+          starts(p?.name) ||
+          starts(p?.product_code) ||
+          starts(p?.barcode) ||
+          starts(p?.formulation) ||
+          starts(p?.rack) ||
+          starts(p?.brand?.name || p?.brand_name) ||
+          starts(p?.supplier?.name || p?.supplier_name)
       );
       if (prefixMatches.length > 0) return prefixMatches;
 
       return items.filter(
-        (p) => includes(p?.name) || includes(p?.product_code) || includes(p?.barcode)
+        (p) =>
+          includes(p?.name) ||
+          includes(p?.product_code) ||
+          includes(p?.barcode) ||
+          includes(p?.formulation) ||
+          includes(p?.rack) ||
+          includes(p?.brand?.name || p?.brand_name) ||
+          includes(p?.supplier?.name || p?.supplier_name)
       );
     }, [items, search]);
 
@@ -299,9 +313,9 @@ const getQuantity = (p) => p?.quantity ?? p?.current_quantity ?? null;
       }
     };
 
-const handleSearchChange = (e) => {
+    const handleSearchChange = (e) => {
       const val = e.target.value;
-      const valid = /^[a-zA-Z0-9-.()/\s]*$/;
+      const valid = /^[a-zA-Z0-9-.()/+%,&_:\s]*$/;
       if (!valid.test(val)) {
         setIsInvalidInput(true);
         setTimeout(() => setIsInvalidInput(false), 200);
@@ -525,12 +539,16 @@ className={`w-full h-6 text-sm px-1 rounded-md text-left cursor-pointer transiti
                   <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 shrink-0" />
                   <input
                     ref={searchRef}
-                    aria-label="Search by product name, code, or barcode"
+                    aria-label="Search by product name, generic formula, code, barcode, or rack"
                     onMouseDown={(e) => e.stopPropagation()}
                     type="text"
                     value={search}
                     onChange={handleSearchChange}
-                    placeholder="Search by product name, code, or barcode..."
+                    placeholder="Search by product name, generic/formula, code, barcode, or rack..."
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
                     className={`flex-1 bg-transparent border-0 outline-hidden placeholder:text-slate-400 dark:placeholder:text-slate-500 text-[1em] text-slate-900 dark:text-slate-100 ${
                       isInvalidInput ? "animate-shake" : ""
                     }`}
@@ -609,7 +627,7 @@ className={`w-full h-6 text-sm px-1 rounded-md text-left cursor-pointer transiti
 {/* Product identity */}
                                 <td className="px-4 py-3">
                                   <div className="min-w-0">
-<div className="flex items-center gap-2 flex-wrap">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                       <span className={`text-[1.143em] leading-tight font-extrabold tracking-tight truncate ${active ? "text-indigo-700 dark:text-indigo-200" : "text-slate-900 dark:text-white"}`}>
                                         {p?.name || "—"}
                                       </span>
@@ -619,10 +637,20 @@ className={`w-full h-6 text-sm px-1 rounded-md text-left cursor-pointer transiti
                                         </span>
                                       )}
                                     </div>
-<div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                    {p?.formulation && (
+                                      <div className={`text-[0.857em] font-semibold truncate mt-0.5 ${active ? "text-blue-700 dark:text-blue-300" : "text-blue-600 dark:text-blue-400"}`}>
+                                        {p.formulation}
+                                      </div>
+                                    )}
+                                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                       {getSupplierName(p) && (
                                         <span className={`font-semibold text-[0.857em] ${active ? "text-indigo-600/70 dark:text-indigo-300/70" : "text-slate-500 dark:text-slate-400"}`}>
                                           • {getSupplierName(p)}
+                                        </span>
+                                      )}
+                                      {p?.rack && (
+                                        <span className="px-1.5 py-0.2 rounded-sm bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-bold text-[0.785em]">
+                                          Rack: {p.rack}
                                         </span>
                                       )}
                                     </div>

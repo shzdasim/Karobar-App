@@ -54,6 +54,7 @@ const ProductFormFields = forwardRef(({
   suppliers, 
   isEdit, 
   handleChange, 
+  onGenerateBarcode,
   loadBrandOptions, 
   getSmallSelectStyles, 
   isDark, 
@@ -86,6 +87,7 @@ const ProductFormFields = forwardRef(({
   // Create refs locally
 
   const nameRef = useRef(null);
+  const rackRef = useRef(null);
   const formulationRef = useRef(null);
   const packSizeRef = useRef(null);
   const categorySelectRef = useRef(null);
@@ -124,12 +126,63 @@ const ProductFormFields = forwardRef(({
             <GlassInput type="text" id="product-product_code" name="product_code" value={form.product_code || ""} disabled className="w-full bg-white/70 dark:bg-slate-700/70 text-sm h-8 dark:text-slate-200" />
           </div>
           <div>
-            <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-barcode">Barcode</label>
-            <GlassInput type="text" id="product-barcode" name="barcode" value={form.barcode || ""} disabled className="w-full bg-white/70 dark:bg-slate-700/70 text-sm h-8 dark:text-slate-200" />
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-medium dark:text-slate-300" htmlFor="product-barcode">Barcode</label>
+              {onGenerateBarcode && (
+                <button
+                  type="button"
+                  onClick={onGenerateBarcode}
+                  className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer"
+                  title="Generate a new internal barcode"
+                >
+                  Auto-generate
+                </button>
+              )}
+            </div>
+            <GlassInput
+              type="text"
+              id="product-barcode"
+              name="barcode"
+              value={form.barcode || ""}
+              onChange={handleChange}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  rackRef.current?.focus();
+                }
+              }}
+              placeholder="Scan or enter barcode"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              enterKeyHint="next"
+              className="w-full text-sm h-8 dark:bg-slate-700/70 dark:text-slate-200"
+            />
           </div>
           <div className={isPharmacy ? "" : "col-span-2"}>
             <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-rack">Rack</label>
-            <GlassInput type="text" id="product-rack" name="rack" value={form.rack || ""} onChange={handleChange} className="w-full text-sm h-8 dark:bg-slate-700/70 dark:text-slate-200" />
+            <GlassInput
+              ref={rackRef}
+              type="text"
+              id="product-rack"
+              name="rack"
+              value={form.rack || ""}
+              onChange={handleChange}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  nameRef.current?.focus();
+                }
+              }}
+              placeholder="e.g. R-12"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              enterKeyHint="next"
+              className="w-full text-sm h-8 dark:bg-slate-700/70 dark:text-slate-200"
+            />
           </div>
           {isPharmacy && (
           <div className="flex items-end">
@@ -171,7 +224,7 @@ const ProductFormFields = forwardRef(({
         </div>
         {isPharmacy && (
         <div>
-          <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-formulation">Formulation</label>
+          <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-formulation">Formulation (Generic / Salt)</label>
           <GlassInput
             ref={formulationRef}
             type="text"
@@ -184,6 +237,12 @@ const ProductFormFields = forwardRef(({
                 packSizeRef.current?.focus();
               }
             }}
+            placeholder="e.g. Paracetamol 500mg"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            enterKeyHint="next"
             className="w-full text-sm h-8 dark:bg-slate-700/70 dark:text-slate-200"
           />
         </div>
@@ -488,6 +547,18 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     }));
   };
 
+  // ===== Generate a new internal barcode only =====
+  const handleGenerateBarcode = async () => {
+    try {
+      const res = await axios.get("/api/products/new-code");
+      if (res.data?.barcode) {
+        setForm((prev) => ({ ...prev, barcode: res.data.barcode }));
+      }
+    } catch {
+      toast.error("Failed to generate barcode");
+    }
+  };
+
   // ===== Load batches on edit =====
   const fetchBatches = async () => {
     if (isEdit && initialData?.id) {
@@ -750,6 +821,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
             suppliers={suppliers}
             isEdit={isEdit}
             handleChange={handleChange}
+            onGenerateBarcode={handleGenerateBarcode}
             loadBrandOptions={loadBrandOptions}
             getSmallSelectStyles={getSmallSelectStyles}
             isDark={isDark}

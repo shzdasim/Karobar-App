@@ -502,8 +502,9 @@ style={{
             {/* Code / Barcode inline */}
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs font-medium mb-1 dark:text-slate-300">Product Code</label>
+                <label htmlFor="modal-product-code" className="block text-xs font-medium mb-1 dark:text-slate-300">Product Code</label>
                 <input
+                  id="modal-product-code"
                   type="text"
                   name="product_code"
                   value={form.product_code || ""}
@@ -512,24 +513,58 @@ style={{
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1 dark:text-slate-300">Barcode</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="modal-product-barcode" className="block text-xs font-medium dark:text-slate-300">Barcode</label>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const res = await axios.get("/api/products/new-code");
+                        if (res.data?.barcode) {
+                          setForm((prev) => ({ ...prev, barcode: res.data.barcode }));
+                        }
+                      } catch {
+                        toast.error("Failed to generate barcode");
+                      }
+                    }}
+                    className="text-[10px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 cursor-pointer"
+                    title="Generate a new internal barcode"
+                  >
+                    Auto-generate
+                  </button>
+                </div>
                 <input
+                  id="modal-product-barcode"
                   type="text"
                   name="barcode"
                   value={form.barcode || ""}
-                  disabled
-                  className="w-full h-8 px-2 text-xs border rounded-sm bg-gray-100 dark:bg-slate-600 dark:text-slate-200"
+                  onChange={handleChange}
+                  onKeyDown={(e) => handleEnterNav(e, "rack")}
+                  placeholder="Scan or enter barcode"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  enterKeyHint="next"
+                  className="w-full h-8 px-2 text-xs border rounded-sm dark:bg-slate-700 dark:text-slate-200"
                 />
               </div>
-<div>
-                <label className="block text-xs font-medium mb-1 dark:text-slate-300">Rack</label>
+              <div>
+                <label htmlFor="modal-product-rack" className="block text-xs font-medium mb-1 dark:text-slate-300">Rack</label>
                 <input
+                  id="modal-product-rack"
                   ref={rackRef}
                   type="text"
                   name="rack"
                   value={form.rack || ""}
                   onChange={handleChange}
                   onKeyDown={(e) => handleEnterNav(e, "name")}
+                  placeholder="e.g. R-12"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  enterKeyHint="next"
                   className="w-full h-8 px-2 text-xs border rounded-sm dark:bg-slate-700 dark:text-slate-200"
                 />
               </div>
@@ -538,8 +573,9 @@ style={{
             {/* Name / Formulation / Pack Size (Formulation only for pharmacy shops) */}
             <div className={`grid ${isPharmacy ? "grid-cols-3" : "grid-cols-2"} gap-3`}>
               <div>
-                <label className="block text-xs font-medium mb-1 dark:text-slate-300">Name *</label>
-<input
+                <label htmlFor="modal-product-name" className="block text-xs font-medium mb-1 dark:text-slate-300">Name *</label>
+                <input
+                  id="modal-product-name"
                   ref={nameInputRef}
                   type="text"
                   name="name"
@@ -552,21 +588,29 @@ style={{
               </div>
               {isPharmacy && (
               <div>
-                <label className="block text-xs font-medium mb-1 dark:text-slate-300">Formulation</label>
-<input
+                <label htmlFor="modal-product-formulation" className="block text-xs font-medium mb-1 dark:text-slate-300">Formulation (Generic / Salt)</label>
+                <input
+                  id="modal-product-formulation"
                   ref={formulationRef}
                   type="text"
                   name="formulation"
                   value={form.formulation || ""}
                   onChange={handleChange}
                   onKeyDown={(e) => handleEnterNav(e, "pack_size")}
+                  placeholder="e.g. Paracetamol 500mg"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  enterKeyHint="next"
                   className="w-full h-8 px-2 text-xs border rounded-sm dark:bg-slate-700 dark:text-slate-200"
                 />
               </div>
               )}
               <div>
-                <label className="block text-xs font-medium mb-1 dark:text-slate-300">Pack Size</label>
-<input
+                <label htmlFor="modal-product-pack-size" className="block text-xs font-medium mb-1 dark:text-slate-300">Pack Size</label>
+                <input
+                  id="modal-product-pack-size"
                   ref={packSizeRef}
                   type="text"
                   name="pack_size"

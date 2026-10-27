@@ -47,6 +47,11 @@ function ResultRow({ p, active, onHover, onOpen }) {
           <div className="font-bold text-sm leading-tight truncate">
             {p.name || "—"}
           </div>
+          {p.formulation && (
+            <div className="text-[11px] font-medium text-blue-600 dark:text-blue-400 truncate">
+              {p.formulation}
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-1.5">
             {p.brand?.name && (
               <span className="inline-flex items-center gap-1 text-[10px] text-slate-600 dark:text-slate-300 bg-slate-200/70 dark:bg-slate-700/70 px-1.5 py-0.5 rounded-full font-medium">
@@ -58,6 +63,11 @@ function ResultRow({ p, active, onHover, onOpen }) {
               <span className="inline-flex items-center gap-1 text-[10px] text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full font-medium">
                 <FolderIcon className="w-2.5 h-2.5" />
                 {p.category.name}
+              </span>
+            )}
+            {p.rack && (
+              <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100/70 dark:bg-amber-900/30 px-1.5 py-0.5 rounded-full">
+                Rack: {p.rack}
               </span>
             )}
             {p.pack_size != null && (

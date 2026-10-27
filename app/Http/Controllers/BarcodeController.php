@@ -174,6 +174,8 @@ class BarcodeController extends Controller
             'id',
             'product_code',
             'name',
+            'formulation',
+            'rack',
             'barcode',
             'unit_sale_price',
             'whole_sale_unit_price',
@@ -190,7 +192,9 @@ class BarcodeController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                   ->orWhere('barcode', 'like', "%{$search}%")
-                  ->orWhere('product_code', 'like', "%{$search}%");
+                  ->orWhere('product_code', 'like', "%{$search}%")
+                  ->orWhere('formulation', 'like', "%{$search}%")
+                  ->orWhere('rack', 'like', "%{$search}%");
             });
         } elseif (!empty($categoryId)) {
             $query->where('category_id', $categoryId);

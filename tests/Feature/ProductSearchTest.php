@@ -107,4 +107,58 @@ class ProductSearchTest extends TestCase
         $this->expectException(AuthorizationException::class);
         app(ProductController::class)->index(Request::create('/api/products', 'GET', ['q' => 'Pain']));
     }
+
+    public function test_search_and_index_match_formulation_barcode_and_rack(): void
+    {
+        Schema::table('products', function (Blueprint $table) {
+            $table->string('barcode')->nullable();
+            $table->string('formulation')->nullable();
+            $table->string('rack')->nullable();
+        });
+
+        DB::table('products')->insert([
+            [
+                'id' => 20,
+                'name' => 'Augmentin 625mg',
+                'product_code' => 'PRD-0020',
+                'barcode' => '8964009988776',
+                'formulation' => 'Amoxicillin 500mg + Clavulanic Acid 125mg',
+                'rack' => 'RACK-B4',
+                'brand_id' => 1,
+                'supplier_id' => 1,
+                'quantity' => 50,
+                'pack_size' => 10,
+            ],
+        ]);
+
+        // 1. Index endpoint searches by generic/salt formulation (including second salt), barcode, and rack
+        $bySalt = $this->listing(['q' => 'Clavulanic']);
+        $this->assertSame([20], array_column($bySalt['data'], 'id'));
+        $this->assertSame('Amoxicillin 500mg + Clavulanic Acid 125mg', $bySalt['data'][0]['formulation']);
+        $this->assertSame('8964009988776', $bySalt['data'][0]['barcode']);
+        $this->assertSame('RACK-B4', $bySalt['data'][0]['rack']);
+
+        $byBarcode = $this->listing(['q' => '8964009988']);
+        $this->assertSame([20], array_column($byBarcode['data'], 'id'));
+
+        $byRack = $this->listing(['q' => 'RACK-B4']);
+        $this->assertSame([20], array_column($byRack['data'], 'id'));
+
+        // 2. Lookup search endpoint (/api/products/search) matches formulation, barcode, and rack
+        $lookupSalt = app(ProductController::class)->search(
+            Request::create('/api/products/search', 'GET', ['q' => 'Clavulanic'])
+        )->getData(true);
+        $this->assertSame([20], array_column($lookupSalt, 'id'));
+        $this->assertSame('Amoxicillin 500mg + Clavulanic Acid 125mg', $lookupSalt[0]['formulation']);
+
+        $lookupBarcode = app(ProductController::class)->search(
+            Request::create('/api/products/search', 'GET', ['q' => '8964009988776'])
+        )->getData(true);
+        $this->assertSame([20], array_column($lookupBarcode, 'id'));
+
+        $lookupRack = app(ProductController::class)->search(
+            Request::create('/api/products/search', 'GET', ['q' => 'RACK-B4'])
+        )->getData(true);
+        $this->assertSame([20], array_column($lookupRack, 'id'));
+    }
 }

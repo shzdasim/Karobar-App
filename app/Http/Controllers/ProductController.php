@@ -8,6 +8,7 @@ use App\Models\PurchaseReturnItem;
 use App\Models\SaleInvoiceItem;
 use App\Models\SaleReturnItem;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\Rule;
@@ -23,15 +24,24 @@ class ProductController extends Controller
         $ids   = $req->input('ids'); // can be array or comma-separated
         $limit = max(1, min((int)$req->input('limit', 30), 1000));
 
-        $query = Product::select([
-                'id','name','product_code','barcode','pack_size',
-                'unit_purchase_price','unit_sale_price',
-                'pack_purchase_price','pack_sale_price',
-                'whole_sale_pack_price','whole_sale_unit_price',
-                'quantity','margin','avg_price',
-                'brand_id','supplier_id'
-            ])
-            ->with(['brand:id,name','supplier:id,name'])
+        $existingCols = array_flip(Schema::getColumnListing('products'));
+        $desiredCols = [
+            'id','name','product_code','barcode','formulation','rack','narcotic','pack_size',
+            'unit_purchase_price','unit_sale_price',
+            'pack_purchase_price','pack_sale_price',
+            'whole_sale_pack_price','whole_sale_unit_price',
+            'quantity','margin','avg_price',
+            'category_id','brand_id','supplier_id',
+        ];
+        $selectCols = array_values(array_filter($desiredCols, fn(string $c) => isset($existingCols[$c])));
+
+        $relations = ['brand:id,name', 'supplier:id,name'];
+        if (isset($existingCols['category_id']) && Schema::hasTable('categories')) {
+            $relations[] = 'category:id,name';
+        }
+
+        $query = Product::select($selectCols ?: ['*'])
+            ->with($relations)
             ->orderBy('name');
 
         // If ids are provided → return exactly those (no limit)
@@ -45,11 +55,29 @@ class ProductController extends Controller
         }
 
         if ($q !== '') {
-            $query->where(function (Builder $b) use ($q) {
+            $hasBarcode     = isset($existingCols['barcode']);
+            $hasFormulation = isset($existingCols['formulation']);
+            $hasRack        = isset($existingCols['rack']);
+
+            $query->where(function (Builder $b) use ($q, $hasBarcode, $hasFormulation, $hasRack) {
                 $pattern = $q.'%'; // starts-with
                 $b->where('name', 'like', $pattern)
-                  ->orWhere('product_code', 'like', $pattern)
-                  ->orWhere('barcode', 'like', $pattern);
+                  ->orWhere('product_code', 'like', $pattern);
+                if ($hasBarcode) {
+                    $b->orWhere('barcode', 'like', $pattern);
+                }
+                if ($hasFormulation) {
+                    $b->orWhere('formulation', 'like', '%'.$q.'%');
+                }
+                if ($hasRack) {
+                    $b->orWhere('rack', 'like', $pattern);
+                }
+                if (Schema::hasTable('brands')) {
+                    $b->orWhereHas('brand', fn(Builder $brand) => $brand->where('name', 'like', $pattern));
+                }
+                if (Schema::hasTable('suppliers')) {
+                    $b->orWhereHas('supplier', fn(Builder $supplier) => $supplier->where('name', 'like', $pattern));
+                }
             });
         }
 
@@ -123,18 +151,25 @@ class ProductController extends Controller
         $this->authorize('viewAny', Product::class);
         $perPage = max(1, min((int)$req->input('per_page', 25), 100));
 
-        $search    = trim((string)$req->input('q', ''));
-        $qName     = trim((string)$req->input('q_name', ''));
-        $qBrand    = trim((string)$req->input('q_brand', ''));
-        $qSupplier = trim((string)$req->input('q_supplier', ''));
-        $lowStock  = (int) $req->input('low_stock', 0);
+        $search       = trim((string)$req->input('q', ''));
+        $qName        = trim((string)$req->input('q_name', ''));
+        $qBrand       = trim((string)$req->input('q_brand', ''));
+        $qSupplier    = trim((string)$req->input('q_supplier', ''));
+        $qFormulation = trim((string)$req->input('q_formulation', ''));
+        $qBarcode     = trim((string)$req->input('q_barcode', ''));
+        $qRack        = trim((string)$req->input('q_rack', ''));
+        $lowStock     = (int) $req->input('low_stock', 0);
+
+        $existingCols = array_flip(Schema::getColumnListing('products'));
+        $desiredCols = [
+            'id','product_code','barcode','name','formulation','rack','image',
+            'category_id','brand_id','supplier_id',
+            'quantity','pack_size',
+        ];
+        $selectCols = array_values(array_filter($desiredCols, fn(string $c) => isset($existingCols[$c])));
 
         $q = Product::query()
-            ->select([
-                'id','product_code','name','image',
-                'category_id','brand_id','supplier_id',
-                'quantity',
-            ])
+            ->select($selectCols ?: ['*'])
             ->with([
                 'category:id,name',
                 'brand:id,name',
@@ -142,18 +177,32 @@ class ProductController extends Controller
             ])
             ->withCount('batches');
 
-        // Starts-with (prefix) matching: searches products from the start (e.g. 'x' matches 'xyx' but not 'axt')
+        $hasBarcode     = isset($existingCols['barcode']);
+        $hasFormulation = isset($existingCols['formulation']);
+        $hasRack        = isset($existingCols['rack']);
+
+        // Starts-with (prefix) matching: searches products from the start (e.g. 'x' matches 'xyx' but not 'axt'),
+        // plus barcode, rack, and generic/salt formulation.
         if ($search !== '') {
             $pattern = $search.'%';
-            $q->where(function (Builder $matches) use ($pattern) {
+            $q->where(function (Builder $matches) use ($search, $pattern, $hasBarcode, $hasFormulation, $hasRack) {
                 $matches->where('name', 'like', $pattern)
                     ->orWhere('product_code', 'like', $pattern)
                     ->orWhereHas('brand', fn(Builder $brand) => $brand->where('name', 'like', $pattern))
                     ->orWhereHas('supplier', fn(Builder $supplier) => $supplier->where('name', 'like', $pattern));
+                if ($hasBarcode) {
+                    $matches->orWhere('barcode', 'like', $pattern);
+                }
+                if ($hasFormulation) {
+                    $matches->orWhere('formulation', 'like', '%'.$search.'%');
+                }
+                if ($hasRack) {
+                    $matches->orWhere('rack', 'like', $pattern);
+                }
             });
         }
 
-        // 🔍 Prefix-only matching for name, brand, and supplier
+        // 🔍 Field-specific matching for name, brand, supplier, formulation, barcode, and rack
         if ($qName !== '') {
             $q->where('name', 'like', $qName.'%');
         }
@@ -162,6 +211,15 @@ class ProductController extends Controller
         }
         if ($qSupplier !== '') {
             $q->whereHas('supplier', fn(Builder $s) => $s->where('name', 'like', $qSupplier.'%'));
+        }
+        if ($qFormulation !== '' && $hasFormulation) {
+            $q->where('formulation', 'like', '%'.$qFormulation.'%');
+        }
+        if ($qBarcode !== '' && $hasBarcode) {
+            $q->where('barcode', 'like', $qBarcode.'%');
+        }
+        if ($qRack !== '' && $hasRack) {
+            $q->where('rack', 'like', $qRack.'%');
         }
 
         // 🟠 Low stock only — running products (ever purchased) whose on-hand
