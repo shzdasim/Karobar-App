@@ -11,7 +11,7 @@ class SupplierController extends Controller
 {
     public function search(Request $req)
     {
-        $this->authorize('viewAny', Supplier::class);
+        $this->authorize('lookup', Supplier::class);
 
         $q     = trim($req->input('q', ''));
         $limit = max(1, min((int)$req->input('limit', 20), 100));
@@ -79,7 +79,7 @@ class SupplierController extends Controller
 
     public function creditSummary(Supplier $supplier)
     {
-        $this->authorize('view', $supplier);
+        $this->authorize('lookup', $supplier);
 
         $openInvoices = app(\App\Services\PaymentService::class)->getOpenInvoicesForSupplier($supplier->id);
         $totalOutstanding = collect($openInvoices)->sum('due');

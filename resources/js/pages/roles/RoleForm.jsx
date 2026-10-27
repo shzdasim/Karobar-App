@@ -26,6 +26,7 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
 
   const [name, setName] = useState("");
   const [allPerms, setAllPerms] = useState([]);          // ["user.view", ...]
+  const [loadingPerms, setLoadingPerms] = useState(true);
   const [selected, setSelected] = useState(new Set());   // Set<string>
   const [filter, setFilter] = useState("");
   const formRef = useRef(null);
@@ -45,12 +46,27 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
   // Consistent action ordering
   const ACTION_ORDER = [
     "view",
+    "print",
     "create",
     "update",
+    "edit",
     "delete",
     "import",
     "export",
     "generate",
+    "cancel",
+    "finalize",
+    "dispose",
+    "restore",
+    "upload",
+    "open",
+    "transaction",
+    "close",
+    "transfer",
+    "adjust",
+    "credit-override",
+    "discount-override",
+    "expired-override",
     "sync.permissions",
     "assign.roles",
     "assign.permissions",
@@ -59,11 +75,37 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
 
   const titleizeModule = (m) => {
     const map = {
+      barcode: "Barcode Studio & Generator",
+      "barcode-pos": "⚡ Barcode POS",
+      "batch-expiry": "Batch Expiry & Tracking",
       "sale-invoice": "Sale Invoice",
       "purchase-invoice": "Purchase Invoice",
-      "sale-return": "Sale Return",
-      "purchase-return": "Purchase Return",
+      "sale-return": "Sale Return Invoices",
+      "purchase-return": "Purchase Return Invoices",
       "stock-adjustment": "Stock Adjustment",
+      "stock-disposal": "Stock Disposal & Quarantine",
+      stocktake: "Physical Stocktake",
+      payment: "Payment Vouchers",
+      account: "Financial Accounts",
+      "cash-drawer": "Cash Drawer",
+      expense: "Operating Expenses",
+      backup: "Backups & Storage",
+      "user-demands": "User Demands",
+      report: "Reports",
+      "report.cost-of-sale": "Report: Cost of Sale",
+      "report.cost-of-sale-detail": "Report: Cost of Sale Detail",
+      "report.net-profit": "Report: Net Profit (P&L)",
+      "report.current-stock": "Report: Current Stock",
+      "report.reorder": "Report: Low Stock & Reorder",
+      "report.purchase-detail": "Report: Purchase Detail",
+      "report.purchase-summary": "Report: Purchase Summary",
+      "report.purchase-returns": "Report: Purchase Returns",
+      "report.sale-detail": "Report: Sale Detail",
+      "report.sale-returns": "Report: Sale Returns",
+      "report.stock-adjustment": "Report: Stock Adjustment",
+      "report.product-comprehensive": "Report: Product Comprehensive",
+      "report.near-expiry-product": "Report: Near Expiry Product",
+      "report.outstanding-aging": "Report: Outstanding & Aging",
       settings: "Settings",
       category: "Category",
       brand: "Brand",
@@ -79,6 +121,14 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
       invoice: "Invoice (Legacy)",
     };
     if (map[m]) return map[m];
+    if (m.startsWith("report.")) {
+      const sub = m
+        .slice("report.".length)
+        .split("-")
+        .map((x) => x.charAt(0).toUpperCase() + x.slice(1))
+        .join(" ");
+      return `Report: ${sub}`;
+    }
     return m
       .split("-")
       .map((x) => x.charAt(0).toUpperCase() + x.slice(1))
@@ -89,13 +139,17 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
   useEffect(() => {
     let alive = true;
     (async () => {
+      setLoadingPerms(true);
       try {
         const { data } = await listAllPermissions();
         if (!alive) return;
-        setAllPerms(normalizeList(data));
+        const payload = Array.isArray(data?.data) ? data.data : data;
+        setAllPerms(normalizeList(payload));
       } catch (e) {
         console.error(e);
         if (alive) setAllPerms([]);
+      } finally {
+        if (alive) setLoadingPerms(false);
       }
     })();
     return () => {
@@ -146,8 +200,17 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
     for (const full of allPerms) {
       if (typeof full !== "string" || !full) continue;
       const parts = full.split(".");
-      const module = parts.length > 1 ? parts[0] : full;
-      const action = parts.length > 1 ? parts.slice(1).join(".") : ""; // for custom singles / manage
+      const isReportSubmodule = parts[0] === "report" && parts.length >= 3;
+      const module = isReportSubmodule
+        ? `report.${parts[1]}`
+        : parts.length > 1
+        ? parts[0]
+        : full;
+      const action = isReportSubmodule
+        ? parts.slice(2).join(".")
+        : parts.length > 1
+        ? parts.slice(1).join(".")
+        : ""; // for custom singles / manage
       if (!groups[module]) groups[module] = new Map(); // action -> perm
       groups[module].set(action || full, full);
     }
@@ -353,7 +416,11 @@ export default function RoleForm({ onSubmit, initial, submitting }) {
                 </div>
               ))}
 
-              {groupedFiltered.length === 0 && (
+              {loadingPerms && (
+                <p className="people-hint">Loading permissions…</p>
+              )}
+
+              {!loadingPerms && groupedFiltered.length === 0 && (
                 <p className="people-hint">No permissions match the filter.</p>
               )}
             </div>

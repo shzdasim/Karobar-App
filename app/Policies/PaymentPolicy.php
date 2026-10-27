@@ -10,12 +10,10 @@ class PaymentPolicy
     public function viewAny(User $user): bool
     {
         return $user->can('payment.view')
-            || $user->can('customer-ledger.view')
-            || $user->can('supplier-ledger.view')
-            || $user->hasRole('admin');
+            || $user->hasRole('Admin');
     }
 
-    public function view(User $user, Payment $payment): bool
+    public function view(User $user, ?Payment $payment = null): bool
     {
         return $this->viewAny($user);
     }
@@ -23,17 +21,12 @@ class PaymentPolicy
     public function create(User $user): bool
     {
         return $user->can('payment.create')
-            || $user->can('customer-ledger.create')
-            || $user->can('supplier-ledger.create')
-            || $user->hasRole('admin');
+            || $user->hasRole('Admin');
     }
 
-    public function reverse(User $user, Payment $payment): bool
+    public function reverse(User $user, ?Payment $payment = null): bool
     {
         return $user->can('payment.delete')
-            || $user->can('customer-ledger.delete')
-            || $user->can('supplier-ledger.delete')
-            || $user->hasRole('admin');
+            || $user->hasRole('Admin');
     }
 }
-

@@ -94,13 +94,15 @@ export default function ProductsIndex() {
   const debounceRef = useRef(null);
 
   // 🔒 permissions
-  const { loading: permsLoading, canFor } = usePermissions();
+  const { loading: permsLoading, canFor, has } = usePermissions();
   const can = useMemo(
-    () =>
-      (typeof canFor === "function"
+    () => ({
+      ...(typeof canFor === "function"
         ? canFor("product")
         : { view: false, create: false, update: false, delete: false, import: false, export: false }),
-    [canFor]
+      barcode: !permsLoading && (has("barcode.view") || has("barcode.print")),
+    }),
+    [canFor, permsLoading, has]
   );
 
   // 🎨 Dynamic button palette using theme colors
@@ -439,14 +441,16 @@ useEffect(() => {
             </Guard>
 
             {/* Barcode Studio Shortcut */}
-            <Link
-              to={selectedIds.size > 0 ? `/barcode-labels?product_ids=${Array.from(selectedIds).join(",")}` : "/barcode-labels"}
-              title="Print Barcode Labels"
-              className="products-action theme-btn-secondary"
-            >
-              <QrCodeIcon className="w-3.5 h-3.5" />
-              <span>{selectedIds.size > 0 ? `Print Labels (${selectedIds.size})` : "Barcode Studio"}</span>
-            </Link>
+            <Guard when={can.barcode}>
+              <Link
+                to={selectedIds.size > 0 ? `/barcode-labels?product_ids=${Array.from(selectedIds).join(",")}` : "/barcode-labels"}
+                title="Print Barcode Labels"
+                className="products-action theme-btn-secondary"
+              >
+                <QrCodeIcon className="w-3.5 h-3.5" />
+                <span>{selectedIds.size > 0 ? `Print Labels (${selectedIds.size})` : "Barcode Studio"}</span>
+              </Link>
+            </Guard>
 
             {/* Primary action */}
             <Guard when={can.create}>

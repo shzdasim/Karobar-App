@@ -25,6 +25,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { useCurrency } from "@/context/CurrencyContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { GlassCard, GlassSectionHeader, GlassInput } from "@/components";
+import { usePermissions } from "@/api/usePermissions.js";
 import DisposalCertificateModal from "@/components/DisposalCertificateModal.jsx";
 
 const CAUSE_OPTIONS = [
@@ -58,6 +59,11 @@ export default function StockDisposalsIndex() {
   const navigate = useNavigate();
   const { isDark, theme } = useTheme();
   const { formatCurrency } = useCurrency();
+  const { has } = usePermissions();
+  const canCreateDisposal = has("stock-disposal.create");
+  const canDispose = has("stock-disposal.dispose");
+  const canRestore = has("stock-disposal.restore");
+  const canViewExpiry = has("batch-expiry.view");
 
   const buttonStyle = theme?.button_style || "modern";
   const themeColors = useMemo(() => ({
@@ -289,24 +295,28 @@ export default function StockDisposalsIndex() {
               <ArrowPathIcon className="w-4 h-4" />
               <span>Refresh</span>
             </button>
-            <button
-              type="button"
-              onClick={() => navigate("/batch-expiry")}
-              className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold ${btnSecondary.className}`}
-              style={btnSecondary.style}
-            >
-              <ClockIcon className="w-4 h-4" />
-              <span>Expiry Tracker</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate("/stock-disposals/create")}
-              className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold ${btnPrimary.className}`}
-              style={btnPrimary.style}
-            >
-              <PlusCircleIcon className="w-4 h-4" />
-              <span>New Quarantine / Disposal</span>
-            </button>
+            {canViewExpiry && (
+              <button
+                type="button"
+                onClick={() => navigate("/batch-expiry")}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold ${btnSecondary.className}`}
+                style={btnSecondary.style}
+              >
+                <ClockIcon className="w-4 h-4" />
+                <span>Expiry Tracker</span>
+              </button>
+            )}
+            {canCreateDisposal && (
+              <button
+                type="button"
+                onClick={() => navigate("/stock-disposals/create")}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold ${btnPrimary.className}`}
+                style={btnPrimary.style}
+              >
+                <PlusCircleIcon className="w-4 h-4" />
+                <span>New Quarantine / Disposal</span>
+              </button>
+            )}
           </div>
         }
       />
@@ -539,15 +549,17 @@ export default function StockDisposalsIndex() {
                     <p className={`text-xs mt-1 mb-4 ${isDark ? "text-slate-400" : "text-gray-500"}`}>
                       Isolate damaged, spoiled, or expired stock from your sellable inventory or write it off to P&L.
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => navigate("/stock-disposals/create")}
-                      className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold ${btnPrimary.className}`}
-                      style={btnPrimary.style}
-                    >
-                      <PlusCircleIcon className="w-4 h-4" />
-                      <span>Record First Quarantine / Disposal</span>
-                    </button>
+                    {canCreateDisposal && (
+                      <button
+                        type="button"
+                        onClick={() => navigate("/stock-disposals/create")}
+                        className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold ${btnPrimary.className}`}
+                        style={btnPrimary.style}
+                      >
+                        <PlusCircleIcon className="w-4 h-4" />
+                        <span>Record First Quarantine / Disposal</span>
+                      </button>
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -689,22 +701,26 @@ export default function StockDisposalsIndex() {
 
                           {isQuarantined && (
                             <>
-                              <button
-                                type="button"
-                                onClick={() => openFinalizeModal(row)}
-                                className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-600 hover:bg-rose-500 text-white transition-colors"
-                                title="Execute final disposal and P&L write-off"
-                              >
-                                Dispose
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openRestoreModal(row)}
-                                className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
-                                title="Release from Quarantine back to sellable stock"
-                              >
-                                Restore
-                              </button>
+                              {canDispose && (
+                                <button
+                                  type="button"
+                                  onClick={() => openFinalizeModal(row)}
+                                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-600 hover:bg-rose-500 text-white transition-colors"
+                                  title="Execute final disposal and P&L write-off"
+                                >
+                                  Dispose
+                                </button>
+                              )}
+                              {canRestore && (
+                                <button
+                                  type="button"
+                                  onClick={() => openRestoreModal(row)}
+                                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+                                  title="Release from Quarantine back to sellable stock"
+                                >
+                                  Restore
+                                </button>
+                              )}
                             </>
                           )}
                         </div>

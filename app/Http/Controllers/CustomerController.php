@@ -12,7 +12,7 @@ class CustomerController extends Controller
 {
     public function search(Request $request)
 {
-    $this->authorize('viewAny', Customer::class);
+    $this->authorize('lookup', Customer::class);
     $q     = trim((string) $request->query('q', ''));
     $page  = max(1, (int) $request->query('page', 1));
     $limit = min(50, max(5, (int) $request->query('limit', 20)));
@@ -88,7 +88,7 @@ class CustomerController extends Controller
 
     public function creditSummary(Customer $customer)
     {
-        $this->authorize('view', $customer);
+        $this->authorize('lookup', $customer);
 
         $netBalance = CustomerLedger::getCustomerNetBalance($customer->id);
         $creditLimit = $customer->credit_limit !== null ? (float)$customer->credit_limit : null;

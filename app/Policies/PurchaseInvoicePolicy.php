@@ -12,9 +12,18 @@ class PurchaseInvoicePolicy
         return $user->can('purchase-invoice.view');
     }
 
+    public function lookup(User $user): bool
+    {
+        return $user->can('purchase-invoice.view')
+            || $user->can('purchase-return.create')
+            || $user->can('purchase-return.update');
+    }
+
     public function view(User $user, PurchaseInvoice $invoice): bool
     {
-        return $user->can('purchase-invoice.view');
+        return $user->can('purchase-invoice.view')
+            || $user->can('purchase-return.create')
+            || $user->can('purchase-return.update');
     }
 
     public function create(User $user): bool

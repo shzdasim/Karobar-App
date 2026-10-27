@@ -40,17 +40,31 @@ class RolesAndPermissionsSeeder extends Seeder
 
             // Reports
             'report.cost-of-sale.view', 'report.cost-of-sale.export',
+            'report.cost-of-sale-detail.view', 'report.cost-of-sale-detail.export',
+            'report.net-profit.view', 'report.net-profit.export',
             'report.purchase-detail.view', 'report.purchase-detail.export',
+            'report.purchase-summary.view', 'report.purchase-summary.export',
+            'report.purchase-returns.view', 'report.purchase-returns.export',
             'report.sale-detail.view', 'report.sale-detail.export', 'report.sale-detail.edit',
+            'report.sale-returns.view', 'report.sale-returns.export',
             'report.current-stock.view', 'report.current-stock.export',
+            'report.reorder.view', 'report.reorder.export',
             'report.stock-adjustment.view', 'report.stock-adjustment.export',
             'report.product-comprehensive.view', 'report.product-comprehensive.export',
             'report.near-expiry-product.view', 'report.near-expiry-product.export',
+            'report.outstanding-aging.view', 'report.outstanding-aging.export',
 
-            // Financial Accounts, Cash Drawer, Expenses & POS Overrides
+            // Barcode Studio / Label Generator & Barcode POS & Batch Expiry Tracking
+            'barcode.view', 'barcode.print', 'barcode.create', 'barcode.update', 'barcode.delete',
+            'barcode-pos.view', 'barcode-pos.create',
+            'batch-expiry.view', 'batch-expiry.update',
+
+            // Financial Accounts, Cash Drawer, Expenses, Payments & POS Overrides
             'account.view', 'account.create', 'account.update', 'account.transfer', 'account.adjust',
             'cash-drawer.view', 'cash-drawer.open', 'cash-drawer.transaction', 'cash-drawer.close',
             'expense.view', 'expense.create', 'expense.update', 'expense.delete',
+            'payment.view', 'payment.create', 'payment.delete',
+            'stocktake.view', 'stocktake.create', 'stocktake.update', 'stocktake.delete', 'stocktake.finalize',
             'sale-invoice.credit-override', 'sale-invoice.discount-override', 'sale-invoice.expired-override',
         ];
 

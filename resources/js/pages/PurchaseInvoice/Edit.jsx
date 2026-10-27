@@ -11,7 +11,7 @@ export default function EditPurchaseInvoice() {
 
   const { loading: permsLoading, canFor } = usePermissions();
   const can = useMemo(
-    () => (typeof canFor === "function" ? canFor("purchase_invoice") : {
+    () => (typeof canFor === "function" ? canFor("purchase-invoice") : {
       view:false, create:false, update:false, delete:false, import:false, export:false
     }),
     [canFor]

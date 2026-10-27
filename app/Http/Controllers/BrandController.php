@@ -11,7 +11,7 @@ class BrandController extends Controller
 {
     public function search(Request $req)
     {
-        $this->authorize('viewAny', Brand::class);
+        $this->authorize('lookup', Brand::class);
 
         $q     = trim($req->input('q', ''));
         $limit = max(1, min((int)$req->input('limit', 20), 100));

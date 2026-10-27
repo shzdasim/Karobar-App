@@ -6,6 +6,7 @@ import Select from "react-select";
 import { useSearchParams } from "react-router-dom";
 import { useTheme } from "@/context/ThemeContext";
 import { useCurrency } from "@/context/CurrencyContext";
+import { usePermissions } from "@/api/usePermissions";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { BarcodeSvg, generateBarcodeSvgString } from "@/utils/barcode";
 import ProductSearchInput from "@/components/ProductSearchInput.jsx";
@@ -42,7 +43,12 @@ const TABS = [
 export default function BarcodeIndex() {
   const { theme, isDark } = useTheme();
   const { formatCurrency, currencySymbol } = useCurrency();
+  const { loading: permsLoading, has } = usePermissions();
   const [searchParams] = useSearchParams();
+
+  const canViewBarcode = !permsLoading && (has("barcode.view") || has("barcode.print"));
+  const canPrintBarcode = !permsLoading && (has("barcode.print") || has("barcode.view"));
+  const canSaveTemplate = !permsLoading && (has("barcode.create") || has("barcode.update"));
 
   // Navigation tab
   const [activeTab, setActiveTab] = useState("queue");
@@ -1164,30 +1170,34 @@ export default function BarcodeIndex() {
 
           {/* Quick Actions */}
           <div className="flex flex-wrap items-center gap-2.5">
-            <button
-              type="button"
-              onClick={() => setShowSaveModal(true)}
-              className="products-action theme-btn-secondary"
-              title="Save current layout as a reusable preset"
-            >
-              <BookmarkSquareIcon className="w-4 h-4" />
-              <span>Save As Preset</span>
-            </button>
+            {canSaveTemplate && (
+              <button
+                type="button"
+                onClick={() => setShowSaveModal(true)}
+                className="products-action theme-btn-secondary"
+                title="Save current layout as a reusable preset"
+              >
+                <BookmarkSquareIcon className="w-4 h-4" />
+                <span>Save As Preset</span>
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={handlePrint}
-              disabled={isPrinting || printQueue.length === 0}
-              className="products-action theme-btn-primary"
-              title="Print stickers now"
-            >
-              <PrinterIcon className={`w-4 h-4 ${isPrinting ? "animate-pulse" : ""}`} />
-              <span>
-                {isPrinting
-                  ? "Generating…"
-                  : `Print ${totalLabelsToPrint} Sticker${totalLabelsToPrint === 1 ? "" : "s"}`}
-              </span>
-            </button>
+            {canPrintBarcode && (
+              <button
+                type="button"
+                onClick={handlePrint}
+                disabled={isPrinting || printQueue.length === 0}
+                className="products-action theme-btn-primary"
+                title="Print stickers now"
+              >
+                <PrinterIcon className={`w-4 h-4 ${isPrinting ? "animate-pulse" : ""}`} />
+                <span>
+                  {isPrinting
+                    ? "Generating…"
+                    : `Print ${totalLabelsToPrint} Sticker${totalLabelsToPrint === 1 ? "" : "s"}`}
+                </span>
+              </button>
+            )}
           </div>
         </div>
 

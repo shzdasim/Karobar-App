@@ -12,7 +12,7 @@ class StocktakePolicy
         return $user->can('stocktake.view');
     }
 
-    public function view(User $user, StocktakeSession $session): bool
+    public function view(User $user, ?StocktakeSession $session = null): bool
     {
         return $user->can('stocktake.view');
     }
@@ -22,17 +22,17 @@ class StocktakePolicy
         return $user->can('stocktake.create');
     }
 
-    public function update(User $user, StocktakeSession $session): bool
+    public function update(User $user, ?StocktakeSession $session = null): bool
     {
         return $user->can('stocktake.update');
     }
 
-    public function delete(User $user, StocktakeSession $session): bool
+    public function delete(User $user, ?StocktakeSession $session = null): bool
     {
         return $user->can('stocktake.delete');
     }
 
-    public function finalize(User $user, StocktakeSession $session): bool
+    public function finalize(User $user, ?StocktakeSession $session = null): bool
     {
         return $user->can('stocktake.finalize');
     }

@@ -67,7 +67,7 @@ export default function SaleDetailReport() {
   const { loading: permsLoading, canFor } = usePermissions();
   const can = useMemo(
     () =>
-      (typeof canFor === "function" ? canFor("sale-detail-report") : {
+      (typeof canFor === "function" ? canFor("report.sale-detail") : {
         view: false,
         export: false,
         edit: false,

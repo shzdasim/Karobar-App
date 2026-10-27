@@ -539,8 +539,10 @@ async function fetchNearExpiry() {
       const { data } = await axios.get("/api/dashboard/near-expiry", { params });
       setNearExpiryRows(Array.isArray(data?.rows) ? data.rows : []);
     } catch (err) {
-      console.error(err);
-      toast.error("Failed to load near expiry data.");
+      if (err?.response?.status !== 403) {
+        console.error(err);
+        toast.error("Failed to load near expiry data.");
+      }
     } finally {
       setLoadingExpiry(false);
     }

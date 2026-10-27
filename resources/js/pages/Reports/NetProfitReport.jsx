@@ -3,6 +3,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
+import { usePermissions } from "@/api/usePermissions";
 import {
   CalculatorIcon,
   ArrowDownTrayIcon,
@@ -23,6 +24,9 @@ const monthStart = () => `${today().slice(0, 7)}-01`;
 export default function NetProfitReport() {
   const { formatCurrency } = useCurrency();
   const { isDark, theme } = useTheme();
+  const { loading: permsLoading, has } = usePermissions();
+  const canView = !permsLoading && has("report.net-profit.view");
+  const canExport = !permsLoading && has("report.net-profit.export");
   const printRef = useRef(null);
 
   // 🎨 Dynamic Button styles using theme colors (matching ThemeSetting.jsx)
@@ -71,8 +75,10 @@ export default function NetProfitReport() {
   }, [from, to]);
 
   useEffect(() => {
-    fetchReport();
-  }, [fetchReport]);
+    if (!permsLoading && canView) {
+      fetchReport();
+    }
+  }, [fetchReport, permsLoading, canView]);
 
   function setQuickRange(type) {
     const t = today();
@@ -172,24 +178,28 @@ export default function NetProfitReport() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
-          <button
-            onClick={exportCsv}
-            disabled={!report}
-            className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold theme-btn-secondary ${btnSecondary.className} disabled:opacity-50`}
-            style={btnSecondary.style}
-          >
-            <ArrowDownTrayIcon className="w-4 h-4 text-emerald-500" />
-            <span>Export CSV</span>
-          </button>
-          <button
-            onClick={handlePrint}
-            disabled={!report}
-            className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold theme-btn-primary ${btnPrimary.className} disabled:opacity-50`}
-            style={btnPrimary.style}
-          >
-            <PrinterIcon className="w-4 h-4" />
-            <span>Print P&L</span>
-          </button>
+          {canExport && (
+            <>
+              <button
+                onClick={exportCsv}
+                disabled={!report}
+                className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold theme-btn-secondary ${btnSecondary.className} disabled:opacity-50`}
+                style={btnSecondary.style}
+              >
+                <ArrowDownTrayIcon className="w-4 h-4 text-emerald-500" />
+                <span>Export CSV</span>
+              </button>
+              <button
+                onClick={handlePrint}
+                disabled={!report}
+                className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold theme-btn-primary ${btnPrimary.className} disabled:opacity-50`}
+                style={btnPrimary.style}
+              >
+                <PrinterIcon className="w-4 h-4" />
+                <span>Print P&L</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 

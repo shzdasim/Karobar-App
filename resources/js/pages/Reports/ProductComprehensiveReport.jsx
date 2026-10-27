@@ -67,7 +67,7 @@ export default function ProductComprehensiveReport() {
   const { loading: permsLoading, canFor } = usePermissions();
   const can = useMemo(
     () =>
-      (typeof canFor === "function" ? canFor("product-comprehensive-report") : {
+      (typeof canFor === "function" ? canFor("report.product-comprehensive") : {
         view: false,
         export: false,
       }),

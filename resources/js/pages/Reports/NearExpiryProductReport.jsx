@@ -71,7 +71,7 @@ export default function NearExpiryProductReport() {
   const { loading: permsLoading, canFor } = usePermissions();
   const can = useMemo(
     () =>
-      (typeof canFor === "function" ? canFor("near-expiry-product-report") : {
+      (typeof canFor === "function" ? canFor("report.near-expiry-product") : {
         view: false,
         export: false,
       }),

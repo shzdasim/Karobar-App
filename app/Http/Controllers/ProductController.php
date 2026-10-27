@@ -17,7 +17,7 @@ class ProductController extends Controller
 {
     public function search(Request $req)
     {
-        $this->authorize('viewAny', Product::class);
+        $this->authorize('lookup', Product::class);
 
         $q     = trim($req->input('q', ''));
         $ids   = $req->input('ids'); // can be array or comma-separated
@@ -79,7 +79,7 @@ class ProductController extends Controller
 
     public function availableQuantity(Request $request, ?Product $product = null)
     {
-        $this->authorize('viewAny', Product::class);
+        $this->authorize('lookup', Product::class);
         $productId = $product ? $product->id : $request->query('product_id');
         $batch     = trim((string)$request->query('batch', ''));
 

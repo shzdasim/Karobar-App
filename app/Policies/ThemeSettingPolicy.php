@@ -14,7 +14,7 @@ class ThemeSettingPolicy
     }
 
     // viewing a specific theme / GET /api/theme-settings/{id}
-    public function view(User $user, ThemeSetting $themeSetting): bool
+    public function view(User $user, ?ThemeSetting $themeSetting = null): bool
     {
         return $user->can('settings.view');
     }
@@ -26,15 +26,14 @@ class ThemeSettingPolicy
     }
 
     // updating theme settings / PUT /api/theme-settings/{id}
-    public function update(User $user, ThemeSetting $themeSetting): bool
+    public function update(User $user, ?ThemeSetting $themeSetting = null): bool
     {
         return $user->can('settings.update');
     }
 
     // deleting theme settings / DELETE /api/theme-settings/{id}
-    public function delete(User $user, ThemeSetting $themeSetting): bool
+    public function delete(User $user, ?ThemeSetting $themeSetting = null): bool
     {
         return $user->can('settings.update');
     }
 }
-

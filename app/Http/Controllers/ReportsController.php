@@ -25,9 +25,26 @@ use Carbon\Carbon;
 
 class ReportsController extends Controller
 {
+    private function authorizeReportAction(string|array $permissions): void
+    {
+        $user = request()->user() ?? auth()->user();
+        if (!$user) {
+            abort(401, 'Unauthenticated.');
+        }
+        if ($user->hasRole(['Admin', 'admin', 'super-admin'])) {
+            return;
+        }
+        foreach ((array) $permissions as $perm) {
+            if ($user->can($perm)) {
+                return;
+            }
+        }
+        abort(403, 'This action is unauthorized.');
+    }
+
     public function purchaseReturns(Request $req)
     {
-        $this->authorize('viewAny', PurchaseReturn::class);
+        $this->authorizeReportAction('report.purchase-returns.view');
 
         $filters = $req->validate([
             'from' => 'sometimes|date_format:Y-m-d',
@@ -102,7 +119,7 @@ class ReportsController extends Controller
 
     public function saleReturns(Request $req)
     {
-        $this->authorize('viewAny', SaleReturn::class);
+        $this->authorizeReportAction('report.sale-returns.view');
 
         $filters = $req->validate([
             'from' => 'sometimes|date_format:Y-m-d',
@@ -174,7 +191,7 @@ class ReportsController extends Controller
 
     public function purchaseSummary(Request $req)
     {
-        $this->authorize('view', PurchaseDetailReport::class);
+        $this->authorizeReportAction('report.purchase-summary.view');
 
         $filters = $req->validate([
             'from' => 'sometimes|date_format:Y-m-d',
@@ -240,9 +257,7 @@ class ReportsController extends Controller
 
     public function outstandingAging(Request $req)
     {
-        $customerAllowed = \Illuminate\Support\Facades\Gate::allows('viewAny', CustomerLedger::class);
-        $supplierAllowed = \Illuminate\Support\Facades\Gate::allows('viewAny', SupplierLedger::class);
-        abort_unless($customerAllowed || $supplierAllowed, 403);
+        $this->authorizeReportAction('report.outstanding-aging.view');
 
         $filters = $req->validate([
             'as_of'    => 'sometimes|date_format:Y-m-d',
@@ -399,12 +414,8 @@ class ReportsController extends Controller
                 ->values();
         };
 
-        $customers = $customerAllowed
-            ? $buildPartyAging('customer_ledgers', 'customers', 'customer_id', 'invoice_total', 'total_received', 'credited_amount')
-            : collect();
-        $suppliers = $supplierAllowed
-            ? $buildPartyAging('supplier_ledgers', 'suppliers', 'supplier_id', 'invoice_total', 'total_paid', 'debited_amount')
-            : collect();
+        $customers = $buildPartyAging('customer_ledgers', 'customers', 'customer_id', 'invoice_total', 'total_received', 'credited_amount');
+        $suppliers = $buildPartyAging('supplier_ledgers', 'suppliers', 'supplier_id', 'invoice_total', 'total_paid', 'debited_amount');
 
         $sumBuckets = function ($parties) {
             return [
@@ -435,16 +446,10 @@ class ReportsController extends Controller
 
     public function overdueWorkQueue(Request $req)
     {
-        $customerAllowed = \Illuminate\Support\Facades\Gate::allows('viewAny', CustomerLedger::class);
-        $supplierAllowed = \Illuminate\Support\Facades\Gate::allows('viewAny', SupplierLedger::class);
-        abort_unless($customerAllowed || $supplierAllowed, 403);
+        $this->authorizeReportAction('report.outstanding-aging.view');
 
         $partyType = $req->input('party_type', 'customers');
-        if ($partyType === 'customers') {
-            abort_unless($customerAllowed, 403);
-        } else {
-            abort_unless($supplierAllowed, 403);
-        }
+        abort_unless(in_array($partyType, ['customers', 'suppliers'], true), 422);
 
         $asOf = Carbon::parse($req->input('as_of', Carbon::today()->toDateString()))->startOfDay();
         $minOverdue = (float)$req->input('min_overdue', 0);
@@ -494,7 +499,7 @@ class ReportsController extends Controller
 
     public function reorderReport(Request $req)
     {
-        $this->authorize('view', CurrentStockReport::class);
+        $this->authorizeReportAction('report.reorder.view');
         $filters = $req->validate([
             'supplier_id' => 'required|integer|exists:suppliers,id',
             'brand_id' => 'sometimes|integer|exists:brands,id',
@@ -732,7 +737,7 @@ class ReportsController extends Controller
      */
     public function costOfSaleDetail(Request $req)
     {
-        $this->authorize('view', CostOfSaleReport::class);
+        $this->authorizeReportAction('report.cost-of-sale-detail.view');
         
         try {
             $invoiceId = $req->query('invoice_id');
@@ -861,7 +866,7 @@ class ReportsController extends Controller
      */
     public function costOfSaleDetailPdf(Request $req)
     {
-        $this->authorize('export', CostOfSaleReport::class);
+        $this->authorizeReportAction('report.cost-of-sale-detail.export');
         
         $invoiceId = $req->query('invoice_id');
         $from = $req->query('from');
@@ -2384,7 +2389,7 @@ class ReportsController extends Controller
      */
     public function netProfit(Request $req, \App\Services\ExpenseService $expenseService)
     {
-        $this->authorize('view', \App\Authorizables\CostOfSaleReport::class);
+        $this->authorizeReportAction('report.net-profit.view');
 
         $filters = $req->validate([
             'from' => 'sometimes|date_format:Y-m-d',

@@ -28,6 +28,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { useCurrency } from "@/context/CurrencyContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { GlassCard, GlassSectionHeader, GlassInput, GlassToolbar } from "@/components";
+import { usePermissions } from "@/api/usePermissions.js";
 import PaymentReceiptModal from "@/components/PaymentReceiptModal.jsx";
 import RecordPaymentModal from "@/components/RecordPaymentModal.jsx";
 import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
@@ -65,6 +66,9 @@ function fmtDate(d) {
 export default function PaymentsPage() {
   const { isDark, theme } = useTheme();
   const { formatCurrency } = useCurrency();
+  const { has } = usePermissions();
+  const canCreatePayment = has("payment.create");
+  const canDeletePayment = has("payment.delete");
 
   // Theme buttons
   const themeColors = useMemo(() => ({
@@ -239,19 +243,21 @@ export default function PaymentsPage() {
               <ArrowPathIcon className="w-4 h-4" />
               Refresh
             </button>
-            <button
-              onClick={() => {
-                setPickerPartyType("customer");
-                setPickerPartyId(null);
-                setPickerPartyName("");
-                setShowPartyPicker(true);
-              }}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold ${btnPrimary.className}`}
-              style={btnPrimary.style}
-            >
-              <PlusCircleIcon className="w-4 h-4" />
-              New Payment
-            </button>
+            {canCreatePayment && (
+              <button
+                onClick={() => {
+                  setPickerPartyType("customer");
+                  setPickerPartyId(null);
+                  setPickerPartyName("");
+                  setShowPartyPicker(true);
+                }}
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold ${btnPrimary.className}`}
+                style={btnPrimary.style}
+              >
+                <PlusCircleIcon className="w-4 h-4" />
+                New Payment
+              </button>
+            )}
           </div>
         }
       />
@@ -387,14 +393,16 @@ export default function PaymentsPage() {
                   <td colSpan={10} className="py-12 text-center">
                     <BanknotesIcon className={`w-10 h-10 mx-auto mb-3 opacity-30 ${isDark ? "text-slate-400" : "text-slate-400"}`} />
                     <p className={`text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>No payments found.</p>
-                    <button
-                      onClick={() => setShowRecordModal(true)}
-                      className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg ${btnPrimary.className}`}
-                      style={btnPrimary.style}
-                    >
-                      <PlusCircleIcon className="w-3.5 h-3.5" />
-                      Record First Payment
-                    </button>
+                    {canCreatePayment && (
+                      <button
+                        onClick={() => setShowRecordModal(true)}
+                        className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg ${btnPrimary.className}`}
+                        style={btnPrimary.style}
+                      >
+                        <PlusCircleIcon className="w-3.5 h-3.5" />
+                        Record First Payment
+                      </button>
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -513,7 +521,7 @@ export default function PaymentsPage() {
                           </button>
 
                           {/* Reverse */}
-                          {!isReversed && (
+                          {!isReversed && canDeletePayment && (
                             <button
                               onClick={() => { setReversingPayment(payment); setReversalReason(""); }}
                               className="p-1.5 rounded-lg transition-colors text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30"

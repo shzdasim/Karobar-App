@@ -28,6 +28,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { useCurrency } from "@/context/CurrencyContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { GlassCard, GlassSectionHeader, GlassInput } from "@/components";
+import { usePermissions } from "@/api/usePermissions.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -709,6 +710,10 @@ function HistoryRow({ session, formatCurrency, isDark, selectStyles }) {
 export default function CashDrawerPage() {
   const { isDark, theme } = useTheme();
   const { formatCurrency } = useCurrency();
+  const { has } = usePermissions();
+  const canOpenShift = has("cash-drawer.open");
+  const canCloseShift = has("cash-drawer.close");
+  const canRecordTxn = has("cash-drawer.transaction");
 
   // ── Theme setup ────────────────────────────────────────────────────────────
   const themeColors = useMemo(() => ({
@@ -844,33 +849,39 @@ export default function CashDrawerPage() {
             </button>
             {isOpen && (
               <>
-                <button
-                  onClick={() => setShowTxnModal("cash_in")}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold ${btnPrimary.className}`}
-                  style={btnPrimary.style}
-                >
-                  <ArrowUpCircleIcon className="w-4 h-4" />
-                  Cash In
-                </button>
-                <button
-                  onClick={() => setShowTxnModal("cash_out")}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold ${btnDanger.className}`}
-                  style={btnDanger.style}
-                >
-                  <ArrowDownCircleIcon className="w-4 h-4" />
-                  Cash Out
-                </button>
-                <button
-                  onClick={() => setShowCloseModal(true)}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium ${btnSecondary.className}`}
-                  style={btnSecondary.style}
-                >
-                  <LockClosedIcon className="w-4 h-4" />
-                  Close Drawer
-                </button>
+                {canRecordTxn && (
+                  <>
+                    <button
+                      onClick={() => setShowTxnModal("cash_in")}
+                      className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold ${btnPrimary.className}`}
+                      style={btnPrimary.style}
+                    >
+                      <ArrowUpCircleIcon className="w-4 h-4" />
+                      Cash In
+                    </button>
+                    <button
+                      onClick={() => setShowTxnModal("cash_out")}
+                      className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold ${btnDanger.className}`}
+                      style={btnDanger.style}
+                    >
+                      <ArrowDownCircleIcon className="w-4 h-4" />
+                      Cash Out
+                    </button>
+                  </>
+                )}
+                {canCloseShift && (
+                  <button
+                    onClick={() => setShowCloseModal(true)}
+                    className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium ${btnSecondary.className}`}
+                    style={btnSecondary.style}
+                  >
+                    <LockClosedIcon className="w-4 h-4" />
+                    Close Drawer
+                  </button>
+                )}
               </>
             )}
-            {!isOpen && !loadingCurrent && (
+            {!isOpen && !loadingCurrent && canOpenShift && (
               <button
                 onClick={() => setShowOpenModal(true)}
                 className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold ${btnPrimary.className}`}

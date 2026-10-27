@@ -191,13 +191,15 @@ export default function SaleInvoicesIndex() {
   const debounceRef = useRef(null);
 
   // 🔒 permissions
-  const { loading: permsLoading, canFor } = usePermissions();
+  const { loading: permsLoading, canFor, has } = usePermissions();
   const can = useMemo(
-    () =>
-      (typeof canFor === "function" ? canFor("sale-invoice") : {
+    () => ({
+      ...(typeof canFor === "function" ? canFor("sale-invoice") : {
         view: false, create: false, update: false, delete: false, import: false, export: false
       }),
-    [canFor]
+      pos: !permsLoading && (has("barcode-pos.view") || has("barcode-pos.create")),
+    }),
+    [canFor, permsLoading, has]
   );
 
   // 🎨 Modern button palette (matching sidebar design language)
@@ -564,6 +566,17 @@ export default function SaleInvoicesIndex() {
               <span>Refresh</span>
             </button>
 
+            <Guard when={can.pos}>
+              <Link
+                to="/sale-invoices/pos"
+                title="Open High-Speed Barcode Scanning POS Mode"
+                className="products-action theme-btn-secondary"
+              >
+                <QrCodeIcon className="w-4 h-4 text-emerald-500" />
+                <span>⚡ Barcode POS</span>
+              </Link>
+            </Guard>
+
             <Guard when={can.create}>
               <button
                 type="button"
@@ -582,15 +595,6 @@ export default function SaleInvoicesIndex() {
                   </span>
                 )}
               </button>
-
-              <Link
-                to="/sale-invoices/pos"
-                title="Open High-Speed Barcode Scanning POS Mode"
-                className="products-action theme-btn-secondary"
-              >
-                <QrCodeIcon className="w-4 h-4 text-emerald-500" />
-                <span>⚡ Barcode POS</span>
-              </Link>
 
               <Link
                 to="/sale-invoices/create/retail"

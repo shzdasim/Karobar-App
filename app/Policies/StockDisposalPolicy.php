@@ -9,32 +9,32 @@ class StockDisposalPolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->can('stock-disposal.view') || $user->can('stock-adjustment.view');
+        return $user->can('stock-disposal.view');
     }
 
     public function view(User $user, StockDisposal $disposal): bool
     {
-        return $user->can('stock-disposal.view') || $user->can('stock-adjustment.view');
+        return $user->can('stock-disposal.view');
     }
 
     public function create(User $user): bool
     {
-        return $user->can('stock-disposal.create') || $user->can('stock-adjustment.create');
+        return $user->can('stock-disposal.create');
     }
 
     public function dispose(User $user, StockDisposal $disposal): bool
     {
-        return $user->can('stock-disposal.dispose') || $user->can('stock-adjustment.create');
+        return $user->can('stock-disposal.dispose');
     }
 
     public function restore(User $user, StockDisposal $disposal): bool
     {
-        return $user->can('stock-disposal.restore') || $user->can('stock-adjustment.delete');
+        return $user->can('stock-disposal.restore');
     }
 
     public function delete(User $user, StockDisposal $disposal): bool
     {
-        return $user->can('stock-disposal.delete') || $user->can('stock-adjustment.delete');
+        return $user->can('stock-disposal.delete');
     }
 }
 

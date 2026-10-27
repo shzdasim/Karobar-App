@@ -15,6 +15,7 @@ import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 import { useInvoiceDraft } from "@/hooks/useInvoiceDraft.js";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
+import { usePermissions } from "@/api/usePermissions.js";
 import InvoiceDraftIndicator from "@/components/InvoiceDraftIndicator.jsx";
 import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
 import PreShiftDrawerPromptModal from "@/components/PreShiftDrawerPromptModal.jsx";
@@ -97,6 +98,8 @@ const normalizeFormLoaded = (f) => {
 export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   // Helper to generate unique ID for rows
   const generateRowId = () => `row_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const { loading: permsLoading, has } = usePermissions();
+  const canPos = !permsLoading && (has("barcode-pos.view") || has("barcode-pos.create"));
 
   /* -------- state -------- */
   const [customers, setCustomers] = useState([]);
@@ -1647,14 +1650,16 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
               })}
             </div>
 
-            <Link
-              to="/sale-invoices/pos"
-              title="Switch to High-Speed Hands-Free Barcode POS Mode"
-              className="px-3 py-1.5 text-[11px] font-bold rounded-lg border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 transition-colors"
-            >
-              <QrCodeIcon className="w-4 h-4" />
-              <span>⚡ Barcode POS</span>
-            </Link>
+            {canPos && (
+              <Link
+                to="/sale-invoices/pos"
+                title="Switch to High-Speed Hands-Free Barcode POS Mode"
+                className="px-3 py-1.5 text-[11px] font-bold rounded-lg border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 transition-colors"
+              >
+                <QrCodeIcon className="w-4 h-4" />
+                <span>⚡ Barcode POS</span>
+              </Link>
+            )}
 
             <button
               type="button"

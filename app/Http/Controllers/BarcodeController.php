@@ -12,7 +12,7 @@ class BarcodeController extends Controller
 {
     private function authorizeBarcodeAction(string|array $permissions): void
     {
-        $user = request()->user();
+        $user = request()->user() ?? auth()->user();
         if (!$user) {
             abort(401, 'Unauthenticated.');
         }
@@ -33,7 +33,7 @@ class BarcodeController extends Controller
      */
     public function getTemplates()
     {
-        $this->authorizeBarcodeAction(['product.view', 'sale-invoice.create']);
+        $this->authorizeBarcodeAction(['barcode.view', 'barcode.print']);
         $templates = BarcodeTemplate::orderByDesc('is_default')
             ->orderBy('id')
             ->get();
@@ -58,7 +58,7 @@ class BarcodeController extends Controller
      */
     public function saveTemplate(Request $request)
     {
-        $this->authorizeBarcodeAction('product.update');
+        $this->authorizeBarcodeAction(['barcode.create', 'barcode.update']);
         $validated = $request->validate([
             'name' => 'required|string|max:100',
             'paper_type' => 'required|in:roll,sheet',
@@ -95,7 +95,7 @@ class BarcodeController extends Controller
      */
     public function updateTemplate(Request $request, $id)
     {
-        $this->authorizeBarcodeAction('product.update');
+        $this->authorizeBarcodeAction('barcode.update');
         $template = BarcodeTemplate::findOrFail($id);
 
         $validated = $request->validate([
@@ -134,7 +134,7 @@ class BarcodeController extends Controller
      */
     public function deleteTemplate($id)
     {
-        $this->authorizeBarcodeAction('product.update');
+        $this->authorizeBarcodeAction('barcode.delete');
         $template = BarcodeTemplate::findOrFail($id);
 
         // Keep at least one template in the database
@@ -162,7 +162,7 @@ class BarcodeController extends Controller
      */
     public function searchProducts(Request $request)
     {
-        $this->authorizeBarcodeAction(['product.view', 'sale-invoice.create']);
+        $this->authorizeBarcodeAction(['barcode.view', 'barcode.print']);
         $search = trim((string) $request->input('search', ''));
         $categoryId = $request->input('category_id');
         $productIds = $request->input('product_ids');
@@ -209,7 +209,7 @@ class BarcodeController extends Controller
      */
     public function getPurchaseOrders(Request $request)
     {
-        $this->authorizeBarcodeAction('purchase-order.view');
+        $this->authorizeBarcodeAction(['barcode.view', 'barcode.print']);
         $id = $request->input('id');
         $supplierId = $request->input('supplier_id');
         $brandId = $request->input('brand_id');
@@ -284,7 +284,7 @@ class BarcodeController extends Controller
      */
     public function scanProduct(Request $request)
     {
-        $this->authorizeBarcodeAction(['product.view', 'sale-invoice.create']);
+        $this->authorizeBarcodeAction(['barcode-pos.view', 'barcode-pos.create']);
         $code = trim((string) ($request->input('barcode') ?? $request->input('code') ?? ''));
         $productId = $request->input('product_id');
 

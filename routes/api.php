@@ -113,7 +113,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::delete('/roles/{role}',[RoleController::class, 'destroy']);
 
     // Permissions (single set — removed duplicate index)
-    Route::get('/permissions',                     [PermissionController::class, 'index'])->middleware('permission:permission.view');
+    Route::get('/permissions',                     [PermissionController::class, 'index']);
     Route::post('/permissions',                    [PermissionController::class, 'store'])->middleware('permission:permission.create');
     Route::delete('/permissions/{permission}',     [PermissionController::class, 'destroy'])->middleware('permission:permission.delete');
 

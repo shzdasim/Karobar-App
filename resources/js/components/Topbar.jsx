@@ -6,6 +6,7 @@ import { ClipboardDocumentListIcon, ShoppingCartIcon, ClockIcon, BellIcon, Bars3
 import { useLicense } from "@/context/LicenseContext.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
+import { usePermissions } from "@/api/usePermissions.js";
 import ProductSearchModal from "@/components/ProductSearchModal.jsx";
 import KeyboardShortcutsModal from "@/components/KeyboardShortcutsModal.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
@@ -41,10 +42,20 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
   const { user, logout } = useAuth();
   const { theme } = useTheme();
   const { formatCurrency } = useCurrency();
+  const { loading: permsLoading, has } = usePermissions();
 
   // Cash Drawer Register state
   const [drawerModalOpen, setDrawerModalOpen] = useState(false);
   const [drawerStatus, setDrawerStatus] = useState({ isOpen: false, expected: 0, loading: true });
+  const canViewDrawer =
+    has("cash-drawer.view") ||
+    has("cash-drawer.open") ||
+    has("cash-drawer.close") ||
+    has("cash-drawer.transaction");
+  const canOpenDrawerPopup =
+    has("cash-drawer.open") ||
+    has("cash-drawer.close") ||
+    has("cash-drawer.transaction");
 
   // Financial Accounts state
   const [accountsModalOpen, setAccountsModalOpen] = useState(false);
@@ -57,6 +68,10 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
 
   const fetchDrawerStatus = async () => {
+    if (permsLoading || !canViewDrawer) {
+      setDrawerStatus((prev) => ({ ...prev, loading: false }));
+      return;
+    }
     try {
       const res = await axios.get("/api/cash-drawer/current");
       setDrawerStatus({
@@ -70,6 +85,10 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
   };
 
   const fetchAccountsStatus = async () => {
+    if (permsLoading || !has("account.view")) {
+      setAccountsStatus((prev) => ({ ...prev, loading: false }));
+      return;
+    }
     try {
       const res = await axios.get("/api/accounts");
       setAccountsStatus({
@@ -112,17 +131,20 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
   useEffect(() => {
     fetchDrawerStatus();
     fetchAccountsStatus();
-  }, [location.pathname]);
+  }, [location.pathname, permsLoading]);
 
 // Poll for low-stock + user-demand notification count
   useEffect(() => {
+    if (permsLoading) return;
     let cancelled = false;
     const fetchCount = async () => {
       try {
+        const canViewProducts = has("product.view");
+        const canViewDemands = has("user-demands.view");
         const [lowStockRes, demandsRes, expiryRes] = await Promise.allSettled([
-          axios.get("/api/notifications/low-stock", { params: { limit: 1 } }),
-          axios.get("/api/user-demands", { params: { status: "pending", limit: 1 } }),
-          axios.get("/api/notifications/expiry-alerts", { params: { limit: 1 } }),
+          canViewProducts ? axios.get("/api/notifications/low-stock", { params: { limit: 1 } }) : Promise.resolve({ data: { count: 0 } }),
+          canViewDemands ? axios.get("/api/user-demands", { params: { status: "pending", limit: 1 } }) : Promise.resolve({ data: { pending_count: 0 } }),
+          canViewProducts ? axios.get("/api/notifications/expiry-alerts", { params: { limit: 1 } }) : Promise.resolve({ data: { count: 0 } }),
         ]);
         if (cancelled) return;
         const lowStockCount = lowStockRes.status === "fulfilled" ? Number(lowStockRes.value.data?.count || 0) : 0;
@@ -145,7 +167,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
       clearInterval(interval);
       window.removeEventListener("notifications-changed", onChanged);
     };
-  }, []);
+  }, [permsLoading, has]);
 
   // License status
   const { loading: licLoading, valid: licValid, remainingMs } = useLicense();
@@ -216,10 +238,12 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
         return;
       }
 
-      // Alt+D opens Cash Drawer modal anywhere
+      // Alt+D opens Cash Drawer modal anywhere (only if user has operational drawer permissions)
       if (e.code === "KeyD" || e.key.toLowerCase() === "d") {
         e.preventDefault();
-        setDrawerModalOpen((v) => !v);
+        if (canOpenDrawerPopup) {
+          setDrawerModalOpen((v) => !v);
+        }
         return;
       }
 
@@ -311,76 +335,96 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
           {/* Right: Quick actions + Balance badges + Utilities + User (Single line fit) */}
           <div className="workspace-topbar-actions">
             {/* Action: Purchase */}
-            <button
-              type="button"
-              onClick={() => openInNewTab("/purchase-invoices/create")}
-              aria-label="Open purchase invoice"
-              aria-keyshortcuts="Alt+1"
-              title="Open Purchase Invoice (Alt+1) in a new tab"
-              className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 text-xs font-semibold theme-btn-secondary relative z-20 shrink-0"
-            >
-              <ClipboardDocumentListIcon className="w-4 h-4 shrink-0" />
-              <span className="hidden sm:inline">Purchase</span>
-            </button>
+            {!permsLoading && has("purchase-invoice.create") && (
+              <button
+                type="button"
+                onClick={() => openInNewTab("/purchase-invoices/create")}
+                aria-label="Open purchase invoice"
+                aria-keyshortcuts="Alt+1"
+                title="Open Purchase Invoice (Alt+1) in a new tab"
+                className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 text-xs font-semibold theme-btn-secondary relative z-20 shrink-0"
+              >
+                <ClipboardDocumentListIcon className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">Purchase</span>
+              </button>
+            )}
 
             {/* Action: Sale */}
-            <button
-              type="button"
-              onClick={() => openInNewTab("/sale-invoices/create/retail")}
-              aria-label="Open sale invoice"
-              aria-keyshortcuts="Alt+2"
-              title="Open Sale Invoice (Alt+2) in a new tab"
-              className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 text-xs font-semibold theme-btn-primary relative z-20 shrink-0"
-            >
-              <ShoppingCartIcon className="w-4 h-4 shrink-0" />
-              <span className="hidden sm:inline">Sale</span>
-            </button>
+            {!permsLoading && has("sale-invoice.create") && (
+              <button
+                type="button"
+                onClick={() => openInNewTab("/sale-invoices/create/retail")}
+                aria-label="Open sale invoice"
+                aria-keyshortcuts="Alt+2"
+                title="Open Sale Invoice (Alt+2) in a new tab"
+                className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 text-xs font-semibold theme-btn-primary relative z-20 shrink-0"
+              >
+                <ShoppingCartIcon className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">Sale</span>
+              </button>
+            )}
 
-            {/* Cash Drawer register button */}
-            <button
-              type="button"
-              onClick={() => setDrawerModalOpen(true)}
-              aria-label="Cash Drawer register"
-              title={
-                drawerStatus.isOpen
-                  ? `Cash Drawer Open: ${formatCurrency(drawerStatus.expected)}`
-                  : "Cash Drawer is Closed (Click to Open Shift)"
-              }
-              className={`inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 text-xs font-semibold rounded-xl transition-all duration-150 relative z-20 shrink-0 border ${
-                drawerStatus.isOpen
-                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
-                  : "bg-slate-500/10 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-500/20"
-              }`}
-            >
-              <BanknotesIcon className="w-4 h-4 shrink-0" />
-              <span className="flex items-center gap-1.5">
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    drawerStatus.isOpen ? "bg-emerald-500 animate-pulse" : "bg-amber-400"
-                  }`}
-                />
-                <span className="hidden md:inline font-bold">
-                  {drawerStatus.isOpen ? formatCurrency(drawerStatus.expected) : "Drawer"}
+            {/* Cash Drawer register button / status badge */}
+            {!permsLoading && canViewDrawer && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (canOpenDrawerPopup) {
+                    setDrawerModalOpen(true);
+                  }
+                }}
+                aria-label="Cash Drawer register"
+                title={
+                  drawerStatus.isOpen
+                    ? `Cash Drawer Open: ${formatCurrency(drawerStatus.expected)}`
+                    : canOpenDrawerPopup
+                    ? "Cash Drawer is Closed (Click to Open Shift)"
+                    : "Cash Drawer is Closed"
+                }
+                className={`inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 text-xs font-semibold rounded-xl transition-all duration-150 relative z-20 shrink-0 border ${
+                  canOpenDrawerPopup ? "cursor-pointer" : "cursor-default"
+                } ${
+                  drawerStatus.isOpen
+                    ? `bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400${
+                        canOpenDrawerPopup ? " hover:bg-emerald-500/20" : ""
+                      }`
+                    : `bg-slate-500/10 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300${
+                        canOpenDrawerPopup ? " hover:bg-slate-500/20" : ""
+                      }`
+                }`}
+              >
+                <BanknotesIcon className="w-4 h-4 shrink-0" />
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      drawerStatus.isOpen ? "bg-emerald-500 animate-pulse" : "bg-amber-400"
+                    }`}
+                  />
+                  <span className="hidden md:inline font-bold">
+                    {drawerStatus.isOpen ? formatCurrency(drawerStatus.expected) : "Drawer"}
+                  </span>
                 </span>
-              </span>
-            </button>
+              </button>
+            )}
 
             {/* Financial Accounts register button */}
-            <button
-              type="button"
-              onClick={() => setAccountsModalOpen(true)}
-              aria-label="Financial Accounts register"
-              title={`Financial Accounts Register: ${formatCurrency(accountsStatus.total_balance)} across all accounts`}
-              className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 text-xs font-semibold rounded-xl transition-all duration-150 relative z-20 shrink-0 border bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20"
-            >
-              <BuildingLibraryIcon className="w-4 h-4 shrink-0" />
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-blue-500" />
-                <span className="hidden md:inline font-bold">
-                  {formatCurrency(accountsStatus.total_balance)}
+            {!permsLoading && has("account.view") && (
+              <button
+                type="button"
+                onClick={() => setAccountsModalOpen(true)}
+                aria-label="Financial Accounts register"
+                title={`Financial Accounts Register: ${formatCurrency(accountsStatus.total_balance)} across all accounts`}
+                className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 text-xs font-semibold rounded-xl transition-all duration-150 relative z-20 shrink-0 border bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20"
+              >
+                <BuildingLibraryIcon className="w-4 h-4 shrink-0" />
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-500" />
+                  <span className="hidden md:inline font-bold">
+                    {formatCurrency(accountsStatus.total_balance)}
+                  </span>
                 </span>
-              </span>
-            </button>
+              </button>
+            )}
 
             <div className="mx-0.5 h-5 w-px bg-slate-300/60 dark:bg-slate-700/60 shrink-0" />
 
@@ -520,12 +564,14 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
         onClose={() => setNotifOpen(false)}
       />
 
-      {/* Cash Drawer Shift Modal */}
-      <CashDrawerModal
-        isOpen={drawerModalOpen}
-        onClose={() => setDrawerModalOpen(false)}
-        onSessionUpdated={fetchDrawerStatus}
-      />
+      {/* Cash Drawer Shift Modal (only opens when user has open/close/transaction permission) */}
+      {canOpenDrawerPopup && (
+        <CashDrawerModal
+          isOpen={drawerModalOpen}
+          onClose={() => setDrawerModalOpen(false)}
+          onSessionUpdated={fetchDrawerStatus}
+        />
+      )}
 
       {/* Financial Accounts Modal */}
       <AccountsModal
@@ -535,7 +581,11 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
           fetchAccountsStatus();
           fetchDrawerStatus();
         }}
-        onOpenCashDrawer={() => setDrawerModalOpen(true)}
+        onOpenCashDrawer={() => {
+          if (canOpenDrawerPopup) {
+            setDrawerModalOpen(true);
+          }
+        }}
       />
 
       {/* Product Search Modal (Alt+P anywhere) */}

@@ -21,7 +21,7 @@ class BackupPolicy
     /**
      * Determine whether the user can view the backup.
      */
-    public function view(User $user, BackupLog $backup): bool
+    public function view(User $user, ?BackupLog $backup = null): bool
     {
         return $user->can('backup.view');
     }
@@ -37,7 +37,7 @@ class BackupPolicy
     /**
      * Determine whether the user can restore backups.
      */
-    public function restore(User $user, BackupLog $backup): bool
+    public function restore(User $user, ?BackupLog $backup = null): bool
     {
         return $user->can('backup.restore');
     }
@@ -45,7 +45,7 @@ class BackupPolicy
     /**
      * Determine whether the user can delete backups.
      */
-    public function delete(User $user, BackupLog $backup): bool
+    public function delete(User $user, ?BackupLog $backup = null): bool
     {
         return $user->can('backup.delete');
     }
@@ -58,4 +58,3 @@ class BackupPolicy
         return $user->can('backup.upload');
     }
 }
-

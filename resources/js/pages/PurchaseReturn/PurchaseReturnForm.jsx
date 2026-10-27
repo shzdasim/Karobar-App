@@ -394,14 +394,14 @@ export default function PurchaseReturnForm({ returnId, initialData, onSuccess })
     (async () => {
       try {
         const requests = [
-          axios.get("/api/suppliers"),
+          axios.get("/api/suppliers/search", { params: { limit: 50 } }),
           axios.get("/api/products/search", { params: { q: "", limit: 30 } }),
           axios.get("/api/accounts", { params: { active_only: 1 } }).catch(() => ({ data: [] })),
         ];
         
         
         const results = await Promise.all(requests);
-        setSuppliers(results[0].data || []);
+        setSuppliers(Array.isArray(results[0].data) ? results[0].data : results[0].data?.data || []);
         const catalog = Array.isArray(results[1]?.data?.data) ? results[1].data.data : Array.isArray(results[1]?.data) ? results[1].data : [];
         setCatalogProducts(catalog);
         setProducts(catalog); // until an invoice is chosen

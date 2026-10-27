@@ -248,7 +248,12 @@ class SaleInvoiceController extends Controller
 
     public function index(Request $request)
     {
-        $this->authorize('viewAny', SaleInvoice::class);
+        $qCustomerId = $request->query('customer_id');
+        if ($qCustomerId) {
+            $this->authorize('lookup', SaleInvoice::class);
+        } else {
+            $this->authorize('viewAny', SaleInvoice::class);
+        }
         
         $qPosted   = trim((string) $request->query('posted'));
         $qCustomer = trim((string) $request->query('customer'));
@@ -259,6 +264,9 @@ class SaleInvoiceController extends Controller
 
         $query = SaleInvoice::with(['customer'])->orderByDesc('id');
 
+        if ($qCustomerId) {
+            $query->where('customer_id', $qCustomerId);
+        }
         if ($qPosted !== '') {
             $query->where('posted_number', 'like', '%'.$qPosted.'%');
         }
@@ -970,7 +978,18 @@ class SaleInvoiceController extends Controller
 
     public function printUrl(Request $request, SaleInvoice $saleInvoice)
     {
-        $this->authorize('view', $saleInvoice);
+        $user = $request->user();
+        if (
+            !$user
+            || (
+                !$user->hasRole(['Admin', 'admin', 'super-admin'])
+                && !$user->can('sale-invoice.view')
+                && !$user->can('sale-invoice.create')
+                && !$user->can('barcode-pos.create')
+            )
+        ) {
+            abort(403, 'This action is unauthorized.');
+        }
 
         $params = array_filter([
             'invoice' => $saleInvoice->id,
@@ -1070,7 +1089,7 @@ class SaleInvoiceController extends Controller
 
     public function search(Request $request)
     {
-        $this->authorize('viewAny', SaleInvoice::class);
+        $this->authorize('lookup', SaleInvoice::class);
 
         $q = trim((string) $request->query('q', ''));
         $customerId = $request->query('customer_id');

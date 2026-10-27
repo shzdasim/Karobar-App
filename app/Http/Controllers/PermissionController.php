@@ -12,15 +12,37 @@ class PermissionController extends Controller
         'user.', 'role.', 'permission.', 'product.', 'invoice.',
         'category.', 'brand.', 'supplier.', 'customer.',
         'sale-invoice.', 'purchase-invoice.', 'sale-return.', 'purchase-return.',
-        'stock-adjustment.', 'stock-disposal.', 'customer-ledger.', 'supplier-ledger.',
+        'stock-adjustment.', 'stock-disposal.', 'stocktake.', 'payment.',
+        'customer-ledger.', 'supplier-ledger.',
         'purchase-order.', 'user-demands.', 'report.', 'settings.', 'backup.',
         'account.', 'cash-drawer.', 'expense.',
+        'barcode.', 'barcode-pos.', 'batch-expiry.',
     ];
 
     public function index(Request $request)
     {
-        if (!($request->user()?->can('role.view') || $request->user()?->can('permission.view') || $request->user()?->hasRole('Admin'))) {
+        $user = $request->user();
+        $allowed = $user && (
+            $user->hasRole('Admin')
+            || $user->can('permission.view')
+            || $user->can('role.view')
+            || $user->can('role.create')
+            || $user->can('role.update')
+            || $user->can('role.sync.permissions')
+            || $user->can('user.view')
+            || $user->can('user.create')
+            || $user->can('user.update')
+            || $user->can('user.assign.roles')
+            || $user->can('user.assign.permissions')
+            || $user->can('user.manage')
+        );
+
+        if (!$allowed) {
             abort(403);
+        }
+
+        if (Permission::where('guard_name', 'sanctum')->count() === 0) {
+            app(\Database\Seeders\RolesAndPermissionsSeeder::class)->run();
         }
 
         $search = trim($request->query('search', ''));

@@ -26,6 +26,7 @@ import {
 } from "@heroicons/react/24/solid";
 import { useTheme } from "@/context/ThemeContext";
 import { useCurrency } from "@/context/CurrencyContext";
+import { usePermissions } from "@/api/usePermissions";
 import { posSound, useBarcodeScanner } from "@/utils/posScanner";
 import CustomerSearch from "@/components/CustomerSearch";
 import ProductSearchInput from "@/components/ProductSearchInput";
@@ -34,6 +35,9 @@ export default function BarcodePos() {
   const navigate = useNavigate();
   const { theme, isDark } = useTheme();
   const { formatCurrency, currencySymbol } = useCurrency();
+  const { loading: permsLoading, has } = usePermissions();
+  const canCreatePosSale = !permsLoading && has("barcode-pos.create");
+  const canCreateStandardSale = !permsLoading && has("sale-invoice.create");
 
   // Scanner & Audio state
   const [isScannerActive, setIsScannerActive] = useState(true);
@@ -78,7 +82,7 @@ export default function BarcodePos() {
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await axios.get("/api/customers", { params: { limit: 50 } });
+        const { data } = await axios.get("/api/customers/search", { params: { limit: 50 } });
         const list = Array.isArray(data) ? data : data.data || [];
 
         // Auto-select Walk-in customer as default
@@ -97,7 +101,7 @@ export default function BarcodePos() {
   // Fetch accounts on mount
   const fetchAccounts = useCallback(async () => {
     try {
-      const res = await axios.get("/api/accounts");
+      const res = await axios.get("/api/accounts", { params: { active_only: 1 } });
       const list = res.data?.accounts || [];
       setAccounts(list);
     } catch {
@@ -706,18 +710,20 @@ export default function BarcodePos() {
           </button>
 
           {/* Switch to Standard Retail Invoice View */}
-          <Link
-            to="/sale-invoices/create/retail"
-            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-              isDark
-                ? "border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200"
-                : "border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700"
-            }`}
-            title="Switch to detailed standard sale invoice form"
-          >
-            <Squares2X2Icon className="w-4 h-4" />
-            <span>Standard Form</span>
-          </Link>
+          {canCreateStandardSale && (
+            <Link
+              to="/sale-invoices/create/retail"
+              className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                isDark
+                  ? "border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200"
+                  : "border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700"
+              }`}
+              title="Switch to detailed standard sale invoice form"
+            >
+              <Squares2X2Icon className="w-4 h-4" />
+              <span>Standard Form</span>
+            </Link>
+          )}
         </div>
       </header>
 
@@ -1440,7 +1446,7 @@ export default function BarcodePos() {
               <button
                 type="button"
                 onClick={handleCompleteSale}
-                disabled={isSubmitting || items.length === 0}
+                disabled={!canCreatePosSale || isSubmitting || items.length === 0}
                 className="w-full py-3.5 px-4 rounded-xl font-black text-sm text-white bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:to-teal-500 shadow-lg shadow-emerald-600/25 transition-all duration-150 flex items-center justify-center gap-2 disabled:opacity-40 cursor-pointer active:scale-[0.99]"
               >
                 {isSubmitting ? (

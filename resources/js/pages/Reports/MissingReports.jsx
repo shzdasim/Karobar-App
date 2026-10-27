@@ -23,7 +23,8 @@ const REPORTS = {
   "purchase-returns": {
     title: "Purchase Returns Report",
     endpoint: "/api/reports/purchase-returns",
-    permission: "purchase-return.view",
+    permission: "report.purchase-returns.view",
+    exportPermission: "report.purchase-returns.export",
     dated: true,
     summary: [
       ["return_count", "Returns"],
@@ -44,7 +45,8 @@ const REPORTS = {
   "sale-returns": {
     title: "Sale Returns Report",
     endpoint: "/api/reports/sale-returns",
-    permission: "sale-return.view",
+    permission: "report.sale-returns.view",
+    exportPermission: "report.sale-returns.export",
     dated: true,
     summary: [
       ["return_count", "Returns"],
@@ -65,7 +67,8 @@ const REPORTS = {
   "purchase-summary": {
     title: "Purchase Summary Report",
     endpoint: "/api/reports/purchase-summary",
-    permission: "report.purchase-detail.view",
+    permission: "report.purchase-summary.view",
+    exportPermission: "report.purchase-summary.export",
     dated: true,
     summary: [
       ["invoice_count", "Invoices"],
@@ -90,13 +93,15 @@ const REPORTS = {
   "outstanding-aging": {
     title: "Outstanding Aging Report",
     endpoint: "/api/reports/outstanding-aging",
-    permission: null,
+    permission: "report.outstanding-aging.view",
+    exportPermission: "report.outstanding-aging.export",
     dated: false,
   },
   reorder: {
     title: "Low Stock & Reorder Report",
     endpoint: "/api/reports/reorder",
-    permission: "report.current-stock.view",
+    permission: "report.reorder.view",
+    exportPermission: "report.reorder.export",
     dated: false,
   },
 };
@@ -115,9 +120,8 @@ function downloadCsv(filename, headers, rows) {
 export default function MissingReports({ type }) {
   const report = REPORTS[type];
   const { loading: permissionsLoading, has } = usePermissions();
-  const permitted = report?.permission
-    ? has(report.permission)
-    : has("customer-ledger.view") || has("supplier-ledger.view");
+  const permitted = report?.permission ? has(report.permission) : false;
+  const canExport = report?.exportPermission ? has(report.exportPermission) : permitted;
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(today());
   const [asOf, setAsOf] = useState(today());
@@ -139,7 +143,7 @@ export default function MissingReports({ type }) {
     setWorkQueuePayload(null);
   }, [type]);
 
-  const selectedPartyType = partyType === "customers" && !has("customer-ledger.view") ? "suppliers" : partyType;
+  const selectedPartyType = partyType;
   const rows = useMemo(() => {
     if (type === "outstanding-aging") {
       if (agingTab === "work_queue") {
@@ -415,9 +419,11 @@ export default function MissingReports({ type }) {
           )}
 
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={exportCsv} disabled={!rows.length} className="products-action theme-btn-secondary">
-              <ArrowDownOnSquareIcon className="w-4 h-4" /> Export CSV
-            </button>
+            {canExport && (
+              <button type="button" onClick={exportCsv} disabled={!rows.length} className="products-action theme-btn-secondary">
+                <ArrowDownOnSquareIcon className="w-4 h-4" /> Export CSV
+              </button>
+            )}
             <button type="button" onClick={() => { setPayload(null); setWorkQueuePayload(null); setAsOf(today()); setSupplier(null); }} className="products-action theme-btn-tertiary">
               Reset
             </button>

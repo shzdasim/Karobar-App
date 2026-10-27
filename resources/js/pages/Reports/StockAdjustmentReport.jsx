@@ -63,7 +63,7 @@ export default function StockAdjustmentReport() {
   const { loading: permsLoading, canFor } = usePermissions();
   const can = useMemo(
     () =>
-      (typeof canFor === "function" ? canFor("stock-adjustment-report") : {
+      (typeof canFor === "function" ? canFor("report.stock-adjustment") : {
         view: false,
         export: false,
       }),

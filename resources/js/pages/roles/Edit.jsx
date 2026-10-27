@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { getRole, updateRole } from "@/api/roles";
 import { useNavigate, useParams } from "react-router-dom";
+import { usePermissions } from "@/api/usePermissions.js";
 import RoleForm from "./RoleForm.jsx";
 
 export default function EditRole() {
@@ -9,8 +10,11 @@ export default function EditRole() {
   const nav = useNavigate();
   const [initial, setInitial] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const { loading: permsLoading, canFor } = usePermissions();
+  const can = canFor("role");
 
   useEffect(() => {
+    if (permsLoading || !(can.update || can.syncPerms)) return;
     let alive = true;
     (async () => {
       try {
@@ -22,7 +26,7 @@ export default function EditRole() {
       }
     })();
     return () => { alive = false; };
-  }, [id]);
+  }, [id, permsLoading, can.update, can.syncPerms]);
 
   const onSubmit = async (payload) => {
     setSubmitting(true);
@@ -33,6 +37,16 @@ export default function EditRole() {
       setSubmitting(false);
     }
   };
+
+  if (permsLoading) return null;
+
+  if (!(can.update || can.syncPerms)) {
+    return (
+      <div className="p-6 text-sm text-rose-600">
+        You do not have permission to edit roles.
+      </div>
+    );
+  }
 
   // Don’t render until we have the current role
   if (!initial) return null; // or a spinner

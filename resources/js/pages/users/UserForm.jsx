@@ -44,10 +44,13 @@ export default function UserForm({ onSubmit, initial, submitting }) {
   // ---- Load roles + permissions
   useEffect(() => {
     (async () => {
-      const [r, p] = await Promise.all([
+      const [rRes, pRes] = await Promise.allSettled([
         axios.get("/api/roles", { params: { per_page: 1000 } }),
         axios.get("/api/permissions"),
       ]);
+
+      const r = rRes.status === "fulfilled" ? rRes.value : null;
+      const p = pRes.status === "fulfilled" ? pRes.value : null;
 
       const roleNames = (Array.isArray(r?.data?.data) ? r.data.data : asArray(r?.data))
         .map((x) => (typeof x === "string" ? x : x?.name))
@@ -117,12 +120,27 @@ export default function UserForm({ onSubmit, initial, submitting }) {
   // ===== Permission grouping & ordering =====
   const ACTION_ORDER = [
     "view",
+    "print",
     "create",
     "update",
+    "edit",
     "delete",
     "import",
     "export",
     "generate",
+    "cancel",
+    "finalize",
+    "dispose",
+    "restore",
+    "upload",
+    "open",
+    "transaction",
+    "close",
+    "transfer",
+    "adjust",
+    "credit-override",
+    "discount-override",
+    "expired-override",
     "sync.permissions",
     "assign.roles",
     "assign.permissions",
@@ -132,11 +150,37 @@ export default function UserForm({ onSubmit, initial, submitting }) {
   const titleizeModule = (m) => {
     // friendly headings
     const map = {
+      barcode: "Barcode Studio & Generator",
+      "barcode-pos": "⚡ Barcode POS",
+      "batch-expiry": "Batch Expiry & Tracking",
       "sale-invoice": "Sale Invoice",
       "purchase-invoice": "Purchase Invoice",
-      "sale-return": "Sale Return",
-      "purchase-return": "Purchase Return",
+      "sale-return": "Sale Return Invoices",
+      "purchase-return": "Purchase Return Invoices",
       "stock-adjustment": "Stock Adjustment",
+      "stock-disposal": "Stock Disposal & Quarantine",
+      stocktake: "Physical Stocktake",
+      payment: "Payment Vouchers",
+      account: "Financial Accounts",
+      "cash-drawer": "Cash Drawer",
+      expense: "Operating Expenses",
+      backup: "Backups & Storage",
+      "user-demands": "User Demands",
+      report: "Reports",
+      "report.cost-of-sale": "Report: Cost of Sale",
+      "report.cost-of-sale-detail": "Report: Cost of Sale Detail",
+      "report.net-profit": "Report: Net Profit (P&L)",
+      "report.current-stock": "Report: Current Stock",
+      "report.reorder": "Report: Low Stock & Reorder",
+      "report.purchase-detail": "Report: Purchase Detail",
+      "report.purchase-summary": "Report: Purchase Summary",
+      "report.purchase-returns": "Report: Purchase Returns",
+      "report.sale-detail": "Report: Sale Detail",
+      "report.sale-returns": "Report: Sale Returns",
+      "report.stock-adjustment": "Report: Stock Adjustment",
+      "report.product-comprehensive": "Report: Product Comprehensive",
+      "report.near-expiry-product": "Report: Near Expiry Product",
+      "report.outstanding-aging": "Report: Outstanding & Aging",
       settings: "Settings",
       category: "Category",
       brand: "Brand",
@@ -152,6 +196,14 @@ export default function UserForm({ onSubmit, initial, submitting }) {
       invoice: "Invoice (Legacy)",
     };
     if (map[m]) return map[m];
+    if (m.startsWith("report.")) {
+      const sub = m
+        .slice("report.".length)
+        .split("-")
+        .map((x) => x.charAt(0).toUpperCase() + x.slice(1))
+        .join(" ");
+      return `Report: ${sub}`;
+    }
     // Fallback: Title Case + hyphen to space
     return m
       .split("-")
@@ -166,8 +218,17 @@ export default function UserForm({ onSubmit, initial, submitting }) {
       // expected "module.action" format, but keep custom singles too
       if (typeof full !== "string" || !full) continue;
       const parts = full.split(".");
-      const module = parts.length > 1 ? parts[0] : full; // "user.manage" => module "user"
-      const action = parts.length > 1 ? parts.slice(1).join(".") : ""; // manage / assign.roles etc.
+      const isReportSubmodule = parts[0] === "report" && parts.length >= 3;
+      const module = isReportSubmodule
+        ? `report.${parts[1]}`
+        : parts.length > 1
+        ? parts[0]
+        : full; // "user.manage" => module "user"
+      const action = isReportSubmodule
+        ? parts.slice(2).join(".")
+        : parts.length > 1
+        ? parts.slice(1).join(".")
+        : ""; // manage / assign.roles etc.
 
       const key = module;
       if (!groups[key]) {

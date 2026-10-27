@@ -14,7 +14,7 @@ class CategoryController extends Controller
      */
     public function search(Request $req)
     {
-        $this->authorize('viewAny', Category::class);
+        $this->authorize('lookup', Category::class);
 
         $q     = trim($req->input('q', ''));
         $limit = max(1, min((int)$req->input('limit', 20), 100));

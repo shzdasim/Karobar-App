@@ -284,11 +284,11 @@ const [saleInvoices, setSaleInvoices] = useState([]);
     (async () => {
       try {
         const [custRes, prodRes, accRes] = await Promise.all([
-          axios.get("/api/customers"),
+          axios.get("/api/customers/search", { params: { limit: 50 } }),
           axios.get("/api/products/search", { params: { q: "", limit: 30 } }),
           axios.get("/api/accounts", { params: { active_only: 1 } }).catch(() => ({ data: [] })),
         ]);
-        const customersArr = Array.isArray(custRes.data) ? custRes.data : [];
+        const customersArr = Array.isArray(custRes.data) ? custRes.data : custRes.data?.data || [];
         setCustomers(customersArr);
         const accountsArr = Array.isArray(accRes?.data?.data) ? accRes.data.data : Array.isArray(accRes?.data) ? accRes.data : [];
         setAccounts(accountsArr);

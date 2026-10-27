@@ -22,20 +22,36 @@ export function usePermissions() {
   }, []);
 
   const has = useCallback(
-    (ability) => roles.has("Admin") || perms.has(ability),
+    (ability) =>
+      roles.has("Admin") ||
+      perms.has(ability) ||
+      (typeof ability === "string" && ability.startsWith("user.") && perms.has("user.manage")),
     [roles, perms]
   );
 
   const canFor = useCallback(
     (mod) => ({
-      view:   has(`${mod}.view`),
-      create: has(`${mod}.create`),
-      update: has(`${mod}.update`),
-      delete: has(`${mod}.delete`),
-      export: has(`${mod}.export`),
-      import: has(`${mod}.import`),
-      restore: has(`${mod}.restore`),
-      upload: has(`${mod}.upload`),
+      view:        has(`${mod}.view`),
+      create:      has(`${mod}.create`),
+      update:      has(`${mod}.update`),
+      edit:        has(`${mod}.edit`),
+      delete:      has(`${mod}.delete`),
+      export:      has(`${mod}.export`),
+      import:      has(`${mod}.import`),
+      restore:     has(`${mod}.restore`),
+      upload:      has(`${mod}.upload`),
+      finalize:    has(`${mod}.finalize`),
+      dispose:     has(`${mod}.dispose`),
+      adjust:      has(`${mod}.adjust`),
+      transfer:    has(`${mod}.transfer`),
+      generate:    has(`${mod}.generate`),
+      cancel:      has(`${mod}.cancel`),
+      open:        has(`${mod}.open`),
+      close:       has(`${mod}.close`),
+      transaction: has(`${mod}.transaction`),
+      assignRoles: has(`${mod}.assign.roles`),
+      assignPerms: has(`${mod}.assign.permissions`),
+      syncPerms:   has(`${mod}.sync.permissions`),
     }),
     [has]
   );

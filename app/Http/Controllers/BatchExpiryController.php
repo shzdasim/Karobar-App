@@ -11,6 +11,23 @@ use Illuminate\Support\Facades\DB;
 
 class BatchExpiryController extends Controller
 {
+    private function authorizeExpiryAction(string|array $permissions): void
+    {
+        $user = request()->user() ?? auth()->user();
+        if (!$user) {
+            abort(401, 'Unauthenticated.');
+        }
+        if ($user->hasRole(['Admin', 'admin', 'super-admin'])) {
+            return;
+        }
+        foreach ((array) $permissions as $perm) {
+            if ($user->can($perm)) {
+                return;
+            }
+        }
+        abort(403, 'This action is unauthorized.');
+    }
+
     /**
      * Get the active global warning days setting.
      */
@@ -28,7 +45,7 @@ class BatchExpiryController extends Controller
      */
     public function index(Request $request)
     {
-        $this->authorize('viewAny', Product::class);
+        $this->authorizeExpiryAction('batch-expiry.view');
 
         $globalWarningDays = $this->getGlobalWarningDays();
         $statusFilter = $request->query('status', 'all'); // all, expired, critical, warning, safe
@@ -247,7 +264,7 @@ class BatchExpiryController extends Controller
      */
     public function updateProductWarning(Request $request, $productId)
     {
-        $this->authorize('update', Product::class);
+        $this->authorizeExpiryAction('batch-expiry.update');
 
         $product = Product::findOrFail($productId);
 
@@ -274,7 +291,7 @@ class BatchExpiryController extends Controller
      */
     public function updateGlobalWarning(Request $request)
     {
-        $this->authorize('update', Setting::class);
+        $this->authorizeExpiryAction('batch-expiry.update');
 
         $validated = $request->validate([
             'expiry_warning_days' => 'required|integer|min:1|max:3650',
@@ -298,7 +315,15 @@ class BatchExpiryController extends Controller
      */
     public function expiryAlerts(Request $request)
     {
-        $this->authorize('viewAny', Product::class);
+        $this->authorizeExpiryAction([
+            'batch-expiry.view',
+            'product.view',
+            'report.near-expiry-product.view',
+            'sale-invoice.create',
+            'barcode-pos.view',
+            'barcode-pos.create',
+            'purchase-invoice.create',
+        ]);
 
         $limit = max(1, min((int) $request->query('limit', 15), 100));
         $globalWarningDays = $this->getGlobalWarningDays();

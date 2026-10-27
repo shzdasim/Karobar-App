@@ -13,7 +13,7 @@ class ProductComprehensiveReportPolicy
     /**
      * Determine whether the user can view the report.
      */
-    public function view(User $user, ProductComprehensiveReport $report): bool
+    public function view(User $user, ?ProductComprehensiveReport $report = null): bool
     {
         return $user->can('report.product-comprehensive.view');
     }
@@ -21,9 +21,8 @@ class ProductComprehensiveReportPolicy
     /**
      * Determine whether the user can export the report.
      */
-    public function export(User $user, ProductComprehensiveReport $report): bool
+    public function export(User $user, ?ProductComprehensiveReport $report = null): bool
     {
         return $user->can('report.product-comprehensive.export');
     }
 }
-

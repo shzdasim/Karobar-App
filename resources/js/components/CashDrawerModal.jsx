@@ -17,6 +17,7 @@ import {
 } from "@heroicons/react/24/solid";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
+import { usePermissions } from "@/api/usePermissions.js";
 
 const TRANSACTION_TYPE_OPTIONS = [
   { value: "cash_in", label: "Cash In (Add Money / Float)" },
@@ -26,6 +27,11 @@ const TRANSACTION_TYPE_OPTIONS = [
 export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
   const { formatCurrency } = useCurrency();
   const { isDark, theme } = useTheme();
+  const { has } = usePermissions();
+  const canOpenShift = has("cash-drawer.open");
+  const canCloseShift = has("cash-drawer.close");
+  const canRecordTxn = has("cash-drawer.transaction");
+  const canOperateDrawer = canOpenShift || canCloseShift || canRecordTxn;
 
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -418,7 +424,7 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !canOperateDrawer) return null;
 
   const isOpenShift = !!sessionData?.is_open;
   const summary = sessionData?.summary;
@@ -507,13 +513,13 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
           {(isOpenShift
             ? [
                 { id: "overview", label: "Overview & Balance" },
-                { id: "actions", label: "Cash In / Cash Out" },
-                { id: "close", label: "Close Register" },
+                ...(canRecordTxn ? [{ id: "actions", label: "Cash In / Cash Out" }] : []),
+                ...(canCloseShift ? [{ id: "close", label: "Close Register" }] : []),
                 { id: "report", label: "Detailed Report" },
                 { id: "history", label: "Shift History" },
               ]
             : [
-                { id: "overview", label: "Open Register" },
+                { id: "overview", label: canOpenShift ? "Open Register" : "Register Status" },
                 { id: "report", label: "Detailed Report" },
                 { id: "history", label: "Shift History" },
               ]
@@ -553,7 +559,8 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
         {/* Body */}
         <div className="p-6 overflow-y-auto space-y-4 flex-1">
           {/* View 1: When drawer is CLOSED -> Open Shift Form */}
-          {!isOpenShift && (
+          {!isOpenShift && activeTab === "overview" && (
+            canOpenShift ? (
             <form onSubmit={handleOpenDrawer} className="space-y-4">
               <div
                 className={`p-4 rounded-xl border flex items-start gap-3 ${
@@ -620,6 +627,21 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                 {submitting ? "Opening Register…" : "Open Cash Register Shift"}
               </button>
             </form>
+            ) : (
+              <div
+                className={`p-4 rounded-xl border flex items-start gap-3 ${
+                  isDark ? "bg-slate-800/40 border-slate-700" : "bg-amber-50/50 border-amber-100"
+                }`}
+              >
+                <BanknotesIcon className="w-6 h-6 text-amber-500 shrink-0 mt-0.5" />
+                <div className="text-xs space-y-1">
+                  <p className="font-semibold text-sm">Register is currently closed</p>
+                  <p className={isDark ? "text-slate-400" : "text-gray-600"}>
+                    You do not have permission to open a new cash register shift.
+                  </p>
+                </div>
+              </div>
+            )
           )}
 
           {/* View 2: When drawer is OPEN -> Overview Tab */}
@@ -710,41 +732,49 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
               </div>
 
               {/* Action shortcuts */}
-              <div className="flex items-center gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedTxnType(TRANSACTION_TYPE_OPTIONS[0]);
-                    setActiveTab("actions");
-                  }}
-                  className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                    isDark ? "border-slate-700 hover:bg-slate-800 text-emerald-400" : "border-emerald-200 hover:bg-emerald-50 text-emerald-700"
-                  }`}
-                >
-                  <ArrowDownLeftIcon className="w-4 h-4" /> Add Cash In
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedTxnType(TRANSACTION_TYPE_OPTIONS[1]);
-                    setActiveTab("actions");
-                  }}
-                  className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                    isDark ? "border-slate-700 hover:bg-slate-800 text-rose-400" : "border-rose-200 hover:bg-rose-50 text-rose-700"
-                  }`}
-                >
-                  <ArrowUpRightIcon className="w-4 h-4" /> Cash Out / Expense
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("close")}
-                  className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                    isDark ? "border-slate-700 hover:bg-slate-800 text-amber-400" : "border-amber-200 hover:bg-amber-50 text-amber-700"
-                  }`}
-                >
-                  <LockClosedIcon className="w-4 h-4" /> Close Shift
-                </button>
-              </div>
+              {(canRecordTxn || canCloseShift) && (
+                <div className="flex items-center gap-2 pt-2">
+                  {canRecordTxn && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedTxnType(TRANSACTION_TYPE_OPTIONS[0]);
+                          setActiveTab("actions");
+                        }}
+                        className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                          isDark ? "border-slate-700 hover:bg-slate-800 text-emerald-400" : "border-emerald-200 hover:bg-emerald-50 text-emerald-700"
+                        }`}
+                      >
+                        <ArrowDownLeftIcon className="w-4 h-4" /> Add Cash In
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedTxnType(TRANSACTION_TYPE_OPTIONS[1]);
+                          setActiveTab("actions");
+                        }}
+                        className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                          isDark ? "border-slate-700 hover:bg-slate-800 text-rose-400" : "border-rose-200 hover:bg-rose-50 text-rose-700"
+                        }`}
+                      >
+                        <ArrowUpRightIcon className="w-4 h-4" /> Cash Out / Expense
+                      </button>
+                    </>
+                  )}
+                  {canCloseShift && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("close")}
+                      className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        isDark ? "border-slate-700 hover:bg-slate-800 text-amber-400" : "border-amber-200 hover:bg-amber-50 text-amber-700"
+                      }`}
+                    >
+                      <LockClosedIcon className="w-4 h-4" /> Close Shift
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Recent transactions in this shift */}
               <div className="pt-2">

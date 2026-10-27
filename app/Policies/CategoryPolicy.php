@@ -23,6 +23,21 @@ class CategoryPolicy
         return $user->can('category.view');
     }
 
+    public function lookup(User $user): bool
+    {
+        return $user->can('category.view')
+            || $user->can('product.view')
+            || $user->can('product.create')
+            || $user->can('product.update')
+            || $user->can('barcode.view')
+            || $user->can('barcode.print')
+            || $user->can('batch-expiry.view')
+            || $user->can('stocktake.view')
+            || $user->can('stocktake.create')
+            || $user->can('stocktake.update')
+            || $user->can('report.current-stock.view');
+    }
+
     public function view(User $user, Category $category): bool
     {
         return $user->can('category.view');

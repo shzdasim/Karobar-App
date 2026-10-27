@@ -1,11 +1,23 @@
 <?php
 
 namespace App\Providers;
+
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Gate;
 
 class AuthServiceProvider extends ServiceProvider
 {
+    /**
+     * The model to policy mappings for the application.
+     *
+     * @var array<class-string, class-string>
+     */
+    protected $policies = [
+        \App\Models\BackupLog::class => \App\Policies\BackupPolicy::class,
+        \App\Models\StocktakeSession::class => \App\Policies\StocktakePolicy::class,
+        \App\Authorizables\CurrentStockReport::class => \App\Policies\CurrentStockReportPolicy::class,
+        \App\Authorizables\NearExpiryProductReport::class => \App\Policies\NearExpiryProductReportPolicy::class,
+    ];
 
     /**
      * Register any authentication / authorization services.
@@ -14,22 +26,20 @@ class AuthServiceProvider extends ServiceProvider
     {
         $this->registerPolicies();
 
-        // This makes super-admin have all permissions automatically
+        // This makes Admin have all permissions automatically
         Gate::before(function ($user, $ability) {
-            return $user->hasRole('Admin') ? true : null; // <- Admin has all abilities
+            return $user->hasRole('Admin') ? true : null;
         });
 
-        // keep your manage-users Gate but let’s tie it to either role or permission
+        // Tie manage-users Gate strictly to Admin role or explicit user.manage permission
         Gate::define('manage-users', function ($user) {
-            if (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['Admin','Manager'])) {
+            if (method_exists($user, 'hasRole') && $user->hasRole('Admin')) {
                 return true;
             }
-            // OR allow via explicit permission:
             if (method_exists($user, 'can') && $user->can('user.manage')) {
                 return true;
             }
             return false;
         });
-
     }
 }

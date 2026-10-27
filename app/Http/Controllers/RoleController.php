@@ -9,11 +9,32 @@ use Spatie\Permission\Models\Permission;
 
 class RoleController extends Controller
 {
+    private function isReservedAdminRoleName(string $name): bool
+    {
+        return in_array(strtolower(trim($name)), ['admin', 'super-admin'], true);
+    }
+
+    private function assertCanGrantPermissions(Request $request, array $requestedPermissions): void
+    {
+        $actor = $request->user();
+        if ($actor && $actor->hasRole('Admin')) {
+            return;
+        }
+
+        foreach ($requestedPermissions as $permName) {
+            if (!$actor || !$actor->can((string) $permName)) {
+                abort(403, "You cannot grant the '{$permName}' permission because you do not possess it.");
+            }
+        }
+    }
+
     // GET /api/roles?search=&page=&per_page=
     public function index(Request $request)
     {
-        // Allow via role_or_permission. Admin will also pass Gate::before
-        $this->authorizeViaMiddleware($request, 'role.view');
+        // Allow role viewers as well as user managers who need to populate role dropdowns
+        $this->authorizeViaMiddleware($request, [
+            'role.view', 'user.view', 'user.create', 'user.update', 'user.assign.roles', 'user.manage'
+        ]);
 
         $search  = trim($request->query('search', ''));
         $perPage = (int) $request->query('per_page', 15);
@@ -59,6 +80,14 @@ class RoleController extends Controller
             'permissions.*' => ['string'],
         ]);
 
+        if ($this->isReservedAdminRoleName($validated['name'])) {
+            return response()->json(['message' => 'Cannot create a role with a reserved Admin role name.'], 422);
+        }
+
+        if (!empty($validated['permissions'])) {
+            $this->assertCanGrantPermissions($request, $validated['permissions']);
+        }
+
         $role = Role::create([
             'name' => $validated['name'],
             'guard_name' => 'sanctum',
@@ -74,24 +103,23 @@ class RoleController extends Controller
     }
 
     // GET /api/roles/{role}
-public function show(Role $role, Request $request)
-{
-    $this->authorizeViaMiddleware($request, 'role.view');
-    abort_unless($role->guard_name === 'sanctum', 404);
+    public function show(Role $role, Request $request)
+    {
+        $this->authorizeViaMiddleware($request, ['role.view', 'role.update', 'role.sync.permissions']);
+        abort_unless($role->guard_name === 'sanctum', 404);
 
-    return response()->json([
-  'id' => $role->id,
-  'name' => $role->name,
-  'guard_name' => $role->guard_name,
-  'permissions' => $role->permissions()->pluck('name')->values()->all(), // ✅
-]);
-}
-
+        return response()->json([
+            'id' => $role->id,
+            'name' => $role->name,
+            'guard_name' => $role->guard_name,
+            'permissions' => $role->permissions()->pluck('name')->values()->all(),
+        ]);
+    }
 
     // PUT /api/roles/{role}
     public function update(Request $request, Role $role)
     {
-        $this->authorizeViaMiddleware($request, 'role.update');
+        $this->authorizeViaMiddleware($request, ['role.update', 'role.sync.permissions']);
         abort_unless($role->guard_name === 'sanctum', 404);
 
         $validated = $request->validate([
@@ -101,25 +129,36 @@ public function show(Role $role, Request $request)
                     ->where('guard_name','sanctum')
                     ->ignore($role->id),
             ],
-            'permissions' => ['array'],
+            'permissions' => ['sometimes', 'array'],
             'permissions.*' => ['string'],
         ]);
 
-        if ($role->name === 'Admin') {
-            if ($validated['name'] !== 'Admin') {
+        if ($this->isReservedAdminRoleName($role->name)) {
+            if ($validated['name'] !== $role->name) {
                 return response()->json(['message' => 'Cannot rename Admin role'], 422);
             }
             if (!$request->user()?->hasRole('Admin')) {
                 return response()->json(['message' => 'Only an Admin can modify the Admin role'], 403);
             }
+        } elseif ($this->isReservedAdminRoleName($validated['name'])) {
+            return response()->json(['message' => 'Cannot rename a role to a reserved Admin role name.'], 422);
+        }
+
+        if (array_key_exists('permissions', $validated)) {
+            $this->assertCanGrantPermissions($request, $validated['permissions'] ?? []);
         }
 
         $role->name = $validated['name'];
         $role->save();
 
-        $perms = $validated['permissions'] ?? [];
-        $perms = Permission::whereIn('name', $perms)->where('guard_name','sanctum')->pluck('name')->all();
-        $role->syncPermissions($perms);
+        if ($role->name === 'Admin') {
+            $allPerms = Permission::where('guard_name', 'sanctum')->pluck('name')->all();
+            $role->syncPermissions($allPerms);
+        } elseif (array_key_exists('permissions', $validated)) {
+            $perms = $validated['permissions'] ?? [];
+            $perms = Permission::whereIn('name', $perms)->where('guard_name','sanctum')->pluck('name')->all();
+            $role->syncPermissions($perms);
+        }
 
         return response()->json($role->load('permissions'));
     }
@@ -130,7 +169,7 @@ public function show(Role $role, Request $request)
         $this->authorizeViaMiddleware($request, 'role.delete');
         abort_unless($role->guard_name === 'sanctum', 404);
 
-        if ($role->name === 'Admin') {
+        if ($this->isReservedAdminRoleName($role->name)) {
             return response()->json(['message' => 'Cannot delete Admin role'], 422);
         }
 
@@ -138,14 +177,21 @@ public function show(Role $role, Request $request)
         return response()->json(['message' => 'Deleted']);
     }
 
-    private function authorizeViaMiddleware(Request $request, string $permission): void
+    private function authorizeViaMiddleware(Request $request, array|string $permissions): void
     {
-        // If you prefer route middleware, you can remove this and rely on routes.
-        // Here we keep a simple check that aligns with your Gate::before.
-        if (method_exists($request->user(), 'can') && $request->user()->can($permission)) {
+        $user = $request->user();
+        if ($user && $user->hasRole('Admin')) {
             return;
         }
-        // Admin will pass Gate::before, but if not Admin or missing permission:
-        abort_unless($request->user()?->hasRole('Admin') ?? false, 403);
+
+        if ($user && method_exists($user, 'can')) {
+            foreach ((array) $permissions as $perm) {
+                if ($user->can($perm)) {
+                    return;
+                }
+            }
+        }
+
+        abort(403);
     }
 }

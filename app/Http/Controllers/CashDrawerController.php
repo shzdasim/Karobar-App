@@ -18,7 +18,7 @@ class CashDrawerController extends Controller
 
     private function authorizeDrawerAction(string|array $permissions): void
     {
-        $user = request()->user();
+        $user = request()->user() ?? auth()->user();
         if (!$user) {
             abort(401, 'Unauthenticated.');
         }
@@ -38,7 +38,15 @@ class CashDrawerController extends Controller
      */
     public function current(Request $request)
     {
-        $this->authorizeDrawerAction(['cash-drawer.view', 'sale-invoice.create']);
+        $this->authorizeDrawerAction([
+            'cash-drawer.view',
+            'cash-drawer.open',
+            'cash-drawer.close',
+            'cash-drawer.transaction',
+            'sale-invoice.create',
+            'barcode-pos.view',
+            'barcode-pos.create',
+        ]);
         $session = $this->cashDrawerService->getCurrentSession($request->user());
 
         if (!$session) {

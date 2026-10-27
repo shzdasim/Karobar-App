@@ -51,10 +51,14 @@ class PurchaseInvoiceController extends Controller
     // List all invoices
     public function index(Request $request)
     {
-        $this->authorize('viewAny', PurchaseInvoice::class);
+        $qSupplierId = $request->query('supplier_id');
+        if ($qSupplierId) {
+            $this->authorize('lookup', PurchaseInvoice::class);
+        } else {
+            $this->authorize('viewAny', PurchaseInvoice::class);
+        }
         
         $qPosted     = trim((string) $request->query('posted'));
-        $qSupplierId = $request->query('supplier_id');
         
         // Pagination parameters
         $page     = (int) $request->query('page', 1);
@@ -1020,7 +1024,7 @@ class PurchaseInvoiceController extends Controller
 // Search purchase invoices
     public function search(Request $request)
     {
-        $this->authorize('viewAny', PurchaseInvoice::class);
+        $this->authorize('lookup', PurchaseInvoice::class);
 
         $q = trim((string) $request->query('q', ''));
         $supplierId = $request->query('supplier_id');

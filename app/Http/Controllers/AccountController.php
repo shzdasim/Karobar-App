@@ -73,9 +73,24 @@ class AccountController extends Controller
     /**
      * Get all accounts and funds summary.
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        $this->authorizeAccountAction('account.view');
+        if ($request->boolean('active_only')) {
+            $this->authorizeAccountAction([
+                'account.view',
+                'sale-invoice.create',
+                'sale-invoice.update',
+                'barcode-pos.view',
+                'barcode-pos.create',
+                'purchase-invoice.create',
+                'purchase-invoice.update',
+                'payment.create',
+                'expense.create',
+                'expense.update',
+            ]);
+        } else {
+            $this->authorizeAccountAction('account.view');
+        }
         $summary = $this->accountService->getSummary();
         return response()->json($summary);
     }
