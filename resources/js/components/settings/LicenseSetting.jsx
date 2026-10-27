@@ -101,7 +101,7 @@ export default function LicenseSetting({
   // Get payload fields to display
   const getPayloadEntries = () => {
     const payload = licenseStatus?.payload || {};
-    const excludeKeys = ['exp', 'nbf', 'machine'];
+    const excludeKeys = ['exp', 'nbf', 'machine', 'iat', 'iss', 'sub', 'ver', '_seal'];
     return Object.entries(payload).filter(([key]) => !excludeKeys.includes(key));
   };
 

@@ -98,8 +98,8 @@ export default function ActivateLicense() {
       <form onSubmit={onActivate}>
         <label className="block text-sm font-medium mb-1">License key</label>
         <textarea
-          className="w-full border rounded-sm p-3 h-40"
-          placeholder="Paste <signature>.<payload> here"
+          className="w-full border rounded-sm p-3 h-40 font-mono text-xs"
+          placeholder="Paste your Karobar license key (KRBL....) here"
           value={key}
           onChange={(e) => setKey(e.target.value)}
         />

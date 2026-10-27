@@ -17,6 +17,8 @@
 /public/hot
 /public/storage
 /storage/*.key
+/storage/app/.machine-id
+/storage/app/.license-*
 /storage/pail
 /storage/framework/views/
 /storage/framework/cache/

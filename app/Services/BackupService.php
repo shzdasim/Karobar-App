@@ -786,6 +786,21 @@ class BackupService
         if (empty($sqlContent)) {
             throw new \Exception('Failed to read or decompress backup file');
         }
+
+        // Preserve this machine's currently valid license across database restores
+        // while preventing foreign backups from smuggling a license onto an unlicensed machine.
+        $preservedLicenseAttributes = null;
+        try {
+            $licenseService = app(\App\Services\LicenseService::class);
+            if (($licenseService->currentStatus()['valid'] ?? false) === true) {
+                $currentLicense = \App\Models\License::latest('id')->first();
+                if ($currentLicense) {
+                    $preservedLicenseAttributes = $currentLicense->getAttributes();
+                    unset($preservedLicenseAttributes['id']);
+                }
+            }
+        } catch (\Throwable $ignored) {
+        }
         
         $driver = config('database.default');
         
@@ -829,6 +844,7 @@ class BackupService
                 DB::purge('sqlite');
                 DB::reconnect('sqlite');
 
+                $this->reconcileLicenseAfterRestore($preservedLicenseAttributes);
                 return;
             } else {
                 // SQL statements
@@ -837,6 +853,26 @@ class BackupService
         } else {
             // For MySQL/PostgreSQL, execute SQL statements
             $this->executeSqlStatements($sqlContent);
+        }
+
+        $this->reconcileLicenseAfterRestore($preservedLicenseAttributes);
+    }
+
+    /**
+     * Ensure that restoring an old backup on a validly licensed machine preserves its active license,
+     * and restoring a foreign machine's backup on a new machine revokes the mismatched license.
+     */
+    protected function reconcileLicenseAfterRestore(?array $preservedLicenseAttributes): void
+    {
+        try {
+            $licenseService = app(\App\Services\LicenseService::class);
+            $licenseService->clearLicenseIfMachineChanged();
+
+            if ($preservedLicenseAttributes !== null && !($licenseService->currentStatus()['valid'] ?? false)) {
+                \App\Models\License::query()->delete();
+                DB::table('licenses')->insert($preservedLicenseAttributes);
+            }
+        } catch (\Throwable $ignored) {
         }
     }
 
