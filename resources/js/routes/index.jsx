@@ -55,7 +55,7 @@ const BackupsIndex = lazy(() => import("../pages/Backups/Index.jsx"));
 const BarcodeIndex = lazy(() => import("../pages/Barcodes/Index.jsx"));
 const StockAdjustmentsIndex = lazy(() => import("../pages/stock-adjustments/index.jsx"));
 const CreateStockAdjustment = lazy(() => import("../pages/stock-adjustments/Create.jsx"));
-const EditStockAdjustment = lazy(() => import("../pages/stock-adjustments/Edit.jsx"));
+const ShowStockAdjustment = lazy(() => import("../pages/stock-adjustments/Show.jsx"));
 // Stocktake Sessions
 const StocktakeIndex = lazy(() => import("../pages/stocktake/index.jsx"));
 const CreateStocktake = lazy(() => import("../pages/stocktake/Create.jsx"));
@@ -599,11 +599,11 @@ export default function AppRoutes() {
       }
       />
       <Route
-      path="stock-adjustments/:id/edit"
+      path="stock-adjustments/:id"
       element= {
         <ProtectedRoute>
           <DashboardLayout>
-            <EditStockAdjustment />
+            <ShowStockAdjustment />
           </DashboardLayout>
         </ProtectedRoute>
       }

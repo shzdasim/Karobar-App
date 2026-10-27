@@ -38,17 +38,25 @@ export default function DashboardLayout({ children }) {
     "/suppliers": "Suppliers",
     "/customers": "Customers",
     "/products": "Products",
+    "/products/create": "Add Product",
     "/categories": "Categories",
     "/brands": "Brands",
+    "/barcode-labels": "Barcode Studio",
+    "/batch-expiry": "Batch Expiry & Tracking",
+    "/stock-disposals": "Quarantine & Disposals",
+    "/stock-disposals/create": "New Quarantine / Disposal",
     "/purchase-invoices": "Purchase Invoices",
     "/purchase-invoices/create": "Purchase Invoice",
     "/purchase-returns": "Purchase Returns",
     "/purchase-returns/create": "Create Purchase Return",
     "/sale-invoices": "Sale Invoices",
     "/sale-invoices/create": "Create Sale Invoice",
+    "/sale-invoices/create/retail": "Retail Sale Invoice",
+    "/sale-invoices/create/wholesale": "Wholesale Sale Invoice",
     "/sale-returns": "Sale Returns",
     "/sale-returns/create": "Create Sale Return",
     "/purchase-orders": "Purchase Orders",
+    "/purchase-orders/forecast": "Smart Reorder Forecast",
     "/user-demands": "User Demands",
     "/user-demands/create": "Request Product",
     "/settings": "Settings",
@@ -58,16 +66,43 @@ export default function DashboardLayout({ children }) {
     "/reports/sale-detail": "Sales Detail Report",
     "/reports/purchase-detail": "Purchase Detail Report",
     "/reports/cost-of-sale": "Cost of Sale Report",
+    "/reports/cost-of-sale-detail": "Cost of Sale Detail Report",
+    "/reports/current-stock": "Current Stock Report",
+    "/reports/stock-adjustment": "Stock Adjustment Report",
+    "/reports/product-comprehensive": "Product Comprehensive Report",
+    "/reports/near-expiry-product": "Near Expiry Product Report",
+    "/reports/purchase-returns": "Purchase Returns Report",
+    "/reports/sale-returns": "Sale Returns Report",
+    "/reports/purchase-summary": "Purchase Summary Report",
+    "/reports/outstanding-aging": "Outstanding Aging Report",
+    "/reports/reorder": "Low Stock & Reorder Report",
     "/supplier-ledger": "Supplier Ledger",
     "/customer-ledger": "Customer Ledger",
+    "/accounts": "Financial Accounts",
+    "/payments": "Payment Vouchers",
+    "/cash-drawer": "Cash Drawer",
     "/expenses": "Operating Expenses",
     "/reports/net-profit": "Profit & Loss Statement",
     "/stock-adjustments": "Stock Adjustments",
+    "/stock-adjustments/create": "Add Stock Adjustment",
+    "/stocktake-sessions": "Stocktake Sessions",
+    "/stocktake-sessions/create": "New Stocktake Session",
     "/backups": "Backups & Offsite Storage",
   };
 
   const currentPath = location.pathname;
-  const pageTitle = titles[currentPath] || "Dashboard";
+  const resolvePageTitle = (path) => {
+    if (titles[path]) return titles[path];
+    if (/^\/stock-adjustments\/\d+$/.test(path)) return "Stock Adjustment Details";
+    if (/^\/stocktake-sessions\/\d+\/review$/.test(path)) return "Stocktake Variance Review";
+    if (/^\/stocktake-sessions\/\d+$/.test(path)) return "Stocktake Session";
+    if (/^\/sale-invoices\/\d+\/edit$/.test(path)) return "Edit Sale Invoice";
+    if (/^\/sale-invoices\/\d+$/.test(path)) return "Sale Invoice Details";
+    if (/^\/purchase-invoices\/\d+\/edit$/.test(path)) return "Edit Purchase Invoice";
+    if (/^\/purchase-invoices\/\d+$/.test(path)) return "Purchase Invoice Details";
+    return "Dashboard";
+  };
+  const pageTitle = resolvePageTitle(currentPath);
 
   useEffect(() => {
     document.title = `${pageTitle} - ${appName || "ERP"}`;

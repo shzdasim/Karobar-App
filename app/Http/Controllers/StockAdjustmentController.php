@@ -2,12 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Batch;
+use App\Models\Expense;
+use App\Models\ExpenseCategory;
 use App\Models\Product;
 use App\Models\StockAdjustment;
 use App\Models\StockAdjustmentItem;
-use App\Models\Batch;
+use App\Services\DocumentAuditService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
 class StockAdjustmentController extends Controller
@@ -15,17 +20,19 @@ class StockAdjustmentController extends Controller
     // ===== Helpers to read/set product stock column consistently =====
     protected function getProductQty(Product $p): float
     {
-        // TODO: align with your schema
-        return (float)($p->available_units ?? $p->quantity_on_hand ?? $p->quantity ?? 0);
+        return (float) ($p->available_units ?? $p->quantity_on_hand ?? $p->quantity ?? 0);
     }
 
     protected function setProductQty(Product $p, float $qty): void
     {
-        // TODO: align with your schema
-        if ($p->offsetExists('available_units')) $p->available_units = $qty;
-        elseif ($p->offsetExists('quantity_on_hand')) $p->quantity_on_hand = $qty;
-        else $p->quantity = $qty;
-        
+        if ($p->offsetExists('available_units')) {
+            $p->available_units = $qty;
+        } elseif ($p->offsetExists('quantity_on_hand')) {
+            $p->quantity_on_hand = $qty;
+        } else {
+            $p->quantity = $qty;
+        }
+
         // If stock becomes zero, reset average price and margins
         // This ensures moving average resets when all stock is removed
         if ($qty <= 0) {
@@ -33,7 +40,7 @@ class StockAdjustmentController extends Controller
             $p->margin = 0;
             $p->whole_sale_margin = 0;
         }
-        
+
         $p->save();
     }
 
@@ -65,7 +72,19 @@ class StockAdjustmentController extends Controller
         $q = trim((string)$request->get('q'));
         $per = (int)($request->get('per_page', 50));
 
+        $with = ['user:id,name'];
+        if (Schema::hasTable('stocktake_sessions')) {
+            $with[] = 'stocktakeSession:id,reference_no,session_type,status,stock_adjustment_id';
+        }
+        if (Schema::hasTable('stock_disposals')) {
+            $with[] = 'stockDisposal:id,disposal_number,status,cause,stock_adjustment_id';
+        }
+        if (Schema::hasTable('expenses')) {
+            $with[] = 'expense:id,expense_number,reference_number,amount,date';
+        }
+
         $query = StockAdjustment::query()
+            ->with($with)
             ->withCount('items')
             ->when($q !== '', fn($qq) =>
                 $qq->where('posted_number','like',"%{$q}%")
@@ -78,7 +97,18 @@ class StockAdjustmentController extends Controller
 
     public function show($id)
     {
-        $adj = StockAdjustment::with(['items.product'])->findOrFail($id);
+        $with = ['items.product', 'user:id,name,email'];
+        if (Schema::hasTable('stocktake_sessions')) {
+            $with[] = 'stocktakeSession:id,reference_no,session_type,status,completed_at,stock_adjustment_id';
+        }
+        if (Schema::hasTable('stock_disposals')) {
+            $with[] = 'stockDisposal:id,disposal_number,status,cause,disposal_method,stock_adjustment_id';
+        }
+        if (Schema::hasTable('expenses')) {
+            $with[] = 'expense:id,expense_number,reference_number,amount,date';
+        }
+
+        $adj = StockAdjustment::with($with)->findOrFail($id);
         // 🔒 view instance
         $this->authorize('view', $adj);
         return $adj;
@@ -206,6 +236,10 @@ class StockAdjustmentController extends Controller
             }
 
             $adj->update(['total_worth' => $totalWorth]);
+            $adj->load('items.product');
+            $this->syncShrinkageExpense($adj);
+            app(DocumentAuditService::class)->recordCreate($adj, $request->user(), $data['note'] ?? null);
+
             // return created (and authorized view)
             $this->authorize('view', $adj);
             return $this->show($adj->id);
@@ -214,127 +248,18 @@ class StockAdjustmentController extends Controller
 
     public function update(Request $request, $id)
     {
-        $adj = StockAdjustment::with('items')->findOrFail($id);
-        // 🔒 update instance
-        $this->authorize('update', $adj);
-
-        $data = $this->validatePayload($request, $id);
-
-        return DB::transaction(function () use ($adj, $data) {
-            $baselineQtyByKey = [];
-            $oldItems = $adj->items->keyBy(function ($item) {
-                return $this->stockAdjustmentItemKey([
-                    'product_id' => $item->product_id,
-                    'batch_number' => $item->batch_number,
-                    'expiry' => $item->expiry,
-                    'pack_size' => $item->pack_size,
-                ]);
-            });
-
-            $newItems = collect($data['items'])->keyBy(function ($row) {
-                return $this->stockAdjustmentItemKey($row);
-            });
-
-            $allKeys = array_values(array_unique(array_merge(
-                $oldItems->keys()->all(),
-                $newItems->keys()->all()
-            )));
-
-            foreach ($allKeys as $key) {
-                $old = $oldItems->get($key);
-                $new = $newItems->get($key);
-
-                $productId = (int)($new['product_id'] ?? $old->product_id ?? 0);
-                if ($productId <= 0) {
-                    continue;
-                }
-
-                /** @var Product $product */
-                $product = Product::query()->lockForUpdate()->findOrFail($productId);
-                $baselineQtyByKey[$key] = $old ? (float)($old->previous_qty ?? 0) : 0.0;
-
-                $oldActual = (float)($old->actual_qty ?? 0);
-                $newActual = (float)($new['actual_qty'] ?? 0);
-                $delta = $newActual - $oldActual;
-
-                if ($delta !== 0.0) {
-                    if (!empty($new['batch_number']) || !empty($old->batch_number)) {
-                        $batchNumber = $new['batch_number'] ?? $old->batch_number;
-                        $batch = Batch::query()->lockForUpdate()
-                            ->where('product_id', $product->id)
-                            ->where('batch_number', $batchNumber)
-                            ->first();
-                        if ($batch) {
-                            $this->addBatchQty($batch, $delta);
-                        }
-                    } else {
-                        $this->addProductQty($product, $delta);
-                    }
-                }
-            }
-
-            // Delete old items after live stock has been adjusted by net deltas only
-            $adj->items()->delete();
-
-            $totalWorth = 0.0;
-            $touchedProducts = [];
-            foreach ($data['items'] as $row) {
-                /** @var Product $product */
-                $product = Product::query()->lockForUpdate()->findOrFail($row['product_id']);
-                $useBatch = isset($row['batch_number']) && $row['batch_number'] !== null && $row['batch_number'] !== '';
-                $key = $this->stockAdjustmentItemKey($row);
-                $previous = (float)($baselineQtyByKey[$key] ?? $this->getProductQty($product));
-                $actual   = (float)$row['actual_qty'];
-                $diff     = $actual - $previous;
-                $unitCost = (float)($row['unit_purchase_price'] ?? $product->unit_purchase_price ?? 0);
-                $worth    = abs($diff) * $unitCost;
-
-                StockAdjustmentItem::create([
-                    'stock_adjustment_id' => $adj->id,
-                    'product_id'          => $product->id,
-                    'batch_number'        => $row['batch_number'] ?? null,
-                    'expiry'              => $row['expiry'] ?? null,
-                    'pack_size'           => $row['pack_size'] ?? null,
-                    'previous_qty'        => $previous,
-                    'actual_qty'          => $actual,
-                    'diff_qty'            => $diff,
-                    'unit_purchase_price' => $unitCost,
-                    'worth_adjusted'      => $worth,
-                ]);
-
-                $totalWorth += $worth;
-                $touchedProducts[$product->id] = true;
-            }
-
-            foreach (array_keys($touchedProducts) as $pid) {
-                /** @var Product $p */
-                $p = Product::query()->lockForUpdate()->findOrFail($pid);
-                $batchCount = Batch::where('product_id', $pid)->count();
-                if ($batchCount > 0) {
-                    $this->setProductQty($p, $this->sumBatches($p));
-                }
-            }
-
-            $adj->update([
-                'posted_number' => $data['posted_number'],
-                'posted_date'   => $data['posted_date'],
-                'note'          => $data['note'],
-                'total_worth'   => $totalWorth,
-            ]);
-
-            // return updated (and authorized view)
-            $this->authorize('view', $adj);
-            return $this->show($adj->id);
-        });
+        abort(405, 'Stock adjustments are immutable audit records and cannot be edited.');
     }
 
     public function destroy($id)
     {
-        $adj = StockAdjustment::with('items')->findOrFail($id);
+        $adj = StockAdjustment::with('items.product')->findOrFail($id);
         // 🔒 delete instance
         $this->authorize('delete', $adj);
 
         return DB::transaction(function () use ($adj) {
+            app(DocumentAuditService::class)->recordReversal($adj, auth()->user(), 'Stock adjustment deleted');
+            $this->deleteShrinkageExpense($adj->posted_number);
             $touchedProducts = [];
 
             foreach ($adj->items as $item) {
@@ -401,5 +326,93 @@ class StockAdjustmentController extends Controller
             trim((string)($data['expiry'] ?? '')),
             trim((string)($data['pack_size'] ?? '')),
         ]);
+    }
+
+    protected function syncShrinkageExpense(StockAdjustment $adj, ?string $previousPostedNumber = null): void
+    {
+        if (!Schema::hasTable('expenses') || !Schema::hasTable('expense_categories')) {
+            return;
+        }
+        // Disposal adjustments manage their own P&L write-off via StockDisposalService
+        if (str_starts_with((string) $adj->posted_number, 'DISP-')) {
+            return;
+        }
+
+        $netSignedValue = 0.0;
+        foreach ($adj->items as $item) {
+            $diff = (float) ($item->diff_qty ?? ((float) $item->actual_qty - (float) $item->previous_qty));
+            $unitCost = (float) ($item->unit_purchase_price ?? 0);
+            $netSignedValue += ($diff * $unitCost);
+        }
+
+        $lookupRef = $previousPostedNumber ?: $adj->posted_number;
+        $existing = Expense::withTrashed()
+            ->where('reference_number', $lookupRef)
+            ->first();
+
+        // Only record a write-off expense when there is a net inventory shrinkage (netSignedValue < 0)
+        if ($netSignedValue >= -0.005) {
+            if ($existing && !$existing->trashed()) {
+                $existing->delete();
+            }
+            return;
+        }
+
+        $lossAmount = round(abs($netSignedValue), 2);
+        $userId = $adj->user_id ?: auth()->id() ?: DB::table('users')->value('id');
+        if (!$userId) {
+            return;
+        }
+
+        $category = ExpenseCategory::firstOrCreate(
+            ['code' => 'stock_shrinkage_writeoff'],
+            [
+                'name'        => 'Inventory Shrinkage & Count Variance Write-Off',
+                'description' => 'Non-cash P&L write-off for inventory count shortages and stock adjustments',
+                'is_active'   => true,
+            ]
+        );
+
+        $dateStr = $adj->posted_date instanceof Carbon
+            ? $adj->posted_date->toDateString()
+            : Carbon::parse($adj->posted_date ?: now())->toDateString();
+
+        $description = "Stock Adjustment {$adj->posted_number}" . ($adj->note ? " — {$adj->note}" : '');
+
+        if ($existing) {
+            if ($existing->trashed()) {
+                $existing->restore();
+            }
+            $existing->update([
+                'expense_category_id' => $category->id,
+                'amount'              => $lossAmount,
+                'date'                => $dateStr,
+                'reference_number'    => $adj->posted_number,
+                'description'         => $description,
+            ]);
+        } else {
+            Expense::create([
+                'expense_number'         => Expense::generateExpenseNumber($dateStr),
+                'expense_category_id'    => $category->id,
+                'account_id'             => null,
+                'user_id'                => $userId,
+                'cash_drawer_session_id' => null,
+                'amount'                 => $lossAmount,
+                'date'                   => $dateStr,
+                'payment_method'         => 'other',
+                'reference_number'       => $adj->posted_number,
+                'payee'                  => 'Inventory Shrinkage Write-Off',
+                'description'            => $description,
+                'is_recurring'           => false,
+            ]);
+        }
+    }
+
+    protected function deleteShrinkageExpense(?string $postedNumber): void
+    {
+        if (!$postedNumber || !Schema::hasTable('expenses')) {
+            return;
+        }
+        Expense::where('reference_number', $postedNumber)->delete();
     }
 }

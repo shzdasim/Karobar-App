@@ -30,4 +30,19 @@ class StockAdjustment extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    public function stocktakeSession()
+    {
+        return $this->hasOne(StocktakeSession::class, 'stock_adjustment_id');
+    }
+
+    public function stockDisposal()
+    {
+        return $this->hasOne(StockDisposal::class, 'stock_adjustment_id');
+    }
+
+    public function expense()
+    {
+        return $this->hasOne(Expense::class, 'reference_number', 'posted_number');
+    }
 }

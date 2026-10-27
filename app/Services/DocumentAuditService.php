@@ -102,13 +102,16 @@ class DocumentAuditService
         if (method_exists($entity, 'items') && $entity->relationLoaded('items')) {
             $data['items'] = $entity->items->map(function ($it) {
                 return [
-                    'id'           => $it->id,
-                    'product_id'   => $it->product_id,
-                    'product_name' => $it->product?->name ?? null,
-                    'batch_number' => $it->batch_number ?? null,
-                    'quantity'     => $it->quantity ?? 0,
-                    'price'        => $it->price ?? ($it->pack_purchase_price ?? null),
-                    'sub_total'    => $it->sub_total ?? null,
+                    'id'                  => $it->id,
+                    'product_id'          => $it->product_id,
+                    'product_name'        => $it->product?->name ?? null,
+                    'batch_number'        => $it->batch_number ?? null,
+                    'quantity'            => $it->quantity ?? ($it->actual_qty ?? 0),
+                    'previous_qty'        => $it->previous_qty ?? null,
+                    'actual_qty'          => $it->actual_qty ?? null,
+                    'diff_qty'            => $it->diff_qty ?? null,
+                    'price'               => $it->price ?? ($it->unit_purchase_price ?? ($it->pack_purchase_price ?? null)),
+                    'sub_total'           => $it->sub_total ?? ($it->worth_adjusted ?? null),
                 ];
             })->toArray();
         }

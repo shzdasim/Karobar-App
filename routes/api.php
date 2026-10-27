@@ -333,12 +333,11 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::post('/products/import/validate',      [ProductImportController::class, 'validateUpload'])->middleware('permission:product.import');
     Route::post('/products/import/commit',        [ProductImportController::class, 'commit'])->middleware('permission:product.import');
 
-    // Stock Adjustments
+    // Stock Adjustments (immutable audit records — no update endpoint)
     Route::get('/stock-adjustments',              [StockAdjustmentController::class, 'index']);
     Route::post('/stock-adjustments',             [StockAdjustmentController::class, 'store']);
     Route::get('/stock-adjustments/new-code',     [StockAdjustmentController::class, 'newCode']);
     Route::get('/stock-adjustments/{id}',         [StockAdjustmentController::class, 'show']);
-    Route::put('/stock-adjustments/{id}',         [StockAdjustmentController::class, 'update']);
     Route::delete('/stock-adjustments/{id}',      [StockAdjustmentController::class, 'destroy']);
 
     // Supplier Ledger

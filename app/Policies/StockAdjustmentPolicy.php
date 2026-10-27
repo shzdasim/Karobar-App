@@ -17,14 +17,19 @@ class StockAdjustmentPolicy
         return $user->can('stock-adjustment.view');
     }
 
+    public function viewHistory(User $user, StockAdjustment $adjustment): bool
+    {
+        return $user->can('stock-adjustment.view');
+    }
+
     public function create(User $user): bool
     {
         return $user->can('stock-adjustment.create');
     }
 
-    public function update(User $user, StockAdjustment $adjustment): bool
+    public function update(User $user, ?StockAdjustment $adjustment = null): bool
     {
-        return $user->can('stock-adjustment.update');
+        return false;
     }
 
     public function delete(User $user, StockAdjustment $adjustment): bool

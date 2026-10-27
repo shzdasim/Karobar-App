@@ -23,9 +23,9 @@ export default function CreateStockAdjustment(){
       return;
     }
     try {
-      await axios.post("/api/stock-adjustments", payload);
+      const { data } = await axios.post("/api/stock-adjustments", payload);
       toast.success("Stock adjustment created");
-      navigate("/stock-adjustments");
+      navigate(data?.id ? `/stock-adjustments/${data.id}` : "/stock-adjustments");
     } catch (e) {
       const msg = e?.response?.data?.message || "Create failed";
       toast.error(msg);

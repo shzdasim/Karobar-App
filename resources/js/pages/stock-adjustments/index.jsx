@@ -16,6 +16,7 @@ import {
   ChevronRightIcon,
   ChevronDoubleLeftIcon,
   ChevronDoubleRightIcon,
+  EyeIcon,
 } from "@heroicons/react/24/solid";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 
@@ -291,7 +292,7 @@ export default function StockAdjustmentsIndex() {
   };
 
   // Check if has actions (edit disabled - adjustments are immutable audit records)
-  const hasActions = can.delete;
+  const hasActions = can.view || can.delete;
 
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view stock adjustments.</div>;
@@ -474,21 +475,53 @@ export default function StockAdjustmentsIndex() {
                       {start + idx + 1}
                     </td>
                     <td className="px-3 py-3">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300 text-xs font-medium">
-                        <DocumentTextIcon className="w-3.5 h-3.5" />
-                        {r.posted_number || "-"}
-                      </span>
+                      <div className="flex flex-col items-start gap-1">
+                        <Link
+                          to={`/stock-adjustments/${r.id}`}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/50 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-slate-700 dark:text-slate-200 hover:text-blue-700 dark:hover:text-blue-300 text-xs font-mono font-semibold transition-colors"
+                          title="View stock adjustment details"
+                        >
+                          <DocumentTextIcon className="w-3.5 h-3.5" />
+                          {r.posted_number || "-"}
+                        </Link>
+                        {r.stocktake_session && (
+                          <Link
+                            to={`/stocktake-sessions/${r.stocktake_session.id}`}
+                            className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 hover:underline"
+                          >
+                            Stocktake: {r.stocktake_session.reference_no}
+                          </Link>
+                        )}
+                        {r.stock_disposal && (
+                          <Link
+                            to="/stock-disposals"
+                            className="text-[10px] font-medium text-rose-600 dark:text-rose-400 hover:underline"
+                          >
+                            Disposal: {r.stock_disposal.disposal_number}
+                          </Link>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
                         <CalendarIcon className="w-4 h-4 text-gray-400" />
                         <span className="text-gray-800 dark:text-gray-200">{formatDate(r.posted_date)}</span>
                       </div>
+                      {r.user?.name && (
+                        <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">
+                          by {r.user.name}
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-3">
-                      <span className="text-gray-600 dark:text-gray-300 max-w-[200px] truncate block">
+                      <span className="text-gray-600 dark:text-gray-300 max-w-[240px] truncate block" title={r.note || ""}>
                         {r.note || "-"}
                       </span>
+                      {r.expense && (
+                        <span className="mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                          P&amp;L: {r.expense.expense_number}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-right">
                       <span className="inline-flex items-center justify-center min-w-10 px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
@@ -506,6 +539,18 @@ export default function StockAdjustmentsIndex() {
                     {hasActions && (
                       <td className="px-3 py-3">
                         <div className="flex items-center gap-1.5 justify-center">
+                          {/* View Action */}
+                          <Guard when={can.view}>
+                            <Link
+                              to={`/stock-adjustments/${r.id}`}
+                              className="products-row-action"
+                              aria-label={`View adjustment ${r.posted_number}`}
+                              title="View adjustment details"
+                            >
+                              <EyeIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
+                            </Link>
+                          </Guard>
+
                           {/* Delete Action */}
                           <Guard when={can.delete}>
                             <button

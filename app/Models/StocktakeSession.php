@@ -29,7 +29,7 @@ class StocktakeSession extends Model
         'completed_at' => 'datetime',
     ];
 
-    protected $appends = ['progress'];
+    protected $appends = ['progress', 'scope_name'];
 
     // ===== Relationships =====
 
@@ -66,6 +66,20 @@ class StocktakeSession extends Model
             'counted' => $counted,
             'total'   => $total,
         ];
+    }
+
+    public function getScopeNameAttribute(): ?string
+    {
+        if (!$this->scope_type || !$this->scope_id) {
+            return null;
+        }
+
+        return match ($this->scope_type) {
+            'category' => Category::find($this->scope_id)?->name,
+            'brand'    => Brand::find($this->scope_id)?->name,
+            'supplier' => Supplier::find($this->scope_id)?->name,
+            default    => null,
+        };
     }
 
     // ===== Scopes =====

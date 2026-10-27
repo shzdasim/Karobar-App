@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\Batch;
+use App\Models\Expense;
+use App\Models\ExpenseCategory;
 use App\Models\Product;
 use App\Models\StockAdjustment;
 use App\Models\StockAdjustmentItem;
@@ -10,6 +12,7 @@ use App\Models\StocktakeItem;
 use App\Models\StocktakeSession;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class StocktakeService
 {
@@ -299,6 +302,48 @@ class StocktakeService
 
             // Update StockAdjustment total
             $adj->update(['total_worth' => $totalWorth]);
+            $adj->load('items.product');
+
+            // Record audit trail for generated stock adjustment
+            app(DocumentAuditService::class)->recordCreate(
+                $adj,
+                $user,
+                "Stocktake finalization for session {$session->reference_no}"
+            );
+
+            // Post non-cash P&L Shrinkage Write-Off expense if net variance value is negative (shortage)
+            if (Schema::hasTable('expenses') && Schema::hasTable('expense_categories')) {
+                $netSignedValue = 0.0;
+                foreach ($adj->items as $adjItem) {
+                    $netSignedValue += ((float) $adjItem->diff_qty * (float) $adjItem->unit_purchase_price);
+                }
+                if ($netSignedValue < -0.005) {
+                    $lossAmount = round(abs($netSignedValue), 2);
+                    $category = ExpenseCategory::firstOrCreate(
+                        ['code' => 'stock_shrinkage_writeoff'],
+                        [
+                            'name'        => 'Inventory Shrinkage & Count Variance Write-Off',
+                            'description' => 'Non-cash P&L write-off for inventory count shortages and stock adjustments',
+                            'is_active'   => true,
+                        ]
+                    );
+                    $dateStr = now()->toDateString();
+                    Expense::create([
+                        'expense_number'         => Expense::generateExpenseNumber($dateStr),
+                        'expense_category_id'    => $category->id,
+                        'account_id'             => null,
+                        'user_id'                => $user->id,
+                        'cash_drawer_session_id' => null,
+                        'amount'                 => $lossAmount,
+                        'date'                   => $dateStr,
+                        'payment_method'         => 'other',
+                        'reference_number'       => $adj->posted_number,
+                        'payee'                  => 'Stocktake Variance Write-Off',
+                        'description'            => "Stocktake {$session->reference_no} Shrinkage Write-Off ({$adj->posted_number})",
+                        'is_recurring'           => false,
+                    ]);
+                }
+            }
 
             // Mark session as finalized
             $session->update([
@@ -307,7 +352,7 @@ class StocktakeService
                 'stock_adjustment_id' => $adj->id,
             ]);
 
-            return $session->fresh();
+            return $session->fresh(['stockAdjustment:id,posted_number']);
         });
     }
 

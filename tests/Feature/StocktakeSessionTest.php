@@ -332,6 +332,72 @@ class StocktakeSessionTest extends TestCase
         $this->assertDatabaseHas('stock_adjustments', [
             'note' => "Stocktake finalization for session {$finalRes->json('reference_no')}",
         ]);
+
+        // Verify the linked stock adjustment can be fetched via GET /api/stock-adjustments/{id}
+        $adjId = $finalRes->json('stock_adjustment_id');
+        $this->assertNotNull($adjId);
+
+        $showAdjRes = $this->getJson("/api/stock-adjustments/{$adjId}");
+        $showAdjRes->assertOk()
+            ->assertJsonFragment([
+                'id'            => $adjId,
+                'posted_number' => 'STOCKTAKE-' . $finalRes->json('reference_no'),
+            ])
+            ->assertJsonPath('stocktake_session.id', $sessionId);
+
+        // Verify non-cash P&L Shrinkage Write-Off expense was created for the 5-unit shortage (5 * 10.00 = 50.00)
+        $this->assertDatabaseHas('expenses', [
+            'reference_number' => 'STOCKTAKE-' . $finalRes->json('reference_no'),
+            'amount'           => 50.00,
+            'payment_method'   => 'other',
+        ]);
+
+        // Verify Document Audit History was recorded and is retrievable via GET /api/document-histories
+        $historyRes = $this->getJson("/api/document-histories?entity_type=stock_adjustment&entity_id={$adjId}");
+        $historyRes->assertOk()
+            ->assertJsonPath('histories.0.action', 'created');
+    }
+
+    public function test_manual_stock_adjustment_show_history_and_pnl_shrinkage_sync(): void
+    {
+        $product = $this->makeProduct(['quantity' => 50, 'unit_purchase_price' => 20.00]);
+
+        // 1. Create a manual Stock Adjustment with a 10-unit shortage (actual = 40, diff = -10, loss = 200)
+        $storeRes = $this->postJson('/api/stock-adjustments', [
+            'posted_number' => 'STADJ-00999',
+            'posted_date'   => now()->toDateString(),
+            'note'          => 'Damaged shelf units discovered',
+            'items'         => [
+                [
+                    'product_id'          => $product->id,
+                    'actual_qty'          => 40,
+                    'unit_purchase_price' => 20.00,
+                ],
+            ],
+        ]);
+
+        $storeRes->assertOk()
+            ->assertJsonFragment(['posted_number' => 'STADJ-00999']);
+
+        $adjId = $storeRes->json('id');
+
+        // Verify GET /api/stock-adjustments/{id} returns full adjustment details & linked expense
+        $showRes = $this->getJson("/api/stock-adjustments/{$adjId}");
+        $showRes->assertOk()
+            ->assertJsonPath('items.0.previous_qty', 50)
+            ->assertJsonPath('items.0.actual_qty', 40)
+            ->assertJsonPath('items.0.diff_qty', -10);
+        $this->assertEquals(200.0, (float) $showRes->json('expense.amount'));
+
+        // Verify audit history endpoint works for stock_adjustment
+        $histRes = $this->getJson("/api/document-histories?entity_type=stock_adjustment&entity_id={$adjId}");
+        $histRes->assertOk()
+            ->assertJsonPath('histories.0.action', 'created');
+
+        // 2. Delete the adjustment -> stock restored to 50 and P&L shrinkage expense soft-deleted
+        $this->deleteJson("/api/stock-adjustments/{$adjId}")->assertNoContent();
+        $this->assertEquals(50, $product->fresh()->quantity);
+        $this->assertSoftDeleted('expenses', ['reference_number' => 'STADJ-00999']);
     }
 
     // ──────────────────────────────────────────────────────────────────────────

@@ -52,7 +52,7 @@ export default function EditStockAdjustment(){
     try {
       await axios.post(`/api/stock-adjustments/${id}?_method=PUT`, payload);
       toast.success("Stock adjustment updated");
-      navigate("/stock-adjustments");
+      navigate(`/stock-adjustments/${id}`);
     } catch (e) {
       const msg = e?.response?.data?.message || "Update failed";
       toast.error(msg);
@@ -67,7 +67,7 @@ export default function EditStockAdjustment(){
   return (
     <div className="stock-adjustment-page stock-adjustment-edit space-y-4">
       <div className="flex justify-end">
-        <Link to="/stock-adjustments" className="products-action theme-btn-tertiary"><ArrowLeftIcon className="w-5 h-5" aria-hidden="true" /><span>Back</span></Link>
+        <Link to={`/stock-adjustments/${id}`} className="products-action theme-btn-tertiary"><ArrowLeftIcon className="w-5 h-5" aria-hidden="true" /><span>Back</span></Link>
       </div>
 
       <Guard when={can.update}>
@@ -75,7 +75,7 @@ export default function EditStockAdjustment(){
           adjustmentId={id}
           initialData={initial}
           onSubmit={onSubmit}
-          onSuccess={()=>navigate('/stock-adjustments')}
+          onSuccess={()=>navigate(`/stock-adjustments/${id}`)}
         />
       </Guard>
       {!can.update && (

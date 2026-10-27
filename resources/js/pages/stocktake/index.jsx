@@ -323,7 +323,7 @@ export default function StocktakeIndex() {
                       {/* Scope */}
                       <td className="py-3 px-4 text-xs text-slate-500 dark:text-slate-400">
                         {s.scope_type
-                          ? <span className="capitalize">{s.scope_type}: #{s.scope_id}</span>
+                          ? <span className="capitalize">{s.scope_type}: {s.scope_name || `#${s.scope_id}`}</span>
                           : <span className="italic">All Products</span>
                         }
                       </td>
@@ -341,12 +341,23 @@ export default function StocktakeIndex() {
 
                       {/* Status */}
                       <td className="py-3 px-4">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                          STATUS_COLORS[s.status] || STATUS_COLORS.draft
-                        }`}>
-                          {STATUS_ICON[s.status]}
-                          {STATUS_LABELS[s.status] || s.status}
-                        </span>
+                        <div className="flex flex-col items-start gap-1">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                            STATUS_COLORS[s.status] || STATUS_COLORS.draft
+                          }`}>
+                            {STATUS_ICON[s.status]}
+                            {STATUS_LABELS[s.status] || s.status}
+                          </span>
+                          {s.status === "finalized" && s.stock_adjustment_id && (
+                            <Link
+                              to={`/stock-adjustments/${s.stock_adjustment_id}`}
+                              className="text-[11px] font-medium hover:underline"
+                              style={{ color: themeColors.primary }}
+                            >
+                              View Adjustment →
+                            </Link>
+                          )}
+                        </div>
                       </td>
 
                       {/* Progress */}

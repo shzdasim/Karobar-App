@@ -3,8 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\DocumentHistory;
+use App\Models\Payment;
 use App\Models\PurchaseInvoice;
+use App\Models\PurchaseReturn;
 use App\Models\SaleInvoice;
+use App\Models\SaleReturn;
+use App\Models\StockAdjustment;
+use App\Models\StockDisposal;
+use App\Models\StocktakeSession;
 use App\Services\DocumentAuditService;
 use Illuminate\Http\Request;
 
@@ -25,7 +31,11 @@ class DocumentHistoryController extends Controller
         $id = $validated['entity_id'];
 
         $entity = $type::findOrFail($id);
-        $this->authorize('viewHistory', $entity);
+        if (method_exists(app(\Illuminate\Contracts\Auth\Access\Gate::class)->getPolicyFor($entity) ?: new \stdClass(), 'viewHistory')) {
+            $this->authorize('viewHistory', $entity);
+        } else {
+            $this->authorize('view', $entity);
+        }
 
         $histories = $this->auditService->getHistory($type, $id);
 
@@ -41,6 +51,12 @@ class DocumentHistoryController extends Controller
         return match (strtolower(trim($type))) {
             'sale_invoice', 'saleinvoice', 'sale', strtolower(SaleInvoice::class) => SaleInvoice::class,
             'purchase_invoice', 'purchaseinvoice', 'purchase', strtolower(PurchaseInvoice::class) => PurchaseInvoice::class,
+            'stock_adjustment', 'stockadjustment', 'stock-adjustment', strtolower(StockAdjustment::class) => StockAdjustment::class,
+            'payment', strtolower(Payment::class) => Payment::class,
+            'sale_return', 'salereturn', 'sale-return', strtolower(SaleReturn::class) => SaleReturn::class,
+            'purchase_return', 'purchasereturn', 'purchase-return', strtolower(PurchaseReturn::class) => PurchaseReturn::class,
+            'stock_disposal', 'stockdisposal', 'stock-disposal', strtolower(StockDisposal::class) => StockDisposal::class,
+            'stocktake_session', 'stocktakesession', 'stocktake', strtolower(StocktakeSession::class) => StocktakeSession::class,
             default => abort(400, 'Invalid entity type'),
         };
     }
