@@ -64,6 +64,8 @@ const [customers, setCustomers] = useState([]);
   const [customerId, setCustomerId] = useState("");
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
   const [rows, setRows] = useState([]);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [newestFirst, setNewestFirst] = useState(true);
   const [sortField, setSortField] = useState("entry_date");
   // table paging
@@ -74,6 +76,7 @@ const [customers, setCustomers] = useState([]);
   const [settling, setSettling] = useState(false);
   const [settleBusyId, setSettleBusyId] = useState(null);
   const [summary, setSummary] = useState({
+    opening_balance: 0,
     total_invoiced: 0,
     received_on_invoice: 0,
     payments_credited: 0,
@@ -225,12 +228,16 @@ const [customers, setCustomers] = useState([]);
     })();
   }, [permsLoading, can.view]);
 
-  const fetchData = async () => {
+  const fetchData = async (overrideFrom = fromDate, overrideTo = toDate) => {
     if (!can.view) return toast.error("You don't have permission to view customer ledger.");
     if (!customerId) return toast.error("Select a customer first");
     try {
       const { data } = await axios.get("/api/customer-ledger", {
-        params: { customer_id: customerId },
+        params: {
+          customer_id: customerId,
+          from: overrideFrom || undefined,
+          to: overrideTo || undefined,
+        },
       });
       const clean = (data.data || []).map((r) => {
         const c = { ...r };
@@ -240,6 +247,7 @@ const [customers, setCustomers] = useState([]);
       setRows(clean);
       setSummary(
         data.summary || {
+          opening_balance: 0,
           total_invoiced: 0,
           received_on_invoice: 0,
           payments_credited: 0,
@@ -501,8 +509,8 @@ const [customers, setCustomers] = useState([]);
       return ad < bd ? -1 : 1;
     });
 
-    // Running balance over the chronological order
-    let runningBalance = 0;
+    // Running balance over the chronological order (starting from brought-forward opening balance)
+    let runningBalance = Number(summary?.opening_balance || 0);
     const withBalance = sorted.map((r) => {
       if (r.entry_type === "invoice" || r.entry_type === "manual") {
         runningBalance += Number(r.balance_remaining || 0);
@@ -519,7 +527,7 @@ const [customers, setCustomers] = useState([]);
     const ordered = [...pending, ...(newestFirst ? saved.reverse() : saved)];
 
     return ordered.map((r, i) => ({ ...r, __top: i + 1 }));
-  }, [rows, newestFirst]);
+  }, [rows, newestFirst, summary?.opening_balance]);
 
   // Column totals + how many rows are waiting to be saved
   const totals = useMemo(
@@ -542,13 +550,13 @@ const [customers, setCustomers] = useState([]);
 
   // Latest running balance (newest chronological row) = overall due for this customer
   const overallRunning = useMemo(() => {
-    let last = 0;
+    let last = Number(summary?.opening_balance || 0);
     for (const r of derivedRows) {
       if (r.entry_type === "invoice" || r.entry_type === "manual") last += Number(r.balance_remaining || 0);
       else if (r.entry_type === "payment") last -= Number(r.credited_amount || 0);
     }
     return Number(last.toFixed(2));
-  }, [derivedRows]);
+  }, [derivedRows, summary?.opening_balance]);
 
   // Optional: let users sort by amount instead of date
   const sortedRows = useMemo(() => {
@@ -637,7 +645,12 @@ const [customers, setCustomers] = useState([]);
     try { w.opener = null; } catch {}
     try {
       const { data } = await axios.get("/api/customer-ledger/print-url", {
-        params: { customer_id: customerId, type: type || undefined },
+        params: {
+          customer_id: customerId,
+          type: type || undefined,
+          from: fromDate || undefined,
+          to: toDate || undefined,
+        },
       });
       w.location.replace(data.url);
     } catch (err) {
@@ -816,10 +829,13 @@ return (
           </div>
         </div>
 
-        {/* Ledger totals strip (no date filters anymore) */}
+        {/* Ledger totals strip */}
         {customerId && (
           <div className="relative px-5 pb-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className={`grid grid-cols-2 ${fromDate || Number(summary.opening_balance) !== 0 ? "md:grid-cols-5" : "md:grid-cols-4"} gap-2`}>
+              {(fromDate || Number(summary.opening_balance) !== 0) && (
+                <HeroStat label="Opening Balance (B/F)" value={fmt(summary.opening_balance)} />
+              )}
               <HeroStat label="Total Bills" value={fmt(summary.total_invoiced)} />
               <HeroStat label="Received on Invoice" value={fmt(summary.received_on_invoice)} />
               <HeroStat label="Payments" value={fmt(summary.payments_credited)} />
@@ -852,7 +868,50 @@ return (
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Date range statement filter */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-gray-500 dark:text-gray-400 font-medium">Statement Range:</span>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                aria-label="Statement from date"
+                className={`h-8 px-2 text-xs rounded-lg border focus:outline-hidden focus:ring-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 bg-white text-gray-700"}`}
+              />
+              <span className="text-gray-400">to</span>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                aria-label="Statement to date"
+                className={`h-8 px-2 text-xs rounded-lg border focus:outline-hidden focus:ring-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 bg-white text-gray-700"}`}
+              />
+              <button
+                type="button"
+                disabled={!customerId}
+                onClick={() => fetchData(fromDate, toDate)}
+                className="theme-btn-tertiary inline-flex items-center h-8 px-2.5 text-xs font-medium rounded-lg"
+                title="Apply statement date filter"
+              >
+                Apply
+              </button>
+              {(fromDate || toDate) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFromDate("");
+                    setToDate("");
+                    if (customerId) fetchData("", "");
+                  }}
+                  className="inline-flex items-center h-8 px-2 text-xs font-medium text-rose-600 dark:text-rose-400 hover:underline"
+                  title="Clear statement date filter"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
             {/* Sort field */}
             <div className="relative">
               <select
@@ -1442,7 +1501,11 @@ return (
         isOpen={shareModalOpen}
         onClose={() => setShareModalOpen(false)}
         documentType="customer_ledger"
-        queryParams={{ customer_id: customerId }}
+        queryParams={{
+          customer_id: customerId,
+          from: fromDate || undefined,
+          to: toDate || undefined,
+        }}
       />
 
       {/* print + portal helpers */}

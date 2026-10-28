@@ -27,8 +27,14 @@ class DocumentShareController extends Controller
     {
         switch ($type) {
             case 'sale_invoice':
+            case 'delivery_challan':
                 $invoice = SaleInvoice::findOrFail((int) ($params['id'] ?? 0));
                 $this->authorize('view', $invoice);
+                break;
+
+            case 'quotation':
+                $draft = \App\Models\InvoiceDraft::findOrFail((int) ($params['id'] ?? 0));
+                $this->authorize('view', $draft);
                 break;
 
             case 'customer_ledger':
@@ -47,6 +53,29 @@ class DocumentShareController extends Controller
             case 'purchase_order':
                 $po = PurchaseOrder::findOrFail((int) ($params['id'] ?? 0));
                 $this->authorize('view', $po);
+                break;
+
+            case 'purchase_invoice':
+                $pi = \App\Models\PurchaseInvoice::findOrFail((int) ($params['id'] ?? 0));
+                $this->authorize('view', $pi);
+                break;
+
+            case 'sale_return':
+                $sr = \App\Models\SaleReturn::findOrFail((int) ($params['id'] ?? 0));
+                $this->authorize('view', $sr);
+                break;
+
+            case 'purchase_return':
+                $pr = \App\Models\PurchaseReturn::findOrFail((int) ($params['id'] ?? 0));
+                $this->authorize('view', $pr);
+                break;
+
+            case 'stock_disposal':
+            case 'cash_drawer_session':
+            case 'stocktake_session':
+                if (!request()->user()) {
+                    abort(401);
+                }
                 break;
         }
     }

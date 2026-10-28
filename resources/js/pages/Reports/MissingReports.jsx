@@ -7,9 +7,12 @@ import {
   DocumentChartBarIcon,
   PhoneIcon,
   ExclamationCircleIcon,
+  PrinterIcon,
+  ShareIcon,
 } from "@heroicons/react/24/solid";
 import { usePermissions } from "@/api/usePermissions";
 import SupplierSearch from "@/components/SupplierSearch.jsx";
+import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const monthStart = () => `${today().slice(0, 7)}-01`;
@@ -137,6 +140,7 @@ export default function MissingReports({ type }) {
   const [workQueuePayload, setWorkQueuePayload] = useState(null);
   const [workQueueSearch, setWorkQueueSearch] = useState("");
   const [workQueueMinOverdue, setWorkQueueMinOverdue] = useState("");
+  const [shareParty, setShareParty] = useState(null); // { type: 'customers'|'suppliers', id: number }
 
   useEffect(() => {
     setPayload(null);
@@ -329,6 +333,57 @@ export default function MissingReports({ type }) {
       rows.map((row) => report.columns.map(([field]) => getValue(row, field))));
   };
 
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  const exportPdf = async () => {
+    if (!rows.length) return;
+    if (type === "reorder" && !supplier?.id) {
+      return toast.error("Select a supplier first.");
+    }
+    setExportingPdf(true);
+    try {
+      const pdfEndpoint =
+        type === "outstanding-aging" && agingTab === "work_queue"
+          ? "/api/reports/overdue-work-queue/pdf"
+          : `${report.endpoint}/pdf`;
+      const params =
+        type === "outstanding-aging" && agingTab === "work_queue"
+          ? {
+              as_of: asOf,
+              party_type: selectedPartyType,
+              min_overdue: workQueueMinOverdue || 0,
+              q: workQueueSearch || undefined,
+              download: 1,
+            }
+          : report.dated
+            ? { from, to, download: 1 }
+            : type === "outstanding-aging"
+              ? { as_of: asOf, aging_by: agingBy, download: 1 }
+              : type === "reorder"
+                ? { supplier_id: supplier.id, download: 1 }
+                : { download: 1 };
+
+      const res = await axios.get(pdfEndpoint, {
+        params,
+        responseType: "blob",
+      });
+      const blob = new Blob([res.data], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${type === "outstanding-aging" && agingTab === "work_queue" ? "overdue-work-queue" : type}-report.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast.success("PDF report downloaded");
+    } catch (err) {
+      toast.error("Failed to generate PDF report");
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   if (permissionsLoading) {
     return <div className="report-page"><section className="products-panel"><p className="report-state">Checking permissions…</p></section></div>;
   }
@@ -369,7 +424,15 @@ export default function MissingReports({ type }) {
       : []);
 
   return (
-    <div className="report-page">
+    <div id="missing-report-printable" className="report-page">
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #missing-report-printable, #missing-report-printable * { visibility: visible; }
+          #missing-report-printable { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 12px; background: #fff !important; color: #000 !important; }
+          .no-print, .products-filter-panel { display: none !important; }
+        }
+      `}</style>
       <section className="products-panel">
         <div className="products-heading">
           <div className="flex items-center gap-3 min-w-0">
@@ -418,11 +481,20 @@ export default function MissingReports({ type }) {
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 no-print">
             {canExport && (
-              <button type="button" onClick={exportCsv} disabled={!rows.length} className="products-action theme-btn-secondary">
-                <ArrowDownOnSquareIcon className="w-4 h-4" /> Export CSV
-              </button>
+              <>
+                <button type="button" onClick={exportCsv} disabled={!rows.length} className="products-action theme-btn-secondary">
+                  <ArrowDownOnSquareIcon className="w-4 h-4" /> Export CSV
+                </button>
+                <button type="button" onClick={exportPdf} disabled={!rows.length || exportingPdf} className="products-action theme-btn-secondary">
+                  <ArrowDownOnSquareIcon className={`w-4 h-4 ${exportingPdf ? "animate-bounce" : ""}`} />
+                  {exportingPdf ? "Building PDF…" : "Export PDF"}
+                </button>
+                <button type="button" onClick={() => window.print()} disabled={!rows.length} className="products-action theme-btn-secondary">
+                  <PrinterIcon className="w-4 h-4" /> Print
+                </button>
+              </>
             )}
             <button type="button" onClick={() => { setPayload(null); setWorkQueuePayload(null); setAsOf(today()); setSupplier(null); }} className="products-action theme-btn-tertiary">
               Reset
@@ -622,31 +694,42 @@ export default function MissingReports({ type }) {
                             </details>
                           </td>
                           <td>
-                            {row.party_phone ? (
-                              <div className="flex items-center gap-2">
-                                <a
-                                  href={`tel:${row.party_phone}`}
-                                  className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
-                                  title="Click to call"
-                                >
-                                  <PhoneIcon className="w-3.5 h-3.5" />
-                                  {row.party_phone}
-                                </a>
-                                {phoneClean && (
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {row.party_phone ? (
+                                <>
                                   <a
-                                    href={`https://wa.me/${phoneClean.startsWith("0") ? "92" + phoneClean.slice(1) : phoneClean}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 font-semibold hover:bg-emerald-200"
-                                    title="Chat on WhatsApp"
+                                    href={`tel:${row.party_phone}`}
+                                    className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                                    title="Click to call"
                                   >
-                                    WhatsApp
+                                    <PhoneIcon className="w-3.5 h-3.5" />
+                                    {row.party_phone}
                                   </a>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-gray-400 text-xs">—</span>
-                            )}
+                                  {phoneClean && (
+                                    <a
+                                      href={`https://wa.me/${phoneClean.startsWith("0") ? "92" + phoneClean.slice(1) : phoneClean}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 font-semibold hover:bg-emerald-200"
+                                      title="Chat on WhatsApp"
+                                    >
+                                      WhatsApp
+                                    </a>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-gray-400 text-xs">—</span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setShareParty({ type: selectedPartyType, id: row.party_id })}
+                                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-300 font-semibold hover:bg-blue-200 cursor-pointer"
+                                title="Share Official Ledger Statement PDF via WhatsApp / Email"
+                              >
+                                <ShareIcon className="w-3 h-3" />
+                                Share Statement PDF
+                              </button>
+                            </div>
                           </td>
                           <td className="report-num">
                             {Number(row.credit_limit) > 0 ? `Rs. ${money(row.credit_limit)}` : "Unlimited"}
@@ -886,6 +969,16 @@ export default function MissingReports({ type }) {
           }}
         />
       )}
+      <ShareDocumentModal
+        isOpen={Boolean(shareParty?.id)}
+        onClose={() => setShareParty(null)}
+        documentType={shareParty?.type === "customers" ? "customer_ledger" : "supplier_ledger"}
+        queryParams={
+          shareParty?.type === "customers"
+            ? { customer_id: shareParty?.id }
+            : { supplier_id: shareParty?.id }
+        }
+      />
     </div>
   );
 }

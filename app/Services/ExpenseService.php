@@ -10,6 +10,7 @@ use App\Models\ExpenseCategory;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class ExpenseService
@@ -58,6 +59,8 @@ class ExpenseService
                 $drawerSession = $this->cashDrawerService->getCurrentSession($user);
             }
 
+            $isRecurring = !empty($data['is_recurring']) && filter_var($data['is_recurring'], FILTER_VALIDATE_BOOLEAN);
+
             $expense = Expense::create([
                 'expense_number'         => $expenseNumber,
                 'expense_category_id'    => $category->id,
@@ -71,8 +74,8 @@ class ExpenseService
                 'payee'                  => $data['payee'] ?? null,
                 'description'            => $data['description'] ?? null,
                 'receipt_path'           => $data['receipt_path'] ?? null,
-                'is_recurring'           => !empty($data['is_recurring']),
-                'recurring_frequency'    => $data['recurring_frequency'] ?? null,
+                'is_recurring'           => $isRecurring,
+                'recurring_frequency'    => $isRecurring ? ($data['recurring_frequency'] ?? null) : null,
             ]);
 
             // Apply financial deductions
@@ -169,6 +172,13 @@ class ExpenseService
             }
 
             // 3. Update expense fields
+            $isRecurring = array_key_exists('is_recurring', $data)
+                ? (!empty($data['is_recurring']) && filter_var($data['is_recurring'], FILTER_VALIDATE_BOOLEAN))
+                : $expense->is_recurring;
+            $recurringFrequency = $isRecurring
+                ? (array_key_exists('recurring_frequency', $data) ? $data['recurring_frequency'] : $expense->recurring_frequency)
+                : null;
+
             $expense->update([
                 'expense_category_id'    => $category->id,
                 'account_id'             => $newAccount?->id,
@@ -180,8 +190,8 @@ class ExpenseService
                 'payee'                  => array_key_exists('payee', $data) ? $data['payee'] : $expense->payee,
                 'description'            => array_key_exists('description', $data) ? $data['description'] : $expense->description,
                 'receipt_path'           => array_key_exists('receipt_path', $data) ? $data['receipt_path'] : $expense->receipt_path,
-                'is_recurring'           => array_key_exists('is_recurring', $data) ? !empty($data['is_recurring']) : $expense->is_recurring,
-                'recurring_frequency'    => array_key_exists('recurring_frequency', $data) ? $data['recurring_frequency'] : $expense->recurring_frequency,
+                'is_recurring'           => $isRecurring,
+                'recurring_frequency'    => $recurringFrequency,
             ]);
 
             // 4. Apply new financial effects
@@ -262,8 +272,78 @@ class ExpenseService
                 }
             }
 
+            if ($expense->receipt_path) {
+                $sharedReceiptCount = Expense::where('id', '!=', $expense->id)
+                    ->where('receipt_path', $expense->receipt_path)
+                    ->count();
+                if ($sharedReceiptCount === 0 && Storage::disk('public')->exists($expense->receipt_path)) {
+                    Storage::disk('public')->delete($expense->receipt_path);
+                }
+            }
+
             return (bool) $expense->delete();
         });
+    }
+
+    /**
+     * Process all due recurring expenses up to the given target date.
+     *
+     * Each active recurring expense (`is_recurring = true`) whose next cycle date is
+     * on or before `$asOfDate` spawns a new Expense record for that cycle date (which
+     * becomes the new active recurring head) and marks the prior occurrence `is_recurring = false`.
+     */
+    public function processRecurringExpenses(?Carbon $asOfDate = null, ?User $actor = null): array
+    {
+        $targetDate = ($asOfDate ? $asOfDate->copy() : Carbon::today())->startOfDay();
+        $createdExpenses = [];
+
+        $recurringHeads = Expense::where('is_recurring', true)
+            ->whereIn('recurring_frequency', ['weekly', 'monthly', 'yearly'])
+            ->orderBy('date')
+            ->orderBy('id')
+            ->get();
+
+        foreach ($recurringHeads as $head) {
+            $current = $head;
+            $nextDate = $current->getNextRecurringDate();
+            $iterations = 0;
+
+            while ($nextDate !== null && $nextDate->lte($targetDate) && $iterations < 12) {
+                $iterations++;
+
+                $newExpense = DB::transaction(function () use ($current, $nextDate, $actor) {
+                    $expenseOwner = $actor ?? ($current->user_id ? User::find($current->user_id) : null);
+
+                    $spawned = $this->createExpense([
+                        'expense_category_id' => $current->expense_category_id,
+                        'account_id'          => $current->account_id,
+                        'amount'              => (float) $current->amount,
+                        'date'                => $nextDate->toDateString(),
+                        'payment_method'      => $current->payment_method,
+                        'reference_number'    => $current->reference_number,
+                        'payee'               => $current->payee,
+                        'description'         => $current->description,
+                        'is_recurring'        => true,
+                        'recurring_frequency' => $current->recurring_frequency,
+                    ], $expenseOwner);
+
+                    $current->update([
+                        'is_recurring' => false,
+                    ]);
+
+                    return $spawned;
+                });
+
+                $createdExpenses[] = $newExpense;
+                $current = $newExpense;
+                $nextDate = $current->getNextRecurringDate();
+            }
+        }
+
+        return [
+            'processed_count'  => count($createdExpenses),
+            'created_expenses' => $createdExpenses,
+        ];
     }
 
     /**

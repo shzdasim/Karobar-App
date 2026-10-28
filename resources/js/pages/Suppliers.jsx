@@ -13,6 +13,8 @@ import {
   PlusIcon,
   BuildingStorefrontIcon,
   XMarkIcon,
+  BanknotesIcon,
+  ExclamationTriangleIcon,
 } from "@heroicons/react/24/solid";
 import SupplierImportModal from "../components/SupplierImportModal.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
@@ -27,13 +29,32 @@ import { getThemeButtonClasses } from "@/utils/buttonStyles";
 
 export default function Suppliers() {
   const [suppliers, setSuppliers] = useState([]);
-  const [form, setForm] = useState({ name: "", address: "", phone: "", email: "", credit_limit: "", credit_days: "" });
+  const [form, setForm] = useState({ name: "", address: "", phone: "", email: "", credit_limit: "", credit_days: "", opening_balance: "" });
   const [editingId, setEditingId] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  // Credit summary modal state
+  const [creditModalSupplier, setCreditModalSupplier] = useState(null);
+  const [creditSummary, setCreditSummary] = useState(null);
+  const [loadingCreditSummary, setLoadingCreditSummary] = useState(false);
+
+  const openCreditSummary = async (supplier) => {
+    setCreditModalSupplier(supplier);
+    setCreditSummary(null);
+    setLoadingCreditSummary(true);
+    try {
+      const { data } = await axios.get(`/api/suppliers/${supplier.id}/credit-summary`);
+      setCreditSummary(data);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to load supplier credit summary");
+    } finally {
+      setLoadingCreditSummary(false);
+    }
+  };
 
   // search + pagination
   const [qName, setQName] = useState("");
@@ -151,7 +172,7 @@ export default function Suppliers() {
   };
 
   const resetForm = () => {
-    setForm({ name: "", address: "", phone: "", email: "", credit_limit: "", credit_days: "" });
+    setForm({ name: "", address: "", phone: "", email: "", credit_limit: "", credit_days: "", opening_balance: "" });
     setEditingId(null);
     setTimeout(() => nameRef.current?.focus(), 0);
   };
@@ -435,6 +456,21 @@ return (
                 </div>
               </div>
 
+              {!editingId && (
+                <div>
+                  <label className="block text-xs font-medium mb-1">Opening Balance Payable (Rs.)</label>
+                  <GlassInput
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00 (Optional initial payable balance)"
+                    value={form.opening_balance ?? ""}
+                    onChange={(e) => setForm({ ...form, opening_balance: e.target.value })}
+                    className="w-full h-9"
+                  />
+                </div>
+              )}
+
               <div className="flex items-center gap-2">
                 <GlassBtn
                   type="button"
@@ -499,15 +535,15 @@ return (
                     <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase w-32">Phone</th>
                     <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase w-28">Credit Limit</th>
                     <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase w-20">Terms</th>
-                    {(can.update || can.delete) && (
-                      <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase text-center w-24">Actions</th>
+                    {(can.view || can.update || can.delete) && (
+                      <th className="px-3 py-2 font-medium text-gray-600 dark:text-gray-300 text-xs uppercase text-center w-28">Actions</th>
                     )}
                   </tr>
                 </thead>
                 <tbody>
                   {paged.length === 0 && !loading && (
                     <tr>
-                      <td className="px-3 py-10 text-center text-gray-500 dark:text-gray-400" colSpan={(can.update || can.delete) ? 6 : 5}>
+                      <td className="px-3 py-10 text-center text-gray-500 dark:text-gray-400" colSpan={(can.view || can.update || can.delete) ? 6 : 5}>
                         <div className="flex flex-col items-center gap-2">
                           <BuildingStorefrontIcon className="w-8 h-8 text-gray-400" />
                           <p className="text-sm">No suppliers found</p>
@@ -534,9 +570,20 @@ return (
                         <td className="px-3 py-2.5 text-xs text-gray-700 dark:text-gray-300">
                           {Number(s.credit_days) > 0 ? `${s.credit_days} days` : "Immediate"}
                         </td>
-                        {(can.update || can.delete) && (
+                        {(can.view || can.update || can.delete) && (
                           <td className="px-3 py-2.5">
                             <div className="flex items-center justify-center gap-1.5">
+                              <Guard when={can.view}>
+                                <button
+                                  type="button"
+                                  onClick={() => openCreditSummary(s)}
+                                  className="products-row-action"
+                                  aria-label={`Credit Summary for ${s.name}`}
+                                  title="View Credit Summary & Overdue Status"
+                                >
+                                  <BanknotesIcon aria-hidden="true" className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                </button>
+                              </Guard>
                               <Guard when={can.update}>
                                 <button 
                                   onClick={() => handleEdit(s)} 
@@ -589,6 +636,127 @@ return (
         onClose={() => setImportOpen(false)}
         onImported={fetchSuppliers}
       />
+
+      {/* Supplier Credit Summary Modal */}
+      {creditModalSupplier && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4"
+          onClick={() => setCreditModalSupplier(null)}
+        >
+          <div
+            className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-700 w-full max-w-lg overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/80">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <BanknotesIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                    Supplier Credit Summary — {creditModalSupplier.name}
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Payables exposure, credit limit &amp; overdue bills
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreditModalSupplier(null)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-slate-700"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {loadingCreditSummary ? (
+                <div className="py-10 text-center text-xs text-gray-500">
+                  <ArrowPathIcon className="w-6 h-6 mx-auto animate-spin mb-2 text-emerald-500" />
+                  Loading credit exposure summary…
+                </div>
+              ) : creditSummary ? (
+                <>
+                  {creditSummary.is_limit_exceeded && (
+                    <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 flex items-center gap-2.5 text-xs text-rose-700 dark:text-rose-300">
+                      <ExclamationTriangleIcon className="w-5 h-5 shrink-0 text-rose-600 dark:text-rose-400" />
+                      <div>
+                        <span className="font-bold block">Credit Limit Exceeded</span>
+                        Payable balance exceeds the configured supplier credit limit.
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="p-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50/70 dark:bg-slate-900/40">
+                      <span className="text-[10px] uppercase tracking-wider text-gray-400 block">Current Payable</span>
+                      <span className="text-base font-bold font-mono text-gray-900 dark:text-gray-100">
+                        Rs. {Number(creditSummary.current_balance || 0).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="p-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50/70 dark:bg-slate-900/40">
+                      <span className="text-[10px] uppercase tracking-wider text-gray-400 block">Credit Limit</span>
+                      <span className="text-base font-bold font-mono text-gray-900 dark:text-gray-100">
+                        {Number(creditSummary.credit_limit) > 0
+                          ? `Rs. ${Number(creditSummary.credit_limit).toLocaleString()}`
+                          : "Unlimited"}
+                      </span>
+                    </div>
+                    <div className="p-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50/70 dark:bg-slate-900/40">
+                      <span className="text-[10px] uppercase tracking-wider text-gray-400 block">Available Credit</span>
+                      <span className="text-base font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                        {creditSummary.available_credit !== null && creditSummary.available_credit !== undefined
+                          ? `Rs. ${Number(creditSummary.available_credit).toLocaleString()}`
+                          : "Unlimited"}
+                      </span>
+                    </div>
+                    <div className="p-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50/70 dark:bg-slate-900/40">
+                      <span className="text-[10px] uppercase tracking-wider text-gray-400 block">Credit Terms</span>
+                      <span className="text-base font-bold text-gray-900 dark:text-gray-100">
+                        {Number(creditSummary.credit_days) > 0 ? `${creditSummary.credit_days} Days` : "Immediate"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-amber-200/80 dark:border-amber-800/50 bg-amber-50/60 dark:bg-amber-950/20 flex items-center justify-between text-xs">
+                    <div>
+                      <span className="text-[10px] uppercase tracking-wider font-semibold text-amber-700 dark:text-amber-400 block">
+                        Overdue Payable Amount ({creditSummary.overdue_invoices_count || 0} bill{creditSummary.overdue_invoices_count === 1 ? "" : "s"})
+                      </span>
+                      <span className="text-sm font-bold font-mono text-amber-900 dark:text-amber-200">
+                        Rs. {Number(creditSummary.total_overdue || 0).toLocaleString()}
+                      </span>
+                    </div>
+                    {creditSummary.oldest_due_date && (
+                      <div className="text-right">
+                        <span className="text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 block">
+                          Oldest Due Date
+                        </span>
+                        <span className="font-mono font-semibold text-amber-900 dark:text-amber-200">
+                          {creditSummary.oldest_due_date}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="py-6 text-center text-xs text-gray-400">No credit summary available.</div>
+              )}
+            </div>
+
+            <div className="px-5 py-3 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setCreditModalSupplier(null)}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-slate-600"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use App\Models\Product;
+use App\Models\UserDemand;
 use Illuminate\Support\Facades\Auth;
 
 class NotificationController extends Controller
@@ -165,6 +166,48 @@ $countQuery = $buildQuery(DB::table('products as p'));
 
         return response()->json([
             'dismissed' => $merged,
+        ]);
+    }
+
+    /**
+     * POST /api/notifications/ack-demand
+     *
+     * Stamp last_notified_at on pending user demands when shown as live notifications.
+     * Body: { demand_ids: int[] } or { demand_id: int }
+     */
+    public function ackDemand(Request $request)
+    {
+        $this->authorize('viewAny', UserDemand::class);
+
+        $validated = $request->validate([
+            'demand_id'    => 'nullable|integer',
+            'demand_ids'   => 'nullable|array',
+            'demand_ids.*' => 'integer',
+        ]);
+
+        $ids = [];
+        if (!empty($validated['demand_id'])) {
+            $ids[] = (int) $validated['demand_id'];
+        }
+        if (!empty($validated['demand_ids']) && is_array($validated['demand_ids'])) {
+            foreach ($validated['demand_ids'] as $id) {
+                $ids[] = (int) $id;
+            }
+        }
+        $ids = array_values(array_unique(array_filter($ids)));
+
+        $now = now();
+        $updated = 0;
+        if (!empty($ids)) {
+            $updated = UserDemand::whereIn('id', $ids)
+                ->where('status', 'pending')
+                ->update(['last_notified_at' => $now]);
+        }
+
+        return response()->json([
+            'acknowledged' => $ids,
+            'updated'      => $updated,
+            'notified_at'  => $now->toIso8601String(),
         ]);
     }
 }

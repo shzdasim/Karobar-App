@@ -24,6 +24,8 @@ import {
   SparklesIcon,
   InformationCircleIcon,
   DocumentTextIcon,
+  PencilSquareIcon,
+  TrashIcon,
 } from "@heroicons/react/24/solid";
 import { useTheme } from "@/context/ThemeContext";
 import { useCurrency } from "@/context/CurrencyContext";
@@ -148,8 +150,15 @@ export default function AccountsPage() {
   const [formType, setFormType] = useState("bank");
   const [formBankName, setFormBankName] = useState("");
   const [formAccountNumber, setFormAccountNumber] = useState("");
+  const [formOpeningBalance, setFormOpeningBalance] = useState("");
+  const [formCode, setFormCode] = useState("");
+  const [formIcon, setFormIcon] = useState("");
+  const [formColor, setFormColor] = useState("");
+  const [formIsActive, setFormIsActive] = useState(true);
   const [formNotes, setFormNotes] = useState("");
   const [formSaving, setFormSaving] = useState(false);
+  const [seedingDefaults, setSeedingDefaults] = useState(false);
+  const [presets, setPresets] = useState({ banks: [], wallets: [] });
 
   // ── Transfer form ──────────────────────────────────────────────────────────
   const [transferFrom, setTransferFrom] = useState(null);
@@ -181,6 +190,31 @@ export default function AccountsPage() {
   }, []);
 
   useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+
+  useEffect(() => {
+    axios
+      .get("/api/accounts/presets")
+      .then(({ data }) => {
+        setPresets({
+          banks: Array.isArray(data?.banks) ? data.banks : [],
+          wallets: Array.isArray(data?.wallets) ? data.wallets : [],
+        });
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSeedDefaults = async () => {
+    setSeedingDefaults(true);
+    try {
+      const { data } = await axios.post("/api/accounts/seed-defaults");
+      toast.success(data?.message || "Standard accounts seeded");
+      fetchAccounts();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to seed default accounts");
+    } finally {
+      setSeedingDefaults(false);
+    }
+  };
 
   // ── Load transactions for selected account ────────────────────────────────
   const fetchTransactions = useCallback(async () => {
@@ -221,12 +255,51 @@ export default function AccountsPage() {
 
   const txnPageCount = Math.max(1, Math.ceil(txnTotal / txnPerPage));
 
-  // ── Open create modal ──────────────────────────────────────────────────────
+  // ── Open create / edit modal ───────────────────────────────────────────────
   const openCreate = () => {
     setEditingAccount(null);
     setFormName(""); setFormType("bank"); setFormBankName("");
-    setFormAccountNumber(""); setFormNotes("");
+    setFormAccountNumber(""); setFormOpeningBalance("");
+    setFormCode(""); setFormIcon(""); setFormColor("");
+    setFormIsActive(true); setFormNotes("");
     setModalMode("create");
+  };
+
+  const openEdit = (account) => {
+    setEditingAccount(account);
+    setFormName(account.name || "");
+    setFormType(account.type || "bank");
+    setFormBankName(account.bank_name || "");
+    setFormAccountNumber(account.account_number || "");
+    setFormOpeningBalance(String(account.opening_balance ?? 0));
+    setFormCode(account.code || "");
+    setFormIcon(account.icon || "");
+    setFormColor(account.color || "");
+    setFormIsActive(account.is_active !== false);
+    setFormNotes(account.notes || "");
+    setModalMode("create");
+  };
+
+  const handleApplyPreset = (preset) => {
+    if (!preset) return;
+    setFormName(preset.name || "");
+    setFormType(preset.type || "bank");
+    setFormBankName(preset.full_name || preset.name || "");
+    setFormCode(preset.code || "");
+    setFormIcon(preset.icon || preset.code || "");
+    setFormColor(preset.color || "");
+  };
+
+  const handleDeleteAccount = async (account) => {
+    if (!window.confirm(`Delete account "${account.name}"?`)) return;
+    try {
+      await axios.delete(`/api/accounts/${account.id}`);
+      toast.success("Account deleted");
+      if (selectedAccount?.id === account.id) setSelectedAccount(null);
+      fetchAccounts();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to delete account");
+    }
   };
 
   // ── Submit create/edit ─────────────────────────────────────────────────────
@@ -238,10 +311,17 @@ export default function AccountsPage() {
       const payload = {
         name: formName.trim(),
         type: formType,
+        code: formCode.trim() || null,
+        icon: formIcon.trim() || null,
+        color: formColor.trim() || null,
         bank_name: formBankName.trim() || null,
         account_number: formAccountNumber.trim() || null,
+        is_active: formIsActive,
         notes: formNotes.trim() || null,
       };
+      if (!editingAccount) {
+        payload.opening_balance = parseFloat(formOpeningBalance) || 0;
+      }
       if (editingAccount) {
         await axios.put(`/api/accounts/${editingAccount.id}`, payload);
         toast.success("Account updated");
@@ -341,8 +421,9 @@ export default function AccountsPage() {
       <GlassSectionHeader
         title="Financial Accounts"
         right={
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
             <button
+              type="button"
               onClick={fetchAccounts}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg ${btnSecondary.className}`}
               style={btnSecondary.style}
@@ -351,6 +432,18 @@ export default function AccountsPage() {
               Refresh
             </button>
             <button
+              type="button"
+              onClick={handleSeedDefaults}
+              disabled={seedingDefaults}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg ${btnSecondary.className}`}
+              style={btnSecondary.style}
+              title="Create standard Pakistani Bank & Mobile Wallet accounts"
+            >
+              <SparklesIcon className="w-3.5 h-3.5" />
+              {seedingDefaults ? "Seeding…" : "Seed Standard Accounts"}
+            </button>
+            <button
+              type="button"
               onClick={() => { setAdjustAccount(null); setAdjustType("deposit"); setAdjustAmount(""); setAdjustReason(""); setModalMode("adjust"); }}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg ${btnSecondary.className}`}
               style={btnSecondary.style}
@@ -359,6 +452,7 @@ export default function AccountsPage() {
               Adjust
             </button>
             <button
+              type="button"
               onClick={() => { setTransferFrom(null); setTransferTo(null); setTransferAmount(""); setTransferNotes(""); setModalMode("transfer"); }}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg ${btnSecondary.className}`}
               style={btnSecondary.style}
@@ -367,6 +461,7 @@ export default function AccountsPage() {
               Transfer
             </button>
             <button
+              type="button"
               onClick={openCreate}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg ${btnPrimary.className}`}
               style={btnPrimary.style}
@@ -526,6 +621,7 @@ export default function AccountsPage() {
                     Transfer
                   </button>
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (!isSelected) { setSelectedAccount(account); setTxnPage(1); }
@@ -540,6 +636,36 @@ export default function AccountsPage() {
                     <DocumentTextIcon className="w-3 h-3" />
                     Statement
                   </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEdit(account);
+                    }}
+                    className={`p-1.5 text-xs rounded-md transition-colors ${
+                      isDark ? "bg-slate-700/60 hover:bg-slate-700 text-slate-400 hover:text-blue-400" : "bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-blue-600"
+                    }`}
+                    title="Edit account"
+                    aria-label={`Edit ${account.name}`}
+                  >
+                    <PencilSquareIcon className="w-3.5 h-3.5" />
+                  </button>
+                  {!account.is_default && account.code !== "cash_drawer" && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteAccount(account);
+                      }}
+                      className={`p-1.5 text-xs rounded-md transition-colors ${
+                        isDark ? "bg-slate-700/60 hover:bg-rose-900/40 text-slate-400 hover:text-rose-400" : "bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600"
+                      }`}
+                      title="Delete account"
+                      aria-label={`Delete ${account.name}`}
+                    >
+                      <TrashIcon className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </GlassCard>
             );
@@ -703,28 +829,81 @@ export default function AccountsPage() {
                 <XMarkIcon className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleFormSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleFormSubmit} className="p-6 space-y-4 max-h-[82vh] overflow-y-auto">
+              {/* Quick Preset Selector */}
+              {(presets.banks.length > 0 || presets.wallets.length > 0) && (
+                <div>
+                  <label className={labelCls}>Quick Institution Preset (Optional)</label>
+                  <Select
+                    options={[
+                      {
+                        label: "Pakistani Banks",
+                        options: presets.banks.map(b => ({ value: b.code, label: `${b.name} — ${b.full_name}`, preset: b })),
+                      },
+                      {
+                        label: "Mobile Wallets & Digital Accounts",
+                        options: presets.wallets.map(w => ({ value: w.code, label: `${w.name} — ${w.full_name}`, preset: w })),
+                      },
+                    ]}
+                    value={null}
+                    onChange={opt => handleApplyPreset(opt?.preset)}
+                    styles={selectStyles}
+                    placeholder="Choose a bank or wallet preset to auto-fill…"
+                    isClearable
+                  />
+                </div>
+              )}
               <div>
                 <label className={labelCls}>Account Name *</label>
                 <input type="text" value={formName} onChange={e => setFormName(e.target.value)} placeholder="e.g. HBL Current Account" className={inputCls} required />
               </div>
-              <div>
-                <label className={labelCls}>Account Type *</label>
-                <Select
-                  options={ACCOUNT_TYPE_OPTIONS}
-                  value={ACCOUNT_TYPE_OPTIONS.find(o => o.value === formType)}
-                  onChange={opt => setFormType(opt?.value || "bank")}
-                  styles={selectStyles}
-                  isSearchable={false}
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Account Type *</label>
+                  <Select
+                    options={ACCOUNT_TYPE_OPTIONS}
+                    value={ACCOUNT_TYPE_OPTIONS.find(o => o.value === formType)}
+                    onChange={opt => setFormType(opt?.value || "bank")}
+                    styles={selectStyles}
+                    isSearchable={false}
+                  />
+                </div>
+                {!editingAccount ? (
+                  <div>
+                    <label className={labelCls}>Opening Balance (Rs.)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formOpeningBalance}
+                      onChange={e => setFormOpeningBalance(e.target.value)}
+                      placeholder="0.00"
+                      className={inputCls}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex items-end pb-1.5">
+                    <label className="inline-flex items-center gap-2 cursor-pointer text-sm">
+                      <input
+                        type="checkbox"
+                        checked={formIsActive}
+                        onChange={e => setFormIsActive(e.target.checked)}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className={isDark ? "text-slate-200" : "text-slate-700"}>Account Active</span>
+                    </label>
+                  </div>
+                )}
               </div>
-              <div>
-                <label className={labelCls}>Bank / Institution Name</label>
-                <input type="text" value={formBankName} onChange={e => setFormBankName(e.target.value)} placeholder="e.g. Habib Bank Limited" className={inputCls} />
-              </div>
-              <div>
-                <label className={labelCls}>Account Number</label>
-                <input type="text" value={formAccountNumber} onChange={e => setFormAccountNumber(e.target.value)} placeholder="IBAN or account number" className={inputCls} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Bank / Institution Name</label>
+                  <input type="text" value={formBankName} onChange={e => setFormBankName(e.target.value)} placeholder="e.g. Habib Bank Limited" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Account Number / IBAN</label>
+                  <input type="text" value={formAccountNumber} onChange={e => setFormAccountNumber(e.target.value)} placeholder="IBAN or account number" className={inputCls} />
+                </div>
               </div>
               <div>
                 <label className={labelCls}>Notes (optional)</label>

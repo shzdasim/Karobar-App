@@ -1,8 +1,22 @@
 // src/components/Topbar.jsx
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
-import { ClipboardDocumentListIcon, ShoppingCartIcon, ClockIcon, BellIcon, Bars3Icon, BanknotesIcon, BuildingLibraryIcon, MagnifyingGlassIcon, CommandLineIcon } from "@heroicons/react/24/solid";
+import {
+  ClipboardDocumentListIcon,
+  ShoppingCartIcon,
+  ClockIcon,
+  BellIcon,
+  Bars3Icon,
+  BanknotesIcon,
+  BuildingLibraryIcon,
+  MagnifyingGlassIcon,
+  CommandLineIcon,
+  ExclamationTriangleIcon,
+  HandRaisedIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/solid";
+import toast from "react-hot-toast";
 import { useLicense } from "@/context/LicenseContext.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
@@ -35,6 +49,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
 
   // Notification center state
   const [notifOpen, setNotifOpen] = useState(false);
+  const [notifInitialTab, setNotifInitialTab] = useState("low-stock");
   const [notifCount, setNotifCount] = useState(0);
 
   const navigate = useNavigate();
@@ -133,41 +148,341 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
     fetchAccountsStatus();
   }, [location.pathname, permsLoading]);
 
-// Poll for low-stock + user-demand notification count
+  const showLiveNotificationCard = useCallback(
+    ({ id, category, badge, title, subtitle, meta, primaryLabel, onPrimary, secondaryLabel, onSecondary }) => {
+      const styleMap = {
+        "low-stock": {
+          icon: ExclamationTriangleIcon,
+          accent: "border-l-4 border-l-amber-500",
+          badgeCls: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300",
+        },
+        demands: {
+          icon: HandRaisedIcon,
+          accent: "border-l-4 border-l-blue-500",
+          badgeCls: "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300",
+        },
+        expiry: {
+          icon: ClockIcon,
+          accent: "border-l-4 border-l-rose-500",
+          badgeCls: "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300",
+        },
+      };
+      const cfg = styleMap[category] || styleMap["low-stock"];
+      const Icon = cfg.icon;
+
+      toast.custom(
+        (t) => (
+          <div
+            role="status"
+            aria-live="polite"
+            className={`${
+              t.visible ? "animate-in fade-in slide-in-from-top-2" : "opacity-0"
+            } max-w-sm w-full bg-white dark:bg-slate-800 shadow-xl rounded-xl pointer-events-auto ring-1 ring-slate-200 dark:ring-slate-700 overflow-hidden transition-all duration-200 ${cfg.accent}`}
+          >
+            <div className="p-3.5">
+              <div className="flex items-start justify-between gap-2">
+                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold ${cfg.badgeCls}`}>
+                  <Icon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  <span>{badge}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => toast.dismiss(t.id)}
+                  aria-label="Close live notification"
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors cursor-pointer"
+                >
+                  <XMarkIcon className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="mt-1.5 text-sm font-bold text-slate-900 dark:text-slate-100 leading-snug">
+                {title}
+              </p>
+              {subtitle && (
+                <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300 line-clamp-2">
+                  {subtitle}
+                </p>
+              )}
+              {meta && (
+                <p className="mt-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                  {meta}
+                </p>
+              )}
+
+              {(primaryLabel || secondaryLabel) && (
+                <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center gap-3">
+                  {primaryLabel && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        toast.dismiss(t.id);
+                        onPrimary?.();
+                      }}
+                      className="text-xs font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer"
+                    >
+                      {primaryLabel}
+                    </button>
+                  )}
+                  {secondaryLabel && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        toast.dismiss(t.id);
+                        onSecondary?.();
+                      }}
+                      className="text-xs font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 cursor-pointer"
+                    >
+                      {secondaryLabel}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        ),
+        { id, duration: 7000 }
+      );
+    },
+    []
+  );
+
+  // Poll & reactively listen for low-stock + user-demand + expiry live notifications
   useEffect(() => {
     if (permsLoading) return;
     let cancelled = false;
+    const storageKey = `karobar_live_notified_${user?.id || "anon"}`;
+
+    const getSeenSet = () => {
+      try {
+        const raw = sessionStorage.getItem(storageKey);
+        return new Set(raw ? JSON.parse(raw) : []);
+      } catch {
+        return new Set();
+      }
+    };
+
+    const saveSeenSet = (set) => {
+      try {
+        sessionStorage.setItem(storageKey, JSON.stringify([...set].slice(-500)));
+      } catch {
+        /* ignore storage quota errors */
+      }
+    };
+
     const fetchCount = async () => {
       try {
         const canViewProducts = has("product.view");
         const canViewDemands = has("user-demands.view");
+        const canViewExpiry =
+          canViewProducts ||
+          has("batch-expiry.view") ||
+          has("sale-invoice.create") ||
+          has("purchase-invoice.create");
+
         const [lowStockRes, demandsRes, expiryRes] = await Promise.allSettled([
-          canViewProducts ? axios.get("/api/notifications/low-stock", { params: { limit: 1 } }) : Promise.resolve({ data: { count: 0 } }),
-          canViewDemands ? axios.get("/api/user-demands", { params: { status: "pending", limit: 1 } }) : Promise.resolve({ data: { pending_count: 0 } }),
-          canViewProducts ? axios.get("/api/notifications/expiry-alerts", { params: { limit: 1 } }) : Promise.resolve({ data: { count: 0 } }),
+          canViewProducts
+            ? axios.get("/api/notifications/low-stock", { params: { limit: 15 } })
+            : Promise.resolve({ data: { count: 0, rows: [] } }),
+          canViewDemands
+            ? axios.get("/api/user-demands", { params: { status: "pending", limit: 15 } })
+            : Promise.resolve({ data: { pending_count: 0, rows: [] } }),
+          canViewExpiry
+            ? axios.get("/api/notifications/expiry-alerts", { params: { limit: 15 } })
+            : Promise.resolve({ data: { count: 0, rows: [] } }),
         ]);
         if (cancelled) return;
-        const lowStockCount = lowStockRes.status === "fulfilled" ? Number(lowStockRes.value.data?.count || 0) : 0;
-        const demandCount = demandsRes.status === "fulfilled" ? Number(demandsRes.value.data?.pending_count || 0) : 0;
-        const expiryCount = expiryRes.status === "fulfilled" ? Number(expiryRes.value.data?.count || 0) : 0;
+
+        const lowStockCount =
+          lowStockRes.status === "fulfilled" ? Number(lowStockRes.value.data?.count || 0) : 0;
+        const demandCount =
+          demandsRes.status === "fulfilled" ? Number(demandsRes.value.data?.pending_count || 0) : 0;
+        const expiryCount =
+          expiryRes.status === "fulfilled" ? Number(expiryRes.value.data?.count || 0) : 0;
+
         setNotifCount(lowStockCount + demandCount + expiryCount);
+
+        const seen = getSeenSet();
+        let seenDirty = false;
+
+        // 1. Live User Demand Notifications
+        const demandRows =
+          demandsRes.status === "fulfilled" && Array.isArray(demandsRes.value.data?.rows)
+            ? demandsRes.value.data.rows
+            : [];
+        const newDemands = [];
+        const ackIds = [];
+        const dayAgoMs = Date.now() - 24 * 60 * 60 * 1000;
+
+        for (const d of demandRows) {
+          const lastNotifiedMs = d.last_notified_at ? new Date(d.last_notified_at).getTime() : 0;
+          const dateTag = lastNotifiedMs ? new Date(lastNotifiedMs).toISOString().slice(0, 10) : "unnotified";
+          const key = `demand:${d.id}:${dateTag}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            seenDirty = true;
+            newDemands.push(d);
+            if (!lastNotifiedMs || lastNotifiedMs < dayAgoMs) {
+              ackIds.push(d.id);
+            }
+          }
+        }
+
+        newDemands.slice(0, 2).forEach((d) => {
+          const itemName = d.requested_name || d.product?.name || "Product request";
+          showLiveNotificationCard({
+            id: `live-demand-${d.id}`,
+            category: "demands",
+            badge: "Product Demand",
+            title: `${itemName} (${d.requested_quantity || 1} units)`,
+            subtitle: d.notes || (d.customer?.name ? `Customer: ${d.customer.name}` : "Pending product demand"),
+            meta: d.product_supplier_name ? `Supplier: ${d.product_supplier_name}` : undefined,
+            primaryLabel: "View Demands",
+            onPrimary: () => navigate("/user-demands"),
+            secondaryLabel: "Open Center",
+            onSecondary: () => {
+              setNotifInitialTab("demands");
+              setNotifOpen(true);
+            },
+          });
+        });
+        if (newDemands.length > 2) {
+          showLiveNotificationCard({
+            id: "live-demand-summary",
+            category: "demands",
+            badge: "Product Demands",
+            title: `+${newDemands.length - 2} more pending product demand(s)`,
+            subtitle: `${demandCount} total pending demand(s) awaiting procurement.`,
+            primaryLabel: "View All Demands",
+            onPrimary: () => navigate("/user-demands"),
+          });
+        }
+        if (ackIds.length > 0) {
+          axios.post("/api/notifications/ack-demand", { demand_ids: ackIds }).catch(() => {});
+        }
+
+        // 2. Live Low-Stock Notifications
+        const lowStockRows =
+          lowStockRes.status === "fulfilled" && Array.isArray(lowStockRes.value.data?.rows)
+            ? lowStockRes.value.data.rows
+            : [];
+        const newLowStock = [];
+        for (const item of lowStockRows) {
+          const key = `low-stock:${item.product_id}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            seenDirty = true;
+            newLowStock.push(item);
+          }
+        }
+
+        newLowStock.slice(0, 2).forEach((item) => {
+          showLiveNotificationCard({
+            id: `live-low-stock-${item.product_id}`,
+            category: "low-stock",
+            badge: "Low Stock Alert",
+            title: `${item.product_name} is below pack size`,
+            subtitle: `On-hand: ${item.quantity} units · Pack size: ${item.pack_size} units`,
+            meta: item.supplier_name ? `Supplier: ${item.supplier_name}` : item.brand_name || undefined,
+            primaryLabel: "View Low Stock",
+            onPrimary: () => navigate("/products?low_stock=1"),
+            secondaryLabel: "Dismiss",
+            onSecondary: () => {
+              axios
+                .post("/api/notifications/dismiss", { product_id: item.product_id })
+                .then(() => window.dispatchEvent(new CustomEvent("notifications-changed")))
+                .catch(() => {});
+            },
+          });
+        });
+        if (newLowStock.length > 2) {
+          showLiveNotificationCard({
+            id: "live-low-stock-summary",
+            category: "low-stock",
+            badge: "Low Stock Alerts",
+            title: `+${newLowStock.length - 2} more product(s) low on stock`,
+            subtitle: `${lowStockCount} running product(s) have dropped below pack size.`,
+            primaryLabel: "Open Notification Center",
+            onPrimary: () => {
+              setNotifInitialTab("low-stock");
+              setNotifOpen(true);
+            },
+          });
+        }
+
+        // 3. Live Batch Expiry Notifications
+        const expiryRows =
+          expiryRes.status === "fulfilled" && Array.isArray(expiryRes.value.data?.rows)
+            ? expiryRes.value.data.rows
+            : [];
+        const newExpiry = [];
+        for (const b of expiryRows) {
+          const key = `expiry:${b.batch_id}:${b.status || "warn"}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            seenDirty = true;
+            newExpiry.push(b);
+          }
+        }
+
+        newExpiry.slice(0, 2).forEach((b) => {
+          const isExp = b.days_remaining < 0;
+          showLiveNotificationCard({
+            id: `live-expiry-${b.batch_id}`,
+            category: "expiry",
+            badge: isExp ? "Batch Expired" : "Expiry Warning",
+            title: `${b.product_name} — Batch ${b.batch_number}`,
+            subtitle: isExp
+              ? `Expired ${Math.abs(b.days_remaining)} day(s) ago · ${b.quantity} units on hand`
+              : `${b.days_remaining} day(s) remaining · Exp: ${b.expiry_date} (${b.quantity} units)`,
+            primaryLabel: "Open Batch Tracking",
+            onPrimary: () => navigate("/batch-expiry"),
+            secondaryLabel: "Open Center",
+            onSecondary: () => {
+              setNotifInitialTab("expiry");
+              setNotifOpen(true);
+            },
+          });
+        });
+        if (newExpiry.length > 2) {
+          showLiveNotificationCard({
+            id: "live-expiry-summary",
+            category: "expiry",
+            badge: "Expiry Alerts",
+            title: `+${newExpiry.length - 2} more batch expiry alert(s)`,
+            subtitle: `${expiryCount} batch(es) require attention.`,
+            primaryLabel: "Open Expiry Alerts",
+            onPrimary: () => {
+              setNotifInitialTab("expiry");
+              setNotifOpen(true);
+            },
+          });
+        }
+
+        if (seenDirty) {
+          saveSeenSet(seen);
+        }
       } catch {
         if (!cancelled) setNotifCount(0);
       }
     };
     fetchCount();
-    const interval = setInterval(fetchCount, 60000); // every 60s
+    const interval = setInterval(fetchCount, 30000); // poll every 30s
 
-    // Refresh immediately when notifications are dismissed elsewhere
+    // Refresh immediately when any relevant event occurs across the application
     const onChanged = () => fetchCount();
+    const onCustomLive = (e) => {
+      if (e?.detail) showLiveNotificationCard(e.detail);
+    };
     window.addEventListener("notifications-changed", onChanged);
+    window.addEventListener("live-notification", onCustomLive);
 
     return () => {
       cancelled = true;
       clearInterval(interval);
       window.removeEventListener("notifications-changed", onChanged);
+      window.removeEventListener("live-notification", onCustomLive);
     };
-  }, [permsLoading, has]);
+  }, [permsLoading, has, user?.id, navigate, showLiveNotificationCard]);
 
   // License status
   const { loading: licLoading, valid: licValid, remainingMs } = useLicense();
@@ -562,6 +877,7 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
       <NotificationCenter
         open={notifOpen}
         onClose={() => setNotifOpen(false)}
+        initialTab={notifInitialTab}
       />
 
       {/* Cash Drawer Shift Modal (only opens when user has open/close/transaction permission) */}

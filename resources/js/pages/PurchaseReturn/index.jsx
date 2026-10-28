@@ -1,6 +1,6 @@
 // src/pages/purchase-returns/index.jsx
 import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import {
@@ -13,8 +13,15 @@ import {
   BuildingStorefrontIcon,
   CalendarIcon,
   CurrencyDollarIcon,
+  EyeIcon,
+  XMarkIcon,
+  PrinterIcon,
+  ClockIcon,
+  ShareIcon,
 } from "@heroicons/react/24/solid";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
+import DocumentHistoryModal from "@/components/DocumentHistoryModal.jsx";
+import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 
 // Reusable components
 import {
@@ -59,7 +66,14 @@ export default function PurchaseReturnsIndex() {
   const [deletingReturn, setDeletingReturn] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
+  // View modal state
+  const [viewingReturn, setViewingReturn] = useState(null);
+  const [loadingView, setLoadingView] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+
   const navigate = useNavigate();
+  const { id: routeId } = useParams();
 
   // AbortController for fetches
   const controllerRef = useRef(null);
@@ -73,8 +87,6 @@ export default function PurchaseReturnsIndex() {
       }),
     [canFor]
   );
-
-  useEffect(() => { document.title = "Purchase Returns - Pharmacy ERP"; }, []);
 
   // Get theme colors
   const { theme, isDark } = useTheme();
@@ -152,9 +164,9 @@ export default function PurchaseReturnsIndex() {
     try {
       setLoading(true);
       const res = await axios.get("/api/purchase-returns", { signal });
-      const data = Array.isArray(res.data) ? res.data : [];
+      const data = Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : []);
       setReturns(data);
-      setTotal(data.length);
+      setTotal(res.data?.total ?? data.length);
     } catch (e) {
       if (axios.isCancel?.(e)) return;
       const status = e?.response?.status;
@@ -212,6 +224,33 @@ export default function PurchaseReturnsIndex() {
   const start = (page - 1) * pageSize;
   const paged = filtered.slice(start, start + pageSize);
 
+  // ===== view modal handlers =====
+  const handleOpenView = useCallback(async (id) => {
+    if (!id) return;
+    setLoadingView(true);
+    try {
+      const res = await axios.get(`/api/purchase-returns/${id}`);
+      setViewingReturn(res.data);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to load purchase return details");
+    } finally {
+      setLoadingView(false);
+    }
+  }, []);
+
+  const handleCloseView = useCallback(() => {
+    setViewingReturn(null);
+    if (routeId) {
+      navigate("/purchase-returns", { replace: true });
+    }
+  }, [routeId, navigate]);
+
+  useEffect(() => {
+    if (routeId && !permsLoading && can.view) {
+      handleOpenView(routeId);
+    }
+  }, [routeId, permsLoading, can.view, handleOpenView]);
+
   // ===== delete modal handlers =====
   const openDeleteModal = (ret) => {
     if (!can.delete) return toast.error("You don't have permission to delete returns.");
@@ -265,7 +304,7 @@ export default function PurchaseReturnsIndex() {
   };
 
   // Check if has actions
-  const hasActions = can.update || can.delete;
+  const hasActions = can.view || can.update || can.delete;
 
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view purchase returns.</div>;
@@ -456,16 +495,19 @@ export default function PurchaseReturnsIndex() {
                       {start + idx + 1}
                     </td>
                     <td className="px-3 py-3">
-                      <span
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium"
+                      <button
+                        type="button"
+                        onClick={() => handleOpenView(ret.id)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity cursor-pointer"
                         style={{
                           backgroundColor: themeColors.secondaryLight,
                           color: themeColors.secondary
                         }}
+                        title="View Purchase Return Details"
                       >
                         <DocumentTextIcon className="w-3.5 h-3.5" />
                         {ret.posted_number || "-"}
-                      </span>
+                      </button>
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
@@ -499,6 +541,19 @@ export default function PurchaseReturnsIndex() {
                     {hasActions && (
                       <td className="px-3 py-3">
                         <div className="flex items-center gap-1.5 justify-center">
+                          {/* View Action */}
+                          <Guard when={can.view}>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenView(ret.id)}
+                              className="products-row-action"
+                              title="View Details"
+                              aria-label="View purchase return details"
+                            >
+                              <EyeIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
+                            </button>
+                          </Guard>
+
                           {/* Edit Action */}
                           <Guard when={can.update}>
                             <Link
@@ -617,6 +672,198 @@ export default function PurchaseReturnsIndex() {
           red: btnDanger.className,
           glass: getButtonClasses.glass.className
         }}
+      />
+
+      {/* Read-Only Purchase Return View Modal */}
+      {(viewingReturn || loadingView) && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4"
+          onClick={handleCloseView}
+        >
+          <div
+            className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-700 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-slate-700 bg-gray-50/80 dark:bg-slate-800/80">
+              <div className="flex items-center gap-3">
+                <div
+                  className="p-2 rounded-xl text-white"
+                  style={{ backgroundColor: themeColors.secondary }}
+                >
+                  <DocumentTextIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                    {loadingView ? "Loading Return..." : `Purchase Return ${viewingReturn?.posted_number || ""}`}
+                  </h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {viewingReturn?.date ? formatDate(viewingReturn.date) : ""}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {viewingReturn && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setHistoryOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-200 transition-colors"
+                    >
+                      <ClockIcon className="w-4 h-4" />
+                      History
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => window.print()}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-200 transition-colors"
+                    >
+                      <PrinterIcon className="w-4 h-4" />
+                      Print
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShareOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-200 transition-colors"
+                    >
+                      <ShareIcon className="w-4 h-4" />
+                      PDF / Share
+                    </button>
+                    <Guard when={can.update}>
+                      <Link
+                        to={`/purchase-returns/${viewingReturn.id}/edit`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
+                        style={{ backgroundColor: themeColors.primary }}
+                      >
+                        <PencilSquareIcon className="w-4 h-4" />
+                        Edit
+                      </Link>
+                    </Guard>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={handleCloseView}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-slate-700"
+                  aria-label="Close modal"
+                >
+                  <XMarkIcon className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-5 flex-1">
+              {loadingView ? (
+                <div className="py-12 flex flex-col items-center justify-center gap-2">
+                  <ArrowPathIcon className="w-6 h-6 text-gray-400 animate-spin" />
+                  <p className="text-sm text-gray-500">Loading purchase return details...</p>
+                </div>
+              ) : viewingReturn && (
+                <>
+                  {/* Metadata Grid */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-gray-50 dark:bg-slate-700/40 p-4 rounded-xl border border-gray-100 dark:border-slate-700">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase text-gray-400">Supplier</div>
+                      <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 mt-0.5">
+                        {viewingReturn.supplier?.name || "N/A"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase text-gray-400">Original Invoice</div>
+                      <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 mt-0.5">
+                        {viewingReturn.purchase_invoice?.posted_number || "Open / Direct Return"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase text-gray-400">Settlement Mode</div>
+                      <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 mt-0.5 capitalize">
+                        {(viewingReturn.settlement_mode || "ledger_credit").replace(/_/g, " ")}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase text-gray-400">Remarks</div>
+                      <div className="text-sm text-gray-700 dark:text-gray-200 mt-0.5">
+                        {viewingReturn.remarks || "—"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Items Table */}
+                  <div className="border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-100 dark:bg-slate-700/70 text-gray-600 dark:text-gray-300 uppercase">
+                        <tr>
+                          <th className="px-3 py-2.5 text-left">#</th>
+                          <th className="px-3 py-2.5 text-left">Product</th>
+                          <th className="px-3 py-2.5 text-left">Batch</th>
+                          <th className="px-3 py-2.5 text-left">Expiry</th>
+                          <th className="px-3 py-2.5 text-right">Return Pack</th>
+                          <th className="px-3 py-2.5 text-right">Return Units</th>
+                          <th className="px-3 py-2.5 text-right">Unit Price</th>
+                          <th className="px-3 py-2.5 text-right">Disc %</th>
+                          <th className="px-3 py-2.5 text-right">Sub Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                        {(viewingReturn.items || []).map((it, i) => (
+                          <tr key={it.id || i} className="text-gray-700 dark:text-gray-200">
+                            <td className="px-3 py-2">{i + 1}</td>
+                            <td className="px-3 py-2 font-medium">{it.product?.name || `#${it.product_id}`}</td>
+                            <td className="px-3 py-2">{it.batch || "—"}</td>
+                            <td className="px-3 py-2">{it.expiry ? formatDate(it.expiry) : "—"}</td>
+                            <td className="px-3 py-2 text-right font-semibold">{it.return_pack_quantity ?? 0}</td>
+                            <td className="px-3 py-2 text-right font-semibold">{it.return_unit_quantity ?? 0}</td>
+                            <td className="px-3 py-2 text-right">{Number(it.unit_purchase_price ?? it.pack_purchase_price ?? 0).toLocaleString()}</td>
+                            <td className="px-3 py-2 text-right">{Number(it.item_discount_percentage ?? 0)}%</td>
+                            <td className="px-3 py-2 text-right font-semibold">{Number(it.sub_total ?? 0).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Summary Totals */}
+                  <div className="flex justify-end">
+                    <div className="w-full max-w-xs space-y-1.5 text-sm bg-gray-50 dark:bg-slate-700/40 p-4 rounded-xl border border-gray-100 dark:border-slate-700">
+                      <div className="flex justify-between text-gray-600 dark:text-gray-300">
+                        <span>Gross Amount:</span>
+                        <span>{Number(viewingReturn.gross_total ?? viewingReturn.total ?? 0).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-gray-600 dark:text-gray-300">
+                        <span>Discount:</span>
+                        <span>{Number(viewingReturn.discount_amount ?? 0).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-gray-600 dark:text-gray-300">
+                        <span>Tax:</span>
+                        <span>{Number(viewingReturn.tax_amount ?? 0).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between font-bold text-base pt-2 border-t border-gray-200 dark:border-slate-600 text-gray-900 dark:text-white">
+                        <span>Net Return Total:</span>
+                        <span>{Number(viewingReturn.total ?? 0).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <DocumentHistoryModal
+        isOpen={historyOpen && Boolean(viewingReturn?.id)}
+        onClose={() => setHistoryOpen(false)}
+        entityType="purchase_return"
+        entityId={viewingReturn?.id}
+        documentNumber={viewingReturn?.posted_number || ""}
+      />
+
+      <ShareDocumentModal
+        isOpen={shareOpen && Boolean(viewingReturn?.id)}
+        onClose={() => setShareOpen(false)}
+        documentType="purchase_return"
+        documentId={viewingReturn?.id}
       />
     </div>
   );

@@ -82,6 +82,15 @@
         </tr>
       </thead>
       <tbody>
+        @if(!empty($from) || (!empty($summary['opening_balance']) && (float)$summary['opening_balance'] != 0))
+          <tr style="background:#f9fafb;font-weight:bold;">
+            <td>{{ $from ?: '—' }}</td>
+            <td>B/F</td>
+            <td colspan="7">Opening Balance Brought Forward</td>
+            <td class="text-right">{{ nf($summary['opening_balance'] ?? 0) }}</td>
+            <td>Prior to {{ $from ?: 'period' }}</td>
+          </tr>
+        @endif
         @forelse($rows as $r)
           <tr>
             <td>{{ \Illuminate\Support\Str::of($r->entry_date)->substr(0,10) }}</td>

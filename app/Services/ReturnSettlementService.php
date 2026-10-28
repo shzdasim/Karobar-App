@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\Account;
 use App\Models\AccountTransaction;
 use App\Models\CustomerLedger;
+use App\Models\Payment;
+use App\Models\PaymentAllocation;
 use App\Models\PurchaseInvoice;
 use App\Models\PurchaseReturn;
 use App\Models\SaleInvoice;
@@ -593,6 +595,7 @@ class ReturnSettlementService
 
     protected function deleteCustomerLedgerForSaleReturn(int $saleReturnId): void
     {
+        $this->deleteSaleReturnCreditPayment($saleReturnId);
         if (Schema::hasTable('customer_ledgers') && Schema::hasColumn('customer_ledgers', 'sale_return_id')) {
             CustomerLedger::where('sale_return_id', $saleReturnId)->delete();
         }
@@ -600,6 +603,7 @@ class ReturnSettlementService
 
     protected function deleteSupplierLedgerForPurchaseReturn(int $purchaseReturnId): void
     {
+        $this->deletePurchaseReturnCreditPayment($purchaseReturnId);
         if (Schema::hasTable('supplier_ledgers') && Schema::hasColumn('supplier_ledgers', 'purchase_return_id')) {
             SupplierLedger::where('purchase_return_id', $purchaseReturnId)->delete();
         }
@@ -614,12 +618,14 @@ class ReturnSettlementService
         string $mode,
         ?User $user = null
     ): void {
-        if (!Schema::hasTable('customer_ledgers') || !Schema::hasColumn('customer_ledgers', 'sale_return_id')) {
+        if ($amount <= 0) {
+            $this->deleteCustomerLedgerForSaleReturn($saleReturn->id);
             return;
         }
 
-        if ($amount <= 0) {
-            CustomerLedger::where('sale_return_id', $saleReturn->id)->delete();
+        $payment = $this->syncSaleReturnCreditPayment($saleReturn, $amount, $mode, $user);
+
+        if (!Schema::hasTable('customer_ledgers') || !Schema::hasColumn('customer_ledgers', 'sale_return_id')) {
             return;
         }
 
@@ -636,23 +642,28 @@ class ReturnSettlementService
             ? $saleReturn->date->toDateString()
             : (string) $saleReturn->date;
 
+        $attrs = [
+            'customer_id'       => $saleReturn->customer_id,
+            'sale_invoice_id'   => null,
+            'entry_type'        => 'payment',
+            'is_manual'         => false,
+            'entry_date'        => $entryDate,
+            'posted_number'     => $saleReturn->posted_number,
+            'invoice_total'     => 0,
+            'total_received'    => 0,
+            'balance_remaining' => 0,
+            'credited_amount'   => $amount,
+            'payment_ref'       => $saleReturn->posted_number,
+            'description'       => $description,
+            'created_by'        => $user?->id ?? $saleReturn->user_id,
+        ];
+        if ($payment && Schema::hasColumn('customer_ledgers', 'payment_id')) {
+            $attrs['payment_id'] = $payment->id;
+        }
+
         CustomerLedger::updateOrCreate(
             ['sale_return_id' => $saleReturn->id],
-            [
-                'customer_id'       => $saleReturn->customer_id,
-                'sale_invoice_id'   => null,
-                'entry_type'        => 'payment',
-                'is_manual'         => false,
-                'entry_date'        => $entryDate,
-                'posted_number'     => $saleReturn->posted_number,
-                'invoice_total'     => 0,
-                'total_received'    => 0,
-                'balance_remaining' => 0,
-                'credited_amount'   => $amount,
-                'payment_ref'       => $saleReturn->posted_number,
-                'description'       => $description,
-                'created_by'        => $user?->id ?? $saleReturn->user_id,
-            ]
+            $attrs
         );
     }
 
@@ -665,12 +676,14 @@ class ReturnSettlementService
         string $mode,
         ?User $user = null
     ): void {
-        if (!Schema::hasTable('supplier_ledgers') || !Schema::hasColumn('supplier_ledgers', 'purchase_return_id')) {
+        if ($amount <= 0) {
+            $this->deleteSupplierLedgerForPurchaseReturn($purchaseReturn->id);
             return;
         }
 
-        if ($amount <= 0) {
-            SupplierLedger::where('purchase_return_id', $purchaseReturn->id)->delete();
+        $payment = $this->syncPurchaseReturnCreditPayment($purchaseReturn, $amount, $mode, $user);
+
+        if (!Schema::hasTable('supplier_ledgers') || !Schema::hasColumn('supplier_ledgers', 'purchase_return_id')) {
             return;
         }
 
@@ -690,24 +703,329 @@ class ReturnSettlementService
             ? $purchaseReturn->date->toDateString()
             : (string) $purchaseReturn->date;
 
+        $attrs = [
+            'supplier_id'         => $purchaseReturn->supplier_id,
+            'purchase_invoice_id' => null,
+            'entry_type'          => 'payment',
+            'is_manual'           => false,
+            'entry_date'          => $entryDate,
+            'posted_number'       => $purchaseReturn->posted_number,
+            'invoice_number'      => $invNumber,
+            'invoice_total'       => 0,
+            'total_paid'          => 0,
+            'debited_amount'      => $amount,
+            'credit_remaining'    => 0,
+            'payment_ref'         => $purchaseReturn->posted_number,
+            'description'         => $description,
+            'created_by'          => $user?->id,
+        ];
+        if ($payment && Schema::hasColumn('supplier_ledgers', 'payment_id')) {
+            $attrs['payment_id'] = $payment->id;
+        }
+
         SupplierLedger::updateOrCreate(
             ['purchase_return_id' => $purchaseReturn->id],
-            [
-                'supplier_id'         => $purchaseReturn->supplier_id,
-                'purchase_invoice_id' => null,
-                'entry_type'          => 'payment',
-                'is_manual'           => false,
-                'entry_date'          => $entryDate,
-                'posted_number'       => $purchaseReturn->posted_number,
-                'invoice_number'      => $invNumber,
-                'invoice_total'       => 0,
-                'total_paid'          => 0,
-                'debited_amount'      => $amount,
-                'credit_remaining'    => 0,
-                'payment_ref'         => $purchaseReturn->posted_number,
-                'description'         => $description,
-                'created_by'          => $user?->id,
-            ]
+            $attrs
         );
+    }
+
+    /**
+     * Synchronize a Credit Note Payment record for a SaleReturn so its balance can be allocated to open SaleInvoices.
+     */
+    public function syncSaleReturnCreditPayment(
+        SaleReturn $saleReturn,
+        float $amount,
+        string $mode = 'credit_note',
+        ?User $user = null
+    ): ?Payment {
+        if (!Schema::hasTable('payments') || !Schema::hasTable('payment_allocations') || !$saleReturn->customer_id) {
+            return null;
+        }
+
+        $amount = round($amount, 2);
+        if ($amount <= 0) {
+            $this->deleteSaleReturnCreditPayment($saleReturn->id);
+            return null;
+        }
+
+        $idempotencyKey = "sale_return:{$saleReturn->id}";
+        $entryDate = $saleReturn->date instanceof \Carbon\Carbon
+            ? $saleReturn->date->toDateString()
+            : ((string) ($saleReturn->date ?: now()->toDateString()));
+
+        $payment = Payment::where('idempotency_key', $idempotencyKey)->first();
+        if (!$payment) {
+            $baseNo = 'CN-' . ($saleReturn->posted_number ?: ('SR-' . str_pad((string) $saleReturn->id, 4, '0', STR_PAD_LEFT)));
+            $paymentNumber = Payment::where('payment_number', $baseNo)->exists()
+                ? "{$baseNo}-{$saleReturn->id}"
+                : $baseNo;
+
+            $payment = Payment::create([
+                'payment_number'   => $paymentNumber,
+                'party_type'       => 'customer',
+                'party_id'         => $saleReturn->customer_id,
+                'payment_date'     => $entryDate,
+                'amount'           => $amount,
+                'allocated_amount' => 0,
+                'unapplied_amount' => $amount,
+                'payment_method'   => 'credit_note',
+                'reference'        => $saleReturn->posted_number,
+                'status'           => 'posted',
+                'notes'            => "Credit Note from Sale Return #{$saleReturn->posted_number}",
+                'idempotency_key'  => $idempotencyKey,
+                'created_by_id'    => $user?->id ?? $saleReturn->user_id,
+            ]);
+        }
+
+        // Trim existing allocations if return amount decreased
+        $existingAllocs = PaymentAllocation::where('payment_id', $payment->id)->orderByDesc('id')->get();
+        $allocatedSum = round((float) $existingAllocs->sum('amount'), 2);
+
+        if ($allocatedSum > $amount) {
+            $excessToTrim = round($allocatedSum - $amount, 2);
+            foreach ($existingAllocs as $alloc) {
+                if ($excessToTrim <= 0) break;
+                $reduceBy = min((float) $alloc->amount, $excessToTrim);
+                if ($reduceBy > 0) {
+                    $inv = SaleInvoice::find($alloc->invoice_id);
+                    if ($inv) {
+                        $inv->total_receive = round(max((float) ($inv->total_receive ?? 0) - $reduceBy, 0), 2);
+                        $inv->save();
+                    }
+                    $newAllocAmt = round((float) $alloc->amount - $reduceBy, 2);
+                    if ($newAllocAmt <= 0.001) {
+                        $alloc->delete();
+                    } else {
+                        $alloc->amount = $newAllocAmt;
+                        $alloc->save();
+                    }
+                    $excessToTrim = round($excessToTrim - $reduceBy, 2);
+                }
+            }
+            $allocatedSum = round((float) PaymentAllocation::where('payment_id', $payment->id)->sum('amount'), 2);
+        }
+
+        // If mode is invoice_offset and linked to an open SaleInvoice, auto-allocate remaining credit to that invoice
+        if ($mode === 'invoice_offset' && $saleReturn->sale_invoice_id && $allocatedSum < $amount) {
+            $linkedInv = SaleInvoice::lockForUpdate()->find($saleReturn->sale_invoice_id);
+            if ($linkedInv && (int) $linkedInv->customer_id === (int) $saleReturn->customer_id && ($linkedInv->status ?? 'posted') !== 'reversed') {
+                $invTotal = (float) ($linkedInv->total ?? 0);
+                $invReceived = (float) ($linkedInv->total_receive ?? $linkedInv->total_recieve ?? 0);
+                $invDue = round(max($invTotal - $invReceived, 0), 2);
+                $toAutoAlloc = round(min($amount - $allocatedSum, $invDue), 2);
+
+                if ($toAutoAlloc > 0) {
+                    $existingAlloc = PaymentAllocation::where('payment_id', $payment->id)
+                        ->where('invoice_type', 'sale_invoice')
+                        ->where('invoice_id', $linkedInv->id)
+                        ->first();
+                    if ($existingAlloc) {
+                        $existingAlloc->amount = round((float) $existingAlloc->amount + $toAutoAlloc, 2);
+                        $existingAlloc->save();
+                    } else {
+                        PaymentAllocation::create([
+                            'payment_id'   => $payment->id,
+                            'invoice_type' => 'sale_invoice',
+                            'invoice_id'   => $linkedInv->id,
+                            'amount'       => $toAutoAlloc,
+                        ]);
+                    }
+                    $linkedInv->total_receive = round($invReceived + $toAutoAlloc, 2);
+                    $linkedInv->save();
+                    $allocatedSum = round($allocatedSum + $toAutoAlloc, 2);
+                }
+            }
+        }
+
+        $payment->update([
+            'party_id'         => $saleReturn->customer_id,
+            'payment_date'     => $entryDate,
+            'amount'           => $amount,
+            'allocated_amount' => $allocatedSum,
+            'unapplied_amount' => round(max($amount - $allocatedSum, 0), 2),
+            'payment_method'   => 'credit_note',
+            'reference'        => $saleReturn->posted_number,
+            'status'           => 'posted',
+            'notes'            => "Credit Note from Sale Return #{$saleReturn->posted_number}",
+        ]);
+
+        return $payment;
+    }
+
+    protected function deleteSaleReturnCreditPayment(int $saleReturnId): void
+    {
+        if (!Schema::hasTable('payments') || !Schema::hasTable('payment_allocations')) {
+            return;
+        }
+
+        $payment = Payment::where('idempotency_key', "sale_return:{$saleReturnId}")
+            ->with('allocations')
+            ->first();
+
+        if (!$payment) {
+            return;
+        }
+
+        foreach ($payment->allocations as $alloc) {
+            if ($alloc->invoice_type === 'sale_invoice') {
+                $inv = SaleInvoice::find($alloc->invoice_id);
+                if ($inv) {
+                    $inv->total_receive = round(max((float) ($inv->total_receive ?? 0) - (float) $alloc->amount, 0), 2);
+                    $inv->save();
+                }
+            }
+        }
+
+        $payment->allocations()->delete();
+        $payment->delete();
+    }
+
+    /**
+     * Synchronize a Debit Note Payment record for a PurchaseReturn so its balance can be allocated to open PurchaseInvoices.
+     */
+    public function syncPurchaseReturnCreditPayment(
+        PurchaseReturn $purchaseReturn,
+        float $amount,
+        string $mode = 'credit_note',
+        ?User $user = null
+    ): ?Payment {
+        if (!Schema::hasTable('payments') || !Schema::hasTable('payment_allocations') || !$purchaseReturn->supplier_id) {
+            return null;
+        }
+
+        $amount = round($amount, 2);
+        if ($amount <= 0) {
+            $this->deletePurchaseReturnCreditPayment($purchaseReturn->id);
+            return null;
+        }
+
+        $idempotencyKey = "purchase_return:{$purchaseReturn->id}";
+        $entryDate = $purchaseReturn->date instanceof \Carbon\Carbon
+            ? $purchaseReturn->date->toDateString()
+            : ((string) ($purchaseReturn->date ?: now()->toDateString()));
+
+        $payment = Payment::where('idempotency_key', $idempotencyKey)->first();
+        if (!$payment) {
+            $baseNo = 'DN-' . ($purchaseReturn->posted_number ?: ('PR-' . str_pad((string) $purchaseReturn->id, 4, '0', STR_PAD_LEFT)));
+            $paymentNumber = Payment::where('payment_number', $baseNo)->exists()
+                ? "{$baseNo}-{$purchaseReturn->id}"
+                : $baseNo;
+
+            $payment = Payment::create([
+                'payment_number'   => $paymentNumber,
+                'party_type'       => 'supplier',
+                'party_id'         => $purchaseReturn->supplier_id,
+                'payment_date'     => $entryDate,
+                'amount'           => $amount,
+                'allocated_amount' => 0,
+                'unapplied_amount' => $amount,
+                'payment_method'   => 'credit_note',
+                'reference'        => $purchaseReturn->posted_number,
+                'status'           => 'posted',
+                'notes'            => "Debit Note from Purchase Return #{$purchaseReturn->posted_number}",
+                'idempotency_key'  => $idempotencyKey,
+                'created_by_id'    => $user?->id,
+            ]);
+        }
+
+        $existingAllocs = PaymentAllocation::where('payment_id', $payment->id)->orderByDesc('id')->get();
+        $allocatedSum = round((float) $existingAllocs->sum('amount'), 2);
+
+        if ($allocatedSum > $amount) {
+            $excessToTrim = round($allocatedSum - $amount, 2);
+            foreach ($existingAllocs as $alloc) {
+                if ($excessToTrim <= 0) break;
+                $reduceBy = min((float) $alloc->amount, $excessToTrim);
+                if ($reduceBy > 0) {
+                    $inv = PurchaseInvoice::find($alloc->invoice_id);
+                    if ($inv) {
+                        $inv->total_paid = round(max((float) ($inv->total_paid ?? 0) - $reduceBy, 0), 2);
+                        $inv->save();
+                    }
+                    $newAllocAmt = round((float) $alloc->amount - $reduceBy, 2);
+                    if ($newAllocAmt <= 0.001) {
+                        $alloc->delete();
+                    } else {
+                        $alloc->amount = $newAllocAmt;
+                        $alloc->save();
+                    }
+                    $excessToTrim = round($excessToTrim - $reduceBy, 2);
+                }
+            }
+            $allocatedSum = round((float) PaymentAllocation::where('payment_id', $payment->id)->sum('amount'), 2);
+        }
+
+        if ($mode === 'invoice_offset' && $purchaseReturn->purchase_invoice_id && $allocatedSum < $amount) {
+            $linkedInv = PurchaseInvoice::lockForUpdate()->find($purchaseReturn->purchase_invoice_id);
+            if ($linkedInv && (int) $linkedInv->supplier_id === (int) $purchaseReturn->supplier_id && ($linkedInv->status ?? 'posted') !== 'reversed') {
+                $invTotal = (float) ($linkedInv->total_amount ?? 0);
+                $invPaid = (float) ($linkedInv->total_paid ?? 0);
+                $invDue = round(max($invTotal - $invPaid, 0), 2);
+                $toAutoAlloc = round(min($amount - $allocatedSum, $invDue), 2);
+
+                if ($toAutoAlloc > 0) {
+                    $existingAlloc = PaymentAllocation::where('payment_id', $payment->id)
+                        ->where('invoice_type', 'purchase_invoice')
+                        ->where('invoice_id', $linkedInv->id)
+                        ->first();
+                    if ($existingAlloc) {
+                        $existingAlloc->amount = round((float) $existingAlloc->amount + $toAutoAlloc, 2);
+                        $existingAlloc->save();
+                    } else {
+                        PaymentAllocation::create([
+                            'payment_id'   => $payment->id,
+                            'invoice_type' => 'purchase_invoice',
+                            'invoice_id'   => $linkedInv->id,
+                            'amount'       => $toAutoAlloc,
+                        ]);
+                    }
+                    $linkedInv->total_paid = round($invPaid + $toAutoAlloc, 2);
+                    $linkedInv->save();
+                    $allocatedSum = round($allocatedSum + $toAutoAlloc, 2);
+                }
+            }
+        }
+
+        $payment->update([
+            'party_id'         => $purchaseReturn->supplier_id,
+            'payment_date'     => $entryDate,
+            'amount'           => $amount,
+            'allocated_amount' => $allocatedSum,
+            'unapplied_amount' => round(max($amount - $allocatedSum, 0), 2),
+            'payment_method'   => 'credit_note',
+            'reference'        => $purchaseReturn->posted_number,
+            'status'           => 'posted',
+            'notes'            => "Debit Note from Purchase Return #{$purchaseReturn->posted_number}",
+        ]);
+
+        return $payment;
+    }
+
+    protected function deletePurchaseReturnCreditPayment(int $purchaseReturnId): void
+    {
+        if (!Schema::hasTable('payments') || !Schema::hasTable('payment_allocations')) {
+            return;
+        }
+
+        $payment = Payment::where('idempotency_key', "purchase_return:{$purchaseReturnId}")
+            ->with('allocations')
+            ->first();
+
+        if (!$payment) {
+            return;
+        }
+
+        foreach ($payment->allocations as $alloc) {
+            if ($alloc->invoice_type === 'purchase_invoice') {
+                $inv = PurchaseInvoice::find($alloc->invoice_id);
+                if ($inv) {
+                    $inv->total_paid = round(max((float) ($inv->total_paid ?? 0) - (float) $alloc->amount, 0), 2);
+                    $inv->save();
+                }
+            }
+        }
+
+        $payment->allocations()->delete();
+        $payment->delete();
     }
 }

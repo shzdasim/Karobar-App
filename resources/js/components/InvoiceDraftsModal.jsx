@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import axios from "axios";
+import toast from "react-hot-toast";
 import {
   XMarkIcon,
   TrashIcon,
@@ -8,8 +10,11 @@ import {
   DocumentPlusIcon,
   MagnifyingGlassIcon,
   CubeIcon,
+  ShareIcon,
+  CheckCircleIcon,
 } from "@heroicons/react/24/outline";
 import { useTheme } from "@/context/ThemeContext.jsx";
+import ShareDocumentModal from "./ShareDocumentModal.jsx";
 
 export default function InvoiceDraftsModal({
   isOpen,
@@ -27,6 +32,8 @@ export default function InvoiceDraftsModal({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [discardingId, setDiscardingId] = useState(null);
   const [confirmingDiscardId, setConfirmingDiscardId] = useState(null);
+  const [shareQuotationId, setShareQuotationId] = useState(null);
+  const [postingId, setPostingId] = useState(null);
 
   const searchInputRef = useRef(null);
   const itemsContainerRef = useRef(null);
@@ -35,9 +42,11 @@ export default function InvoiceDraftsModal({
   const getTypeName = (t) => {
     switch (t) {
       case "sale_retail":
-        return "Retail Sale";
+        return "Retail Sale / Quotation";
       case "sale_wholesale":
-        return "Wholesale Sale";
+        return "Wholesale Sale / Quotation";
+      case "quotation":
+        return "Price Quotation";
       case "purchase":
         return "Purchase Invoice";
       default:
@@ -416,6 +425,55 @@ export default function InvoiceDraftsModal({
                         </div>
                       ) : (
                         <>
+                          {d.type !== "purchase" && (
+                            <>
+                              <button
+                                type="button"
+                                title="Print or Share Price Quotation / Estimate PDF"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShareQuotationId(d.id);
+                                }}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 border transition-colors ${
+                                  isDark
+                                    ? "bg-emerald-900/30 border-emerald-700/60 text-emerald-300 hover:bg-emerald-900/50"
+                                    : "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+                                }`}
+                              >
+                                <ShareIcon className="w-3.5 h-3.5" />
+                                <span>Quote PDF</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={postingId === d.id}
+                                title="One-click convert this Quotation / Draft into a Posted Sale Invoice"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    setPostingId(d.id);
+                                    const { data } = await axios.post(`/api/invoice-drafts/${d.id}/post`);
+                                    toast.success(`Converted to Sale Invoice ${data?.posted_number || `#${data?.id}`}`);
+                                    onClose();
+                                    if (data?.id) {
+                                      window.location.href = `/sale-invoices/${data.id}`;
+                                    }
+                                  } catch (err) {
+                                    toast.error(err?.response?.data?.message || "Failed to convert quotation to invoice");
+                                  } finally {
+                                    setPostingId(null);
+                                  }
+                                }}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 border transition-colors ${
+                                  isDark
+                                    ? "bg-indigo-900/40 border-indigo-700/60 text-indigo-300 hover:bg-indigo-900/60"
+                                    : "bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100"
+                                }`}
+                              >
+                                <CheckCircleIcon className="w-3.5 h-3.5" />
+                                <span>{postingId === d.id ? "Posting…" : "Post Invoice"}</span>
+                              </button>
+                            </>
+                          )}
                           <button
                             type="button"
                             title="Discard draft permanently"
@@ -491,6 +549,13 @@ export default function InvoiceDraftsModal({
           </button>
         </div>
       </div>
+
+      <ShareDocumentModal
+        isOpen={Boolean(shareQuotationId)}
+        onClose={() => setShareQuotationId(null)}
+        documentType="quotation"
+        documentId={shareQuotationId}
+      />
     </div>
   );
 }

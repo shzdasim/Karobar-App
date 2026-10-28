@@ -2,7 +2,7 @@
 import { Fragment, useEffect, useRef, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { DocumentTextIcon, MagnifyingGlassIcon, PencilSquareIcon, TrashIcon, PlusIcon, ArrowLeftIcon, ClockIcon, ArrowUturnLeftIcon, BanknotesIcon } from "@heroicons/react/24/outline";
+import { DocumentTextIcon, MagnifyingGlassIcon, PencilSquareIcon, TrashIcon, PlusIcon, ArrowLeftIcon, ClockIcon, ArrowUturnLeftIcon, BanknotesIcon, PrinterIcon, ShareIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext";
@@ -12,6 +12,7 @@ import DocumentHistoryModal from "@/components/DocumentHistoryModal.jsx";
 import VoidInvoiceModal from "@/components/VoidInvoiceModal.jsx";
 import RecordPaymentModal from "@/components/RecordPaymentModal.jsx";
 import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
+import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -41,10 +42,11 @@ export default function PurchaseInvoiceShow() {
   const [password, setPassword] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
 
-  // History, Void and Payment modal states
+  // History, Void, Share and Payment modal states
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [voidModalOpen, setVoidModalOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
   const [isReversing, setIsReversing] = useState(false);
 
   // Held Invoices & Drafts state
@@ -358,6 +360,26 @@ return (
                   <span>Pay Supplier</span>
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-200 ${btnSecondary.className}`}
+                style={btnSecondary.style}
+                title="Print GRN / Purchase Invoice"
+              >
+                <PrinterIcon className="w-4 h-4" aria-hidden="true" />
+                <span>Print</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShareModalOpen(true)}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-200 ${btnSecondary.className}`}
+                style={btnSecondary.style}
+                title="Download PDF or Share via WhatsApp / Email"
+              >
+                <ShareIcon className="w-4 h-4" aria-hidden="true" />
+                <span>PDF / Share</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setHistoryModalOpen(true)}
@@ -694,6 +716,14 @@ return (
         entityType="purchase_invoice"
         entityId={id}
         entityNumber={inv?.posted_number || inv?.invoice_number || `#${id}`}
+      />
+
+      {/* Outbound Document Share / PDF Modal */}
+      <ShareDocumentModal
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        documentType="purchase_invoice"
+        documentId={inv?.id || id}
       />
 
       {/* Void / Reversal Modal */}

@@ -19,3 +19,6 @@ Schedule::command('backup:run-scheduled')->hourly();
 
 // Daily cleanup of temporary shared PDF files older than 24 hours
 Schedule::call(fn () => app(\App\Services\DocumentShareService::class)->cleanupExpiredSharedPdfs())->daily();
+
+// Automatically process due recurring operating expenses (weekly, monthly, yearly)
+Schedule::command('expenses:process-recurring')->dailyAt('00:05');

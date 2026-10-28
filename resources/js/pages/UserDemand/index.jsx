@@ -43,7 +43,13 @@ export default function UserDemandsIndex() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState("pending");
-  const [stats, setStats] = useState({ count: 0, pending_count: 0 });
+  const [stats, setStats] = useState({
+    count: 0,
+    pending_count: 0,
+    ordered_count: 0,
+    fulfilled_count: 0,
+    cancelled_count: 0,
+  });
 
   const canView = has("user-demands.view");
   const canCreate = has("user-demands.create");
@@ -53,6 +59,10 @@ export default function UserDemandsIndex() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(null);
   const [deletingLoading, setDeletingLoading] = useState(false);
+
+  const notifyTopbarCountChanged = () => {
+    window.dispatchEvent(new CustomEvent("notifications-changed"));
+  };
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -72,7 +82,13 @@ export default function UserDemandsIndex() {
         params: { status: statusFilter || undefined, limit: 200 },
       });
       setRows(Array.isArray(data?.rows) ? data.rows : []);
-      setStats({ count: data?.count || 0, pending_count: data?.pending_count || 0 });
+      setStats({
+        count: data?.count || 0,
+        pending_count: data?.pending_count || 0,
+        ordered_count: data?.ordered_count || 0,
+        fulfilled_count: data?.fulfilled_count || 0,
+        cancelled_count: data?.cancelled_count || 0,
+      });
     } catch (err) {
       console.error(err);
       toast.error("Failed to load user demands.");
@@ -89,8 +105,9 @@ export default function UserDemandsIndex() {
     if (!canUpdate) return toast.error("You don't have permission to update demands.");
     try {
       await axios.put(`/api/user-demands/${demand.id}`, { status });
-      toast.success(`Marked as ${status}.`);
+      toast.success(`Marked as ${STATUS_STYLES[status]?.label || status}.`);
       fetchDemands();
+      notifyTopbarCountChanged();
     } catch (err) {
       toast.error(err?.response?.data?.message || "Update failed.");
     }
@@ -110,6 +127,7 @@ export default function UserDemandsIndex() {
       setDeleteOpen(false);
       setDeleting(null);
       fetchDemands();
+      notifyTopbarCountChanged();
     } catch (err) {
       toast.error(err?.response?.data?.message || "Delete failed.");
     }
@@ -164,16 +182,29 @@ export default function UserDemandsIndex() {
         {/* Status filter */}
         <div className="relative px-6 pt-2 pb-5">
           <div className="user-demand-status-filters" role="group" aria-label="Filter demands by status">
-            {["all", ...STATUS_ORDER].map((s) => (
-              <button
-                key={s}
-                onClick={() => setStatusFilter(s === "all" ? "" : s)}
-                aria-pressed={statusFilter === (s === "all" ? "" : s)}
-                className={`user-demand-status-option ${statusFilter === (s === "all" ? "" : s) ? "theme-btn-secondary" : "theme-btn-tertiary"}`}
-              >
-                {s === "all" ? "All" : STATUS_STYLES[s]?.label}
-              </button>
-            ))}
+            {["all", ...STATUS_ORDER].map((s) => {
+              const countMap = {
+                all: stats.count,
+                pending: stats.pending_count,
+                ordered: stats.ordered_count,
+                fulfilled: stats.fulfilled_count,
+                cancelled: stats.cancelled_count,
+              };
+              const badgeCount = countMap[s];
+              return (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s === "all" ? "" : s)}
+                  aria-pressed={statusFilter === (s === "all" ? "" : s)}
+                  className={`user-demand-status-option ${statusFilter === (s === "all" ? "" : s) ? "theme-btn-secondary" : "theme-btn-tertiary"}`}
+                >
+                  <span>{s === "all" ? "All" : STATUS_STYLES[s]?.label}</span>
+                  {typeof badgeCount === "number" && (
+                    <span className="ml-1.5 text-[11px] opacity-80 font-mono">({badgeCount})</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -199,20 +230,22 @@ export default function UserDemandsIndex() {
                 <th className="px-3 py-2 font-semibold">Product</th>
                 <th className="px-3 py-2 font-semibold">Brand</th>
                 <th className="px-3 py-2 font-semibold">Supplier</th>
-<th className="px-3 py-2 font-semibold text-right">Qty</th>
+                <th className="px-3 py-2 font-semibold text-right">Stock</th>
+                <th className="px-3 py-2 font-semibold text-right">Demand Qty</th>
                 <th className="px-3 py-2 font-semibold">Requested By</th>
                 <th className="px-3 py-2 font-semibold">Customer</th>
+                <th className="px-3 py-2 font-semibold">Notes</th>
                 <th className="px-3 py-2 font-semibold">Status</th>
                 <th className="px-3 py-2 font-semibold text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading && rows.length === 0 && (
-                <tr><td colSpan={8} className="px-3 py-12 text-center" role="status">Loading demands…</td></tr>
+                <tr><td colSpan={10} className="px-3 py-12 text-center" role="status">Loading demands…</td></tr>
               )}
               {rows.length === 0 && !loading && (
                 <tr>
-<td colSpan={8} className="px-3 py-12 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={10} className="px-3 py-12 text-center text-gray-500 dark:text-gray-400">
                     <div className="flex flex-col items-center gap-2">
                       <HandRaisedIcon className="w-8 h-8 text-gray-400" />
                       <p>No user demands found.</p>
@@ -232,6 +265,7 @@ export default function UserDemandsIndex() {
 
               {rows.map((d) => {
                 const st = STATUS_STYLES[d.status] || STATUS_STYLES.pending;
+                const itemName = d.requested_name || d.product?.name || "demand";
                 return (
                   <tr key={d.id} className="odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/40 dark:even:bg-slate-800/40 hover:bg-blue-50 dark:hover:bg-slate-600/50 transition-colors border-b border-gray-100 dark:border-slate-700/50">
                     <td className="px-3 py-2.5">
@@ -244,16 +278,21 @@ export default function UserDemandsIndex() {
                     </td>
                     <td className="px-3 py-2.5 text-gray-700 dark:text-gray-300">{d.product_brand_name || "—"}</td>
                     <td className="px-3 py-2.5 text-gray-700 dark:text-gray-300">{d.product_supplier_name || "—"}</td>
-                    <td className="px-3 py-2.5 text-right font-medium text-gray-800 dark:text-gray-200">{d.requested_quantity}</td>
-<td className="px-3 py-2.5 text-gray-700 dark:text-gray-300">
+                    <td className="px-3 py-2.5 text-right font-mono text-gray-600 dark:text-gray-300">
+                      {d.product?.quantity ?? "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-gray-800 dark:text-gray-200">{d.requested_quantity}</td>
+                    <td className="px-3 py-2.5 text-gray-700 dark:text-gray-300">
                       {d.requester?.name || "—"}
-                      {d.customer?.name && (
-                        <div className="text-xs mt-0.5 text-blue-600 dark:text-blue-400">
-                          Customer: {d.customer.name}
-                        </div>
-                      )}
                     </td>
                     <td className="px-3 py-2.5 text-gray-700 dark:text-gray-300">{d.customer?.name || "—"}</td>
+                    <td className="px-3 py-2.5 text-xs text-gray-600 dark:text-gray-300 max-w-[220px]">
+                      {d.notes ? (
+                        <span className="line-clamp-2" title={d.notes}>{d.notes}</span>
+                      ) : (
+                        <span className="text-gray-400 dark:text-gray-500">—</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2.5">
                       <span className={`user-demand-badge user-demand-badge-${d.status || "pending"}`}>
                         {st.label}
@@ -261,40 +300,89 @@ export default function UserDemandsIndex() {
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-center gap-1.5">
-                        {d.status === "pending" && (
+                        {canUpdate && d.status === "pending" && (
                           <>
                             <button
+                              type="button"
                               onClick={() => changeStatus(d, "ordered")}
                               title="Mark as Ordered"
-                              aria-label={`Mark as Ordered: ${d.requested_name || d.product?.name || "demand"}`}
-                              className="products-row-action "
+                              aria-label={`Mark as Ordered: ${itemName}`}
+                              className="products-row-action text-blue-600 hover:text-blue-700"
                             >
                               <ShoppingCartIcon className="w-4 h-4" />
                             </button>
                             <button
+                              type="button"
                               onClick={() => changeStatus(d, "fulfilled")}
                               title="Mark as Fulfilled"
-                              aria-label={`Mark as Fulfilled: ${d.requested_name || d.product?.name || "demand"}`}
-                              className="products-row-action "
+                              aria-label={`Mark as Fulfilled: ${itemName}`}
+                              className="products-row-action text-emerald-600 hover:text-emerald-700"
                             >
                               <CheckCircleIcon className="w-4 h-4" />
                             </button>
                             <button
+                              type="button"
                               onClick={() => changeStatus(d, "cancelled")}
                               title="Cancel demand"
-                              aria-label={`Cancel demand: ${d.requested_name || d.product?.name || "demand"}`}
+                              aria-label={`Cancel demand: ${itemName}`}
                               className="products-row-action products-row-action-danger"
                             >
                               <XCircleIcon className="w-4 h-4" />
                             </button>
                           </>
                         )}
+
+                        {canUpdate && d.status === "ordered" && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => changeStatus(d, "fulfilled")}
+                              title="Mark as Fulfilled"
+                              aria-label={`Mark as Fulfilled: ${itemName}`}
+                              className="products-row-action text-emerald-600 hover:text-emerald-700"
+                            >
+                              <CheckCircleIcon className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => changeStatus(d, "pending")}
+                              title="Revert to Pending"
+                              aria-label={`Revert to Pending: ${itemName}`}
+                              className="products-row-action text-amber-600 hover:text-amber-700"
+                            >
+                              <ArrowPathIcon className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => changeStatus(d, "cancelled")}
+                              title="Cancel demand"
+                              aria-label={`Cancel demand: ${itemName}`}
+                              className="products-row-action products-row-action-danger"
+                            >
+                              <XCircleIcon className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+
+                        {canUpdate && (d.status === "fulfilled" || d.status === "cancelled") && (
+                          <button
+                            type="button"
+                            onClick={() => changeStatus(d, "pending")}
+                            title="Reopen as Pending"
+                            aria-label={`Reopen as Pending: ${itemName}`}
+                            className="products-row-action text-amber-600 hover:text-amber-700"
+                          >
+                            <ArrowPathIcon className="w-4 h-4" />
+                          </button>
+                        )}
+
                         {canDelete && (
                           <button
+                            type="button"
                             onClick={() => openDelete(d)}
                             title="Delete"
-                              aria-label={`Delete: ${d.requested_name || d.product?.name || "demand"}`}
-                              className="products-row-action products-row-action-danger"
+                            aria-label={`Delete: ${itemName}`}
+                            className="products-row-action products-row-action-danger"
                           >
                             <TrashIcon className="w-4 h-4" />
                           </button>

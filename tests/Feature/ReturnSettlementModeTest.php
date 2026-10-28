@@ -407,4 +407,96 @@ class ReturnSettlementModeTest extends TestCase
         $supLedgerAfterDel = $this->getJson("/api/supplier-ledger?supplier_id={$this->supplier->id}")->assertOk();
         $this->assertEquals(80000.0, (float) $supLedgerAfterDel->json('summary.net_balance'));
     }
+
+    public function test_sale_return_credit_note_can_be_allocated_later_to_open_sale_invoices_without_changing_net_ledger_balance(): void
+    {
+        // 1. Create two credit SaleInvoices: INV-A (Rs. 2,000) and INV-B (Rs. 1,500)
+        $invARes = $this->postJson('/api/sale-invoices', [
+            'customer_id'   => $this->customer->id,
+            'date'          => now()->toDateString(),
+            'invoice_type'  => 'credit',
+            'gross_amount'  => 2000,
+            'total'         => 2000,
+            'total_receive' => 0,
+            'items'         => [
+                [
+                    'product_id'       => $this->product->id,
+                    'pack_size'        => 1,
+                    'current_quantity' => 200,
+                    'quantity'         => 20,
+                    'price'            => 100,
+                    'sub_total'        => 2000,
+                ],
+            ],
+        ])->assertStatus(201);
+        $invA = SaleInvoice::findOrFail($invARes->json('id'));
+
+        $invBRes = $this->postJson('/api/sale-invoices', [
+            'customer_id'   => $this->customer->id,
+            'date'          => now()->toDateString(),
+            'invoice_type'  => 'credit',
+            'gross_amount'  => 1500,
+            'total'         => 1500,
+            'total_receive' => 0,
+            'items'         => [
+                [
+                    'product_id'       => $this->product->id,
+                    'pack_size'        => 1,
+                    'current_quantity' => 180,
+                    'quantity'         => 15,
+                    'price'            => 100,
+                    'sub_total'        => 1500,
+                ],
+            ],
+        ])->assertStatus(201);
+        $invB = SaleInvoice::findOrFail($invBRes->json('id'));
+
+        // 2. Post a SaleReturn with settlement_mode = 'credit_note' for Rs. 1,200
+        $this->postJson('/api/sale-returns', [
+            'customer_id'     => $this->customer->id,
+            'sale_invoice_id' => $invA->id,
+            'date'            => now()->toDateString(),
+            'gross_total'     => 1200,
+            'total'           => 1200,
+            'settlement_mode' => 'credit_note',
+            'items'           => [
+                [
+                    'product_id'           => $this->product->id,
+                    'unit_sale_quantity'   => 20,
+                    'unit_return_quantity' => 12,
+                    'unit_sale_price'      => 100,
+                    'sub_total'            => 1200,
+                ],
+            ],
+        ])->assertStatus(201);
+
+        // Net balance on ledger is 2000 + 1500 - 1200 = 2300
+        $ledgerBefore = $this->getJson("/api/customer-ledger?customer_id={$this->customer->id}")->assertOk();
+        $this->assertEquals(2300.0, (float) $ledgerBefore->json('summary.net_balance'));
+
+        // Available credits shows Rs. 1,200 from the Credit Note
+        $avail = $this->getJson("/api/payments/available-credits?party_type=customer&party_id={$this->customer->id}")
+            ->assertOk();
+        $this->assertEquals(1200.0, (float) $avail->json('total_unapplied'));
+        $creditPaymentId = $avail->json('credits.0.id');
+        $this->assertNotNull($creditPaymentId);
+
+        // 3. Allocate Rs. 1,200 of the Credit Note to INV-B (reducing INV-B remaining due from 1500 to 300)
+        $this->postJson("/api/payments/{$creditPaymentId}/allocate", [
+            'allocations' => [
+                ['invoice_id' => $invB->id, 'amount' => 1200],
+            ],
+        ])->assertOk();
+
+        $this->assertEquals(1200.0, (float) $invB->fresh()->total_receive);
+
+        // Open invoices endpoint now reports INV-B due = 300
+        $openInvs = collect($this->getJson("/api/payments/open-invoices?party_type=customer&party_id={$this->customer->id}")->json());
+        $invBOpen = $openInvs->firstWhere('id', $invB->id);
+        $this->assertEquals(300.0, (float) $invBOpen['due']);
+
+        // Customer ledger net balance remains 2300 (no double counting!)
+        $ledgerAfter = $this->getJson("/api/customer-ledger?customer_id={$this->customer->id}")->assertOk();
+        $this->assertEquals(2300.0, (float) $ledgerAfter->json('summary.net_balance'));
+    }
 }

@@ -28,12 +28,19 @@ class SendUserDemandNotifications extends Command
     public function handle(): int
     {
         $now = now();
+        $force = (bool) $this->option('force');
 
-        $updated = DB::table('user_demands')
-            ->where('status', 'pending')
-            ->where('last_notified_at', '<', $now->copy()->subDay()) // only demand not reminded today
-            ->orWhereNull('last_notified_at')
-            ->update(['last_notified_at' => $now]);
+        $query = DB::table('user_demands')
+            ->where('status', 'pending');
+
+        if (!$force) {
+            $query->where(function ($q) use ($now) {
+                $q->whereNull('last_notified_at')
+                  ->orWhere('last_notified_at', '<', $now->copy()->subDay());
+            });
+        }
+
+        $updated = $query->update(['last_notified_at' => $now]);
 
         $pendingCount = UserDemand::pending()->count();
 

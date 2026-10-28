@@ -131,6 +131,18 @@
             </tr>
         </thead>
         <tbody>
+            @if(!empty($from) || (float)($summary['opening_balance'] ?? 0) != 0)
+                <tr style="background: #f1f5f9; font-weight: bold;">
+                    <td>{{ $from ? \Carbon\Carbon::parse($from)->format('d M Y') : '-' }}</td>
+                    <td>OPENING</td>
+                    <td>—</td>
+                    <td>Opening Balance Brought Forward</td>
+                    <td class="text-right">—</td>
+                    <td class="text-right">—</td>
+                    <td class="text-right">—</td>
+                    <td class="text-right"><strong>Rs. {{ number_format((float)($summary['opening_balance'] ?? 0), 2) }}</strong></td>
+                </tr>
+            @endif
             @forelse($rows as $r)
                 <tr>
                     <td>{{ $r->entry_date ? \Carbon\Carbon::parse($r->entry_date)->format('d M Y') : '-' }}</td>

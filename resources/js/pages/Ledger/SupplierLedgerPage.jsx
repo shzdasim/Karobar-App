@@ -65,6 +65,8 @@ const [suppliers, setSuppliers] = useState([]);
   const [supplierId, setSupplierId] = useState("");
   const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
   const [rows, setRows] = useState([]);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [newestFirst, setNewestFirst] = useState(true);
   const [sortField, setSortField] = useState("entry_date");
   // table paging
@@ -75,6 +77,7 @@ const [suppliers, setSuppliers] = useState([]);
   const [settling, setSettling] = useState(false);
   const [settleBusyId, setSettleBusyId] = useState(null);
   const [summary, setSummary] = useState({
+    opening_balance: 0,
     total_invoiced: 0,
     paid_on_invoice: 0,
     payments_debited: 0,
@@ -226,12 +229,16 @@ const [suppliers, setSuppliers] = useState([]);
     })();
   }, [permsLoading, can.view]);
 
-  const fetchData = async () => {
+  const fetchData = async (overrideFrom = fromDate, overrideTo = toDate) => {
     if (!can.view) return toast.error("You don't have permission to view supplier ledger.");
     if (!supplierId) return toast.error("Select a supplier first");
     try {
       const { data } = await axios.get("/api/supplier-ledger", {
-        params: { supplier_id: supplierId },
+        params: {
+          supplier_id: supplierId,
+          from: overrideFrom || undefined,
+          to: overrideTo || undefined,
+        },
       });
       const clean = (data.data || []).map((r) => {
         const c = { ...r };
@@ -241,6 +248,7 @@ const [suppliers, setSuppliers] = useState([]);
       setRows(clean);
       setSummary(
         data.summary || {
+          opening_balance: 0,
           total_invoiced: 0,
           paid_on_invoice: 0,
           payments_debited: 0,
@@ -502,8 +510,8 @@ const [suppliers, setSuppliers] = useState([]);
       return ad < bd ? -1 : 1;
     });
 
-    // Running balance over the chronological order
-    let runningBalance = 0;
+    // Running balance over the chronological order (starting from brought-forward opening balance)
+    let runningBalance = Number(summary?.opening_balance || 0);
     const withBalance = sorted.map((r) => {
       if (r.entry_type === "invoice" || r.entry_type === "manual") {
         runningBalance += Number(r.credit_remaining || 0);
@@ -520,7 +528,7 @@ const [suppliers, setSuppliers] = useState([]);
     const ordered = [...pending, ...(newestFirst ? saved.reverse() : saved)];
 
     return ordered.map((r, i) => ({ ...r, __top: i + 1 }));
-  }, [rows, newestFirst]);
+  }, [rows, newestFirst, summary?.opening_balance]);
 
   // Column totals + how many rows are waiting to be saved
   const totals = useMemo(
@@ -543,18 +551,19 @@ const [suppliers, setSuppliers] = useState([]);
 
   // Latest running balance (newest chronological row) = overall due for this supplier
   const overallRunning = useMemo(() => {
-    let last = 0;
+    let last = Number(summary?.opening_balance || 0);
     for (const r of derivedRows) {
       if (r.entry_type === "invoice" || r.entry_type === "manual") last += Number(r.credit_remaining || 0);
       else if (r.entry_type === "payment") last -= Number(r.debited_amount || 0);
     }
     return Number(last.toFixed(2));
-  }, [derivedRows]);
+  }, [derivedRows, summary?.opening_balance]);
 
   // Client-side summary computed from local rows so the hero strip updates
   // in real-time when manual/payment rows are added or edited (before saving).
   const computedSummary = useMemo(() => {
-    const init = { total_invoiced: 0, paid_on_invoice: 0, payments_debited: 0, net_balance: 0 };
+    const openingBal = Number(summary?.opening_balance || 0);
+    const init = { opening_balance: openingBal, total_invoiced: 0, paid_on_invoice: 0, payments_debited: 0, net_balance: 0 };
     for (const r of derivedRows) {
       if (r.entry_type !== "payment") {
         init.total_invoiced += Number(r.invoice_total || 0);
@@ -564,10 +573,10 @@ const [suppliers, setSuppliers] = useState([]);
       }
     }
     init.net_balance = Number(
-      (init.total_invoiced - (init.paid_on_invoice + init.payments_debited)).toFixed(2)
+      (openingBal + init.total_invoiced - (init.paid_on_invoice + init.payments_debited)).toFixed(2)
     );
     return init;
-  }, [derivedRows]);
+  }, [derivedRows, summary?.opening_balance]);
 
   // Optional: let users sort by amount instead of date
   const sortedRows = useMemo(() => {
@@ -656,7 +665,12 @@ const [suppliers, setSuppliers] = useState([]);
     try { w.opener = null; } catch {}
     try {
       const { data } = await axios.get("/api/supplier-ledger/print-url", {
-        params: { supplier_id: supplierId, type: type || undefined },
+        params: {
+          supplier_id: supplierId,
+          type: type || undefined,
+          from: fromDate || undefined,
+          to: toDate || undefined,
+        },
       });
       w.location.replace(data.url);
     } catch (err) {
@@ -835,10 +849,13 @@ return (
           </div>
         </div>
 
-        {/* Ledger totals strip (no date filters anymore) */}
+        {/* Ledger totals strip */}
         {supplierId && (
           <div className="relative px-5 pb-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className={`grid grid-cols-2 ${fromDate || Number(computedSummary.opening_balance) !== 0 ? "md:grid-cols-5" : "md:grid-cols-4"} gap-2`}>
+              {(fromDate || Number(computedSummary.opening_balance) !== 0) && (
+                <HeroStat label="Opening Balance (B/F)" value={fmt(computedSummary.opening_balance)} />
+              )}
               <HeroStat label="Total Bills" value={fmt(computedSummary.total_invoiced)} />
               <HeroStat label="Paid on Invoice" value={fmt(computedSummary.paid_on_invoice)} />
               <HeroStat label="Payments" value={fmt(computedSummary.payments_debited)} />
@@ -871,7 +888,50 @@ return (
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Date range statement filter */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-gray-500 dark:text-gray-400 font-medium">Statement Range:</span>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                aria-label="Statement from date"
+                className={`h-8 px-2 text-xs rounded-lg border focus:outline-hidden focus:ring-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 bg-white text-gray-700"}`}
+              />
+              <span className="text-gray-400">to</span>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                aria-label="Statement to date"
+                className={`h-8 px-2 text-xs rounded-lg border focus:outline-hidden focus:ring-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 bg-white text-gray-700"}`}
+              />
+              <button
+                type="button"
+                disabled={!supplierId}
+                onClick={() => fetchData(fromDate, toDate)}
+                className="theme-btn-tertiary inline-flex items-center h-8 px-2.5 text-xs font-medium rounded-lg"
+                title="Apply statement date filter"
+              >
+                Apply
+              </button>
+              {(fromDate || toDate) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFromDate("");
+                    setToDate("");
+                    if (supplierId) fetchData("", "");
+                  }}
+                  className="inline-flex items-center h-8 px-2 text-xs font-medium text-rose-600 dark:text-rose-400 hover:underline"
+                  title="Clear statement date filter"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
             {/* Sort field */}
             <div className="relative">
               <select
@@ -1461,7 +1521,11 @@ return (
         isOpen={shareModalOpen}
         onClose={() => setShareModalOpen(false)}
         documentType="supplier_ledger"
-        queryParams={{ supplier_id: supplierId }}
+        queryParams={{
+          supplier_id: supplierId,
+          from: fromDate || undefined,
+          to: toDate || undefined,
+        }}
       />
 
       {/* print + portal helpers */}

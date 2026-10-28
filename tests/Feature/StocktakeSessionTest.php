@@ -467,4 +467,73 @@ class StocktakeSessionTest extends TestCase
 
         $this->deleteJson("/api/stocktake-sessions/{$session->id}")->assertStatus(422);
     }
+
+    public function test_full_stocktake_includes_zero_stock_products_and_allows_adding_found_items(): void
+    {
+        $zeroProduct = $this->makeProduct(['name' => 'Zero Stock Drug', 'quantity' => 0]);
+        $extraProduct = $this->makeProduct(['name' => 'Unlisted Batch Drug', 'quantity' => 10]);
+
+        $createRes = $this->postJson('/api/stocktake-sessions', [
+            'session_type' => 'full',
+            'is_blind'     => false,
+        ])->assertCreated();
+
+        $sessionId = $createRes->json('id');
+
+        // Start session — must include the zero-stock product
+        $this->patchJson("/api/stocktake-sessions/{$sessionId}/start")->assertOk();
+
+        $this->assertDatabaseHas('stocktake_items', [
+            'stocktake_session_id' => $sessionId,
+            'product_id'           => $zeroProduct->id,
+            'system_qty'           => 0,
+        ]);
+
+        // Record count = 5 found on shelf for the zero-stock product
+        $zeroItem = StocktakeItem::where('stocktake_session_id', $sessionId)
+            ->where('product_id', $zeroProduct->id)
+            ->firstOrFail();
+
+        $this->patchJson("/api/stocktake-items/{$zeroItem->id}", [
+            'counted_qty'        => 5,
+            'discrepancy_reason' => 'data_entry_error',
+        ])->assertOk();
+
+        // Count existing item for extraProduct as 10 (no variance)
+        $extraItem = StocktakeItem::where('stocktake_session_id', $sessionId)
+            ->where('product_id', $extraProduct->id)
+            ->firstOrFail();
+
+        $this->patchJson("/api/stocktake-items/{$extraItem->id}", [
+            'counted_qty' => 10,
+        ])->assertOk();
+
+        // Add an unexpected new batch found on shelf via POST /api/stocktake-sessions/{id}/items
+        $addRes = $this->postJson("/api/stocktake-sessions/{$sessionId}/items", [
+            'product_id'         => $extraProduct->id,
+            'batch_number'       => 'FOUND-BATCH-99',
+            'expiry_date'        => '2027-12-31',
+            'counted_qty'        => 8,
+            'discrepancy_reason' => 'other',
+            'notes'              => 'Found unopened box on top shelf',
+        ])->assertStatus(201);
+
+        $this->assertEquals(8, $addRes->json('variance_qty'));
+        $this->assertEquals('counted', $addRes->json('status'));
+
+        // Submit and finalize session
+        $this->patchJson("/api/stocktake-sessions/{$sessionId}/submit-review")->assertOk();
+        $this->postJson("/api/stocktake-sessions/{$sessionId}/finalize")->assertOk();
+
+        // Zero-stock product should now have quantity = 5
+        $this->assertEquals(5, (int) $zeroProduct->fresh()->quantity);
+
+        // Extra product should now have quantity = 10 + 8 = 18, and the newly found batch created
+        $this->assertEquals(18, (int) $extraProduct->fresh()->quantity);
+        $this->assertDatabaseHas('batches', [
+            'product_id'   => $extraProduct->id,
+            'batch_number' => 'FOUND-BATCH-99',
+            'quantity'     => 8,
+        ]);
+    }
 }

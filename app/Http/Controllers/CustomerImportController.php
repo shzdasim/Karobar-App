@@ -15,9 +15,9 @@ class CustomerImportController extends Controller
     public function template(): StreamedResponse
     {
         return response()->streamDownload(function () {
-            echo "name,email,phone,address\n";
-            echo "Alice Smith,alice@example.com,0300-1234567,123 Main St\n";
-            echo "Bob Khan,,021-1112223,Defense Phase 6\n";
+            echo "name,email,phone,address,opening_balance\n";
+            echo "Alice Smith,alice@example.com,0300-1234567,123 Main St,5000\n";
+            echo "Bob Khan,,021-1112223,Defense Phase 6,0\n";
         }, 'customers_template.csv', ['Content-Type' => 'text/csv']);
     }
 

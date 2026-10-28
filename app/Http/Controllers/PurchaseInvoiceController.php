@@ -494,12 +494,17 @@ class PurchaseInvoiceController extends Controller
                 $purchaseInvoice->items()->delete();
                 $this->persistInvoiceItems($purchaseInvoice, $data['items']);
 
-                // Mark pending user demands for these products as ordered
-                $productIds = collect($data['items'])->pluck('product_id')->filter()->unique()->all();
+                // Mark pending/ordered user demands for these received products as fulfilled
+                $productIds = collect($data['items'])
+                    ->filter(fn ($row) => ((int) ($row['quantity'] ?? $row['unit_quantity'] ?? 0)) > 0)
+                    ->pluck('product_id')
+                    ->filter()
+                    ->unique()
+                    ->all();
                 if (\Illuminate\Support\Facades\Schema::hasTable('user_demands') && !empty($productIds)) {
                     UserDemand::whereIn('product_id', $productIds)
-                        ->whereIn('status', ['pending'])
-                        ->update(['status' => 'ordered']);
+                        ->whereIn('status', ['pending', 'ordered'])
+                        ->update(['status' => 'fulfilled']);
                 }
 
                 // Handle supplier ledger entries
@@ -790,11 +795,12 @@ class PurchaseInvoiceController extends Controller
                 $product->applyPurchaseFromItem($item); 
             }
 
-            // Mark pending user demands for this product as ordered
-            if (!empty($item['product_id']) && \Illuminate\Support\Facades\Schema::hasTable('user_demands')) {
+            // Mark pending/ordered user demands for this received product as fulfilled
+            $receivedQty = (int) ($item['quantity'] ?? $item['unit_quantity'] ?? 0);
+            if (!empty($item['product_id']) && $receivedQty > 0 && \Illuminate\Support\Facades\Schema::hasTable('user_demands')) {
                 UserDemand::where('product_id', $item['product_id'])
-                    ->whereIn('status', ['pending'])
-                    ->update(['status' => 'ordered']);
+                    ->whereIn('status', ['pending', 'ordered'])
+                    ->update(['status' => 'fulfilled']);
             }
 
             if (!empty($item['batch']) && !empty($item['expiry'])) {

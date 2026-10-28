@@ -230,14 +230,24 @@ public function nearExpiryFilters(Request $request)
         $to = $request->query('date_to', $today);
 
         // Get sales by category from sale_invoice_items joined with products and categories
-        $data = DB::table('sale_invoice_items as sii')
+        $query = DB::table('sale_invoice_items as sii')
             ->join('sale_invoices as si', 'si.id', '=', 'sii.sale_invoice_id')
             ->join('products as p', 'p.id', '=', 'sii.product_id')
             ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
-            ->whereBetween('si.date', [$from, $to])
+            ->whereBetween('si.date', [$from, $to]);
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'status')) {
+            $query->where(function ($q) {
+                $q->whereNull('si.status')->orWhere('si.status', '!=', 'reversed');
+            });
+        }
+
+        $data = $query
             ->select(
-                DB::raw('COALESCE(c.name, "Uncategorized") as category'),
-                DB::raw('SUM(sii.quantity * sii.rate) as value')
+                DB::raw("COALESCE(c.name, 'Uncategorized') as category"),
+                DB::raw("COALESCE(c.name, 'Uncategorized') as name"),
+                DB::raw('COALESCE(SUM(COALESCE(sii.sub_total, sii.quantity * sii.price, 0)), 0) as value'),
+                DB::raw('COALESCE(SUM(COALESCE(sii.sub_total, sii.quantity * sii.price, 0)), 0) as revenue')
             )
             ->groupBy('c.name')
             ->orderByDesc('value')

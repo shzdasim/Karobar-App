@@ -14,6 +14,50 @@ use Illuminate\Validation\Rule;
 
 class SupplierLedgerController extends Controller
 {
+    private function calculateOpeningBalance(int $supplierId, ?string $from): float
+    {
+        if (!$from) {
+            return 0.0;
+        }
+
+        $priorRows = SupplierLedger::with(['purchaseInvoice:id,invoice_number,posted_number,total_amount,total_paid'])
+            ->where('supplier_id', $supplierId)
+            ->whereDate('entry_date', '<', $from)
+            ->get();
+
+        $priorAllocated = collect();
+        $priorInvIds = $priorRows->pluck('purchase_invoice_id')->filter()->unique()->values()->all();
+        if (!empty($priorInvIds) && Schema::hasTable('payment_allocations') && Schema::hasTable('payments')) {
+            $priorAllocated = \App\Models\PaymentAllocation::query()
+                ->where('invoice_type', 'purchase_invoice')
+                ->whereIn('invoice_id', $priorInvIds)
+                ->whereHas('payment', fn($q) => $q->where('status', 'posted'))
+                ->selectRaw('invoice_id, SUM(amount) as total_allocated')
+                ->groupBy('invoice_id')
+                ->pluck('total_allocated', 'invoice_id');
+        }
+
+        $openingBalance = 0.0;
+        foreach ($priorRows as $pRow) {
+            $invTotal = (float) ($pRow->invoice_total ?? 0);
+            $paidOnInv = (float) ($pRow->total_paid ?? 0);
+            if ($pRow->entry_type === 'invoice' && $pRow->purchaseInvoice) {
+                $inv = $pRow->purchaseInvoice;
+                $invTotal = (float) ($inv->total_amount ?? $invTotal);
+                $rawPaid = (float) ($inv->total_paid ?? $paidOnInv);
+                $alloc = (float) ($priorAllocated[$inv->id] ?? 0);
+                $paidOnInv = max(0.0, min($rawPaid - $alloc, $invTotal));
+            }
+            if (in_array($pRow->entry_type, ['invoice', 'manual'], true)) {
+                $openingBalance += ($invTotal - $paidOnInv);
+            } elseif ($pRow->entry_type === 'payment') {
+                $openingBalance -= (float) ($pRow->debited_amount ?? 0);
+            }
+        }
+
+        return round($openingBalance, 2);
+    }
+
     // GET /api/supplier-ledger?supplier_id=..&from=..&to=..
     public function index(Request $request)
     {
@@ -64,15 +108,21 @@ class SupplierLedgerController extends Controller
             }
         }
 
+        $openingBalance = $this->calculateOpeningBalance((int) $validated['supplier_id'], $request->get('from'));
         $invoiceRows = $rows->whereIn('entry_type', ['invoice', 'manual']);
         $paymentRows = $rows->where('entry_type', 'payment');
 
         $summary = [
+            'opening_balance'  => $openingBalance,
             'total_invoiced'   => $invoiceRows->sum('invoice_total'),
             'paid_on_invoice'  => $invoiceRows->sum('total_paid'),
             'payments_debited' => $paymentRows->sum('debited_amount'),
-            'net_balance'      => ($invoiceRows->sum('invoice_total'))
-                                - ($invoiceRows->sum('total_paid') + $paymentRows->sum('debited_amount')),
+            'net_balance'      => round(
+                $openingBalance
+                + ($invoiceRows->sum('invoice_total'))
+                - ($invoiceRows->sum('total_paid') + $paymentRows->sum('debited_amount')),
+                2
+            ),
         ];
 
         return response()->json([
@@ -467,7 +517,8 @@ class SupplierLedgerController extends Controller
                 ->pluck('total_allocated', 'invoice_id');
         }
 
-        $balance = 0;
+        $openingBalance = $this->calculateOpeningBalance($supplier->id, $from);
+        $balance = $openingBalance;
         $mapped = $rows->map(function ($r) use (&$balance, $allocatedByInvoice) {
             if ($r->entry_type === 'invoice' && $r->purchaseInvoice) {
                 $inv = $r->purchaseInvoice;
@@ -498,11 +549,12 @@ class SupplierLedgerController extends Controller
         });
 
         $summary = [
+            'opening_balance'   => $openingBalance,
             'total_invoiced'    => (float) $mapped->sum('invoice_total'),
             'paid_on_invoice'   => (float) $mapped->sum('total_paid'),
             'payments_debited'  => (float) $mapped->sum('debited_amount'),
             'net_balance'       => round(
-                ($mapped->sum('invoice_total') - $mapped->sum('total_paid')) - $mapped->sum('debited_amount'),
+                $openingBalance + ($mapped->sum('invoice_total') - $mapped->sum('total_paid')) - $mapped->sum('debited_amount'),
                 2
             ),
         ];

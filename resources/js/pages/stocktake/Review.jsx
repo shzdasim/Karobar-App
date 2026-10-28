@@ -13,10 +13,12 @@ import {
   ArrowTrendingUpIcon,
   ArrowTrendingDownIcon,
   InformationCircleIcon,
+  PrinterIcon,
 } from "@heroicons/react/24/solid";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { GlassCard, GlassSectionHeader } from "@/components";
+import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 
 const getContrastText = (hex) => {
   hex = (hex || "#3b82f6").replace("#", "");
@@ -48,6 +50,7 @@ export default function StocktakeReview() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [finalizing, setFinalizing] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   // Per-item reason state: { [itemId]: string }
   const [reasons, setReasons] = useState({});
@@ -204,8 +207,20 @@ export default function StocktakeReview() {
             </span>
           }
         />
-        {!isReadonly && (
-          <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShareOpen(true)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-colors ${
+              isDark
+                ? "bg-slate-800 border-slate-600 text-slate-200 hover:bg-slate-700"
+                : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            <PrinterIcon className="w-4 h-4 text-blue-500" />
+            Variance PDF / Print
+          </button>
+          {!isReadonly && (
             <button
               onClick={handleFinalize}
               disabled={finalizing}
@@ -215,8 +230,8 @@ export default function StocktakeReview() {
               <CheckCircleIcon className="w-5 h-5" />
               {finalizing ? "Finalizing…" : "Finalize & Post Adjustments"}
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -456,6 +471,13 @@ export default function StocktakeReview() {
           </button>
         </div>
       )}
+
+      <ShareDocumentModal
+        isOpen={shareOpen && Boolean(session?.id)}
+        onClose={() => setShareOpen(false)}
+        documentType="stocktake_session"
+        documentId={session?.id}
+      />
     </div>
   );
 }

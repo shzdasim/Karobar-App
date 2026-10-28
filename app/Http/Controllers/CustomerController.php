@@ -68,15 +68,41 @@ class CustomerController extends Controller
     {
         $this->authorize('create', Customer::class);
         $validated = $request->validate([
-            'name'          => 'required|unique:customers,name',
-            'email'         => 'nullable|email|unique:customers,email',
-            'phone'         => 'nullable|string',
-            'address'       => 'nullable|string',
-            'credit_limit'  => 'nullable|numeric|min:0',
-            'credit_days'   => 'nullable|integer|min:0|max:365',
-            'credit_status' => 'nullable|string|in:active,on_hold,blocked',
+            'name'            => 'required|unique:customers,name',
+            'email'           => 'nullable|email|unique:customers,email',
+            'phone'           => 'nullable|string',
+            'address'         => 'nullable|string',
+            'credit_limit'    => 'nullable|numeric|min:0',
+            'credit_days'     => 'nullable|integer|min:0|max:365',
+            'credit_status'   => 'nullable|string|in:active,on_hold,blocked',
+            'opening_balance' => 'nullable|numeric|min:0',
         ]);
-        $customer = Customer::create($validated);
+
+        $openingBalance = round((float) ($validated['opening_balance'] ?? 0), 2);
+        unset($validated['opening_balance']);
+
+        $customer = DB::transaction(function () use ($validated, $openingBalance, $request) {
+            $customer = Customer::create($validated);
+
+            if ($openingBalance > 0 && \Illuminate\Support\Facades\Schema::hasTable('customer_ledgers')) {
+                CustomerLedger::create([
+                    'customer_id'       => $customer->id,
+                    'entry_type'        => 'manual',
+                    'is_manual'         => true,
+                    'entry_date'        => now()->toDateString(),
+                    'posted_number'     => 'OB-' . str_pad((string) $customer->id, 5, '0', STR_PAD_LEFT),
+                    'invoice_total'     => $openingBalance,
+                    'total_received'    => 0,
+                    'balance_remaining' => $openingBalance,
+                    'credited_amount'   => 0,
+                    'description'       => 'Opening Balance',
+                    'created_by'        => $request->user()?->id,
+                ]);
+            }
+
+            return $customer;
+        });
+
         return response()->json($customer, 201);
     }
 

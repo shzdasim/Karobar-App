@@ -133,7 +133,7 @@ class InvoiceDraftController extends Controller
             'item_issues'   => [],
         ];
 
-        if (in_array($draft->type, ['sale_retail', 'sale_wholesale'])) {
+        if (in_array($draft->type, ['sale_retail', 'sale_wholesale', 'quotation'])) {
             $customerId = $payload['customer_id'] ?? null;
             if ($customerId) {
                 $customer = Customer::find($customerId);
@@ -199,7 +199,7 @@ class InvoiceDraftController extends Controller
 
         $validated = $request->validate([
             'uuid'    => 'nullable|uuid',
-            'type'    => 'required|string|in:sale_retail,sale_wholesale,purchase',
+            'type'    => 'required|string|in:sale_retail,sale_wholesale,quotation,purchase',
             'title'   => 'nullable|string|max:255',
             'payload' => 'required|array',
         ]);
@@ -349,15 +349,19 @@ class InvoiceDraftController extends Controller
 
         $payload = $draft->payload ?? [];
         $payload['draft_id'] = $draft->id;
+        if (in_array($draft->type, ['sale_retail', 'sale_wholesale', 'quotation'])) {
+            $payload['date'] = $payload['date'] ?? now()->toDateString();
+            $payload['sale_type'] = $payload['sale_type'] ?? ($draft->type === 'sale_wholesale' ? 'wholesale' : 'retail');
+        }
 
         $fakeRequest = Request::create(
-            in_array($draft->type, ['sale_retail', 'sale_wholesale']) ? '/api/sale-invoices' : '/api/purchase-invoices',
+            in_array($draft->type, ['sale_retail', 'sale_wholesale', 'quotation']) ? '/api/sale-invoices' : '/api/purchase-invoices',
             'POST',
             $payload
         );
         $fakeRequest->setUserResolver(fn () => $request->user());
 
-        if (in_array($draft->type, ['sale_retail', 'sale_wholesale'])) {
+        if (in_array($draft->type, ['sale_retail', 'sale_wholesale', 'quotation'])) {
             $response = app(SaleInvoiceController::class)->store($fakeRequest);
         } else {
             $response = app(PurchaseInvoiceController::class)->store($fakeRequest);
@@ -368,7 +372,7 @@ class InvoiceDraftController extends Controller
 
     private function extractPartyName(string $type, array $payload): ?string
     {
-        if (in_array($type, ['sale_retail', 'sale_wholesale'])) {
+        if (in_array($type, ['sale_retail', 'sale_wholesale', 'quotation'])) {
             $cid = $payload['customer_id'] ?? null;
             if ($cid) {
                 return Customer::find($cid)?->name;
@@ -385,7 +389,7 @@ class InvoiceDraftController extends Controller
 
     private function extractTotalAmount(string $type, array $payload): float
     {
-        if (in_array($type, ['sale_retail', 'sale_wholesale'])) {
+        if (in_array($type, ['sale_retail', 'sale_wholesale', 'quotation'])) {
             return (float)($payload['total'] ?? 0);
         }
         return (float)($payload['total_amount'] ?? 0);
@@ -396,6 +400,7 @@ class InvoiceDraftController extends Controller
         $prefix = match ($type) {
             'sale_retail'    => 'Retail Sale',
             'sale_wholesale' => 'Wholesale Sale',
+            'quotation'      => 'Price Quotation',
             'purchase'       => 'Purchase Invoice',
             default          => 'Draft',
         };

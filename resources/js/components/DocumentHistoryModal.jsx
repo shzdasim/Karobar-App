@@ -20,19 +20,32 @@ export default function DocumentHistoryModal({
   const [loading, setLoading] = useState(true);
   const [histories, setHistories] = useState([]);
   const [error, setError] = useState(null);
+  const [expandedIds, setExpandedIds] = useState({});
+  const [filterEntityType, setFilterEntityType] = useState("");
+  const [filterAction, setFilterAction] = useState("");
+  const isGlobalMode = !entityType || !entityId;
   const mouseDownTargetRef = useRef(null);
 
+  const toggleExpanded = (id) => {
+    setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
   useEffect(() => {
-    if (!isOpen || !entityType || !entityId) return;
+    if (!isOpen) return;
 
     let cancelled = false;
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const { data } = await axios.get("/api/document-histories", {
-          params: { entity_type: entityType, entity_id: entityId },
-        });
+        const params = isGlobalMode
+          ? {
+              ...(filterEntityType ? { entity_type: filterEntityType } : {}),
+              ...(filterAction ? { action: filterAction } : {}),
+              per_page: 50,
+            }
+          : { entity_type: entityType, entity_id: entityId };
+        const { data } = await axios.get("/api/document-histories", { params });
         if (!cancelled) {
           setHistories(Array.isArray(data?.histories) ? data.histories : []);
         }
@@ -48,7 +61,7 @@ export default function DocumentHistoryModal({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, entityType, entityId]);
+  }, [isOpen, entityType, entityId, isGlobalMode, filterEntityType, filterAction]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -155,6 +168,33 @@ export default function DocumentHistoryModal({
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {isGlobalMode && (
+            <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-slate-800 text-xs">
+              <select
+                value={filterEntityType}
+                onChange={(e) => setFilterEntityType(e.target.value)}
+                className="h-8 px-2.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200"
+              >
+                <option value="">All Document Types</option>
+                <option value="sale_invoice">Sale Invoices</option>
+                <option value="purchase_invoice">Purchase Invoices</option>
+                <option value="sale_return">Sale Returns</option>
+                <option value="purchase_return">Purchase Returns</option>
+                <option value="supplier_payment">Supplier Payments</option>
+                <option value="customer_payment">Customer Payments</option>
+              </select>
+              <select
+                value={filterAction}
+                onChange={(e) => setFilterAction(e.target.value)}
+                className="h-8 px-2.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-200"
+              >
+                <option value="">All Actions</option>
+                <option value="created">Created</option>
+                <option value="updated">Edited</option>
+                <option value="reversed">Reversed / Voided</option>
+              </select>
+            </div>
+          )}
           {loading ? (
             <div className="py-12 text-center text-slate-400 space-y-2">
               <ArrowPathIcon className="w-8 h-8 mx-auto animate-spin text-blue-400" />
@@ -183,6 +223,11 @@ export default function DocumentHistoryModal({
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           {getActionBadge(h.action)}
+                          {isGlobalMode && (
+                            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-blue-300">
+                              {(h.entity_type || "").replace(/_/g, " ")} #{h.entity_id}
+                            </span>
+                          )}
                           <span className="text-xs font-semibold text-slate-200 flex items-center gap-1">
                             <UserIcon className="w-3.5 h-3.5 text-slate-400" />
                             {author}
@@ -225,6 +270,93 @@ export default function DocumentHistoryModal({
                             }
                             return null;
                           })}
+                        </div>
+                      )}
+
+                      {/* Expandable Before/After Snapshot & Line-Item Inspector */}
+                      {(h.before_payload || h.after_payload) && (
+                        <div className="pt-1">
+                          <button
+                            type="button"
+                            onClick={() => toggleExpanded(h.id)}
+                            className="text-[11px] font-semibold text-blue-400 hover:text-blue-300 underline"
+                          >
+                            {expandedIds[h.id]
+                              ? "Hide Snapshot & Line-Item Details"
+                              : "View Snapshot & Line-Item Details"}
+                          </button>
+
+                          {expandedIds[h.id] && (
+                            <div className="mt-2 space-y-2.5 text-[11px] bg-slate-950/70 p-3 rounded-lg border border-slate-800">
+                              {Array.isArray(h.before_payload?.items) && h.before_payload.items.length > 0 && (
+                                <div>
+                                  <div className="font-semibold text-rose-400 mb-1">
+                                    Before Line Items ({h.before_payload.items.length})
+                                  </div>
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse">
+                                      <thead>
+                                        <tr className="border-b border-slate-800 text-slate-400">
+                                          <th className="py-1 pr-2">Product</th>
+                                          <th className="py-1 pr-2">Batch</th>
+                                          <th className="py-1 pr-2 text-right">Qty</th>
+                                          <th className="py-1 text-right">Subtotal</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                                        {h.before_payload.items.map((it, idx) => (
+                                          <tr key={it.id || idx}>
+                                            <td className="py-1 pr-2">{it.product?.name || `#${it.product_id}`}</td>
+                                            <td className="py-1 pr-2 font-mono">{it.batch_number || it.batch || "—"}</td>
+                                            <td className="py-1 pr-2 text-right font-mono">
+                                              {it.quantity ?? it.unit_return_quantity ?? it.return_unit_quantity ?? 0}
+                                            </td>
+                                            <td className="py-1 text-right font-mono">
+                                              {Number(it.sub_total || 0).toLocaleString()}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              )}
+
+                              {Array.isArray(h.after_payload?.items) && h.after_payload.items.length > 0 && (
+                                <div>
+                                  <div className="font-semibold text-emerald-400 mb-1">
+                                    {h.action === "created" ? "Recorded Line Items" : "After Line Items"} ({h.after_payload.items.length})
+                                  </div>
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse">
+                                      <thead>
+                                        <tr className="border-b border-slate-800 text-slate-400">
+                                          <th className="py-1 pr-2">Product</th>
+                                          <th className="py-1 pr-2">Batch</th>
+                                          <th className="py-1 pr-2 text-right">Qty</th>
+                                          <th className="py-1 text-right">Subtotal</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                                        {h.after_payload.items.map((it, idx) => (
+                                          <tr key={it.id || idx}>
+                                            <td className="py-1 pr-2">{it.product?.name || `#${it.product_id}`}</td>
+                                            <td className="py-1 pr-2 font-mono">{it.batch_number || it.batch || "—"}</td>
+                                            <td className="py-1 pr-2 text-right font-mono">
+                                              {it.quantity ?? it.unit_return_quantity ?? it.return_unit_quantity ?? 0}
+                                            </td>
+                                            <td className="py-1 text-right font-mono">
+                                              {Number(it.sub_total || 0).toLocaleString()}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

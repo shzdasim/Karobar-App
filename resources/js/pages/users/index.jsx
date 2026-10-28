@@ -11,7 +11,9 @@ import {
   UserCircleIcon,
   EnvelopeIcon,
   ShieldCheckIcon,
+  ClockIcon,
 } from "@heroicons/react/24/solid";
+import DocumentHistoryModal from "@/components/DocumentHistoryModal.jsx";
 
 // 🔒 permissions
 import { usePermissions, Guard } from "@/api/usePermissions.js";
@@ -45,11 +47,15 @@ export default function UsersIndex() {
 
   // selection
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [availableRoles, setAvailableRoles] = useState([]);
+  const [bulkRole, setBulkRole] = useState("");
+  const [bulkProcessing, setBulkProcessing] = useState(false);
 
   // Delete modal state
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deletingUser, setDeletingUser] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [auditLogOpen, setAuditLogOpen] = useState(false);
 
   const navigate = useNavigate();
 
@@ -130,6 +136,45 @@ export default function UsersIndex() {
     controllerRef.current = ctrl;
     fetchUsers(ctrl.signal);
   }, [permsLoading, can.view, page, pageSize, fetchUsers]);
+
+  // Fetch roles for bulk role assignment
+  useEffect(() => {
+    if (permsLoading || !can.view) return;
+    axios
+      .get("/api/roles", { params: { per_page: 100 } })
+      .then(({ data }) => {
+        const list = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+        setAvailableRoles(list);
+      })
+      .catch(() => {});
+  }, [permsLoading, can.view]);
+
+  const handleBulkAction = async (action) => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (action === "assign_role" && !bulkRole) {
+      toast.error("Please select a role first");
+      return;
+    }
+    if (action === "delete" && !window.confirm(`Delete ${ids.length} selected user(s)?`)) {
+      return;
+    }
+    try {
+      setBulkProcessing(true);
+      const { data } = await axios.post("/api/users/bulk-action", {
+        action,
+        user_ids: ids,
+        role: action === "assign_role" ? bulkRole : undefined,
+      });
+      toast.success(data?.message || "Bulk action completed");
+      setSelectedIds(new Set());
+      refresh();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Bulk action failed");
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
 
   // Debounce filter changes (qSearch)
   useEffect(() => {
@@ -221,7 +266,7 @@ export default function UsersIndex() {
 
   // Check if has actions
   const hasActions = can.update || can.delete;
-  const columnCount = 5 + (hasActions ? 1 : 0);
+  const columnCount = 6 + (hasActions ? 1 : 0);
 
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view users.</div>;
@@ -247,6 +292,15 @@ export default function UsersIndex() {
 
           {/* Actions */}
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setAuditLogOpen(true)}
+              title="System Document Audit Log"
+              className="products-action theme-btn-secondary"
+            >
+              <ClockIcon className="w-3.5 h-3.5" />
+              <span>Audit Log</span>
+            </button>
             <button
               onClick={refresh}
               title="Refresh users"
@@ -334,6 +388,74 @@ export default function UsersIndex() {
           </div>
         </div>
 
+        {/* Bulk Actions Bar */}
+        {selectedIds.size > 0 && (can.update || can.delete) && (
+          <div className="mx-3 mb-3 px-4 py-2.5 rounded-xl bg-blue-50/90 dark:bg-slate-800/90 border border-blue-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 font-semibold text-blue-900 dark:text-blue-200">
+              <span>{selectedIds.size} user(s) selected</span>
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                className="underline text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 font-normal"
+              >
+                Clear selection
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Guard when={can.update}>
+                <button
+                  type="button"
+                  disabled={bulkProcessing}
+                  onClick={() => handleBulkAction("activate")}
+                  className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition-colors disabled:opacity-50"
+                >
+                  Activate
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkProcessing}
+                  onClick={() => handleBulkAction("deactivate")}
+                  className="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold transition-colors disabled:opacity-50"
+                >
+                  Deactivate
+                </button>
+                <div className="flex items-center gap-1">
+                  <select
+                    value={bulkRole}
+                    onChange={(e) => setBulkRole(e.target.value)}
+                    className="h-7 px-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-800 dark:text-slate-100 text-xs"
+                  >
+                    <option value="">Assign Role…</option>
+                    {availableRoles.map((r) => (
+                      <option key={r.id || r.name} value={r.name}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={bulkProcessing || !bulkRole}
+                    onClick={() => handleBulkAction("assign_role")}
+                    className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition-colors disabled:opacity-50"
+                  >
+                    Apply Role
+                  </button>
+                </div>
+              </Guard>
+              <Guard when={can.delete}>
+                <button
+                  type="button"
+                  disabled={bulkProcessing}
+                  onClick={() => handleBulkAction("delete")}
+                  className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold transition-colors disabled:opacity-50"
+                >
+                  Delete Selected
+                </button>
+              </Guard>
+            </div>
+          </div>
+        )}
+
         <div className="products-table-scroll" tabIndex={0} role="region" aria-label="User list" aria-busy={loading}>
           <table className="products-table people-table">
             <thead>
@@ -357,6 +479,9 @@ export default function UsersIndex() {
                 </th>
                 <th scope="col" className="pb-2 pl-3">
                   <span className="products-column-label">Email</span>
+                </th>
+                <th scope="col" className="pb-2 pl-3">
+                  <span className="products-column-label">Roles</span>
                 </th>
                 <th scope="col" className="w-32 pb-2 pl-3">
                   <span className="products-column-label">Status</span>
@@ -415,6 +540,22 @@ export default function UsersIndex() {
                         <EnvelopeIcon className="w-4 h-4 shrink-0" aria-hidden="true" />
                         <span className="truncate">{u.email}</span>
                       </span>
+                    </td>
+                    <td className="products-cell">
+                      <div className="flex flex-wrap items-center gap-1">
+                        {Array.isArray(u.roles) && u.roles.length > 0 ? (
+                          u.roles.map((r) => (
+                            <span
+                              key={r.id || r.name}
+                              className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-700/50"
+                            >
+                              {r.name}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-gray-400">No role</span>
+                        )}
+                      </div>
                     </td>
                     <td className="products-cell">
                       <span className={`people-badge ${isActive ? "people-badge-active" : "people-badge-inactive"}`}>
@@ -550,6 +691,12 @@ export default function UsersIndex() {
         title="Delete user"
         isDeleting={deleting}
         setIsDeleting={setDeleting}
+      />
+
+      {/* Global System Audit Log Modal */}
+      <DocumentHistoryModal
+        isOpen={auditLogOpen}
+        onClose={() => setAuditLogOpen(false)}
       />
     </div>
   );

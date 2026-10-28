@@ -329,6 +329,11 @@ class SaleInvoiceController extends Controller
             'gross_amount'        => 'nullable|numeric',
             'total'               => 'nullable|numeric',
             'total_receive'       => 'nullable|numeric',
+            'apply_credit_amount' => 'nullable|numeric|min:0',
+            'split_payments'                  => 'nullable|array',
+            'split_payments.*.payment_method' => 'required_with:split_payments|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
+            'split_payments.*.account_id'     => 'nullable|integer|exists:accounts,id',
+            'split_payments.*.amount'         => 'required_with:split_payments|numeric|min:0',
 
             'items'                            => 'required|array|min:1',
             'items.*.product_id'               => 'required|exists:products,id',
@@ -360,6 +365,17 @@ class SaleInvoiceController extends Controller
         $data['tax_amount']          = $calculated['tax_amount'];
         $data['total']               = $calculated['total'];
         $data['items']               = $calculated['items'];
+
+        $applyCreditAmount = round((float) ($data['apply_credit_amount'] ?? 0), 2);
+        if ($applyCreditAmount > 0) {
+            $data['invoice_type'] = 'credit';
+        }
+        if (!empty($data['split_payments'])) {
+            $splitSum = round(collect($data['split_payments'])->sum(fn($leg) => (float)($leg['amount'] ?? 0)), 2);
+            if (!isset($data['total_receive'])) {
+                $data['total_receive'] = $splitSum;
+            }
+        }
 
         $this->validateCreditLimits($data, $request);
         $dueDate = $this->resolveDueDate($data);
@@ -499,35 +515,92 @@ class SaleInvoiceController extends Controller
             }
 
             // Account & Cash Drawer recording if money was received
-            $payMethod = $invoice->payment_method ?? 'cash';
-            $cashReceived = (float)($invoice->total_receive ?? 0);
-            if (($invoice->invoice_type ?? 'debit') === 'debit' && $cashReceived <= 0) {
-                $cashReceived = (float)$invoice->total;
-            }
-            if ($cashReceived > 0) {
-                $account = app(\App\Services\AccountService::class)->resolveAccount($invoice->account_id, $payMethod);
-                if ($account) {
-                    $invoice->account_id = $account->id;
-                    $invoice->saveQuietly();
+            $splitLegs = collect($data['split_payments'] ?? [])
+                ->filter(fn ($leg) => round((float) ($leg['amount'] ?? 0), 2) > 0)
+                ->values();
 
-                    app(\App\Services\AccountService::class)->deposit(
-                        $account,
-                        $cashReceived,
-                        'sale_invoice',
-                        $invoice->id,
-                        "Sale invoice {$posted} ({$account->name})",
-                        $request->user()
-                    );
+            if ($splitLegs->isNotEmpty()) {
+                $firstAccountId = null;
+                foreach ($splitLegs as $leg) {
+                    $legAmount = round((float) $leg['amount'], 2);
+                    $legMethod = $leg['payment_method'] ?? 'cash';
+                    $legAccount = app(\App\Services\AccountService::class)->resolveAccount($leg['account_id'] ?? null, $legMethod);
+                    if ($legAccount) {
+                        if ($firstAccountId === null) {
+                            $firstAccountId = $legAccount->id;
+                        }
+                        app(\App\Services\AccountService::class)->deposit(
+                            $legAccount,
+                            $legAmount,
+                            'sale_invoice',
+                            $invoice->id,
+                            "Sale invoice {$posted} ({$legAccount->name} - {$legMethod})",
+                            $request->user()
+                        );
+                    }
+
+                    if (($legAccount && $legAccount->type === 'cash') || $legMethod === 'cash') {
+                        app(\App\Services\CashDrawerService::class)->recordTransaction(
+                            null,
+                            'cash_sale',
+                            $legAmount,
+                            'sale_invoice',
+                            $invoice->id,
+                            "Cash sale {$posted} (split)",
+                            $request->user()
+                        );
+                    }
                 }
+                if ($firstAccountId !== null) {
+                    $invoice->account_id = $firstAccountId;
+                    $invoice->saveQuietly();
+                }
+            } else {
+                $payMethod = $invoice->payment_method ?? 'cash';
+                $cashReceived = (float)($invoice->total_receive ?? 0);
+                if (($invoice->invoice_type ?? 'debit') === 'debit' && $cashReceived <= 0) {
+                    $cashReceived = (float)$invoice->total;
+                }
+                if ($cashReceived > 0) {
+                    $account = app(\App\Services\AccountService::class)->resolveAccount($invoice->account_id, $payMethod);
+                    if ($account) {
+                        $invoice->account_id = $account->id;
+                        $invoice->saveQuietly();
 
-                if (($account && $account->type === 'cash') || $payMethod === 'cash') {
-                    app(\App\Services\CashDrawerService::class)->recordTransaction(
-                        null,
-                        'cash_sale',
-                        $cashReceived,
-                        'sale_invoice',
-                        $invoice->id,
-                        "Cash sale {$posted}",
+                        app(\App\Services\AccountService::class)->deposit(
+                            $account,
+                            $cashReceived,
+                            'sale_invoice',
+                            $invoice->id,
+                            "Sale invoice {$posted} ({$account->name})",
+                            $request->user()
+                        );
+                    }
+
+                    if (($account && $account->type === 'cash') || $payMethod === 'cash') {
+                        app(\App\Services\CashDrawerService::class)->recordTransaction(
+                            null,
+                            'cash_sale',
+                            $cashReceived,
+                            'sale_invoice',
+                            $invoice->id,
+                            "Cash sale {$posted}",
+                            $request->user()
+                        );
+                    }
+                }
+            }
+
+            // Apply available customer credit / return credit note if requested at checkout
+            $applyCredit = round((float) ($data['apply_credit_amount'] ?? 0), 2);
+            if ($applyCredit > 0) {
+                $remainingOnInvoice = round(max((float) $invoice->total - (float) ($invoice->total_receive ?? 0), 0), 2);
+                $creditToApply = min($applyCredit, $remainingOnInvoice);
+                if ($creditToApply > 0) {
+                    app(\App\Services\PaymentService::class)->applyPartyCredits(
+                        'customer',
+                        (int) $invoice->customer_id,
+                        [['invoice_id' => $invoice->id, 'amount' => $creditToApply]],
                         $request->user()
                     );
                 }
@@ -589,6 +662,11 @@ class SaleInvoiceController extends Controller
             'gross_amount'        => 'nullable|numeric',
             'total'               => 'nullable|numeric',
             'total_receive'       => 'nullable|numeric',
+            'apply_credit_amount' => 'nullable|numeric|min:0',
+            'split_payments'                  => 'nullable|array',
+            'split_payments.*.payment_method' => 'required_with:split_payments|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
+            'split_payments.*.account_id'     => 'nullable|integer|exists:accounts,id',
+            'split_payments.*.amount'         => 'required_with:split_payments|numeric|min:0',
 
             'items'                            => 'required|array|min:1',
             'items.*.id'                       => 'nullable|integer',

@@ -24,6 +24,13 @@ class PaymentPolicy
             || $user->hasRole('Admin');
     }
 
+    public function allocate(User $user, ?Payment $payment = null): bool
+    {
+        return $user->can('payment.create')
+            || $user->can('payment.update')
+            || $user->hasRole('Admin');
+    }
+
     public function reverse(User $user, ?Payment $payment = null): bool
     {
         return $user->can('payment.delete')

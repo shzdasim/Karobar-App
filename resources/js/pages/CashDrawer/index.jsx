@@ -23,12 +23,15 @@ import {
   DocumentTextIcon,
   CurrencyDollarIcon,
   InformationCircleIcon,
+  PrinterIcon,
+  ShareIcon,
 } from "@heroicons/react/24/solid";
 import { useTheme } from "@/context/ThemeContext";
 import { useCurrency } from "@/context/CurrencyContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { GlassCard, GlassSectionHeader, GlassInput } from "@/components";
 import { usePermissions } from "@/api/usePermissions.js";
+import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -613,7 +616,7 @@ function ModalBackdrop({ onClose, children }) {
 
 // ─── History Row (expandable) ─────────────────────────────────────────────────
 
-function HistoryRow({ session, formatCurrency, isDark, selectStyles }) {
+function HistoryRow({ session, formatCurrency, isDark, selectStyles, onOpenZReport }) {
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -677,7 +680,23 @@ function HistoryRow({ session, formatCurrency, isDark, selectStyles }) {
           </span>
         </td>
         <td className="px-4 py-3 text-center">
-          {expanded ? <ChevronUpIcon className="w-4 h-4 text-blue-500 mx-auto" /> : <ChevronDownIcon className="w-4 h-4 text-slate-400 mx-auto" />}
+          <div className="flex items-center justify-center gap-2">
+            {onOpenZReport && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenZReport(session.id);
+                }}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50 transition-colors"
+                title="View / Print Shift Z-Report PDF"
+              >
+                <PrinterIcon className="w-3.5 h-3.5" />
+                Z-Report
+              </button>
+            )}
+            {expanded ? <ChevronUpIcon className="w-4 h-4 text-blue-500" /> : <ChevronDownIcon className="w-4 h-4 text-slate-400" />}
+          </div>
         </td>
       </tr>
       {expanded && (
@@ -766,6 +785,7 @@ export default function CashDrawerPage() {
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showTxnModal, setShowTxnModal] = useState(null); // null | "cash_in" | "cash_out"
   const [showCloseModal, setShowCloseModal] = useState(false);
+  const [zReportSessionId, setZReportSessionId] = useState(null);
 
   // ── Data fetching ──────────────────────────────────────────────────────────
   const fetchCurrent = useCallback(async () => {
@@ -976,7 +996,18 @@ export default function CashDrawerPage() {
                 {enrichedTxns.length} transactions · Opening balance {formatCurrency(session.opening_balance)}
               </p>
             </div>
-            <DocumentTextIcon className="w-5 h-5 text-slate-300 dark:text-slate-600" />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setZReportSessionId(session.id)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold ${btnSecondary.className}`}
+                style={btnSecondary.style}
+              >
+                <ShareIcon className="w-4 h-4" />
+                Shift Z-Report (PDF)
+              </button>
+              <DocumentTextIcon className="w-5 h-5 text-slate-300 dark:text-slate-600" />
+            </div>
           </div>
           <SessionLedger
             session={session}
@@ -1034,6 +1065,7 @@ export default function CashDrawerPage() {
                       formatCurrency={formatCurrency}
                       isDark={isDark}
                       selectStyles={selectStyles}
+                      onOpenZReport={(id) => setZReportSessionId(id)}
                     />
                   ))}
                 </tbody>
@@ -1104,6 +1136,12 @@ export default function CashDrawerPage() {
           onSuccess={handleActionSuccess}
         />
       )}
+      <ShareDocumentModal
+        isOpen={Boolean(zReportSessionId)}
+        onClose={() => setZReportSessionId(null)}
+        documentType="cash_drawer_session"
+        documentId={zReportSessionId}
+      />
     </div>
   );
 }

@@ -35,6 +35,71 @@ class CustomerLedgerController extends Controller
         return null;
     }
 
+    private function calculateOpeningBalance(int $customerId, ?string $from): float
+    {
+        if (!$from) {
+            return 0.0;
+        }
+
+        $priorInvoices = SaleInvoice::query()
+            ->where('customer_id', $customerId)
+            ->where('invoice_type', 'credit')
+            ->whereDate('date', '<', $from)
+            ->get([
+                'id', 'invoice_total', 'total', 'grand_total', 'net_total', 'gross_amount', 'sub_total',
+                'total_receive', 'total_recieve', 'received', 'amount_received',
+            ]);
+
+        $priorAllocated = collect();
+        $priorIds = $priorInvoices->pluck('id')->all();
+        if (!empty($priorIds) && Schema::hasTable('payment_allocations') && Schema::hasTable('payments')) {
+            $priorAllocated = \App\Models\PaymentAllocation::query()
+                ->where('invoice_type', 'sale_invoice')
+                ->whereIn('invoice_id', $priorIds)
+                ->whereHas('payment', fn($q) => $q->where('status', 'posted'))
+                ->selectRaw('invoice_id, SUM(amount) as total_allocated')
+                ->groupBy('invoice_id')
+                ->pluck('total_allocated', 'invoice_id');
+        }
+
+        $openingBalance = 0.0;
+        foreach ($priorInvoices as $pInv) {
+            $t = $this->num(
+                $pInv->invoice_total ?? null,
+                $pInv->total ?? null,
+                $pInv->grand_total ?? null,
+                $pInv->net_total ?? null,
+                $pInv->gross_amount ?? null,
+                $pInv->sub_total ?? null
+            );
+            $rawR = $this->num(
+                $pInv->total_receive ?? null,
+                $pInv->total_recieve ?? null,
+                $pInv->received ?? null,
+                $pInv->amount_received ?? null
+            );
+            $alloc = (float) ($priorAllocated[$pInv->id] ?? 0);
+            $r = max(0.0, min($rawR - $alloc, $t));
+            $openingBalance += max(0.0, $t - $r);
+        }
+
+        $priorLedgers = CustomerLedger::query()
+            ->where('customer_id', $customerId)
+            ->whereIn('entry_type', ['payment', 'manual'])
+            ->whereDate('entry_date', '<', $from)
+            ->get();
+
+        foreach ($priorLedgers as $pRow) {
+            if (strtolower((string) $pRow->entry_type) === 'manual') {
+                $openingBalance += ((float) ($pRow->invoice_total ?? 0) - (float) ($pRow->total_received ?? 0));
+            } elseif (strtolower((string) $pRow->entry_type) === 'payment') {
+                $openingBalance -= (float) ($pRow->credited_amount ?? 0);
+            }
+        }
+
+        return round($openingBalance, 2);
+    }
+
     /** ================================
      * GET /api/customer-ledger?customer_id=&from=&to=
      * Build ledger view:
@@ -179,8 +244,9 @@ class CustomerLedgerController extends Controller
             ->all();
 
         // ---- Calculate running balance ----
-        // Running balance = Previous balance + Invoice remaining - Payments
-        $runningBalance = 0.0;
+        // Running balance = Opening balance + Previous balance + Invoice remaining - Payments
+        $openingBalance = $this->calculateOpeningBalance($customerId, $from);
+        $runningBalance = $openingBalance;
         foreach ($all as &$row) {
             $type = $row['entry_type'];
             
@@ -211,13 +277,14 @@ class CustomerLedgerController extends Controller
             }
         }
 
-        // Net Balance = Total Invoiced - Received on Invoice - Payments
-        // This is the total amount still owed by the customer
-        $net = ($totalInvoiced - $receivedOnInv) - $paymentsCred;
+        // Net Balance = Opening Balance + Total Invoiced - Received on Invoice - Payments
+        // This is the total amount still owed by the customer at period end
+        $net = $openingBalance + ($totalInvoiced - $receivedOnInv) - $paymentsCred;
 
         return response()->json([
             'data' => $all,
             'summary' => [
+                'opening_balance'     => round($openingBalance, 2),
                 'total_invoiced'      => round($totalInvoiced, 2),
                 'received_on_invoice' => round($receivedOnInv, 2),
                 'payments_credited'   => round($paymentsCred, 2),
@@ -762,7 +829,8 @@ class CustomerLedgerController extends Controller
         ->values();
 
     // -------- 4) Running balance + per-row "credit remaining" --------
-    $balance = 0.0;
+    $openingBalance = $this->calculateOpeningBalance($customer->id, $from);
+    $balance = $openingBalance;
     foreach ($all as $r) {
         $type = strtolower($r->entry_type);
         $creditRemaining = 0.0;
@@ -785,10 +853,11 @@ class CustomerLedgerController extends Controller
     $sumPay   = (float) $all->where('entry_type', 'payment')->sum('credited_amount');
 
     $summary = [
+        'opening_balance'     => $openingBalance,
         'total_invoiced'      => $sumInv,
         'received_on_invoice' => $sumRecv,
         'payments_credited'   => $sumPay,
-        'net_balance'         => round(($sumInv - $sumRecv) - $sumPay, 2),
+        'net_balance'         => round($openingBalance + ($sumInv - $sumRecv) - $sumPay, 2),
     ];
 
     // -------- Render --------

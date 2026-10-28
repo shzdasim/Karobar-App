@@ -283,6 +283,87 @@ class BarcodeController extends Controller
     }
 
     /**
+     * List purchase invoices (GRNs) with items (including batch & expiry), products, brands, and suppliers for barcode printing
+     * GET /api/barcodes/purchase-invoices
+     */
+    public function getPurchaseInvoices(Request $request)
+    {
+        $this->authorizeBarcodeAction(['barcode.view', 'barcode.print']);
+        $id = $request->input('id');
+        $supplierId = $request->input('supplier_id');
+        $brandId = $request->input('brand_id');
+        $search = trim((string) $request->input('search', ''));
+        $limit = max(1, min((int) $request->input('limit', 50), 100));
+
+        $query = \App\Models\PurchaseInvoice::with([
+            'supplier:id,name',
+            'items.product' => function ($pq) {
+                $pq->select([
+                    'id',
+                    'name',
+                    'product_code',
+                    'barcode',
+                    'unit_sale_price',
+                    'whole_sale_unit_price',
+                    'quantity',
+                    'pack_size',
+                    'brand_id',
+                    'supplier_id',
+                ])
+                ->with([
+                    'brand:id,name',
+                    'supplier:id,name',
+                    'batches' => function ($bq) {
+                        $bq->orderBy('expiry_date', 'asc');
+                    },
+                ]);
+            },
+        ])
+        ->withCount('items')
+        ->withSum('items', 'quantity');
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('purchase_invoices', 'status')) {
+            $query->where(function ($q) {
+                $q->whereNull('status')->orWhere('status', '!=', 'reversed');
+            });
+        }
+
+        if (!empty($id)) {
+            $pi = $query->find($id);
+            if (!$pi) {
+                return response()->json(['message' => 'Purchase invoice not found'], 404);
+            }
+            return response()->json(['purchase_invoice' => $pi]);
+        }
+
+        if (!empty($supplierId)) {
+            $query->where('supplier_id', $supplierId);
+        }
+
+        if (!empty($brandId)) {
+            $query->whereHas('items.product', function ($q) use ($brandId) {
+                $q->where('brand_id', $brandId);
+            });
+        }
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('posted_number', 'like', "%{$search}%")
+                  ->orWhere('invoice_number', 'like', "%{$search}%")
+                  ->orWhereHas('supplier', function ($sq) use ($search) {
+                      $sq->where('name', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        $invoices = $query->orderByDesc('id')->limit($limit)->get();
+
+        return response()->json([
+            'purchase_invoices' => $invoices,
+        ]);
+    }
+
+    /**
      * High-speed barcode scanner lookup for POS mode
      * GET /api/barcodes/scan
      */

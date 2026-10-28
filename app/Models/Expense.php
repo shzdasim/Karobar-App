@@ -35,6 +35,48 @@ class Expense extends Model
         'is_recurring' => 'boolean',
     ];
 
+    protected $appends = [
+        'receipt_url',
+        'next_recurring_date',
+    ];
+
+    public function getReceiptUrlAttribute(): ?string
+    {
+        if (!$this->receipt_path) {
+            return null;
+        }
+        if (
+            str_starts_with($this->receipt_path, 'http://') ||
+            str_starts_with($this->receipt_path, 'https://') ||
+            str_starts_with($this->receipt_path, '/storage/')
+        ) {
+            return $this->receipt_path;
+        }
+
+        return '/storage/' . ltrim($this->receipt_path, '/');
+    }
+
+    public function getNextRecurringDate(): ?Carbon
+    {
+        if (!$this->is_recurring || !$this->recurring_frequency || !$this->date) {
+            return null;
+        }
+
+        $baseDate = Carbon::parse($this->date)->startOfDay();
+
+        return match ($this->recurring_frequency) {
+            'weekly'  => $baseDate->copy()->addWeek(),
+            'monthly' => $baseDate->copy()->addMonthNoOverflow(),
+            'yearly'  => $baseDate->copy()->addYearNoOverflow(),
+            default   => null,
+        };
+    }
+
+    public function getNextRecurringDateAttribute(): ?string
+    {
+        return $this->getNextRecurringDate()?->toDateString();
+    }
+
     public function category(): BelongsTo
     {
         return $this->belongsTo(ExpenseCategory::class, 'expense_category_id');

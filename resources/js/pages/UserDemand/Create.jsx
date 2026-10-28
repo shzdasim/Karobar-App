@@ -201,6 +201,7 @@ export default function CreateUserDemand() {
           ? "User demand created!"
           : `${payloadItems.length} user demands created!`
       );
+      window.dispatchEvent(new CustomEvent("notifications-changed"));
       navigate("/user-demands");
     } catch (err) {
       const d = err?.response?.data;

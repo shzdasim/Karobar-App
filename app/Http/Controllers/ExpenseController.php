@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 
 class ExpenseController extends Controller
 {
@@ -60,6 +61,9 @@ class ExpenseController extends Controller
         if ($request->filled('account_id')) {
             $query->where('account_id', $request->query('account_id'));
         }
+        if ($request->filled('is_recurring')) {
+            $query->where('is_recurring', filter_var($request->query('is_recurring'), FILTER_VALIDATE_BOOLEAN));
+        }
         if ($request->filled('search')) {
             $s = trim($request->query('search'));
             $query->where(function ($q) use ($s) {
@@ -88,6 +92,13 @@ class ExpenseController extends Controller
     public function store(Request $request): JsonResponse
     {
         $this->authorizeExpenseAction('expense.create');
+
+        if ($request->has('is_recurring')) {
+            $request->merge([
+                'is_recurring' => filter_var($request->input('is_recurring'), FILTER_VALIDATE_BOOLEAN),
+            ]);
+        }
+
         $validated = $request->validate([
             'expense_category_id' => ['required', 'exists:expense_categories,id'],
             'amount'              => ['required', 'numeric', 'min:0.01'],
@@ -97,10 +108,15 @@ class ExpenseController extends Controller
             'reference_number'    => ['nullable', 'string', 'max:100'],
             'payee'               => ['nullable', 'string', 'max:255'],
             'description'         => ['nullable', 'string', 'max:1000'],
+            'receipt'             => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
             'receipt_path'        => ['nullable', 'string', 'max:500'],
             'is_recurring'        => ['nullable', 'boolean'],
-            'recurring_frequency' => ['nullable', 'string', 'in:weekly,monthly,yearly'],
+            'recurring_frequency' => ['nullable', 'required_if:is_recurring,true', 'string', 'in:weekly,monthly,yearly'],
         ]);
+
+        if ($request->hasFile('receipt')) {
+            $validated['receipt_path'] = $request->file('receipt')->store('expense-receipts', 'public');
+        }
 
         $expense = $this->expenseService->createExpense($validated, Auth::user());
 
@@ -125,6 +141,18 @@ class ExpenseController extends Controller
     public function update(Request $request, Expense $expense): JsonResponse
     {
         $this->authorizeExpenseAction('expense.update');
+
+        if ($request->has('is_recurring')) {
+            $request->merge([
+                'is_recurring' => filter_var($request->input('is_recurring'), FILTER_VALIDATE_BOOLEAN),
+            ]);
+        }
+        if ($request->has('remove_receipt')) {
+            $request->merge([
+                'remove_receipt' => filter_var($request->input('remove_receipt'), FILTER_VALIDATE_BOOLEAN),
+            ]);
+        }
+
         $validated = $request->validate([
             'expense_category_id' => ['required', 'exists:expense_categories,id'],
             'amount'              => ['required', 'numeric', 'min:0.01'],
@@ -134,10 +162,34 @@ class ExpenseController extends Controller
             'reference_number'    => ['nullable', 'string', 'max:100'],
             'payee'               => ['nullable', 'string', 'max:255'],
             'description'         => ['nullable', 'string', 'max:1000'],
+            'receipt'             => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
+            'remove_receipt'      => ['nullable', 'boolean'],
             'receipt_path'        => ['nullable', 'string', 'max:500'],
             'is_recurring'        => ['nullable', 'boolean'],
-            'recurring_frequency' => ['nullable', 'string', 'in:weekly,monthly,yearly'],
+            'recurring_frequency' => ['nullable', 'required_if:is_recurring,true', 'string', 'in:weekly,monthly,yearly'],
         ]);
+
+        if ($request->hasFile('receipt')) {
+            if ($expense->receipt_path && Storage::disk('public')->exists($expense->receipt_path)) {
+                $sharedCount = Expense::where('id', '!=', $expense->id)
+                    ->where('receipt_path', $expense->receipt_path)
+                    ->count();
+                if ($sharedCount === 0) {
+                    Storage::disk('public')->delete($expense->receipt_path);
+                }
+            }
+            $validated['receipt_path'] = $request->file('receipt')->store('expense-receipts', 'public');
+        } elseif (!empty($validated['remove_receipt'])) {
+            if ($expense->receipt_path && Storage::disk('public')->exists($expense->receipt_path)) {
+                $sharedCount = Expense::where('id', '!=', $expense->id)
+                    ->where('receipt_path', $expense->receipt_path)
+                    ->count();
+                if ($sharedCount === 0) {
+                    Storage::disk('public')->delete($expense->receipt_path);
+                }
+            }
+            $validated['receipt_path'] = null;
+        }
 
         $updated = $this->expenseService->updateExpense($expense, $validated, Auth::user());
 
@@ -182,14 +234,58 @@ class ExpenseController extends Controller
             ->orderByDesc('total')
             ->first();
 
+        $activeRecurring = Expense::where('is_recurring', true)
+            ->whereIn('recurring_frequency', ['weekly', 'monthly', 'yearly'])
+            ->get(['id', 'date', 'is_recurring', 'recurring_frequency']);
+
+        $todayCarbon = Carbon::today()->startOfDay();
+        $dueRecurringCount = $activeRecurring->filter(function (Expense $exp) use ($todayCarbon) {
+            $nextDate = $exp->getNextRecurringDate();
+            return $nextDate !== null && $nextDate->lte($todayCarbon);
+        })->count();
+
         return response()->json([
-            'today_total'       => round($todayTotal, 2),
-            'month_total'       => round($monthTotal, 2),
-            'cash_total'        => round($cashTotal, 2),
-            'bank_total'        => round($bankTotal, 2),
-            'top_category_name' => $topCategory?->name ?? 'None',
-            'top_category_sum'  => round((float) ($topCategory?->total ?? 0), 2),
+            'today_total'            => round($todayTotal, 2),
+            'month_total'            => round($monthTotal, 2),
+            'cash_total'             => round($cashTotal, 2),
+            'bank_total'             => round($bankTotal, 2),
+            'top_category_name'      => $topCategory?->name ?? 'None',
+            'top_category_sum'       => round((float) ($topCategory?->total ?? 0), 2),
+            'recurring_active_count' => $activeRecurring->count(),
+            'recurring_due_count'    => $dueRecurringCount,
         ]);
+    }
+
+    /**
+     * Process all due recurring expenses immediately.
+     */
+    public function processRecurring(): JsonResponse
+    {
+        $this->authorizeExpenseAction(['expense.create', 'expense.update']);
+
+        $result = $this->expenseService->processRecurringExpenses(Carbon::today(), Auth::user());
+
+        return response()->json([
+            'message'          => $result['processed_count'] > 0
+                ? "Generated {$result['processed_count']} due recurring expense(s)."
+                : 'No recurring expenses are currently due.',
+            'processed_count'  => $result['processed_count'],
+            'created_expenses' => $result['created_expenses'],
+        ]);
+    }
+
+    /**
+     * Stream or download an expense receipt attachment.
+     */
+    public function receipt(Expense $expense)
+    {
+        $this->authorizeExpenseAction('expense.view');
+
+        if (!$expense->receipt_path || !Storage::disk('public')->exists($expense->receipt_path)) {
+            abort(404, 'Receipt attachment not found.');
+        }
+
+        return Storage::disk('public')->response($expense->receipt_path);
     }
 }
 

@@ -23,6 +23,7 @@ import {
   PlayIcon,
   Squares2X2Icon,
   XMarkIcon,
+  ShareIcon,
 } from "@heroicons/react/24/solid";
 import { useTheme } from "@/context/ThemeContext";
 import { useCurrency } from "@/context/CurrencyContext";
@@ -30,6 +31,7 @@ import { usePermissions } from "@/api/usePermissions";
 import { posSound, useBarcodeScanner } from "@/utils/posScanner";
 import CustomerSearch from "@/components/CustomerSearch";
 import ProductSearchInput from "@/components/ProductSearchInput";
+import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 
 export default function BarcodePos() {
   const navigate = useNavigate();
@@ -63,7 +65,7 @@ export default function BarcodePos() {
 
   // Payment method & Accounts state (using react-select)
   const [accounts, setAccounts] = useState([]);
-  const [paymentMethod, setPaymentMethod] = useState("cash"); // 'cash' | 'card' | 'mobile_wallet'
+  const [paymentMethod, setPaymentMethod] = useState("cash"); // 'cash' | 'card' | 'mobile_wallet' | 'split'
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const [paymentRef, setPaymentRef] = useState(""); // Card Slip # or Wallet TID
   const [cashGiven, setCashGiven] = useState("");
@@ -71,12 +73,22 @@ export default function BarcodePos() {
   const [remarks, setRemarks] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Parked Carts state (Multi-customer queueing)
+  // Split-Tender & Customer Credit Redemption state
+  const [splitCashAmount, setSplitCashAmount] = useState("");
+  const [splitCardAmount, setSplitCardAmount] = useState("");
+  const [splitSecondaryMethod, setSplitSecondaryMethod] = useState("card"); // 'card' | 'mobile_wallet'
+  const [splitSecondaryAccountId, setSplitSecondaryAccountId] = useState(null);
+  const [availableCreditTotal, setAvailableCreditTotal] = useState(0);
+  const [applyCreditAmount, setApplyCreditAmount] = useState("");
+
+  // Parked Carts state (Multi-customer queueing + server-synced /api/invoice-drafts)
   const [parkedCarts, setParkedCarts] = useState([]);
   const [showParkedModal, setShowParkedModal] = useState(false);
+  const [shareQuoteDraftId, setShareQuoteDraftId] = useState(null);
 
   // Post-checkout success modal
   const [completedSale, setCompletedSale] = useState(null);
+  const [shareSaleId, setShareSaleId] = useState(null);
 
   // Load initial Walk-in customer on mount
   useEffect(() => {
@@ -150,8 +162,67 @@ export default function BarcodePos() {
                         accounts.find((a) => a.type === "mobile_wallet" && a.is_active) ||
                         accounts[0];
       if (walletAcc) setSelectedAccountId(walletAcc.id);
+    } else if (paymentMethod === "split") {
+      const cashAcc = accounts.find((a) => a.type === "cash" && a.is_active && a.is_default) ||
+                      accounts.find((a) => a.type === "cash" && a.is_active) ||
+                      accounts[0];
+      if (cashAcc) setSelectedAccountId(cashAcc.id);
+      const secAcc = splitSecondaryMethod === "mobile_wallet"
+        ? (accounts.find((a) => a.type === "mobile_wallet" && a.is_active && a.is_default) || accounts.find((a) => a.type === "mobile_wallet" && a.is_active))
+        : (accounts.find((a) => (a.type === "card" || a.type === "bank") && a.is_active && a.is_default) || accounts.find((a) => (a.type === "card" || a.type === "bank") && a.is_active));
+      if (secAcc) setSplitSecondaryAccountId(secAcc.id);
     }
-  }, [paymentMethod, accounts]);
+  }, [paymentMethod, splitSecondaryMethod, accounts]);
+
+  // Fetch available customer unapplied credits / return credit notes when customer changes
+  useEffect(() => {
+    const isWalkIn = !selectedCustomerId || (selectedCustomer?.name || "").toUpperCase().includes("WALK-IN");
+    if (isWalkIn) {
+      setAvailableCreditTotal(0);
+      setApplyCreditAmount("");
+      return;
+    }
+    (async () => {
+      try {
+        const { data } = await axios.get("/api/payments/available-credits", {
+          params: { party_type: "customer", party_id: selectedCustomerId },
+        });
+        setAvailableCreditTotal(Number(data?.total_available || 0));
+      } catch {
+        setAvailableCreditTotal(0);
+      }
+    })();
+  }, [selectedCustomerId, selectedCustomer]);
+
+  // Load server-synced parked carts (/api/invoice-drafts) on mount
+  const fetchServerParkedCarts = useCallback(async () => {
+    try {
+      const { data } = await axios.get("/api/invoice-drafts", { params: { type: "sale_retail" } });
+      const list = Array.isArray(data) ? data : data?.data || [];
+      const mapped = list
+        .filter((d) => Array.isArray(d.payload?.items) && d.payload.items.length > 0)
+        .map((d) => ({
+          id: `draft_${d.id}`,
+          draftId: d.id,
+          time: d.updated_at ? new Date(d.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Saved",
+          customer: d.payload?.customer || { id: d.party_id, name: d.party_name || "Walk-in Customer" },
+          customerId: d.party_id || d.payload?.customer_id,
+          items: d.payload.items,
+          discountAmount: Number(d.payload?.discount_amount || 0),
+          totals: {
+            totalUnits: d.payload.items.reduce((s, it) => s + (Number(it.quantity) || 0), 0),
+            grandTotal: Number(d.total || d.payload?.total || 0),
+          },
+        }));
+      setParkedCarts(mapped);
+    } catch {
+      // Ignore if offline or unauthorized
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchServerParkedCarts();
+  }, [fetchServerParkedCarts]);
 
   // Selected account object
   const activeAccount = useMemo(() => {
@@ -161,14 +232,14 @@ export default function BarcodePos() {
 
   // Matching accounts for current method
   const availableAccountsForMethod = useMemo(() => {
-    if (paymentMethod === "card") {
+    if (paymentMethod === "card" || (paymentMethod === "split" && splitSecondaryMethod === "card")) {
       return accounts.filter((a) => (a.type === "card" || a.type === "bank") && a.is_active);
     }
-    if (paymentMethod === "mobile_wallet") {
+    if (paymentMethod === "mobile_wallet" || (paymentMethod === "split" && splitSecondaryMethod === "mobile_wallet")) {
       return accounts.filter((a) => a.type === "mobile_wallet" && a.is_active);
     }
     return accounts.filter((a) => a.type === "cash" && a.is_active);
-  }, [paymentMethod, accounts]);
+  }, [paymentMethod, splitSecondaryMethod, accounts]);
 
   // Sync sound engine enabled state
   useEffect(() => {
@@ -187,19 +258,24 @@ export default function BarcodePos() {
     const grandTotal = Math.max(0, Math.round(gross - itemDiscount - overallDiscount));
     const totalUnits = items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
 
+    const creditApplied = Math.min(grandTotal, availableCreditTotal, Math.max(0, Number(applyCreditAmount) || 0));
+    const netPayableAfterCredit = Math.max(0, grandTotal - creditApplied);
+
     const cashNum = Number(cashGiven) || 0;
-    const changeDue = Math.max(0, cashNum - grandTotal);
+    const changeDue = Math.max(0, cashNum - netPayableAfterCredit);
 
     return {
       gross,
       itemDiscount,
       overallDiscount,
       grandTotal,
+      creditApplied,
+      netPayableAfterCredit,
       totalUnits,
       totalItems: items.length,
       changeDue,
     };
-  }, [items, discountAmount, cashGiven]);
+  }, [items, discountAmount, cashGiven, availableCreditTotal, applyCreditAmount]);
 
   // Trigger visual scan pulse
   const triggerPulse = (item, action) => {
@@ -362,6 +438,17 @@ export default function BarcodePos() {
     );
   };
 
+  const handleUpdateItemDiscount = (uid, newDiscPct) => {
+    const discPct = Math.min(100, Math.max(0, Number(newDiscPct) || 0));
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.uid !== uid) return it;
+        const subTotal = (Number(it.price) || 0) * (Number(it.quantity) || 1) * (1 - discPct / 100);
+        return { ...it, item_discount_percentage: discPct, sub_total: Math.round(subTotal * 100) / 100 };
+      })
+    );
+  };
+
   const handleRemoveItem = (uid) => {
     setItems((prev) => prev.filter((it) => it.uid !== uid));
     toast("Item removed", { icon: "🗑️" });
@@ -372,6 +459,9 @@ export default function BarcodePos() {
     if (window.confirm("Are you sure you want to clear this entire cart?")) {
       setItems([]);
       setCashGiven("");
+      setSplitCashAmount("");
+      setSplitCardAmount("");
+      setApplyCreditAmount("");
       setDiscountAmount(0);
       setRemarks("");
       setLastScanned(null);
@@ -408,20 +498,42 @@ export default function BarcodePos() {
   // Quick Cash Tender buttons
   const handleQuickCash = (amount) => {
     if (amount === "exact") {
-      setCashGiven(String(totals.grandTotal));
+      setCashGiven(String(totals.netPayableAfterCredit));
     } else {
       setCashGiven(String(amount));
     }
   };
 
-  // Park current cart
-  const handleParkCart = () => {
+  // Park current cart (syncs with /api/invoice-drafts so it persists across refreshes/terminals)
+  const handleParkCart = async () => {
     if (items.length === 0) {
       toast.error("Cart is empty");
       return;
     }
+    let savedDraftId = null;
+    try {
+      const { data } = await axios.post("/api/invoice-drafts", {
+        type: "sale_retail",
+        party_id: selectedCustomerId || null,
+        party_name: selectedCustomer?.name || "Walk-in Customer",
+        total: totals.grandTotal,
+        payload: {
+          customer_id: selectedCustomerId,
+          customer: selectedCustomer,
+          discount_amount: discountAmount,
+          gross_amount: totals.gross,
+          total: totals.grandTotal,
+          items: [...items],
+        },
+      });
+      savedDraftId = data?.id || data?.draft?.id || null;
+    } catch {
+      // Fallback to local state if draft save fails
+    }
+
     const parkedObj = {
-      id: `park_${Date.now()}`,
+      id: savedDraftId ? `draft_${savedDraftId}` : `park_${Date.now()}`,
+      draftId: savedDraftId,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       customer: selectedCustomer,
       customerId: selectedCustomerId,
@@ -432,14 +544,17 @@ export default function BarcodePos() {
     setParkedCarts((prev) => [parkedObj, ...prev]);
     setItems([]);
     setCashGiven("");
+    setSplitCashAmount("");
+    setSplitCardAmount("");
+    setApplyCreditAmount("");
     setDiscountAmount(0);
     setRemarks("");
     setLastScanned(null);
-    toast.success("Cart parked successfully! Waiting for next customer.");
+    toast.success("Cart parked & synced to server drafts! Waiting for next customer.");
   };
 
   // Resume parked cart
-  const handleResumeParkedCart = (parkId) => {
+  const handleResumeParkedCart = async (parkId) => {
     const found = parkedCarts.find((p) => p.id === parkId);
     if (!found) return;
 
@@ -449,6 +564,12 @@ export default function BarcodePos() {
       }
     }
 
+    if (found.draftId) {
+      try {
+        await axios.delete(`/api/invoice-drafts/${found.draftId}`);
+      } catch {}
+    }
+
     setItems(found.items);
     setSelectedCustomer(found.customer);
     setSelectedCustomerId(found.customerId);
@@ -456,6 +577,16 @@ export default function BarcodePos() {
     setParkedCarts((prev) => prev.filter((p) => p.id !== parkId));
     setShowParkedModal(false);
     toast.success("Parked cart restored!");
+  };
+
+  // Delete parked cart
+  const handleDeleteParkedCart = async (p) => {
+    if (p.draftId) {
+      try {
+        await axios.delete(`/api/invoice-drafts/${p.draftId}`);
+      } catch {}
+    }
+    setParkedCarts((prev) => prev.filter((it) => it.id !== p.id));
   };
 
   // Final Checkout & Sale Submission
@@ -471,20 +602,65 @@ export default function BarcodePos() {
       return;
     }
 
+    const isWalkIn = (selectedCustomer?.name || "").toUpperCase().includes("WALK-IN");
+    const creditToApply = totals.creditApplied;
+    const netAfterCredit = totals.netPayableAfterCredit;
+
+    let splitPaymentsPayload = undefined;
+    let totalReceive = totals.grandTotal;
+    let invoiceType = "debit";
+
+    if (paymentMethod === "split") {
+      const cashLeg = Math.max(0, Number(splitCashAmount) || 0);
+      const cardLeg = Math.max(0, Number(splitCardAmount) || 0);
+      const totalSplitPaid = cashLeg + cardLeg;
+
+      if (totalSplitPaid + creditToApply < totals.grandTotal && isWalkIn) {
+        toast.error("Walk-in customer cannot leave an unpaid credit balance. Please select a registered customer or tender full amount.");
+        return;
+      }
+
+      const cashAcc = accounts.find((a) => a.type === "cash" && a.is_active && a.is_default) ||
+                      accounts.find((a) => a.type === "cash" && a.is_active);
+      splitPaymentsPayload = [];
+      if (cashLeg > 0) {
+        splitPaymentsPayload.push({
+          payment_method: "cash",
+          account_id: cashAcc?.id || selectedAccountId || null,
+          amount: cashLeg,
+        });
+      }
+      if (cardLeg > 0) {
+        splitPaymentsPayload.push({
+          payment_method: splitSecondaryMethod,
+          account_id: splitSecondaryAccountId || selectedAccountId || null,
+          amount: cardLeg,
+        });
+      }
+      totalReceive = Math.min(netAfterCredit, totalSplitPaid);
+      if (totalReceive + creditToApply < totals.grandTotal) {
+        invoiceType = "credit";
+      }
+    } else {
+      totalReceive = netAfterCredit;
+    }
+
     try {
       setIsSubmitting(true);
       const payload = {
         sale_type: "retail",
-        invoice_type: "debit",
+        invoice_type: invoiceType,
         customer_id: selectedCustomerId,
         date: new Date().toISOString().split("T")[0],
-        payment_method: paymentMethod,
+        payment_method: paymentMethod === "split" ? "cash" : paymentMethod,
         account_id: selectedAccountId || undefined,
+        split_payments: splitPaymentsPayload,
+        apply_credit_amount: creditToApply > 0 ? creditToApply : undefined,
         discount_amount: totals.overallDiscount,
         gross_amount: totals.gross,
         total: totals.grandTotal,
-        total_receive: totals.grandTotal,
-        cash_given: paymentMethod === "cash" ? (Number(cashGiven) || totals.grandTotal) : totals.grandTotal,
+        total_receive: totalReceive,
+        cash_given: paymentMethod === "cash" ? (Number(cashGiven) || netAfterCredit) : totalReceive,
         change_due: paymentMethod === "cash" ? totals.changeDue : 0,
         remarks: paymentRef
           ? `[${paymentMethod === "card" ? "CARD" : "WALLET"}: ${paymentRef}] ${remarks || ""}`.trim()
@@ -513,7 +689,7 @@ export default function BarcodePos() {
         invoice_id: saleId,
         posted_number: data?.posted_number || `INV-${saleId}`,
         total: totals.grandTotal,
-        cash_given: paymentMethod === "cash" ? (Number(cashGiven) || totals.grandTotal) : totals.grandTotal,
+        cash_given: paymentMethod === "cash" ? (Number(cashGiven) || netAfterCredit) : totalReceive + creditToApply,
         change_due: paymentMethod === "cash" ? totals.changeDue : 0,
         payment_method: paymentMethod,
       });
@@ -521,10 +697,16 @@ export default function BarcodePos() {
       // Clear current cart
       setItems([]);
       setCashGiven("");
+      setSplitCashAmount("");
+      setSplitCardAmount("");
+      setApplyCreditAmount("");
       setPaymentRef("");
       setDiscountAmount(0);
       setRemarks("");
       setLastScanned(null);
+      if (creditToApply > 0) {
+        setAvailableCreditTotal((prev) => Math.max(0, prev - creditToApply));
+      }
     } catch (err) {
       posSound.playError();
       const msg = err?.response?.data?.message || "Failed to complete sale";
@@ -904,6 +1086,7 @@ export default function BarcodePos() {
                     <th className="py-2.5 px-3 w-36">Batch (FEFO)</th>
                     <th className="py-2.5 px-3 w-28 text-center">Quantity</th>
                     <th className="py-2.5 px-3 w-24 text-right">Unit Price</th>
+                    <th className="py-2.5 px-3 w-20 text-right">Disc %</th>
                     <th className="py-2.5 px-3 w-28 text-right">Subtotal</th>
                     <th className="py-2.5 px-2 w-10 text-center">Del</th>
                   </tr>
@@ -911,7 +1094,7 @@ export default function BarcodePos() {
                 <tbody className={`divide-y ${isDark ? "divide-slate-800" : "divide-slate-100"}`}>
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-16 text-center">
+                      <td colSpan={8} className="py-16 text-center">
                         <div className="flex flex-col items-center justify-center gap-3">
                           <div className={`p-4 rounded-3xl ${isDark ? "bg-slate-800/60 text-slate-500" : "bg-slate-100 text-slate-400"}`}>
                             <QrCodeIcon className="w-10 h-10" />
@@ -1046,9 +1229,34 @@ export default function BarcodePos() {
                             </div>
                           </td>
 
-                          {/* Unit Price (read-only) */}
-                          <td className={`py-2 px-3 text-right font-bold font-mono text-xs ${isDark ? "text-slate-200" : "text-slate-800"}`}>
-                            Rs. {Number(it.price).toFixed(2)}
+                          {/* Unit Price (Editable Override) */}
+                          <td className="py-2 px-3 text-right">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={it.price}
+                              onChange={(e) => handleUpdatePrice(it.uid, e.target.value)}
+                              className={`w-20 text-right px-1.5 py-1 text-xs font-mono font-bold rounded border focus:outline-hidden ${
+                                isDark ? "bg-slate-900 border-slate-700 text-white" : "bg-white border-slate-300 text-slate-900"
+                              }`}
+                            />
+                          </td>
+
+                          {/* Line-Item Discount % */}
+                          <td className="py-2 px-3 text-right">
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="0.5"
+                              value={it.item_discount_percentage || ""}
+                              placeholder="0"
+                              onChange={(e) => handleUpdateItemDiscount(it.uid, e.target.value)}
+                              className={`w-16 text-right px-1.5 py-1 text-xs font-mono font-bold rounded border focus:outline-hidden ${
+                                isDark ? "bg-slate-900 border-slate-700 text-white" : "bg-white border-slate-300 text-slate-900"
+                              }`}
+                            />
                           </td>
 
                           {/* Subtotal */}
@@ -1200,6 +1408,39 @@ export default function BarcodePos() {
                       />
                     </div>
                   </div>
+                  {availableCreditTotal > 0 && (
+                    <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400 pt-1">
+                      <span className="font-semibold">
+                        Redeem Credit (Avail: Rs. {availableCreditTotal.toFixed(0)}):
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setApplyCreditAmount(String(Math.min(availableCreditTotal, totals.grandTotal)))}
+                          className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 font-bold hover:bg-emerald-500/30"
+                        >
+                          Max
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          max={Math.min(availableCreditTotal, totals.grandTotal)}
+                          value={applyCreditAmount}
+                          onChange={(e) => setApplyCreditAmount(e.target.value)}
+                          placeholder="0"
+                          className={`w-16 text-right px-1.5 py-0.5 text-xs font-mono font-bold rounded border focus:outline-hidden ${
+                            isDark ? "bg-slate-800 border-emerald-700 text-emerald-300" : "bg-emerald-50 border-emerald-300 text-emerald-900"
+                          }`}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {totals.creditApplied > 0 && (
+                    <div className="flex justify-between font-bold text-blue-600 dark:text-blue-300 pt-1 border-t border-dashed border-slate-300 dark:border-slate-700">
+                      <span>Net Payable After Credit:</span>
+                      <span className="font-mono">Rs. {totals.netPayableAfterCredit.toFixed(2)}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1208,11 +1449,12 @@ export default function BarcodePos() {
                 <label className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>
                   Payment Method
                 </label>
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className="grid grid-cols-4 gap-1.5">
                   {[
                     { id: "cash", label: "Cash", icon: BanknotesIcon },
                     { id: "card", label: "Card / POS", icon: CreditCardIcon },
                     { id: "mobile_wallet", label: "Wallet", icon: DevicePhoneMobileIcon },
+                    { id: "split", label: "Split / Credit", icon: Squares2X2Icon },
                   ].map((m) => {
                     const Icon = m.icon;
                     const isSelected = paymentMethod === m.id;
@@ -1434,9 +1676,103 @@ export default function BarcodePos() {
                   >
                     <span className="text-[11px] font-bold">Transfer to Wallet:</span>
                     <span className="text-base font-black font-mono">
-                      Rs. {totals.grandTotal.toFixed(2)}
+                      Rs. {totals.netPayableAfterCredit.toFixed(2)}
                     </span>
                   </div>
+                </div>
+              )}
+
+              {/* SPLIT-TENDER / MULTI-PAYMENT & PARTIAL CREDIT SECTION */}
+              {paymentMethod === "split" && (
+                <div className="space-y-2.5 animate-in fade-in duration-150">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                        Cash Portion (Rs.)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0.00"
+                        value={splitCashAmount}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setSplitCashAmount(v);
+                          const rem = Math.max(0, totals.netPayableAfterCredit - (Number(v) || 0));
+                          setSplitCardAmount(rem > 0 ? String(rem) : "");
+                        }}
+                        className={`w-full px-2.5 py-1.5 text-xs font-mono font-bold rounded-xl border focus:outline-hidden ${
+                          isDark ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-300 text-slate-900"
+                        }`}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                          {splitSecondaryMethod === "card" ? "Card / Bank" : "Wallet"} (Rs.)
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setSplitSecondaryMethod((m) => (m === "card" ? "mobile_wallet" : "card"))}
+                          className="text-[9px] text-blue-500 hover:underline font-bold"
+                        >
+                          Switch to {splitSecondaryMethod === "card" ? "Wallet" : "Card"}
+                        </button>
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0.00"
+                        value={splitCardAmount}
+                        onChange={(e) => setSplitCardAmount(e.target.value)}
+                        className={`w-full px-2.5 py-1.5 text-xs font-mono font-bold rounded-xl border focus:outline-hidden ${
+                          isDark ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-300 text-slate-900"
+                        }`}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Secondary Account Selector */}
+                  <div className="space-y-1">
+                    <label className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                      {splitSecondaryMethod === "card" ? "Card / Bank Account" : "Mobile Wallet Account"}
+                    </label>
+                    <Select
+                      options={cardAccountOptions}
+                      value={cardAccountOptions.find((o) => o.value === splitSecondaryAccountId) || cardAccountOptions[0] || null}
+                      onChange={(opt) => setSplitSecondaryAccountId(opt ? opt.value : null)}
+                      styles={selectStyles}
+                      isSearchable={false}
+                      placeholder="Select Account…"
+                      menuPortalTarget={document.body}
+                    />
+                  </div>
+
+                  {/* Remaining Balance on Customer Credit */}
+                  {(() => {
+                    const paid = (Number(splitCashAmount) || 0) + (Number(splitCardAmount) || 0);
+                    const unpaidCredit = Math.max(0, totals.netPayableAfterCredit - paid);
+                    return (
+                      <div
+                        className={`p-2.5 rounded-xl border flex items-center justify-between text-xs ${
+                          unpaidCredit > 0
+                            ? isDark
+                              ? "bg-amber-950/30 border-amber-800/40 text-amber-300"
+                              : "bg-amber-50 border-amber-200 text-amber-800"
+                            : isDark
+                            ? "bg-emerald-950/30 border-emerald-800/40 text-emerald-300"
+                            : "bg-emerald-50 border-emerald-200 text-emerald-800"
+                        }`}
+                      >
+                        <span className="font-bold">
+                          {unpaidCredit > 0 ? "Remaining on Customer Credit:" : "Split Tender Balanced:"}
+                        </span>
+                        <span className="font-black font-mono">
+                          Rs. {unpaidCredit > 0 ? unpaidCredit.toFixed(2) : paid.toFixed(2)}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -1518,24 +1854,37 @@ export default function BarcodePos() {
             </div>
 
             {/* Action Buttons */}
-            <div className="grid grid-cols-2 gap-3 pt-2">
+            <div className="grid grid-cols-3 gap-2 pt-2">
               <Link
                 to={`/sale-invoices/${completedSale.invoice_id}`}
                 target="_blank"
-                className={`py-2.5 px-4 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors ${
+                className={`py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors ${
                   isDark
                     ? "border-slate-700 bg-slate-800 hover:bg-slate-700 text-white"
                     : "border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800"
                 }`}
               >
                 <PrinterIcon className="w-4 h-4" />
-                <span>Print Receipt</span>
+                <span>Print</span>
               </Link>
 
               <button
                 type="button"
+                onClick={() => setShareSaleId(completedSale.invoice_id)}
+                className={`py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                  isDark
+                    ? "border-emerald-700 bg-emerald-900/40 hover:bg-emerald-900/60 text-emerald-300"
+                    : "border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800"
+                }`}
+              >
+                <ShareIcon className="w-4 h-4" />
+                <span>Share / PDF</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setCompletedSale(null)}
-                className="py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/25 transition-colors cursor-pointer"
+                className="py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/25 transition-colors cursor-pointer"
               >
                 <span>Next Customer</span>
               </button>
@@ -1588,14 +1937,25 @@ export default function BarcodePos() {
                       <div className={`text-[11px] flex items-center gap-2 mt-0.5 font-mono ${isDark ? "text-slate-400" : "text-slate-500"}`}>
                         <span>Time: {p.time}</span>
                         <span>•</span>
-                        <span>{p.items.length} items ({p.totalUnits} units)</span>
+                        <span>{p.items.length} items ({p.totals?.totalUnits ?? p.totalUnits ?? 0} units)</span>
                       </div>
                       <div className="text-xs font-black text-emerald-600 dark:text-emerald-400 mt-1 font-mono">
-                        Rs. {p.grandTotal.toFixed(2)}
+                        Rs. {Number(p.totals?.grandTotal ?? p.grandTotal ?? 0).toFixed(2)}
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2">
+                      {p.draftId && (
+                        <button
+                          type="button"
+                          onClick={() => setShareQuoteDraftId(p.draftId)}
+                          className="px-2.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-xs font-bold text-white flex items-center gap-1 shadow-xs"
+                          title="Print or share Quotation / Estimate PDF"
+                        >
+                          <ShareIcon className="w-3.5 h-3.5" />
+                          <span>Quote PDF</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleResumeParkedCart(p.id)}
@@ -1606,7 +1966,7 @@ export default function BarcodePos() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setParkedCarts((prev) => prev.filter((it) => it.id !== p.id))}
+                        onClick={() => handleDeleteParkedCart(p)}
                         className="p-1.5 rounded-xl text-rose-500 hover:bg-rose-500/10"
                       >
                         <TrashIcon className="w-4 h-4" />
@@ -1634,6 +1994,20 @@ export default function BarcodePos() {
           setSelectedCustomerId(cust.id);
           setCustomerSearchOpen(false);
         }}
+      />
+
+      <ShareDocumentModal
+        isOpen={Boolean(shareSaleId)}
+        onClose={() => setShareSaleId(null)}
+        documentType="sale_invoice"
+        documentId={shareSaleId}
+      />
+
+      <ShareDocumentModal
+        isOpen={Boolean(shareQuoteDraftId)}
+        onClose={() => setShareQuoteDraftId(null)}
+        documentType="quotation"
+        documentId={shareQuoteDraftId}
       />
     </div>
   );

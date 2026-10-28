@@ -22,6 +22,12 @@ class Payment extends Model
         'payment_method',
         'account_id',
         'reference',
+        'cheque_number',
+        'bank_name',
+        'cheque_date',
+        'cheque_status',
+        'cleared_at',
+        'bounced_at',
         'status',
         'notes',
         'idempotency_key',
@@ -33,9 +39,12 @@ class Payment extends Model
 
     protected $casts = [
         'payment_date'     => 'date',
+        'cheque_date'      => 'date',
         'amount'           => 'float',
         'allocated_amount' => 'float',
         'unapplied_amount' => 'float',
+        'cleared_at'       => 'datetime',
+        'bounced_at'       => 'datetime',
         'reversed_at'      => 'datetime',
     ];
 

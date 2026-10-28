@@ -25,7 +25,8 @@ class AccountService
     ];
 
     /**
-     * Synchronize Cash in Hand account balance with the Cash Drawer.
+     * Synchronize Cash in Hand (Drawer) account balance across all active open Cash Drawer sessions
+     * plus any account-level safe reserve (opening_balance), without overwriting other cash accounts.
      */
     public function syncCashDrawerBalance(?\App\Models\CashDrawerSession $session = null): ?Account
     {
@@ -52,21 +53,26 @@ class AccountService
             ]);
         }
 
-        if (!$session) {
-            $session = \App\Models\CashDrawerSession::where('status', 'open')->latest('opened_at')->first();
-        }
+        $openSessions = \App\Models\CashDrawerSession::where('status', 'open')->get();
 
-        if ($session) {
-            $cashIn = (float) \App\Models\CashDrawerTransaction::where('session_id', $session->id)
-                ->whereIn('type', \App\Services\CashDrawerService::CASH_IN_TYPES)
-                ->sum('amount');
-            $cashOut = (float) \App\Models\CashDrawerTransaction::where('session_id', $session->id)
-                ->whereIn('type', \App\Services\CashDrawerService::CASH_OUT_TYPES)
-                ->sum('amount');
-            $drawerBalance = round((float)$session->opening_balance + $cashIn - $cashOut, 2);
+        if ($openSessions->isNotEmpty()) {
+            $totalOpenDrawers = 0.0;
+            foreach ($openSessions as $openSession) {
+                $cashIn = (float) \App\Models\CashDrawerTransaction::where('session_id', $openSession->id)
+                    ->whereIn('type', \App\Services\CashDrawerService::CASH_IN_TYPES)
+                    ->sum('amount');
+                $cashOut = (float) \App\Models\CashDrawerTransaction::where('session_id', $openSession->id)
+                    ->whereIn('type', \App\Services\CashDrawerService::CASH_OUT_TYPES)
+                    ->sum('amount');
+                $sessionExpected = round((float) $openSession->opening_balance + $cashIn - $cashOut, 2);
+                $totalOpenDrawers = round($totalOpenDrawers + $sessionExpected, 2);
+            }
 
-            if (abs((float)$cashAccount->current_balance - $drawerBalance) > 0.001) {
-                $cashAccount->current_balance = $drawerBalance;
+            $safeOpeningReserve = max((float) ($cashAccount->opening_balance ?? 0), 0.0);
+            $targetBalance = round($safeOpeningReserve + $totalOpenDrawers, 2);
+
+            if (abs((float) $cashAccount->current_balance - $targetBalance) > 0.001) {
+                $cashAccount->current_balance = $targetBalance;
                 $cashAccount->save();
             }
         }
@@ -290,9 +296,9 @@ class AccountService
                 'transaction_date' => Carbon::now(),
             ]);
 
-            // Sync with active cash drawer if either side is cash
+            // Sync with active cash drawer if either side is the default cash drawer account
             $cashDrawerService = app(CashDrawerService::class);
-            if ($fromLocked->type === 'cash') {
+            if ($fromLocked->type === 'cash' && $fromLocked->is_default) {
                 $cashDrawerService->recordTransaction(
                     null,
                     'cash_out',
@@ -303,7 +309,7 @@ class AccountService
                     $user
                 );
             }
-            if ($toLocked->type === 'cash') {
+            if ($toLocked->type === 'cash' && $toLocked->is_default) {
                 $cashDrawerService->recordTransaction(
                     null,
                     'cash_in',
@@ -367,8 +373,8 @@ class AccountService
                 'transaction_date' => Carbon::now(),
             ]);
 
-            // If account is cash, sync with cash drawer
-            if ($locked->type === 'cash') {
+            // If account is the default cash drawer account, sync with cash drawer
+            if ($locked->type === 'cash' && $locked->is_default) {
                 $cashDrawerService = app(CashDrawerService::class);
                 if ($type === 'deposit') {
                     $cashDrawerService->recordTransaction(null, 'cash_in', $amount, 'account_adjustment', $txn->id, $desc, $user);

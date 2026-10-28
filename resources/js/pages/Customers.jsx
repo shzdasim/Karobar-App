@@ -13,8 +13,10 @@ import {
   PlusIcon,
   UsersIcon,
   XMarkIcon,
+  TagIcon,
 } from "@heroicons/react/24/solid";
 import CustomerImportModal from "../components/CustomerImportModal.jsx";
+import ProductSearchInput from "../components/ProductSearchInput.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext";
 
@@ -35,6 +37,7 @@ export default function Customers() {
     credit_limit: "",
     credit_days: 30,
     credit_status: "active",
+    opening_balance: "",
   });
   const [editingId, setEditingId] = useState(null);
 
@@ -42,6 +45,15 @@ export default function Customers() {
   const [saving, setSaving] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  // Custom Wholesale Price List Modal state
+  const [priceListCustomer, setPriceListCustomer] = useState(null);
+  const [customPrices, setCustomPrices] = useState([]);
+  const [loadingPrices, setLoadingPrices] = useState(false);
+  const [selectedPriceProduct, setSelectedPriceProduct] = useState(null);
+  const [customPackPriceInput, setCustomPackPriceInput] = useState("");
+  const [savingCustomPrice, setSavingCustomPrice] = useState(false);
+  const [productsCatalog, setProductsCatalog] = useState([]);
 
   // search + pagination
   const [q, setQ] = useState("");
@@ -150,6 +162,7 @@ export default function Customers() {
       credit_limit: "",
       credit_days: 30,
       credit_status: "active",
+      opening_balance: "",
     });
     setEditingId(null);
     setTimeout(() => nameRef.current?.focus(), 0);
@@ -224,6 +237,76 @@ export default function Customers() {
     }
   };
 
+  // ===== Custom Wholesale Price List handlers =====
+  const openPriceListModal = async (customer) => {
+    setPriceListCustomer(customer);
+    setSelectedPriceProduct(null);
+    setCustomPackPriceInput("");
+    setLoadingPrices(true);
+    try {
+      const [pricesRes, prodRes] = await Promise.all([
+        axios.get(`/api/customers/${customer.id}/whole-sale-prices`),
+        productsCatalog.length === 0
+          ? axios.get("/api/products/search", { params: { q: "", limit: 50 } })
+          : Promise.resolve({ data: productsCatalog }),
+      ]);
+      setCustomPrices(Array.isArray(pricesRes.data) ? pricesRes.data : []);
+      if (productsCatalog.length === 0 && Array.isArray(prodRes.data)) {
+        setProductsCatalog(prodRes.data);
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to load custom wholesale prices");
+    } finally {
+      setLoadingPrices(false);
+    }
+  };
+
+  const handleSaveCustomPrice = async (e) => {
+    e.preventDefault();
+    if (!priceListCustomer) return;
+    if (!selectedPriceProduct?.id) {
+      toast.error("Please select a product");
+      return;
+    }
+    const packPrice = parseFloat(customPackPriceInput);
+    if (isNaN(packPrice) || packPrice < 0) {
+      toast.error("Please enter a valid pack price");
+      return;
+    }
+    setSavingCustomPrice(true);
+    try {
+      const { data } = await axios.post(`/api/customers/${priceListCustomer.id}/whole-sale-prices`, {
+        product_id: selectedPriceProduct.id,
+        pack_price: packPrice,
+      });
+      setCustomPrices((prev) => {
+        const exists = prev.some((p) => Number(p.product_id) === Number(data.product_id));
+        if (exists) {
+          return prev.map((p) => (Number(p.product_id) === Number(data.product_id) ? data : p));
+        }
+        return [data, ...prev];
+      });
+      setSelectedPriceProduct(null);
+      setCustomPackPriceInput("");
+      toast.success("Custom wholesale pack price saved");
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to save custom wholesale price");
+    } finally {
+      setSavingCustomPrice(false);
+    }
+  };
+
+  const handleDeleteCustomPrice = async (priceRow) => {
+    if (!priceListCustomer) return;
+    try {
+      await axios.delete(`/api/customers/${priceListCustomer.id}/whole-sale-prices/${priceRow.id}`);
+      setCustomPrices((prev) => prev.filter((p) => p.id !== priceRow.id));
+      toast.success("Custom wholesale price removed");
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to remove custom wholesale price");
+    }
+  };
+
   const handleExport = async () => {
     if (!can.export) return toast.error("You don't have permission to export customers.");
     try {
@@ -287,7 +370,7 @@ export default function Customers() {
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view customers.</div>;
 
-  const hasActions = can.update || can.delete;
+  const hasActions = can.view || can.update || can.delete;
 
   // ===== Section config =====
   const SECTION_CONFIG = {
@@ -494,6 +577,21 @@ return (
                 </select>
               </div>
 
+              {!editingId && (
+                <div>
+                  <label className="block text-xs font-medium mb-1">Opening Balance Receivable (Rs.)</label>
+                  <GlassInput
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00 (Optional initial ledger balance)"
+                    value={form.opening_balance ?? ""}
+                    onChange={(e) => setForm({ ...form, opening_balance: e.target.value })}
+                    className="w-full h-9"
+                  />
+                </div>
+              )}
+
               <div className="flex items-center gap-2">
                 <GlassBtn
                   type="button"
@@ -613,8 +711,18 @@ return (
                         {hasActions && (
                           <td className="px-3 py-2.5">
                             <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => openPriceListModal(c)}
+                                className="products-row-action"
+                                aria-label={`Custom Wholesale Prices for ${c.name}`}
+                                title="Negotiated Wholesale Price List"
+                              >
+                                <TagIcon aria-hidden="true" className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                              </button>
                               <Guard when={can.update}>
                                 <button 
+                                  type="button"
                                   onClick={() => handleEdit(c)} 
                                   className="products-row-action"
                                   aria-label={`Edit ${c.name}`}
@@ -665,6 +773,184 @@ return (
         onClose={() => setImportOpen(false)}
         onImported={fetchCustomers}
       />
+
+      {/* Customer Custom Wholesale Price List Modal */}
+      {priceListCustomer && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
+          onClick={() => setPriceListCustomer(null)}
+        >
+          <div
+            className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-700 w-full max-w-3xl max-h-[88vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-slate-700 bg-gray-50/80 dark:bg-slate-800/80">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-purple-600/15 text-purple-600 dark:text-purple-400">
+                  <TagIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                    Custom Wholesale Price List — {priceListCustomer.name}
+                  </h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Negotiated product pack prices automatically applied on Wholesale Sale Invoices for this customer
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPriceListCustomer(null)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-slate-700"
+                aria-label="Close price list modal"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-4 flex-1">
+              {(can.update || can.create) && (
+                <form
+                  onSubmit={handleSaveCustomPrice}
+                  className="p-3.5 rounded-xl bg-gray-50 dark:bg-slate-700/40 border border-gray-200 dark:border-slate-700 grid grid-cols-1 md:grid-cols-12 gap-3 items-end"
+                >
+                  <div className="md:col-span-6">
+                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      Product *
+                    </label>
+                    <ProductSearchInput
+                      value={selectedPriceProduct}
+                      onChange={(prod) => {
+                        setSelectedPriceProduct(prod);
+                        if (prod) {
+                          const existing = customPrices.find((cp) => Number(cp.product_id) === Number(prod.id));
+                          setCustomPackPriceInput(
+                            existing
+                              ? String(existing.pack_price)
+                              : String(prod.whole_sale_pack_price || prod.pack_sale_price || "")
+                          );
+                        }
+                      }}
+                      products={productsCatalog}
+                    />
+                  </div>
+                  <div className="md:col-span-4">
+                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      Custom Pack Price (Rs.) *
+                    </label>
+                    <GlassInput
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      required
+                      placeholder="Negotiated Pack Price"
+                      value={customPackPriceInput}
+                      onChange={(e) => setCustomPackPriceInput(e.target.value)}
+                      className="w-full h-9"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <button
+                      type="submit"
+                      disabled={savingCustomPrice}
+                      className="w-full h-9 px-3 rounded-lg text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50 transition-colors cursor-pointer"
+                    >
+                      {savingCustomPrice ? "Saving..." : "Save Price"}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {loadingPrices ? (
+                <div className="py-10 text-center text-gray-400">
+                  <ArrowPathIcon className="w-6 h-6 mx-auto animate-spin mb-2" />
+                  <p className="text-xs">Loading negotiated prices…</p>
+                </div>
+              ) : customPrices.length === 0 ? (
+                <div className="py-10 text-center text-gray-500 dark:text-gray-400 border border-dashed border-gray-200 dark:border-slate-700 rounded-xl">
+                  <TagIcon className="w-8 h-8 mx-auto text-gray-300 dark:text-slate-600 mb-1.5" />
+                  <p className="text-sm font-medium">No custom wholesale prices configured for {priceListCustomer.name}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Select a product above to set a negotiated wholesale pack price.
+                  </p>
+                </div>
+              ) : (
+                <div className="border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-100 dark:bg-slate-700/70 text-gray-600 dark:text-gray-300 uppercase">
+                      <tr>
+                        <th className="px-3 py-2.5 text-left">Product</th>
+                        <th className="px-3 py-2.5 text-center">Pack Size</th>
+                        <th className="px-3 py-2.5 text-right">Std W.S. Pack</th>
+                        <th className="px-3 py-2.5 text-right">Custom Pack Price</th>
+                        <th className="px-3 py-2.5 text-right">Implied Unit Price</th>
+                        {(can.update || can.delete) && (
+                          <th className="px-3 py-2.5 text-center w-24">Actions</th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                      {customPrices.map((cp) => {
+                        const prod = cp.product || {};
+                        const packSize = Math.max(1, Number(prod.pack_size || 1));
+                        const customPack = Number(cp.pack_price || 0);
+                        const customUnit = customPack / packSize;
+                        return (
+                          <tr key={cp.id} className="text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700/40">
+                            <td className="px-3 py-2.5">
+                              <div className="font-semibold">{prod.name || `Product #${cp.product_id}`}</div>
+                              {prod.product_code && (
+                                <div className="text-[10px] text-gray-400 font-mono">{prod.product_code}</div>
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5 text-center font-mono">{packSize}</td>
+                            <td className="px-3 py-2.5 text-right text-gray-500 font-mono">
+                              {prod.whole_sale_pack_price ? `Rs. ${Number(prod.whole_sale_pack_price).toLocaleString()}` : "—"}
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-bold text-purple-600 dark:text-purple-400 font-mono">
+                              Rs. {customPack.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-mono text-gray-600 dark:text-gray-300">
+                              Rs. {customUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            {(can.update || can.delete) && (
+                              <td className="px-3 py-2.5 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedPriceProduct(prod.id ? prod : { id: cp.product_id, name: `Product #${cp.product_id}` });
+                                      setCustomPackPriceInput(String(cp.pack_price));
+                                    }}
+                                    className="p-1 rounded hover:bg-blue-50 dark:hover:bg-slate-600 text-blue-600 dark:text-blue-400"
+                                    title="Edit custom price"
+                                    aria-label="Edit custom price"
+                                  >
+                                    <PencilSquareIcon className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteCustomPrice(cp)}
+                                    className="p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-900/30 text-rose-600 dark:text-rose-400"
+                                    title="Remove custom price"
+                                    aria-label="Remove custom price"
+                                  >
+                                    <TrashIcon className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

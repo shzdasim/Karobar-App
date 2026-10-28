@@ -17,10 +17,13 @@ import {
   ChevronDownIcon,
   ExclamationTriangleIcon,
   EyeSlashIcon,
+  PlusCircleIcon,
+  PrinterIcon,
 } from "@heroicons/react/24/solid";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { GlassCard } from "@/components";
+import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 
 const getContrastText = (hex) => {
   hex = (hex || "#3b82f6").replace("#", "");
@@ -67,6 +70,18 @@ export default function StocktakeSession() {
   // Per-item count input state: { [itemId]: { value: string, saving: bool } }
   const [countInputs, setCountInputs] = useState({});
   const [savingItem, setSavingItem] = useState(null);
+
+  // Add unexpected found item modal state
+  const [showAddItemModal, setShowAddItemModal] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [productSearchQ, setProductSearchQ] = useState("");
+  const [productSearchResults, setProductSearchResults] = useState([]);
+  const [searchingProducts, setSearchingProducts] = useState(false);
+  const [selectedAddProduct, setSelectedAddProduct] = useState(null);
+  const [addBatchNumber, setAddBatchNumber] = useState("");
+  const [addExpiryDate, setAddExpiryDate] = useState("");
+  const [addCountedQty, setAddCountedQty] = useState("");
+  const [addingItem, setAddingItem] = useState(false);
 
   // Barcode scan state
   const [scanBuffer, setScanBuffer] = useState("");
@@ -292,6 +307,61 @@ export default function StocktakeSession() {
     }
   };
 
+  // Search products for "+ Add Found Item" modal
+  useEffect(() => {
+    if (!showAddItemModal) return;
+    const trimmed = productSearchQ.trim();
+    if (trimmed.length < 1) {
+      setProductSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        setSearchingProducts(true);
+        const { data } = await axios.get("/api/products/search", { params: { q: trimmed, limit: 15 } });
+        setProductSearchResults(Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []));
+      } catch {
+        setProductSearchResults([]);
+      } finally {
+        setSearchingProducts(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [showAddItemModal, productSearchQ]);
+
+  const handleAddItemSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedAddProduct) {
+      toast.error("Please select a product");
+      return;
+    }
+    setAddingItem(true);
+    try {
+      const payload = {
+        product_id: selectedAddProduct.id,
+        batch_number: addBatchNumber.trim() || null,
+        expiry_date: addExpiryDate || null,
+        counted_qty: addCountedQty !== "" ? parseFloat(addCountedQty) : null,
+      };
+      const { data } = await axios.post(`/api/stocktake-sessions/${id}/items`, payload);
+      toast.success(`Added ${selectedAddProduct.name} to count session`);
+      setShowAddItemModal(false);
+      setSelectedAddProduct(null);
+      setProductSearchQ("");
+      setAddBatchNumber("");
+      setAddExpiryDate("");
+      setAddCountedQty("");
+      await loadSession();
+      if (data?.id && inputRefs.current[data.id]) {
+        inputRefs.current[data.id].focus();
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to add item to session");
+    } finally {
+      setAddingItem(false);
+    }
+  };
+
   // Input class helper
   const inputBaseCls = `w-24 text-right text-sm font-mono rounded-lg border px-2 py-1.5 focus:outline-none focus:ring-2 transition-colors ${
     isDark
@@ -365,6 +435,19 @@ export default function StocktakeSession() {
 
           {/* Action buttons */}
           <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setShareOpen(true)}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold border transition-colors ${
+                isDark
+                  ? "bg-slate-800 border-slate-600 text-slate-200 hover:bg-slate-700"
+                  : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
+              }`}
+              title="Print or export Count Sheet / Variance PDF"
+            >
+              <PrinterIcon className="w-4 h-4 text-blue-500" />
+              Count Sheet PDF
+            </button>
             {session.status === "draft" && (
               <button
                 onClick={handleStart}
@@ -379,6 +462,27 @@ export default function StocktakeSession() {
 
             {session.status === "in_progress" && (
               <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedAddProduct(null);
+                    setProductSearchQ("");
+                    setAddBatchNumber("");
+                    setAddExpiryDate("");
+                    setAddCountedQty("");
+                    setShowAddItemModal(true);
+                  }}
+                  disabled={actionLoading}
+                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold border transition-colors ${
+                    isDark
+                      ? "bg-slate-800 border-slate-600 text-slate-200 hover:bg-slate-700"
+                      : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
+                  }`}
+                  title="Add unexpected product or batch found on shelf"
+                >
+                  <PlusCircleIcon className="w-4 h-4 text-emerald-500" />
+                  Add Found Item
+                </button>
                 <button
                   onClick={handleSubmitForReview}
                   disabled={actionLoading || progress.counted < progress.total}
@@ -699,6 +803,188 @@ export default function StocktakeSession() {
           </button>
         </div>
       )}
+
+      {/* Add Unexpected Found Item Modal */}
+      {showAddItemModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !addingItem) setShowAddItemModal(false);
+          }}
+        >
+          <GlassCard
+            className={`w-full max-w-lg border shadow-2xl rounded-2xl overflow-hidden ${
+              isDark ? "bg-slate-900 border-slate-700 text-slate-100" : "bg-white border-slate-200 text-slate-900"
+            }`}
+          >
+            <div
+              className={`flex items-center justify-between px-6 py-4 border-b ${
+                isDark ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <PlusCircleIcon className="w-5 h-5 text-emerald-500" />
+                <h3 className="font-bold text-base">Add Found Item to Stocktake</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddItemModal(false)}
+                disabled={addingItem}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  isDark ? "hover:bg-slate-700 text-slate-400" : "hover:bg-slate-200/70 text-slate-500"
+                }`}
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddItemSubmit} className="p-6 space-y-4">
+              <div>
+                <label className={`block text-xs font-semibold mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                  Product *
+                </label>
+                {selectedAddProduct ? (
+                  <div
+                    className={`flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm ${
+                      isDark ? "bg-emerald-900/20 border-emerald-700/60 text-emerald-200" : "bg-emerald-50 border-emerald-200 text-emerald-900"
+                    }`}
+                  >
+                    <div>
+                      <p className="font-semibold">{selectedAddProduct.name}</p>
+                      <p className="text-xs opacity-75">
+                        Code: {selectedAddProduct.product_code || "—"} · Barcode: {selectedAddProduct.barcode || "—"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAddProduct(null)}
+                      className="text-xs underline font-semibold ml-3"
+                    >
+                      Change
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={productSearchQ}
+                      onChange={(e) => setProductSearchQ(e.target.value)}
+                      placeholder="Type product name, code, formula, or barcode…"
+                      className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                        isDark
+                          ? "bg-slate-800 border-slate-600 text-slate-100 focus:ring-blue-500/40"
+                          : "bg-white border-slate-300 text-slate-900 focus:ring-blue-500/40"
+                      }`}
+                    />
+                    {searchingProducts && (
+                      <p className="text-xs text-slate-400">Searching products…</p>
+                    )}
+                    {productSearchResults.length > 0 && (
+                      <div
+                        className={`max-h-44 overflow-y-auto rounded-lg border divide-y text-xs ${
+                          isDark ? "border-slate-700 divide-slate-700 bg-slate-800" : "border-slate-200 divide-slate-100 bg-white"
+                        }`}
+                      >
+                        {productSearchResults.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => setSelectedAddProduct(p)}
+                            className={`w-full text-left px-3 py-2 flex items-center justify-between transition-colors ${
+                              isDark ? "hover:bg-slate-700" : "hover:bg-slate-50"
+                            }`}
+                          >
+                            <div>
+                              <span className="font-semibold">{p.name}</span>
+                              {p.formulation && <span className="ml-1.5 opacity-70">({p.formulation})</span>}
+                            </div>
+                            <span className="font-mono opacity-75">{p.barcode || p.product_code || ""}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                    Batch Number (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={addBatchNumber}
+                    onChange={(e) => setAddBatchNumber(e.target.value)}
+                    placeholder="e.g. B-2026-01"
+                    className={`w-full rounded-lg border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 ${
+                      isDark ? "bg-slate-800 border-slate-600 text-slate-100" : "bg-white border-slate-300 text-slate-900"
+                    }`}
+                  />
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                    Expiry Date (Optional)
+                  </label>
+                  <input
+                    type="date"
+                    value={addExpiryDate}
+                    onChange={(e) => setAddExpiryDate(e.target.value)}
+                    className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                      isDark ? "bg-slate-800 border-slate-600 text-slate-100" : "bg-white border-slate-300 text-slate-900"
+                    }`}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className={`block text-xs font-semibold mb-1 ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                  Physical Count Quantity (Optional — leave blank to count later)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={addCountedQty}
+                  onChange={(e) => setAddCountedQty(e.target.value)}
+                  placeholder="Enter counted quantity on shelf…"
+                  className={`w-full rounded-lg border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 ${
+                    isDark ? "bg-slate-800 border-slate-600 text-slate-100" : "bg-white border-slate-300 text-slate-900"
+                  }`}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddItemModal(false)}
+                  disabled={addingItem}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold border ${
+                    isDark ? "border-slate-600 text-slate-300 hover:bg-slate-800" : "border-slate-300 text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!selectedAddProduct || addingItem}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 ${btnPrimary.className}`}
+                  style={btnPrimary.style}
+                >
+                  {addingItem ? "Adding…" : "Add to Session"}
+                </button>
+              </div>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      <ShareDocumentModal
+        isOpen={shareOpen && Boolean(session?.id)}
+        onClose={() => setShareOpen(false)}
+        documentType="stocktake_session"
+        documentId={session?.id}
+      />
     </div>
   );
 }

@@ -463,6 +463,7 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     expiry_date: "",
     quantity: "",
   });
+  const [editingBatchId, setEditingBatchId] = useState(null);
   const [addingBatch, setAddingBatch] = useState(false);
   const [deletingBatchId, setDeletingBatchId] = useState(null);
 
@@ -473,6 +474,13 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
   const totalStock = parseInt(form.quantity, 10) || 0;
   const batchedStock = realBatches.reduce((acc, b) => acc + (parseInt(b.quantity, 10) || 0), 0);
   const unassignedStock = Math.max(0, totalStock - batchedStock);
+  const editingBatchObj = useMemo(
+    () => (editingBatchId ? realBatches.find((b) => Number(b.id) === Number(editingBatchId)) : null),
+    [editingBatchId, realBatches]
+  );
+  const maxBatchAssignable = editingBatchObj
+    ? unassignedStock + (parseInt(editingBatchObj.quantity, 10) || 0)
+    : unassignedStock;
 
   const handleAddBatch = async (e) => {
     e.preventDefault();
@@ -480,21 +488,31 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
       toast.error("Please enter both Batch # and Expiry date");
       return;
     }
-    const requestedQty = newBatch.quantity ? parseInt(newBatch.quantity, 10) : 0;
-    if (totalStock > 0 && requestedQty > unassignedStock) {
-      toast.error(`Cannot assign ${requestedQty} units. Only ${unassignedStock} unassigned units are available.`);
+    const requestedQty = newBatch.quantity !== "" ? parseInt(newBatch.quantity, 10) : 0;
+    if (totalStock > 0 && requestedQty > maxBatchAssignable) {
+      toast.error(`Cannot assign ${requestedQty} units. Only ${maxBatchAssignable} units are available for this batch.`);
       return;
     }
 
     setAddingBatch(true);
     try {
-      await axios.post(`/api/products/${initialData.id}/batches`, {
-        batch_number: newBatch.batch_number.trim(),
-        expiry_date: newBatch.expiry_date,
-        quantity: requestedQty,
-      });
-      toast.success("Batch added / updated successfully");
+      if (editingBatchId) {
+        await axios.put(`/api/batches/${editingBatchId}`, {
+          batch_number: newBatch.batch_number.trim(),
+          expiry_date: newBatch.expiry_date,
+          quantity: requestedQty,
+        });
+        toast.success("Batch updated successfully");
+      } else {
+        await axios.post(`/api/products/${initialData.id}/batches`, {
+          batch_number: newBatch.batch_number.trim(),
+          expiry_date: newBatch.expiry_date,
+          quantity: requestedQty,
+        });
+        toast.success("Batch added / updated successfully");
+      }
       setNewBatch({ batch_number: "", expiry_date: "", quantity: "" });
+      setEditingBatchId(null);
       const bRes = await axios.get(`/api/products/${initialData.id}/batches`);
       setBatches(bRes.data);
       const realTotalUnits = (bRes.data || [])
@@ -502,11 +520,29 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
         .reduce((acc, b) => acc + (parseInt(b.quantity, 10) || 0), 0);
       setForm((prev) => ({ ...prev, quantity: Math.max(parseInt(prev.quantity, 10) || 0, realTotalUnits) }));
     } catch (err) {
-      const msg = err?.response?.data?.message || "Failed to save batch";
+      const msg =
+        err?.response?.data?.errors?.batch_number?.[0] ||
+        err?.response?.data?.errors?.quantity?.[0] ||
+        err?.response?.data?.message ||
+        "Failed to save batch";
       toast.error(msg);
     } finally {
       setAddingBatch(false);
     }
+  };
+
+  const handleStartEditBatch = (batch) => {
+    setEditingBatchId(batch.id);
+    setNewBatch({
+      batch_number: batch.batch_number || "",
+      expiry_date: (batch.expiry_date || "").slice(0, 10),
+      quantity: String(batch.quantity ?? 0),
+    });
+  };
+
+  const handleCancelEditBatch = () => {
+    setEditingBatchId(null);
+    setNewBatch({ batch_number: "", expiry_date: "", quantity: "" });
   };
 
   const handleDeleteBatch = async (batchId) => {
@@ -931,12 +967,16 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
               <form onSubmit={handleAddBatch} className="p-3 rounded-xl bg-gray-50/70 dark:bg-slate-800/50 border border-gray-200/60 dark:border-slate-700/60 space-y-2.5">
                 <div className="text-xs font-semibold text-gray-700 dark:text-slate-200 flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    <PlusIcon className="w-3.5 h-3.5 text-blue-500" />
-                    <span>Add or Update Batch</span>
+                    {editingBatchId ? (
+                      <PencilSquareIcon className="w-3.5 h-3.5 text-amber-500" />
+                    ) : (
+                      <PlusIcon className="w-3.5 h-3.5 text-blue-500" />
+                    )}
+                    <span>{editingBatchId ? "Edit Selected Batch" : "Add or Update Batch"}</span>
                   </div>
                   {totalStock > 0 && (
                     <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-                      Assigns from unassigned stock ({unassignedStock} avail)
+                      Max assignable: {maxBatchAssignable} avail
                     </span>
                   )}
                 </div>
@@ -965,22 +1005,31 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                     <input
                       type="number"
                       min="0"
-                      max={totalStock > 0 ? unassignedStock : undefined}
-                      placeholder={totalStock > 0 ? `Max: ${unassignedStock}` : "0"}
+                      max={totalStock > 0 ? maxBatchAssignable : undefined}
+                      placeholder={totalStock > 0 ? `Max: ${maxBatchAssignable}` : "0"}
                       value={newBatch.quantity}
                       onChange={(e) => setNewBatch((p) => ({ ...p, quantity: e.target.value }))}
                       className="w-full text-xs px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-500"
                     />
                   </div>
                 </div>
-                <div className="flex justify-end pt-1">
+                <div className="flex justify-end gap-2 pt-1">
+                  {editingBatchId && (
+                    <button
+                      type="button"
+                      onClick={handleCancelEditBatch}
+                      className="text-xs px-3 py-1.5 rounded-lg font-medium border border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  )}
                   <button
                     type="submit"
                     disabled={addingBatch}
                     className={`${themeButtonClasses.primary} text-xs px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50`}
                   >
-                    <PlusIcon className="w-3.5 h-3.5" />
-                    {addingBatch ? "Saving..." : "Save Batch"}
+                    {editingBatchId ? <PencilSquareIcon className="w-3.5 h-3.5" /> : <PlusIcon className="w-3.5 h-3.5" />}
+                    {addingBatch ? "Saving..." : editingBatchId ? "Update Batch" : "Save Batch"}
                   </button>
                 </div>
               </form>
@@ -1027,15 +1076,27 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                         </td>
                         {isEdit && (
                           <td className="p-2.5 text-center">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteBatch(batch.id)}
-                              disabled={deletingBatchId === batch.id}
-                              className="p-1 rounded-md text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
-                              title="Delete batch"
-                            >
-                              <TrashIcon className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditBatch(batch)}
+                                className="p-1 rounded-md text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-colors cursor-pointer"
+                                title="Edit batch"
+                                aria-label={`Edit batch ${batch.batch_number}`}
+                              >
+                                <PencilSquareIcon className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteBatch(batch.id)}
+                                disabled={deletingBatchId === batch.id}
+                                className="p-1 rounded-md text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
+                                title="Delete batch"
+                                aria-label={`Delete batch ${batch.batch_number}`}
+                              >
+                                <TrashIcon className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                         )}
                       </tr>

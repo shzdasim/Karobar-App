@@ -157,6 +157,11 @@ class SaleReturnController extends Controller
             });
         }
 
+        if ($request->filled('per_page')) {
+            $perPage = max(1, min((int) $request->query('per_page', 25), 200));
+            return $query->paginate($perPage);
+        }
+
         return $query->get();
     }
 
@@ -165,7 +170,7 @@ class SaleReturnController extends Controller
         // 🔒 view
         $this->authorize('view', $saleReturn);
 
-        return $saleReturn->load(['customer', 'saleInvoice', 'items.product']);
+        return $saleReturn->load(['customer', 'saleInvoice', 'items.product', 'account']);
     }
 
     public function store(Request $request)

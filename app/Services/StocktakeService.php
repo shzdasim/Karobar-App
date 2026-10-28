@@ -165,6 +165,86 @@ class StocktakeService
     }
 
     /**
+     * Add an unexpected product / batch discovered on the shelf during an in-progress stocktake.
+     */
+    public function addItem(
+        StocktakeSession $session,
+        array $data,
+        ?int $userId = null
+    ): StocktakeItem {
+        if ($session->status !== 'in_progress') {
+            throw new \RuntimeException("Items can only be added to in-progress stocktake sessions.");
+        }
+
+        $product = Product::findOrFail((int) $data['product_id']);
+        $batchNumber = isset($data['batch_number']) && trim((string) $data['batch_number']) !== ''
+            ? trim((string) $data['batch_number'])
+            : null;
+        $expiryDate = !empty($data['expiry_date']) ? $data['expiry_date'] : null;
+
+        // Check if this product + batch already exists in the session
+        $existingQuery = $session->items()->where('product_id', $product->id);
+        if ($batchNumber !== null) {
+            $existingQuery->where('batch_number', $batchNumber);
+        } else {
+            $existingQuery->whereNull('batch_number');
+        }
+        $existing = $existingQuery->first();
+
+        if ($existing) {
+            if (array_key_exists('counted_qty', $data) && $data['counted_qty'] !== null && $data['counted_qty'] !== '') {
+                return $this->recordCount(
+                    $existing,
+                    (float) $data['counted_qty'],
+                    $data['discrepancy_reason'] ?? $existing->discrepancy_reason,
+                    $userId
+                );
+            }
+            return $existing->fresh();
+        }
+
+        $systemQty = 0.0;
+        if ($batchNumber !== null) {
+            $batch = Batch::where('product_id', $product->id)
+                ->where('batch_number', $batchNumber)
+                ->first();
+            $systemQty = $batch ? (float) ($batch->quantity ?? 0) : 0.0;
+            if (!$expiryDate && $batch) {
+                $expiryDate = $batch->expiry_date;
+            }
+        } else {
+            $systemQty = (float) ($product->quantity ?? 0);
+        }
+
+        $item = StocktakeItem::create([
+            'stocktake_session_id' => $session->id,
+            'product_id'           => $product->id,
+            'batch_number'         => $batchNumber,
+            'expiry_date'          => $expiryDate,
+            'system_qty'           => $systemQty,
+            'counted_qty'          => null,
+            'variance_qty'         => 0,
+            'variance_value'       => 0,
+            'unit_purchase_price'  => (float) ($product->unit_purchase_price ?? 0),
+            'status'               => 'pending',
+            'discrepancy_reason'   => $data['discrepancy_reason'] ?? null,
+            'counted_by'           => null,
+            'counted_at'           => null,
+        ]);
+
+        if (array_key_exists('counted_qty', $data) && $data['counted_qty'] !== null && $data['counted_qty'] !== '') {
+            return $this->recordCount(
+                $item,
+                (float) $data['counted_qty'],
+                $data['discrepancy_reason'] ?? 'Unexpected stock found during count',
+                $userId
+            );
+        }
+
+        return $item->fresh();
+    }
+
+    /**
      * Record a physical count for one item.
      */
     public function recordCount(
@@ -274,8 +354,20 @@ class StocktakeService
 
                     if ($batch) {
                         $batch->quantity = max(0, (float) ($batch->quantity ?? 0) + $item->variance_qty);
+                        if (!$batch->expiry_date && $item->expiry_date) {
+                            $batch->expiry_date = $item->expiry_date;
+                        }
                         $batch->save();
+                    } elseif ((float) $item->counted_qty > 0) {
+                        Batch::create([
+                            'product_id'   => $item->product_id,
+                            'batch_number' => $item->batch_number,
+                            'expiry_date'  => $item->expiry_date,
+                            'quantity'     => max(0, (float) $item->counted_qty),
+                        ]);
                     }
+                    $product->quantity = max(0, (float) ($product->quantity ?? 0) + $item->variance_qty);
+                    $product->save();
                 } else {
                     $product->quantity = max(0, (float) ($product->quantity ?? 0) + $item->variance_qty);
                     // If qty hits zero, reset avg_price and margins
@@ -290,12 +382,13 @@ class StocktakeService
                 $touchedProducts[$product->id] = true;
             }
 
-            // Sync product-level qty from batch sums for all touched batched products
+            // Sync product-level qty from batch sums for touched pure-batched products
             foreach (array_keys($touchedProducts) as $pid) {
                 /** @var Product $p */
                 $p          = Product::lockForUpdate()->findOrFail($pid);
                 $batchCount = Batch::where('product_id', $pid)->count();
-                if ($batchCount > 0) {
+                $hasUnbatchedSessionItem = $items->contains(fn ($it) => (int) $it->product_id === (int) $pid && empty($it->batch_number));
+                if ($batchCount > 0 && !$hasUnbatchedSessionItem) {
                     $this->setProductQty($p, $this->sumBatches($p));
                 }
             }
@@ -381,13 +474,7 @@ class StocktakeService
     {
         $query = Product::query();
 
-        if ($session->session_type === 'full') {
-            // All products with quantity > 0 OR that have batches with quantity > 0
-            $query->where(function ($q) {
-                $q->where('quantity', '>', 0)
-                  ->orWhereHas('batches', fn($b) => $b->where('quantity', '>', 0));
-            });
-        } else {
+        if ($session->session_type !== 'full') {
             // Cycle count — filter by scope
             switch ($session->scope_type) {
                 case 'category':

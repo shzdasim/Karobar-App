@@ -699,4 +699,101 @@ class PurchaseOrderWorkflowTest extends TestCase
         $this->assertSame([40, 100], $demands->pluck('requested_quantity')->all());
         $this->assertSame(['Abbott item', 'Getz item'], $demands->pluck('requested_name')->all());
     }
+
+    public function test_user_demands_lifecycle_from_pending_to_ordered_and_fulfilled_and_notification_command_sql_precedence(): void
+    {
+        (require database_path('migrations/2025_08_10_103922_create_customers_table.php'))->up();
+        (require database_path('migrations/2026_05_02_000000_add_customer_id_to_user_demands_table.php'))->up();
+        $this->withoutMiddleware(EnsureLicensed::class);
+
+        // 1. Create 3 pending demands (products 1, 2, 3)
+        $this->postJson('/api/user-demands', [
+            'items' => [
+                ['product_id' => 1, 'requested_quantity' => 10, 'notes' => 'Customer waiting'],
+                ['product_id' => 2, 'requested_quantity' => 20, 'notes' => 'Restock'],
+                ['product_id' => 3, 'requested_quantity' => 15, 'notes' => 'Cancelled item'],
+            ],
+        ])->assertCreated();
+
+        $d1 = \App\Models\UserDemand::where('product_id', 1)->firstOrFail();
+        $d2 = \App\Models\UserDemand::where('product_id', 2)->firstOrFail();
+        $d3 = \App\Models\UserDemand::where('product_id', 3)->firstOrFail();
+
+        // Manually cancel demand 3
+        $this->putJson("/api/user-demands/{$d3->id}", ['status' => 'cancelled'])
+            ->assertOk()
+            ->assertJsonPath('status', 'cancelled');
+
+        // 2. Creating a Purchase Order for products 1 & 2 transitions their pending demands to 'ordered'
+        $poRes = $this->postJson('/api/purchase-orders', [
+            'supplier_id' => 1,
+            'date' => '2026-04-10',
+            'expected_received_date' => '2026-04-12',
+            'items' => [
+                ['product_id' => 1, 'pack_size' => 10, 'ordered_packs' => 2, 'pack_purchase_price' => 200],
+                ['product_id' => 2, 'pack_size' => 10, 'ordered_packs' => 3, 'pack_purchase_price' => 200],
+            ],
+        ])->assertCreated();
+
+        $this->assertSame('ordered', $d1->fresh()->status);
+        $this->assertSame('ordered', $d2->fresh()->status);
+        $this->assertSame('cancelled', $d3->fresh()->status);
+
+        // 3. Verify demands:notify only updates 'pending' demands and NOT 'ordered' or 'cancelled' demands with null last_notified_at
+        $dPending = \App\Models\UserDemand::create([
+            'product_id' => 1,
+            'requested_by' => 1,
+            'requested_name' => 'GSK item',
+            'requested_quantity' => 5,
+            'status' => 'pending',
+            'last_notified_at' => null,
+        ]);
+
+        $this->artisan('demands:notify')->assertSuccessful();
+
+        $this->assertNotNull($dPending->fresh()->last_notified_at);
+        $this->assertNull($d1->fresh()->last_notified_at, 'Ordered demand must not be updated by demands:notify');
+        $this->assertNull($d3->fresh()->last_notified_at, 'Cancelled demand must not be updated by demands:notify');
+
+        // 3b. Verify live notification acknowledgement endpoint stamps last_notified_at on pending demands only
+        $dPendingLive = \App\Models\UserDemand::create([
+            'product_id' => 1,
+            'requested_by' => 1,
+            'requested_name' => 'GSK item',
+            'requested_quantity' => 3,
+            'status' => 'pending',
+            'last_notified_at' => null,
+        ]);
+
+        $this->postJson('/api/notifications/ack-demand', [
+            'demand_ids' => [$dPendingLive->id, $d1->id],
+        ])->assertOk()->assertJsonPath('updated', 1);
+
+        $this->assertNotNull($dPendingLive->fresh()->last_notified_at);
+        $this->assertNull($d1->fresh()->last_notified_at, 'Non-pending demand must not be updated by ack-demand');
+
+        // 4. Posting a Purchase Invoice receiving products 1 & 2 transitions both 'ordered' and 'pending' demands to 'fulfilled'
+        $po = \App\Models\PurchaseOrder::findOrFail($poRes->json('id'));
+        $invData = $this->invoiceData($po, 20);
+        $invData['items'][1]['unit_quantity'] = 30;
+        $invData['items'][1]['pack_quantity'] = 3;
+        $invData['items'][1]['quantity'] = 30;
+        $invData['items'][1]['sub_total'] = 60;
+        $invData['invoice_amount'] = 100;
+        $invData['total_amount'] = 100;
+        app(PurchaseInvoiceController::class)->store($this->request($invData));
+
+        $this->assertSame('fulfilled', $d1->fresh()->status);
+        $this->assertSame('fulfilled', $d2->fresh()->status);
+        $this->assertSame('fulfilled', $dPending->fresh()->status);
+        $this->assertSame('fulfilled', $dPendingLive->fresh()->status);
+
+        // 5. Verify status counts on GET /api/user-demands
+        $list = $this->getJson('/api/user-demands')->assertOk();
+        $list->assertJsonPath('count', 5);
+        $list->assertJsonPath('pending_count', 0);
+        $list->assertJsonPath('ordered_count', 0);
+        $list->assertJsonPath('fulfilled_count', 4);
+        $list->assertJsonPath('cancelled_count', 1);
+    }
 }

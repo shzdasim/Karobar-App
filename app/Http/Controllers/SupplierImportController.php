@@ -16,9 +16,9 @@ class SupplierImportController extends Controller
     {
         $headers = ['Content-Type' => 'text/csv'];
         return response()->streamDownload(function () {
-            echo "name,address,phone\n";
-            echo "Acme Supplies,21 Main Street,+92 300 1234567\n";
-            echo "Nexus Traders,Plot #45, +92 333 7654321\n";
+            echo "name,address,phone,opening_balance\n";
+            echo "Acme Supplies,21 Main Street,+92 300 1234567,15000\n";
+            echo "Nexus Traders,Plot #45, +92 333 7654321,0\n";
         }, 'suppliers_template.csv', $headers);
     }
 

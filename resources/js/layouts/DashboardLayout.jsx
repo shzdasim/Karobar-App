@@ -50,19 +50,26 @@ export default function DashboardLayout({ children }) {
     "/purchase-returns": "Purchase Returns",
     "/purchase-returns/create": "Create Purchase Return",
     "/sale-invoices": "Sale Invoices",
+    "/sale-invoices/pos": "POS Terminal",
+    "/sale-invoices/barcode-pos": "POS Terminal",
     "/sale-invoices/create": "Create Sale Invoice",
     "/sale-invoices/create/retail": "Retail Sale Invoice",
+    "/sale-invoices/create-retail": "Retail Sale Invoice",
     "/sale-invoices/create/wholesale": "Wholesale Sale Invoice",
+    "/sale-invoices/create-wholesale": "Wholesale Sale Invoice",
     "/sale-returns": "Sale Returns",
     "/sale-returns/create": "Create Sale Return",
     "/purchase-orders": "Purchase Orders",
+    "/purchase-orders/create": "Create Purchase Order",
     "/purchase-orders/forecast": "Smart Reorder Forecast",
     "/user-demands": "User Demands",
     "/user-demands/create": "Request Product",
     "/settings": "Settings",
     "/reports": "Reports",
     "/users": "Users",
+    "/users/create": "Add User",
     "/roles": "Roles",
+    "/roles/create": "Create Role",
     "/reports/sale-detail": "Sales Detail Report",
     "/reports/purchase-detail": "Purchase Detail Report",
     "/reports/cost-of-sale": "Cost of Sale Report",
@@ -75,6 +82,7 @@ export default function DashboardLayout({ children }) {
     "/reports/sale-returns": "Sale Returns Report",
     "/reports/purchase-summary": "Purchase Summary Report",
     "/reports/outstanding-aging": "Outstanding Aging Report",
+    "/reports/overdue-work-queue": "Overdue Work Queue",
     "/reports/reorder": "Low Stock & Reorder Report",
     "/supplier-ledger": "Supplier Ledger",
     "/customer-ledger": "Customer Ledger",
@@ -88,18 +96,30 @@ export default function DashboardLayout({ children }) {
     "/stocktake-sessions": "Stocktake Sessions",
     "/stocktake-sessions/create": "New Stocktake Session",
     "/backups": "Backups & Offsite Storage",
+    "/activate": "License Activation",
   };
 
   const currentPath = location.pathname;
   const resolvePageTitle = (path) => {
-    if (titles[path]) return titles[path];
-    if (/^\/stock-adjustments\/\d+$/.test(path)) return "Stock Adjustment Details";
-    if (/^\/stocktake-sessions\/\d+\/review$/.test(path)) return "Stocktake Variance Review";
-    if (/^\/stocktake-sessions\/\d+$/.test(path)) return "Stocktake Session";
-    if (/^\/sale-invoices\/\d+\/edit$/.test(path)) return "Edit Sale Invoice";
-    if (/^\/sale-invoices\/\d+$/.test(path)) return "Sale Invoice Details";
-    if (/^\/purchase-invoices\/\d+\/edit$/.test(path)) return "Edit Purchase Invoice";
-    if (/^\/purchase-invoices\/\d+$/.test(path)) return "Purchase Invoice Details";
+    const cleanPath = (path || "").replace(/\/+$/, "") || "/dashboard";
+    if (titles[cleanPath]) return titles[cleanPath];
+    if (/^\/products\/\d+\/edit$/.test(cleanPath)) return "Edit Product";
+    if (/^\/stock-adjustments\/\d+$/.test(cleanPath)) return "Stock Adjustment Details";
+    if (/^\/stocktake-sessions\/\d+\/review$/.test(cleanPath)) return "Stocktake Variance Review";
+    if (/^\/stocktake-sessions\/\d+$/.test(cleanPath)) return "Stocktake Session";
+    if (/^\/stock-disposals\/\d+$/.test(cleanPath)) return "Quarantine / Disposal Details";
+    if (/^\/sale-invoices\/\d+\/edit$/.test(cleanPath)) return "Edit Sale Invoice";
+    if (/^\/sale-invoices\/\d+$/.test(cleanPath)) return "Sale Invoice Details";
+    if (/^\/purchase-invoices\/\d+\/edit$/.test(cleanPath)) return "Edit Purchase Invoice";
+    if (/^\/purchase-invoices\/\d+$/.test(cleanPath)) return "Purchase Invoice Details";
+    if (/^\/sale-returns\/\d+\/edit$/.test(cleanPath)) return "Edit Sale Return";
+    if (/^\/sale-returns\/\d+$/.test(cleanPath)) return "Sale Return Details";
+    if (/^\/purchase-returns\/\d+\/edit$/.test(cleanPath)) return "Edit Purchase Return";
+    if (/^\/purchase-returns\/\d+$/.test(cleanPath)) return "Purchase Return Details";
+    if (/^\/purchase-orders\/\d+\/edit$/.test(cleanPath)) return "Edit Purchase Order";
+    if (/^\/purchase-orders\/\d+$/.test(cleanPath)) return "Purchase Order Details";
+    if (/^\/users\/\d+\/edit$/.test(cleanPath)) return "Edit User";
+    if (/^\/roles\/\d+\/edit$/.test(cleanPath)) return "Edit Role";
     return "Dashboard";
   };
   const pageTitle = resolvePageTitle(currentPath);

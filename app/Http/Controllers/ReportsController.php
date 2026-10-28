@@ -2404,4 +2404,144 @@ class ReportsController extends Controller
 
         return response()->json($data);
     }
+
+    public function purchaseReturnsPdf(Request $req)
+    {
+        $this->authorizeReportAction(['report.purchase-returns.export', 'report.purchase-returns.view']);
+        $data = $this->purchaseReturns($req)->getData(true);
+        $meta = [
+            'from'        => $req->query('from', Carbon::now()->startOfMonth()->toDateString()),
+            'to'          => $req->query('to', Carbon::now()->toDateString()),
+            'generatedAt' => now()->format('Y-m-d H:i'),
+        ];
+        $pdf = Pdf::loadView('reports.purchase_returns_pdf', [
+            'rows'    => $data['rows'] ?? [],
+            'summary' => $data['summary'] ?? [],
+            'meta'    => $meta,
+        ])->setPaper('a4', 'landscape');
+
+        return $req->boolean('download')
+            ? $pdf->download('purchase-returns-report.pdf')
+            : $pdf->stream('purchase-returns-report.pdf');
+    }
+
+    public function saleReturnsPdf(Request $req)
+    {
+        $this->authorizeReportAction(['report.sale-returns.export', 'report.sale-returns.view']);
+        $data = $this->saleReturns($req)->getData(true);
+        $meta = [
+            'from'        => $req->query('from', Carbon::now()->startOfMonth()->toDateString()),
+            'to'          => $req->query('to', Carbon::now()->toDateString()),
+            'generatedAt' => now()->format('Y-m-d H:i'),
+        ];
+        $pdf = Pdf::loadView('reports.sale_returns_pdf', [
+            'rows'    => $data['rows'] ?? [],
+            'summary' => $data['summary'] ?? [],
+            'meta'    => $meta,
+        ])->setPaper('a4', 'landscape');
+
+        return $req->boolean('download')
+            ? $pdf->download('sale-returns-report.pdf')
+            : $pdf->stream('sale-returns-report.pdf');
+    }
+
+    public function purchaseSummaryPdf(Request $req)
+    {
+        $this->authorizeReportAction(['report.purchase-summary.export', 'report.purchase-summary.view']);
+        $data = $this->purchaseSummary($req)->getData(true);
+        $meta = [
+            'from'        => $req->query('from', Carbon::now()->startOfMonth()->toDateString()),
+            'to'          => $req->query('to', Carbon::now()->toDateString()),
+            'generatedAt' => now()->format('Y-m-d H:i'),
+        ];
+        $pdf = Pdf::loadView('reports.purchase_summary_pdf', [
+            'rows'    => $data['rows'] ?? [],
+            'summary' => $data['summary'] ?? [],
+            'meta'    => $meta,
+        ])->setPaper('a4', 'landscape');
+
+        return $req->boolean('download')
+            ? $pdf->download('purchase-summary-report.pdf')
+            : $pdf->stream('purchase-summary-report.pdf');
+    }
+
+    public function outstandingAgingPdf(Request $req)
+    {
+        $this->authorizeReportAction(['report.outstanding-aging.export', 'report.outstanding-aging.view']);
+        $data = $this->outstandingAging($req)->getData(true);
+        $meta = [
+            'as_of'       => $data['as_of'] ?? Carbon::today()->toDateString(),
+            'aging_by'    => $data['aging_by'] ?? 'due_date',
+            'generatedAt' => now()->format('Y-m-d H:i'),
+        ];
+        $pdf = Pdf::loadView('reports.outstanding_aging_pdf', [
+            'customers' => $data['customers'] ?? [],
+            'suppliers' => $data['suppliers'] ?? [],
+            'summary'   => $data['summary'] ?? [],
+            'meta'      => $meta,
+        ])->setPaper('a4', 'landscape');
+
+        return $req->boolean('download')
+            ? $pdf->download('outstanding-aging-report.pdf')
+            : $pdf->stream('outstanding-aging-report.pdf');
+    }
+
+    public function overdueWorkQueuePdf(Request $req)
+    {
+        $this->authorizeReportAction(['report.outstanding-aging.export', 'report.outstanding-aging.view']);
+        $data = $this->overdueWorkQueue($req)->getData(true);
+        $meta = [
+            'as_of'       => $data['as_of'] ?? Carbon::today()->toDateString(),
+            'party_type'  => $data['party_type'] ?? 'customers',
+            'generatedAt' => now()->format('Y-m-d H:i'),
+        ];
+        $pdf = Pdf::loadView('reports.overdue_work_queue_pdf', [
+            'parties'           => $data['parties'] ?? [],
+            'total_parties'     => $data['total_parties'] ?? 0,
+            'total_overdue_sum' => $data['total_overdue_sum'] ?? 0,
+            'meta'              => $meta,
+        ])->setPaper('a4', 'landscape');
+
+        return $req->boolean('download')
+            ? $pdf->download('overdue-work-queue-report.pdf')
+            : $pdf->stream('overdue-work-queue-report.pdf');
+    }
+
+    public function reorderReportPdf(Request $req)
+    {
+        $this->authorizeReportAction(['report.reorder.export', 'report.reorder.view']);
+        $data = $this->reorderReport($req)->getData(true);
+        $meta = [
+            'generatedAt' => now()->format('Y-m-d H:i'),
+            'threshold'   => $data['threshold'] ?? 'On-hand quantity below one pack',
+        ];
+        $pdf = Pdf::loadView('reports.reorder_pdf', [
+            'rows'    => $data['rows'] ?? [],
+            'summary' => $data['summary'] ?? [],
+            'meta'    => $meta,
+        ])->setPaper('a4', 'landscape');
+
+        return $req->boolean('download')
+            ? $pdf->download('reorder-report.pdf')
+            : $pdf->stream('reorder-report.pdf');
+    }
+
+    public function netProfitPdf(Request $req, \App\Services\ExpenseService $expenseService)
+    {
+        $this->authorizeReportAction(['report.net-profit.export', 'report.net-profit.view']);
+        $data = $this->netProfit($req, $expenseService)->getData(true);
+        $meta = [
+            'from'        => $data['date_range']['from'] ?? $data['period']['from'] ?? Carbon::now()->startOfMonth()->toDateString(),
+            'to'          => $data['date_range']['to'] ?? $data['period']['to'] ?? Carbon::now()->toDateString(),
+            'generatedAt' => now()->format('Y-m-d H:i'),
+        ];
+        $pdf = Pdf::loadView('reports.net_profit_pdf', [
+            'data' => $data,
+            'meta' => $meta,
+        ])->setPaper('a4', 'portrait');
+
+        return $req->boolean('download')
+            ? $pdf->download('net-profit-report.pdf')
+            : $pdf->stream('net-profit-report.pdf');
+    }
 }

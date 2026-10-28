@@ -49,6 +49,7 @@ export default function SaleInvoiceShow() {
   const [voidModalOpen, setVoidModalOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [challanModalOpen, setChallanModalOpen] = useState(false);
   const [isReversing, setIsReversing] = useState(false);
 
   // Held Invoices & Drafts state
@@ -528,6 +529,16 @@ export default function SaleInvoiceShow() {
             >
               <ShareIcon className="w-4 h-4" aria-hidden="true" />
               <span>Share / PDF</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setChallanModalOpen(true)}
+              className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnSecondary.className}`}
+              style={btnSecondary.style}
+              title="Print / Share Delivery Challan (Gate Pass without prices)"
+            >
+              <PrinterIcon className="w-4 h-4" aria-hidden="true" />
+              <span>Delivery Challan</span>
             </button>
             {invoiceDue > 0.01 && inv?.status !== 'reversed' && (
               <button
@@ -1148,6 +1159,14 @@ export default function SaleInvoiceShow() {
         isOpen={shareModalOpen}
         onClose={() => setShareModalOpen(false)}
         documentType="sale_invoice"
+        documentId={id}
+      />
+
+      {/* Delivery Challan / Gate Pass Share & Print Modal */}
+      <ShareDocumentModal
+        isOpen={challanModalOpen}
+        onClose={() => setChallanModalOpen(false)}
+        documentType="delivery_challan"
         documentId={id}
       />
     </div>

@@ -53,9 +53,12 @@ $query = UserDemand::with(['product:id,name,product_code,quantity,brand_id,suppl
         });
 
         return response()->json([
-            'count' => UserDemand::count(),
-            'pending_count' => UserDemand::pending()->count(),
-            'rows' => $rows,
+            'count'           => UserDemand::count(),
+            'pending_count'   => UserDemand::where('status', 'pending')->count(),
+            'ordered_count'   => UserDemand::where('status', 'ordered')->count(),
+            'fulfilled_count' => UserDemand::where('status', 'fulfilled')->count(),
+            'cancelled_count' => UserDemand::where('status', 'cancelled')->count(),
+            'rows'            => $rows,
         ]);
     }
 

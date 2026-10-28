@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   XMarkIcon,
   PrinterIcon,
@@ -7,11 +7,13 @@ import {
   ClockIcon,
   ArrowUturnLeftIcon,
   DocumentTextIcon,
+  ShareIcon,
 } from "@heroicons/react/24/solid";
 import { GlassCard } from "@/components/Glass.jsx";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
+import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 
 export default function DisposalCertificateModal({
   isOpen,
@@ -21,6 +23,7 @@ export default function DisposalCertificateModal({
   const { formatCurrency } = useCurrency();
   const { isDark, theme } = useTheme();
   const printAreaRef = useRef(null);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const buttonStyle = theme?.button_style || "modern";
   const themeColors = useMemo(() => ({
@@ -138,6 +141,15 @@ export default function DisposalCertificateModal({
               >
                 <PrinterIcon className="w-4 h-4" />
                 <span>Print Certificate</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShareOpen(true)}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold ${btnSecondary.className}`}
+                style={btnSecondary.style}
+              >
+                <ShareIcon className="w-4 h-4" />
+                <span>PDF / Share</span>
               </button>
               <button
                 type="button"
@@ -518,6 +530,13 @@ export default function DisposalCertificateModal({
           </div>
         </GlassCard>
       </div>
+
+      <ShareDocumentModal
+        isOpen={shareOpen && Boolean(disposal?.id)}
+        onClose={() => setShareOpen(false)}
+        documentType="stock_disposal"
+        documentId={disposal?.id}
+      />
     </div>
   );
 }

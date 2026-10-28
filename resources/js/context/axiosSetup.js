@@ -19,7 +19,26 @@ export function initAxiosAuth() {
   );
 
   axios.interceptors.response.use(
-    (r) => r,
+    (r) => {
+      try {
+        const method = (r?.config?.method || "get").toLowerCase();
+        const url = r?.config?.url || "";
+        if (
+          ["post", "put", "patch", "delete"].includes(method) &&
+          /\/api\/(sale-invoices|purchase-invoices|purchase-orders|sale-returns|purchase-returns|user-demands|stock-adjustments|stock-disposals|stocktake-sessions|batches|products)/.test(
+            url
+          ) &&
+          !url.includes("/notifications/")
+        ) {
+          window.dispatchEvent(
+            new CustomEvent("notifications-changed", { detail: { url, method } })
+          );
+        }
+      } catch {
+        /* ignore event dispatch errors */
+      }
+      return r;
+    },
     (err) => {
       const status = err?.response?.status;
       const url = err?.config?.url || "";

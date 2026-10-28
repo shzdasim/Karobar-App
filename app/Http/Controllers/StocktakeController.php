@@ -197,6 +197,33 @@ class StocktakeController extends Controller
         return response()->json($items);
     }
 
+    // ===== Add an unexpected product / batch to an in-progress session =====
+
+    public function addItem(Request $request, int $id): JsonResponse
+    {
+        $session = StocktakeSession::findOrFail($id);
+        $this->authorize('update', $session);
+
+        $data = $request->validate([
+            'product_id'         => ['required', 'integer', 'exists:products,id'],
+            'batch_number'       => ['nullable', 'string', 'max:100'],
+            'expiry_date'        => ['nullable', 'date'],
+            'counted_qty'        => ['nullable', 'numeric', 'min:0'],
+            'discrepancy_reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        try {
+            $item = $this->service->addItem($session, $data, optional($request->user())->id);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(
+            $item->load(['product:id,name,barcode,rack,unit_purchase_price', 'counter:id,name']),
+            201
+        );
+    }
+
     // ===== Record a count for one item =====
 
     public function recordCount(Request $request, StocktakeItem $item): JsonResponse

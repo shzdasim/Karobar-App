@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Product;
 use App\Models\Supplier;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SupplierController extends Controller
@@ -54,15 +55,39 @@ class SupplierController extends Controller
         $this->authorize('create', Supplier::class);
 
         $data = $request->validate([
-            'name'         => 'required|string|max:150|unique:suppliers,name',
-            'address'      => 'nullable|string|max:255',
-            'phone'        => 'nullable|string|max:50',
-            'email'        => 'nullable|email|max:150',
-            'credit_limit' => 'nullable|numeric|min:0',
-            'credit_days'  => 'nullable|integer|min:0|max:365',
+            'name'            => 'required|string|max:150|unique:suppliers,name',
+            'address'         => 'nullable|string|max:255',
+            'phone'           => 'nullable|string|max:50',
+            'email'           => 'nullable|email|max:150',
+            'credit_limit'    => 'nullable|numeric|min:0',
+            'credit_days'     => 'nullable|integer|min:0|max:365',
+            'opening_balance' => 'nullable|numeric|min:0',
         ]);
 
-        $supplier = Supplier::create($data);
+        $openingBalance = round((float) ($data['opening_balance'] ?? 0), 2);
+        unset($data['opening_balance']);
+
+        $supplier = DB::transaction(function () use ($data, $openingBalance, $request) {
+            $supplier = Supplier::create($data);
+
+            if ($openingBalance > 0 && \Illuminate\Support\Facades\Schema::hasTable('supplier_ledgers')) {
+                \App\Models\SupplierLedger::create([
+                    'supplier_id'      => $supplier->id,
+                    'entry_type'       => 'manual',
+                    'is_manual'        => true,
+                    'entry_date'       => now()->toDateString(),
+                    'posted_number'    => 'OB-' . str_pad((string) $supplier->id, 5, '0', STR_PAD_LEFT),
+                    'invoice_total'    => $openingBalance,
+                    'total_paid'       => 0,
+                    'credit_remaining' => $openingBalance,
+                    'debited_amount'   => 0,
+                    'description'      => 'Opening Balance',
+                    'created_by'       => $request->user()?->id,
+                ]);
+            }
+
+            return $supplier;
+        });
 
         return response()->json($supplier, 201);
     }

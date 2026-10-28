@@ -126,6 +126,14 @@ class PurchaseOrderController extends Controller
             $order->number = 'PO-' . str_pad($order->id, 5, '0', STR_PAD_LEFT);
             $order->save();
             $order->items()->createMany($data['items']);
+
+            $productIds = collect($data['items'])->pluck('product_id')->filter()->unique()->all();
+            if (!empty($productIds) && \Illuminate\Support\Facades\Schema::hasTable('user_demands')) {
+                \App\Models\UserDemand::whereIn('product_id', $productIds)
+                    ->where('status', 'pending')
+                    ->update(['status' => 'ordered']);
+            }
+
             return response()->json($order->load('supplier', 'items.product.brand'), 201);
         });
     }
@@ -145,6 +153,14 @@ class PurchaseOrderController extends Controller
             $order->update(array_merge($data, ['updated_by' => Auth::id()]));
             $order->items()->delete();
             $order->items()->createMany($data['items']);
+
+            $productIds = collect($data['items'])->pluck('product_id')->filter()->unique()->all();
+            if (!empty($productIds) && \Illuminate\Support\Facades\Schema::hasTable('user_demands')) {
+                \App\Models\UserDemand::whereIn('product_id', $productIds)
+                    ->where('status', 'pending')
+                    ->update(['status' => 'ordered']);
+            }
+
             return $order->load('supplier', 'items.product.brand');
         });
     }

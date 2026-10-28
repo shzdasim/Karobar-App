@@ -28,9 +28,10 @@ class SupplierImportService
 
     /** Header aliases accepted for mapping to canonical columns */
     private array $aliases = [
-        'name'    => ['name','supplier','supplier_name','company','company_name','suppliername'],
-        'address' => ['address','addr','supplier_address','location','address1','address_line1'],
-        'phone'   => ['phone','mobile','contact','contact_no','contact_number','phone_number','tel','telephone'],
+        'name'            => ['name','supplier','supplier_name','company','company_name','suppliername'],
+        'address'         => ['address','addr','supplier_address','location','address1','address_line1'],
+        'phone'           => ['phone','mobile','contact','contact_no','contact_number','phone_number','tel','telephone'],
+        'opening_balance' => ['opening_balance','opening','balance','initial_balance'],
     ];
 
     // ---------------- Public API ----------------
@@ -182,6 +183,7 @@ class SupplierImportService
             ->flip();
 
         $toUpsert = [];
+        $openingBalancesByName = [];
         $stats = [
             'total'     => 0,
             'valid'     => 0,
@@ -207,9 +209,10 @@ class SupplierImportService
             if ($row === null) break;
 
             $data = [
-                'name'    => $row[$colIdx['name']]    ?? null,
-                'address' => $row[$colIdx['address']] ?? null,
-                'phone'   => $row[$colIdx['phone']]   ?? null,
+                'name'            => $row[$colIdx['name']]    ?? null,
+                'address'         => $row[$colIdx['address']] ?? null,
+                'phone'           => $row[$colIdx['phone']]   ?? null,
+                'opening_balance' => array_key_exists('opening_balance', $colIdx) ? ($row[$colIdx['opening_balance']] ?? null) : null,
             ];
 
             $stats['total']++;
@@ -244,6 +247,11 @@ class SupplierImportService
                 $existingLower[$lower] = true; // so later occurrences count as existing
             }
 
+            $rawOb = trim((string) ($data['opening_balance'] ?? ''));
+            if ($rawOb !== '' && is_numeric($rawOb) && (float)$rawOb > 0) {
+                $openingBalancesByName[$lower] = ['name' => $name, 'amount' => round((float)$rawOb, 2)];
+            }
+
             $toUpsert[] = [
                 'name'    => $name,
                 'address' => $this->safeStr($data['address']),
@@ -255,8 +263,33 @@ class SupplierImportService
             }
         }
 
-        DB::transaction(function () use ($flush) {
+        DB::transaction(function () use ($flush, $openingBalancesByName) {
             $flush();
+
+            if (!empty($openingBalancesByName) && \Illuminate\Support\Facades\Schema::hasTable('supplier_ledgers')) {
+                foreach ($openingBalancesByName as $obItem) {
+                    $sup = Supplier::where('name', $obItem['name'])->first();
+                    if (!$sup) continue;
+                    $postedNo = 'OB-' . str_pad((string) $sup->id, 5, '0', STR_PAD_LEFT);
+                    $alreadyExists = \App\Models\SupplierLedger::where('supplier_id', $sup->id)
+                        ->where('posted_number', $postedNo)
+                        ->exists();
+                    if (!$alreadyExists) {
+                        \App\Models\SupplierLedger::create([
+                            'supplier_id'      => $sup->id,
+                            'entry_type'       => 'manual',
+                            'is_manual'        => true,
+                            'entry_date'       => now()->toDateString(),
+                            'posted_number'    => $postedNo,
+                            'invoice_total'    => $obItem['amount'],
+                            'total_paid'       => 0,
+                            'credit_remaining' => $obItem['amount'],
+                            'debited_amount'   => 0,
+                            'description'      => 'Opening Balance (CSV Import)',
+                        ]);
+                    }
+                }
+            }
         });
 
         return $stats;
@@ -331,14 +364,14 @@ class SupplierImportService
         if (!empty($lower)) { $lower[0] = preg_replace('/^\xEF\xBB\xBF/', '', $lower[0]); }
 
         $map = [];
-        foreach (['name','address','phone'] as $key) {
+        foreach (['name','address','phone','opening_balance'] as $key) {
             $idx = null;
-            foreach ($this->aliases[$key] as $alias) {
+            foreach (($this->aliases[$key] ?? []) as $alias) {
                 $i = array_search($alias, $lower, true);
                 if ($i !== false) { $idx = $i; break; }
             }
-            if ($idx === null) return [];
-            $map[$key] = $idx;
+            if (in_array($key, ['name','address','phone'], true) && $idx === null) return [];
+            if ($idx !== null) $map[$key] = $idx;
         }
         return $map;
     }

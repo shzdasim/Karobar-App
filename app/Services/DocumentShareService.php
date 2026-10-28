@@ -23,10 +23,18 @@ class DocumentShareService
 {
     public const SUPPORTED_TYPES = [
         'sale_invoice',
+        'delivery_challan',
+        'quotation',
         'customer_ledger',
         'supplier_ledger',
         'payment',
         'purchase_order',
+        'purchase_invoice',
+        'sale_return',
+        'purchase_return',
+        'stock_disposal',
+        'cash_drawer_session',
+        'stocktake_session',
     ];
 
     /**
@@ -288,6 +296,8 @@ class DocumentShareService
 
         return match ($type) {
             'sale_invoice'    => $this->resolveSaleInvoice((int) ($params['id'] ?? 0), $setting, $storeName),
+            'delivery_challan'=> $this->resolveDeliveryChallan((int) ($params['id'] ?? 0), $setting, $storeName),
+            'quotation'       => $this->resolveQuotation((int) ($params['id'] ?? 0), $setting, $storeName),
             'customer_ledger' => $this->resolveCustomerLedger(
                 (int) ($params['customer_id'] ?? $params['id'] ?? 0),
                 $params['from'] ?? null,
@@ -304,6 +314,12 @@ class DocumentShareService
             ),
             'payment'         => $this->resolvePayment((int) ($params['id'] ?? 0), $setting, $storeName),
             'purchase_order'  => $this->resolvePurchaseOrder((int) ($params['id'] ?? 0), $setting, $storeName),
+            'purchase_invoice'=> $this->resolvePurchaseInvoice((int) ($params['id'] ?? 0), $setting, $storeName),
+            'sale_return'     => $this->resolveSaleReturn((int) ($params['id'] ?? 0), $setting, $storeName),
+            'purchase_return' => $this->resolvePurchaseReturn((int) ($params['id'] ?? 0), $setting, $storeName),
+            'stock_disposal'  => $this->resolveStockDisposal((int) ($params['id'] ?? 0), $setting, $storeName),
+            'cash_drawer_session' => $this->resolveCashDrawerSession((int) ($params['id'] ?? 0), $setting, $storeName),
+            'stocktake_session'   => $this->resolveStocktakeSession((int) ($params['id'] ?? 0), $setting, $storeName),
             default           => throw new InvalidArgumentException("Unsupported document type: {$type}"),
         };
     }
@@ -448,7 +464,37 @@ class DocumentShareService
             ->sortBy(fn ($r) => [$r->entry_date, $r->id ?? 0])
             ->values();
 
-        $balance = 0.0;
+        // Compute opening brought-forward balance prior to $from
+        $openingBalance = 0.0;
+        if (!empty($from)) {
+            $priorInv = SaleInvoice::query()
+                ->where('customer_id', $customer->id)
+                ->where('invoice_type', 'credit')
+                ->whereDate($dateColumn, '<', $from)
+                ->get($selectCols)
+                ->sum(function ($inv) {
+                    $t = (float) ($inv->invoice_total ?? $inv->total ?? $inv->grand_total ?? $inv->net_total ?? $inv->gross_amount ?? $inv->sub_total ?? 0);
+                    $rawR = (float) ($inv->total_receive ?? $inv->total_recieve ?? $inv->received ?? $inv->amount_received ?? 0);
+                    return max(0.0, $t - min($rawR, $t));
+                });
+
+            $priorManual = CustomerLedger::query()
+                ->where('customer_id', $customer->id)
+                ->where('entry_type', 'manual')
+                ->whereDate('entry_date', '<', $from)
+                ->get(['invoice_total', 'total_received'])
+                ->sum(fn ($r) => (float) ($r->invoice_total ?? 0) - (float) ($r->total_received ?? 0));
+
+            $priorPay = (float) CustomerLedger::query()
+                ->where('customer_id', $customer->id)
+                ->where('entry_type', 'payment')
+                ->whereDate('entry_date', '<', $from)
+                ->sum('credited_amount');
+
+            $openingBalance = round(($priorInv + $priorManual) - $priorPay, 2);
+        }
+
+        $balance = $openingBalance;
         foreach ($all as $r) {
             $t = strtolower($r->entry_type);
             if (in_array($t, ['invoice', 'manual'], true)) {
@@ -462,9 +508,10 @@ class DocumentShareService
         $sumInv  = (float) $all->whereIn('entry_type', ['invoice', 'manual'])->sum('invoice_total');
         $sumRecv = (float) $all->whereIn('entry_type', ['invoice', 'manual'])->sum('total_received');
         $sumPay  = (float) $all->where('entry_type', 'payment')->sum('credited_amount');
-        $netBal  = round(($sumInv - $sumRecv) - $sumPay, 2);
+        $netBal  = round($openingBalance + ($sumInv - $sumRecv) - $sumPay, 2);
 
         $summary = [
+            'opening_balance'     => $openingBalance,
             'total_invoiced'      => $sumInv,
             'received_on_invoice' => $sumRecv,
             'payments_credited'   => $sumPay,
@@ -528,7 +575,23 @@ class DocumentShareService
             ->orderBy('id')
             ->get();
 
-        $balance = 0.0;
+        $openingBalance = 0.0;
+        if (!empty($from)) {
+            $priorRows = SupplierLedger::query()
+                ->where('supplier_id', $supplier->id)
+                ->whereDate('entry_date', '<', $from)
+                ->get(['entry_type', 'invoice_total', 'total_paid', 'debited_amount']);
+            foreach ($priorRows as $pr) {
+                if (in_array($pr->entry_type, ['invoice', 'manual'], true)) {
+                    $openingBalance += ((float) ($pr->invoice_total ?? 0) - (float) ($pr->total_paid ?? 0));
+                } elseif ($pr->entry_type === 'payment') {
+                    $openingBalance -= (float) ($pr->debited_amount ?? 0);
+                }
+            }
+            $openingBalance = round($openingBalance, 2);
+        }
+
+        $balance = $openingBalance;
         $mapped = $rows->map(function ($r) use (&$balance) {
             $invoiceTotal = (float) ($r->invoice_total ?? 0);
             $paidOnInv    = (float) ($r->total_paid ?? 0);
@@ -550,9 +613,10 @@ class DocumentShareService
         $sumInv  = (float) $mapped->sum('invoice_total');
         $sumPaid = (float) $mapped->sum('total_paid');
         $sumDeb  = (float) $mapped->sum('debited_amount');
-        $netBal  = round(($sumInv - $sumPaid) - $sumDeb, 2);
+        $netBal  = round($openingBalance + ($sumInv - $sumPaid) - $sumDeb, 2);
 
         $summary = [
+            'opening_balance'  => $openingBalance,
             'total_invoiced'   => $sumInv,
             'paid_on_invoice'  => $sumPaid,
             'payments_debited' => $sumDeb,
@@ -743,5 +807,328 @@ class DocumentShareService
             ->sum('credited_amount');
 
         return round(($invDelta + $manualDelta) - $paymentsCredited, 2);
+    }
+
+    private function resolvePurchaseInvoice(int $id, ?Setting $setting, string $storeName): array
+    {
+        $invoice = \App\Models\PurchaseInvoice::with(['supplier', 'items.product'])->findOrFail($id);
+        $supplier = $invoice->supplier;
+        $supplierName = $supplier->name ?? 'Supplier';
+        $docNo = $invoice->posted_number ?: ('PI-' . $invoice->id);
+        $dateStr = $invoice->posted_date ? Carbon::parse($invoice->posted_date)->format('d M Y') : '-';
+        $total = (float) ($invoice->total_amount ?? 0);
+        $paid = (float) ($invoice->total_paid ?? 0);
+        $remaining = max(0, $total - $paid);
+
+        $waLines = [
+            "*{$storeName}*",
+            "📦 *Purchase Invoice (GRN): {$docNo}*",
+            "📅 Date: {$dateStr}",
+            "🏢 Supplier: {$supplierName}",
+            "────────────────────",
+            "💰 *Invoice Total:* Rs. " . number_format($total, 2),
+            "✅ *Paid:* Rs. " . number_format($paid, 2),
+            "📌 *Balance Payable:* Rs. " . number_format($remaining, 2),
+        ];
+
+        $emailSubject = "Purchase Invoice (GRN) {$docNo} - {$storeName}";
+        $emailBody = "Dear {$supplierName},\n\n"
+            . "Please find attached Purchase Invoice / GRN ({$docNo}) dated {$dateStr} recorded by {$storeName}.\n\n"
+            . "Invoice Total: Rs. " . number_format($total, 2) . "\n"
+            . "Amount Paid: Rs. " . number_format($paid, 2) . "\n"
+            . "Remaining Payable: Rs. " . number_format($remaining, 2) . "\n\n"
+            . "Best regards,\n{$storeName}";
+
+        return [
+            'title'           => "Purchase Invoice {$docNo}",
+            'filename'        => 'Purchase_Invoice_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $docNo) . '.pdf',
+            'view'            => 'pdf.purchase_invoice',
+            'view_data'       => [
+                'invoice' => $invoice,
+                'setting' => $setting,
+            ],
+            'party_type'      => $supplier ? 'supplier' : null,
+            'party_id'        => $supplier?->id,
+            'recipient_name'  => $supplierName,
+            'recipient_phone' => $supplier?->phone ?? '',
+            'recipient_email' => $supplier?->email ?? '',
+            'whatsapp_text'   => implode("\n", $waLines),
+            'email_subject'   => $emailSubject,
+            'email_body'      => $emailBody,
+        ];
+    }
+
+    private function resolveSaleReturn(int $id, ?Setting $setting, string $storeName): array
+    {
+        $ret = \App\Models\SaleReturn::with(['customer', 'saleInvoice', 'items.product'])->findOrFail($id);
+        $customer = $ret->customer;
+        $custName = $customer->name ?? 'Valued Customer';
+        $docNo = $ret->posted_number ?: ('SR-' . $ret->id);
+        $dateStr = $ret->date ? Carbon::parse($ret->date)->format('d M Y') : '-';
+        $total = (float) ($ret->total ?? 0);
+
+        $waLines = [
+            "*{$storeName}*",
+            "↩️ *Sale Return / Credit Note: {$docNo}*",
+            "📅 Date: {$dateStr}",
+            "👤 Customer: {$custName}",
+            "────────────────────",
+            "💰 *Return Credit Total:* Rs. " . number_format($total, 2),
+        ];
+
+        $emailSubject = "Sale Return Credit Note {$docNo} from {$storeName}";
+        $emailBody = "Dear {$custName},\n\n"
+            . "Please find attached your Sale Return / Credit Note ({$docNo}) dated {$dateStr} from {$storeName}.\n\n"
+            . "Total Return Amount: Rs. " . number_format($total, 2) . "\n\n"
+            . "Best regards,\n{$storeName}";
+
+        return [
+            'title'           => "Sale Return {$docNo}",
+            'filename'        => 'Sale_Return_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $docNo) . '.pdf',
+            'view'            => 'pdf.sale_return',
+            'view_data'       => [
+                'return'  => $ret,
+                'setting' => $setting,
+            ],
+            'party_type'      => $customer ? 'customer' : null,
+            'party_id'        => $customer?->id,
+            'recipient_name'  => $custName,
+            'recipient_phone' => $customer?->phone ?? '',
+            'recipient_email' => $customer?->email ?? '',
+            'whatsapp_text'   => implode("\n", $waLines),
+            'email_subject'   => $emailSubject,
+            'email_body'      => $emailBody,
+        ];
+    }
+
+    private function resolvePurchaseReturn(int $id, ?Setting $setting, string $storeName): array
+    {
+        $ret = \App\Models\PurchaseReturn::with(['supplier', 'purchaseInvoice', 'items.product'])->findOrFail($id);
+        $supplier = $ret->supplier;
+        $supplierName = $supplier->name ?? 'Supplier';
+        $docNo = $ret->posted_number ?: ('PR-' . $ret->id);
+        $dateStr = $ret->date ? Carbon::parse($ret->date)->format('d M Y') : '-';
+        $total = (float) ($ret->total ?? 0);
+
+        $waLines = [
+            "*{$storeName}*",
+            "↩️ *Purchase Return / Debit Note: {$docNo}*",
+            "📅 Date: {$dateStr}",
+            "🏢 Supplier: {$supplierName}",
+            "────────────────────",
+            "💰 *Return Debit Total:* Rs. " . number_format($total, 2),
+        ];
+
+        $emailSubject = "Purchase Return Debit Note {$docNo} from {$storeName}";
+        $emailBody = "Dear {$supplierName},\n\n"
+            . "Please find attached our Purchase Return / Debit Note ({$docNo}) dated {$dateStr} from {$storeName}.\n\n"
+            . "Total Return Amount: Rs. " . number_format($total, 2) . "\n\n"
+            . "Best regards,\n{$storeName}";
+
+        return [
+            'title'           => "Purchase Return {$docNo}",
+            'filename'        => 'Purchase_Return_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $docNo) . '.pdf',
+            'view'            => 'pdf.purchase_return',
+            'view_data'       => [
+                'return'  => $ret,
+                'setting' => $setting,
+            ],
+            'party_type'      => $supplier ? 'supplier' : null,
+            'party_id'        => $supplier?->id,
+            'recipient_name'  => $supplierName,
+            'recipient_phone' => $supplier?->phone ?? '',
+            'recipient_email' => $supplier?->email ?? '',
+            'whatsapp_text'   => implode("\n", $waLines),
+            'email_subject'   => $emailSubject,
+            'email_body'      => $emailBody,
+        ];
+    }
+
+    private function resolveStockDisposal(int $id, ?Setting $setting, string $storeName): array
+    {
+        $disposal = \App\Models\StockDisposal::with(['creator', 'disposer', 'restorer', 'items.product', 'items.batch'])->findOrFail($id);
+        $docNo = $disposal->disposal_number ?: ($disposal->reference_no ?: ('DSP-' . $disposal->id));
+        $dateStr = $disposal->disposal_date ? Carbon::parse($disposal->disposal_date)->format('d M Y') : '-';
+        $totalCost = (float) ($disposal->total_cost_value ?? $disposal->total_cost ?? 0);
+
+        $waLines = [
+            "*{$storeName}*",
+            "🔥 *Official Stock Disposal Certificate: {$docNo}*",
+            "📅 Date: {$dateStr}",
+            "📌 Status: " . strtoupper($disposal->status ?? 'QUARANTINED'),
+            "💰 Total Cost Write-Off: Rs. " . number_format($totalCost, 2),
+        ];
+
+        return [
+            'title'           => "Stock Disposal Certificate {$docNo}",
+            'filename'        => 'Stock_Disposal_Certificate_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $docNo) . '.pdf',
+            'view'            => 'pdf.stock_disposal',
+            'view_data'       => [
+                'disposal' => $disposal,
+                'setting'  => $setting,
+            ],
+            'party_type'      => null,
+            'party_id'        => null,
+            'recipient_name'  => 'Regulatory / Audit Authority',
+            'recipient_phone' => '',
+            'recipient_email' => '',
+            'whatsapp_text'   => implode("\n", $waLines),
+            'email_subject'   => "Stock Disposal Certificate {$docNo} - {$storeName}",
+            'email_body'      => "Please find attached the Official Stock Disposal / Destruction Certificate ({$docNo}) dated {$dateStr} from {$storeName}.",
+        ];
+    }
+
+    private function resolveCashDrawerSession(int $id, ?Setting $setting, string $storeName): array
+    {
+        $session = \App\Models\CashDrawerSession::with(['user', 'transactions.user'])->findOrFail($id);
+        $docNo = 'SHIFT-' . $session->id;
+        $openedStr = $session->opened_at ? Carbon::parse($session->opened_at)->format('d M Y h:i A') : '-';
+
+        return [
+            'title'           => "Cash Drawer Z-Report ({$docNo})",
+            'filename'        => "Cash_Drawer_Z_Report_{$docNo}.pdf",
+            'view'            => 'pdf.cash_drawer_z_report',
+            'view_data'       => [
+                'session' => $session,
+                'setting' => $setting,
+            ],
+            'party_type'      => null,
+            'party_id'        => null,
+            'recipient_name'  => $session->user?->name ?? 'Cashier',
+            'recipient_phone' => '',
+            'recipient_email' => $session->user?->email ?? '',
+            'whatsapp_text'   => "*{$storeName}*\n📠 *Cash Drawer Shift Z-Report ({$docNo})*\nOpened: {$openedStr}",
+            'email_subject'   => "Cash Drawer Z-Report ({$docNo}) - {$storeName}",
+            'email_body'      => "Please find attached the Cash Drawer Shift Z-Report ({$docNo}) from {$storeName}.",
+        ];
+    }
+
+    private function resolveStocktakeSession(int $id, ?Setting $setting, string $storeName): array
+    {
+        $session = \App\Models\StocktakeSession::with(['user', 'stockAdjustment', 'items.product', 'items.counter'])->findOrFail($id);
+        $docNo = $session->reference_no ?: ('ST-' . $session->id);
+
+        return [
+            'title'           => "Stocktake Session {$docNo}",
+            'filename'        => 'Stocktake_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $docNo) . '.pdf',
+            'view'            => 'pdf.stocktake_session',
+            'view_data'       => [
+                'session' => $session,
+                'setting' => $setting,
+            ],
+            'party_type'      => null,
+            'party_id'        => null,
+            'recipient_name'  => $session->user?->name ?? 'Inventory Auditor',
+            'recipient_phone' => '',
+            'recipient_email' => $session->user?->email ?? '',
+            'whatsapp_text'   => "*{$storeName}*\n📋 *Stocktake Report ({$docNo})*",
+            'email_subject'   => "Stocktake Session Report ({$docNo}) - {$storeName}",
+            'email_body'      => "Please find attached the Stocktake Count & Variance Report ({$docNo}) from {$storeName}.",
+        ];
+    }
+
+    private function resolveDeliveryChallan(int $id, ?Setting $setting, string $storeName): array
+    {
+        $invoice = SaleInvoice::with(['customer', 'user', 'items.product'])->findOrFail($id);
+        $customer = $invoice->customer;
+        $docNo = 'DC-' . ($invoice->posted_number ?: $invoice->id);
+        $dateStr = $invoice->date ? Carbon::parse($invoice->date)->format('d M Y') : optional($invoice->created_at)->format('d M Y');
+        $custName = $customer->name ?? 'Valued Customer';
+        $totalUnits = (int) $invoice->items->sum('quantity');
+
+        $waLines = [
+            "*{$storeName}*",
+            "🚚 *Delivery Challan / Gate Pass: {$docNo}*",
+            "📅 Date: {$dateStr}",
+            "👤 Consignee: {$custName}",
+            "📦 Total Dispatched Items: {$invoice->items->count()} lines ({$totalUnits} units)",
+            "\nPlease verify quantities and batch numbers upon delivery.",
+        ];
+
+        $emailSubject = "Delivery Challan {$docNo} from {$storeName}";
+        $emailBody = "Dear {$custName},\n\n"
+            . "Please find attached the Delivery Challan / Packing Slip ({$docNo}) for Sale Invoice #" . ($invoice->posted_number ?: $invoice->id) . " dated {$dateStr}.\n\n"
+            . "Total Lines: {$invoice->items->count()} ({$totalUnits} units)\n\n"
+            . "Best regards,\n{$storeName}";
+
+        return [
+            'title'           => "Delivery Challan {$docNo}",
+            'filename'        => 'Delivery_Challan_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $docNo) . '.pdf',
+            'view'            => 'pdf.delivery_challan',
+            'view_data'       => [
+                'invoice' => $invoice,
+                'setting' => $setting,
+            ],
+            'party_type'      => $customer ? 'customer' : null,
+            'party_id'        => $customer?->id,
+            'recipient_name'  => $custName,
+            'recipient_phone' => $customer?->phone ?? '',
+            'recipient_email' => $customer?->email ?? '',
+            'whatsapp_text'   => implode("\n", $waLines),
+            'email_subject'   => $emailSubject,
+            'email_body'      => $emailBody,
+        ];
+    }
+
+    private function resolveQuotation(int $id, ?Setting $setting, string $storeName): array
+    {
+        $draft = \App\Models\InvoiceDraft::with('user')->findOrFail($id);
+        $payload = $draft->payload ?? [];
+        $customer = !empty($payload['customer_id']) ? Customer::find($payload['customer_id']) : null;
+        $custName = $customer?->name ?? ($draft->party_name ?: 'Valued Customer');
+        $quotationNo = 'QT-' . str_pad((string) $draft->id, 5, '0', STR_PAD_LEFT);
+        $dateStr = optional($draft->created_at ?? now())->format('d M Y');
+        $total = (float) ($draft->total_amount ?? $payload['total'] ?? 0);
+
+        $rawItems = $payload['items'] ?? [];
+        $productIds = collect($rawItems)->pluck('product_id')->filter()->unique()->values()->all();
+        $productsMap = empty($productIds)
+            ? []
+            : \App\Models\Product::whereIn('id', $productIds)->pluck('name', 'id')->all();
+
+        $items = array_map(function ($it) use ($productsMap) {
+            $pid = $it['product_id'] ?? null;
+            if (empty($it['product_name']) && $pid && isset($productsMap[$pid])) {
+                $it['product_name'] = $productsMap[$pid];
+            }
+            return $it;
+        }, $rawItems);
+
+        $waLines = [
+            "*{$storeName}*",
+            "📄 *Price Quotation / Estimate: {$quotationNo}*",
+            "📅 Date: {$dateStr}",
+            "👤 Prepared For: {$custName}",
+            "────────────────────",
+            "💰 *Estimated Total:* Rs. " . number_format($total, 2),
+            "\nThank you for your inquiry!",
+        ];
+
+        $emailSubject = "Price Quotation {$quotationNo} from {$storeName}";
+        $emailBody = "Dear {$custName},\n\n"
+            . "Please find attached your Price Quotation / Estimate ({$quotationNo}) dated {$dateStr} from {$storeName}.\n\n"
+            . "Estimated Total: Rs. " . number_format($total, 2) . "\n\n"
+            . "Best regards,\n{$storeName}";
+
+        return [
+            'title'           => "Price Quotation {$quotationNo}",
+            'filename'        => "Quotation_{$quotationNo}.pdf",
+            'view'            => 'pdf.quotation',
+            'view_data'       => [
+                'draft'       => $draft,
+                'quotationNo' => $quotationNo,
+                'customer'    => $customer,
+                'items'       => $items,
+                'setting'     => $setting,
+            ],
+            'party_type'      => $customer ? 'customer' : null,
+            'party_id'        => $customer?->id,
+            'recipient_name'  => $custName,
+            'recipient_phone' => $customer?->phone ?? '',
+            'recipient_email' => $customer?->email ?? '',
+            'whatsapp_text'   => implode("\n", $waLines),
+            'email_subject'   => $emailSubject,
+            'email_body'      => $emailBody,
+        ];
     }
 }

@@ -17,10 +17,11 @@ class CustomerImportService
     private string $disk = 'local';
 
     private array $aliases = [
-        'name'    => ['name','customer','customer_name','full_name'],
-        'email'   => ['email','e-mail','mail'],
-        'phone'   => ['phone','mobile','contact','phone_number','tel','telephone'],
-        'address' => ['address','addr','location','street','addr1'],
+        'name'            => ['name','customer','customer_name','full_name'],
+        'email'           => ['email','e-mail','mail'],
+        'phone'           => ['phone','mobile','contact','phone_number','tel','telephone'],
+        'address'         => ['address','addr','location','street','addr1'],
+        'opening_balance' => ['opening_balance','opening','balance','initial_balance'],
     ];
 
     public function storeUploaded(UploadedFile $file): array
@@ -135,6 +136,7 @@ class CustomerImportService
 
         $stats = ['total'=>0,'valid'=>0,'invalid'=>0,'committed'=>0,'new'=>0,'existing'=>0];
         $toUpsert = [];
+        $openingBalancesByName = [];
 
         $flush = function () use (&$toUpsert, &$stats) {
             if (empty($toUpsert)) return;
@@ -154,6 +156,7 @@ class CustomerImportService
             $email   = array_key_exists('email',$colIdx)   ? trim((string)($row[$colIdx['email']] ?? ''))   : '';
             $phone   = array_key_exists('phone',$colIdx)   ? trim((string)($row[$colIdx['phone']] ?? ''))   : '';
             $address = array_key_exists('address',$colIdx) ? trim((string)($row[$colIdx['address']] ?? '')) : '';
+            $rawOb   = array_key_exists('opening_balance',$colIdx) ? trim((string)($row[$colIdx['opening_balance']] ?? '')) : '';
 
             $stats['total']++;
 
@@ -168,6 +171,10 @@ class CustomerImportService
             $ln = mb_strtolower($name);
             if (isset($nameToId[$ln])) $stats['existing']++; else { $stats['new']++; $nameToId[$ln] = -1; }
 
+            if ($rawOb !== '' && is_numeric($rawOb) && (float)$rawOb > 0) {
+                $openingBalancesByName[$ln] = ['name' => $name, 'amount' => round((float)$rawOb, 2)];
+            }
+
             $toUpsert[] = [
                 'name'    => $name,
                 'email'   => ($email !== '') ? $email : null,
@@ -178,7 +185,34 @@ class CustomerImportService
             if (count($toUpsert) >= self::CHUNK_SIZE) $flush();
         }
 
-        DB::transaction(fn() => $flush());
+        DB::transaction(function () use ($flush, $openingBalancesByName) {
+            $flush();
+
+            if (!empty($openingBalancesByName) && \Illuminate\Support\Facades\Schema::hasTable('customer_ledgers')) {
+                foreach ($openingBalancesByName as $obItem) {
+                    $cust = Customer::where('name', $obItem['name'])->first();
+                    if (!$cust) continue;
+                    $postedNo = 'OB-' . str_pad((string) $cust->id, 5, '0', STR_PAD_LEFT);
+                    $alreadyExists = \App\Models\CustomerLedger::where('customer_id', $cust->id)
+                        ->where('posted_number', $postedNo)
+                        ->exists();
+                    if (!$alreadyExists) {
+                        \App\Models\CustomerLedger::create([
+                            'customer_id'       => $cust->id,
+                            'entry_type'        => 'manual',
+                            'is_manual'         => true,
+                            'entry_date'        => now()->toDateString(),
+                            'posted_number'     => $postedNo,
+                            'invoice_total'     => $obItem['amount'],
+                            'total_received'    => 0,
+                            'balance_remaining' => $obItem['amount'],
+                            'credited_amount'   => 0,
+                            'description'       => 'Opening Balance (CSV Import)',
+                        ]);
+                    }
+                }
+            }
+        });
         return $stats;
     }
 
@@ -228,7 +262,7 @@ class CustomerImportService
         if (!empty($lower)) $lower[0] = preg_replace('/^\xEF\xBB\xBF/', '', $lower[0]);
 
         $map=[];
-        foreach (['name','email','phone','address'] as $key) {
+        foreach (['name','email','phone','address','opening_balance'] as $key) {
             $idx=null;
             foreach (($this->aliases[$key] ?? []) as $alias) {
                 $i = array_search($alias, $lower, true);

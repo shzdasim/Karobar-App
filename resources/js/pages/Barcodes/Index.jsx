@@ -49,6 +49,7 @@ export default function BarcodeIndex() {
   const canViewBarcode = !permsLoading && (has("barcode.view") || has("barcode.print"));
   const canPrintBarcode = !permsLoading && (has("barcode.print") || has("barcode.view"));
   const canSaveTemplate = !permsLoading && (has("barcode.create") || has("barcode.update"));
+  const canDeleteTemplate = !permsLoading && (has("barcode.delete") || has("barcode.update"));
 
   // Navigation tab
   const [activeTab, setActiveTab] = useState("queue");
@@ -133,8 +134,10 @@ export default function BarcodeIndex() {
   const [selectedSupplierOpt, setSelectedSupplierOpt] = useState({ value: null, label: "🏢 All Suppliers" });
   const [selectedBrandOpt, setSelectedBrandOpt] = useState({ value: null, label: "🏷️ All Brands" });
 
-  // Purchase Orders list and selection
+  // Purchase Orders & Purchase Invoices list and selection
+  const [importDocType, setImportDocType] = useState("purchase_invoices"); // "purchase_invoices" | "purchase_orders"
   const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [purchaseInvoices, setPurchaseInvoices] = useState([]);
   const [loadingPoList, setLoadingPoList] = useState(false);
   const [selectedPoOpt, setSelectedPoOpt] = useState(null);
   const [selectedPoData, setSelectedPoData] = useState(null);
@@ -158,17 +161,22 @@ export default function BarcodeIndex() {
     loadFilters();
   }, []);
 
-  // Fetch purchase orders matching supplier and brand
+  // Fetch purchase orders & purchase invoices matching supplier and brand
   const fetchPurchaseOrders = useCallback(async (supplierId = null, brandId = null) => {
     try {
       setLoadingPoList(true);
       const params = {};
       if (supplierId) params.supplier_id = supplierId;
       if (brandId) params.brand_id = brandId;
-      const { data } = await axios.get("/api/barcodes/purchase-orders", { params });
-      setPurchaseOrders(data.purchase_orders || []);
+      const [poRes, piRes] = await Promise.all([
+        axios.get("/api/barcodes/purchase-orders", { params }).catch(() => ({ data: {} })),
+        axios.get("/api/barcodes/purchase-invoices", { params }).catch(() => ({ data: {} })),
+      ]);
+      setPurchaseOrders(poRes.data?.purchase_orders || []);
+      setPurchaseInvoices(piRes.data?.purchase_invoices || []);
     } catch {
       setPurchaseOrders([]);
+      setPurchaseInvoices([]);
     } finally {
       setLoadingPoList(false);
     }
@@ -178,7 +186,7 @@ export default function BarcodeIndex() {
     fetchPurchaseOrders(selectedSupplierOpt?.value, selectedBrandOpt?.value);
   }, [fetchPurchaseOrders, selectedSupplierOpt, selectedBrandOpt]);
 
-  // Options for Supplier, Brand and PO Selects
+  // Options for Supplier, Brand and PO/PI Selects
   const supplierOptions = useMemo(() => [
     { value: null, label: "🏢 All Suppliers" },
     ...suppliersList.map((s) => ({ value: s.id, label: s.name })),
@@ -190,6 +198,23 @@ export default function BarcodeIndex() {
   ], [brandsList]);
 
   const poSelectOptions = useMemo(() => {
+    if (importDocType === "purchase_invoices") {
+      return purchaseInvoices.map((pi) => {
+        const dateStr = pi.posted_date ? ` — ${pi.posted_date}` : "";
+        const supStr = pi.supplier?.name ? ` — ${pi.supplier.name}` : "";
+        const invNum = pi.invoice_number ? ` [Inv: ${pi.invoice_number}]` : "";
+        const itemsCount = pi.items_count || pi.items?.length || 0;
+        const unitsCount =
+          pi.items_sum_quantity ||
+          (pi.items || []).reduce((acc, i) => acc + Number(i.quantity || i.unit_quantity || 0), 0);
+        return {
+          value: `pi_${pi.id}`,
+          docType: "purchase_invoice",
+          label: `${pi.posted_number || `GRN #${pi.id}`}${invNum}${dateStr}${supStr} (${itemsCount} items, ${unitsCount} units)`,
+          po: pi,
+        };
+      });
+    }
     return purchaseOrders.map((po) => {
       const dateStr = po.date ? ` — ${po.date}` : "";
       const supStr = po.supplier?.name ? ` — ${po.supplier.name}` : "";
@@ -198,14 +223,15 @@ export default function BarcodeIndex() {
         po.items_sum_ordered_quantity ||
         (po.items || []).reduce((acc, i) => acc + Number(i.ordered_quantity || 0), 0);
       return {
-        value: po.id,
+        value: `po_${po.id}`,
+        docType: "purchase_order",
         label: `${po.number || `PO #${po.id}`}${dateStr}${supStr} (${itemsCount} items, ${unitsCount} units)`,
         po,
       };
     });
-  }, [purchaseOrders]);
+  }, [importDocType, purchaseInvoices, purchaseOrders]);
 
-  // Select a PO and initialize its items for import
+  // Select a PO or Purchase Invoice and initialize its items for import
   const handleSelectPo = (opt) => {
     setSelectedPoOpt(opt);
     if (!opt || !opt.po) {
@@ -218,9 +244,9 @@ export default function BarcodeIndex() {
 
     const items = (po.items || []).map((it) => {
       const p = it.product || {};
-      const orderedUnits = Number(it.ordered_quantity) || 0;
+      const orderedUnits = Number(it.ordered_quantity ?? it.quantity ?? it.unit_quantity ?? 0) || 1;
       const packSize = Math.max(1, Number(it.pack_size || p.pack_size || 1));
-      const orderedPacks = Math.max(1, Math.round(orderedUnits / packSize));
+      const orderedPacks = Math.max(1, Number(it.pack_quantity) || Math.round(orderedUnits / packSize));
 
       return {
         id: it.id,
@@ -228,6 +254,8 @@ export default function BarcodeIndex() {
         product_name: p.name || `Product #${it.product_id}`,
         barcode: p.barcode || p.product_code || "",
         brand_name: p.brand?.name || "—",
+        batch_number: it.batch || "",
+        expiry_date: it.expiry ? String(it.expiry).slice(0, 10) : "",
         pack_size: packSize,
         ordered_units: orderedUnits,
         ordered_packs: orderedPacks,
@@ -251,7 +279,7 @@ export default function BarcodeIndex() {
     );
   };
 
-  // Import selected PO items into queue
+  // Import selected PO / GRN items into queue
   const handleImportPoToQueue = () => {
     const selected = poItemSelections.filter((item) => item.selected && item.import_quantity > 0);
     if (selected.length === 0) {
@@ -260,10 +288,11 @@ export default function BarcodeIndex() {
     }
 
     selected.forEach((item) => {
-      addProductToQueue(item.product, item.import_quantity);
+      addProductToQueue(item.product, item.import_quantity, item.batch_number || null, item.expiry_date || null);
     });
 
-    toast.success(`Imported ${selected.length} product(s) from ${selectedPoData?.number || "Purchase Order"} into queue`);
+    const docLabel = selectedPoData?.posted_number || selectedPoData?.number || "Document";
+    toast.success(`Imported ${selected.length} product(s) from ${docLabel} into queue`);
     setSelectedPoOpt(null);
     setSelectedPoData(null);
     setPoItemSelections([]);
@@ -386,13 +415,32 @@ export default function BarcodeIndex() {
     fetchTemplates();
   }, [fetchTemplates]);
 
-  // Handle URL query parameters (e.g. ?purchase_order_id=5 or ?product_id=12 or ?product_ids=1,2,3)
+  // Handle URL query parameters (e.g. ?purchase_invoice_id=3 or ?purchase_order_id=5 or ?product_id=12 or ?product_ids=1,2,3)
   useEffect(() => {
     const productId = searchParams.get("product_id");
     const productIds = searchParams.get("product_ids");
     const poId = searchParams.get("purchase_order_id");
+    const piId = searchParams.get("purchase_invoice_id");
 
-    if (poId) {
+    if (piId) {
+      axios
+        .get("/api/barcodes/purchase-invoices", { params: { id: piId } })
+        .then(({ data }) => {
+          const pi = data.purchase_invoice;
+          if (pi && pi.items && pi.items.length > 0) {
+            pi.items.forEach((it) => {
+              if (it.product) {
+                const qty = Number(it.quantity ?? it.unit_quantity) || 1;
+                addProductToQueue(it.product, qty, it.batch || null, it.expiry ? String(it.expiry).slice(0, 10) : null);
+              }
+            });
+            toast.success(`Loaded ${pi.items.length} product(s) from ${pi.posted_number || "Purchase Invoice"} into print queue`);
+          }
+        })
+        .catch(() => {
+          toast.error("Failed to load purchase invoice for barcode printing");
+        });
+    } else if (poId) {
       axios
         .get("/api/barcodes/purchase-orders", { params: { id: poId } })
         .then(({ data }) => {
@@ -466,11 +514,13 @@ export default function BarcodeIndex() {
   };
 
   // Add product to queue and fetch batch options + unassigned quantity
-  const addProductToQueue = async (product, initialQty = 1) => {
+  const addProductToQueue = async (product, initialQty = 1, preferredBatch = null, preferredExpiry = null) => {
     if (!product || !product.id) return;
 
-    // Check if already in queue
-    const existingIndex = printQueue.findIndex((item) => item.product_id === product.id);
+    // Check if already in queue with same batch
+    const existingIndex = printQueue.findIndex(
+      (item) => item.product_id === product.id && (!preferredBatch || item.batch_number === preferredBatch)
+    );
     if (existingIndex > -1) {
       setPrintQueue((prev) =>
         prev.map((item, idx) =>
@@ -496,12 +546,12 @@ export default function BarcodeIndex() {
       retail_price: Number(product.unit_sale_price) || 0,
       wholesale_price: Number(product.whole_sale_unit_price) || 0,
       stock: productStock,
-      selected_batch_type: "unassigned", // "batch" | "unassigned" | "custom"
-      selected_batch_id: null,
-      batch_number: "",
-      expiry_date: "",
-      custom_batch_number: "",
-      custom_expiry_date: "",
+      selected_batch_type: preferredBatch ? "custom" : "unassigned", // "batch" | "unassigned" | "custom"
+      selected_batch_id: preferredBatch ? "custom" : null,
+      batch_number: preferredBatch || "",
+      expiry_date: preferredExpiry || "",
+      custom_batch_number: preferredBatch || "",
+      custom_expiry_date: preferredExpiry || "",
       print_quantity: Math.max(1, initialQty || 1),
       batches: [],
       unassigned_quantity: productStock,
@@ -534,8 +584,14 @@ export default function BarcodeIndex() {
       }
 
       // Choose initial batch selection:
-      // Prefer first FEFO batch with stock, else first active batch, else unassigned
+      // 1) If preferredBatch was passed from a Purchase Invoice, match it in realBatches or keep it as custom!
+      // 2) Otherwise prefer first FEFO batch with stock, else first active batch, else unassigned
+      const matchedPreferred = preferredBatch
+        ? realBatches.find((b) => String(b.batch_number).toLowerCase() === String(preferredBatch).toLowerCase())
+        : null;
+
       const fefoBatch =
+        matchedPreferred ||
         realBatches.find((b) => b.is_fefo_recommended && Number(b.quantity) > 0) ||
         realBatches.find((b) => !b.is_expired && Number(b.quantity) > 0) ||
         realBatches[0];
@@ -545,7 +601,17 @@ export default function BarcodeIndex() {
       let initialBatchNo = "";
       let initialExp = "";
 
-      if (fefoBatch) {
+      if (matchedPreferred) {
+        initialType = "batch";
+        initialBatchId = matchedPreferred.id;
+        initialBatchNo = matchedPreferred.batch_number;
+        initialExp = matchedPreferred.expiry_date || preferredExpiry || "";
+      } else if (preferredBatch) {
+        initialType = "custom";
+        initialBatchId = "custom";
+        initialBatchNo = preferredBatch;
+        initialExp = preferredExpiry || "";
+      } else if (fefoBatch) {
         initialType = "batch";
         initialBatchId = fefoBatch.id;
         initialBatchNo = fefoBatch.batch_number;
@@ -755,6 +821,73 @@ export default function BarcodeIndex() {
     } catch (err) {
       const msg = err.response?.data?.message || "Failed to save template";
       toast.error(msg);
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
+  // Update active template in-place
+  const handleUpdateActiveTemplate = async () => {
+    if (!selectedTemplateId) return;
+    try {
+      setSavingTemplate(true);
+      const payload = {
+        name: layout.name || "Custom Label",
+        paper_type: layout.paper_type,
+        width_mm: layout.width_mm,
+        height_mm: layout.height_mm,
+        orientation: layout.orientation,
+        columns: layout.columns,
+        rows: layout.rows,
+        gap_x_mm: layout.gap_x_mm,
+        gap_y_mm: layout.gap_y_mm,
+        margin_top_mm: layout.margin_top_mm,
+        margin_left_mm: layout.margin_left_mm,
+        margin_right_mm: layout.margin_right_mm,
+        margin_bottom_mm: layout.margin_bottom_mm,
+        layout_options: layout.options,
+      };
+      await axios.put(`/api/barcodes/templates/${selectedTemplateId}`, payload);
+      toast.success("Template updated!");
+      await fetchTemplates();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to update template");
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
+  // Set active template as default
+  const handleSetDefaultTemplate = async () => {
+    if (!selectedTemplateId) return;
+    try {
+      setSavingTemplate(true);
+      await axios.put(`/api/barcodes/templates/${selectedTemplateId}`, { is_default: true });
+      toast.success("Set as default barcode template!");
+      await fetchTemplates();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to set default template");
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
+  // Delete active template
+  const handleDeleteActiveTemplate = async () => {
+    if (!selectedTemplateId) return;
+    if (templates.length <= 1) {
+      toast.error("Cannot delete the only remaining template");
+      return;
+    }
+    const activeTpl = templates.find((t) => t.id === selectedTemplateId);
+    if (!window.confirm(`Delete template "${activeTpl?.name || "this template"}"?`)) return;
+    try {
+      setSavingTemplate(true);
+      await axios.delete(`/api/barcodes/templates/${selectedTemplateId}`);
+      toast.success("Template deleted");
+      await fetchTemplates();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to delete template");
     } finally {
       setSavingTemplate(false);
     }
@@ -1204,9 +1337,48 @@ export default function BarcodeIndex() {
         {/* Preset Selector Banner */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-5 border-t border-slate-200/60 dark:border-slate-800/60 items-center">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Active Template Preset:
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Active Template Preset:
+              </label>
+              <div className="flex items-center gap-1">
+                {canSaveTemplate && selectedTemplateId && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleUpdateActiveTemplate}
+                      disabled={savingTemplate}
+                      className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition-colors cursor-pointer"
+                      title="Save changes to the currently selected template"
+                    >
+                      Update
+                    </button>
+                    {!templates.find((t) => t.id === selectedTemplateId)?.is_default && (
+                      <button
+                        type="button"
+                        onClick={handleSetDefaultTemplate}
+                        disabled={savingTemplate}
+                        className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-colors cursor-pointer"
+                        title="Make this template the default preset"
+                      >
+                        Set Default
+                      </button>
+                    )}
+                  </>
+                )}
+                {canDeleteTemplate && selectedTemplateId && templates.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteActiveTemplate}
+                    disabled={savingTemplate}
+                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800 transition-colors cursor-pointer"
+                    title="Delete selected template"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+            </div>
             <Select
               value={templateOptions.find((o) => o.value === selectedTemplateId)}
               onChange={(opt) => {
@@ -1351,7 +1523,7 @@ export default function BarcodeIndex() {
                 </div>
               </div>
 
-              {/* Find & Load Saved Purchase Orders Section */}
+              {/* Find & Load Saved Purchase Invoices (GRN) or Purchase Orders Section */}
               <div className="rounded-2xl border border-blue-200/80 dark:border-blue-900/40 bg-gradient-to-br from-blue-50/60 via-indigo-50/30 to-slate-50/60 dark:from-slate-900/80 dark:via-blue-950/20 dark:to-slate-900/80 p-4 shadow-xs space-y-3.5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center gap-2.5">
@@ -1360,19 +1532,63 @@ export default function BarcodeIndex() {
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                        <span>Find &amp; Load Saved Purchase Orders</span>
+                        <span>
+                          {importDocType === "purchase_invoices"
+                            ? "Load from Purchase Invoices (GRN with Batch & Expiry)"
+                            : "Load from Saved Purchase Orders"}
+                        </span>
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
-                          {purchaseOrders.length} Order{purchaseOrders.length === 1 ? "" : "s"}
+                          {importDocType === "purchase_invoices"
+                            ? `${purchaseInvoices.length} Invoice${purchaseInvoices.length === 1 ? "" : "s"}`
+                            : `${purchaseOrders.length} Order${purchaseOrders.length === 1 ? "" : "s"}`}
                         </span>
                       </h4>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Filter by brand and supplier to quickly load all ordered products and quantities into your print queue.
+                        {importDocType === "purchase_invoices"
+                          ? "Load received items with their exact GRN batch numbers, expiry dates, and quantities."
+                          : "Filter by brand and supplier to quickly load ordered products and quantities into your print queue."}
                       </p>
                     </div>
                   </div>
+
+                  {/* Document Source Switcher */}
+                  <div className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 bg-white/80 dark:bg-slate-800/80 self-start sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImportDocType("purchase_invoices");
+                        setSelectedPoOpt(null);
+                        setSelectedPoData(null);
+                        setPoItemSelections([]);
+                      }}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                        importDocType === "purchase_invoices"
+                          ? "bg-blue-600 text-white shadow-xs"
+                          : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                      }`}
+                    >
+                      Purchase Invoices (GRN)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImportDocType("purchase_orders");
+                        setSelectedPoOpt(null);
+                        setSelectedPoData(null);
+                        setPoItemSelections([]);
+                      }}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                        importDocType === "purchase_orders"
+                          ? "bg-blue-600 text-white shadow-xs"
+                          : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                      }`}
+                    >
+                      Purchase Orders
+                    </button>
+                  </div>
                 </div>
 
-                {/* Filters: Supplier, Brand, and Purchase Order */}
+                {/* Filters: Supplier, Brand, and Purchase Invoice / Order */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {/* Supplier Select */}
                   <div className="space-y-1">
@@ -1410,11 +1626,15 @@ export default function BarcodeIndex() {
                     />
                   </div>
 
-                  {/* Purchase Order Select */}
+                  {/* Purchase Invoice / Order Select */}
                   <div className="space-y-1">
                     <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
                       <ClipboardDocumentListIcon className="w-3.5 h-3.5 text-emerald-500" />
-                      <span>Select Purchase Order</span>
+                      <span>
+                        {importDocType === "purchase_invoices"
+                          ? "Select Purchase Invoice (GRN)"
+                          : "Select Purchase Order"}
+                      </span>
                     </label>
                     <Select
                       value={selectedPoOpt}
@@ -1425,14 +1645,16 @@ export default function BarcodeIndex() {
                       isSearchable
                       placeholder={
                         loadingPoList
-                          ? "Loading orders…"
+                          ? "Loading documents…"
                           : poSelectOptions.length === 0
-                          ? "No orders found"
-                          : "Choose an order to print…"
+                          ? "No documents found"
+                          : importDocType === "purchase_invoices"
+                          ? "Choose a purchase invoice…"
+                          : "Choose a purchase order…"
                       }
                       menuPortalTarget={typeof document !== "undefined" ? document.body : null}
                       menuPosition="fixed"
-                      noOptionsMessage={() => "No purchase orders match your filters"}
+                      noOptionsMessage={() => "No documents match your filters"}
                     />
                   </div>
                 </div>

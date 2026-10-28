@@ -214,6 +214,11 @@ public function index(Request $request)
         });
     }
 
+    if ($request->filled('per_page')) {
+        $perPage = max(1, min((int) $request->query('per_page', 25), 200));
+        return $query->paginate($perPage);
+    }
+
     return $query->get();
 }
 
@@ -221,7 +226,7 @@ public function index(Request $request)
     public function show(PurchaseReturn $purchaseReturn)
     {
         $this->authorize('view', $purchaseReturn);
-        return $purchaseReturn->load(['supplier', 'purchaseInvoice', 'items.product']);
+        return $purchaseReturn->load(['supplier', 'purchaseInvoice', 'items.product', 'account']);
     }
 
     public function store(Request $request)

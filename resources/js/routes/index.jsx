@@ -285,6 +285,16 @@ export default function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/purchase-returns/:id"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <PurchaseReturnsIndex />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
       {/* Sale Invoice */}
       <Route 
       path="sale-invoices"
@@ -403,6 +413,16 @@ export default function AppRoutes() {
         <ProtectedRoute>
           <DashboardLayout>
             <EditSaleReturn />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      <Route
+      path="sale-returns/:id"
+      element= {
+        <ProtectedRoute>
+          <DashboardLayout>
+            <IndexSaleReturn />
           </DashboardLayout>
         </ProtectedRoute>
       }

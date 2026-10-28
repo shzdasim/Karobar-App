@@ -16,7 +16,9 @@ use App\Models\SaleInvoiceItem;
 use App\Models\Supplier;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class ExpenseAndNetProfitTest extends TestCase
@@ -295,5 +297,105 @@ class ExpenseAndNetProfitTest extends TestCase
         $this->assertCount(1, $categories);
         $this->assertEquals('Tea & Refreshments (Kharcha)', $categories[0]['category_name']);
         $this->assertEquals(100.0, (float) $categories[0]['total_amount']);
+    }
+
+    public function test_can_upload_stream_replace_and_remove_expense_receipt()
+    {
+        Storage::fake('public');
+        $category = ExpenseCategory::where('code', 'utilities')->first();
+
+        $receiptPdf = UploadedFile::fake()->create('wapda-bill.pdf', 150, 'application/pdf');
+
+        $res = $this->actingAs($this->user)->post('/api/expenses', [
+            'expense_category_id' => $category->id,
+            'account_id'          => $this->bankAccount->id,
+            'amount'              => 12500,
+            'date'                => now()->toDateString(),
+            'payment_method'      => 'bank_transfer',
+            'payee'               => 'WAPDA',
+            'receipt'             => $receiptPdf,
+        ]);
+
+        $res->assertStatus(201);
+        $expenseId = $res->json('expense.id');
+        $receiptPath = $res->json('expense.receipt_path');
+
+        $this->assertNotEmpty($receiptPath);
+        $this->assertStringStartsWith('/storage/expense-receipts/', $res->json('expense.receipt_url'));
+        Storage::disk('public')->assertExists($receiptPath);
+
+        // Stream receipt via endpoint
+        $this->actingAs($this->user)
+            ->get("/api/expenses/{$expenseId}/receipt")
+            ->assertOk();
+
+        // Remove receipt on update
+        $updateRes = $this->actingAs($this->user)->putJson("/api/expenses/{$expenseId}", [
+            'expense_category_id' => $category->id,
+            'account_id'          => $this->bankAccount->id,
+            'amount'              => 12500,
+            'date'                => now()->toDateString(),
+            'payment_method'      => 'bank_transfer',
+            'payee'               => 'WAPDA',
+            'remove_receipt'      => true,
+        ]);
+
+        $updateRes->assertOk();
+        $this->assertNull($updateRes->json('expense.receipt_path'));
+        Storage::disk('public')->assertMissing($receiptPath);
+    }
+
+    public function test_recurring_expense_scheduler_generates_due_expenses_idempotently()
+    {
+        $category = ExpenseCategory::where('code', 'rent')->first();
+        $lastMonth = Carbon::today()->subMonthNoOverflow()->toDateString();
+        $expectedDueDate = Carbon::parse($lastMonth)->addMonthNoOverflow()->toDateString();
+
+        // 1. Create a monthly recurring rent expense dated 1 month ago
+        $res = $this->actingAs($this->user)->postJson('/api/expenses', [
+            'expense_category_id' => $category->id,
+            'account_id'          => $this->bankAccount->id,
+            'amount'              => 30000,
+            'date'                => $lastMonth,
+            'payment_method'      => 'bank_transfer',
+            'payee'               => 'Shop Landlord',
+            'description'         => 'Monthly shop rent',
+            'is_recurring'        => true,
+            'recurring_frequency' => 'monthly',
+        ]);
+
+        $res->assertStatus(201);
+        $initialExpenseId = $res->json('expense.id');
+        $this->assertTrue((bool) $res->json('expense.is_recurring'));
+        $this->assertSame('monthly', $res->json('expense.recurring_frequency'));
+        $this->assertSame($expectedDueDate, $res->json('expense.next_recurring_date'));
+        $this->assertEquals(70000.0, (float) $this->bankAccount->fresh()->current_balance);
+
+        // 2. Summary should show 1 active recurring expense and 1 due recurring expense
+        $sumBefore = $this->actingAs($this->user)->getJson('/api/expenses/summary')->assertOk();
+        $sumBefore->assertJsonPath('recurring_active_count', 1);
+        $sumBefore->assertJsonPath('recurring_due_count', 1);
+
+        // 3. Run the Artisan recurring expense scheduler
+        $this->artisan('expenses:process-recurring')->assertSuccessful();
+
+        // Old expense is marked is_recurring = false; new expense is created for expectedDueDate with is_recurring = true
+        $oldExpense = Expense::findOrFail($initialExpenseId);
+        $this->assertFalse((bool) $oldExpense->is_recurring);
+
+        $newExpense = Expense::where('id', '!=', $initialExpenseId)
+            ->where('expense_category_id', $category->id)
+            ->firstOrFail();
+
+        $this->assertTrue((bool) $newExpense->is_recurring);
+        $this->assertSame('monthly', $newExpense->recurring_frequency);
+        $this->assertSame($expectedDueDate, Carbon::parse($newExpense->date)->toDateString());
+        $this->assertEquals(40000.0, (float) $this->bankAccount->fresh()->current_balance);
+
+        // 4. Running the scheduler or API endpoint again on the same day creates 0 duplicates
+        $apiRun = $this->actingAs($this->user)->postJson('/api/expenses/process-recurring')->assertOk();
+        $apiRun->assertJsonPath('processed_count', 0);
+        $this->assertEquals(2, Expense::where('expense_category_id', $category->id)->count());
+        $this->assertEquals(40000.0, (float) $this->bankAccount->fresh()->current_balance);
     }
 }

@@ -1,6 +1,6 @@
 // src/pages/sale-returns/index.jsx
 import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import {
@@ -13,8 +13,15 @@ import {
   UserIcon,
   CalendarIcon,
   CurrencyDollarIcon,
+  EyeIcon,
+  XMarkIcon,
+  PrinterIcon,
+  ClockIcon,
+  ShareIcon,
 } from "@heroicons/react/24/solid";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
+import DocumentHistoryModal from "@/components/DocumentHistoryModal.jsx";
+import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 
 // Reusable components
 import {
@@ -59,7 +66,14 @@ export default function SaleReturnsIndex() {
   const [deletingReturn, setDeletingReturn] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Read-only View modal state
+  const [viewingReturn, setViewingReturn] = useState(null);
+  const [loadingView, setLoadingView] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+
   const navigate = useNavigate();
+  const { id: routeReturnId } = useParams();
 
   // AbortController for fetches
   const controllerRef = useRef(null);
@@ -134,9 +148,9 @@ export default function SaleReturnsIndex() {
     try {
       setLoading(true);
       const res = await axios.get("/api/sale-returns", { signal });
-      const data = Array.isArray(res.data) ? res.data : [];
+      const data = Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : []);
       setReturns(data);
-      setTotal(data.length);
+      setTotal(res.data?.total ?? data.length);
     } catch (e) {
       if (axios.isCancel?.(e)) return;
       const status = e?.response?.status;
@@ -247,7 +261,33 @@ export default function SaleReturnsIndex() {
   };
 
   // Check if has actions
-  const hasActions = can.update || can.delete;
+  const hasActions = can.view || can.update || can.delete;
+
+  const handleOpenView = useCallback(async (returnId) => {
+    if (!returnId) return;
+    setLoadingView(true);
+    try {
+      const { data } = await axios.get(`/api/sale-returns/${returnId}`);
+      setViewingReturn(data);
+    } catch {
+      toast.error("Failed to load sale return details");
+    } finally {
+      setLoadingView(false);
+    }
+  }, []);
+
+  const handleCloseView = useCallback(() => {
+    setViewingReturn(null);
+    if (routeReturnId) {
+      navigate("/sale-returns", { replace: true });
+    }
+  }, [routeReturnId, navigate]);
+
+  useEffect(() => {
+    if (routeReturnId && !permsLoading && can.view) {
+      handleOpenView(routeReturnId);
+    }
+  }, [routeReturnId, permsLoading, can.view, handleOpenView]);
 
   if (permsLoading) return <div className="p-6">Loading…</div>;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view sale returns.</div>;
@@ -438,16 +478,19 @@ export default function SaleReturnsIndex() {
                       {start + idx + 1}
                     </td>
                     <td className="px-3 py-3">
-                      <span 
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium"
+                      <button
+                        type="button"
+                        onClick={() => handleOpenView(ret.id)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium hover:opacity-85 transition-opacity cursor-pointer"
                         style={{
                           backgroundColor: themeColors.secondaryLight,
                           color: themeColors.secondary
                         }}
+                        title="View Sale Return Details"
                       >
                         <DocumentTextIcon className="w-3.5 h-3.5" />
                         {ret.posted_number || "-"}
-                      </span>
+                      </button>
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
@@ -481,6 +524,19 @@ export default function SaleReturnsIndex() {
                     {hasActions && (
                       <td className="px-3 py-3">
                         <div className="flex items-center gap-1.5 justify-center">
+                          {/* View Action */}
+                          <Guard when={can.view}>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenView(ret.id)}
+                              className="products-row-action"
+                              title="View"
+                              aria-label="View sale return"
+                            >
+                              <EyeIcon className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
+                            </button>
+                          </Guard>
+
                           {/* Edit Action */}
                           <Guard when={can.update}>
                             <Link
@@ -586,6 +642,184 @@ export default function SaleReturnsIndex() {
         </div>
       </div>
 
+      {/* Read-Only Sale Return View Modal */}
+      {(viewingReturn || loadingView) && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleCloseView();
+          }}
+        >
+          <GlassCard
+            className={`w-full max-w-4xl border shadow-2xl rounded-2xl overflow-hidden my-8 ${
+              isDark ? "bg-slate-900 border-slate-700 text-slate-100" : "bg-white border-gray-200 text-gray-900"
+            }`}
+          >
+            <div
+              className={`flex items-center justify-between px-6 py-4 border-b ${
+                isDark ? "border-slate-700 bg-slate-800/60" : "border-gray-200 bg-gray-50"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <DocumentTextIcon className="w-5 h-5" style={{ color: themeColors.secondary }} />
+                <div>
+                  <h3 className="font-bold text-base">
+                    Sale Return Details — {viewingReturn?.posted_number || "Loading…"}
+                  </h3>
+                  {viewingReturn && (
+                    <p className={`text-xs ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+                      Date: {formatDate(viewingReturn.date)} · Customer:{" "}
+                      <span className="font-semibold">{viewingReturn.customer?.name || "N/A"}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {viewingReturn && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setHistoryOpen(true)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                        isDark ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-gray-300 text-gray-700 hover:bg-gray-100"
+                      }`}
+                    >
+                      <ClockIcon className="w-3.5 h-3.5" />
+                      History
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => window.print()}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                        isDark ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-gray-300 text-gray-700 hover:bg-gray-100"
+                      }`}
+                    >
+                      <PrinterIcon className="w-3.5 h-3.5" />
+                      Print
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShareOpen(true)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                        isDark ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-gray-300 text-gray-700 hover:bg-gray-100"
+                      }`}
+                    >
+                      <ShareIcon className="w-3.5 h-3.5" />
+                      PDF / Share
+                    </button>
+                    {can.update && (
+                      <Link
+                        to={`/sale-returns/${viewingReturn.id}/edit`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                        style={{ backgroundColor: themeColors.primary }}
+                      >
+                        <PencilSquareIcon className="w-3.5 h-3.5" />
+                        Edit
+                      </Link>
+                    )}
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={handleCloseView}
+                  className={`p-1.5 rounded-lg transition-colors ${
+                    isDark ? "hover:bg-slate-700 text-slate-400" : "hover:bg-gray-200 text-gray-500"
+                  }`}
+                >
+                  <XMarkIcon className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {loadingView || !viewingReturn ? (
+              <div className="py-16 text-center text-sm text-gray-400">
+                <ArrowPathIcon className="w-6 h-6 mx-auto animate-spin mb-2" />
+                Loading sale return details…
+              </div>
+            ) : (
+              <div className="p-6 space-y-5">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                  <div className={`p-3 rounded-xl border ${isDark ? "bg-slate-800/50 border-slate-700" : "bg-gray-50 border-gray-200"}`}>
+                    <span className="block text-gray-400 uppercase tracking-wider text-[10px]">Customer</span>
+                    <span className="font-semibold text-sm">{viewingReturn.customer?.name || "N/A"}</span>
+                  </div>
+                  <div className={`p-3 rounded-xl border ${isDark ? "bg-slate-800/50 border-slate-700" : "bg-gray-50 border-gray-200"}`}>
+                    <span className="block text-gray-400 uppercase tracking-wider text-[10px]">Original Sale Invoice</span>
+                    <span className="font-semibold text-sm font-mono">
+                      {viewingReturn.sale_invoice?.posted_number || viewingReturn.saleInvoice?.posted_number || "Standalone Return"}
+                    </span>
+                  </div>
+                  <div className={`p-3 rounded-xl border ${isDark ? "bg-slate-800/50 border-slate-700" : "bg-gray-50 border-gray-200"}`}>
+                    <span className="block text-gray-400 uppercase tracking-wider text-[10px]">Settlement Mode</span>
+                    <span className="font-semibold text-sm capitalize">
+                      {(viewingReturn.settlement_mode || "cash_refund").replace("_", " ")}
+                    </span>
+                  </div>
+                  <div className={`p-3 rounded-xl border ${isDark ? "bg-slate-800/50 border-slate-700" : "bg-gray-50 border-gray-200"}`}>
+                    <span className="block text-gray-400 uppercase tracking-wider text-[10px]">Remarks</span>
+                    <span className="font-medium text-sm">{viewingReturn.remarks || "—"}</span>
+                  </div>
+                </div>
+
+                <div className={`rounded-xl border overflow-hidden ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+                  <table className="w-full text-xs text-left">
+                    <thead className={isDark ? "bg-slate-800 text-slate-300 border-b border-slate-700" : "bg-gray-50 text-gray-600 border-b border-gray-200"}>
+                      <tr>
+                        <th className="px-3 py-2.5 font-semibold">#</th>
+                        <th className="px-3 py-2.5 font-semibold">Product</th>
+                        <th className="px-3 py-2.5 font-semibold">Batch</th>
+                        <th className="px-3 py-2.5 font-semibold">Expiry</th>
+                        <th className="px-3 py-2.5 font-semibold text-right">Sold Qty</th>
+                        <th className="px-3 py-2.5 font-semibold text-right">Return Qty</th>
+                        <th className="px-3 py-2.5 font-semibold text-right">Unit Price</th>
+                        <th className="px-3 py-2.5 font-semibold text-right">Disc %</th>
+                        <th className="px-3 py-2.5 font-semibold text-right">Sub Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className={`divide-y ${isDark ? "divide-slate-700/60" : "divide-gray-100"}`}>
+                      {(viewingReturn.items || []).map((it, i) => (
+                        <tr key={it.id || i}>
+                          <td className="px-3 py-2.5">{i + 1}</td>
+                          <td className="px-3 py-2.5 font-medium">{it.product?.name || `#${it.product_id}`}</td>
+                          <td className="px-3 py-2.5 font-mono">{it.batch_number || "—"}</td>
+                          <td className="px-3 py-2.5">{it.expiry ? formatDate(it.expiry) : "—"}</td>
+                          <td className="px-3 py-2.5 text-right font-mono">{it.unit_sale_quantity ?? 0}</td>
+                          <td className="px-3 py-2.5 text-right font-mono font-bold">{it.unit_return_quantity ?? 0}</td>
+                          <td className="px-3 py-2.5 text-right font-mono">{Number(it.unit_sale_price || 0).toLocaleString()}</td>
+                          <td className="px-3 py-2.5 text-right font-mono">{Number(it.item_discount_percentage || 0)}%</td>
+                          <td className="px-3 py-2.5 text-right font-mono font-semibold">{Number(it.sub_total || 0).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-6 pt-2 text-xs">
+                  <div>
+                    <span className="text-gray-400 block uppercase">Gross Total</span>
+                    <span className="font-mono font-semibold text-sm">{Number(viewingReturn.gross_total || 0).toLocaleString()}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block uppercase">Discount</span>
+                    <span className="font-mono font-semibold text-sm">{Number(viewingReturn.discount_amount || 0).toLocaleString()}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block uppercase">Tax</span>
+                    <span className="font-mono font-semibold text-sm">{Number(viewingReturn.tax_amount || 0).toLocaleString()}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block uppercase">Net Return Total</span>
+                    <span className="font-mono font-bold text-base" style={{ color: themeColors.primary }}>
+                      {Number(viewingReturn.total || 0).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </GlassCard>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal */}
       <DeleteConfirmationModal
         isOpen={deleteModalOpen}
@@ -599,6 +833,21 @@ export default function SaleReturnsIndex() {
           red: btnDanger.className,
           glass: btnGlass.className
         }}
+      />
+
+      <DocumentHistoryModal
+        isOpen={historyOpen && Boolean(viewingReturn?.id)}
+        onClose={() => setHistoryOpen(false)}
+        entityType="sale_return"
+        entityId={viewingReturn?.id}
+        documentNumber={viewingReturn?.posted_number || ""}
+      />
+
+      <ShareDocumentModal
+        isOpen={shareOpen && Boolean(viewingReturn?.id)}
+        onClose={() => setShareOpen(false)}
+        documentType="sale_return"
+        documentId={viewingReturn?.id}
       />
     </div>
   );

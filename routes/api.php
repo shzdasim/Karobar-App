@@ -101,6 +101,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::post('/preferences/{key}', [UserPreferenceController::class, 'store']);
 
     // Users
+    Route::post('/users/bulk-action', [UserController::class, 'bulkAction']);
     Route::resource('users', UserController::class);
     Route::put('/users/{user}/roles', [UserController::class, 'syncRoles']);
     Route::put('/users/{user}/permissions', [UserController::class, 'syncPermissions']);
@@ -181,6 +182,10 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
 
     // Payments & Allocations (Project 3)
     Route::get('payments/open-invoices',          [PaymentController::class, 'openInvoices']);
+    Route::get('payments/available-credits',      [PaymentController::class, 'availableCredits']);
+    Route::post('payments/apply-credits',         [PaymentController::class, 'applyCredits']);
+    Route::post('payments/{id}/allocate',         [PaymentController::class, 'allocate']);
+    Route::post('payments/{id}/cheque-status',    [PaymentController::class, 'updateChequeStatus']);
     Route::post('payments/{id}/reverse',          [PaymentController::class, 'reverse']);
     Route::apiResource('payments',                PaymentController::class)->only(['index', 'show', 'store']);
 
@@ -198,12 +203,15 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::post('accounts/seed-defaults',         [AccountController::class, 'seedDefaults']);
     Route::post('accounts',                       [AccountController::class, 'store']);
     Route::put('accounts/{id}',                   [AccountController::class, 'update']);
+    Route::delete('accounts/{id}',                [AccountController::class, 'destroy']);
     Route::get('accounts/{id}/transactions',      [AccountController::class, 'transactions']);
     Route::post('accounts/transfer',              [AccountController::class, 'transfer']);
     Route::post('accounts/{id}/adjust',           [AccountController::class, 'adjust']);
 
     // Operating Expenses & Categories
     Route::get('expenses/summary',                [ExpenseController::class, 'summary']);
+    Route::post('expenses/process-recurring',     [ExpenseController::class, 'processRecurring']);
+    Route::get('expenses/{expense}/receipt',      [ExpenseController::class, 'receipt']);
     Route::apiResource('expenses',                ExpenseController::class);
     Route::apiResource('expense-categories',      ExpenseCategoryController::class);
 
@@ -224,6 +232,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/dashboard/near-expiry/filters',  [DashboardController::class, 'nearExpiryFilters']);
     Route::get('/dashboard/invoice-counts',       [DashboardController::class, 'invoiceCounts']);
     Route::get('/dashboard/sales-by-brands',      [DashboardController::class, 'salesByBrands']);
+    Route::get('/dashboard/sales-by-category',    [DashboardController::class, 'salesByCategory']);
     Route::get('/dashboard/top-products',         [DashboardController::class, 'topProducts']);
     Route::get('/dashboard/kpi-metrics',          [DashboardController::class, 'kpiMetrics']);
 
@@ -232,6 +241,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/notifications/expiry-alerts',    [BatchExpiryController::class, 'expiryAlerts']);
     Route::post('/notifications/dismiss',         [NotificationController::class, 'dismiss']);
     Route::post('/notifications/dismiss-all',     [NotificationController::class, 'dismissAll']);
+    Route::post('/notifications/ack-demand',      [NotificationController::class, 'ackDemand']);
 
     // Batch Expiry Tracking & Warning System
     Route::get('/batch-expiry',                           [BatchExpiryController::class, 'index']);
@@ -260,12 +270,19 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/reports/near-expiry-product',     [ReportsController::class, 'nearExpiryProduct']);
     Route::get('/reports/near-expiry-product/pdf', [ReportsController::class, 'nearExpiryProductPdf']);
     Route::get('/reports/purchase-returns',        [ReportsController::class, 'purchaseReturns']);
+    Route::get('/reports/purchase-returns/pdf',    [ReportsController::class, 'purchaseReturnsPdf']);
     Route::get('/reports/sale-returns',            [ReportsController::class, 'saleReturns']);
+    Route::get('/reports/sale-returns/pdf',        [ReportsController::class, 'saleReturnsPdf']);
     Route::get('/reports/purchase-summary',        [ReportsController::class, 'purchaseSummary']);
+    Route::get('/reports/purchase-summary/pdf',    [ReportsController::class, 'purchaseSummaryPdf']);
     Route::get('/reports/outstanding-aging',       [ReportsController::class, 'outstandingAging']);
+    Route::get('/reports/outstanding-aging/pdf',   [ReportsController::class, 'outstandingAgingPdf']);
     Route::get('/reports/overdue-work-queue',      [ReportsController::class, 'overdueWorkQueue']);
+    Route::get('/reports/overdue-work-queue/pdf',  [ReportsController::class, 'overdueWorkQueuePdf']);
     Route::get('/reports/reorder',                 [ReportsController::class, 'reorderReport']);
+    Route::get('/reports/reorder/pdf',             [ReportsController::class, 'reorderReportPdf']);
     Route::get('/reports/net-profit',              [ReportsController::class, 'netProfit']);
+    Route::get('/reports/net-profit/pdf',          [ReportsController::class, 'netProfitPdf']);
     Route::put('/sale-invoices/{saleInvoice}/meta',[SaleInvoiceController::class, 'updateMeta']);
 
 
@@ -324,8 +341,46 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
         if (!$user || (!$user->hasRole(['Admin', 'admin', 'super-admin']) && !$user->can('customer.view') && !$user->can('sale-invoice.create'))) {
             abort(403, 'This action is unauthorized.');
         }
-        $prices = \App\Models\CustomerWholeSalePrice::where('customer_id', $customerId)->get();
+        $prices = \App\Models\CustomerWholeSalePrice::with('product:id,name,product_code,pack_size,whole_sale_pack_price,whole_sale_unit_price,unit_sale_price,pack_sale_price')
+            ->where('customer_id', $customerId)
+            ->orderByDesc('id')
+            ->get();
         return response()->json($prices);
+    });
+    Route::post('/customers/{customerId}/whole-sale-prices', function (Request $request, $customerId) {
+        $user = $request->user();
+        if (!$user || (!$user->hasRole(['Admin', 'admin', 'super-admin']) && !$user->can('customer.update') && !$user->can('customer.create'))) {
+            abort(403, 'This action is unauthorized.');
+        }
+        \App\Models\Customer::findOrFail($customerId);
+        $validated = $request->validate([
+            'product_id' => 'required|integer|exists:products,id',
+            'pack_price' => 'required|numeric|min:0',
+        ]);
+        $price = \App\Models\CustomerWholeSalePrice::updateOrCreate(
+            [
+                'customer_id' => (int) $customerId,
+                'product_id'  => (int) $validated['product_id'],
+            ],
+            [
+                'pack_price'  => round((float) $validated['pack_price'], 2),
+            ]
+        );
+        return response()->json(
+            $price->load('product:id,name,product_code,pack_size,whole_sale_pack_price,whole_sale_unit_price,unit_sale_price,pack_sale_price'),
+            201
+        );
+    });
+    Route::delete('/customers/{customerId}/whole-sale-prices/{priceId}', function (Request $request, $customerId, $priceId) {
+        $user = $request->user();
+        if (!$user || (!$user->hasRole(['Admin', 'admin', 'super-admin']) && !$user->can('customer.update') && !$user->can('customer.delete'))) {
+            abort(403, 'This action is unauthorized.');
+        }
+        $price = \App\Models\CustomerWholeSalePrice::where('customer_id', $customerId)
+            ->where('id', $priceId)
+            ->firstOrFail();
+        $price->delete();
+        return response()->json(['message' => 'Custom wholesale price removed']);
     });
 
     // Product import
@@ -365,6 +420,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::delete('/barcodes/templates/{id}',      [\App\Http\Controllers\BarcodeController::class, 'deleteTemplate']);
     Route::get('/barcodes/products-search',        [\App\Http\Controllers\BarcodeController::class, 'searchProducts']);
     Route::get('/barcodes/purchase-orders',        [\App\Http\Controllers\BarcodeController::class, 'getPurchaseOrders']);
+    Route::get('/barcodes/purchase-invoices',      [\App\Http\Controllers\BarcodeController::class, 'getPurchaseInvoices']);
     Route::get('/barcodes/scan',                   [\App\Http\Controllers\BarcodeController::class, 'scanProduct']);
 
     // -------------------------------------------------------------------------
@@ -380,6 +436,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::post('/stocktake-sessions/{id}/finalize',    [\App\Http\Controllers\StocktakeController::class, 'finalize']);
     Route::patch('/stocktake-sessions/{id}/cancel',     [\App\Http\Controllers\StocktakeController::class, 'cancel']);
     Route::get('/stocktake-sessions/{id}/items',        [\App\Http\Controllers\StocktakeController::class, 'items']);
+    Route::post('/stocktake-sessions/{id}/items',       [\App\Http\Controllers\StocktakeController::class, 'addItem']);
     Route::patch('/stocktake-items/{item}',             [\App\Http\Controllers\StocktakeController::class, 'recordCount']);
 
     // -------------------------------------------------------------------------

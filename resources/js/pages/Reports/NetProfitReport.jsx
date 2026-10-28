@@ -105,6 +105,33 @@ export default function NetProfitReport() {
     window.print();
   }
 
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  async function exportPdf() {
+    if (!report) return;
+    setExportingPdf(true);
+    try {
+      const res = await axios.get("/api/reports/net-profit/pdf", {
+        params: { from, to, download: 1 },
+        responseType: "blob",
+      });
+      const blob = new Blob([res.data], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `profit-and-loss-${from}-to-${to}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast.success("Downloaded Profit & Loss PDF");
+    } catch (err) {
+      toast.error("Failed to generate P&L PDF");
+    } finally {
+      setExportingPdf(false);
+    }
+  }
+
   function exportCsv() {
     if (!report) return;
     const kpis = report.kpis;
@@ -188,6 +215,15 @@ export default function NetProfitReport() {
               >
                 <ArrowDownTrayIcon className="w-4 h-4 text-emerald-500" />
                 <span>Export CSV</span>
+              </button>
+              <button
+                onClick={exportPdf}
+                disabled={!report || exportingPdf}
+                className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold theme-btn-secondary ${btnSecondary.className} disabled:opacity-50`}
+                style={btnSecondary.style}
+              >
+                <ArrowDownTrayIcon className="w-4 h-4 text-blue-500" />
+                <span>{exportingPdf ? "Building PDF…" : "Export PDF"}</span>
               </button>
               <button
                 onClick={handlePrint}

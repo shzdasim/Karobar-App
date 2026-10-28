@@ -18,7 +18,7 @@ import {
 const fmtNumber = (v) =>
   Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-export default function NotificationCenter({ open, onClose }) {
+export default function NotificationCenter({ open, onClose, initialTab = null }) {
   const navigate = useNavigate();
   const panelRef = useRef(null);
   const [stockError, setStockError] = useState("");
@@ -51,6 +51,12 @@ export default function NotificationCenter({ open, onClose }) {
 
   // User demand tab state
   const [tab, setTab] = useState("low-stock");
+
+  useEffect(() => {
+    if (open && initialTab && ["low-stock", "demands", "expiry"].includes(initialTab)) {
+      setTab(initialTab);
+    }
+  }, [open, initialTab]);
   const [demands, setDemands] = useState([]);
   const [demandCount, setDemandCount] = useState(0);
   const [demandsLoading, setDemandsLoading] = useState(false);
@@ -287,13 +293,59 @@ export default function NotificationCenter({ open, onClose }) {
             ) : (
               <ul className="activity-list">
                 {demands.map((d) => (
-                  <li key={d.id}>
-                    <button type="button" onClick={goToDemands} className="activity-card activity-demand-card">
+                  <li key={d.id} className="activity-card activity-demand-card">
+                    <button type="button" onClick={goToDemands} className="text-left w-full">
                       <span className="activity-card-topline"><span className="activity-status"><HandRaisedIcon className="h-4 w-4" aria-hidden="true" />Product request</span><ArrowRightIcon className="h-4 w-4 activity-muted" aria-hidden="true" /></span>
                       <h3>{d.requested_name || d.product?.name || "Product demand"}</h3>
                       <p className="activity-muted">{d.customer?.name || d.customer_name || "Walk-in customer"}</p>
+                      {d.notes && (
+                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 line-clamp-2">{d.notes}</p>
+                      )}
                       <div className="activity-card-meta"><span>{d.requested_quantity || d.quantity_requested || 0} unit(s) requested</span><span className="activity-muted">{d.created_at ? new Date(d.created_at).toLocaleDateString() : ""}</span></div>
                     </button>
+                    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+                      <button
+                        type="button"
+                        disabled={dismissBusy}
+                        onClick={async () => {
+                          try {
+                            setDismissBusy(true);
+                            await axios.put(`/api/user-demands/${d.id}`, { status: "ordered" });
+                            setDemands((prev) => prev.filter((item) => item.id !== d.id));
+                            setDemandCount((prev) => Math.max(0, prev - 1));
+                            notifyCountChanged();
+                          } catch {
+                            setActionError("Could not update demand status.");
+                          } finally {
+                            setDismissBusy(false);
+                          }
+                        }}
+                        className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 cursor-pointer"
+                      >
+                        Mark Ordered
+                      </button>
+                      <span className="text-slate-300 dark:text-slate-600">·</span>
+                      <button
+                        type="button"
+                        disabled={dismissBusy}
+                        onClick={async () => {
+                          try {
+                            setDismissBusy(true);
+                            await axios.put(`/api/user-demands/${d.id}`, { status: "fulfilled" });
+                            setDemands((prev) => prev.filter((item) => item.id !== d.id));
+                            setDemandCount((prev) => Math.max(0, prev - 1));
+                            notifyCountChanged();
+                          } catch {
+                            setActionError("Could not update demand status.");
+                          } finally {
+                            setDismissBusy(false);
+                          }
+                        }}
+                        className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 cursor-pointer"
+                      >
+                        Mark Fulfilled
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>

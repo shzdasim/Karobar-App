@@ -189,6 +189,27 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
   // Supplier search modal state
   const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
+  const [supplierCreditSummary, setSupplierCreditSummary] = useState(null);
+
+  useEffect(() => {
+    const supId = form.supplier_id || selectedSupplier?.id;
+    if (!supId) {
+      setSupplierCreditSummary(null);
+      return;
+    }
+    let cancelled = false;
+    axios
+      .get(`/api/suppliers/${supId}/credit-summary`)
+      .then((res) => {
+        if (!cancelled) setSupplierCreditSummary(res.data || null);
+      })
+      .catch(() => {
+        if (!cancelled) setSupplierCreditSummary(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.supplier_id, selectedSupplier?.id]);
 
   const isDraftingEnabled = !invoiceId && !form.purchase_order_id && !initialData?.purchase_order_id;
 
@@ -1644,26 +1665,54 @@ const contRect = container.getBoundingClientRect();
             </div>
           </div>
 
-          {form.invoice_type === "credit" && (
+          {(form.invoice_type === "credit" || supplierCreditSummary?.is_limit_exceeded || Number(supplierCreditSummary?.total_overdue || 0) > 0) && (
             <div className="mt-2 py-1.5 px-3 rounded-md bg-blue-50/90 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 flex flex-wrap items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-3 flex-wrap">
                 <span className="font-semibold text-blue-900 dark:text-blue-200">
-                  Credit Terms: <strong>{selectedSupplier?.credit_days ? `${selectedSupplier.credit_days} days` : 'Immediate'}</strong>
+                  Credit Terms: <strong>{(supplierCreditSummary?.credit_days ?? selectedSupplier?.credit_days) ? `${supplierCreditSummary?.credit_days ?? selectedSupplier?.credit_days} days` : 'Immediate'}</strong>
                 </span>
                 <span className="text-gray-600 dark:text-gray-300">
-                  Credit Limit: <strong>{Number(selectedSupplier?.credit_limit) > 0 ? `Rs. ${Number(selectedSupplier.credit_limit).toLocaleString()}` : 'Unlimited'}</strong>
+                  Credit Limit: <strong>{Number(supplierCreditSummary?.credit_limit ?? selectedSupplier?.credit_limit) > 0 ? `Rs. ${Number(supplierCreditSummary?.credit_limit ?? selectedSupplier?.credit_limit).toLocaleString()}` : 'Unlimited'}</strong>
                 </span>
+                {supplierCreditSummary && (
+                  <>
+                    <span className="text-gray-600 dark:text-gray-300">
+                      Current Payable: <strong className="font-mono">Rs. {Number(supplierCreditSummary.current_balance || 0).toLocaleString()}</strong>
+                    </span>
+                    {supplierCreditSummary.available_credit !== null && supplierCreditSummary.available_credit !== undefined && (
+                      <span className="text-emerald-700 dark:text-emerald-400">
+                        Available Credit: <strong className="font-mono">Rs. {Number(supplierCreditSummary.available_credit).toLocaleString()}</strong>
+                      </span>
+                    )}
+                    {Number(supplierCreditSummary.total_overdue || 0) > 0 && (
+                      <span className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 font-semibold">
+                        Overdue: Rs. {Number(supplierCreditSummary.total_overdue).toLocaleString()} ({supplierCreditSummary.overdue_invoices_count} bill{supplierCreditSummary.overdue_invoices_count === 1 ? "" : "s"})
+                      </span>
+                    )}
+                    {(supplierCreditSummary.is_limit_exceeded ||
+                      (Number(supplierCreditSummary.credit_limit || 0) > 0 &&
+                        Number(supplierCreditSummary.current_balance || 0) +
+                          Math.max(0, Number(form.total_amount || 0) - Number(form.total_paid || 0)) >
+                          Number(supplierCreditSummary.credit_limit))) && (
+                      <span className="px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 font-bold">
+                        Credit Limit Exceeded
+                      </span>
+                    )}
+                  </>
+                )}
               </div>
-              <div className="flex items-center gap-2">
-                <label className="text-[10px] font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Due Date:</label>
-                <input
-                  type="date"
-                  name="due_date"
-                  value={form.due_date || ""}
-                  onChange={handleChange}
-                  className="h-6 px-1.5 text-xs rounded border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 font-mono"
-                />
-              </div>
+              {form.invoice_type === "credit" && (
+                <div className="flex items-center gap-2">
+                  <label className="text-[10px] font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Due Date:</label>
+                  <input
+                    type="date"
+                    name="due_date"
+                    value={form.due_date || ""}
+                    onChange={handleChange}
+                    className="h-6 px-1.5 text-xs rounded border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 font-mono"
+                  />
+                </div>
+              )}
             </div>
           )}
 

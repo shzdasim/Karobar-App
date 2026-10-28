@@ -374,4 +374,81 @@ class PaymentAndAllocationTest extends TestCase
         $this->assertEquals('INV-OPEN-1', $items[0]['posted_number']);
         $this->assertEquals(600.00, $items[0]['due']);
     }
+
+    public function test_unapplied_payment_credit_can_be_allocated_later_to_open_invoices(): void
+    {
+        $customer = Customer::create(['name' => 'Later Allocation Customer']);
+
+        // 1. Record an unallocated advance payment of Rs. 1,500
+        $payRes = $this->postJson('/api/payments', [
+            'party_type'     => 'customer',
+            'party_id'       => $customer->id,
+            'payment_date'   => '2026-10-20',
+            'amount'         => 1500.00,
+            'payment_method' => 'cash',
+            'allocations'    => [],
+        ])->assertStatus(201);
+
+        $paymentId = $payRes->json('payment.id');
+        $this->assertEquals(0.00, (float) $payRes->json('payment.allocated_amount'));
+        $this->assertEquals(1500.00, (float) $payRes->json('payment.unapplied_amount'));
+
+        // 2. Later, two credit SaleInvoices are posted
+        $inv1 = SaleInvoice::create([
+            'user_id'       => $this->user->id,
+            'customer_id'   => $customer->id,
+            'invoice_type'  => 'credit',
+            'posted_number' => 'INV-LATER-1',
+            'date'          => '2026-10-24',
+            'gross_amount'  => 900.00,
+            'total'         => 900.00,
+            'total_receive' => 0.00,
+            'status'        => 'posted',
+        ]);
+
+        $inv2 = SaleInvoice::create([
+            'user_id'       => $this->user->id,
+            'customer_id'   => $customer->id,
+            'invoice_type'  => 'credit',
+            'posted_number' => 'INV-LATER-2',
+            'date'          => '2026-10-25',
+            'gross_amount'  => 800.00,
+            'total'         => 800.00,
+            'total_receive' => 0.00,
+            'status'        => 'posted',
+        ]);
+
+        // 3. Allocate Rs. 900 to INV-LATER-1 via POST /api/payments/{id}/allocate
+        $allocRes = $this->postJson("/api/payments/{$paymentId}/allocate", [
+            'allocations' => [
+                ['invoice_id' => $inv1->id, 'amount' => 900.00],
+            ],
+        ])->assertOk();
+
+        $this->assertEquals(900.00, (float) $allocRes->json('payment.allocated_amount'));
+        $this->assertEquals(600.00, (float) $allocRes->json('payment.unapplied_amount'));
+        $this->assertEquals(900.00, (float) $inv1->fresh()->total_receive);
+
+        // 4. Check available credits endpoint shows remaining Rs. 600
+        $availRes = $this->getJson("/api/payments/available-credits?party_type=customer&party_id={$customer->id}")
+            ->assertOk();
+        $this->assertEquals(600.00, (float) $availRes->json('total_unapplied'));
+        $this->assertCount(1, $availRes->json('credits'));
+
+        // 5. Apply remaining Rs. 600 to INV-LATER-2 via POST /api/payments/apply-credits
+        $applyRes = $this->postJson('/api/payments/apply-credits', [
+            'party_type'  => 'customer',
+            'party_id'    => $customer->id,
+            'allocations' => [
+                ['invoice_id' => $inv2->id, 'amount' => 600.00],
+            ],
+        ])->assertOk();
+
+        $this->assertEquals(600.00, (float) $applyRes->json('allocated_total'));
+        $this->assertEquals(600.00, (float) $inv2->fresh()->total_receive);
+
+        $paymentFresh = Payment::findOrFail($paymentId);
+        $this->assertEquals(1500.00, (float) $paymentFresh->allocated_amount);
+        $this->assertEquals(0.00, (float) $paymentFresh->unapplied_amount);
+    }
 }

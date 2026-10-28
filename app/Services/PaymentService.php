@@ -7,11 +7,14 @@ use App\Models\CustomerLedger;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Models\PurchaseInvoice;
+use App\Models\PurchaseReturn;
 use App\Models\SaleInvoice;
+use App\Models\SaleReturn;
 use App\Models\Supplier;
 use App\Models\SupplierLedger;
 use App\Models\User;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
@@ -118,8 +121,21 @@ class PaymentService
 
             $unapplied = round(max($amount - $totalAllocated, 0), 2);
             $paymentNumber = $this->generatePaymentNumber('customer');
+            $payMethod = $data['payment_method'] ?? 'cash';
+            $isCheque = $payMethod === 'cheque';
+            $chequeDate = !empty($data['cheque_date']) ? $data['cheque_date'] : null;
+            $chequeStatus = null;
+            if ($isCheque) {
+                if (!empty($data['cheque_status'])) {
+                    $chequeStatus = $data['cheque_status'];
+                } elseif ($chequeDate && Carbon::parse($chequeDate)->gt(Carbon::today())) {
+                    $chequeStatus = 'pending';
+                } else {
+                    $chequeStatus = 'cleared';
+                }
+            }
 
-            $payment = Payment::create([
+            $createPayload = [
                 'payment_number'   => $paymentNumber,
                 'party_type'       => 'customer',
                 'party_id'         => $customer->id,
@@ -127,13 +143,23 @@ class PaymentService
                 'amount'           => $amount,
                 'allocated_amount' => $totalAllocated,
                 'unapplied_amount' => $unapplied,
-                'payment_method'   => $data['payment_method'] ?? 'cash',
-                'reference'        => $data['reference'] ?? null,
+                'payment_method'   => $payMethod,
+                'reference'        => $data['reference'] ?? ($data['cheque_number'] ?? null),
                 'status'           => 'posted',
                 'notes'            => $data['notes'] ?? null,
                 'idempotency_key'  => $data['idempotency_key'] ?? null,
                 'created_by_id'    => $user?->id,
-            ]);
+            ];
+
+            if ($isCheque && Schema::hasColumn('payments', 'cheque_status')) {
+                $createPayload['cheque_number'] = $data['cheque_number'] ?? ($data['reference'] ?? null);
+                $createPayload['bank_name']     = $data['bank_name'] ?? null;
+                $createPayload['cheque_date']   = $chequeDate ?? $createPayload['payment_date'];
+                $createPayload['cheque_status'] = $chequeStatus;
+                $createPayload['cleared_at']    = $chequeStatus === 'cleared' ? Carbon::now() : null;
+            }
+
+            $payment = Payment::create($createPayload);
 
             // Save allocations and update invoice totals
             foreach ($allocationsToCreate as $item) {
@@ -153,6 +179,9 @@ class PaymentService
             // Sync with CustomerLedger
             if (Schema::hasTable('customer_ledgers')) {
                 $methodLabel = ucfirst(str_replace('_', ' ', $payment->payment_method));
+                if ($isCheque && $chequeStatus && $chequeStatus !== 'cleared') {
+                    $methodLabel .= ' (' . strtoupper($chequeStatus) . ')';
+                }
                 $notesText = $payment->notes ? ": {$payment->notes}" : '';
 
                 CustomerLedger::create([
@@ -175,24 +204,26 @@ class PaymentService
                 "Customer payment {$payment->payment_number} recorded"
             );
 
-            // Record financial account deposit
+            // Record financial account deposit (deferred for pending/deposited PDC cheques until cleared)
             $account = app(AccountService::class)->resolveAccount($payment->account_id ?? $data['account_id'] ?? null, $payment->payment_method);
             if ($account) {
                 $payment->account_id = $account->id;
                 $payment->saveQuietly();
 
-                app(AccountService::class)->deposit(
-                    $account,
-                    $payment->amount,
-                    'customer_payment',
-                    $payment->id,
-                    "Customer payment {$payment->payment_number} ({$customer->name})",
-                    $user
-                );
+                if (!$isCheque || $chequeStatus === 'cleared') {
+                    app(AccountService::class)->deposit(
+                        $account,
+                        $payment->amount,
+                        'customer_payment',
+                        $payment->id,
+                        "Customer payment {$payment->payment_number} ({$customer->name})",
+                        $user
+                    );
+                }
             }
 
             // Record cash drawer transaction if payment method is cash
-            if (($account && $account->type === 'cash') || $payment->payment_method === 'cash') {
+            if ((($account && $account->type === 'cash') || $payment->payment_method === 'cash') && !$isCheque) {
                 app(CashDrawerService::class)->recordTransaction(
                     null,
                     'customer_payment',
@@ -278,8 +309,21 @@ class PaymentService
 
             $unapplied = round(max($amount - $totalAllocated, 0), 2);
             $paymentNumber = $this->generatePaymentNumber('supplier');
+            $payMethod = $data['payment_method'] ?? 'cash';
+            $isCheque = $payMethod === 'cheque';
+            $chequeDate = !empty($data['cheque_date']) ? $data['cheque_date'] : null;
+            $chequeStatus = null;
+            if ($isCheque) {
+                if (!empty($data['cheque_status'])) {
+                    $chequeStatus = $data['cheque_status'];
+                } elseif ($chequeDate && Carbon::parse($chequeDate)->gt(Carbon::today())) {
+                    $chequeStatus = 'pending';
+                } else {
+                    $chequeStatus = 'cleared';
+                }
+            }
 
-            $payment = Payment::create([
+            $createPayload = [
                 'payment_number'   => $paymentNumber,
                 'party_type'       => 'supplier',
                 'party_id'         => $supplier->id,
@@ -287,13 +331,23 @@ class PaymentService
                 'amount'           => $amount,
                 'allocated_amount' => $totalAllocated,
                 'unapplied_amount' => $unapplied,
-                'payment_method'   => $data['payment_method'] ?? 'cash',
-                'reference'        => $data['reference'] ?? null,
+                'payment_method'   => $payMethod,
+                'reference'        => $data['reference'] ?? ($data['cheque_number'] ?? null),
                 'status'           => 'posted',
                 'notes'            => $data['notes'] ?? null,
                 'idempotency_key'  => $data['idempotency_key'] ?? null,
                 'created_by_id'    => $user?->id,
-            ]);
+            ];
+
+            if ($isCheque && Schema::hasColumn('payments', 'cheque_status')) {
+                $createPayload['cheque_number'] = $data['cheque_number'] ?? ($data['reference'] ?? null);
+                $createPayload['bank_name']     = $data['bank_name'] ?? null;
+                $createPayload['cheque_date']   = $chequeDate ?? $createPayload['payment_date'];
+                $createPayload['cheque_status'] = $chequeStatus;
+                $createPayload['cleared_at']    = $chequeStatus === 'cleared' ? Carbon::now() : null;
+            }
+
+            $payment = Payment::create($createPayload);
 
             // Save allocations and update purchase invoice totals
             foreach ($allocationsToCreate as $item) {
@@ -313,6 +367,9 @@ class PaymentService
             // Sync with SupplierLedger
             if (Schema::hasTable('supplier_ledgers')) {
                 $methodLabel = ucfirst(str_replace('_', ' ', $payment->payment_method));
+                if ($isCheque && $chequeStatus && $chequeStatus !== 'cleared') {
+                    $methodLabel .= ' (' . strtoupper($chequeStatus) . ')';
+                }
                 $notesText = $payment->notes ? ": {$payment->notes}" : '';
 
                 SupplierLedger::create([
@@ -335,24 +392,26 @@ class PaymentService
                 "Supplier payment {$payment->payment_number} recorded"
             );
 
-            // Record financial account withdrawal
+            // Record financial account withdrawal (deferred for pending/deposited PDC cheques until cleared)
             $account = app(AccountService::class)->resolveAccount($payment->account_id ?? $data['account_id'] ?? null, $payment->payment_method);
             if ($account) {
                 $payment->account_id = $account->id;
                 $payment->saveQuietly();
 
-                app(AccountService::class)->withdraw(
-                    $account,
-                    $payment->amount,
-                    'supplier_payment',
-                    $payment->id,
-                    "Supplier payment {$payment->payment_number} ({$supplier->name})",
-                    $user
-                );
+                if (!$isCheque || $chequeStatus === 'cleared') {
+                    app(AccountService::class)->withdraw(
+                        $account,
+                        $payment->amount,
+                        'supplier_payment',
+                        $payment->id,
+                        "Supplier payment {$payment->payment_number} ({$supplier->name})",
+                        $user
+                    );
+                }
             }
 
             // Record cash drawer transaction if payment method is cash
-            if (($account && $account->type === 'cash') || $payment->payment_method === 'cash') {
+            if ((($account && $account->type === 'cash') || $payment->payment_method === 'cash') && !$isCheque) {
                 app(CashDrawerService::class)->recordTransaction(
                     null,
                     'supplier_payment',
@@ -401,10 +460,23 @@ class PaymentService
             }
 
             // Remove or unwind party ledger entry
+            $isCreditNote = $payment->payment_method === 'credit_note';
             if ($payment->party_type === 'customer' && Schema::hasTable('customer_ledgers')) {
-                CustomerLedger::where('payment_id', $payment->id)->delete();
+                if ($isCreditNote && Schema::hasColumn('customer_ledgers', 'sale_return_id')) {
+                    CustomerLedger::where('payment_id', $payment->id)
+                        ->whereNull('sale_return_id')
+                        ->delete();
+                } else {
+                    CustomerLedger::where('payment_id', $payment->id)->delete();
+                }
             } elseif ($payment->party_type === 'supplier' && Schema::hasTable('supplier_ledgers')) {
-                SupplierLedger::where('payment_id', $payment->id)->delete();
+                if ($isCreditNote && Schema::hasColumn('supplier_ledgers', 'purchase_return_id')) {
+                    SupplierLedger::where('payment_id', $payment->id)
+                        ->whereNull('purchase_return_id')
+                        ->delete();
+                } else {
+                    SupplierLedger::where('payment_id', $payment->id)->delete();
+                }
             }
 
             // Mark reversed
@@ -414,37 +486,45 @@ class PaymentService
             $payment->reversal_reason = $reason;
             $payment->save();
 
-            // Reverse financial account effect
-            $account = app(AccountService::class)->resolveAccount($payment->account_id, $payment->payment_method);
-            if ($account) {
-                if ($payment->party_type === 'customer') {
-                    app(AccountService::class)->withdraw(
-                        $account,
-                        $payment->amount,
-                        'payment_reversal',
-                        $payment->id,
-                        "Reversal of Customer Payment {$payment->payment_number}: {$reason}",
-                        $user
-                    );
-                } else {
-                    app(AccountService::class)->deposit(
-                        $account,
-                        $payment->amount,
-                        'payment_reversal',
-                        $payment->id,
-                        "Reversal of Supplier Payment {$payment->payment_number}: {$reason}",
+            // Check whether this payment was an uncleared cheque (whose Account balance was deferred)
+            $wasUnclearedCheque = $payment->payment_method === 'cheque'
+                && Schema::hasColumn('payments', 'cheque_status')
+                && in_array($payment->cheque_status, ['pending', 'deposited', 'bounced'], true)
+                && empty($payment->cleared_at);
+
+            if (!$isCreditNote && !$wasUnclearedCheque) {
+                // Reverse financial account effect
+                $account = app(AccountService::class)->resolveAccount($payment->account_id, $payment->payment_method);
+                if ($account) {
+                    if ($payment->party_type === 'customer') {
+                        app(AccountService::class)->withdraw(
+                            $account,
+                            $payment->amount,
+                            'payment_reversal',
+                            $payment->id,
+                            "Reversal of Customer Payment {$payment->payment_number}: {$reason}",
+                            $user
+                        );
+                    } else {
+                        app(AccountService::class)->deposit(
+                            $account,
+                            $payment->amount,
+                            'payment_reversal',
+                            $payment->id,
+                            "Reversal of Supplier Payment {$payment->payment_number}: {$reason}",
+                            $user
+                        );
+                    }
+                }
+
+                // Reverse cash drawer transaction if payment method is cash
+                if (($account && $account->type === 'cash') || $payment->payment_method === 'cash') {
+                    app(CashDrawerService::class)->handlePaymentReversal(
+                        $payment,
+                        $reason,
                         $user
                     );
                 }
-            }
-
-            // Reverse cash drawer transaction if payment method is cash
-            if (($account && $account->type === 'cash') || $payment->payment_method === 'cash') {
-                app(CashDrawerService::class)->handlePaymentReversal(
-                    $payment,
-                    $reason,
-                    $user
-                );
             }
 
             // Record audit
@@ -455,6 +535,451 @@ class PaymentService
             );
 
             return $payment;
+        });
+    }
+
+    /**
+     * Transition a Post-Dated Cheque (PDC) payment through pending -> deposited -> cleared or bounced.
+     */
+    public function updateChequeStatus(
+        Payment $payment,
+        string $newStatus,
+        ?int $accountId = null,
+        ?string $reason = null,
+        ?User $user = null
+    ): Payment {
+        return DB::transaction(function () use ($payment, $newStatus, $accountId, $reason, $user) {
+            $locked = Payment::where('id', $payment->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->payment_method !== 'cheque') {
+                throw ValidationException::withMessages([
+                    'payment' => 'Cheque lifecycle transitions are only valid for cheque payments.',
+                ]);
+            }
+
+            if ($locked->status === 'reversed' && $newStatus !== 'bounced') {
+                throw ValidationException::withMessages([
+                    'payment' => 'Cannot update cheque status on a reversed payment.',
+                ]);
+            }
+
+            if (!in_array($newStatus, ['deposited', 'cleared', 'bounced'], true)) {
+                throw ValidationException::withMessages([
+                    'status' => 'Invalid cheque status. Allowed: deposited, cleared, bounced.',
+                ]);
+            }
+
+            if ($newStatus === 'deposited') {
+                if (in_array($locked->cheque_status, ['cleared', 'bounced'], true)) {
+                    throw ValidationException::withMessages([
+                        'status' => "Cannot mark a {$locked->cheque_status} cheque as deposited.",
+                    ]);
+                }
+                if ($accountId) {
+                    $locked->account_id = $accountId;
+                }
+                $locked->cheque_status = 'deposited';
+                $locked->save();
+                return $locked->load(['allocations', 'customer:id,name', 'supplier:id,name', 'account:id,name,code']);
+            }
+
+            if ($newStatus === 'cleared') {
+                if ($locked->cheque_status === 'bounced') {
+                    throw ValidationException::withMessages([
+                        'status' => 'Cannot clear a bounced cheque.',
+                    ]);
+                }
+                if ($locked->cheque_status === 'cleared' && !empty($locked->cleared_at)) {
+                    return $locked->load(['allocations', 'customer:id,name', 'supplier:id,name', 'account:id,name,code']);
+                }
+
+                $account = app(AccountService::class)->resolveAccount($accountId ?? $locked->account_id, 'cheque');
+                if ($account) {
+                    $locked->account_id = $account->id;
+                    if ($locked->party_type === 'customer') {
+                        $partyName = Customer::find($locked->party_id)?->name ?? 'Customer';
+                        app(AccountService::class)->deposit(
+                            $account,
+                            $locked->amount,
+                            'customer_payment',
+                            $locked->id,
+                            "Cheque cleared {$locked->payment_number} ({$partyName})",
+                            $user
+                        );
+                    } else {
+                        $partyName = Supplier::find($locked->party_id)?->name ?? 'Supplier';
+                        app(AccountService::class)->withdraw(
+                            $account,
+                            $locked->amount,
+                            'supplier_payment',
+                            $locked->id,
+                            "Cheque cleared {$locked->payment_number} ({$partyName})",
+                            $user
+                        );
+                    }
+                }
+
+                $locked->cheque_status = 'cleared';
+                $locked->cleared_at = Carbon::now();
+                $locked->save();
+
+                return $locked->load(['allocations', 'customer:id,name', 'supplier:id,name', 'account:id,name,code']);
+            }
+
+            // $newStatus === 'bounced'
+            $bounceReason = $reason ?: 'Cheque Dishonoured / Bounced';
+            if ($locked->status !== 'reversed') {
+                $locked = $this->reversePayment($locked, $bounceReason, $user);
+            }
+            $locked->cheque_status = 'bounced';
+            $locked->bounced_at = Carbon::now();
+            $locked->save();
+
+            return $locked->load(['allocations', 'customer:id,name', 'supplier:id,name', 'account:id,name,code']);
+        });
+    }
+
+    /**
+     * Allocate an existing payment's or credit note's unapplied_amount to open invoices.
+     */
+    public function allocatePayment(Payment $payment, array $allocationsInput, ?User $user = null): Payment
+    {
+        return DB::transaction(function () use ($payment, $allocationsInput, $user) {
+            $lockedPayment = Payment::where('id', $payment->id)->lockForUpdate()->firstOrFail();
+
+            if ($lockedPayment->status !== 'posted') {
+                throw ValidationException::withMessages([
+                    'payment' => 'Only posted payments or credit notes can be allocated.',
+                ]);
+            }
+
+            $availableUnapplied = round((float) ($lockedPayment->unapplied_amount ?? 0), 2);
+            if ($availableUnapplied <= 0.001) {
+                throw ValidationException::withMessages([
+                    'payment' => 'This payment has no unapplied credit remaining to allocate.',
+                ]);
+            }
+
+            $beforeSnapshot = $lockedPayment->load('allocations')->toArray();
+
+            $totalNewAllocated = 0.0;
+            $allocationsToApply = [];
+
+            foreach ($allocationsInput as $alloc) {
+                $allocAmount = round((float) ($alloc['amount'] ?? 0), 2);
+                if ($allocAmount <= 0) {
+                    continue;
+                }
+
+                $invoiceId = (int) ($alloc['invoice_id'] ?? 0);
+                if ($invoiceId <= 0) {
+                    continue;
+                }
+
+                if ($lockedPayment->party_type === 'customer') {
+                    $invoice = SaleInvoice::where('id', $invoiceId)
+                        ->where('customer_id', $lockedPayment->party_id)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$invoice) {
+                        throw ValidationException::withMessages([
+                            'allocations' => "Sale invoice #{$invoiceId} not found for this customer.",
+                        ]);
+                    }
+
+                    if ($invoice->status === 'reversed') {
+                        throw ValidationException::withMessages([
+                            'allocations' => "Invoice {$invoice->posted_number} is reversed and cannot receive allocations.",
+                        ]);
+                    }
+
+                    $invTotal = (float) ($invoice->total ?? 0);
+                    $invReceived = (float) ($invoice->total_receive ?? $invoice->total_recieve ?? 0);
+                    $remainingDue = max($invTotal - $invReceived, 0);
+
+                    if ($allocAmount > ($remainingDue + 0.001)) {
+                        throw ValidationException::withMessages([
+                            'allocations' => "Allocation of {$allocAmount} exceeds remaining balance ({$remainingDue}) on invoice {$invoice->posted_number}.",
+                        ]);
+                    }
+
+                    $allocationsToApply[] = [
+                        'invoice' => $invoice,
+                        'invoice_type' => 'sale_invoice',
+                        'amount' => $allocAmount,
+                    ];
+                } else {
+                    $invoice = PurchaseInvoice::where('id', $invoiceId)
+                        ->where('supplier_id', $lockedPayment->party_id)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$invoice) {
+                        throw ValidationException::withMessages([
+                            'allocations' => "Purchase invoice #{$invoiceId} not found for this supplier.",
+                        ]);
+                    }
+
+                    if ($invoice->status === 'reversed') {
+                        throw ValidationException::withMessages([
+                            'allocations' => "Invoice {$invoice->posted_number} is reversed and cannot receive allocations.",
+                        ]);
+                    }
+
+                    $invTotal = (float) ($invoice->total_amount ?? 0);
+                    $invPaid = (float) ($invoice->total_paid ?? 0);
+                    $remainingDue = max($invTotal - $invPaid, 0);
+
+                    if ($allocAmount > ($remainingDue + 0.001)) {
+                        throw ValidationException::withMessages([
+                            'allocations' => "Allocation of {$allocAmount} exceeds remaining balance ({$remainingDue}) on invoice {$invoice->posted_number}.",
+                        ]);
+                    }
+
+                    $allocationsToApply[] = [
+                        'invoice' => $invoice,
+                        'invoice_type' => 'purchase_invoice',
+                        'amount' => $allocAmount,
+                    ];
+                }
+
+                $totalNewAllocated = round($totalNewAllocated + $allocAmount, 2);
+            }
+
+            if ($totalNewAllocated <= 0) {
+                throw ValidationException::withMessages([
+                    'allocations' => 'Please enter a valid allocation amount greater than zero.',
+                ]);
+            }
+
+            if ($totalNewAllocated > ($availableUnapplied + 0.001)) {
+                throw ValidationException::withMessages([
+                    'allocations' => "Total allocation ({$totalNewAllocated}) exceeds available unapplied credit ({$availableUnapplied}).",
+                ]);
+            }
+
+            foreach ($allocationsToApply as $item) {
+                $invoice = $item['invoice'];
+                $invoiceType = $item['invoice_type'];
+                $allocAmount = $item['amount'];
+
+                $existingAlloc = PaymentAllocation::where('payment_id', $lockedPayment->id)
+                    ->where('invoice_type', $invoiceType)
+                    ->where('invoice_id', $invoice->id)
+                    ->first();
+
+                if ($existingAlloc) {
+                    $existingAlloc->amount = round((float) $existingAlloc->amount + $allocAmount, 2);
+                    $existingAlloc->save();
+                } else {
+                    PaymentAllocation::create([
+                        'payment_id'   => $lockedPayment->id,
+                        'invoice_type' => $invoiceType,
+                        'invoice_id'   => $invoice->id,
+                        'amount'       => $allocAmount,
+                    ]);
+                }
+
+                if ($invoiceType === 'sale_invoice') {
+                    $invoice->total_receive = round((float) ($invoice->total_receive ?? 0) + $allocAmount, 2);
+                } else {
+                    $invoice->total_paid = round((float) ($invoice->total_paid ?? 0) + $allocAmount, 2);
+                }
+                $invoice->save();
+            }
+
+            $lockedPayment->allocated_amount = round((float) ($lockedPayment->allocated_amount ?? 0) + $totalNewAllocated, 2);
+            $lockedPayment->unapplied_amount = round(max((float) $lockedPayment->amount - (float) $lockedPayment->allocated_amount, 0), 2);
+            $lockedPayment->save();
+
+            $this->auditService->recordUpdate(
+                $lockedPayment,
+                $beforeSnapshot,
+                $user,
+                "Allocated {$totalNewAllocated} of unapplied credit to invoices"
+            );
+
+            return $lockedPayment->load([
+                'allocations.saleInvoice:id,posted_number,date,total',
+                'allocations.purchaseInvoice:id,posted_number,invoice_number,posted_date,total_amount',
+                'customer:id,name',
+                'supplier:id,name',
+            ]);
+        });
+    }
+
+    /**
+     * Ensure any historical SaleReturn / PurchaseReturn settled via credit_note or invoice_offset
+     * has its corresponding allocatable Payment record synchronized.
+     */
+    public function syncMissingReturnCreditPayments(?string $partyType = null, ?int $partyId = null): void
+    {
+        if (!Schema::hasTable('payments')) {
+            return;
+        }
+
+        $settlementService = app(ReturnSettlementService::class);
+
+        if (($partyType === null || $partyType === 'customer') && Schema::hasTable('sale_returns') && Schema::hasColumn('sale_returns', 'settlement_mode')) {
+            $saleReturnQuery = SaleReturn::whereIn('settlement_mode', ['credit_note', 'invoice_offset'])
+                ->where('credited_amount', '>', 0)
+                ->whereNotNull('customer_id');
+
+            if ($partyType === 'customer' && $partyId !== null) {
+                $saleReturnQuery->where('customer_id', $partyId);
+            }
+
+            $saleReturns = $saleReturnQuery->get();
+            foreach ($saleReturns as $sr) {
+                $key = "sale_return:{$sr->id}";
+                $exists = Payment::where('idempotency_key', $key)->exists();
+                if (!$exists) {
+                    $settlementService->syncSaleReturnCreditPayment(
+                        $sr,
+                        (string) $sr->settlement_mode,
+                        round((float) $sr->credited_amount, 2),
+                        Auth::user()
+                    );
+                }
+            }
+        }
+
+        if (($partyType === null || $partyType === 'supplier') && Schema::hasTable('purchase_returns') && Schema::hasColumn('purchase_returns', 'settlement_mode')) {
+            $purchaseReturnQuery = PurchaseReturn::whereIn('settlement_mode', ['credit_note', 'invoice_offset'])
+                ->where('credited_amount', '>', 0)
+                ->whereNotNull('supplier_id');
+
+            if ($partyType === 'supplier' && $partyId !== null) {
+                $purchaseReturnQuery->where('supplier_id', $partyId);
+            }
+
+            $purchaseReturns = $purchaseReturnQuery->get();
+            foreach ($purchaseReturns as $pr) {
+                $key = "purchase_return:{$pr->id}";
+                $exists = Payment::where('idempotency_key', $key)->exists();
+                if (!$exists) {
+                    $settlementService->syncPurchaseReturnCreditPayment(
+                        $pr,
+                        (string) $pr->settlement_mode,
+                        round((float) $pr->credited_amount, 2),
+                        Auth::user()
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * Get all posted payments and credit notes with unapplied balance for a party.
+     */
+    public function getAvailableCreditsForParty(string $partyType, int $partyId): array
+    {
+        $this->syncMissingReturnCreditPayments($partyType, $partyId);
+
+        $credits = Payment::with('allocations')
+            ->where('party_type', $partyType)
+            ->where('party_id', $partyId)
+            ->where('status', 'posted')
+            ->where('unapplied_amount', '>', 0)
+            ->orderBy('payment_date', 'asc')
+            ->orderBy('id', 'asc')
+            ->get();
+
+        return [
+            'party_type'      => $partyType,
+            'party_id'        => $partyId,
+            'total_unapplied' => round((float) $credits->sum('unapplied_amount'), 2),
+            'credits'         => $credits,
+        ];
+    }
+
+    /**
+     * Apply a party's available unapplied payments / credit notes (FIFO) to the requested invoices.
+     */
+    public function applyPartyCredits(string $partyType, int $partyId, array $allocationsInput, ?User $user = null): array
+    {
+        return DB::transaction(function () use ($partyType, $partyId, $allocationsInput, $user) {
+            $this->syncMissingReturnCreditPayments($partyType, $partyId);
+
+            $credits = Payment::where('party_type', $partyType)
+                ->where('party_id', $partyId)
+                ->where('status', 'posted')
+                ->where('unapplied_amount', '>', 0)
+                ->orderBy('payment_date', 'asc')
+                ->orderBy('id', 'asc')
+                ->lockForUpdate()
+                ->get();
+
+            $totalAvailable = round((float) $credits->sum('unapplied_amount'), 2);
+            if ($totalAvailable <= 0.001) {
+                throw ValidationException::withMessages([
+                    'credits' => 'No unapplied payments or credit notes are available for this party.',
+                ]);
+            }
+
+            // Normalize requested invoice allocations
+            $invoiceBuckets = [];
+            $totalRequested = 0.0;
+            foreach ($allocationsInput as $alloc) {
+                $invId = (int) ($alloc['invoice_id'] ?? 0);
+                $amt = round((float) ($alloc['amount'] ?? 0), 2);
+                if ($invId <= 0 || $amt <= 0) {
+                    continue;
+                }
+                $invoiceBuckets[$invId] = round(($invoiceBuckets[$invId] ?? 0.0) + $amt, 2);
+                $totalRequested = round($totalRequested + $amt, 2);
+            }
+
+            if ($totalRequested <= 0) {
+                throw ValidationException::withMessages([
+                    'allocations' => 'Please specify at least one invoice allocation amount greater than zero.',
+                ]);
+            }
+
+            if ($totalRequested > ($totalAvailable + 0.001)) {
+                throw ValidationException::withMessages([
+                    'allocations' => "Requested credit application ({$totalRequested}) exceeds total available unapplied credit ({$totalAvailable}).",
+                ]);
+            }
+
+            $updatedPayments = [];
+            $totalAllocatedAcrossAll = 0.0;
+
+            foreach ($credits as $creditPayment) {
+                $creditRemaining = round((float) $creditPayment->unapplied_amount, 2);
+                if ($creditRemaining <= 0.001) {
+                    continue;
+                }
+
+                $perPaymentAllocations = [];
+                foreach ($invoiceBuckets as $invId => &$neededAmt) {
+                    if ($neededAmt <= 0.001 || $creditRemaining <= 0.001) {
+                        continue;
+                    }
+
+                    $slice = round(min($creditRemaining, $neededAmt), 2);
+                    if ($slice > 0) {
+                        $perPaymentAllocations[] = [
+                            'invoice_id' => $invId,
+                            'amount'     => $slice,
+                        ];
+                        $neededAmt = round($neededAmt - $slice, 2);
+                        $creditRemaining = round($creditRemaining - $slice, 2);
+                        $totalAllocatedAcrossAll = round($totalAllocatedAcrossAll + $slice, 2);
+                    }
+                }
+                unset($neededAmt);
+
+                if (!empty($perPaymentAllocations)) {
+                    $updatedPayments[] = $this->allocatePayment($creditPayment, $perPaymentAllocations, $user);
+                }
+            }
+
+            return [
+                'allocated_total' => $totalAllocatedAcrossAll,
+                'payments'        => $updatedPayments,
+            ];
         });
     }
 

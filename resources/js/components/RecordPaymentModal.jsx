@@ -62,13 +62,19 @@ export default function RecordPaymentModal({
 
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [applyingCredits, setApplyingCredits] = useState(false);
   const [openInvoices, setOpenInvoices] = useState([]);
+  const [availableCredits, setAvailableCredits] = useState({ total_unapplied: 0, credits: [] });
 
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [amount, setAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState(PAYMENT_METHODS[0]);
   const [accountId, setAccountId] = useState(null);
   const [reference, setReference] = useState("");
+  const [chequeNumber, setChequeNumber] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [chequeDate, setChequeDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [chequeStatus, setChequeStatus] = useState("pending");
   const [notes, setNotes] = useState("");
   const [allocations, setAllocations] = useState({}); // { [invoiceId]: allocatedAmountString }
 
@@ -118,11 +124,22 @@ export default function RecordPaymentModal({
     if (!partyId) return;
     try {
       setLoading(true);
-      const res = await axios.get("/api/payments/open-invoices", {
-        params: { party_type: partyType, party_id: partyId },
-      });
-      const list = res.data || [];
+      const [invRes, credRes] = await Promise.all([
+        axios.get("/api/payments/open-invoices", {
+          params: { party_type: partyType, party_id: partyId },
+        }),
+        axios
+          .get("/api/payments/available-credits", {
+            params: { party_type: partyType, party_id: partyId },
+          })
+          .catch(() => ({ data: { total_unapplied: 0, credits: [] } })),
+      ]);
+      const list = invRes.data || [];
       setOpenInvoices(list);
+      setAvailableCredits({
+        total_unapplied: parseFloat(credRes?.data?.total_unapplied || 0),
+        credits: Array.isArray(credRes?.data?.credits) ? credRes.data.credits : [],
+      });
 
       // If preselectedInvoiceId is passed, pre-fill its full due amount
       if (preselectedInvoiceId) {
@@ -219,6 +236,60 @@ export default function RecordPaymentModal({
     toast.success("Payment automatically allocated across open invoices");
   };
 
+  // Apply existing unapplied credits / credit notes directly to open invoices
+  const handleApplyAvailableCredits = async () => {
+    const avail = round2(parseFloat(availableCredits.total_unapplied || 0));
+    if (avail <= 0 || openInvoices.length === 0) return;
+
+    // Use currently entered allocations if within available credit, otherwise auto-build oldest-first
+    let payloadAllocations = Object.entries(allocations)
+      .map(([invId, val]) => ({
+        invoice_id: Number(invId),
+        amount: round2(parseFloat(val || 0)),
+      }))
+      .filter((a) => a.amount > 0);
+
+    const currentSum = round2(payloadAllocations.reduce((s, a) => s + a.amount, 0));
+
+    if (payloadAllocations.length === 0 || currentSum > avail) {
+      let rem = avail;
+      payloadAllocations = [];
+      for (const inv of openInvoices) {
+        if (rem <= 0) break;
+        const due = round2(parseFloat(inv.due || 0));
+        const slice = round2(Math.min(due, rem));
+        if (slice > 0) {
+          payloadAllocations.push({ invoice_id: Number(inv.id), amount: slice });
+          rem = round2(rem - slice);
+        }
+      }
+    }
+
+    if (payloadAllocations.length === 0) {
+      toast.error("No open invoice balance to apply credit against");
+      return;
+    }
+
+    try {
+      setApplyingCredits(true);
+      const { data } = await axios.post("/api/payments/apply-credits", {
+        party_type: partyType,
+        party_id: partyId,
+        allocations: payloadAllocations,
+      });
+      toast.success(
+        `Applied ${formatCurrency(data.allocated_total || 0)} of existing credit to open invoices`
+      );
+      setAllocations({});
+      await fetchOpenInvoices();
+      onPaymentSuccess?.(data.payments?.[0]);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to apply available credit");
+    } finally {
+      setApplyingCredits(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (numAmount <= 0) {
@@ -249,7 +320,11 @@ export default function RecordPaymentModal({
         amount: round2(numAmount),
         payment_method: paymentMethod.value,
         account_id: accountId,
-        reference: reference.trim() || null,
+        reference: (paymentMethod.value === "cheque" ? chequeNumber.trim() || reference.trim() : reference.trim()) || null,
+        cheque_number: paymentMethod.value === "cheque" ? (chequeNumber.trim() || reference.trim() || null) : undefined,
+        bank_name: paymentMethod.value === "cheque" ? (bankName.trim() || null) : undefined,
+        cheque_date: paymentMethod.value === "cheque" ? (chequeDate || paymentDate) : undefined,
+        cheque_status: paymentMethod.value === "cheque" ? chequeStatus : undefined,
         notes: notes.trim() || null,
         idempotency_key: idempotencyKey,
         allocations: payloadAllocations,
@@ -409,6 +484,74 @@ export default function RecordPaymentModal({
               </div>
             </div>
 
+            {/* PDC Cheque Details Row (when method === 'cheque') */}
+            {paymentMethod?.value === "cheque" && (
+              <div
+                className={`p-3.5 rounded-xl border grid grid-cols-1 md:grid-cols-4 gap-3 ${
+                  isDark ? "bg-slate-800/60 border-slate-700" : "bg-blue-50/50 border-blue-200"
+                }`}
+              >
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>
+                    Cheque Number *
+                  </label>
+                  <GlassInput
+                    type="text"
+                    value={chequeNumber}
+                    onChange={(e) => {
+                      setChequeNumber(e.target.value);
+                      if (!reference) setReference(e.target.value);
+                    }}
+                    placeholder="e.g. CHQ-90812"
+                    disabled={submitting}
+                    className="w-full text-xs h-9 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>
+                    Bank Name
+                  </label>
+                  <GlassInput
+                    type="text"
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    placeholder="e.g. Meezan Bank"
+                    disabled={submitting}
+                    className="w-full text-xs h-9"
+                  />
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>
+                    Maturity / Cheque Date
+                  </label>
+                  <GlassInput
+                    type="date"
+                    value={chequeDate}
+                    onChange={(e) => setChequeDate(e.target.value)}
+                    disabled={submitting}
+                    className="w-full text-xs h-9"
+                  />
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>
+                    Initial Cheque Status
+                  </label>
+                  <select
+                    value={chequeStatus}
+                    onChange={(e) => setChequeStatus(e.target.value)}
+                    disabled={submitting}
+                    className={`w-full h-9 px-2.5 rounded-xl border text-xs font-semibold ${
+                      isDark ? "bg-slate-900 border-slate-700 text-slate-100" : "bg-white border-gray-300 text-gray-800"
+                    }`}
+                  >
+                    <option value="pending">Pending (PDC - Hold Account)</option>
+                    <option value="deposited">Deposited in Bank</option>
+                    <option value="cleared">Cleared Immediately</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
             {/* Middle Row: Reference, Notes */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -447,6 +590,45 @@ export default function RecordPaymentModal({
                 />
               </div>
             </div>
+
+            {/* Available Unapplied Credit / Credit Notes Banner */}
+            {availableCredits.total_unapplied > 0 && openInvoices.length > 0 && (
+              <div
+                className={`p-3.5 rounded-xl border flex flex-wrap items-center justify-between gap-3 ${
+                  isDark
+                    ? "bg-amber-900/20 border-amber-700/60 text-amber-200"
+                    : "bg-amber-50 border-amber-200 text-amber-900"
+                }`}
+              >
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                    <SparklesIcon className="w-4 h-4" />
+                    <span>
+                      Available Unapplied Credit / Credit Notes:{" "}
+                      <span className="font-mono text-sm">
+                        {formatCurrency(availableCredits.total_unapplied)}
+                      </span>
+                    </span>
+                  </div>
+                  <p className={`text-xs ${isDark ? "text-slate-300" : "text-amber-800"}`}>
+                    {availableCredits.credits.length} open credit voucher(s) (
+                    {availableCredits.credits.map((c) => c.payment_number).join(", ")}) can be
+                    applied directly to open invoices without recording a new payment.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleApplyAvailableCredits}
+                  disabled={applyingCredits || submitting}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white shadow-xs transition-colors disabled:opacity-50"
+                >
+                  <SparklesIcon className="w-3.5 h-3.5" />
+                  <span>
+                    {applyingCredits ? "Applying Credit…" : "Apply Available Credit"}
+                  </span>
+                </button>
+              </div>
+            )}
 
             {/* Invoices Allocation Section */}
             <div className="space-y-3">

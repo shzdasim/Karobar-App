@@ -275,4 +275,81 @@ class UserController extends Controller
         $user->syncPermissions($data['permissions'] ?? []);
         return $user->load('roles:id,name','permissions:id,name');
     }
+
+    public function bulkAction(Request $request)
+    {
+        $data = $request->validate([
+            'action'     => ['required', Rule::in(['activate', 'deactivate', 'assign_role', 'delete'])],
+            'user_ids'   => ['required', 'array', 'min:1'],
+            'user_ids.*' => ['integer', 'exists:users,id'],
+            'role'       => ['required_if:action,assign_role', 'nullable', 'string', 'exists:roles,name'],
+        ]);
+
+        $action  = $data['action'];
+        $userIds = array_values(array_unique(array_map('intval', $data['user_ids'])));
+        $actorId = (int) $request->user()->id;
+
+        if ($action === 'delete') {
+            $this->authorizeUserAction($request, ['user.delete']);
+        } elseif ($action === 'assign_role') {
+            $this->authorizeUserAction($request, ['user.assign.roles', 'user.update']);
+            $this->assertCanTouchAdminRoleOrUser($request, null, [$data['role']]);
+        } else {
+            $this->authorizeUserAction($request, ['user.update']);
+        }
+
+        $targets = User::with('roles:id,name')->whereIn('id', $userIds)->get();
+        $processed = 0;
+        $skipped = [];
+
+        foreach ($targets as $target) {
+            if (in_array($action, ['deactivate', 'delete'], true) && (int) $target->id === $actorId) {
+                $skipped[] = "{$target->name} (cannot {$action} your own account)";
+                continue;
+            }
+
+            if (!$this->isSuperOrAdmin($request->user()) && ($this->isSuperOrAdmin($target) || $target->hasRole(['admin', 'super-admin']))) {
+                $skipped[] = "{$target->name} (admin account protected)";
+                continue;
+            }
+
+            if (in_array($action, ['deactivate', 'delete'], true) && $this->isLastActiveAdmin($target)) {
+                $skipped[] = "{$target->name} (last active Admin)";
+                continue;
+            }
+
+            if ($action === 'activate') {
+                $target->status = 'active';
+                $target->save();
+                $processed++;
+            } elseif ($action === 'deactivate') {
+                $target->status = 'inactive';
+                $target->save();
+                if (\Illuminate\Support\Facades\Schema::hasTable('personal_access_tokens')) {
+                    $target->tokens()->delete();
+                }
+                $processed++;
+            } elseif ($action === 'assign_role') {
+                $roleName = (string) $data['role'];
+                if ($this->isSuperOrAdmin($target) && $roleName !== 'Admin' && ($target->id === $actorId || $this->isLastActiveAdmin($target))) {
+                    $skipped[] = "{$target->name} (cannot remove Admin role)";
+                    continue;
+                }
+                $target->syncRoles([$roleName]);
+                $processed++;
+            } elseif ($action === 'delete') {
+                if (\Illuminate\Support\Facades\Schema::hasTable('personal_access_tokens')) {
+                    $target->tokens()->delete();
+                }
+                $target->delete();
+                $processed++;
+            }
+        }
+
+        return response()->json([
+            'message'   => "Processed {$processed} user(s)" . (count($skipped) ? '. Skipped: ' . implode(', ', $skipped) : '.'),
+            'processed' => $processed,
+            'skipped'   => $skipped,
+        ]);
+    }
 }

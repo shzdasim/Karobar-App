@@ -251,6 +251,38 @@ class AccountController extends Controller
     }
 
     /**
+     * Delete an account if it is not a system default and has no non-opening transactions.
+     */
+    public function destroy(int $id): JsonResponse
+    {
+        $this->authorizeAccountAction(['account.delete', 'account.update']);
+        $account = Account::findOrFail($id);
+
+        if ($account->is_default || $account->code === 'cash_drawer') {
+            return response()->json([
+                'message' => 'Cannot delete the default system account.',
+            ], 422);
+        }
+
+        $nonOpeningTxns = AccountTransaction::where('account_id', $account->id)
+            ->where('type', '!=', 'opening_balance')
+            ->exists();
+
+        if ($nonOpeningTxns) {
+            return response()->json([
+                'message' => 'Cannot delete an account that has recorded financial transactions. Deactivate it instead.',
+            ], 422);
+        }
+
+        AccountTransaction::where('account_id', $account->id)->delete();
+        $account->delete();
+
+        return response()->json([
+            'message' => 'Account deleted successfully.',
+        ]);
+    }
+
+    /**
      * Get transactions / statement for an account.
      */
     public function transactions(Request $request, int $id): JsonResponse

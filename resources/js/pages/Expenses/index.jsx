@@ -15,6 +15,10 @@ import {
   CreditCardIcon,
   CurrencyDollarIcon,
   DevicePhoneMobileIcon,
+  PaperClipIcon,
+  ArrowPathRoundedSquareIcon,
+  DocumentTextIcon,
+  ArrowTopRightOnSquareIcon,
 } from "@heroicons/react/24/outline";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useTheme } from "@/context/ThemeContext";
@@ -29,6 +33,36 @@ const PAYMENT_METHODS = [
   { value: "cheque", label: "Cheque" },
   { value: "other", label: "Other" },
 ];
+
+const RECURRING_FREQUENCIES = [
+  { value: "weekly", label: "Weekly (Every 7 Days)" },
+  { value: "monthly", label: "Monthly (Same Day Next Month)" },
+  { value: "yearly", label: "Yearly (Annual Renewal)" },
+];
+
+function computePreviewNextDate(dateStr, frequency) {
+  if (!dateStr || !frequency) return null;
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  if (frequency === "weekly") {
+    d.setDate(d.getDate() + 7);
+  } else if (frequency === "monthly") {
+    const day = d.getDate();
+    d.setMonth(d.getMonth() + 1);
+    if (d.getDate() !== day) {
+      d.setDate(0);
+    }
+  } else if (frequency === "yearly") {
+    const month = d.getMonth();
+    d.setFullYear(d.getFullYear() + 1);
+    if (d.getMonth() !== month) {
+      d.setDate(0);
+    }
+  } else {
+    return null;
+  }
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
 
 export default function ExpensesIndex() {
   const { formatCurrency } = useCurrency();
@@ -75,6 +109,7 @@ export default function ExpensesIndex() {
     to: "",
     category_id: "",
     payment_method: "",
+    is_recurring: "",
   });
   const [pagination, setPagination] = useState({ current_page: 1, last_page: 1, total: 0 });
 
@@ -82,6 +117,8 @@ export default function ExpensesIndex() {
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
   const [isCategoriesModalOpen, setIsCategoriesModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
+  const [previewReceiptExpense, setPreviewReceiptExpense] = useState(null);
+  const [processingRecurring, setProcessingRecurring] = useState(false);
 
   // Form State
   const [form, setForm] = useState({
@@ -93,7 +130,11 @@ export default function ExpensesIndex() {
     reference_number: "",
     payee: "",
     description: "",
+    is_recurring: false,
+    recurring_frequency: "monthly",
   });
+  const [receiptFile, setReceiptFile] = useState(null);
+  const [removeReceipt, setRemoveReceipt] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // React-Select Custom Styles
@@ -255,6 +296,8 @@ export default function ExpensesIndex() {
   // Handle open modal
   function openCreateModal() {
     setEditingExpense(null);
+    setReceiptFile(null);
+    setRemoveReceipt(false);
     setForm({
       expense_category_id: categories[0]?.id ? String(categories[0].id) : "",
       amount: "",
@@ -264,12 +307,16 @@ export default function ExpensesIndex() {
       reference_number: "",
       payee: "",
       description: "",
+      is_recurring: false,
+      recurring_frequency: "monthly",
     });
     setIsRecordModalOpen(true);
   }
 
   function openEditModal(exp) {
     setEditingExpense(exp);
+    setReceiptFile(null);
+    setRemoveReceipt(false);
     setForm({
       expense_category_id: String(exp.expense_category_id),
       amount: exp.amount,
@@ -279,6 +326,8 @@ export default function ExpensesIndex() {
       reference_number: exp.reference_number || "",
       payee: exp.payee || "",
       description: exp.description || "",
+      is_recurring: Boolean(exp.is_recurring),
+      recurring_frequency: exp.recurring_frequency || "monthly",
     });
     setIsRecordModalOpen(true);
   }
@@ -288,14 +337,42 @@ export default function ExpensesIndex() {
     e.preventDefault();
     if (!form.expense_category_id) return toast.error("Please select an expense category.");
     if (!form.amount || Number(form.amount) <= 0) return toast.error("Please enter a valid amount.");
+    if (form.is_recurring && !form.recurring_frequency) {
+      return toast.error("Please select a recurring frequency.");
+    }
 
     setSaving(true);
     try {
+      const payload = new FormData();
+      payload.append("expense_category_id", form.expense_category_id);
+      payload.append("amount", form.amount);
+      payload.append("date", form.date);
+      payload.append("payment_method", form.payment_method);
+      if (form.account_id) payload.append("account_id", form.account_id);
+      payload.append("reference_number", form.reference_number || "");
+      payload.append("payee", form.payee || "");
+      payload.append("description", form.description || "");
+      payload.append("is_recurring", form.is_recurring ? "1" : "0");
+      if (form.is_recurring && form.recurring_frequency) {
+        payload.append("recurring_frequency", form.recurring_frequency);
+      }
+      if (receiptFile) {
+        payload.append("receipt", receiptFile);
+      }
+      if (removeReceipt) {
+        payload.append("remove_receipt", "1");
+      }
+
       if (editingExpense) {
-        await axios.put(`/api/expenses/${editingExpense.id}`, form);
+        payload.append("_method", "PUT");
+        await axios.post(`/api/expenses/${editingExpense.id}`, payload, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
         toast.success("Expense updated successfully.");
       } else {
-        await axios.post("/api/expenses", form);
+        await axios.post("/api/expenses", payload, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
         toast.success("Expense recorded successfully.");
       }
       setIsRecordModalOpen(false);
@@ -308,6 +385,26 @@ export default function ExpensesIndex() {
       toast.error(err?.response?.data?.message || "Failed to save expense.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleProcessRecurring() {
+    setProcessingRecurring(true);
+    try {
+      const res = await axios.post("/api/expenses/process-recurring");
+      const count = res.data?.processed_count || 0;
+      if (count > 0) {
+        toast.success(res.data?.message || `Generated ${count} recurring expense(s).`);
+        window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
+        window.dispatchEvent(new CustomEvent("accounts-changed"));
+        fetchData(1);
+      } else {
+        toast.success(res.data?.message || "All recurring expenses are up to date.");
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to process recurring expenses.");
+    } finally {
+      setProcessingRecurring(false);
     }
   }
 
@@ -362,8 +459,28 @@ export default function ExpensesIndex() {
             Track store overheads, utilities, salaries, and payouts with automatic drawer reconciliation
           </p>
         </div>
-        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto shrink-0">
+          {Number(summary?.recurring_active_count || 0) > 0 && (
+            <button
+              type="button"
+              disabled={processingRecurring}
+              onClick={handleProcessRecurring}
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold theme-btn-tertiary ${btnTertiary.className} disabled:opacity-50`}
+              style={btnTertiary.style}
+              title="Run recurring expense scheduler now for any due weekly, monthly, or yearly expenses"
+            >
+              <ArrowPathRoundedSquareIcon className={`w-4 h-4 ${processingRecurring ? "animate-spin" : ""}`} />
+              <span>
+                {processingRecurring
+                  ? "Processing..."
+                  : Number(summary?.recurring_due_count || 0) > 0
+                  ? `Process Due (${summary.recurring_due_count})`
+                  : `Recurring (${summary.recurring_active_count})`}
+              </span>
+            </button>
+          )}
           <button
+            type="button"
             onClick={() => setIsCategoriesModalOpen(true)}
             className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold theme-btn-secondary ${btnSecondary.className}`}
             style={btnSecondary.style}
@@ -372,6 +489,7 @@ export default function ExpensesIndex() {
             <span>Categories</span>
           </button>
           <button
+            type="button"
             onClick={openCreateModal}
             className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold theme-btn-primary ${btnPrimary.className}`}
             style={btnPrimary.style}
@@ -502,9 +620,10 @@ export default function ExpensesIndex() {
 
         {/* Quick Date Pills & Reset */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-gray-100/60 dark:border-slate-800/60 text-[11px]">
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-gray-400 text-xs">Quick:</span>
             <button
+              type="button"
               onClick={() => setQuickDate("today")}
               className={`px-2.5 py-1 text-[11px] font-medium theme-btn-tertiary ${btnTertiary.className}`}
               style={btnTertiary.style}
@@ -512,18 +631,34 @@ export default function ExpensesIndex() {
               Today
             </button>
             <button
+              type="button"
               onClick={() => setQuickDate("this_month")}
               className={`px-2.5 py-1 text-[11px] font-medium theme-btn-tertiary ${btnTertiary.className}`}
               style={btnTertiary.style}
             >
               This Month
             </button>
+            <button
+              type="button"
+              onClick={() =>
+                setFilters((f) => ({ ...f, is_recurring: f.is_recurring === "1" ? "" : "1" }))
+              }
+              className={`inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-lg border transition ${
+                filters.is_recurring === "1"
+                  ? "bg-violet-600 text-white border-violet-600 shadow-sm"
+                  : "bg-violet-50/70 dark:bg-violet-950/30 text-violet-700 dark:text-violet-300 border-violet-200/70 dark:border-violet-800/60 hover:bg-violet-100/70"
+              }`}
+            >
+              <ArrowPathRoundedSquareIcon className="w-3.5 h-3.5" />
+              <span>Recurring Only</span>
+            </button>
           </div>
 
-          {(filters.from || filters.to || filters.category_id || filters.payment_method || filters.search) && (
+          {(filters.from || filters.to || filters.category_id || filters.payment_method || filters.search || filters.is_recurring) && (
             <button
+              type="button"
               onClick={() =>
-                setFilters({ search: "", from: "", to: "", category_id: "", payment_method: "" })
+                setFilters({ search: "", from: "", to: "", category_id: "", payment_method: "", is_recurring: "" })
               }
               className={`px-2.5 py-1 text-[11px] font-medium theme-btn-danger ${btnDanger.className}`}
               style={btnDanger.style}
@@ -570,16 +705,41 @@ export default function ExpensesIndex() {
                   >
                     {/* Date / Number */}
                     <td className="py-3 px-4 whitespace-nowrap">
-                      <div className="font-semibold text-gray-900 dark:text-white">
-                        {new Date(exp.date).toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
+                      <div className="font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                        <span>
+                          {new Date(exp.date).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                        </span>
+                        {exp.is_recurring && (
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300 border border-violet-200/60 dark:border-violet-800/60 capitalize"
+                            title={
+                              exp.next_recurring_date
+                                ? `Recurring ${exp.recurring_frequency || "monthly"} • Next due: ${exp.next_recurring_date}`
+                                : `Recurring ${exp.recurring_frequency || "monthly"}`
+                            }
+                          >
+                            <ArrowPathRoundedSquareIcon className="w-3 h-3" />
+                            {exp.recurring_frequency || "recurring"}
+                          </span>
+                        )}
                       </div>
                       <div className="text-[10px] font-mono text-gray-400 dark:text-slate-500">
                         {exp.expense_number}
                       </div>
+                      {exp.is_recurring && exp.next_recurring_date && (
+                        <div className="text-[10px] text-violet-600 dark:text-violet-400 font-medium mt-0.5">
+                          Next:{" "}
+                          {new Date(`${exp.next_recurring_date}T00:00:00`).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                        </div>
+                      )}
                     </td>
 
                     {/* Category */}
@@ -600,11 +760,24 @@ export default function ExpensesIndex() {
                       <div className="text-[11px] text-gray-500 dark:text-slate-400 truncate">
                         {exp.description || "—"}
                       </div>
-                      {exp.reference_number && (
-                        <div className="text-[10px] font-mono text-gray-400 truncate">
-                          Ref: {exp.reference_number}
-                        </div>
-                      )}
+                      <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                        {exp.reference_number && (
+                          <span className="text-[10px] font-mono text-gray-400 truncate">
+                            Ref: {exp.reference_number}
+                          </span>
+                        )}
+                        {exp.receipt_path && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewReceiptExpense(exp)}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60 hover:bg-emerald-100/80 transition"
+                            title="View attached receipt"
+                          >
+                            <PaperClipIcon className="w-3 h-3" />
+                            <span>Receipt</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
 
                     {/* Payment Method / Account */}
@@ -636,17 +809,32 @@ export default function ExpensesIndex() {
                     {/* Actions */}
                     <td className="py-3 px-4 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1 opacity-80 group-hover:opacity-100 transition">
+                        {exp.receipt_path && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewReceiptExpense(exp)}
+                            className="p-1.5 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition"
+                            title="View Receipt"
+                            aria-label={`View receipt for ${exp.expense_number}`}
+                          >
+                            <PaperClipIcon className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
+                          type="button"
                           onClick={() => openEditModal(exp)}
                           className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/30 transition"
                           title="Edit"
+                          aria-label={`Edit ${exp.expense_number}`}
                         >
                           <PencilSquareIcon className="w-4 h-4" />
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleDelete(exp)}
                           className="p-1.5 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 transition"
                           title="Delete"
+                          aria-label={`Delete ${exp.expense_number}`}
                         >
                           <TrashIcon className="w-4 h-4" />
                         </button>
@@ -864,6 +1052,138 @@ export default function ExpensesIndex() {
                 />
               </div>
 
+              {/* Receipt Attachment Upload */}
+              <div className="p-3 rounded-xl bg-gray-50/80 dark:bg-slate-800/50 border border-gray-200/70 dark:border-slate-700/70 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label
+                    htmlFor="expense-receipt-input"
+                    className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-slate-200 cursor-pointer"
+                  >
+                    <PaperClipIcon className="w-4 h-4 text-emerald-500" />
+                    <span>Receipt / Bill Attachment (Image or PDF, max 5MB)</span>
+                  </label>
+                  {editingExpense?.receipt_path && !removeReceipt && !receiptFile && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewReceiptExpense(editingExpense)}
+                        className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                      >
+                        View Current
+                      </button>
+                      <span className="text-gray-300 dark:text-slate-600">•</span>
+                      <button
+                        type="button"
+                        onClick={() => setRemoveReceipt(true)}
+                        className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                  {removeReceipt && !receiptFile && (
+                    <button
+                      type="button"
+                      onClick={() => setRemoveReceipt(false)}
+                      className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      Undo Remove
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    id="expense-receipt-input"
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp,.pdf,image/*,application/pdf"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null;
+                      setReceiptFile(file);
+                      if (file) setRemoveReceipt(false);
+                    }}
+                    className="block w-full text-xs text-gray-600 dark:text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 dark:file:bg-blue-950/50 dark:file:text-blue-300 hover:file:bg-blue-100 cursor-pointer"
+                  />
+                  {receiptFile && (
+                    <button
+                      type="button"
+                      onClick={() => setReceiptFile(null)}
+                      className="px-2 py-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg shrink-0"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {receiptFile && (
+                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400 truncate">
+                    Selected: {receiptFile.name} ({(receiptFile.size / 1024).toFixed(1)} KB)
+                  </p>
+                )}
+                {removeReceipt && !receiptFile && (
+                  <p className="text-[11px] text-rose-600 dark:text-rose-400">
+                    Existing receipt attachment will be removed when saved.
+                  </p>
+                )}
+              </div>
+
+              {/* Recurring Expense Schedule */}
+              <div className="p-3 rounded-xl bg-violet-50/50 dark:bg-violet-950/20 border border-violet-200/60 dark:border-violet-800/50 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label
+                    htmlFor="expense-is-recurring"
+                    className="flex items-center gap-2 text-xs font-semibold text-gray-800 dark:text-slate-200 cursor-pointer select-none"
+                  >
+                    <input
+                      id="expense-is-recurring"
+                      type="checkbox"
+                      checked={Boolean(form.is_recurring)}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          is_recurring: e.target.checked,
+                          recurring_frequency: form.recurring_frequency || "monthly",
+                        })
+                      }
+                      className="w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                    />
+                    <ArrowPathRoundedSquareIcon className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+                    <span>Recurring Expense (Auto-Schedule)</span>
+                  </label>
+                  {form.is_recurring && (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300">
+                      Next: {computePreviewNextDate(form.date, form.recurring_frequency) || "—"}
+                    </span>
+                  )}
+                </div>
+
+                {form.is_recurring && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-center pt-1">
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-600 dark:text-slate-400 mb-1">
+                        Billing Frequency
+                      </label>
+                      <Select
+                        options={RECURRING_FREQUENCIES}
+                        value={
+                          RECURRING_FREQUENCIES.find((f) => f.value === form.recurring_frequency) ||
+                          RECURRING_FREQUENCIES[1]
+                        }
+                        onChange={(opt) =>
+                          setForm({ ...form, recurring_frequency: opt?.value || "monthly" })
+                        }
+                        styles={selectStyles}
+                        isSearchable={false}
+                        menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                      />
+                    </div>
+                    <p className="text-[11px] text-gray-500 dark:text-slate-400 leading-relaxed">
+                      Automatically records the next expense and deducts from the selected account on its due date.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               {/* Modal Actions */}
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-gray-100 dark:border-slate-800">
                 <button
@@ -884,6 +1204,71 @@ export default function ExpensesIndex() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Receipt Preview Modal */}
+      {previewReceiptExpense && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fadeIn"
+          onClick={() => setPreviewReceiptExpense(null)}
+        >
+          <div
+            className="relative w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 dark:border-slate-800">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <DocumentTextIcon className="w-5 h-5 text-emerald-500 shrink-0" />
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white truncate">
+                    Receipt — {previewReceiptExpense.expense_number}
+                  </h3>
+                  <p className="text-[11px] text-gray-500 dark:text-slate-400 truncate">
+                    {previewReceiptExpense.payee || previewReceiptExpense.category?.name || "Expense Attachment"} •{" "}
+                    {formatCurrency(previewReceiptExpense.amount)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewReceiptExpense.receipt_url || `/api/expenses/${previewReceiptExpense.id}/receipt`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 hover:bg-blue-100 transition"
+                >
+                  <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
+                  <span>Open / Download</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewReceiptExpense(null)}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 rounded-lg"
+                  aria-label="Close receipt preview"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 overflow-auto flex-1 flex items-center justify-center bg-gray-50 dark:bg-slate-950/60 min-h-[320px]">
+              {String(previewReceiptExpense.receipt_path || "")
+                .toLowerCase()
+                .endsWith(".pdf") ? (
+                <iframe
+                  src={previewReceiptExpense.receipt_url || `/api/expenses/${previewReceiptExpense.id}/receipt`}
+                  title={`Receipt ${previewReceiptExpense.expense_number}`}
+                  className="w-full h-[65vh] rounded-xl border border-gray-200 dark:border-slate-800 bg-white"
+                />
+              ) : (
+                <img
+                  src={previewReceiptExpense.receipt_url || `/api/expenses/${previewReceiptExpense.id}/receipt`}
+                  alt={`Receipt for ${previewReceiptExpense.expense_number}`}
+                  className="max-w-full max-h-[65vh] object-contain rounded-xl shadow-sm"
+                />
+              )}
+            </div>
           </div>
         </div>
       )}

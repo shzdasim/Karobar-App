@@ -40,6 +40,7 @@ class FinancialAccountsTest extends TestCase
             '2026_04_01_000001_add_whole_sale_prices_to_purchase_invoice_items_table.php',
             '2026_04_01_000002_add_whole_sale_margin_to_purchase_invoice_items_table.php',
             '2026_04_01_000003_add_whole_sale_margin_to_products_table.php',
+            '2026_04_02_000002_create_customer_whole_sale_prices_table.php',
             '2025_08_30_171505_create_sale_invoices_table.php',
             '2025_08_30_171513_create_sale_invoice_items_table.php',
             '2025_09_01_074800_create_sale_returns_table.php',
@@ -53,6 +54,7 @@ class FinancialAccountsTest extends TestCase
             '2025_09_08_171931_create_customer_ledgers_table.php',
             '2025_09_08_013727_create_supplier_ledgers_table.php',
             '2025_09_21_102824_create_licenses_table.php',
+            '2026_10_23_000001_create_invoice_drafts_table.php',
             '2026_10_23_000003_create_document_histories_and_invoice_reversals.php',
             '2026_10_23_000004_create_payments_and_allocations_tables.php',
             '2026_10_23_000005_add_payment_method_to_invoices_table.php',
@@ -60,6 +62,7 @@ class FinancialAccountsTest extends TestCase
             '2026_10_23_000007_add_credit_terms_and_due_dates.php',
             '2026_10_23_000008_create_financial_accounts_tables.php',
             '2026_10_23_000009_add_code_and_icon_to_accounts_table.php',
+            '2026_10_28_000001_add_cheque_fields_to_payments_table.php',
         ] as $file) {
             (require database_path('migrations/' . $file))->up();
         }
@@ -570,5 +573,592 @@ class FinancialAccountsTest extends TestCase
         $this->assertEquals('meezan', $acc['icon']);
         $this->assertEquals('#005b41', $acc['color']);
         $this->assertEquals(50000, (float)$acc['current_balance']);
+    }
+
+    public function test_multiple_open_cash_drawer_shifts_aggregate_without_overwriting_each_other_or_secondary_cash_accounts(): void
+    {
+        $cashier1 = User::forceCreate([
+            'name'     => 'Cashier One',
+            'email'    => 'cashier1@example.com',
+            'password' => bcrypt('secret123'),
+        ]);
+        $cashier2 = User::forceCreate([
+            'name'     => 'Cashier Two',
+            'email'    => 'cashier2@example.com',
+            'password' => bcrypt('secret123'),
+        ]);
+
+        // Create a secondary "Safe Vault Cash" account (non-default cash account)
+        $safeVault = Account::create([
+            'name'            => 'Safe Vault Cash',
+            'type'            => 'cash',
+            'code'            => 'safe_vault',
+            'opening_balance' => 100000,
+            'current_balance' => 100000,
+            'is_default'      => false,
+            'is_active'       => true,
+        ]);
+
+        $drawerAccount = Account::where('type', 'cash')->where('is_default', true)->firstOrFail();
+
+        // Cashier 1 opens shift with 5,000
+        $session1 = app(CashDrawerService::class)->openSession($cashier1, 5000, 'Morning Counter 1');
+        $this->assertEquals(5000, (float) $drawerAccount->fresh()->current_balance);
+        $this->assertEquals(100000, (float) $safeVault->fresh()->current_balance);
+
+        // Cashier 2 opens concurrent shift with 8,000
+        $session2 = app(CashDrawerService::class)->openSession($cashier2, 8000, 'Morning Counter 2');
+
+        // Default drawer account must reflect the combined open drawer floats (5,000 + 8,000 = 13,000), not overwrite with 8,000!
+        $this->assertEquals(13000, (float) $drawerAccount->fresh()->current_balance);
+        // Secondary safe vault cash account must remain untouched at 100,000
+        $this->assertEquals(100000, (float) $safeVault->fresh()->current_balance);
+
+        // Cashier 1 records a 2,000 cash sale
+        app(CashDrawerService::class)->recordTransaction($session1, 'cash_sale', 2000, null, null, 'Walk-in cash sale');
+        $this->assertEquals(15000, (float) $drawerAccount->fresh()->current_balance);
+        $this->assertEquals(100000, (float) $safeVault->fresh()->current_balance);
+    }
+
+    public function test_dashboard_sales_by_category_returns_revenue_without_sql_error(): void
+    {
+        $user = User::forceCreate([
+            'name'     => 'Dashboard User',
+            'email'    => 'dashboard@example.com',
+            'password' => bcrypt('secret123'),
+        ]);
+        $this->actingAs($user);
+
+        $customer = Customer::create(['name' => 'Walk-in Customer']);
+        \Illuminate\Support\Facades\DB::table('categories')->insertOrIgnore(['id' => 10, 'name' => 'Antibiotics']);
+        \Illuminate\Support\Facades\DB::table('brands')->insertOrIgnore(['id' => 10, 'name' => 'GSK']);
+
+        $product = Product::create([
+            'category_id'         => 10,
+            'brand_id'            => 10,
+            'name'                => 'Augmentin 625mg',
+            'product_code'        => 'AUG-625',
+            'barcode'             => 'BC-AUG-625',
+            'pack_size'           => 1,
+            'quantity'            => 100,
+            'unit_purchase_price' => 200,
+            'unit_sale_price'     => 300,
+        ]);
+
+        $this->postJson('/api/sale-invoices', [
+            'customer_id'    => $customer->id,
+            'invoice_type'   => 'debit',
+            'payment_method' => 'cash',
+            'date'           => now()->format('Y-m-d'),
+            'gross_amount'   => 600,
+            'total'          => 600,
+            'total_receive'  => 600,
+            'items'          => [
+                [
+                    'product_id' => $product->id,
+                    'quantity'   => 2,
+                    'price'      => 300,
+                    'sub_total'  => 600,
+                ],
+            ],
+        ])->assertStatus(201);
+
+        $res = $this->getJson('/api/dashboard/sales-by-category');
+        $res->assertOk();
+
+        $categories = collect($res->json('data'));
+        $antibiotics = $categories->firstWhere('category', 'Antibiotics');
+        $this->assertNotNull($antibiotics);
+        $this->assertEquals(600.0, (float) $antibiotics['value']);
+        $this->assertEquals(600.0, (float) $antibiotics['revenue']);
+    }
+
+    public function test_tier2_customer_wholesale_prices_account_delete_barcodes_grn_and_bulk_users(): void
+    {
+        $admin = User::forceCreate([
+            'name'     => 'Admin User',
+            'email'    => 'admin_tier2@example.com',
+            'password' => bcrypt('secret123'),
+            'status'   => 'active',
+        ]);
+        \Spatie\Permission\Models\Permission::findOrCreate('user.view', 'sanctum');
+        \Spatie\Permission\Models\Permission::findOrCreate('user.update', 'sanctum');
+        \Spatie\Permission\Models\Permission::findOrCreate('user.delete', 'sanctum');
+        \Spatie\Permission\Models\Permission::findOrCreate('customer.view', 'sanctum');
+        \Spatie\Permission\Models\Permission::findOrCreate('customer.update', 'sanctum');
+        \Spatie\Permission\Models\Permission::findOrCreate('purchase-invoice.view', 'sanctum');
+        $admin->givePermissionTo(['user.view', 'user.update', 'user.delete', 'customer.view', 'customer.update', 'purchase-invoice.view']);
+        $this->actingAs($admin);
+
+        // 1. Customer Custom Wholesale Price CRUD
+        $customer = Customer::create(['name' => 'Clinic Wholesale Partner']);
+        \Illuminate\Support\Facades\DB::table('categories')->insertOrIgnore(['id' => 11, 'name' => 'Tablets']);
+        \Illuminate\Support\Facades\DB::table('brands')->insertOrIgnore(['id' => 11, 'name' => 'Abbott']);
+        $product = Product::create([
+            'category_id'           => 11,
+            'brand_id'              => 11,
+            'name'                  => 'Brufen 400mg',
+            'product_code'          => 'BRU-400',
+            'barcode'               => 'BC-BRU-400',
+            'pack_size'             => 10,
+            'quantity'              => 200,
+            'unit_purchase_price'   => 10,
+            'unit_sale_price'       => 15,
+            'whole_sale_pack_price' => 135,
+            'whole_sale_unit_price' => 13.5,
+        ]);
+
+        $savePriceRes = $this->postJson("/api/customers/{$customer->id}/whole-sale-prices", [
+            'product_id' => $product->id,
+            'pack_price' => 125.50,
+        ]);
+        $savePriceRes->assertStatus(201);
+        $priceId = $savePriceRes->json('id');
+        $this->assertNotNull($priceId);
+        $this->assertEquals(125.50, (float) $savePriceRes->json('pack_price'));
+
+        $listPriceRes = $this->getJson("/api/customers/{$customer->id}/whole-sale-prices");
+        $listPriceRes->assertOk();
+        $this->assertCount(1, $listPriceRes->json());
+        $this->assertEquals('Brufen 400mg', $listPriceRes->json('0.product.name'));
+
+        $this->deleteJson("/api/customers/{$customer->id}/whole-sale-prices/{$priceId}")
+            ->assertOk();
+        $this->assertCount(0, $this->getJson("/api/customers/{$customer->id}/whole-sale-prices")->json());
+
+        // 2. Financial Account Deletion Guard
+        $unusedBank = Account::create([
+            'name'            => 'Temporary Bank Account',
+            'type'            => 'bank',
+            'code'            => 'temp_bank',
+            'opening_balance' => 0,
+            'current_balance' => 0,
+            'is_default'      => false,
+            'is_active'       => true,
+        ]);
+        $this->deleteJson("/api/accounts/{$unusedBank->id}")->assertOk();
+        $this->assertDatabaseMissing('accounts', ['id' => $unusedBank->id]);
+
+        // Default cash account cannot be deleted
+        $defaultCash = Account::where('type', 'cash')->where('is_default', true)->firstOrFail();
+        $this->deleteJson("/api/accounts/{$defaultCash->id}")->assertStatus(422);
+
+        // 3. Barcode Purchase Invoices (GRN) endpoint
+        $supplier = Supplier::create(['name' => 'Pharma Distributor']);
+        $piRes = $this->postJson('/api/purchase-invoices', [
+            'supplier_id'    => $supplier->id,
+            'posted_number'  => 'PI-GRN-001',
+            'posted_date'    => now()->format('Y-m-d'),
+            'invoice_number' => 'SUP-INV-77',
+            'invoice_amount' => 1000,
+            'invoice_type'   => 'credit',
+            'total_amount'   => 1000,
+            'total_paid'     => 0,
+            'payment_method' => 'cash',
+            'items'          => [
+                [
+                    'product_id'          => $product->id,
+                    'batch'               => 'B-GRN-99',
+                    'expiry'              => '2028-06-30',
+                    'pack_quantity'       => 10,
+                    'pack_size'           => 10,
+                    'unit_quantity'       => 100,
+                    'pack_purchase_price' => 100,
+                    'unit_purchase_price' => 10,
+                    'pack_sale_price'     => 150,
+                    'unit_sale_price'     => 15,
+                    'margin'              => 33.33,
+                    'avg_price'           => 10,
+                    'quantity'            => 100,
+                    'sub_total'           => 1000,
+                ],
+            ],
+        ])->assertStatus(201);
+
+        $grnQueueRes = $this->getJson('/api/barcodes/purchase-invoices');
+        $grnQueueRes->assertOk();
+        $this->assertNotEmpty($grnQueueRes->json('purchase_invoices'));
+        $piId = $piRes->json('data.id') ?? $piRes->json('id');
+        $firstGrn = collect($grnQueueRes->json('purchase_invoices'))->firstWhere('id', $piId);
+        $this->assertNotNull($firstGrn);
+        $this->assertEquals('B-GRN-99', $firstGrn['items'][0]['batch']);
+
+        // 4. Global Document History endpoint
+        $globalHistRes = $this->getJson('/api/document-histories');
+        $globalHistRes->assertOk();
+        $this->assertNotEmpty($globalHistRes->json('histories'));
+
+        // 5. Users Bulk Action endpoint
+        $staff1 = User::forceCreate([
+            'name'     => 'Staff One',
+            'email'    => 'staff1@example.com',
+            'password' => bcrypt('secret123'),
+            'status'   => 'active',
+        ]);
+        $staff2 = User::forceCreate([
+            'name'     => 'Staff Two',
+            'email'    => 'staff2@example.com',
+            'password' => bcrypt('secret123'),
+            'status'   => 'active',
+        ]);
+
+        $this->postJson('/api/users/bulk-action', [
+            'action'   => 'deactivate',
+            'user_ids' => [$staff1->id, $staff2->id],
+        ])->assertOk();
+
+        $this->assertEquals('inactive', $staff1->fresh()->status);
+        $this->assertEquals('inactive', $staff2->fresh()->status);
+    }
+
+    public function test_tier3_pdf_reports_document_sharing_and_dated_ledgers(): void
+    {
+        foreach ([
+            '2025_09_02_133214_create_settings_table.php',
+            '2025_09_06_170858_create_stock_adjustments_table.php',
+            '2025_09_06_171041_create_stock_adjustment_items_table.php',
+            '2026_10_23_000010_create_expenses_and_categories_tables.php',
+            '2026_10_25_000001_create_stocktake_sessions_table.php',
+            '2026_10_25_000002_create_stocktake_items_table.php',
+            '2026_10_25_000004_create_stock_disposals_tables.php',
+        ] as $file) {
+            if (file_exists(database_path('migrations/' . $file))) {
+                try {
+                    (require database_path('migrations/' . $file))->up();
+                } catch (\Throwable $e) {
+                    // Already migrated
+                }
+            }
+        }
+
+        $user = User::forceCreate([
+            'name'     => 'Tier3 Admin',
+            'email'    => 'tier3admin@example.com',
+            'password' => bcrypt('secret123'),
+        ]);
+        $this->actingAs($user);
+
+        \Illuminate\Support\Facades\DB::table('categories')->insertOrIgnore(['id' => 1, 'name' => 'General Cat']);
+        \Illuminate\Support\Facades\DB::table('brands')->insertOrIgnore(['id' => 1, 'name' => 'General Brand']);
+
+        $supplier = Supplier::create(['name' => 'Alpha Pharma', 'phone' => '03001112222']);
+        $customer = Customer::create(['name' => 'Beta Clinic', 'phone' => '03003334444']);
+
+        $product = Product::create([
+            'category_id'         => 1,
+            'brand_id'            => 1,
+            'name'                => 'Amoxicillin 250mg',
+            'product_code'        => 'AMX-250',
+            'barcode'             => 'BC-AMX-250',
+            'pack_size'           => 10,
+            'quantity'            => 50,
+            'unit_purchase_price' => 10,
+            'unit_sale_price'     => 15,
+            'supplier_id'         => $supplier->id,
+        ]);
+
+        // 1. Create Purchase Invoice & test share metadata + PDF
+        $piRes = $this->postJson('/api/purchase-invoices', [
+            'supplier_id'    => $supplier->id,
+            'posted_number'  => 'PI-T3-001',
+            'posted_date'    => '2026-10-01',
+            'invoice_number' => 'INV-T3-01',
+            'invoice_amount' => 1000,
+            'invoice_type'   => 'credit',
+            'total_amount'   => 1000,
+            'total_paid'     => 200,
+            'payment_method' => 'cash',
+            'items'          => [
+                [
+                    'product_id'          => $product->id,
+                    'batch'               => 'B-T3-01',
+                    'expiry'              => '2028-12-31',
+                    'pack_quantity'       => 10,
+                    'pack_size'           => 10,
+                    'unit_quantity'       => 100,
+                    'pack_purchase_price' => 100,
+                    'unit_purchase_price' => 10,
+                    'pack_sale_price'     => 150,
+                    'unit_sale_price'     => 15,
+                    'margin'              => 33.33,
+                    'avg_price'           => 10,
+                    'quantity'            => 100,
+                    'sub_total'           => 1000,
+                ],
+            ],
+        ])->assertStatus(201);
+        $piId = $piRes->json('data.id') ?? $piRes->json('id');
+
+        $this->getJson("/api/share/metadata?type=purchase_invoice&id={$piId}")
+            ->assertOk()
+            ->assertJsonPath('document_title', 'Purchase Invoice PRINV-0001');
+        $this->get("/api/share/pdf?type=purchase_invoice&id={$piId}")
+            ->assertOk();
+
+        // 2. Create two Sale Invoices on different dates & verify Customer Ledger opening balance
+        $this->postJson('/api/sale-invoices', [
+            'customer_id'    => $customer->id,
+            'invoice_type'   => 'credit',
+            'payment_method' => 'cash',
+            'date'           => '2026-10-05',
+            'gross_amount'   => 300,
+            'total'          => 300,
+            'total_receive'  => 100,
+            'items'          => [
+                [
+                    'product_id' => $product->id,
+                    'quantity'   => 20,
+                    'price'      => 15,
+                    'sub_total'  => 300,
+                ],
+            ],
+        ])->assertStatus(201);
+
+        $this->postJson('/api/sale-invoices', [
+            'customer_id'    => $customer->id,
+            'invoice_type'   => 'credit',
+            'payment_method' => 'cash',
+            'date'           => '2026-10-15',
+            'gross_amount'   => 150,
+            'total'          => 150,
+            'total_receive'  => 0,
+            'items'          => [
+                [
+                    'product_id' => $product->id,
+                    'quantity'   => 10,
+                    'price'      => 15,
+                    'sub_total'  => 150,
+                ],
+            ],
+        ])->assertStatus(201);
+
+        // Date-filtered customer ledger from 2026-10-10 to 2026-10-20 should have opening_balance = 200 (300 - 100)
+        $custLedgerRes = $this->getJson("/api/customer-ledger?customer_id={$customer->id}&from=2026-10-10&to=2026-10-20");
+        $custLedgerRes->assertOk();
+        $this->assertEquals(200.0, (float) $custLedgerRes->json('summary.opening_balance'));
+        $this->assertEquals(350.0, (float) $custLedgerRes->json('summary.net_balance'));
+        $this->assertCount(1, $custLedgerRes->json('data'));
+
+        // Date-filtered supplier ledger after 2026-10-10 should have opening_balance = 800 (1000 - 200)
+        $suppLedgerRes = $this->getJson("/api/supplier-ledger?supplier_id={$supplier->id}&from=2026-10-10&to=2026-10-20");
+        $suppLedgerRes->assertOk();
+        $this->assertEquals(800.0, (float) $suppLedgerRes->json('summary.opening_balance'));
+        $this->assertEquals(800.0, (float) $suppLedgerRes->json('summary.net_balance'));
+
+        // 3. Test Cash Drawer Session Z-Report PDF via DocumentShareController
+        $drawerRes = $this->postJson('/api/cash-drawer/open', ['opening_balance' => 5000])->assertStatus(201);
+        $drawerSessionId = $drawerRes->json('session.id');
+        $this->getJson("/api/share/metadata?type=cash_drawer_session&id={$drawerSessionId}")
+            ->assertOk();
+        $this->get("/api/share/pdf?type=cash_drawer_session&id={$drawerSessionId}")
+            ->assertOk();
+
+        // 4. Test Stocktake Session PDF via DocumentShareController
+        $stRes = $this->postJson('/api/stocktake-sessions', [
+            'session_type' => 'full',
+            'is_blind'     => true,
+            'notes'        => 'Tier 3 PDF test',
+        ])->assertStatus(201);
+        $stId = $stRes->json('session.id') ?? $stRes->json('id');
+        $this->getJson("/api/share/metadata?type=stocktake_session&id={$stId}")
+            ->assertOk();
+        $this->get("/api/share/pdf?type=stocktake_session&id={$stId}")
+            ->assertOk();
+
+        // 5. Test new Report PDF endpoints
+        $this->get('/api/reports/purchase-summary/pdf?from=2026-10-01&to=2026-10-31')->assertOk();
+        $this->get('/api/reports/purchase-returns/pdf?from=2026-10-01&to=2026-10-31')->assertOk();
+        $this->get('/api/reports/sale-returns/pdf?from=2026-10-01&to=2026-10-31')->assertOk();
+        $this->get('/api/reports/outstanding-aging/pdf?as_of=2026-10-31&aging_by=due_date')->assertOk();
+        $this->get('/api/reports/overdue-work-queue/pdf?as_of=2026-10-31&party_type=customers')->assertOk();
+        $this->get("/api/reports/reorder/pdf?supplier_id={$supplier->id}")->assertOk();
+        $this->get('/api/reports/net-profit/pdf?from=2026-10-01&to=2026-10-31')->assertOk();
+    }
+
+    public function test_tier4_opening_balances_pdc_cheques_quotations_challan_and_pos_split_checkout(): void
+    {
+        if (file_exists(database_path('migrations/2025_09_02_133214_create_settings_table.php'))) {
+            try {
+                (require database_path('migrations/2025_09_02_133214_create_settings_table.php'))->up();
+            } catch (\Throwable $e) {
+            }
+        }
+
+        $user = User::forceCreate([
+            'name'     => 'Tier4 Manager',
+            'email'    => 'tier4manager@example.com',
+            'password' => bcrypt('secret123'),
+        ]);
+        $this->actingAs($user);
+
+        // 1. Party Opening Balances on Customer & Supplier creation
+        $custRes = $this->postJson('/api/customers', [
+            'name'            => 'Opening Balance Customer',
+            'phone'           => '03009998888',
+            'opening_balance' => 4500,
+        ])->assertStatus(201);
+        $custId = $custRes->json('id');
+
+        $custLedger = $this->getJson("/api/customer-ledger?customer_id={$custId}")->assertOk();
+        $this->assertEquals(4500.0, (float) $custLedger->json('summary.net_balance'));
+
+        $suppRes = $this->postJson('/api/suppliers', [
+            'name'            => 'Opening Balance Supplier',
+            'phone'           => '03007776666',
+            'opening_balance' => 12000,
+        ])->assertStatus(201);
+        $suppId = $suppRes->json('id');
+
+        $suppLedger = $this->getJson("/api/supplier-ledger?supplier_id={$suppId}")->assertOk();
+        $this->assertEquals(12000.0, (float) $suppLedger->json('summary.net_balance'));
+
+        // 2. Post-Dated Cheque (PDC) Lifecycle: pending -> deposited -> cleared (and bounce test)
+        $bankAcc = Account::where('type', 'bank')->firstOrFail();
+        $initialBankBal = (float) $bankAcc->current_balance;
+
+        $pdcRes = $this->postJson('/api/payments', [
+            'party_type'     => 'customer',
+            'party_id'       => $custId,
+            'payment_date'   => '2026-10-28',
+            'amount'         => 2000,
+            'payment_method' => 'cheque',
+            'account_id'     => $bankAcc->id,
+            'cheque_number'  => 'CHQ-778899',
+            'bank_name'      => 'Meezan Bank',
+            'cheque_date'    => '2026-11-15',
+            'cheque_status'  => 'pending',
+        ])->assertStatus(201);
+        $pdcId = $pdcRes->json('payment.id') ?? $pdcRes->json('id');
+        $this->assertEquals('pending', $pdcRes->json('payment.cheque_status'));
+
+        // Bank balance should NOT increase while cheque is pending!
+        $this->assertEquals($initialBankBal, (float) $bankAcc->fresh()->current_balance);
+
+        // Transition to deposited -> still deferred
+        $this->postJson("/api/payments/{$pdcId}/cheque-status", [
+            'cheque_status' => 'deposited',
+        ])->assertOk()->assertJsonPath('payment.cheque_status', 'deposited');
+        $this->assertEquals($initialBankBal, (float) $bankAcc->fresh()->current_balance);
+
+        // Transition to cleared -> bank account is now credited!
+        $this->postJson("/api/payments/{$pdcId}/cheque-status", [
+            'cheque_status' => 'cleared',
+        ])->assertOk()->assertJsonPath('payment.cheque_status', 'cleared');
+        $this->assertEquals($initialBankBal + 2000.0, (float) $bankAcc->fresh()->current_balance);
+
+        // Transition to bounced -> reverses the cleared bank deposit and restores customer ledger
+        $this->postJson("/api/payments/{$pdcId}/cheque-status", [
+            'cheque_status' => 'bounced',
+            'reason'        => 'Insufficient funds',
+        ])->assertOk()->assertJsonPath('payment.cheque_status', 'bounced');
+        $this->assertEquals($initialBankBal, (float) $bankAcc->fresh()->current_balance);
+
+        // 3. Quotations / Estimates -> PDF & Convert to Sale Invoice -> Delivery Challan PDF
+        \Illuminate\Support\Facades\DB::table('categories')->insertOrIgnore(['id' => 1, 'name' => 'General Cat']);
+        \Illuminate\Support\Facades\DB::table('brands')->insertOrIgnore(['id' => 1, 'name' => 'General Brand']);
+
+        $product = Product::create([
+            'category_id'         => 1,
+            'brand_id'            => 1,
+            'name'                => 'Ciprofloxacin 500mg',
+            'product_code'        => 'CIP-500',
+            'barcode'             => 'BC-CIP-500',
+            'pack_size'           => 10,
+            'quantity'            => 100,
+            'unit_purchase_price' => 20,
+            'unit_sale_price'     => 30,
+        ]);
+
+        $quoteRes = $this->postJson('/api/invoice-drafts', [
+            'type'       => 'quotation',
+            'party_id'   => $custId,
+            'party_name' => 'Opening Balance Customer',
+            'total'      => 300,
+            'payload'    => [
+                'customer_id'  => $custId,
+                'sale_type'    => 'retail',
+                'invoice_type' => 'credit',
+                'gross_amount' => 300,
+                'total'        => 300,
+                'items'        => [
+                    [
+                        'product_id' => $product->id,
+                        'quantity'   => 10,
+                        'price'      => 30,
+                        'sub_total'  => 300,
+                    ],
+                ],
+            ],
+        ])->assertStatus(201);
+        $quoteId = $quoteRes->json('id') ?? $quoteRes->json('draft.id');
+
+        // Verify Quotation PDF & metadata
+        $this->getJson("/api/share/metadata?type=quotation&id={$quoteId}")
+            ->assertOk();
+        $this->get("/api/share/pdf?type=quotation&id={$quoteId}")
+            ->assertOk();
+
+        // Convert Quotation to posted Sale Invoice
+        $postQuoteRes = $this->postJson("/api/invoice-drafts/{$quoteId}/post")->assertStatus(201);
+        $convertedInvoiceId = $postQuoteRes->json('id') ?? $postQuoteRes->json('invoice_id');
+        $this->assertNotNull($convertedInvoiceId);
+
+        // Verify Delivery Challan / Gate Pass PDF & metadata
+        $this->getJson("/api/share/metadata?type=delivery_challan&id={$convertedInvoiceId}")
+            ->assertOk();
+        $this->get("/api/share/pdf?type=delivery_challan&id={$convertedInvoiceId}")
+            ->assertOk();
+
+        // 4. POS Split-Tender Checkout + Instant Customer Credit Redemption
+        // First record an unapplied advance payment of Rs. 200 for the customer
+        $cashAcc = Account::where('type', 'cash')->where('is_default', true)->firstOrFail();
+        $cardAcc = Account::where('type', 'card')->first() ?? $bankAcc;
+
+        $this->postJson('/api/payments', [
+            'party_type'     => 'customer',
+            'party_id'       => $custId,
+            'payment_date'   => '2026-10-28',
+            'amount'         => 200,
+            'payment_method' => 'cash',
+            'account_id'     => $cashAcc->id,
+        ])->assertStatus(201);
+
+        $cashBefore = (float) $cashAcc->fresh()->current_balance;
+        $cardBefore = (float) $cardAcc->fresh()->current_balance;
+
+        // Checkout Rs. 600 sale: Redeem Rs. 200 credit + Split Tender (Rs. 250 Cash + Rs. 150 Card)
+        $splitSaleRes = $this->postJson('/api/sale-invoices', [
+            'customer_id'         => $custId,
+            'sale_type'           => 'retail',
+            'invoice_type'        => 'debit',
+            'date'                => '2026-10-28',
+            'payment_method'      => 'cash',
+            'gross_amount'        => 600,
+            'total'               => 600,
+            'total_receive'       => 400,
+            'apply_credit_amount' => 200,
+            'split_payments'      => [
+                ['payment_method' => 'cash', 'account_id' => $cashAcc->id, 'amount' => 250],
+                ['payment_method' => 'card', 'account_id' => $cardAcc->id, 'amount' => 150],
+            ],
+            'items'               => [
+                [
+                    'product_id' => $product->id,
+                    'quantity'   => 20,
+                    'price'      => 30,
+                    'sub_total'  => 600,
+                ],
+            ],
+        ])->assertStatus(201);
+
+        $splitInvoiceId = $splitSaleRes->json('id');
+        $splitInvoice = SaleInvoice::findOrFail($splitInvoiceId);
+
+        // Cash account increased by 250, Card account increased by 150
+        $this->assertEquals($cashBefore + 250.0, (float) $cashAcc->fresh()->current_balance);
+        $this->assertEquals($cardBefore + 150.0, (float) $cardAcc->fresh()->current_balance);
+        // Total received on invoice = 400 (split tender) + 200 (applied credit) = 600 (fully settled)
+        $this->assertEquals(600.0, (float) $splitInvoice->total_receive);
+        $this->assertEquals((float) $splitInvoice->total, (float) $splitInvoice->total_receive);
     }
 }
