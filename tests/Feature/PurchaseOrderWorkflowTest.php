@@ -203,24 +203,17 @@ class PurchaseOrderWorkflowTest extends TestCase
         $this->assertSame(0, PurchaseOrder::count());
     }
 
-    public function test_invalid_supplier_leaves_order_and_stock_unchanged(): void
+    public function test_supplier_can_be_changed_when_receiving_order_into_invoice(): void
     {
         $order = $this->order();
-        foreach (['supplier'] as $case) {
-            $data = $this->invoiceData($order, $case === 'quantity' ? 101 : 100);
-            if ($case === 'supplier') {
-                $data['supplier_id'] = 2;
-            }
-            try {
-                app(PurchaseInvoiceController::class)->store($this->request($data));
-                $this->fail('Invalid receipt accepted');
-            } catch (ValidationException $e) {
-                $this->assertNotEmpty($e->errors());
-            }
-        }
-        $this->assertSame('ordered', $order->fresh()->status);
-        $this->assertSame(0, PurchaseInvoice::count());
-        $this->assertSame([5, 5, 5], Product::orderBy('id')->pluck('quantity')->all());
+        $data = $this->invoiceData($order, 100);
+        $data['supplier_id'] = 2;
+        $response = app(PurchaseInvoiceController::class)->store($this->request($data));
+        $this->assertSame(201, $response->status());
+        $this->assertSame(2, (int) PurchaseInvoice::first()->supplier_id);
+        $this->assertSame(2, (int) $order->fresh()->supplier_id);
+        $this->assertSame('received', $order->fresh()->status);
+        $this->assertSame([105, 105, 105], Product::orderBy('id')->pluck('quantity')->all());
     }
 
     public function test_invoice_permission_is_required_to_prepare_receipt(): void
@@ -414,18 +407,15 @@ class PurchaseOrderWorkflowTest extends TestCase
         $this->assertSame([5, 5, 5], Product::orderBy('id')->pluck('quantity')->all());
     }
 
-    public function test_finalized_supplier_and_cancelled_order_are_enforced(): void
+    public function test_supplier_can_be_updated_and_cancelled_order_is_enforced(): void
     {
         $order = $this->order();
         $payload = $order->load('items')->toArray();
         $payload['supplier_id'] = 2;
-        try {
-            app(PurchaseOrderController::class)->update($this->request($payload), $order);
-            $this->fail('Finalized supplier changed');
-        } catch (ValidationException $e) {
-            $this->assertArrayHasKey('supplier_id', $e->errors());
-        }
-        $data = $this->invoiceData($order);
+        app(PurchaseOrderController::class)->update($this->request($payload), $order);
+        $this->assertSame(2, (int) $order->fresh()->supplier_id);
+
+        $data = $this->invoiceData($order->fresh());
         app(PurchaseOrderController::class)->cancel($order);
         try {
             app(PurchaseInvoiceController::class)->store($this->request($data));
@@ -437,16 +427,15 @@ class PurchaseOrderWorkflowTest extends TestCase
         $this->assertSame([5, 5, 5], Product::orderBy('id')->pluck('quantity')->all());
     }
 
-    public function test_invalid_stock_quantities_discounts_and_source_lines_are_rejected(): void
+    public function test_invalid_stock_quantities_and_discounts_are_rejected(): void
     {
         $order = $this->order();
-        foreach (['quantity', 'pack_quantity', 'item_discount_percentage', 'purchase_order_item_id'] as $field) {
+        foreach (['quantity', 'pack_quantity', 'item_discount_percentage'] as $field) {
             $data = $this->invoiceData($order);
             $data['items'][0][$field] = match ($field) {
                 'quantity' => 99,
                 'pack_quantity' => -1,
                 'item_discount_percentage' => 101,
-                'purchase_order_item_id' => $order->items->last()->id,
             };
             try {
                 app(PurchaseInvoiceController::class)->store($this->request($data));

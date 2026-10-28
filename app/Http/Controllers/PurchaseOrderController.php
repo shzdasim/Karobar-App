@@ -147,9 +147,6 @@ class PurchaseOrderController extends Controller
             if ($order->status !== 'ordered' || $order->invoices()->exists()) {
                 abort(409, 'Only unreceived orders can be edited.');
             }
-            if ((int) $order->supplier_id !== (int) $data['supplier_id']) {
-                throw \Illuminate\Validation\ValidationException::withMessages(['supplier_id' => 'The submitted Purchase Order supplier is finalized.']);
-            }
             $order->update(array_merge($data, ['updated_by' => Auth::id()]));
             $order->items()->delete();
             $order->items()->createMany($data['items']);

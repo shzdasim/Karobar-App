@@ -248,7 +248,7 @@ class PurchaseInvoiceController extends Controller
 
                 if ($order) {
                     app(PurchaseOrderReceiving::class)->sync($order);
-                    app(SupplierProductSorting::class)->remember((int) $order->supplier_id, array_column($data['items'], 'product_id'));
+                    app(SupplierProductSorting::class)->remember((int) $data['supplier_id'], array_column($data['items'], 'product_id'));
                 }
 
                 if ($draft) {
@@ -557,7 +557,7 @@ class PurchaseInvoiceController extends Controller
 
                 if ($order) {
                     app(PurchaseOrderReceiving::class)->sync($order);
-                    app(SupplierProductSorting::class)->remember((int) $order->supplier_id, array_column($data['items'], 'product_id'));
+                    app(SupplierProductSorting::class)->remember((int) $data['supplier_id'], array_column($data['items'], 'product_id'));
                 }
 
                 // Sync with active cash drawer if applicable

@@ -460,9 +460,16 @@ class InvoiceCalculationService
 
         $totalAmount = round($afterDiscount + $taxAmt, 2);
 
+        $clientTotalMatches = isset($data['total_amount'])
+            && is_numeric($data['total_amount'])
+            && abs((float)$data['total_amount'] - $totalAmount) < 1.0;
+        $invoiceAmount = ($clientTotalMatches && isset($data['invoice_amount']) && is_numeric($data['invoice_amount']) && (float)$data['invoice_amount'] >= 0)
+            ? round((float)$data['invoice_amount'], 2)
+            : $rowsTotal;
+
         return [
             'items'               => $calculatedItems,
-            'invoice_amount'      => $rowsTotal,
+            'invoice_amount'      => $invoiceAmount,
             'discount_percentage' => $billDiscPct,
             'discount_amount'     => $billDiscAmt,
             'tax_percentage'      => $taxPct,

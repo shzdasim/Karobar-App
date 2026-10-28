@@ -355,7 +355,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
     if (initialData) {
       const items = initialData.items.map(item => recalcItem(item));
       const next = recalcFooter({ ...form, ...initialData, items }, "init");
-      next.invoice_amount = next.total_amount;
+      next.invoice_amount = initialData.invoice_amount ?? "";
       if (next.invoice_type === "credit") {
         next.total_paid = initialData.total_paid ?? "";
         setPaidTouched(true);
@@ -371,7 +371,8 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
       }
       setForm(next);
       setSelectedSupplier(initialData.supplier);
-      setProducts(initialData.items.map(item => item.product));
+      upsertProducts((initialData.items || []).map(item => item.product).filter(Boolean));
+      fetchProducts().catch(showAxiosError);
       ensureBatchesForItems(next.items);
     } else fetchProducts().catch(showAxiosError);
     if (invoiceId) {
@@ -520,7 +521,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
 
   // Called when a supplier is chosen from the SupplierSearch modal
   const handleSupplierSelect = (supplier) => {
-    if (!supplier?.id || form.purchase_order_id) return;
+    if (!supplier?.id) return;
     setSelectedSupplier(supplier);
     const creditDays = Number(supplier.credit_days ?? 0);
     let autoDueDate = undefined;
@@ -682,16 +683,39 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
 
   const removeItem = (index) => {
     setDisplayOrder(order => order.filter(i => i !== index).map(i => i > index ? i - 1 : i));
-    if (form.items.length > 1) {
-      const newItems = form.items.filter((_, i) => i !== index);
-      let nextForm = recalcFooter({ ...form, items: newItems }, "items");
-      if (!paidTouched && nextForm.invoice_type !== "credit") {
-        nextForm.total_paid = nextForm.total_amount ?? "";
-      }
-      setForm(nextForm);
-      if (currentRowIndex >= newItems.length) {
-        setCurrentRowIndex(newItems.length - 1);
-      }
+    const blankRow = {
+      purchase_order_item_id: null,
+      product_id: "",
+      batch: "",
+      expiry: "",
+      pack_quantity: "",
+      pack_size: "",
+      unit_quantity: "",
+      pack_purchase_price: "",
+      unit_purchase_price: "",
+      pack_sale_price: "",
+      unit_sale_price: "",
+      whole_sale_pack_price: "",
+      whole_sale_unit_price: "",
+      whole_sale_margin: "",
+      pack_bonus: "",
+      unit_bonus: "",
+      item_discount_percentage: "",
+      margin: "",
+      sub_total: "",
+      avg_price: "",
+      quantity: "",
+    };
+    const newItems = form.items.length > 1
+      ? form.items.filter((_, i) => i !== index)
+      : [blankRow];
+    let nextForm = recalcFooter({ ...form, items: newItems }, "items");
+    if (!paidTouched && nextForm.invoice_type !== "credit") {
+      nextForm.total_paid = nextForm.total_amount ?? "";
+    }
+    setForm(nextForm);
+    if (currentRowIndex >= newItems.length) {
+      setCurrentRowIndex(newItems.length - 1);
     }
   };
 
@@ -1135,9 +1159,11 @@ const contRect = container.getBoundingClientRect();
     }
 
     // 1) Prevent negative margin (redundant now)
-    const negativeMarginItem = form.items.find(
-      (item) => item.product_id && Number(item.margin) < 0
-    );
+    const negativeMarginItem = form.items.find((item) => {
+      if (!item.product_id) return false;
+      if (isPurchaseOrderReceipt && !hasDeliveredRow(item)) return false;
+      return Number(item.margin) < 0;
+    });
     if (negativeMarginItem) {
       const product = products.find((p) => p.id === negativeMarginItem.product_id);
       const productName = product ? product.name : negativeMarginItem.product_id;
@@ -1169,6 +1195,7 @@ const contRect = container.getBoundingClientRect();
     for (let i = 0; i < form.items.length; i++) {
       const it = form.items[i];
       if (!it.product_id) continue;
+      if (isPurchaseOrderReceipt && !hasDeliveredRow(it)) continue;
       const pId = String(it.product_id);
       const product = products.find((p) => String(p.id) === pId);
       const productName = product?.name || `Product #${pId}`;
@@ -1230,9 +1257,12 @@ const contRect = container.getBoundingClientRect();
       };
 
       const sortedRows = arrangement === 'custom' ? arrangedRows : arrangePurchaseInvoiceRows(payload.items, products, arrangement);
-      const effectiveRows = isPurchaseOrderReceipt && sortedRows.some(row => hasDeliveredRow(row.item))
-        ? sortedRows.filter(row => hasDeliveredRow(row.item))
+      const nonBlankRows = sortedRows.some(row => Boolean(row.item.product_id))
+        ? sortedRows.filter(row => Boolean(row.item.product_id))
         : sortedRows;
+      const effectiveRows = isPurchaseOrderReceipt && nonBlankRows.some(row => hasDeliveredRow(row.item))
+        ? nonBlankRows.filter(row => hasDeliveredRow(row.item))
+        : nonBlankRows;
       submittedRowIndices = effectiveRows.map(row => row.index);
       const payloadToSend = {
         ...payload,
@@ -1593,8 +1623,6 @@ const contRect = container.getBoundingClientRect();
               <button
                 type="button"
                 ref={supplierRef}
-                disabled={Boolean(form.purchase_order_id)}
-                title={form.purchase_order_id ? "Supplier finalized by the source Purchase Order" : undefined}
                 onClick={() => setSupplierSearchOpen(true)}
                 className={`w-full h-8 px-2.5 rounded-md border text-left text-xs flex items-center justify-between gap-2 transition-all duration-200
                   ${selectedSupplier
@@ -1940,6 +1968,7 @@ const contRect = container.getBoundingClientRect();
                         const newItems = [...form.items];
                         const prepared = {
                           ...newItems[i],
+                          purchase_order_item_id: isSameProduct ? (newItems[i]?.purchase_order_item_id ?? null) : null,
                           product_id: selectedProduct?.id || "",
                           product: selectedProduct,
                           pack_size: packSize ?? "",

@@ -13,17 +13,10 @@ class PurchaseOrderReceiving
     // Must run inside the invoice transaction. Serializes competing receipts/edits.
     public function validateReceipt(PurchaseOrder $order, array &$data): void
     {
-        if ((int) $data['supplier_id'] !== (int) $order->supplier_id) {
-            throw ValidationException::withMessages(['supplier_id' => 'The supplier must match the source Purchase Order.']);
-        }
         $items = $order->items()->get()->keyBy('product_id');
-        $received = [];
+        $totalReceivedUnits = 0;
         foreach ($data['items'] as $i => &$row) {
             $line = $items->get($row['product_id']);
-            // Extra delivered products are permitted, but cannot impersonate an order line.
-            if (! empty($row['purchase_order_item_id']) && (! $line || (int) $row['purchase_order_item_id'] !== $line->id)) {
-                throw ValidationException::withMessages(["items.$i.purchase_order_item_id" => 'Invalid source order item.']);
-            }
             $row['purchase_order_item_id'] = $line?->id;
             foreach (['pack_quantity', 'pack_bonus', 'unit_quantity', 'unit_bonus', 'quantity', 'unit_purchase_price', 'pack_purchase_price', 'unit_sale_price', 'pack_sale_price', 'whole_sale_unit_price', 'whole_sale_pack_price'] as $field) {
                 if (($row[$field] ?? 0) < 0) {
@@ -39,15 +32,12 @@ class PurchaseOrderReceiving
             if ((int) $row['quantity'] !== (int) $row['unit_quantity'] + (int) ($row['unit_bonus'] ?? 0)) {
                 throw ValidationException::withMessages(["items.$i.quantity" => 'Stock quantity must equal paid units plus bonus units.']);
             }
-            if ($line) {
-                $received[$line->id] = ($received[$line->id] ?? 0) + (int) $row['unit_quantity'];
-            }
+            $totalReceivedUnits += (int) ($row['quantity'] ?? 0);
         }
         unset($row);
-        if (array_sum($received) <= 0) {
-            throw ValidationException::withMessages(['items' => 'Receive at least one ordered unit.']);
+        if ($totalReceivedUnits <= 0) {
+            throw ValidationException::withMessages(['items' => 'Receive at least one unit.']);
         }
-
     }
 
     public function sync(PurchaseOrder $order): void
@@ -56,8 +46,12 @@ class PurchaseOrderReceiving
         $hasInvoices = $order->invoices->isNotEmpty();
         $complete = $order->items->every(fn ($line) => $line->invoiceItems->sum('unit_quantity') >= $line->ordered_quantity);
         $status = $hasInvoices ? ($complete ? 'received' : 'partially_received') : 'ordered';
+        $latestSupplierId = $hasInvoices
+            ? ($order->invoices->last()?->supplier_id ?? $order->supplier_id)
+            : $order->supplier_id;
 
         $order->update([
+            'supplier_id' => $latestSupplierId,
             'status' => $status,
             'received_by' => $hasInvoices ? ($order->received_by ?? Auth::id()) : null,
             'updated_by' => Auth::id(),

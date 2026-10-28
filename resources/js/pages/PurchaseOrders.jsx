@@ -272,9 +272,9 @@ export default function PurchaseOrders() {
           <label>Expected Receiving Date *<input required className="w-full h-8 border rounded-md px-2 text-xs" type="date" min={form.date} value={form.expected_received_date || ''} onChange={e => setForm({ ...form, expected_received_date: e.target.value })} /></label>
           <label>Reference<input className="w-full h-8 border rounded-md px-2 text-xs" value={form.reference || ''} onChange={e => setForm({ ...form, reference: e.target.value })} /></label>
           <label>Supplier *
-            <button type="button" disabled={editing || busy} onClick={() => setSupplierOpen(true)}
+            <button type="button" disabled={busy} onClick={() => setSupplierOpen(true)}
               className="w-full h-8 border rounded-md px-2 text-xs text-left flex items-center gap-2 disabled:opacity-70"
-              title={editing ? 'Supplier finalized by the submitted Purchase Order' : 'Select supplier'}
+              title="Select supplier"
               aria-label={supplier ? `Supplier: ${supplier.name}` : 'Select supplier'}>
               <BuildingStorefrontIcon aria-hidden="true" className="w-4 h-4 shrink-0" />
               <span className="truncate">{supplier?.name || 'Click to search supplier…'}</span>
