@@ -727,27 +727,90 @@ export default function SaleInvoiceShow() {
                   <th className={`w-24 border-r ${isDark ? "text-slate-300 border-slate-700" : "text-gray-700 border-gray-200"}`}>Batch</th>
                   <th className={`w-20 text-center border-r ${isDark ? "text-slate-400 border-slate-700" : "text-gray-600 border-gray-200"}`}>Expiry</th>
                   <th className={`w-16 text-right border-r ${isDark ? "text-slate-400 border-slate-700" : "text-gray-600 border-gray-200"}`}>Avail</th>
-                  <th className={`w-16 text-right border-r ${isDark ? "text-slate-300 border-slate-700" : "text-gray-700 border-gray-200"}`}>Qty</th>
-                  <th className={`w-20 text-right border-r ${isDark ? "text-slate-400 border-slate-700" : "text-gray-600 border-gray-200"}`}>Price</th>
+                  {inv?.sale_type === "wholesale" ? (
+                    <>
+                      <th className={`w-13 text-center border-r ${isDark ? "text-slate-300 border-slate-700" : "text-gray-700 border-gray-200"}`}>Pack.Q</th>
+                      <th className={`w-13 text-center border-r ${isDark ? "text-slate-300 border-slate-700" : "text-gray-700 border-gray-200"}`}>Unit.Q</th>
+                      <th className={`w-13 text-center border-r ${isDark ? "text-slate-300 border-slate-700" : "text-gray-700 border-gray-200"}`}>Pack.B</th>
+                      <th className={`w-13 text-center border-r ${isDark ? "text-slate-300 border-slate-700" : "text-gray-700 border-gray-200"}`}>Unit.B</th>
+                      <th className={`w-15 text-center border-r ${isDark ? "text-slate-300 border-slate-700" : "text-gray-700 border-gray-200"}`}>Tot.U</th>
+                      <th className={`w-20 text-right border-r ${isDark ? "text-slate-400 border-slate-700" : "text-gray-600 border-gray-200"}`}>Pack.P</th>
+                      <th className={`w-20 text-right border-r ${isDark ? "text-slate-400 border-slate-700" : "text-gray-600 border-gray-200"}`}>Unit.P</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className={`w-16 text-right border-r ${isDark ? "text-slate-300 border-slate-700" : "text-gray-700 border-gray-200"}`}>Qty</th>
+                      <th className={`w-20 text-right border-r ${isDark ? "text-slate-400 border-slate-700" : "text-gray-600 border-gray-200"}`}>Price</th>
+                    </>
+                  )}
                   <th className={`w-16 text-right border-r ${isDark ? "text-slate-400 border-slate-700" : "text-gray-600 border-gray-200"}`}>Disc%</th>
                   <th className={`w-24 text-right ${isDark ? "text-slate-300" : "text-gray-700"}`}>Sub Total</th>
                 </tr>
               </thead>
               <tbody className={`[&>tr>td]:py-1.5 [&>tr>td]:px-2 ${isDark ? "[&>tr]:border-slate-700 [&>tr>td]:text-slate-200" : "[&>tr]:border-gray-200 [&>tr>td]:text-gray-800"}`}>
-                {(inv.items || []).map((it, i) => (
-                  <tr key={i} className={`border-b ${isDark ? "border-slate-700 hover:bg-slate-700/40" : "border-gray-200 hover:bg-gray-50"}`}>
-                    <td className={`text-center font-mono border-r ${isDark ? "border-slate-700 text-slate-400" : "border-gray-200 text-gray-500"}`}>{i + 1}</td>
-                    <td className={`text-left font-medium truncate border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{it.product?.name ?? it.product_id}</td>
-                    <td className={`text-center font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.pack_size) || "—"}</td>
-                    <td className={`text-left font-mono truncate border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.batch_number) || "—"}</td>
-                    <td className={`text-center font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.expiry) || "—"}</td>
-                    <td className={`text-right font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.current_quantity) || "0"}</td>
-                    <td className={`text-right font-mono font-bold border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.quantity) || "0"}</td>
-                    <td className={`text-right font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.price) || "0.00"}</td>
-                    <td className={`text-right font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.item_discount_percentage) || "0"}</td>
-                    <td className="text-right font-mono font-bold">{fmt(it.sub_total) || "0.00"}</td>
-                  </tr>
-                ))}
+                {(inv.items || []).map((it, i) => {
+                  const ps = Math.max(1, Number(it.pack_size || 1));
+                  const totalUnits = Number(it.quantity || 0);
+                  const packQty =
+                    it.pack_quantity !== undefined && it.pack_quantity !== null && Number(it.pack_quantity) > 0
+                      ? Number(it.pack_quantity)
+                      : ps > 1
+                      ? Math.floor(totalUnits / ps)
+                      : 0;
+                  const unitQty =
+                    it.unit_quantity !== undefined && it.unit_quantity !== null && (Number(it.unit_quantity) > 0 || Number(it.pack_quantity) > 0)
+                      ? Number(it.unit_quantity)
+                      : ps > 1
+                      ? totalUnits % ps
+                      : totalUnits;
+                  const bonusQty = Number(it.bonus || 0);
+                  const hasExplicitBonusBreakdown =
+                    Number(it.pack_bonus || 0) > 0 || Number(it.unit_bonus || 0) > 0;
+                  const packBonus = hasExplicitBonusBreakdown
+                    ? Number(it.pack_bonus || 0)
+                    : ps > 1
+                    ? Math.floor(bonusQty / ps)
+                    : 0;
+                  const unitBonus = hasExplicitBonusBreakdown
+                    ? Number(it.unit_bonus || 0)
+                    : ps > 1
+                    ? bonusQty % ps
+                    : bonusQty;
+                  const unitPrice = Number(it.price || 0);
+                  const packPrice =
+                    it.pack_price !== undefined && it.pack_price !== null && Number(it.pack_price) > 0
+                      ? Number(it.pack_price)
+                      : Number((unitPrice * ps).toFixed(2));
+
+                  return (
+                    <tr key={i} className={`border-b ${isDark ? "border-slate-700 hover:bg-slate-700/40" : "border-gray-200 hover:bg-gray-50"}`}>
+                      <td className={`text-center font-mono border-r ${isDark ? "border-slate-700 text-slate-400" : "border-gray-200 text-gray-500"}`}>{i + 1}</td>
+                      <td className={`text-left font-medium truncate border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{it.product?.name ?? it.product_id}</td>
+                      <td className={`text-center font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.pack_size) || "—"}</td>
+                      <td className={`text-left font-mono truncate border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.batch_number) || "—"}</td>
+                      <td className={`text-center font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.expiry) || "—"}</td>
+                      <td className={`text-right font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.current_quantity) || "0"}</td>
+                      {inv?.sale_type === "wholesale" ? (
+                        <>
+                          <td className={`text-center font-mono font-bold border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{packQty}</td>
+                          <td className={`text-center font-mono font-bold border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{unitQty}</td>
+                          <td className={`text-center font-mono border-r ${packBonus > 0 ? "text-emerald-600 dark:text-emerald-400 font-bold" : ""} ${isDark ? "border-slate-700" : "border-gray-200"}`}>{packBonus}</td>
+                          <td className={`text-center font-mono border-r ${unitBonus > 0 ? "text-emerald-600 dark:text-emerald-400 font-bold" : ""} ${isDark ? "border-slate-700" : "border-gray-200"}`}>{unitBonus}</td>
+                          <td className={`text-center font-mono font-bold border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{totalUnits}{bonusQty > 0 ? `+${bonusQty}` : ""}</td>
+                          <td className={`text-right font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{packPrice.toFixed(2)}</td>
+                          <td className={`text-right font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{unitPrice.toFixed(2)}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className={`text-right font-mono font-bold border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.quantity) || "0"}</td>
+                          <td className={`text-right font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.price) || "0.00"}</td>
+                        </>
+                      )}
+                      <td className={`text-right font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.item_discount_percentage) || "0"}</td>
+                      <td className="text-right font-mono font-bold">{fmt(it.sub_total) || "0.00"}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

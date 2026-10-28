@@ -6,7 +6,7 @@ const n = (v) => (v === "" || v === null || v === undefined ? 0 : Number(v) || 0
 // Round to 2 decimals
 const r2 = (v) => (Number.isFinite(v) ? Number(v.toFixed(2)) : 0);
 
-// Recalculate a single sale item
+// Recalculate a single sale item (retail)
 export function recalcItem(item, changedField = null) {
   const packSize = n(item.pack_size);
   const qty = n(item.quantity);        // units
@@ -24,6 +24,76 @@ export function recalcItem(item, changedField = null) {
     quantity: qty,
     price,
     item_discount_percentage: discPct,
+    sub_total: r2(subTotal),
+  };
+}
+
+// Recalculate a single wholesale sale item (supports simultaneous Pack Qty + Unit Qty + Pack Bonus + Unit Bonus + Pack Price + Unit Price)
+export function recalcWholesaleItem(item, changedField = null) {
+  const packSize = Math.max(1, n(item.pack_size));
+  const packQty = Math.max(0, Math.floor(n(item.pack_quantity)));
+  const unitQty = Math.max(0, Math.floor(n(item.unit_quantity)));
+  const packBonus = Math.max(0, Math.floor(n(item.pack_bonus)));
+  const unitBonus = Math.max(0, Math.floor(n(item.unit_bonus)));
+
+  const hasSplitBonus =
+    changedField === "pack_bonus" ||
+    changedField === "unit_bonus" ||
+    item.pack_bonus !== undefined ||
+    item.unit_bonus !== undefined;
+
+  const bonusQty = hasSplitBonus
+    ? packBonus * packSize + unitBonus
+    : Math.max(0, Math.floor(n(item.bonus)));
+
+  const hasSplitQty =
+    changedField === "pack_quantity" ||
+    changedField === "unit_quantity" ||
+    item.pack_quantity !== undefined ||
+    item.unit_quantity !== undefined;
+
+  const totalQty = hasSplitQty
+    ? packQty * packSize + unitQty
+    : Math.max(0, Math.floor(n(item.quantity)));
+
+  let packPrice = n(item.pack_price);
+  let unitPrice = n(item.price);
+
+  if (changedField === "pack_price") {
+    unitPrice = packSize > 0 ? r2(packPrice / packSize) : r2(packPrice);
+  } else if (changedField === "price") {
+    packPrice = packSize > 0 ? r2(unitPrice * packSize) : r2(unitPrice);
+  } else if (changedField === "pack_size") {
+    if (packPrice > 0) unitPrice = r2(packPrice / packSize);
+    else if (unitPrice > 0) packPrice = r2(unitPrice * packSize);
+  } else {
+    if (packPrice > 0 && unitPrice === 0) {
+      unitPrice = r2(packPrice / packSize);
+    } else if (unitPrice > 0 && packPrice === 0) {
+      packPrice = r2(unitPrice * packSize);
+    }
+  }
+
+  const discPct = n(item.item_discount_percentage);
+  const gross = totalQty * unitPrice;
+  const itemDisc = (gross * discPct) / 100;
+  const subTotal = gross - itemDisc;
+
+  const preserve = (fieldName, computedValue) =>
+    changedField === fieldName ? item[fieldName] : computedValue;
+
+  return {
+    ...item,
+    pack_size: packSize,
+    pack_quantity: preserve("pack_quantity", packQty === 0 ? "" : String(packQty)),
+    unit_quantity: preserve("unit_quantity", unitQty === 0 ? "" : String(unitQty)),
+    quantity: totalQty,
+    pack_bonus: preserve("pack_bonus", packBonus === 0 ? "" : String(packBonus)),
+    unit_bonus: preserve("unit_bonus", unitBonus === 0 ? "" : String(unitBonus)),
+    bonus: bonusQty === 0 ? "" : String(bonusQty),
+    pack_price: preserve("pack_price", packPrice),
+    price: preserve("price", unitPrice),
+    item_discount_percentage: preserve("item_discount_percentage", discPct === 0 ? "" : discPct),
     sub_total: r2(subTotal),
   };
 }

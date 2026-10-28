@@ -37,12 +37,13 @@
 
     // Footer note: prefer invoice.footer_note, else setting.note
     $footerNote = trim(($invoice->footer_note ?? '') !== '' ? $invoice->footer_note : ($setting->note ?? ''));
+    $isWholesale = ($invoice->sale_type ?? '') === 'wholesale';
 @endphp
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>Sale Invoice (A4) - {{ $posted }}</title>
+<title>{{ $isWholesale ? 'Wholesale Sale Invoice' : 'Sale Invoice' }} (A4) - {{ $posted }}</title>
 <style>
   :root { --text:#111; --muted:#666; --border:#ccc; }
   * { box-sizing: border-box; }
@@ -106,7 +107,7 @@
 
   {{-- Title / Code --}}
   <div class="title-row">
-    <div class="title">Sale Invoice</div>
+    <div class="title">{{ $isWholesale ? 'Wholesale Sale Invoice' : 'Sale Invoice' }}</div>
     <div class="code"># {{ $posted }}</div>
   </div>
 
@@ -124,29 +125,78 @@
   {{-- Items Table --}}
   <table>
     <thead>
-      <tr>
-        <th style="width:25%">Product</th>
-        <th style="width:10%">Pack</th>
-        <th style="width:12%">Batch</th>
-        <th style="width:10%">Expiry</th>
-        <th class="right" style="width:10%">Qty</th>
-        <th class="right" style="width:10%">Price</th>
-        <th class="right" style="width:8%">Disc %</th>
-        <th class="right" style="width:15%">Sub Total</th>
-      </tr>
+      @if($isWholesale)
+        <tr>
+          <th style="width:18%">Product</th>
+          <th style="width:5%">PSize</th>
+          <th style="width:9%">Batch</th>
+          <th style="width:8%">Expiry</th>
+          <th class="right" style="width:6%">Pack.Q</th>
+          <th class="right" style="width:6%">Unit.Q</th>
+          <th class="right" style="width:6%">Pack.B</th>
+          <th class="right" style="width:6%">Unit.B</th>
+          <th class="right" style="width:7%">Tot.U</th>
+          <th class="right" style="width:8%">Pack.P</th>
+          <th class="right" style="width:7%">Unit.P</th>
+          <th class="right" style="width:5%">Disc%</th>
+          <th class="right" style="width:9%">Sub Total</th>
+        </tr>
+      @else
+        <tr>
+          <th style="width:25%">Product</th>
+          <th style="width:10%">Pack</th>
+          <th style="width:12%">Batch</th>
+          <th style="width:10%">Expiry</th>
+          <th class="right" style="width:10%">Qty</th>
+          <th class="right" style="width:10%">Price</th>
+          <th class="right" style="width:8%">Disc %</th>
+          <th class="right" style="width:15%">Sub Total</th>
+        </tr>
+      @endif
     </thead>
     <tbody>
       @foreach($invoice->items as $it)
-        <tr>
-          <td>{{ optional($it->product)->name ?? '-' }}</td>
-          <td>{{ $it->pack_size }}</td>
-          <td>{{ $it->batch_number }}</td>
-          <td>{{ $it->expiry }}</td>
-          <td class="right">{{ number_format((float)$it->quantity, 2) }}</td>
-          <td class="right">{{ number_format((float)$it->price, 2) }}</td>
-          <td class="right">{{ number_format((float)$it->item_discount_percentage, 2) }}</td>
-          <td class="right">{{ number_format((float)$it->sub_total, 2) }}</td>
-        </tr>
+        @if($isWholesale)
+          @php
+            $ps = max(1, (int)($it->pack_size ?? optional($it->product)->pack_size ?? 1));
+            $totU = (int)($it->quantity ?? 0);
+            $hasExplicitPackBreakdown = ((float)($it->pack_quantity ?? 0) > 0) || ((float)($it->unit_quantity ?? 0) > 0);
+            $packQ = $hasExplicitPackBreakdown ? (int)($it->pack_quantity ?? 0) : intdiv($totU, $ps);
+            $unitQ = $hasExplicitPackBreakdown ? (int)($it->unit_quantity ?? 0) : ($totU % $ps);
+            $bonusQ = (int)($it->bonus ?? 0);
+            $hasExplicitBonusBreakdown = ((int)($it->pack_bonus ?? 0) > 0) || ((int)($it->unit_bonus ?? 0) > 0);
+            $packB = $hasExplicitBonusBreakdown ? (int)($it->pack_bonus ?? 0) : ($ps > 1 ? intdiv($bonusQ, $ps) : 0);
+            $unitB = $hasExplicitBonusBreakdown ? (int)($it->unit_bonus ?? 0) : ($ps > 1 ? ($bonusQ % $ps) : $bonusQ);
+            $unitP = (float)($it->price ?? 0);
+            $packP = ((float)($it->pack_price ?? 0) > 0) ? (float)$it->pack_price : ($unitP * $ps);
+          @endphp
+          <tr>
+            <td>{{ optional($it->product)->name ?? '-' }}</td>
+            <td>{{ $ps }}</td>
+            <td>{{ $it->batch_number }}</td>
+            <td>{{ $it->expiry }}</td>
+            <td class="right">{{ $packQ }}</td>
+            <td class="right">{{ $unitQ }}</td>
+            <td class="right">{{ $packB }}</td>
+            <td class="right">{{ $unitB }}</td>
+            <td class="right">{{ $totU }}</td>
+            <td class="right">{{ number_format($packP, 2) }}</td>
+            <td class="right">{{ number_format($unitP, 2) }}</td>
+            <td class="right">{{ number_format((float)$it->item_discount_percentage, 2) }}</td>
+            <td class="right">{{ number_format((float)$it->sub_total, 2) }}</td>
+          </tr>
+        @else
+          <tr>
+            <td>{{ optional($it->product)->name ?? '-' }}</td>
+            <td>{{ $it->pack_size }}</td>
+            <td>{{ $it->batch_number }}</td>
+            <td>{{ $it->expiry }}</td>
+            <td class="right">{{ number_format((float)$it->quantity, 2) }}</td>
+            <td class="right">{{ number_format((float)$it->price, 2) }}</td>
+            <td class="right">{{ number_format((float)$it->item_discount_percentage, 2) }}</td>
+            <td class="right">{{ number_format((float)$it->sub_total, 2) }}</td>
+          </tr>
+        @endif
       @endforeach
     </tbody>
   </table>

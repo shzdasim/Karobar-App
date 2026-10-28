@@ -75,7 +75,7 @@ const getSectionConfig = (theme) => ({
   },
 });
 
-export default function SaleInvoicesIndex() {
+export default function SaleInvoicesIndex({ defaultSaleType = "" }) {
   const { formatCurrency } = useCurrency();
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -83,10 +83,16 @@ export default function SaleInvoicesIndex() {
   // search + pagination
   const [qPosted, setQPosted] = useState("");
   const [qCustomer, setQCustomer] = useState("");
+  const [saleTypeFilter, setSaleTypeFilter] = useState(defaultSaleType || "");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
   const [lastPage, setLastPage] = useState(1);
+
+  useEffect(() => {
+    setSaleTypeFilter(defaultSaleType || "");
+    setPage(1);
+  }, [defaultSaleType]);
 
   // Delete modal state
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -109,10 +115,14 @@ export default function SaleInvoicesIndex() {
   const fetchDrafts = useCallback(async () => {
     try {
       const res = await axios.get("/api/invoice-drafts", { params: { status: "draft" } });
-      const saleDrafts = (res.data || []).filter((d) => ["sale_retail", "sale_wholesale"].includes(d.type));
+      const allowedTypes =
+        defaultSaleType === "wholesale"
+          ? ["sale_wholesale"]
+          : ["sale_retail", "sale_wholesale"];
+      const saleDrafts = (res.data || []).filter((d) => allowedTypes.includes(d.type));
       setDraftsList(saleDrafts);
     } catch {}
-  }, []);
+  }, [defaultSaleType]);
 
   useEffect(() => {
     fetchDrafts();
@@ -301,6 +311,7 @@ export default function SaleInvoicesIndex() {
       pageSizeArg = pageSize,
       qPostedArg = qPosted,
       qCustomerArg = qCustomer,
+      saleTypeArg = saleTypeFilter,
     } = options;
 
     try {
@@ -311,6 +322,7 @@ export default function SaleInvoicesIndex() {
           per_page: pageSizeArg,
           posted: qPostedArg.trim(),
           customer: qCustomerArg.trim(),
+          ...(saleTypeArg ? { sale_type: saleTypeArg } : {}),
         },
         signal,
       });
@@ -330,7 +342,7 @@ export default function SaleInvoicesIndex() {
     } finally {
       setLoading(false);
     }
-  }, [permsLoading, can.view, page, pageSize, qPosted, qCustomer]);
+  }, [permsLoading, can.view, page, pageSize, qPosted, qCustomer, saleTypeFilter]);
 
   // Initial fetch and refetch on page/pageSize change
   useEffect(() => {
@@ -342,9 +354,10 @@ export default function SaleInvoicesIndex() {
       pageSizeArg: pageSize,
       qPostedArg: qPosted,
       qCustomerArg: qCustomer,
+      saleTypeArg: saleTypeFilter,
     });
     return () => ctrl.abort();
-  }, [page, pageSize, permsLoading, can.view]);
+  }, [page, pageSize, saleTypeFilter, permsLoading, can.view]);
 
   // Alt+N -> create retail, Alt+W -> create wholesale
   useEffect(() => {
@@ -536,16 +549,60 @@ export default function SaleInvoicesIndex() {
               <DocumentTextIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-extrabold tracking-wide text-white leading-none">Sale Invoices</h1>
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-2xl font-extrabold tracking-wide text-white leading-none">
+                  {defaultSaleType === "wholesale" ? "Wholesale Invoices" : "Sale Invoices"}
+                </h1>
+                {defaultSaleType === "wholesale" && (
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold tracking-widest uppercase bg-white/20 text-white backdrop-blur-xs">
+                    B2B Distribution
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-white/85 mt-1.5 flex items-center gap-1.5">
                 <DocumentTextIcon className="w-3.5 h-3.5" />
-                {total} invoices
+                {total} {defaultSaleType === "wholesale" ? "wholesale " : ""}invoices
               </p>
             </div>
           </div>
 
           {/* Actions */}
           <div className="flex items-center gap-2.5 flex-wrap">
+            {hasWholesale && !defaultSaleType && (
+              <div
+                className="inline-flex items-center rounded-xl bg-black/20 p-1 backdrop-blur-xs border border-white/15"
+                role="radiogroup"
+                aria-label="Filter by sale type"
+              >
+                {[
+                  { value: "", label: "All" },
+                  { value: "retail", label: "Retail" },
+                  { value: "wholesale", label: "Wholesale" },
+                ].map((opt) => {
+                  const active = saleTypeFilter === opt.value;
+                  return (
+                    <button
+                      key={opt.value || "all"}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => {
+                        setSaleTypeFilter(opt.value);
+                        setPage(1);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        active
+                          ? "bg-white text-slate-900 shadow-xs"
+                          : "text-white/80 hover:text-white hover:bg-white/10"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             <button
               onClick={() => {
                 if (controllerRef.current) controllerRef.current.abort();
@@ -556,6 +613,7 @@ export default function SaleInvoicesIndex() {
                   pageSizeArg: pageSize,
                   qPostedArg: qPosted,
                   qCustomerArg: qCustomer,
+                  saleTypeArg: saleTypeFilter,
                 });
               }}
               title="Refresh"
@@ -566,7 +624,7 @@ export default function SaleInvoicesIndex() {
               <span>Refresh</span>
             </button>
 
-            <Guard when={can.pos}>
+            <Guard when={can.pos && defaultSaleType !== "wholesale"}>
               <Link
                 to="/sale-invoices/pos"
                 title="Open High-Speed Barcode Scanning POS Mode"
@@ -596,23 +654,29 @@ export default function SaleInvoicesIndex() {
                 )}
               </button>
 
-              <Link
-                to="/sale-invoices/create/retail"
-                title="Add Retail Sale Invoice"
-                className="products-action products-action-primary theme-btn-primary"
-              >
-                <PlusCircleIcon className="w-4 h-4" />
-                <span>Retail Sale</span>
-              </Link>
+              {defaultSaleType !== "wholesale" && (
+                <Link
+                  to="/sale-invoices/create/retail"
+                  title="Add Retail Sale Invoice"
+                  className="products-action products-action-primary theme-btn-primary"
+                >
+                  <PlusCircleIcon className="w-4 h-4" />
+                  <span>Retail Sale</span>
+                </Link>
+              )}
 
               {!saleSystemLoading && hasWholesale && (
                 <Link
                   to="/sale-invoices/create/wholesale"
                   title="Add Wholesale Sale Invoice"
-                  className="products-action theme-btn-secondary"
+                  className={
+                    defaultSaleType === "wholesale"
+                      ? "products-action products-action-primary theme-btn-primary"
+                      : "products-action theme-btn-secondary"
+                  }
                 >
                   <PlusCircleIcon className="w-4 h-4" />
-                  <span>Wholesale Sale</span>
+                  <span>{defaultSaleType === "wholesale" ? "New Wholesale Invoice" : "Wholesale Sale"}</span>
                 </Link>
               )}
             </Guard>
@@ -749,7 +813,16 @@ export default function SaleInvoicesIndex() {
                       {start + idx + 1}
                     </td>
                     <td className="px-3 py-3">
-                      <div className="flex flex-col gap-1 items-start">
+                      <div className="flex flex-wrap gap-1 items-center">
+                        {invoice.sale_type === "wholesale" ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-[10.5px] font-bold bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                            Wholesale
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-[10.5px] font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
+                            Retail
+                          </span>
+                        )}
                         {invoice.invoice_type === 'credit' ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400">
                             Credit

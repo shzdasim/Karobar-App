@@ -118,14 +118,43 @@ class InvoiceCalculationService
                 ]);
             }
 
+            $packSize = max(1, (int)($raw['pack_size'] ?? ($product->pack_size ?: 1)));
+            $packQty = max(0, (int)($raw['pack_quantity'] ?? 0));
+            $unitQty = max(0, (int)($raw['unit_quantity'] ?? 0));
+            $packBonus = max(0, (int)($raw['pack_bonus'] ?? 0));
+            $unitBonus = max(0, (int)($raw['unit_bonus'] ?? 0));
+            $bonusQty = max(0, (int)($raw['bonus'] ?? 0));
+            if ($packBonus > 0 || $unitBonus > 0) {
+                $bonusQty = ($packBonus * $packSize) + $unitBonus;
+            } elseif ($bonusQty > 0) {
+                $packBonus = intdiv($bonusQty, $packSize);
+                $unitBonus = $bonusQty % $packSize;
+            }
+
             $qty = (int)($raw['quantity'] ?? 0);
+            if ($qty < 1 && ($packQty > 0 || $unitQty > 0)) {
+                $qty = ($packQty * $packSize) + $unitQty;
+            }
             if ($qty < 1) {
                 throw ValidationException::withMessages([
                     "items.{$idx}.quantity" => ["Quantity must be at least 1."],
                 ]);
             }
 
+            $itemSaleType = $raw['sale_type'] ?? $invoiceSaleType;
+            if ($itemSaleType === 'wholesale' && $packQty === 0 && $unitQty === 0 && $qty > 0) {
+                $packQty = intdiv($qty, $packSize);
+                $unitQty = $qty % $packSize;
+            }
+
             $price = (float)($raw['price'] ?? 0);
+            $packPrice = isset($raw['pack_price']) && $raw['pack_price'] !== '' && $raw['pack_price'] !== null
+                ? (float)$raw['pack_price']
+                : round($price * $packSize, 2);
+
+            if ($price <= 0 && $packPrice > 0 && $packSize > 0) {
+                $price = round($packPrice / $packSize, 4);
+            }
             if ($price < 0) {
                 throw ValidationException::withMessages([
                     "items.{$idx}.price" => ["Price cannot be negative."],
@@ -146,7 +175,6 @@ class InvoiceCalculationService
 
             // Maximum Discount Enforcement per Product (explicit item discount + manual price reduction for non-override users)
             $maxDiscount = $product->max_discount !== null ? (float)$product->max_discount : null;
-            $itemSaleType = $raw['sale_type'] ?? $invoiceSaleType;
             $catalogPrice = $itemSaleType === 'retail' ? (float)($product->unit_sale_price ?? 0) : 0.0;
             $effectiveItemDiscPct = $discPct;
             if (!$this->canOverrideDiscount($authorizingUser) && $maxDiscount !== null && $maxDiscount > 0 && $catalogPrice > 0 && $price < $catalogPrice) {
@@ -193,8 +221,16 @@ class InvoiceCalculationService
 
             $calculatedItem = $raw;
             $calculatedItem['product_id'] = $productId;
+            $calculatedItem['pack_size'] = $packSize;
+            $calculatedItem['pack_quantity'] = $packQty;
+            $calculatedItem['unit_quantity'] = $unitQty;
             $calculatedItem['quantity'] = $qty;
+            $calculatedItem['pack_bonus'] = $packBonus;
+            $calculatedItem['unit_bonus'] = $unitBonus;
+            $calculatedItem['bonus'] = $bonusQty;
+            $calculatedItem['pack_price'] = round($packPrice, 2);
             $calculatedItem['price'] = $price;
+            $calculatedItem['sale_type'] = $itemSaleType;
             $calculatedItem['item_discount_percentage'] = $discPct;
             $calculatedItem['sub_total'] = $lineSubTotal;
             $calculatedItem['_line_gross'] = $lineGross;

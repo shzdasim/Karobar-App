@@ -61,16 +61,19 @@ class SaleStockAvailability
         $requested = [];
         $batchRequested = [];
         $unbatchedRequested = [];
-        $restored = $originalItems->groupBy('product_id')->map(fn ($rows) => $rows->sum('quantity'));
+        $restored = $originalItems->groupBy('product_id')->map(
+            fn ($rows) => $rows->sum(fn ($r) => (int) ($r->quantity ?? 0) + max(0, (int) ($r->bonus ?? 0)))
+        );
         $batchRestored = [];
         $unbatchedRestored = [];
 
         foreach ($originalItems as $old) {
+            $oldTotalUnits = (int) ($old->quantity ?? 0) + max(0, (int) ($old->bonus ?? 0));
             $batch = $this->matchBatch($batches, $old->toArray());
             if ($batch) {
-                $batchRestored[$batch->id] = ($batchRestored[$batch->id] ?? 0) + (int) $old->quantity;
+                $batchRestored[$batch->id] = ($batchRestored[$batch->id] ?? 0) + $oldTotalUnits;
             } else {
-                $unbatchedRestored[$old->product_id] = ($unbatchedRestored[$old->product_id] ?? 0) + (int) $old->quantity;
+                $unbatchedRestored[$old->product_id] = ($unbatchedRestored[$old->product_id] ?? 0) + $oldTotalUnits;
             }
         }
 
@@ -81,7 +84,8 @@ class SaleStockAvailability
             if (! $product) {
                 throw ValidationException::withMessages(["items.$index.product_id" => 'This product is no longer available.']);
             }
-            $requested[$product->id] = ($requested[$product->id] ?? 0) + (int) $row['quantity'];
+            $rowUnits = (int) ($row['quantity'] ?? 0) + max(0, (int) ($row['bonus'] ?? 0));
+            $requested[$product->id] = ($requested[$product->id] ?? 0) + $rowUnits;
             $available = (int) $product->quantity + (int) ($restored[$product->id] ?? 0);
             if ($requested[$product->id] > $available) {
                 throw ValidationException::withMessages(["items.$index.quantity" => "Insufficient stock for {$product->name}. Available: $available units; requested: {$requested[$product->id]} units."]);
@@ -135,7 +139,7 @@ class SaleStockAvailability
                     }
                 }
 
-                $batchRequested[$batch->id] = ($batchRequested[$batch->id] ?? 0) + (int) $row['quantity'];
+                $batchRequested[$batch->id] = ($batchRequested[$batch->id] ?? 0) + $rowUnits;
                 $availableBatchQty = (int) $batch->quantity + ($batchRestored[$batch->id] ?? 0);
                 if ($batchRequested[$batch->id] > $availableBatchQty) {
                     throw ValidationException::withMessages(["items.$index.quantity" => "Insufficient stock in batch {$batch->batch_number} for {$product->name}. Available: $availableBatchQty units; requested: {$batchRequested[$batch->id]} units."]);
@@ -147,7 +151,7 @@ class SaleStockAvailability
                     $totalBatched = (int) $productBatches->sum('quantity');
                     $unbatchedAvailable = max(0, ((int) $product->quantity + (int) ($unbatchedRestored[$product->id] ?? 0)) - $totalBatched);
 
-                    $unbatchedRequested[$product->id] = ($unbatchedRequested[$product->id] ?? 0) + (int) $row['quantity'];
+                    $unbatchedRequested[$product->id] = ($unbatchedRequested[$product->id] ?? 0) + $rowUnits;
 
                     if ($unbatchedRequested[$product->id] > $unbatchedAvailable) {
                         // If unbatched stock is 0 and all batches are expired, trigger expired stock lock

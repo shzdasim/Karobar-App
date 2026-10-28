@@ -50,6 +50,7 @@ import {
 import { StarIcon as StarSolidIcon } from "@heroicons/react/24/solid";
 import { usePermissions } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
+import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 
 const FAVORITES_STORAGE_KEY = "karobar_sidebar_favorites";
 const EXPANDED_SECTIONS_STORAGE_KEY = "karobar_sidebar_expanded_sections";
@@ -86,6 +87,7 @@ export default function ClassicSidebar({
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { theme } = useTheme();
+  const { hasRetail, hasWholesale } = useSaleSystem();
   const { loading: permsLoading, has } = usePermissions();
   const [expiryAlertCount, setExpiryAlertCount] = useState(0);
 
@@ -177,16 +179,38 @@ export default function ClassicSidebar({
             icon: <QrCodeIcon className="w-5 h-5" />,
             permAny: ["barcode-pos.view", "barcode-pos.create"],
           },
-          {
-            name: "Sale Invoices",
-            path: "/sale-invoices",
-            exactExclude: ["/sale-invoices/pos", "/sale-invoices/barcode-pos"],
-            icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />,
-            perm: "sale-invoice.view",
-            quickCreatePath: "/sale-invoices/create/retail",
-            quickCreatePerm: "sale-invoice.create",
-            quickCreateLabel: "Create Sale Invoice",
-          },
+          ...(hasRetail
+            ? [
+                {
+                  name: "Sale Invoices",
+                  path: "/sale-invoices",
+                  exactExclude: [
+                    "/sale-invoices/pos",
+                    "/sale-invoices/barcode-pos",
+                    "/sale-invoices/create/wholesale",
+                  ],
+                  icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />,
+                  perm: "sale-invoice.view",
+                  quickCreatePath: "/sale-invoices/create/retail",
+                  quickCreatePerm: "sale-invoice.create",
+                  quickCreateLabel: "Create Retail Sale Invoice",
+                },
+              ]
+            : []),
+          ...(hasWholesale
+            ? [
+                {
+                  name: "Wholesale Invoices",
+                  path: "/wholesale-invoices",
+                  matchPaths: ["/wholesale-invoices", "/sale-invoices/create/wholesale"],
+                  icon: <BuildingStorefrontIcon className="w-5 h-5" />,
+                  perm: "sale-invoice.view",
+                  quickCreatePath: "/sale-invoices/create/wholesale",
+                  quickCreatePerm: "sale-invoice.create",
+                  quickCreateLabel: "Create Wholesale Invoice",
+                },
+              ]
+            : []),
           {
             name: "Purchase Invoices",
             path: "/purchase-invoices",
@@ -509,13 +533,16 @@ export default function ClassicSidebar({
         ],
       },
     ],
-    []
+    [hasRetail, hasWholesale]
   );
 
   const isItemActive = useCallback(
     (item) => {
       if (item.exactExclude && item.exactExclude.some((ex) => pathname.startsWith(ex))) {
         return false;
+      }
+      if (Array.isArray(item.matchPaths) && item.matchPaths.length > 0) {
+        return item.matchPaths.some((mp) => pathname === mp || pathname.startsWith(mp + "/"));
       }
       return pathname === item.path || pathname.startsWith(item.path + "/");
     },

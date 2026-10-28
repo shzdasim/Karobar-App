@@ -23,11 +23,11 @@ class SaleInvoiceController extends Controller
 
     private function unitsFromArray(array $item): int
     {
-        return $this->i($item['quantity'] ?? 0);
+        return $this->i($item['quantity'] ?? 0) + max(0, $this->i($item['bonus'] ?? 0));
     }
     private function unitsFromModel(SaleInvoiceItem $item): int
     {
-        return $this->i($item->quantity ?? 0);
+        return $this->i($item->quantity ?? 0) + max(0, $this->i($item->bonus ?? 0));
     }
 
     private function applyStockDeltaSmart(int $productId, ?string $batchNo, ?string $expiry, int $deltaUnits): void
@@ -88,11 +88,17 @@ class SaleInvoiceController extends Controller
                 'batch_number'             => $raw['batch_number'] ?? ($raw['batch'] ?? null),
                 'expiry'                   => $raw['expiry'] ?? ($raw['expiry_date'] ?? null),
                 'current_quantity'         => $this->i($raw['current_quantity'] ?? 0),
+                'pack_quantity'            => max(0, $this->i($raw['pack_quantity'] ?? 0)),
+                'unit_quantity'            => max(0, $this->i($raw['unit_quantity'] ?? 0)),
                 'quantity'                 => $this->i($raw['quantity'] ?? 0),
+                'pack_bonus'               => max(0, $this->i($raw['pack_bonus'] ?? 0)),
+                'unit_bonus'               => max(0, $this->i($raw['unit_bonus'] ?? 0)),
+                'bonus'                    => max(0, $this->i($raw['bonus'] ?? 0)),
+                'pack_price'               => $this->f($raw['pack_price'] ?? 0),
                 'price'                    => $this->f($raw['price'] ?? 0),
                 'item_discount_percentage' => $this->f($raw['item_discount_percentage'] ?? 0),
                 'sub_total'                => $this->f($raw['sub_total'] ?? 0),
-                'sale_type'                => $raw['sale_type'] ?? 'retail',
+                'sale_type'                => $raw['sale_type'] ?? ($invoice->sale_type ?? 'retail'),
                 'is_custom_price'          => $raw['is_custom_price'] ?? false,
             ];
 
@@ -255,8 +261,10 @@ class SaleInvoiceController extends Controller
             $this->authorize('viewAny', SaleInvoice::class);
         }
         
-        $qPosted   = trim((string) $request->query('posted'));
-        $qCustomer = trim((string) $request->query('customer'));
+        $qPosted      = trim((string) $request->query('posted'));
+        $qCustomer    = trim((string) $request->query('customer'));
+        $qSaleType    = trim((string) $request->query('sale_type'));
+        $qInvoiceType = trim((string) $request->query('invoice_type'));
 
         // Pagination parameters
         $page     = (int) $request->query('page', 1);
@@ -266,6 +274,12 @@ class SaleInvoiceController extends Controller
 
         if ($qCustomerId) {
             $query->where('customer_id', $qCustomerId);
+        }
+        if (in_array($qSaleType, ['retail', 'wholesale'], true)) {
+            $query->where('sale_type', $qSaleType);
+        }
+        if (in_array($qInvoiceType, ['credit', 'debit'], true)) {
+            $query->where('invoice_type', $qInvoiceType);
         }
         if ($qPosted !== '') {
             $query->where('posted_number', 'like', '%'.$qPosted.'%');
@@ -343,7 +357,13 @@ class SaleInvoiceController extends Controller
             'items.*.expiry'                   => 'nullable|string',
             'items.*.expiry_date'              => 'nullable|string',
             'items.*.current_quantity'         => 'nullable|integer',
-            'items.*.quantity'                 => 'required|integer|min:1',
+            'items.*.pack_quantity'            => 'nullable|integer|min:0',
+            'items.*.unit_quantity'            => 'nullable|integer|min:0',
+            'items.*.quantity'                 => 'nullable|integer|min:0',
+            'items.*.pack_bonus'               => 'nullable|integer|min:0',
+            'items.*.unit_bonus'               => 'nullable|integer|min:0',
+            'items.*.bonus'                    => 'nullable|integer|min:0',
+            'items.*.pack_price'               => 'nullable|numeric|min:0',
             'items.*.price'                    => 'required|numeric|min:0',
             'items.*.item_discount_percentage' => 'nullable|numeric',
             'items.*.sub_total'                => 'nullable|numeric|min:0',
@@ -447,13 +467,17 @@ class SaleInvoiceController extends Controller
             if ($saleType === 'wholesale' && isset($data['items']) && $canUpdateWholesalePricing) {
                 foreach ($data['items'] as $raw) {
                     if (isset($raw['is_custom_price']) && $raw['is_custom_price'] === true) {
+                        $packSize = max(1, (int)($raw['pack_size'] ?? 1));
+                        $packPriceToSave = isset($raw['pack_price']) && (float)$raw['pack_price'] > 0
+                            ? round((float)$raw['pack_price'], 2)
+                            : round((float)$raw['price'] * $packSize, 2);
                         CustomerWholeSalePrice::updateOrCreate(
                             [
                                 'customer_id' => $data['customer_id'],
                                 'product_id' => $raw['product_id'],
                             ],
                             [
-                                'pack_price' => $raw['price'],
+                                'pack_price' => $packPriceToSave,
                             ]
                         );
                     }
@@ -677,7 +701,13 @@ class SaleInvoiceController extends Controller
             'items.*.expiry'                   => 'nullable|string',
             'items.*.expiry_date'              => 'nullable|string',
             'items.*.current_quantity'         => 'nullable|integer',
-            'items.*.quantity'                 => 'required|integer|min:1',
+            'items.*.pack_quantity'            => 'nullable|integer|min:0',
+            'items.*.unit_quantity'            => 'nullable|integer|min:0',
+            'items.*.quantity'                 => 'nullable|integer|min:0',
+            'items.*.pack_bonus'               => 'nullable|integer|min:0',
+            'items.*.unit_bonus'               => 'nullable|integer|min:0',
+            'items.*.bonus'                    => 'nullable|integer|min:0',
+            'items.*.pack_price'               => 'nullable|numeric|min:0',
             'items.*.price'                    => 'required|numeric|min:0',
             'items.*.item_discount_percentage' => 'nullable|numeric',
             'items.*.sub_total'                => 'nullable|numeric|min:0',
@@ -772,13 +802,17 @@ class SaleInvoiceController extends Controller
             if ($newSaleType === 'wholesale' && isset($data['items']) && $canUpdateWholesalePricing) {
                 foreach ($data['items'] as $raw) {
                     if (isset($raw['is_custom_price']) && $raw['is_custom_price'] === true) {
+                        $packSize = max(1, (int)($raw['pack_size'] ?? 1));
+                        $packPriceToSave = isset($raw['pack_price']) && (float)$raw['pack_price'] > 0
+                            ? round((float)$raw['pack_price'], 2)
+                            : round((float)$raw['price'] * $packSize, 2);
                         CustomerWholeSalePrice::updateOrCreate(
                             [
                                 'customer_id' => $data['customer_id'],
                                 'product_id' => $raw['product_id'],
                             ],
                             [
-                                'pack_price' => $raw['price'],
+                                'pack_price' => $packPriceToSave,
                             ]
                         );
                     }

@@ -307,6 +307,30 @@ export default function AppRoutes() {
       }
       />
       <Route 
+      path="wholesale-invoices"
+      element={
+        <ProtectedRoute>
+          <SaleSystemGuard requiredSaleSystem="wholesale">
+            <DashboardLayout>
+              <IndexSaleInvoice defaultSaleType="wholesale" />
+            </DashboardLayout>
+          </SaleSystemGuard>
+        </ProtectedRoute>
+      }
+      />
+      <Route 
+      path="wholesale-invoices/create"
+      element={
+        <ProtectedRoute>
+          <SaleSystemGuard requiredSaleSystem="wholesale">
+            <DashboardLayout>
+              <CreateSaleInvoiceWholesale />
+            </DashboardLayout>
+          </SaleSystemGuard>
+        </ProtectedRoute>
+      }
+      />
+      <Route 
       path="sale-invoices/pos"
       element={
         <ProtectedRoute>
