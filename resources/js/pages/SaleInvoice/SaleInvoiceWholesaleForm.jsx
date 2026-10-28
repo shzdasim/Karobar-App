@@ -1855,19 +1855,21 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
         {/* LEFT COLUMN: Top Banner Fields + Items Table */}
         <div className="flex flex-col min-h-0 flex-1 gap-1.5 overflow-hidden">
           {/* Top Banner Details Card (Compact) */}
-          <div className={`sale-entry-details px-2.5 py-1.5 rounded-xl border shrink-0 ${isDark ? "bg-slate-800/80 border-slate-700" : "bg-white border-gray-200 shadow-2xs"}`}>
-            <div className="grid grid-cols-2 sm:grid-cols-6 lg:grid-cols-12 gap-1.5 items-end">
+          <div className={`sale-entry-details px-3 py-2 rounded-xl border shrink-0 ${isDark ? "bg-slate-800/80 border-slate-700" : "bg-white border-gray-200 shadow-2xs"}`}>
+            <div className="grid grid-cols-2 sm:grid-cols-6 lg:grid-cols-12 gap-2 items-end">
               <div className="col-span-1 sm:col-span-2 lg:col-span-2">
-                <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">Posted #</label>
+                <label className="flex items-center justify-between text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">
+                  <span>Posted #</span>
+                  <span className="text-[8.5px] font-medium lowercase opacity-75">auto</span>
+                </label>
                 <input
                   type="text"
                   readOnly
+                  tabIndex={-1}
                   value={form.posted_number || ""}
                   placeholder={saleId ? "" : "Auto on Save"}
                   autoComplete="off"
-                  className={`w-full h-7 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-xs font-mono ${
-                    isDark ? "bg-slate-700/60 text-slate-200 placeholder-slate-500" : "bg-gray-100 text-gray-800"
-                  }`}
+                  className="sale-readonly-field w-full h-7 rounded-md px-2 text-xs font-mono"
                 />
               </div>
 
@@ -1879,7 +1881,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                   value={form.date ?? ""}
                   onChange={handleHeaderChange}
                   autoComplete="off"
-                  className="w-full h-7 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
+                  className="w-full h-7 border border-gray-300 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100"
                 />
               </div>
 
@@ -1889,10 +1891,10 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                   ref={customerSelectRef}
                   type="button"
                   onClick={() => setCustomerSearchOpen(true)}
-                  className={`w-full h-7 px-2 rounded-md border text-left text-xs flex items-center justify-between transition-all ${
+                  className={`w-full h-7 px-2.5 rounded-md border text-left text-xs flex items-center justify-between transition-all ${
                     selectedCustomer
                       ? "border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200"
-                      : "border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:border-blue-400"
+                      : "border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:border-blue-400"
                   }`}
                   title={selectedCustomer?.name || (form.customer_id ? `Customer #${form.customer_id}` : "Select customer...")}
                 >
@@ -1917,7 +1919,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                     placeholder="Doctor"
                     onChange={handleHeaderChange}
                     autoComplete="off"
-                    className="w-full h-7 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
+                    className="w-full h-7 border border-gray-300 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100"
                   />
                 </div>
               )}
@@ -1932,7 +1934,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                     placeholder="Patient"
                     onChange={handleHeaderChange}
                     autoComplete="off"
-                    className="w-full h-7 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
+                    className="w-full h-7 border border-gray-300 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100"
                   />
                 </div>
               )}
@@ -1994,16 +1996,17 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                   placeholder="Invoice remarks / customer notes..."
                   onChange={handleHeaderChange}
                   autoComplete="off"
-                  className="w-full h-7 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
+                  className="w-full h-7 border border-gray-300 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100"
                 />
               </div>
 
               <div className="col-span-1 sm:col-span-1 lg:col-span-2">
-                <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5 text-center">Items</label>
+                <label className="flex items-center justify-between text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">
+                  <span>Items</span>
+                  <span className="text-[8.5px] font-medium lowercase opacity-75">count</span>
+                </label>
                 <div
-                  className={`w-full h-7 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-xs font-bold flex items-center justify-center ${
-                    isDark ? "bg-slate-700/60 text-slate-200" : "bg-gray-100 text-gray-800"
-                  }`}
+                  className="sale-readonly-field w-full h-7 rounded-md px-2 text-xs font-bold flex items-center justify-center"
                 >
                   {form.items.length} {form.items.length === 1 ? "item" : "items"}
                 </div>
@@ -2013,28 +2016,42 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
 
           {/* Items Table Card */}
           <div className="flex flex-col min-h-0 flex-1">
-            <div className={`text-[11px] font-semibold mb-0.5 ${isDark ? "text-slate-300" : "text-gray-700"}`}>Items</div>
-            <div ref={itemsScrollRef} className={`sale-entry-items flex-1 overflow-auto border-2 rounded-sm relative ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
-              <table className="w-full text-[11px] table-fixed border-collapse" autoComplete="off">
-              <thead className={`sticky top-0 z-20 ${isDark ? "bg-slate-800/90 backdrop-blur-xs border-slate-700" : "bg-white/80 backdrop-blur-xs border-gray-200/70"} border-b`}>
-                <tr className="[&>th]:py-1 [&>th]:px-1 [&>th]:text-left">
-                  <th className={`w-7 text-center ${isDark ? "text-rose-400" : "text-red-600"}`}>DEL</th>
-                  <th className={`w-7 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>#</th>
-                  <th className={`w-[180px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Product</th>
-                  <th className={`w-14 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>PSize</th>
-                  <th className={`w-24 ${isDark ? "text-slate-400" : "text-gray-600"}`}>Batch</th>
-                  <th className={`w-15 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Expiry</th>
-                  <th className={`w-18 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Avail</th>
-                  <th className={`w-25 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Qty</th>
-                  <th className={`w-22 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Price</th>
-                  <th className={`w-18 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Disc%</th>
-                  <th className={`w-26 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Sub Total</th>
-                  <th className="w-7 text-center">+</th>
+            <div className="flex items-center justify-between mb-1 px-0.5">
+              <div className={`text-[11px] font-bold tracking-wide uppercase ${isDark ? "text-slate-300" : "text-gray-700"}`}>
+                Line Items
+              </div>
+              <div className="flex items-center gap-3 text-[10px]">
+                <span className="inline-flex items-center gap-1.5 font-medium text-gray-600 dark:text-slate-300">
+                  <span className="w-2.5 h-2.5 rounded-xs border border-blue-500 bg-white dark:bg-slate-700 inline-block" />
+                  <span>Editable Field</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 font-medium text-gray-400 dark:text-slate-400">
+                  <span className="w-2.5 h-2.5 rounded-xs border border-dashed border-gray-400 dark:border-slate-500 bg-gray-100 dark:bg-slate-800/80 inline-block" />
+                  <span>Auto / Read-only</span>
+                </span>
+              </div>
+            </div>
+            <div ref={itemsScrollRef} className={`sale-entry-items flex-1 overflow-auto relative ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
+              <table className="w-full min-w-[780px] text-[11px] table-fixed border-collapse" autoComplete="off">
+              <thead className={`sticky top-0 z-20 ${isDark ? "bg-slate-800/95 backdrop-blur-xs border-slate-700" : "bg-white/95 backdrop-blur-xs border-gray-200"} border-b`}>
+                <tr className="[&>th]:text-left">
+                  <th className={`w-8 text-center ${isDark ? "text-rose-400" : "text-red-600"}`}>DEL</th>
+                  <th className="w-7 text-center sale-th-readonly">#</th>
+                  <th className="sale-th-editable">Product *</th>
+                  <th className="text-center sale-th-readonly" title="Pack Size (Auto)">PSize</th>
+                  <th className="sale-th-editable">Batch</th>
+                  <th className="text-center sale-th-readonly" title="Expiry Date (Auto)">Expiry</th>
+                  <th className="text-center sale-th-readonly" title="Available Stock (Auto)">Avail</th>
+                  <th className="text-center sale-th-editable">Qty *</th>
+                  <th className="text-center sale-th-readonly" title="Sale Price (Auto)">Price</th>
+                  <th className="text-center sale-th-editable">Disc %</th>
+                  <th className="text-center sale-th-readonly" title="Row Sub Total (Auto)">Sub Total</th>
+                  <th className="w-8 text-center">+</th>
                 </tr>
               </thead>
-              <tbody className="[&>tr>td]:py-1 [&>tr>td]:px-0.2">
+              <tbody className="[&>tr>td]:py-1.5 [&>tr>td]:px-1">
                 {form.items.map((it, i) => (
-                  <tr key={it.id} id={invoiceErrors.rowId(i)} aria-invalid={invoiceErrors.rowMessages(i).length > 0 || undefined} className={`${invoiceErrors.rowMessages(i).length ? "invoice-row-invalid" : ""} border-b ${isDark ? "border-slate-700 hover:bg-slate-700/50" : "border-gray-100 hover:bg-gray-50"}`}>
+                  <tr key={it.id} id={invoiceErrors.rowId(i)} aria-invalid={invoiceErrors.rowMessages(i).length > 0 || undefined} className={`${invoiceErrors.rowMessages(i).length ? "invoice-row-invalid" : ""} border-b ${isDark ? "border-slate-700/80" : "border-gray-100"}`}>
                     <td className="text-center">
                       <button
                         type="button"
@@ -2046,7 +2063,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                         <TrashIcon aria-hidden="true" />
                       </button>
                     </td>
-                    <td className={`text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>{i + 1}</td>
+                    <td className={`text-center font-semibold text-[11px] ${isDark ? "text-slate-400" : "text-gray-500"}`}>{i + 1}</td>
 
                     <td>
                       <InvoiceRowError messages={invoiceErrors.rowMessages(i)} />
@@ -2066,13 +2083,11 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                       <input
                         type="text"
                         readOnly
+                        tabIndex={-1}
                         value={it.pack_size ?? ""}
+                        placeholder="—"
                         autoComplete="off"
-                        className={`w-full h-6 border rounded px-1 text-center ${
-                          isDark 
-                            ? "border-slate-600 bg-slate-700 text-slate-300" 
-                            : "border-gray-200 bg-gray-100 text-gray-700"
-                        }`}
+                        className="sale-readonly-field w-full h-7 rounded-md px-1.5 text-center"
                       />
                     </td>
 
@@ -2099,15 +2114,13 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
 
                     <td className="text-center">
                       <input
-                        type="date"
+                        type="text"
                         value={it.expiry ?? ""}
                         readOnly
+                        tabIndex={-1}
+                        placeholder="—"
                         autoComplete="off"
-                        className={`w-full h-6 border rounded px-1 text-center ${
-                          isDark 
-                            ? "border-slate-600 bg-slate-700 text-slate-300" 
-                            : "border-gray-200 bg-gray-100 text-gray-700"
-                        }`}
+                        className="sale-readonly-field w-full h-7 rounded-md px-1 text-center font-mono text-[10.5px]"
                       />
                     </td>
 
@@ -2115,13 +2128,11 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                       <input
                         type="text"
                         readOnly
+                        tabIndex={-1}
                         value={it.current_quantity ?? ""}
+                        placeholder="—"
                         autoComplete="off"
-                        className={`w-full h-6 border rounded px-1 text-center ${
-                          isDark 
-                            ? "border-slate-600 bg-slate-700 text-slate-300" 
-                            : "border-gray-200 bg-gray-100 text-gray-700"
-                        }`}
+                        className="sale-readonly-field w-full h-7 rounded-md px-1.5 text-center font-mono"
                       />
                     </td>
 
@@ -2131,17 +2142,18 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                         type="text"
                         name="quantity"
                         inputMode="numeric"
+                        placeholder="0"
                         value={zeroToEmpty(it.quantity)}
                         onChange={(e) => handleItemChange(i, "quantity", e.target.value)}
                         autoComplete="off"
                         className={
-                          `w-full h-6 border rounded px-1 text-center ${
+                          `w-full h-7 border rounded-md px-1.5 text-center font-bold ${
                             isDark 
-                              ? "bg-slate-700 border-slate-600 text-slate-200" 
-                              : "bg-white border-gray-300 text-gray-800"
+                              ? "bg-slate-700 border-slate-500 text-slate-100" 
+                              : "bg-white border-gray-300 text-gray-900"
                           } ` +
                           (Number(it.quantity || 0) > Number(it.current_quantity || 0)
-                            ? "border-red-500 ring-1 ring-red-400"
+                            ? "!border-red-500 ring-1 ring-red-400"
                             : "")
                         }
                         onKeyDown={(e) => onKeyNav(e, i, "quantity")}
@@ -2155,12 +2167,10 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                         type="text"
                         value={to2(it.price ?? "")}
                         readOnly
+                        tabIndex={-1}
+                        placeholder="—"
                         autoComplete="off"
-                        className={`w-full h-6 border rounded px-1 text-center ${
-                          isDark 
-                            ? "border-slate-600 bg-slate-700 text-slate-300" 
-                            : "border-gray-200 bg-gray-100 text-gray-700"
-                        } cursor-not-allowed ${invalidPriceRows[i] ? "border-red-500 ring-1 ring-red-400" : ""}`}
+                        className={`sale-readonly-field w-full h-7 rounded-md px-1.5 text-right font-mono ${invalidPriceRows[i] ? "!border-red-500 ring-1 ring-red-400" : ""}`}
                       />
                     </td>
 
@@ -2169,6 +2179,7 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                         ref={(el) => (discRefs.current[i] = el)}
                         type="text"
                         inputMode="decimal"
+                        placeholder="0"
                         value={zeroToEmpty(it.item_discount_percentage)}
                         onChange={(e) => handleItemChange(i, "item_discount_percentage", e.target.value)}
                         onBlur={(e) => {
@@ -2181,10 +2192,10 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                           }
                         }}
                         autoComplete="off"
-                        className={`w-full h-6 border rounded px-1 text-center ${
+                        className={`w-full h-7 border rounded-md px-1.5 text-center ${
                           isDark 
-                            ? "bg-slate-700 border-slate-600 text-slate-200" 
-                            : "bg-white border-gray-300 text-gray-800"
+                            ? "bg-slate-700 border-slate-500 text-slate-100" 
+                            : "bg-white border-gray-300 text-gray-900"
                         }`}
                         onKeyDown={(e) => onKeyNav(e, i, "disc")}
                         onFocus={(e) => e.target.select()}
@@ -2195,13 +2206,11 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                       <input
                         type="text"
                         readOnly
+                        tabIndex={-1}
                         value={it.sub_total ?? ""}
+                        placeholder="0.00"
                         autoComplete="off"
-                        className={`w-full h-6 border rounded px-1 text-center ${
-                          isDark 
-                            ? "border-slate-600 bg-slate-700 text-slate-300" 
-                            : "border-gray-200 bg-gray-100 text-gray-700"
-                        }`}
+                        className="sale-readonly-field sale-subtotal-field w-full h-7 rounded-md px-2 text-right font-mono"
                       />
                     </td>
 
@@ -2249,14 +2258,11 @@ const [customerWholesalePrices, setCustomerWholesalePrices] = useState({});
                     type="text"
                     name="margin_percentage"
                     readOnly
+                    tabIndex={-1}
                     value={marginPct}
                     onChange={(e) => setMarginPct(sanitizeNumberInput(e.target.value, true))}
                     autoComplete="off"
-                    className={`w-24 h-6.5 border rounded-md px-2 text-center font-extrabold text-xs ${
-                      isDark 
-                        ? "border-slate-600 bg-slate-700 text-rose-400 placeholder-slate-500" 
-                        : "border-gray-200 bg-gray-50 text-red-600"
-                    }`}
+                    className="sale-readonly-field w-24 h-6.5 rounded-md px-2 text-center font-extrabold text-xs"
                   />
                 </div>
 

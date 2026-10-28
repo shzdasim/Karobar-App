@@ -418,6 +418,9 @@ export default function SaleInvoiceShow() {
 
   const fmt = (v) => ((v ?? "") === "" ? "" : String(v));
 
+  const hasClinicalCols = Boolean(isPharmacy || inv?.doctor_name || inv?.patient_name);
+  const headerColCount = hasClinicalCols ? 6 : 4;
+
   return (
     <div className={`sale-entry h-[calc(100vh-130px)] flex flex-col ${isDark ? "bg-slate-900" : "bg-white"}`}>
       <style>{`
@@ -430,10 +433,7 @@ export default function SaleInvoiceShow() {
       {/* === Header (branded banner, matches Sale Invoice form) === */}
       <div className={`sale-entry-header shrink-0 sticky top-0 z-20 border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
         {/* Branded Banner */}
-        <div
-          className="sale-entry-banner px-4 py-2.5 flex items-center justify-between gap-3"
-
-        >
+        <div className="sale-entry-banner px-4 py-2.5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div
               className="w-9 h-9 rounded-xl flex items-center justify-center shadow-inner"
@@ -457,15 +457,13 @@ export default function SaleInvoiceShow() {
                   {(inv?.sale_type || "retail").toUpperCase()}
                 </span>
                 <span
-                  className={`px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest text-white`}
+                  className="px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest text-white"
                   style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(4px)" }}
                 >
                   #{fmt(inv.posted_number)}
                 </span>
-                {inv?.status === 'reversed' && (
-                  <span
-                    className="px-2 py-0.5 rounded-md text-[9px] font-extrabold tracking-widest text-white bg-rose-600 uppercase shadow-xs border border-rose-400"
-                  >
+                {inv?.status === "reversed" && (
+                  <span className="px-2 py-0.5 rounded-md text-[9px] font-extrabold tracking-widest text-white bg-rose-600 uppercase shadow-xs border border-rose-400">
                     REVERSED
                   </span>
                 )}
@@ -540,7 +538,7 @@ export default function SaleInvoiceShow() {
               <PrinterIcon className="w-4 h-4" aria-hidden="true" />
               <span>Delivery Challan</span>
             </button>
-            {invoiceDue > 0.01 && inv?.status !== 'reversed' && (
+            {invoiceDue > 0.01 && inv?.status !== "reversed" && (
               <button
                 type="button"
                 onClick={() => setPaymentModalOpen(true)}
@@ -580,7 +578,7 @@ export default function SaleInvoiceShow() {
               )}
             </button>
             <Guard when={can.delete}>
-              {inv?.status !== 'reversed' && (
+              {inv?.status !== "reversed" && (
                 <button
                   type="button"
                   onClick={() => setVoidModalOpen(true)}
@@ -593,7 +591,7 @@ export default function SaleInvoiceShow() {
               )}
             </Guard>
             <Guard when={can.update}>
-              {inv?.status !== 'reversed' ? (
+              {inv?.status !== "reversed" ? (
                 <button
                   type="button"
                   onClick={() => navigate(`/sale-invoices/${id}/edit`)}
@@ -651,84 +649,65 @@ export default function SaleInvoiceShow() {
           </div>
         </div>
 
-        {/* Fields Card */}
+        {/* Fields Card (Table Style instead of Form Inputs) */}
         <div className="sale-entry-details px-3 py-2">
-          <div className="grid grid-cols-12 gap-2 items-end">
-            <div className="col-span-2">
-              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Posted #</label>
-              <input
-                type="text"
-                readOnly
-                value={fmt(inv.posted_number)}
-                className={`w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] ${
-                  isDark ? "bg-slate-700 text-slate-200" : "bg-gray-100 text-gray-800"
-                }`}
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Date</label>
-              <input
-                type="text"
-                readOnly
-                value={fmt(inv.date)}
-                className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
-              />
-            </div>
-            <div className="col-span-4">
-              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Customer</label>
-              <div className={`w-full h-8 px-3 rounded-md border flex items-center gap-2 text-[11px] font-medium ${
-                isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-blue-200 bg-blue-50 text-blue-700"
-              }`}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
-                <span className="truncate">{inv.customer?.name ?? inv.customer_id ?? ""}</span>
-              </div>
-            </div>
-            {(isPharmacy || inv?.doctor_name || inv?.patient_name) && (
-            <>
-            <div className="col-span-2">
-              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Doctor</label>
-              <input
-                type="text"
-                readOnly
-                value={fmt(inv.doctor_name)}
-                className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Patient</label>
-              <input
-                type="text"
-                readOnly
-                value={fmt(inv.patient_name)}
-                className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
-              />
-            </div>
-            </>
-          )}
-
-            <div className="col-span-10">
-              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Remarks</label>
-              <input
-                type="text"
-                readOnly
-                value={fmt(inv.remarks)}
-                className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Items</label>
-              <input
-                type="text"
-                readOnly
-                value={(inv.items || []).length}
-                className={`w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] text-center ${
-                  isDark ? "bg-slate-700 text-slate-200" : "bg-gray-100 text-gray-800"
-                }`}
-              />
-            </div>
+          <div className={`overflow-x-auto rounded-lg border ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+            <table className="w-full text-[11px] border-collapse">
+              <thead>
+                <tr className={`border-b text-[9.5px] font-semibold uppercase tracking-wide ${isDark ? "bg-slate-800/90 text-slate-400 border-slate-700" : "bg-gray-50 text-gray-500 border-gray-200"}`}>
+                  <th className={`px-3 py-1 text-left border-r w-36 ${isDark ? "border-slate-700" : "border-gray-200"}`}>Posted #</th>
+                  <th className={`px-3 py-1 text-left border-r w-36 ${isDark ? "border-slate-700" : "border-gray-200"}`}>Date</th>
+                  <th className={`px-3 py-1 text-left border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>Customer</th>
+                  {hasClinicalCols && (
+                    <>
+                      <th className={`px-3 py-1 text-left border-r w-44 ${isDark ? "border-slate-700" : "border-gray-200"}`}>Doctor</th>
+                      <th className={`px-3 py-1 text-left border-r w-44 ${isDark ? "border-slate-700" : "border-gray-200"}`}>Patient</th>
+                    </>
+                  )}
+                  <th className="px-3 py-1 text-center w-24">Items</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className={`border-b ${isDark ? "bg-slate-800/60 text-slate-200 border-slate-700" : "bg-white text-gray-800 border-gray-200"}`}>
+                  <td className={`px-3 py-1.5 font-mono font-semibold border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+                    {fmt(inv.posted_number) || "—"}
+                  </td>
+                  <td className={`px-3 py-1.5 font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+                    {fmt(inv.date) || "—"}
+                  </td>
+                  <td className={`px-3 py-1.5 font-medium border-r ${isDark ? "border-slate-700 text-blue-300" : "border-gray-200 text-blue-700"}`}>
+                    <span className="inline-flex items-center gap-1.5">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                        <circle cx="12" cy="7" r="4" />
+                      </svg>
+                      <span>{inv.customer?.name ?? inv.customer_id ?? "Walk-in Customer"}</span>
+                    </span>
+                  </td>
+                  {hasClinicalCols && (
+                    <>
+                      <td className={`px-3 py-1.5 border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+                        {fmt(inv.doctor_name) || "—"}
+                      </td>
+                      <td className={`px-3 py-1.5 border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+                        {fmt(inv.patient_name) || "—"}
+                      </td>
+                    </>
+                  )}
+                  <td className="px-3 py-1.5 text-center font-mono font-bold">
+                    {(inv.items || []).length}
+                  </td>
+                </tr>
+                <tr className={`border-b text-[9.5px] font-semibold uppercase tracking-wide ${isDark ? "bg-slate-800/90 text-slate-400 border-slate-700" : "bg-gray-50 text-gray-500 border-gray-200"}`}>
+                  <th colSpan={headerColCount} className="px-3 py-1 text-left">Remarks</th>
+                </tr>
+                <tr className={isDark ? "bg-slate-800/60 text-slate-200" : "bg-white text-gray-800"}>
+                  <td colSpan={headerColCount} className="px-3 py-1.5">
+                    {fmt(inv.remarks) || "—"}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -741,32 +720,32 @@ export default function SaleInvoiceShow() {
           <div ref={itemsScrollRef} className={`sale-entry-items flex-1 overflow-auto border-2 rounded-sm relative ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"}`}>
             <table className="w-full text-[11px] table-fixed border-collapse print-table">
               <thead className={`sticky top-0 z-20 ${isDark ? "bg-slate-800/90 backdrop-blur-xs" : "bg-white/80 backdrop-blur-xs"} border-b ${isDark ? "border-slate-700" : "border-gray-200/70"}`}>
-                <tr className="[&>th]:py-1 [&>th]:px-1 [&>th]:text-left">
-                  <th className={`w-7 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>#</th>
-                  <th className={`w-[180px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Product</th>
-                  <th className={`w-14 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>PSize</th>
-                  <th className={`w-24 ${isDark ? "text-slate-400" : "text-gray-600"}`}>Batch</th>
-                  <th className={`w-15 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Expiry</th>
-                  <th className={`w-18 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Avail</th>
-                  <th className={`w-25 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Qty</th>
-                  <th className={`w-22 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Price</th>
-                  <th className={`w-18 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Disc%</th>
-                  <th className={`w-26 text-center ${isDark ? "text-slate-400" : "text-gray-600"}`}>Sub Total</th>
+                <tr className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-left">
+                  <th className={`w-8 text-center border-r ${isDark ? "text-slate-400 border-slate-700" : "text-gray-500 border-gray-200"}`}>#</th>
+                  <th className={`w-[180px] border-r ${isDark ? "text-slate-300 border-slate-700" : "text-gray-700 border-gray-200"}`}>Product</th>
+                  <th className={`w-14 text-center border-r ${isDark ? "text-slate-400 border-slate-700" : "text-gray-600 border-gray-200"}`}>PSize</th>
+                  <th className={`w-24 border-r ${isDark ? "text-slate-300 border-slate-700" : "text-gray-700 border-gray-200"}`}>Batch</th>
+                  <th className={`w-20 text-center border-r ${isDark ? "text-slate-400 border-slate-700" : "text-gray-600 border-gray-200"}`}>Expiry</th>
+                  <th className={`w-16 text-right border-r ${isDark ? "text-slate-400 border-slate-700" : "text-gray-600 border-gray-200"}`}>Avail</th>
+                  <th className={`w-16 text-right border-r ${isDark ? "text-slate-300 border-slate-700" : "text-gray-700 border-gray-200"}`}>Qty</th>
+                  <th className={`w-20 text-right border-r ${isDark ? "text-slate-400 border-slate-700" : "text-gray-600 border-gray-200"}`}>Price</th>
+                  <th className={`w-16 text-right border-r ${isDark ? "text-slate-400 border-slate-700" : "text-gray-600 border-gray-200"}`}>Disc%</th>
+                  <th className={`w-24 text-right ${isDark ? "text-slate-300" : "text-gray-700"}`}>Sub Total</th>
                 </tr>
               </thead>
-              <tbody className={`[&>tr>td]:py-1 [&>tr>td]:px-0.5 ${isDark ? "[&>tr]:border-slate-700 [&>tr>td]:text-slate-300" : "[&>tr]:border-gray-100 [&>tr>td]:text-gray-700"}`}>
+              <tbody className={`[&>tr>td]:py-1.5 [&>tr>td]:px-2 ${isDark ? "[&>tr]:border-slate-700 [&>tr>td]:text-slate-200" : "[&>tr]:border-gray-200 [&>tr>td]:text-gray-800"}`}>
                 {(inv.items || []).map((it, i) => (
-                  <tr key={i} className={`border-b ${isDark ? "border-slate-700" : "border-gray-100"} text-center`}>
-                    <td className="px-1">{i + 1}</td>
-                    <td className="px-1 text-left">{it.product?.name ?? it.product_id}</td>
-                    <td className="px-1">{fmt(it.pack_size)}</td>
-                    <td className="px-1">{fmt(it.batch_number)}</td>
-                    <td className="px-1">{fmt(it.expiry)}</td>
-                    <td className="px-1">{fmt(it.current_quantity)}</td>
-                    <td className="px-1">{fmt(it.quantity)}</td>
-                    <td className="px-1">{fmt(it.price)}</td>
-                    <td className="px-1">{fmt(it.item_discount_percentage)}</td>
-                    <td className="px-1">{fmt(it.sub_total)}</td>
+                  <tr key={i} className={`border-b ${isDark ? "border-slate-700 hover:bg-slate-700/40" : "border-gray-200 hover:bg-gray-50"}`}>
+                    <td className={`text-center font-mono border-r ${isDark ? "border-slate-700 text-slate-400" : "border-gray-200 text-gray-500"}`}>{i + 1}</td>
+                    <td className={`text-left font-medium truncate border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{it.product?.name ?? it.product_id}</td>
+                    <td className={`text-center font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.pack_size) || "—"}</td>
+                    <td className={`text-left font-mono truncate border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.batch_number) || "—"}</td>
+                    <td className={`text-center font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.expiry) || "—"}</td>
+                    <td className={`text-right font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.current_quantity) || "0"}</td>
+                    <td className={`text-right font-mono font-bold border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.quantity) || "0"}</td>
+                    <td className={`text-right font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.price) || "0.00"}</td>
+                    <td className={`text-right font-mono border-r ${isDark ? "border-slate-700" : "border-gray-200"}`}>{fmt(it.item_discount_percentage) || "0"}</td>
+                    <td className="text-right font-mono font-bold">{fmt(it.sub_total) || "0.00"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -774,7 +753,7 @@ export default function SaleInvoiceShow() {
           </div>
         </div>
 
-        {/* RIGHT: Summary panel (mirrors form layout) */}
+        {/* RIGHT: Summary panel (mirrors form layout, with table cells instead of inputs) */}
         <div className="min-h-0">
           <div className={`sale-entry-summary h-full flex flex-col rounded-2xl overflow-hidden ${isDark ? "bg-slate-800" : "bg-white"}`}>
             {/* Panel Header */}
@@ -790,45 +769,45 @@ export default function SaleInvoiceShow() {
               </svg>
             </div>
 
-            {/* Content */}
-            <div className="flex-1 flex flex-col min-h-0 px-4 py-3 text-[12px]">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Tax %</label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(inv.tax_percentage)}
-                    className={`w-28 h-8 border rounded-lg px-2 text-center text-[12px] ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 bg-gray-50 text-gray-800"}`}
-                  />
-                </div>
-                <div className={`flex items-center justify-between border-t border-dashed pt-2 ${isDark ? "border-slate-700" : "border-gray-200"}`}>
-                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Tax Amt</label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(inv.tax_amount)}
-                    className={`w-28 h-8 border rounded-lg px-2 text-right font-semibold text-[12px] ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 text-gray-800"}`}
-                  />
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Disc %</label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(inv.discount_percentage)}
-                    className={`w-28 h-8 border rounded-lg px-2 text-center text-[12px] ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 text-gray-800"}`}
-                  />
-                </div>
-                <div className="flex items-center justify-between border-t border-dashed pt-2">
-                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Disc Amt</label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(inv.discount_amount)}
-                    className={`w-28 h-8 border rounded-lg px-2 text-right font-semibold text-[12px] ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 text-gray-800"}`}
-                  />
-                </div>
+            {/* Content (Table Style instead of Form Inputs) */}
+            <div className="flex-1 flex flex-col min-h-0 px-3 py-3 text-[12px] overflow-y-auto">
+              <div className={`overflow-hidden rounded-xl border ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+                <table className="w-full text-[11.5px] border-collapse">
+                  <tbody>
+                    <tr className={`border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+                      <th className={`px-3 py-2 text-left font-semibold border-r w-1/2 ${isDark ? "bg-slate-800/90 text-slate-400 border-slate-700" : "bg-gray-50 text-gray-600 border-gray-200"}`}>
+                        Tax %
+                      </th>
+                      <td className={`px-3 py-2 text-right font-mono ${isDark ? "bg-slate-800/40 text-slate-200" : "bg-white text-gray-800"}`}>
+                        {fmt(inv.tax_percentage) || "0"}%
+                      </td>
+                    </tr>
+                    <tr className={`border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+                      <th className={`px-3 py-2 text-left font-semibold border-r ${isDark ? "bg-slate-800/90 text-slate-400 border-slate-700" : "bg-gray-50 text-gray-600 border-gray-200"}`}>
+                        Tax Amt
+                      </th>
+                      <td className={`px-3 py-2 text-right font-mono font-semibold ${isDark ? "bg-slate-800/40 text-slate-200" : "bg-white text-gray-800"}`}>
+                        {fmt(inv.tax_amount) || "0.00"}
+                      </td>
+                    </tr>
+                    <tr className={`border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+                      <th className={`px-3 py-2 text-left font-semibold border-r ${isDark ? "bg-slate-800/90 text-slate-400 border-slate-700" : "bg-gray-50 text-gray-600 border-gray-200"}`}>
+                        Disc %
+                      </th>
+                      <td className={`px-3 py-2 text-right font-mono ${isDark ? "bg-slate-800/40 text-slate-200" : "bg-white text-gray-800"}`}>
+                        {fmt(inv.discount_percentage) || "0"}%
+                      </td>
+                    </tr>
+                    <tr>
+                      <th className={`px-3 py-2 text-left font-semibold border-r ${isDark ? "bg-slate-800/90 text-slate-400 border-slate-700" : "bg-gray-50 text-gray-600 border-gray-200"}`}>
+                        Disc Amt
+                      </th>
+                      <td className={`px-3 py-2 text-right font-mono font-semibold ${isDark ? "bg-slate-800/40 text-slate-200" : "bg-white text-gray-800"}`}>
+                        {fmt(inv.discount_amount) || "0.00"}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
 
               {/* Totals */}
@@ -838,35 +817,46 @@ export default function SaleInvoiceShow() {
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className={`text-[10px] font-medium uppercase tracking-wide ${isDark ? "text-slate-400" : "text-gray-500"}`}>Gross</span>
-                  <span className={`text-[13px] font-bold ${isDark ? "text-slate-200" : "text-gray-800"}`}>{fmt(inv.gross_amount) ?? 0}</span>
+                  <span className={`text-[13px] font-bold font-mono ${isDark ? "text-slate-200" : "text-gray-800"}`}>{fmt(inv.gross_amount) ?? 0}</span>
                 </div>
                 <div className="flex items-center justify-between border-t border-dashed pt-2" style={{ borderColor: `${themeColors.primary}33` }}>
                   <span className={`text-[13px] font-bold ${isDark ? "text-slate-200" : "text-gray-800"}`}>Total</span>
-                  <span className={`text-2xl font-extrabold ${isDark ? "text-red-400" : "text-red-600"}`}>{fmt(inv.total) ?? 0}</span>
+                  <span className={`text-2xl font-extrabold font-mono ${isDark ? "text-red-400" : "text-red-600"}`}>{fmt(inv.total) ?? 0}</span>
                 </div>
               </div>
 
-              {/* Payment */}
-              <div className="mt-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Received</label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={invReceived.toLocaleString()}
-                    className={`w-28 h-8 border rounded-lg px-2 text-right font-semibold text-[12px] ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 text-gray-800"}`}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className={`font-semibold ${isDark ? "text-slate-400" : "text-gray-500"}`}>Remaining</label>
-                  <span className={`text-lg font-extrabold ${invRemaining > 0 ? "text-amber-500" : (isDark ? "text-emerald-400" : "text-emerald-600")}`}>
-                    {invRemaining}
-                  </span>
-                </div>
-              </div>
-
-              <div className="pt-2 text-[11px] text-gray-500 dark:text-gray-400">
-                Printer: <b className="dark:text-gray-300">{(printerType || "a4").toUpperCase()}</b>
+              {/* Payment & Printer Table */}
+              <div className={`mt-3 overflow-hidden rounded-xl border ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+                <table className="w-full text-[11.5px] border-collapse">
+                  <tbody>
+                    <tr className={`border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+                      <th className={`px-3 py-2 text-left font-semibold border-r w-1/2 ${isDark ? "bg-slate-800/90 text-slate-400 border-slate-700" : "bg-gray-50 text-gray-600 border-gray-200"}`}>
+                        Received
+                      </th>
+                      <td className={`px-3 py-2 text-right font-mono font-semibold ${isDark ? "bg-slate-800/40 text-slate-200" : "bg-white text-gray-800"}`}>
+                        {invReceived.toLocaleString()}
+                      </td>
+                    </tr>
+                    <tr className={`border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
+                      <th className={`px-3 py-2 text-left font-semibold border-r ${isDark ? "bg-slate-800/90 text-slate-400 border-slate-700" : "bg-gray-50 text-gray-600 border-gray-200"}`}>
+                        Remaining
+                      </th>
+                      <td className={`px-3 py-2 text-right font-mono font-extrabold ${
+                        invRemaining > 0 ? "text-amber-500" : (isDark ? "text-emerald-400" : "text-emerald-600")
+                      } ${isDark ? "bg-slate-800/40" : "bg-white"}`}>
+                        {invRemaining.toLocaleString()}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th className={`px-3 py-1.5 text-left font-semibold border-r ${isDark ? "bg-slate-800/90 text-slate-400 border-slate-700" : "bg-gray-50 text-gray-600 border-gray-200"}`}>
+                        Printer
+                      </th>
+                      <td className={`px-3 py-1.5 text-right font-mono font-bold uppercase ${isDark ? "bg-slate-800/40 text-slate-300" : "bg-white text-gray-700"}`}>
+                        {(printerType || "a4").toUpperCase()}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 

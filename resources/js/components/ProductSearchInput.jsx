@@ -476,10 +476,10 @@ const stopResize = () => {
             value={display}
             readOnly
             placeholder="Search product…"
-className={`w-full h-6 text-sm px-1 rounded-md text-left cursor-pointer transition-all border pr-6 ${className} ${
+            className={`w-full h-7 text-xs px-2 rounded-md text-left cursor-pointer transition-all border pr-6 ${className} ${
                 selectedProduct
-                  ? "border-blue-400 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200 font-medium"
-                  : "border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-500 dark:text-gray-400 placeholder-gray-400 dark:placeholder-gray-500"
+                  ? "border-blue-400 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200 font-semibold"
+                  : "border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500"
             } focus:outline-hidden focus:ring-2 focus:ring-blue-400/40`}
             title={selectedProduct?.name || "Search product…"}
             onFocus={() => openModal()}

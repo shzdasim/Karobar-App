@@ -1555,45 +1555,48 @@ const contRect = container.getBoundingClientRect();
 
         {/* ---- Fields Card ---- */}
         <div className="purchase-entry-details px-3 py-2.5 border-b">
-<div className="grid grid-cols-12 gap-2 items-end">
+          <div className="grid grid-cols-12 gap-2 items-end">
             {/* Posted Number - first */}
             <div className="col-span-2">
-              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Posted Number</label>
+              <label className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+                <span>Posted Number</span>
+                <span className="text-[8.5px] font-medium lowercase opacity-75">auto</span>
+              </label>
               <input
                 type="text"
-                inputMode="decimal"
                 name="posted_number"
                 readOnly
-                placeholder="(auto on save)"
+                tabIndex={-1}
+                placeholder="Auto on Save"
                 value={form.posted_number || ""}
-                className="bg-gray-100 dark:bg-slate-600 border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs text-gray-900 dark:text-gray-100"
+                className="purchase-readonly-field rounded-md w-full px-2 h-8 text-xs font-mono"
                 {...antiFill}
               />
             </div>
 
             {/* Date - second */}
             <div className="col-span-2">
-              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Date</label>
+              <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Date</label>
               <input
                 type="date"
                 name="posted_date"
                 value={form.posted_date}
                 onChange={handleChange}
-                className="border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                className="border border-gray-300 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                 {...antiFill}
               />
             </div>
 
-{/* Supplier - opens search modal */}
+            {/* Supplier - opens search modal */}
             <div className="col-span-4">
-              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Supplier *</label>
+              <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Supplier *</label>
               <button
                 type="button"
                 ref={supplierRef}
                 disabled={Boolean(form.purchase_order_id)}
                 title={form.purchase_order_id ? "Supplier finalized by the source Purchase Order" : undefined}
                 onClick={() => setSupplierSearchOpen(true)}
-                className={`w-full h-8 px-2 rounded-md border text-left text-xs flex items-center gap-2 transition-all duration-200
+                className={`w-full h-8 px-2.5 rounded-md border text-left text-xs flex items-center justify-between gap-2 transition-all duration-200
                   ${selectedSupplier
                     ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200'
                     : 'border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-500 dark:text-gray-400 hover:border-blue-400'
@@ -1601,64 +1604,75 @@ const contRect = container.getBoundingClientRect();
                 style={{ color: selectedSupplier ? undefined : (isDark ? "#94a3b8" : "#9ca3af") }}
                 {...antiFill}
               >
-                <BuildingStorefrontIcon className="w-4 h-4 shrink-0" />
-                {selectedSupplier ? (
-                  <span className="truncate font-medium" style={{ color: isDark ? "#bfdbfe" : "#1d4ed8" }}>
-                    {selectedSupplier.name}
-                  </span>
-                ) : (
-                  <span className="truncate">Click to search supplier...</span>
-                )}
+                <span className="flex items-center gap-1.5 min-w-0 truncate">
+                  <BuildingStorefrontIcon className="w-4 h-4 shrink-0 text-blue-500" />
+                  {selectedSupplier ? (
+                    <span className="truncate font-medium" style={{ color: isDark ? "#bfdbfe" : "#1d4ed8" }}>
+                      {selectedSupplier.name}
+                    </span>
+                  ) : (
+                    <span className="truncate">Click to search supplier...</span>
+                  )}
+                </span>
+                <span className="text-[10px] text-gray-400 dark:text-slate-400 shrink-0 font-normal">Search</span>
               </button>
             </div>
 
-{/* Invoice Number */}
+            {/* Invoice Number */}
             <div className="col-span-1">
-              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Invoice Number</label>
+              <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Invoice #</label>
               <input
                 ref={invoiceNumberRef}
                 type="text"
                 name="invoice_number"
+                placeholder="Bill #"
                 value={form.invoice_number}
                 onChange={handleChange}
                 onKeyDown={(e) => handleKeyDown(e, "invoice_number")}
                 onFocus={(e) => e.target.select()}
-                className="border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                className="border border-gray-300 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                 {...antiFill}
               />
             </div>
 
-{/* Invoice Amount */}
+            {/* Invoice Amount */}
             <div className="col-span-1">
-              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Invoice Amount</label>
+              <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Bill Amt</label>
               <input
                 ref={invoiceAmountRef}
                 type="text"
+                inputMode="decimal"
                 name="invoice_amount"
+                placeholder="0.00"
                 value={form.invoice_amount}
                 onChange={handleChange}
                 onKeyDown={(e) => handleKeyDown(e, "invoice_amount")}
                 onFocus={(e) => e.target.select()}
-                className="border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                className="border border-gray-300 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs text-right font-mono bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                 {...antiFill}
               />
             </div>
 
-{/* Difference */}
+            {/* Difference */}
             <div className="col-span-2">
-              <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Difference</label>
+              <label className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+                <span>Difference</span>
+                <span className="text-[8.5px] font-medium lowercase opacity-75">auto</span>
+              </label>
               <input
                 type="text"
                 readOnly
+                tabIndex={-1}
+                placeholder="—"
                 value={
                   form.invoice_amount && form.total_amount
                     ? (Number(form.invoice_amount) - Number(form.total_amount)).toFixed(2)
                     : ""
                 }
-                className={`border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs font-bold text-center bg-gray-100 dark:bg-slate-600 ${
+                className={`purchase-readonly-field rounded-md w-full px-2 h-8 text-xs font-bold font-mono text-center ${
                   Number(form.invoice_amount) - Number(form.total_amount) !== 0
-                    ? "text-red-600 dark:text-red-400"
-                    : "text-gray-700 dark:text-gray-300"
+                    ? "!text-red-600 dark:!text-red-400"
+                    : ""
                 }`}
                 {...antiFill}
               />
@@ -1718,13 +1732,14 @@ const contRect = container.getBoundingClientRect();
 
           {/* Remarks row */}
           <div className="mt-2">
-            <label className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Remarks</label>
+            <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Remarks</label>
             <input
               type="text"
               name="remarks"
+              placeholder="Supplier invoice remarks / delivery notes..."
               value={form.remarks}
               onChange={handleChange}
-              className="border border-gray-200 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+              className="border border-gray-300 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
               {...antiFill}
             />
           </div>
@@ -1770,43 +1785,57 @@ const contRect = container.getBoundingClientRect();
         </label>
       </div>
       {/* ================= ITEMS SECTION ================= */}
-      <div ref={itemsScrollRef} className="purchase-entry-items flex-1 min-h-0 overflow-auto pt-1 px-1 pb-16" autoComplete="off">
-        <h2 className="text-xs font-bold mb-1 text-gray-900 dark:text-gray-100">Items (↑↓ arrows to navigate rows)</h2>
+      <div ref={itemsScrollRef} className="purchase-entry-items flex-1 min-h-0 overflow-auto pt-1.5 px-2 pb-16" autoComplete="off">
+        <div className="flex items-center justify-between mb-1.5 px-1">
+          <div className="text-[11px] font-bold tracking-wide uppercase text-gray-700 dark:text-slate-300">
+            Line Items (↑↓ arrows to navigate rows)
+          </div>
+          <div className="flex items-center gap-3 text-[10px]">
+            <span className="inline-flex items-center gap-1.5 font-medium text-gray-600 dark:text-slate-300">
+              <span className="w-2.5 h-2.5 rounded-xs border border-blue-500 bg-white dark:bg-slate-700 inline-block" />
+              <span>Editable Field</span>
+            </span>
+            <span className="inline-flex items-center gap-1.5 font-medium text-gray-400 dark:text-slate-400">
+              <span className="w-2.5 h-2.5 rounded-xs border border-dashed border-gray-400 dark:border-slate-500 bg-gray-100 dark:bg-slate-800/80 inline-block" />
+              <span>Auto / Read-only</span>
+            </span>
+          </div>
+        </div>
 
         <table className="w-full border-collapse text-[11px]">
           <thead className="sticky top-0 bg-gray-100 dark:bg-slate-700 z-5">
             <tr>
-              <th rowSpan={2} className="border w-6 bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">#</th>
-              <th rowSpan={2} colSpan={1} className="border w-[80px] bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Product</th>
-              <th colSpan={3} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Pack Size / Batch / Expiry</th>
-              <th colSpan={2} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Qty (Pack / Unit)</th>
-              <th colSpan={2} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Purchase Price (P / U)</th>
-              <th colSpan={3} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Disc % / Bonus (P / U)</th>
-              <th colSpan={2} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Sale Price (P / U)</th>
-              <th colSpan={2} className={`border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100 ${!hasWholesale ? 'hidden' : ''}`}>Wholesale Price (P / U)</th>
-              <th colSpan={hasWholesale ? 4 : 3} className="border bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Margin % {hasWholesale && '/ W.S.Mrg%'} / Avg / Sub Total</th>
-              <th rowSpan={2} className="border w-5 bg-gray-200 dark:bg-slate-600 text-gray-900 dark:text-gray-100">+</th>
+              <th rowSpan={2} className="border w-7 purchase-th-readonly">#</th>
+              <th rowSpan={2} colSpan={1} className="border w-[180px] purchase-th-editable">Product *</th>
+              <th colSpan={3} className="border">Pack Size / Batch / Expiry</th>
+              <th colSpan={2} className="border purchase-th-editable">Qty (Pack / Unit)</th>
+              <th colSpan={2} className="border purchase-th-editable">Purchase Price (P / U)</th>
+              <th colSpan={3} className="border purchase-th-editable">Disc % / Bonus (P / U)</th>
+              <th colSpan={2} className="border purchase-th-editable">Sale Price (P / U)</th>
+              <th colSpan={2} className={`border purchase-th-editable ${!hasWholesale ? 'hidden' : ''}`}>Wholesale Price (P / U)</th>
+              <th colSpan={hasWholesale ? 4 : 3} className="border purchase-th-readonly">Margin % {hasWholesale && '/ W.S.Mrg%'} / Avg / Sub Total</th>
+              <th rowSpan={2} className="border w-7">+</th>
             </tr>
 
             <tr>
-              <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">PSize</th>
-              <th className="border min-w-[130px] w-32 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Batch</th>
-              <th className="border w-24 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Exp</th>
-              <th className="border w-12 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Pack.Q</th>
-              <th className="border w-12 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Unit.Q</th>
-              <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Pack.P</th>
-              <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Unit.P</th>
-              <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Disc%</th>
-              <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">PBonus</th>
-              <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">UBonus</th>
-              <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Pack.S</th>
-              <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Unit.S</th>
-              <th className={`border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100 ${!hasWholesale ? 'hidden' : ''}`}>W.S.Pack</th>
-              <th className={`border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100 ${!hasWholesale ? 'hidden' : ''}`}>W.S.Unit</th>
-              <th className="border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Margin%</th>
-              <th className={`border w-14 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100 ${!hasWholesale ? 'hidden' : ''}`}>W.S.Mrg%</th>
-              <th className="border w-16 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Avg</th>
-              <th className="border w-24 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100">Sub Total</th>
+              <th className="border w-14 purchase-th-readonly" title="Pack Size (Auto)">PSize</th>
+              <th className="border min-w-[130px] w-32 purchase-th-editable">Batch</th>
+              <th className="border w-28 purchase-th-editable">Exp</th>
+              <th className="border w-14 purchase-th-editable">Pack.Q</th>
+              <th className="border w-14 purchase-th-editable">Unit.Q</th>
+              <th className="border w-16 purchase-th-editable">Pack.P</th>
+              <th className="border w-16 purchase-th-editable">Unit.P</th>
+              <th className="border w-14 purchase-th-editable">Disc%</th>
+              <th className="border w-14 purchase-th-editable">PBonus</th>
+              <th className="border w-14 purchase-th-editable">UBonus</th>
+              <th className="border w-16 purchase-th-editable">Pack.S</th>
+              <th className="border w-16 purchase-th-editable">Unit.S</th>
+              <th className={`border w-16 purchase-th-editable ${!hasWholesale ? 'hidden' : ''}`}>W.S.Pack</th>
+              <th className={`border w-16 purchase-th-editable ${!hasWholesale ? 'hidden' : ''}`}>W.S.Unit</th>
+              <th className="border w-14 purchase-th-readonly" title="Retail Margin % (Auto)">Margin%</th>
+              <th className={`border w-14 purchase-th-readonly ${!hasWholesale ? 'hidden' : ''}`} title="Wholesale Margin % (Auto)">W.S.Mrg%</th>
+              <th className="border w-18 purchase-th-readonly" title="Average Unit Cost (Auto)">Avg</th>
+              <th className="border w-24 purchase-th-readonly" title="Row Sub Total (Auto)">Sub Total</th>
             </tr>
           </thead>
 
@@ -1832,7 +1861,7 @@ const contRect = container.getBoundingClientRect();
                     </tr>
                   );
                 })()}
-              <tr key={i} id={invoiceErrors.rowId(i)} data-dnd-row={item.product_id ? i : undefined} aria-invalid={invoiceErrors.rowMessages(i).length > 0 || undefined} className={`text-center odd:bg-white even:bg-gray-50 dark:odd:bg-slate-700/30 dark:even:bg-slate-700/50 ${invoiceErrors.rowMessages(i).length ? "invoice-row-invalid" : ""} ${item.product_id ? dnd.rowDropClass(i) : ""} ${item.product_id && dnd.isDragging(i) ? "dnd-dragging" : ""}`}>
+              <tr key={i} id={invoiceErrors.rowId(i)} data-dnd-row={item.product_id ? i : undefined} aria-invalid={invoiceErrors.rowMessages(i).length > 0 || undefined} className={`text-center ${invoiceErrors.rowMessages(i).length ? "invoice-row-invalid" : ""} ${item.product_id ? dnd.rowDropClass(i) : ""} ${item.product_id && dnd.isDragging(i) ? "dnd-dragging" : ""}`}>
                 {/* Drag handle / Remove */}
                 <td className="border">
                   <div className="flex items-center justify-center gap-0.5">
@@ -1966,13 +1995,15 @@ const contRect = container.getBoundingClientRect();
                   </div>
                 </td>
 
-                {/* Pack Size */}
+                {/* Pack Size (Read-only) */}
                 <td className="border w-14">
                   <input
-                    type="number"
+                    type="text"
                     readOnly
+                    tabIndex={-1}
+                    placeholder="—"
                     value={item.pack_size ?? ""}
-                    className="border bg-gray-100 dark:bg-slate-600 w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-gray-900 dark:text-gray-100"
+                    className="purchase-readonly-field w-full h-7 text-[11px] px-1.5 text-center font-mono"
                     {...antiFill}
                   />
                 </td>
@@ -2001,28 +2032,30 @@ const contRect = container.getBoundingClientRect();
                 </td>
 
                 {/* Expiry */}
-                <td className="border w-24">
+                <td className="border w-28">
                   <input
                     ref={(el) => (expiryRefs.current[i] = el)}
                     type="date"
                     value={item.expiry ?? ""}
                     onChange={(e) => handleItemChange(i, "expiry", e.target.value)}
                     onKeyDown={(e) => handleKeyDown(e, "expiry", i)}
-                    className="border w-full h-6 text-[11px] px-1 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    className="border w-full h-7 text-[11px] px-1 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 font-mono"
                     {...antiFill}
                   />
                 </td>
 
-                {/* Pack Qty (✅ now supports decimals) */}
+                {/* Pack Qty */}
                 <td className="border">
                   <input
                     ref={(el) => (packQuantityRefs.current[i] = el)}
                     type="text"
+                    inputMode="decimal"
+                    placeholder="0"
                     value={item.pack_quantity === 0 ? "" : item.pack_quantity}
                     onChange={(e) => handleItemChange(i, "pack_quantity", e.target.value)}
                     onKeyDown={(e) => handleKeyDown(e, "pack_quantity", i)}
                     onFocus={(e) => e.target.select()}
-                    className="border w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    className="border w-full h-7 text-[11px] px-1.5 text-center font-bold bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                     {...antiFill}
                   />
                 </td>
@@ -2031,9 +2064,11 @@ const contRect = container.getBoundingClientRect();
                 <td className="border">
                   <input
                     type="text"
+                    inputMode="decimal"
+                    placeholder="0"
                     value={item.unit_quantity === 0 ? "" : item.unit_quantity}
                     onChange={(e) => handleItemChange(i, "unit_quantity", e.target.value)}
-                    className="border w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    className="border w-full h-7 text-[11px] px-1.5 text-center font-bold bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                     {...antiFill}
                   />
                 </td>
@@ -2043,11 +2078,13 @@ const contRect = container.getBoundingClientRect();
                   <input
                     ref={(el) => (packPurchasePriceRefs.current[i] = el)}
                     type="text"
+                    inputMode="decimal"
+                    placeholder="0.00"
                     value={item.pack_purchase_price === 0 ? "" : item.pack_purchase_price}
                     onChange={(e) => handleItemChange(i, "pack_purchase_price", e.target.value)}
                     onKeyDown={(e) => handleKeyDown(e, "pack_purchase_price", i)}
                     onFocus={(e) => e.target.select()}
-                    className="border w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    className="border w-full h-7 text-[11px] px-1.5 text-right font-mono bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                     {...antiFill}
                   />
                 </td>
@@ -2056,9 +2093,11 @@ const contRect = container.getBoundingClientRect();
                 <td className="border">
                   <input
                     type="text"
+                    inputMode="decimal"
+                    placeholder="0.00"
                     value={item.unit_purchase_price ?? ""}
                     onChange={(e) => handleItemChange(i, "unit_purchase_price", e.target.value)}
-                    className="border w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    className="border w-full h-7 text-[11px] px-1.5 text-right font-mono bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                     {...antiFill}
                   />
                 </td>
@@ -2068,27 +2107,31 @@ const contRect = container.getBoundingClientRect();
                   <input
                     ref={(el) => (itemDiscountRefs.current[i] = el)}
                     type="text"
+                    inputMode="decimal"
+                    placeholder="0"
                     value={item.item_discount_percentage ?? ""}
                     onChange={(e) =>
                       handleItemChange(i, "item_discount_percentage", e.target.value)
                     }
                     onKeyDown={(e) => handleKeyDown(e, "item_discount", i)}
                     onFocus={(e) => e.target.select()}
-                    className="border w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    className="border w-full h-7 text-[11px] px-1.5 text-center bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                     {...antiFill}
                   />
                 </td>
 
-                {/* Pack Bonus (✅ now supports decimals) */}
+                {/* Pack Bonus */}
                 <td className="border">
                   <input
                     ref={(el) => (packBonusRefs.current[i] = el)}
                     type="text"
+                    inputMode="decimal"
+                    placeholder="0"
                     value={item.pack_bonus === 0 ? "" : item.pack_bonus}
                     onChange={(e) => handleItemChange(i, "pack_bonus", e.target.value)}
                     onKeyDown={(e) => handleKeyDown(e, "pack_bonus", i)}
                     onFocus={(e) => e.target.select()}
-                    className="border w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    className="border w-full h-7 text-[11px] px-1.5 text-center bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                     {...antiFill}
                   />
                 </td>
@@ -2097,9 +2140,11 @@ const contRect = container.getBoundingClientRect();
                 <td className="border">
                   <input
                     type="text"
+                    inputMode="decimal"
+                    placeholder="0"
                     value={item.unit_bonus === 0 ? "" : item.unit_bonus}
                     onChange={(e) => handleItemChange(i, "unit_bonus", e.target.value)}
-                    className="border w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    className="border w-full h-7 text-[11px] px-1.5 text-center bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                     {...antiFill}
                   />
                 </td>
@@ -2109,11 +2154,13 @@ const contRect = container.getBoundingClientRect();
                   <input
                     ref={(el) => (packSalePriceRefs.current[i] = el)}
                     type="text"
+                    inputMode="decimal"
+                    placeholder="0.00"
                     value={item.pack_sale_price === 0 ? "" : item.pack_sale_price}
                     onChange={(e) => handleItemChange(i, "pack_sale_price", e.target.value)}
                     onKeyDown={(e) => handleKeyDown(e, "pack_sale_price", i)}
                     onFocus={(e) => e.target.select()}
-                    className="border w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    className="border w-full h-7 text-[11px] px-1.5 text-right font-mono bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                     {...antiFill}
                   />
                 </td>
@@ -2122,9 +2169,11 @@ const contRect = container.getBoundingClientRect();
                 <td className="border">
                   <input
                     type="text"
+                    inputMode="decimal"
+                    placeholder="0.00"
                     value={item.unit_sale_price ?? ""}
                     onChange={(e) => handleItemChange(i, "unit_sale_price", e.target.value)}
-                    className="border w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    className="border w-full h-7 text-[11px] px-1.5 text-right font-mono bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                     {...antiFill}
                   />
                 </td>
@@ -2134,69 +2183,81 @@ const contRect = container.getBoundingClientRect();
                   <input
                     ref={(el) => (wholeSalePackPriceRefs.current[i] = el)}
                     type="text"
+                    inputMode="decimal"
+                    placeholder="0.00"
                     value={item.whole_sale_pack_price === 0 ? "" : item.whole_sale_pack_price}
                     onChange={(e) => handleItemChange(i, "whole_sale_pack_price", e.target.value)}
                     onKeyDown={(e) => handleKeyDown(e, "whole_sale_pack_price", i)}
                     onFocus={(e) => e.target.select()}
-                    className="border w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    className="border w-full h-7 text-[11px] px-1.5 text-right font-mono bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                     {...antiFill}
                   />
                 </td>
 
-{/* Wholesale Unit Sale */}
+                {/* Wholesale Unit Sale */}
                 <td className={`border ${!hasWholesale ? 'hidden' : ''}`}>
                   <input
                     ref={(el) => (wholeSaleUnitPriceRefs.current[i] = el)}
                     type="text"
+                    inputMode="decimal"
+                    placeholder="0.00"
                     value={item.whole_sale_unit_price ?? ""}
                     onChange={(e) => handleItemChange(i, "whole_sale_unit_price", e.target.value)}
                     onKeyDown={(e) => handleKeyDown(e, "whole_sale_unit_price", i)}
                     onFocus={(e) => e.target.select()}
-                    className="border w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    className="border w-full h-7 text-[11px] px-1.5 text-right font-mono bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                     {...antiFill}
                   />
                 </td>
 
-                {/* Margin % */}
+                {/* Margin % (Read-only) */}
                 <td className="border">
                   <input
-                    type="number"
+                    type="text"
                     readOnly
+                    tabIndex={-1}
+                    placeholder="—"
                     value={item.margin ?? ""}
-                    className="border bg-gray-100 dark:bg-slate-600 w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-gray-900 dark:text-gray-100"
+                    className="purchase-readonly-field w-full h-7 text-[11px] px-1.5 text-center font-mono"
                     {...antiFill}
                   />
                 </td>
 
-{/* W.S. Margin % */}
+                {/* W.S. Margin % (Read-only) */}
                 <td className={`border ${!hasWholesale ? 'hidden' : ''}`}>
                   <input
-                    type="number"
+                    type="text"
                     readOnly
+                    tabIndex={-1}
+                    placeholder="—"
                     value={item.whole_sale_margin ?? ""}
-                    className="border bg-gray-100 dark:bg-slate-600 w-full h-6 text-[11px] px-1 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-gray-900 dark:text-gray-100"
+                    className="purchase-readonly-field w-full h-7 text-[11px] px-1.5 text-center font-mono"
                     {...antiFill}
                   />
                 </td>
 
-                {/* Avg Price (readonly) */}
+                {/* Avg Price (Read-only) */}
                 <td className="border">
                   <input
-                    type="number"
+                    type="text"
                     value={item.avg_price ?? ""}
                     readOnly
-                    className="border w-full h-6 text-[11px] px-1 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    tabIndex={-1}
+                    placeholder="—"
+                    className="purchase-readonly-field w-full h-7 text-[11px] px-1.5 text-right font-mono"
                     {...antiFill}
                   />
                 </td>
 
-                {/* Sub Total (readonly) */}
+                {/* Sub Total (Read-only computed badge) */}
                 <td className="border w-24">
                   <input
-                    type="number"
+                    type="text"
                     value={item.sub_total ?? ""}
                     readOnly
-                    className="border w-full h-6 text-[11px] px-1 bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-gray-100 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    tabIndex={-1}
+                    placeholder="0.00"
+                    className="purchase-readonly-field purchase-subtotal-field w-full h-7 text-[11px] px-2 text-right font-mono"
                     {...antiFill}
                   />
                 </td>
@@ -2214,7 +2275,7 @@ const contRect = container.getBoundingClientRect();
                 </td>
 
                 {/* Add */}
-                <td className="border w-5">
+                <td className="border w-7">
                   <button
                     type="button"
                     onClick={addItem}
@@ -2245,10 +2306,12 @@ const contRect = container.getBoundingClientRect();
                 {/* Editable adjustment fields */}
                 <div className="flex gap-2 items-end">
                   <div>
-                    <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Discount %</label>
+                    <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Discount %</label>
                     <input
                       ref={discountPercentageRef}
                       type="text"
+                      inputMode="decimal"
+                      placeholder="0"
                       name="discount_percentage"
                       value={form.discount_percentage ?? ""}
                       onChange={handleChange}
@@ -2258,26 +2321,30 @@ const contRect = container.getBoundingClientRect();
                           taxPercentageRef.current?.focus();
                         }
                       }}
-                      className="border border-gray-200 dark:border-slate-600 rounded-md w-16 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
+                      className="border border-gray-300 dark:border-slate-600 rounded-md w-16 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
                       {...antiFill}
                     />
                   </div>
                   <div>
-                    <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Discount</label>
+                    <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Discount</label>
                     <input
                       type="text"
+                      inputMode="decimal"
+                      placeholder="0.00"
                       name="discount_amount"
                       value={form.discount_amount ?? ""}
                       onChange={handleChange}
-                      className="border border-gray-200 dark:border-slate-600 rounded-md w-24 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
+                      className="border border-gray-300 dark:border-slate-600 rounded-md w-24 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
                       {...antiFill}
                     />
                   </div>
                   <div>
-                    <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Tax %</label>
+                    <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Tax %</label>
                     <input
                       ref={taxPercentageRef}
                       type="text"
+                      inputMode="decimal"
+                      placeholder="0"
                       name="tax_percentage"
                       value={form.tax_percentage ?? ""}
                       onChange={handleChange}
@@ -2287,18 +2354,20 @@ const contRect = container.getBoundingClientRect();
                           saveButtonRef.current?.focus();
                         }
                       }}
-                      className="border border-gray-200 dark:border-slate-600 rounded-md w-16 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
+                      className="border border-gray-300 dark:border-slate-600 rounded-md w-16 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
                       {...antiFill}
                     />
                   </div>
                   <div>
-                    <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Tax</label>
+                    <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Tax</label>
                     <input
                       type="text"
+                      inputMode="decimal"
+                      placeholder="0.00"
                       name="tax_amount"
                       value={form.tax_amount ?? ""}
                       onChange={handleChange}
-                      className="border border-gray-200 dark:border-slate-600 rounded-md w-24 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
+                      className="border border-gray-300 dark:border-slate-600 rounded-md w-24 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
                       {...antiFill}
                     />
                   </div>
@@ -2309,14 +2378,14 @@ const contRect = container.getBoundingClientRect();
                   <div className="rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden">
                     <div className="flex items-center justify-between px-3 py-1 border-b border-gray-100 dark:border-slate-700 text-[11px]">
                       <span className="text-gray-500 dark:text-gray-400">Items Total</span>
-                      <span className="font-medium text-gray-900 dark:text-gray-100">
+                      <span className="font-medium font-mono text-gray-900 dark:text-gray-100">
                         {to2(form.rows_total || 0).toFixed(2)}
                       </span>
                     </div>
                     {Number(form.discount_amount || 0) > 0 && (
                       <div className="flex items-center justify-between px-3 py-1 border-b border-gray-100 dark:border-slate-700 text-[11px]">
                         <span className="text-gray-500 dark:text-gray-400">Discount {form.discount_percentage ? `(${to2(form.discount_percentage)}%)` : ""}</span>
-                        <span className="font-medium text-red-500 dark:text-red-400">
+                        <span className="font-medium font-mono text-red-500 dark:text-red-400">
                           − {to2(form.discount_amount || 0).toFixed(2)}
                         </span>
                       </div>
@@ -2324,13 +2393,13 @@ const contRect = container.getBoundingClientRect();
                     {Number(form.tax_amount || 0) > 0 && (
                       <div className="flex items-center justify-between px-3 py-1 border-b border-gray-100 dark:border-slate-700 text-[11px]">
                         <span className="text-gray-500 dark:text-gray-400">Tax {form.tax_percentage ? `(${to2(form.tax_percentage)}%)` : ""}</span>
-                        <span className="font-medium text-gray-900 dark:text-gray-100">
+                        <span className="font-medium font-mono text-gray-900 dark:text-gray-100">
                           + {to2(form.tax_amount || 0).toFixed(2)}
                         </span>
                       </div>
                     )}
                     <div
-                      className="flex items-center justify-between px-3 py-1.5 text-xs font-bold"
+                      className="flex items-center justify-between px-3 py-1.5 text-xs font-bold font-mono"
                       style={{ background: `${themeColors.primary}14`, color: themeColors.primary }}
                     >
                       <span>Total Amount</span>
@@ -2360,10 +2429,12 @@ const contRect = container.getBoundingClientRect();
 
                 <div className="flex gap-2">
                   <div className="flex-1">
-                    <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Total Paid</label>
+                    <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Total Paid</label>
                   <div className="flex items-center gap-1">
                     <input
                       type="text"
+                      inputMode="decimal"
+                      placeholder="0.00"
                       name="total_paid"
                       value={form.total_paid ?? ""}
                       onChange={(e) => {
@@ -2381,7 +2452,7 @@ const contRect = container.getBoundingClientRect();
                           return { ...prev, total_paid: normalized };
                         });
                       }}
-                      className="border border-gray-200 dark:border-slate-600 rounded-md w-full px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
+                      className="border border-gray-300 dark:border-slate-600 rounded-md w-full px-1.5 h-7 text-xs text-right font-mono bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
                       {...antiFill}
                     />
                     <button
@@ -2403,12 +2474,15 @@ const contRect = container.getBoundingClientRect();
                     </button>
                   </div>
                 </div>
-                <div className="w-20">
-                  <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Remaining</label>
-                  <div className={`h-7 flex items-center px-1.5 rounded-md text-xs font-bold border border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-600/50 ${
+                <div className="w-24">
+                  <label className="flex items-center justify-between text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">
+                    <span>Remaining</span>
+                    <span className="text-[8px] font-normal lowercase opacity-75">auto</span>
+                  </label>
+                  <div className={`purchase-readonly-field h-7 flex items-center justify-end px-2 rounded-md text-xs font-bold font-mono ${
                     (form.total_amount || 0) - (form.total_paid || 0) > 0
-                      ? "text-amber-600 dark:text-amber-400"
-                      : "text-emerald-600 dark:text-emerald-400"
+                      ? "!text-amber-600 dark:!text-amber-400"
+                      : "!text-emerald-600 dark:!text-emerald-400"
                   }`}>
                     {to2((form.total_amount || 0) - (form.total_paid || 0)).toFixed(2)}
                   </div>
