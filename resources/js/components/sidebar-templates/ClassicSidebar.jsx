@@ -87,7 +87,7 @@ export default function ClassicSidebar({
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { theme } = useTheme();
-  const { hasRetail, hasWholesale } = useSaleSystem();
+  const { hasWholesale } = useSaleSystem();
   const { loading: permsLoading, has } = usePermissions();
   const [expiryAlertCount, setExpiryAlertCount] = useState(0);
 
@@ -179,24 +179,21 @@ export default function ClassicSidebar({
             icon: <QrCodeIcon className="w-5 h-5" />,
             permAny: ["barcode-pos.view", "barcode-pos.create"],
           },
-          ...(hasRetail
-            ? [
-                {
-                  name: "Sale Invoices",
-                  path: "/sale-invoices",
-                  exactExclude: [
-                    "/sale-invoices/pos",
-                    "/sale-invoices/barcode-pos",
-                    "/sale-invoices/create/wholesale",
-                  ],
-                  icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />,
-                  perm: "sale-invoice.view",
-                  quickCreatePath: "/sale-invoices/create/retail",
-                  quickCreatePerm: "sale-invoice.create",
-                  quickCreateLabel: "Create Retail Sale Invoice",
-                },
-              ]
-            : []),
+          {
+            name: "Sale Invoices",
+            path: "/sale-invoices",
+            exactExclude: [
+              "/sale-invoices/pos",
+              "/sale-invoices/barcode-pos",
+              "/sale-invoices/create/wholesale",
+              "/sale-invoices/create-wholesale",
+            ],
+            icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />,
+            perm: "sale-invoice.view",
+            quickCreatePath: "/sale-invoices/create/retail",
+            quickCreatePerm: "sale-invoice.create",
+            quickCreateLabel: "Create Retail Sale Invoice",
+          },
           ...(hasWholesale
             ? [
                 {
@@ -533,7 +530,7 @@ export default function ClassicSidebar({
         ],
       },
     ],
-    [hasRetail, hasWholesale]
+    [hasWholesale]
   );
 
   const isItemActive = useCallback(

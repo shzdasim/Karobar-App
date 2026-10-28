@@ -27,6 +27,7 @@ const noopRefresh = async () => {};
 // by useTheme()/useLicense() in this codebase.
 const FALLBACK_CONTEXT = {
   saleSystem: DEFAULT_SALE_SYSTEM,
+  hasRetail: true,
   hasWholesale: true,
   isRetailOnly: false,
   shopType: DEFAULT_SHOP_TYPE,
@@ -113,7 +114,8 @@ export function SaleSystemProvider({ children }) {
   const value = useMemo(
     () => ({
       saleSystem,
-      hasWholesale: saleSystem === "retail_wholesale",
+      hasRetail: true,
+      hasWholesale: saleSystem === "retail_wholesale" || saleSystem === "wholesale",
       isRetailOnly: saleSystem === "retail",
       shopType,
       isPharmacy: shopType === "pharmacy",
