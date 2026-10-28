@@ -1,10 +1,12 @@
 // src/layouts/DashboardLayout.jsx
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { useLocation } from "react-router-dom";
 import Sidebar from "../components/Sidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
 import { Toaster } from "react-hot-toast";
+
+const SIDEBAR_PIN_STORAGE_KEY = "karobar_sidebar_pinned";
 
 export default function DashboardLayout({ children }) {
   const location = useLocation();
@@ -15,6 +17,83 @@ export default function DashboardLayout({ children }) {
 
   // Mobile sidebar state
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // Desktop macOS Dock auto-hide state vs Pinned state (defaults to unpinned auto-hide dock)
+  const [sidebarPinned, setSidebarPinned] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_PIN_STORAGE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [dockOpen, setDockOpen] = useState(false);
+  const openTimerRef = useRef(null);
+  const closeTimerRef = useRef(null);
+
+  const clearDockTimers = useCallback(() => {
+    if (openTimerRef.current) {
+      clearTimeout(openTimerRef.current);
+      openTimerRef.current = null;
+    }
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
+
+  const handleDockTriggerEnter = useCallback(() => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    if (!dockOpen && !openTimerRef.current) {
+      openTimerRef.current = setTimeout(() => {
+        setDockOpen(true);
+        openTimerRef.current = null;
+      }, 65);
+    }
+  }, [dockOpen]);
+
+  const handleDockTriggerLeave = useCallback(() => {
+    if (openTimerRef.current) {
+      clearTimeout(openTimerRef.current);
+      openTimerRef.current = null;
+    }
+    if (dockOpen && !closeTimerRef.current) {
+      closeTimerRef.current = setTimeout(() => {
+        setDockOpen(false);
+        closeTimerRef.current = null;
+      }, 260);
+    }
+  }, [dockOpen]);
+
+  const handleDockPanelEnter = useCallback(() => {
+    clearDockTimers();
+    setDockOpen(true);
+  }, [clearDockTimers]);
+
+  const handleDockPanelLeave = useCallback(() => {
+    clearDockTimers();
+    closeTimerRef.current = setTimeout(() => {
+      setDockOpen(false);
+      closeTimerRef.current = null;
+    }, 250);
+  }, [clearDockTimers]);
+
+  const handleTogglePin = useCallback(() => {
+    setSidebarPinned((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SIDEBAR_PIN_STORAGE_KEY, String(next));
+      } catch {
+        /* ignore quota errors */
+      }
+      if (next) {
+        setDockOpen(false);
+      }
+      return next;
+    });
+  }, []);
 
   // Fetch settings from API and sync with localStorage
   useEffect(() => {
@@ -128,10 +207,27 @@ export default function DashboardLayout({ children }) {
     document.title = `${pageTitle} - ${appName || "ERP"}`;
   }, [pageTitle, appName]);
 
-  // Close mobile sidebar on route change
+  // Close mobile sidebar and floating dock on route change
   useEffect(() => {
     setMobileSidebarOpen(false);
-  }, [location.pathname]);
+    setDockOpen(false);
+    clearDockTimers();
+  }, [location.pathname, clearDockTimers]);
+
+  // Close floating dock on Escape key
+  useEffect(() => {
+    if (!dockOpen || sidebarPinned) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setDockOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [dockOpen, sidebarPinned]);
+
+  // Cleanup timers on unmount
+  useEffect(() => () => clearDockTimers(), [clearDockTimers]);
 
   // Prevent body scroll when mobile sidebar is open
   useEffect(() => {
@@ -147,15 +243,63 @@ export default function DashboardLayout({ children }) {
 
   // --- Responsive layout ---
   //  • Mobile (< lg):  sidebar becomes a slide-over overlay
-  //  • Desktop (≥ lg):  sidebar is always visible (fixed)
+  //  • Desktop (≥ lg):  macOS Dock auto-hide on left edge hover by default, or fixed when pinned
   return (
     <div className="workspace-shell">
-      {/* Desktop sidebar — always visible on lg+ */}
-      <div className="workspace-sidebar-slot hidden lg:block lg:shrink-0">
-        <div className="workspace-sidebar-position">
-          <Sidebar appName={appName} logoUrl={logoUrl} />
+      {sidebarPinned ? (
+        /* Desktop Pinned Mode — docked side-by-side on lg+ */
+        <div className="workspace-sidebar-slot hidden lg:block lg:shrink-0">
+          <div className="workspace-sidebar-position">
+            <Sidebar
+              appName={appName}
+              logoUrl={logoUrl}
+              isPinned={sidebarPinned}
+              onTogglePin={handleTogglePin}
+            />
+          </div>
         </div>
-      </div>
+      ) : (
+        /* Desktop macOS Dock Mode — left edge trigger + floating dock on lg+ */
+        <>
+          <div
+            className="workspace-dock-trigger hidden lg:flex"
+            onMouseEnter={handleDockTriggerEnter}
+            onMouseLeave={handleDockTriggerLeave}
+            onClick={() => {
+              clearDockTimers();
+              setDockOpen(true);
+            }}
+            role="button"
+            tabIndex={0}
+            aria-label="Reveal navigation dock"
+            aria-expanded={dockOpen}
+            title="Hover or click to open Navigation Dock"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setDockOpen(true);
+              }
+            }}
+          >
+            <div className="workspace-dock-pill" />
+          </div>
+
+          <div
+            className={`workspace-dock-floating hidden lg:block ${dockOpen ? "is-open" : ""}`}
+            onMouseEnter={handleDockPanelEnter}
+            onMouseLeave={handleDockPanelLeave}
+          >
+            <Sidebar
+              appName={appName}
+              logoUrl={logoUrl}
+              isPinned={sidebarPinned}
+              onTogglePin={handleTogglePin}
+              isDockOpen={dockOpen}
+              onRequestCloseDock={() => setDockOpen(false)}
+            />
+          </div>
+        </>
+      )}
 
       {/* Mobile sidebar overlay — slide-in panel on < lg */}
       {mobileSidebarOpen && (
@@ -169,13 +313,18 @@ export default function DashboardLayout({ children }) {
           {/* Slide-in panel */}
           <div
             className="
-              workspace-mobile-drawer fixed inset-y-3 left-3 w-[248px] max-w-[calc(100vw-24px)]
+              workspace-mobile-drawer fixed inset-y-3 left-3 w-[272px] max-w-[calc(100vw-24px)]
               kd-mobile-panel
               lg:hidden
             "
           >
             <div className="h-full">
-              <Sidebar appName={appName} logoUrl={logoUrl} />
+              <Sidebar
+                appName={appName}
+                logoUrl={logoUrl}
+                isPinned={false}
+                onRequestCloseDock={() => setMobileSidebarOpen(false)}
+              />
             </div>
           </div>
         </>
@@ -186,6 +335,11 @@ export default function DashboardLayout({ children }) {
         <Topbar
           pageTitle={pageTitle}
           onMobileMenuClick={() => setMobileSidebarOpen(true)}
+          sidebarPinned={sidebarPinned}
+          onDesktopDockOpen={() => {
+            clearDockTimers();
+            setDockOpen((v) => !v);
+          }}
         />
         <main className="workspace-content">
           <div className="workspace-page">

@@ -42,7 +42,13 @@ function formatRemaining(ms) {
   return `${sec}s`;
 }
 
-export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobileMenuClick }) {
+export default function Topbar({
+  pageTitle,
+  navigationStyle = "sidebar",
+  onMobileMenuClick,
+  sidebarPinned = false,
+  onDesktopDockOpen,
+}) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
   const btnRef = useRef(null);
@@ -639,6 +645,21 @@ export default function Topbar({ pageTitle, navigationStyle = "sidebar", onMobil
                 <Bars3Icon className="w-5 h-5" />
               </button>
             </div>
+
+            {/* Desktop dock trigger button — visible on lg+ when sidebar is in macOS Auto-Hide Dock mode */}
+            {!sidebarPinned && onDesktopDockOpen && (
+              <div className="hidden lg:block shrink-0">
+                <button
+                  type="button"
+                  onClick={onDesktopDockOpen}
+                  aria-label="Toggle navigation dock"
+                  title="Open Navigation Dock (or hover left screen edge)"
+                  className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-white/70 dark:bg-slate-800/70 border border-gray-200/70 dark:border-slate-600/70 text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-slate-700 focus:outline-none transition-all duration-150 cursor-pointer"
+                >
+                  <Bars3Icon className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
             {pageTitle && (
               <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 truncate tracking-tight">
