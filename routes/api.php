@@ -289,6 +289,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     // Settings
     Route::get('/settings',                       [SettingController::class, 'show']);
     Route::post('/settings',                      [SettingController::class, 'update']);
+    Route::post('/settings/test-smtp',            [SettingController::class, 'testSmtp']);
 
     // Theme Settings (CRUD operations require license)
     Route::get('/theme-settings',                 [ThemeSettingController::class, 'index']);

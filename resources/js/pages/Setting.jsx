@@ -21,6 +21,7 @@ import {
   ServerIcon,
   Bars3Icon,
   ShoppingCartIcon,
+  EnvelopeIcon,
 } from "@heroicons/react/24/solid";
 
 // Setting Components
@@ -28,6 +29,7 @@ import GeneralSetting from "@/components/settings/GeneralSetting.jsx";
 import SaleSystemSetting from "@/components/settings/SaleSystemSetting.jsx";
 import ThemeSetting from "@/components/settings/ThemeSetting.jsx";
 import PrinterSetting from "@/components/settings/PrinterSetting.jsx";
+import SmtpSetting from "@/components/settings/SmtpSetting.jsx";
 import LicenseSetting from "@/components/settings/LicenseSetting.jsx";
 
 registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);
@@ -48,6 +50,7 @@ const SETTINGS_TABS = [
   { id: "sale", label: "Sale System", icon: ShoppingCartIcon },
   { id: "navigation", label: "Theme Setting", icon: Bars3Icon },
   { id: "printer", label: "Printer Setting", icon: PrinterIcon },
+  { id: "smtp", label: "Email / SMTP", icon: EnvelopeIcon },
   { id: "license", label: "License", icon: DocumentTextIcon },
 ];
 
@@ -73,6 +76,14 @@ export default function Setting() {
     currency_symbol: "Rs.",
     currency_position: "before",
     currency_decimal_places: 2,
+    smtp_enabled: false,
+    smtp_host: "",
+    smtp_port: 587,
+    smtp_username: "",
+    smtp_password: "",
+    smtp_encryption: "tls",
+    smtp_from_address: "",
+    smtp_from_name: "",
   });
 
   // FilePond files (supports remote preload)
@@ -87,6 +98,8 @@ export default function Setting() {
       setActiveTab("license");
     } else if (window.location.hash === "#sale") {
       setActiveTab("sale");
+    } else if (window.location.hash === "#smtp") {
+      setActiveTab("smtp");
     }
   }, []);
 
@@ -199,6 +212,14 @@ export default function Setting() {
         currency_symbol: data.currency_symbol || "Rs.",
         currency_position: data.currency_position || "before",
         currency_decimal_places: data.currency_decimal_places !== undefined ? Number(data.currency_decimal_places) : 2,
+        smtp_enabled: Boolean(data.smtp_enabled),
+        smtp_host: data.smtp_host || "",
+        smtp_port: data.smtp_port !== undefined && data.smtp_port !== null ? Number(data.smtp_port) : 587,
+        smtp_username: data.smtp_username || "",
+        smtp_password: data.smtp_password || "",
+        smtp_encryption: data.smtp_encryption || "tls",
+        smtp_from_address: data.smtp_from_address || "",
+        smtp_from_name: data.smtp_from_name || "",
       });
 
       // Preload existing logo into FilePond as remote file
@@ -254,6 +275,14 @@ export default function Setting() {
       fd.append("currency_symbol", form.currency_symbol || "Rs.");
       fd.append("currency_position", form.currency_position || "before");
       fd.append("currency_decimal_places", String(form.currency_decimal_places ?? 2));
+      fd.append("smtp_enabled", form.smtp_enabled ? "1" : "0");
+      fd.append("smtp_host", form.smtp_host || "");
+      fd.append("smtp_port", String(form.smtp_port || 587));
+      fd.append("smtp_username", form.smtp_username || "");
+      fd.append("smtp_password", form.smtp_password || "");
+      fd.append("smtp_encryption", form.smtp_encryption || "tls");
+      fd.append("smtp_from_address", form.smtp_from_address || "");
+      fd.append("smtp_from_name", form.smtp_from_name || "");
 
       // If user selected a new file (files[0].file will exist)
       if (files.length > 0 && files[0].file) {
@@ -444,6 +473,15 @@ export default function Setting() {
             handleSave={handleSave}
             themeColors={themeColors}
             emeraldTextColor={emeraldTextColor}
+          />
+        )}
+
+        {activeTab === "smtp" && (
+          <SmtpSetting
+            form={form}
+            setForm={setForm}
+            handleChange={handleChange}
+            disableInputs={disableInputs}
           />
         )}
 

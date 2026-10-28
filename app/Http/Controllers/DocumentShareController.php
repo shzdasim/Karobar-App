@@ -150,7 +150,9 @@ class DocumentShareController extends Controller
         $result = $this->shareService->generatePdf($validated['type'], $validated);
         $context = $result['context'];
         $pdfBytes = $result['pdf']->output();
-        $storeName = Setting::first()?->store_name ?? 'Karobar App Store';
+        $setting = Setting::first();
+        $storeName = $setting?->store_name ?? 'Karobar App Store';
+        $customSmtpConfigured = $setting ? $setting->applySmtpConfig() : false;
 
         // Optionally persist the email back to the Customer or Supplier profile
         if (!empty($validated['save_email']) && !empty($context['party_type']) && !empty($context['party_id'])) {
@@ -170,21 +172,31 @@ class DocumentShareController extends Controller
         );
 
         $deliveryMode = 'smtp';
+        $smtpError = null;
         try {
-            Mail::to($validated['email'])->send($mailable);
+            if ($customSmtpConfigured) {
+                Mail::mailer('smtp')->to($validated['email'])->send($mailable);
+            } else {
+                Mail::to($validated['email'])->send($mailable);
+            }
         } catch (\Throwable $e) {
-            // If local SMTP (e.g. 127.0.0.1:1025) is not running, fall back to log mailer
+            $smtpError = $e->getMessage();
+            // If SMTP fails or local SMTP is not running, fall back to log mailer
             // so the request succeeds and returns the built PDF file to the user.
             Mail::mailer('log')->to($validated['email'])->send($mailable);
             $deliveryMode = 'log_fallback';
         }
+
+        $fallbackHostInfo = $customSmtpConfigured
+            ? ($setting->smtp_host . ':' . ($setting->smtp_port ?: 587) . ($smtpError ? ' — ' . $smtpError : ''))
+            : '127.0.0.1:1025';
 
         return response()->json([
             'status'        => 'sent',
             'delivery_mode' => $deliveryMode,
             'message'       => $deliveryMode === 'smtp'
                 ? 'Document PDF sent successfully to ' . $validated['email']
-                : 'PDF built & logged for ' . $validated['email'] . ' (SMTP server not running on 127.0.0.1:1025; PDF downloaded locally)',
+                : 'PDF built & logged for ' . $validated['email'] . ' (SMTP server failed on ' . $fallbackHostInfo . '; PDF downloaded locally)',
             'filename'      => $result['filename'],
             'pdf_base64'    => base64_encode($pdfBytes),
         ]);

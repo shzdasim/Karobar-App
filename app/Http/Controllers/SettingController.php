@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Setting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
@@ -85,6 +87,14 @@ class SettingController extends Controller
             'currency_position'       => ['nullable', Rule::in(['before', 'after'])],
             'currency_decimal_places' => ['nullable', 'integer', 'min:0', 'max:4'],
             'expiry_warning_days'     => ['nullable', 'integer', 'min:1', 'max:3650'],
+            'smtp_enabled'            => ['nullable', 'boolean'],
+            'smtp_host'               => ['nullable', 'string', 'max:255'],
+            'smtp_port'               => ['nullable', 'integer', 'min:1', 'max:65535'],
+            'smtp_username'           => ['nullable', 'string', 'max:255'],
+            'smtp_password'           => ['nullable', 'string', 'max:1000'],
+            'smtp_encryption'         => ['nullable', Rule::in(['tls', 'ssl', 'none', ''])],
+            'smtp_from_address'       => ['nullable', 'email', 'max:255'],
+            'smtp_from_name'          => ['nullable', 'string', 'max:255'],
             'logo'                    => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],
         ]);
 
@@ -98,8 +108,48 @@ class SettingController extends Controller
             $setting->logo_path = $newPath;
         }
 
-        // Fill other fields
-        $setting->fill(collect($validated)->except('logo')->toArray());
+        $smtpFields = [
+            'smtp_enabled',
+            'smtp_host',
+            'smtp_port',
+            'smtp_username',
+            'smtp_password',
+            'smtp_encryption',
+            'smtp_from_address',
+            'smtp_from_name',
+        ];
+
+        // Fill non-SMTP fields first
+        $setting->fill(collect($validated)->except(array_merge(['logo'], $smtpFields))->toArray());
+
+        // Fill SMTP fields safely if columns exist on the settings table
+        if (Schema::hasColumn('settings', 'smtp_host')) {
+            if ($request->has('smtp_enabled')) {
+                $setting->smtp_enabled = $request->boolean('smtp_enabled');
+            }
+            if ($request->has('smtp_host')) {
+                $setting->smtp_host = $request->input('smtp_host');
+            }
+            if ($request->has('smtp_port')) {
+                $port = $request->input('smtp_port');
+                $setting->smtp_port = ($port !== null && $port !== '') ? (int) $port : 587;
+            }
+            if ($request->has('smtp_username')) {
+                $setting->smtp_username = $request->input('smtp_username');
+            }
+            if ($request->has('smtp_password')) {
+                $setting->smtp_password = $request->input('smtp_password');
+            }
+            if ($request->has('smtp_encryption')) {
+                $setting->smtp_encryption = $request->input('smtp_encryption') ?: 'tls';
+            }
+            if ($request->has('smtp_from_address')) {
+                $setting->smtp_from_address = $request->input('smtp_from_address');
+            }
+            if ($request->has('smtp_from_name')) {
+                $setting->smtp_from_name = $request->input('smtp_from_name');
+            }
+        }
         
         // Ensure navigation_style is always updated (it might not be in validated if null)
         if ($request->has('navigation_style')) {
@@ -132,5 +182,55 @@ class SettingController extends Controller
         $setting->save();
 
         return response()->json($setting->fresh());
+    }
+
+    // POST /api/settings/test-smtp
+    public function testSmtp(Request $request)
+    {
+        $this->authorize('update', Setting::class);
+
+        $validated = $request->validate([
+            'smtp_host'         => ['required', 'string', 'max:255'],
+            'smtp_port'         => ['required', 'integer', 'min:1', 'max:65535'],
+            'smtp_username'     => ['nullable', 'string', 'max:255'],
+            'smtp_password'     => ['nullable', 'string', 'max:1000'],
+            'smtp_encryption'   => ['nullable', Rule::in(['tls', 'ssl', 'none', ''])],
+            'smtp_from_address' => ['nullable', 'email', 'max:255'],
+            'smtp_from_name'    => ['nullable', 'string', 'max:255'],
+            'test_email'        => ['required', 'email', 'max:255'],
+        ]);
+
+        $setting = Setting::first();
+        $storeName = $validated['smtp_from_name'] ?? $setting?->store_name ?? 'Karobar App';
+
+        Setting::applyRuntimeSmtp([
+            'smtp_host'         => $validated['smtp_host'],
+            'smtp_port'         => $validated['smtp_port'],
+            'smtp_username'     => $validated['smtp_username'] ?? null,
+            'smtp_password'     => $validated['smtp_password'] ?? null,
+            'smtp_encryption'   => $validated['smtp_encryption'] ?? 'tls',
+            'smtp_from_address' => $validated['smtp_from_address'] ?? $validated['smtp_username'] ?? null,
+            'smtp_from_name'    => $storeName,
+        ]);
+
+        try {
+            Mail::mailer('smtp')->raw(
+                "Hello!\n\nThis is a test email from {$storeName} (Karobar App).\nYour SMTP mail server ({$validated['smtp_host']}:{$validated['smtp_port']}) is configured and ready to send invoices via email.",
+                function ($message) use ($validated, $storeName) {
+                    $message->to($validated['test_email'])
+                        ->subject("SMTP Test Email — {$storeName}");
+                }
+            );
+
+            return response()->json([
+                'status'  => 'sent',
+                'message' => 'Test email sent successfully to ' . $validated['test_email'],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status'  => 'failed',
+                'message' => 'SMTP connection failed: ' . $e->getMessage(),
+            ], 422);
+        }
     }
 }
