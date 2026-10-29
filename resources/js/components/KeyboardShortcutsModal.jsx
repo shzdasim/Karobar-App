@@ -21,14 +21,19 @@ const SHORTCUT_CATEGORIES = [
     description: "Available from anywhere in the application",
     shortcuts: [
       {
-        keys: ["Alt", "P"],
-        label: "Product Catalog Search",
-        description: "Instant product lookup by name, barcode, formula, or generic across the entire software",
+        keys: ["Alt", "K"],
+        label: "Go to Page (Quick Navigation)",
+        description: "Search available pages and jump between modules with arrow keys and Enter",
         badge: "Everywhere",
       },
       {
-        keys: ["Alt", "K"],
-        altKeys: ["?"],
+        keys: ["Alt", "P"],
+        label: "Product Catalog Search",
+        description: "Instant product lookup by name across the entire software",
+        badge: "Everywhere",
+      },
+      {
+        keys: ["?"],
         label: "Keyboard Shortcuts Guide",
         description: "Open this keyboard shortcuts quick reference modal",
         badge: "Everywhere",

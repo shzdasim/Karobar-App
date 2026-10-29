@@ -22,6 +22,7 @@ import { useTheme } from "@/context/ThemeContext.jsx";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { usePermissions } from "@/api/usePermissions.js";
 import ProductSearchModal from "@/components/ProductSearchModal.jsx";
+import PageSearchModal from "@/components/PageSearchModal.jsx";
 import KeyboardShortcutsModal from "@/components/KeyboardShortcutsModal.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
 import NotificationCenter from "./NotificationCenter.jsx";
@@ -86,7 +87,10 @@ export default function Topbar({
   // Product Search Modal state (opens anywhere with Alt+P)
   const [productSearchModalOpen, setProductSearchModalOpen] = useState(false);
 
-  // Keyboard Shortcuts Modal state (opens anywhere with Alt+K or ?)
+  // Page Navigation Search Modal state (opens anywhere with Alt+K)
+  const [pageSearchModalOpen, setPageSearchModalOpen] = useState(false);
+
+  // Keyboard Shortcuts Modal state (opens anywhere with ?)
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
 
   const fetchDrawerStatus = async () => {
@@ -589,10 +593,10 @@ export default function Topbar({
         return;
       }
 
-      // Alt+K opens Keyboard Shortcuts modal anywhere in the software
+      // Alt+K opens Page Navigation Search modal anywhere in the software
       if (e.code === "KeyK" || e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setShortcutsModalOpen((v) => !v);
+        setPageSearchModalOpen((v) => !v);
         return;
       }
 
@@ -627,14 +631,17 @@ export default function Topbar({
     };
 
     const onOpenSearch = () => setProductSearchModalOpen(true);
+    const onOpenPageSearch = () => setPageSearchModalOpen(true);
     const onOpenShortcuts = () => setShortcutsModalOpen(true);
 
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("open-product-search", onOpenSearch);
+    window.addEventListener("open-page-search", onOpenPageSearch);
     window.addEventListener("open-shortcuts-modal", onOpenShortcuts);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("open-product-search", onOpenSearch);
+      window.removeEventListener("open-page-search", onOpenPageSearch);
       window.removeEventListener("open-shortcuts-modal", onOpenShortcuts);
     };
   }, []);
@@ -806,13 +813,31 @@ export default function Topbar({
               <ThemeToggle />
             </div>
 
+            {/* Page Navigation Search button (Alt+K) */}
+            <button
+              type="button"
+              onClick={() => setPageSearchModalOpen(true)}
+              title="Go to Page (Alt+K)"
+              aria-label="Open page search"
+              aria-keyshortcuts="Alt+K"
+              className={`relative inline-flex items-center justify-center h-9 w-9 ${buttonStyleClass} transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 shrink-0 cursor-pointer ${isOutlined ? 'border-2' : 'shadow-xs'}`}
+              style={{
+                background: getButtonBg(themeColors.primary),
+                border: getButtonBorder(themeColors.primary),
+                color: getButtonTextColor(themeColors.primary),
+                borderRadius: 'var(--btn-radius, 0.75rem)',
+              }}
+            >
+              <MagnifyingGlassIcon className="w-4 h-4 shrink-0" />
+            </button>
+
             {/* Keyboard Shortcuts Guide button */}
             <button
               type="button"
               onClick={() => setShortcutsModalOpen(true)}
-              title="Keyboard Shortcuts (Alt+K or ?)"
+              title="Keyboard Shortcuts (?)"
               aria-label="Open keyboard shortcuts guide"
-              aria-keyshortcuts="Alt+K"
+              aria-keyshortcuts="?"
               className={`relative inline-flex items-center justify-center h-9 w-9 ${buttonStyleClass} transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 shrink-0 ${isOutlined ? 'border-2' : 'shadow-xs'}`}
               style={{
                 background: getButtonBg(themeColors.primary),
@@ -968,7 +993,13 @@ export default function Topbar({
         onClose={() => setProductSearchModalOpen(false)}
       />
 
-      {/* Keyboard Shortcuts Modal (Alt+K or ?) */}
+      {/* Page Navigation Search Modal (Alt+K anywhere) */}
+      <PageSearchModal
+        isOpen={pageSearchModalOpen}
+        onClose={() => setPageSearchModalOpen(false)}
+      />
+
+      {/* Keyboard Shortcuts Modal (?) */}
       <KeyboardShortcutsModal
         isOpen={shortcutsModalOpen}
         onClose={() => setShortcutsModalOpen(false)}

@@ -11,6 +11,7 @@ export { default as CategoryImportModel } from "./CategoryImportModel.jsx";
 export { default as SupplierImportModal } from "./SupplierImportModal.jsx";
 export { default as ProductSearch } from "./ProductSearch.jsx";
 export { default as ProductSearchModal } from "./ProductSearchModal.jsx";
+export { default as PageSearchModal } from "./PageSearchModal.jsx";
 export { default as AccountIcon } from "./AccountIcon.jsx";
 export { default as ProductSearchInput } from "./ProductSearchInput.jsx";
 export { default as SupplierSearchInput } from "./SupplierSearchInput.jsx";
