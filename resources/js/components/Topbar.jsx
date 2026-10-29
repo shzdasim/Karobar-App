@@ -57,6 +57,7 @@ export default function Topbar({
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifInitialTab, setNotifInitialTab] = useState("low-stock");
   const [notifCount, setNotifCount] = useState(0);
+  const hasBaselinedNotifsRef = useRef(false);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -256,12 +257,19 @@ export default function Topbar({
   useEffect(() => {
     if (permsLoading) return;
     let cancelled = false;
-    const storageKey = `karobar_live_notified_${user?.id || "anon"}`;
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const storageKey = `karobar_live_notified_${user?.id || "anon"}_${todayKey}`;
+    const legacySessionKey = `karobar_live_notified_${user?.id || "anon"}`;
 
     const getSeenSet = () => {
       try {
-        const raw = sessionStorage.getItem(storageKey);
-        return new Set(raw ? JSON.parse(raw) : []);
+        const localRaw = localStorage.getItem(storageKey);
+        const sessionRaw = sessionStorage.getItem(legacySessionKey);
+        const merged = [
+          ...(localRaw ? JSON.parse(localRaw) : []),
+          ...(sessionRaw ? JSON.parse(sessionRaw) : []),
+        ];
+        return new Set(merged);
       } catch {
         return new Set();
       }
@@ -269,14 +277,30 @@ export default function Topbar({
 
     const saveSeenSet = (set) => {
       try {
-        sessionStorage.setItem(storageKey, JSON.stringify([...set].slice(-500)));
+        const serialized = JSON.stringify([...set].slice(-500));
+        localStorage.setItem(storageKey, serialized);
+        sessionStorage.setItem(legacySessionKey, serialized);
       } catch {
         /* ignore storage quota errors */
       }
     };
 
-    const fetchCount = async () => {
+    const fetchCount = async ({ isInitialMount = false } = {}) => {
       try {
+        let justLoggedIn = false;
+        if (isInitialMount) {
+          try {
+            if (sessionStorage.getItem("karobar_just_logged_in") === "1") {
+              justLoggedIn = true;
+              sessionStorage.removeItem("karobar_just_logged_in");
+            }
+          } catch {
+            /* ignore storage errors */
+          }
+        }
+        const shouldShowToasts =
+          justLoggedIn || (!isInitialMount && hasBaselinedNotifsRef.current);
+
         const canViewProducts = has("product.view");
         const canViewDemands = has("user-demands.view");
         const canViewExpiry =
@@ -308,7 +332,6 @@ export default function Topbar({
         setNotifCount(lowStockCount + demandCount + expiryCount);
 
         const seen = getSeenSet();
-        let seenDirty = false;
 
         // 1. Live User Demand Notifications
         const demandRows =
@@ -322,10 +345,19 @@ export default function Topbar({
         for (const d of demandRows) {
           const lastNotifiedMs = d.last_notified_at ? new Date(d.last_notified_at).getTime() : 0;
           const dateTag = lastNotifiedMs ? new Date(lastNotifiedMs).toISOString().slice(0, 10) : "unnotified";
-          const key = `demand:${d.id}:${dateTag}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            seenDirty = true;
+          const baseKey = `demand:${d.id}`;
+          const datedKey = `demand:${d.id}:${dateTag}`;
+          const alreadySeen =
+            seen.has(baseKey) ||
+            seen.has(datedKey) ||
+            seen.has(`demand:${d.id}:unnotified`) ||
+            seen.has(`demand:${d.id}:${todayKey}`);
+
+          seen.add(baseKey);
+          seen.add(datedKey);
+          seen.add(`demand:${d.id}:${todayKey}`);
+
+          if (!alreadySeen && shouldShowToasts) {
             newDemands.push(d);
             if (!lastNotifiedMs || lastNotifiedMs < dayAgoMs) {
               ackIds.push(d.id);
@@ -333,37 +365,39 @@ export default function Topbar({
           }
         }
 
-        newDemands.slice(0, 2).forEach((d) => {
-          const itemName = d.requested_name || d.product?.name || "Product request";
-          showLiveNotificationCard({
-            id: `live-demand-${d.id}`,
-            category: "demands",
-            badge: "Product Demand",
-            title: `${itemName} (${d.requested_quantity || 1} units)`,
-            subtitle: d.notes || (d.customer?.name ? `Customer: ${d.customer.name}` : "Pending product demand"),
-            meta: d.product_supplier_name ? `Supplier: ${d.product_supplier_name}` : undefined,
-            primaryLabel: "View Demands",
-            onPrimary: () => navigate("/user-demands"),
-            secondaryLabel: "Open Center",
-            onSecondary: () => {
-              setNotifInitialTab("demands");
-              setNotifOpen(true);
-            },
+        if (shouldShowToasts) {
+          newDemands.slice(0, 2).forEach((d) => {
+            const itemName = d.requested_name || d.product?.name || "Product request";
+            showLiveNotificationCard({
+              id: `live-demand-${d.id}`,
+              category: "demands",
+              badge: "Product Demand",
+              title: `${itemName} (${d.requested_quantity || 1} units)`,
+              subtitle: d.notes || (d.customer?.name ? `Customer: ${d.customer.name}` : "Pending product demand"),
+              meta: d.product_supplier_name ? `Supplier: ${d.product_supplier_name}` : undefined,
+              primaryLabel: "View Demands",
+              onPrimary: () => navigate("/user-demands"),
+              secondaryLabel: "Open Center",
+              onSecondary: () => {
+                setNotifInitialTab("demands");
+                setNotifOpen(true);
+              },
+            });
           });
-        });
-        if (newDemands.length > 2) {
-          showLiveNotificationCard({
-            id: "live-demand-summary",
-            category: "demands",
-            badge: "Product Demands",
-            title: `+${newDemands.length - 2} more pending product demand(s)`,
-            subtitle: `${demandCount} total pending demand(s) awaiting procurement.`,
-            primaryLabel: "View All Demands",
-            onPrimary: () => navigate("/user-demands"),
-          });
-        }
-        if (ackIds.length > 0) {
-          axios.post("/api/notifications/ack-demand", { demand_ids: ackIds }).catch(() => {});
+          if (newDemands.length > 2) {
+            showLiveNotificationCard({
+              id: "live-demand-summary",
+              category: "demands",
+              badge: "Product Demands",
+              title: `+${newDemands.length - 2} more pending product demand(s)`,
+              subtitle: `${demandCount} total pending demand(s) awaiting procurement.`,
+              primaryLabel: "View All Demands",
+              onPrimary: () => navigate("/user-demands"),
+            });
+          }
+          if (ackIds.length > 0) {
+            axios.post("/api/notifications/ack-demand", { demand_ids: ackIds }).catch(() => {});
+          }
         }
 
         // 2. Live Low-Stock Notifications
@@ -374,45 +408,47 @@ export default function Topbar({
         const newLowStock = [];
         for (const item of lowStockRows) {
           const key = `low-stock:${item.product_id}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            seenDirty = true;
+          const alreadySeen = seen.has(key);
+          seen.add(key);
+          if (!alreadySeen && shouldShowToasts) {
             newLowStock.push(item);
           }
         }
 
-        newLowStock.slice(0, 2).forEach((item) => {
-          showLiveNotificationCard({
-            id: `live-low-stock-${item.product_id}`,
-            category: "low-stock",
-            badge: "Low Stock Alert",
-            title: `${item.product_name} is below pack size`,
-            subtitle: `On-hand: ${item.quantity} units · Pack size: ${item.pack_size} units`,
-            meta: item.supplier_name ? `Supplier: ${item.supplier_name}` : item.brand_name || undefined,
-            primaryLabel: "View Low Stock",
-            onPrimary: () => navigate("/products?low_stock=1"),
-            secondaryLabel: "Dismiss",
-            onSecondary: () => {
-              axios
-                .post("/api/notifications/dismiss", { product_id: item.product_id })
-                .then(() => window.dispatchEvent(new CustomEvent("notifications-changed")))
-                .catch(() => {});
-            },
+        if (shouldShowToasts) {
+          newLowStock.slice(0, 2).forEach((item) => {
+            showLiveNotificationCard({
+              id: `live-low-stock-${item.product_id}`,
+              category: "low-stock",
+              badge: "Low Stock Alert",
+              title: `${item.product_name} is below pack size`,
+              subtitle: `On-hand: ${item.quantity} units · Pack size: ${item.pack_size} units`,
+              meta: item.supplier_name ? `Supplier: ${item.supplier_name}` : item.brand_name || undefined,
+              primaryLabel: "View Low Stock",
+              onPrimary: () => navigate("/products?low_stock=1"),
+              secondaryLabel: "Dismiss",
+              onSecondary: () => {
+                axios
+                  .post("/api/notifications/dismiss", { product_id: item.product_id })
+                  .then(() => window.dispatchEvent(new CustomEvent("notifications-changed")))
+                  .catch(() => {});
+              },
+            });
           });
-        });
-        if (newLowStock.length > 2) {
-          showLiveNotificationCard({
-            id: "live-low-stock-summary",
-            category: "low-stock",
-            badge: "Low Stock Alerts",
-            title: `+${newLowStock.length - 2} more product(s) low on stock`,
-            subtitle: `${lowStockCount} running product(s) have dropped below pack size.`,
-            primaryLabel: "Open Notification Center",
-            onPrimary: () => {
-              setNotifInitialTab("low-stock");
-              setNotifOpen(true);
-            },
-          });
+          if (newLowStock.length > 2) {
+            showLiveNotificationCard({
+              id: "live-low-stock-summary",
+              category: "low-stock",
+              badge: "Low Stock Alerts",
+              title: `+${newLowStock.length - 2} more product(s) low on stock`,
+              subtitle: `${lowStockCount} running product(s) have dropped below pack size.`,
+              primaryLabel: "Open Notification Center",
+              onPrimary: () => {
+                setNotifInitialTab("low-stock");
+                setNotifOpen(true);
+              },
+            });
+          }
         }
 
         // 3. Live Batch Expiry Notifications
@@ -423,59 +459,60 @@ export default function Topbar({
         const newExpiry = [];
         for (const b of expiryRows) {
           const key = `expiry:${b.batch_id}:${b.status || "warn"}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            seenDirty = true;
+          const alreadySeen = seen.has(key);
+          seen.add(key);
+          if (!alreadySeen && shouldShowToasts) {
             newExpiry.push(b);
           }
         }
 
-        newExpiry.slice(0, 2).forEach((b) => {
-          const isExp = b.days_remaining < 0;
-          showLiveNotificationCard({
-            id: `live-expiry-${b.batch_id}`,
-            category: "expiry",
-            badge: isExp ? "Batch Expired" : "Expiry Warning",
-            title: `${b.product_name} — Batch ${b.batch_number}`,
-            subtitle: isExp
-              ? `Expired ${Math.abs(b.days_remaining)} day(s) ago · ${b.quantity} units on hand`
-              : `${b.days_remaining} day(s) remaining · Exp: ${b.expiry_date} (${b.quantity} units)`,
-            primaryLabel: "Open Batch Tracking",
-            onPrimary: () => navigate("/batch-expiry"),
-            secondaryLabel: "Open Center",
-            onSecondary: () => {
-              setNotifInitialTab("expiry");
-              setNotifOpen(true);
-            },
+        if (shouldShowToasts) {
+          newExpiry.slice(0, 2).forEach((b) => {
+            const isExp = b.days_remaining < 0;
+            showLiveNotificationCard({
+              id: `live-expiry-${b.batch_id}`,
+              category: "expiry",
+              badge: isExp ? "Batch Expired" : "Expiry Warning",
+              title: `${b.product_name} — Batch ${b.batch_number}`,
+              subtitle: isExp
+                ? `Expired ${Math.abs(b.days_remaining)} day(s) ago · ${b.quantity} units on hand`
+                : `${b.days_remaining} day(s) remaining · Exp: ${b.expiry_date} (${b.quantity} units)`,
+              primaryLabel: "Open Batch Tracking",
+              onPrimary: () => navigate("/batch-expiry"),
+              secondaryLabel: "Open Center",
+              onSecondary: () => {
+                setNotifInitialTab("expiry");
+                setNotifOpen(true);
+              },
+            });
           });
-        });
-        if (newExpiry.length > 2) {
-          showLiveNotificationCard({
-            id: "live-expiry-summary",
-            category: "expiry",
-            badge: "Expiry Alerts",
-            title: `+${newExpiry.length - 2} more batch expiry alert(s)`,
-            subtitle: `${expiryCount} batch(es) require attention.`,
-            primaryLabel: "Open Expiry Alerts",
-            onPrimary: () => {
-              setNotifInitialTab("expiry");
-              setNotifOpen(true);
-            },
-          });
+          if (newExpiry.length > 2) {
+            showLiveNotificationCard({
+              id: "live-expiry-summary",
+              category: "expiry",
+              badge: "Expiry Alerts",
+              title: `+${newExpiry.length - 2} more batch expiry alert(s)`,
+              subtitle: `${expiryCount} batch(es) require attention.`,
+              primaryLabel: "Open Expiry Alerts",
+              onPrimary: () => {
+                setNotifInitialTab("expiry");
+                setNotifOpen(true);
+              },
+            });
+          }
         }
 
-        if (seenDirty) {
-          saveSeenSet(seen);
-        }
+        hasBaselinedNotifsRef.current = true;
+        saveSeenSet(seen);
       } catch {
         if (!cancelled) setNotifCount(0);
       }
     };
-    fetchCount();
-    const interval = setInterval(fetchCount, 30000); // poll every 30s
+    fetchCount({ isInitialMount: true });
+    const interval = setInterval(() => fetchCount({ isInitialMount: false }), 30000); // poll every 30s
 
     // Refresh immediately when any relevant event occurs across the application
-    const onChanged = () => fetchCount();
+    const onChanged = () => fetchCount({ isInitialMount: false });
     const onCustomLive = (e) => {
       if (e?.detail) showLiveNotificationCard(e.detail);
     };

@@ -40,6 +40,11 @@ export function AuthProvider({ children }) {
   const login = (userData, tokenValue, additionalData = {}) => {
     localStorage.setItem("token", tokenValue);
     localStorage.setItem("user", JSON.stringify(userData));
+    try {
+      sessionStorage.setItem("karobar_just_logged_in", "1");
+    } catch {
+      /* ignore storage errors */
+    }
     setUser(userData);
     axios.defaults.headers.common["Authorization"] = `Bearer ${tokenValue}`;
 
@@ -58,6 +63,16 @@ export function AuthProvider({ children }) {
     localStorage.removeItem("token_expires_at");
     localStorage.removeItem("productModalPos");
     localStorage.removeItem("productModalSize");
+    try {
+      Object.keys(localStorage).forEach((k) => {
+        if (k.startsWith("karobar_live_notified_")) {
+          localStorage.removeItem(k);
+        }
+      });
+      sessionStorage.clear();
+    } catch {
+      /* ignore storage errors */
+    }
 
     setUser(null);
     delete axios.defaults.headers.common["Authorization"];

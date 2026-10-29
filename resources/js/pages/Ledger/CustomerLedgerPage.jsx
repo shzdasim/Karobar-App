@@ -231,12 +231,14 @@ const [customers, setCustomers] = useState([]);
   const fetchData = async (overrideFrom = fromDate, overrideTo = toDate) => {
     if (!can.view) return toast.error("You don't have permission to view customer ledger.");
     if (!customerId) return toast.error("Select a customer first");
+    const effectiveFrom = typeof overrideFrom === "string" ? overrideFrom : fromDate;
+    const effectiveTo = typeof overrideTo === "string" ? overrideTo : toDate;
     try {
       const { data } = await axios.get("/api/customer-ledger", {
         params: {
           customer_id: customerId,
-          from: overrideFrom || undefined,
-          to: overrideTo || undefined,
+          from: effectiveFrom || undefined,
+          to: effectiveTo || undefined,
         },
       });
       const clean = (data.data || []).map((r) => {
@@ -258,6 +260,22 @@ const [customers, setCustomers] = useState([]);
       toast.error(e?.response?.data?.message || "Failed to load ledger");
     }
   };
+
+  useEffect(() => {
+    if (!permsLoading && can.view && customerId) {
+      fetchData(fromDate, toDate);
+    } else if (!customerId) {
+      setRows([]);
+      setSummary({
+        opening_balance: 0,
+        total_invoiced: 0,
+        received_on_invoice: 0,
+        payments_credited: 0,
+        net_balance: 0,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerId]);
 
   const rebuild = async () => {
     if (!can.update) return toast.error("You don't have permission to rebuild.");
@@ -744,7 +762,7 @@ return (
 
               <Guard when={can.update}>
                 <button
-                  onClick={fetchData}
+                  onClick={() => fetchData()}
                   disabled={!customerId}
                   title="Reload ledger entries"
                   className="products-action theme-btn-tertiary"
