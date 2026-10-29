@@ -1276,16 +1276,16 @@ body {
 }
 
 /* Original product form composition, refreshed with workspace glass. */
-.product-form-page { display: grid; gap: 16px; min-width: 0; color: var(--workspace-ink); }
-.product-form-page .products-heading, .product-form-page-heading { padding: 16px; }
+.product-form-page { display: grid; gap: 20px; min-width: 0; color: var(--workspace-ink); }
+.product-form-page .products-heading, .product-form-page-heading { padding: 18px 20px; }
 .product-form-panel { min-width: 0; border: 1px solid var(--workspace-edge); border-radius: 20px; background: var(--workspace-surface); box-shadow: inset 0 1px 0 var(--workspace-edge), var(--workspace-shadow); contain: none; transform: none; will-change: auto; }
-.product-form-body { padding: 16px; }
-.product-form-fields { display: grid; gap: 16px; min-width: 0; }
+.product-form-body { padding: 20px; }
+.product-form-fields { display: grid; gap: 20px; min-width: 0; }
 .product-form-fields > * { min-width: 0; }
 .product-form-fields label { color: var(--workspace-ink); margin-bottom: 6px; }
-.product-form-panel .g-input, .product-form-panel textarea { height: auto; min-height: 40px; padding: 6px 10px; border: 1px solid var(--workspace-border); border-radius: 12px; color: var(--workspace-ink); background: var(--workspace-reading-fill); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: inset 0 1px 0 var(--workspace-edge); }
+.product-form-panel .g-input, .product-form-panel textarea { height: auto; min-height: 40px; padding: 6px 12px; border: 1px solid var(--workspace-border); border-radius: 12px; color: var(--workspace-ink); background: var(--workspace-reading-fill); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: inset 0 1px 0 var(--workspace-edge); }
 .product-form-panel .g-input:disabled { color: var(--workspace-muted); background: color-mix(in srgb, var(--workspace-surface) 65%, var(--workspace-canvas)); }
-.product-form-panel textarea { min-height: 64px; resize: vertical; }
+.product-form-panel textarea { min-height: 68px; resize: vertical; }
 .product-form-fields > .flex > .w-32 > div { background: var(--workspace-reading-fill); border: 1px solid var(--workspace-border); box-shadow: none; }
 .product-form-panel .filepond--root { margin-bottom: 0; font-family: var(--font-ui); }
 .product-form-panel .filepond--panel-root { background: var(--workspace-canvas); border-radius: 10px; }
@@ -1294,18 +1294,18 @@ body {
 .product-form-pricing-scroll table { min-width: 56rem; }
 .product-form-pricing-scroll :is(th, td), .product-form-batch-scroll :is(th, td) { background: var(--workspace-reading-fill); color: var(--workspace-ink); }
 .product-form-pricing-scroll .g-input { font-variant-numeric: tabular-nums; text-align: right; }
-.product-form-edit-grid { display: grid; gap: 16px; align-items: start; min-width: 0; }
+.product-form-edit-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; min-width: 0; }
 .product-form-page-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--workspace-border); }
 .product-form-page-heading > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
-.product-form-batches-heading { padding: 16px; border-bottom: 1px solid var(--workspace-border); }
-.product-form-batch-scroll { overflow: auto; border: 1px solid var(--workspace-border); border-radius: 12px; }
-.product-form-batch-scroll table { min-width: 18rem; }
+.product-form-batches-heading { padding: 18px 20px; border-bottom: 1px solid var(--workspace-border); }
+.product-form-batch-scroll { overflow: auto; max-inline-size: 100%; container-type: inline-size; border: 1px solid var(--workspace-border); border-radius: 14px; }
+.product-form-batch-scroll table { width: 100%; min-width: 42rem; border-collapse: separate; border-spacing: 0; }
+.product-form-batch-scroll thead { position: sticky; inset-block-start: 0; z-index: 1; }
 .product-form-shortcut { padding: 6px 8px; border: 1px solid var(--workspace-border); border-radius: 8px; color: var(--workspace-muted); font-size: var(--type-support); }
 .product-form-panel :is(input, textarea, button, a):focus-visible { outline: 2px solid var(--workspace-accent); outline-offset: 3px; }
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .product-form-panel { background: linear-gradient(135deg, color-mix(in srgb, var(--workspace-surface) 14%, transparent), transparent 65%), var(--workspace-panel-fill); backdrop-filter: blur(24px) saturate(140%); -webkit-backdrop-filter: blur(24px) saturate(140%); }
 }
-@media (min-width: 1280px) { .product-form-edit-grid { grid-template-columns: minmax(0, 1fr) 300px; } }
 @media (max-width: 640px) {
   .product-form-fields > .flex { flex-wrap: wrap; }
   .product-form-fields > .flex > .flex-1 { flex-basis: 100%; }

@@ -4,11 +4,12 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
 import Select from "react-select";
-import { TrashIcon, PlusIcon, CubeIcon, HashtagIcon, CheckIcon, QrCodeIcon } from "@heroicons/react/24/outline";
+import { TrashIcon, PlusIcon, CubeIcon, HashtagIcon, CheckIcon, QrCodeIcon, ArrowsRightLeftIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
 import CustomerSearch from "../../components/CustomerSearch.jsx";
+import SubstituteProductsModal from "../../components/SubstituteProductsModal.jsx";
 import { recalcItem, recalcFooter } from "../../Formula/SaleInvoice.js";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
@@ -365,6 +366,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   // Get dark mode state and theme colors
   const { isDark, theme } = useTheme();
   const { isPharmacy } = useSaleSystem();
+  const [substituteModalTarget, setSubstituteModalTarget] = useState(null);
 
   // Memoize theme colors for performance
   const themeColors = useMemo(() => {
@@ -541,6 +543,8 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       expiry_date: b?.expiry_date ?? b?.expiry ?? "",
       available_units: Number(b?.available_units ?? b?.available_quantity ?? b?.quantity ?? 0),
       pack_size: Number(b?.pack_size ?? 0),
+      unit_sale_price: b?.unit_sale_price != null ? Number(b.unit_sale_price) : null,
+      pack_sale_price: b?.pack_sale_price != null ? Number(b.pack_sale_price) : null,
       is_expired: Boolean(b?.is_expired || (b?.expiry_date && b?.expiry_date < new Date().toISOString().slice(0, 10))),
       is_fefo_recommended: Boolean(b?.is_fefo_recommended),
       is_unbatched: Boolean(b?.is_unbatched),
@@ -1051,6 +1055,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         ? existingIsUnbatched
         : (!hasAssignedBatches ? true : Boolean(fefoBatch?.is_unbatched));
       const batchAvailable = fefoBatch?.available_units ?? displayAvailable;
+      const effectivePrice =
+        !isCustomPrice && !allocatedIsUnbatched && fefoBatch && Number(fefoBatch.unit_sale_price) > 0
+          ? Number(fefoBatch.unit_sale_price)
+          : price;
       
       items[rowIndex] = recalcItem(
         {
@@ -1059,7 +1067,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
           product_name: freshProductData?.name ?? selected?.name ?? items[rowIndex]?.product_name ?? "",
           product: freshProductData ?? (selected?.id ? selected : null),
           pack_size: packSize,
-          price,
+          price: effectivePrice,
           batch_number: allocatedBatchNumber,
           is_unbatched: allocatedIsUnbatched,
           expiry: allocatedExpiry,
@@ -1105,7 +1113,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
           unbatchedAvailable = 0;
         }
       }
-      handleBatchSelectWithCalculatedAvailable(rowIndex, "", unbatchedAvailable, "", true);
+      handleBatchSelectWithCalculatedAvailable(rowIndex, "", unbatchedAvailable, "", true, unbatchedItem?.unit_sale_price);
       return;
     }
     
@@ -1115,6 +1123,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       
       const baseAvailable = Number(b?.available_units ?? 0);
       const batchExpiry = b?.expiry || b?.expiry_date || "";
+      const batchPrice = b?.unit_sale_price;
 
       if (b?.is_expired) {
         toast.error(`Warning: Batch ${batchNum} is EXPIRED (${batchExpiry}). Supervisor override required.`, { id: "expired-batch-warn" });
@@ -1131,22 +1140,28 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
           res?.data?.available_units ?? res?.data?.available ?? res?.data?.quantity ?? 0
         );
         if (Number.isFinite(apiAvailable)) {
-          return handleBatchSelectWithCalculatedAvailable(rowIndex, batchNum, apiAvailable, batchExpiry, false);
+          return handleBatchSelectWithCalculatedAvailable(rowIndex, batchNum, apiAvailable, batchExpiry, false, batchPrice);
         }
       } catch {}
       
-      handleBatchSelectWithCalculatedAvailable(rowIndex, batchNum, baseAvailable, batchExpiry, false);
+      handleBatchSelectWithCalculatedAvailable(rowIndex, batchNum, baseAvailable, batchExpiry, false, batchPrice);
     } catch {}
   };
 
-  const handleBatchSelectWithCalculatedAvailable = (rowIndex, batchNum, baseAvailable, batchExpiry = "", isUnbatched = false) => {
+  const handleBatchSelectWithCalculatedAvailable = (rowIndex, batchNum, baseAvailable, batchExpiry = "", isUnbatched = false, batchUnitPrice = null) => {
     const available = Number(baseAvailable);
     const exp = isUnbatched ? "" : (batchExpiry || asISODate(form.items[rowIndex]?.expiry || ""));
     
     setForm((prev) => {
       const items = [...prev.items];
+      const currentRow = items[rowIndex] || {};
+      const nextPrice =
+        !currentRow.is_custom_price && batchUnitPrice != null && Number(batchUnitPrice) > 0
+          ? Number(batchUnitPrice)
+          : currentRow.price;
       const updated = {
-        ...items[rowIndex],
+        ...currentRow,
+        price: nextPrice,
         batch_number: batchNum,
         is_unbatched: isUnbatched,
         expiry: exp,
@@ -1889,15 +1904,44 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
 
                     <td>
                       <InvoiceRowError messages={invoiceErrors.rowMessages(i)} />
-                      <div ref={(el) => (productRefs.current[i] = el)} onFocus={() => setFocusedRowIndex(i)}>
-                        <ProductSearchInput
-                          value={products.find((p) => eqId(p.id, it.product_id)) || it.product || (it.product_name ? { id: it.product_id, name: it.product_name } : it.product_id)}
-                          onChange={(val) => handleProductSelect(i, val)}
-                          onKeyDown={(e) => onKeyNav(e, i, "product")}
-                          products={products}
-                          onRefreshProducts={fetchProducts}
-                          inputProps={{ autoComplete: "off", autoCapitalize: "off", autoCorrect: "off", spellCheck: false }}
-                        />
+                      <div
+                        ref={(el) => (productRefs.current[i] = el)}
+                        onFocus={() => setFocusedRowIndex(i)}
+                        className="flex items-center gap-1"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <ProductSearchInput
+                            value={products.find((p) => eqId(p.id, it.product_id)) || it.product || (it.product_name ? { id: it.product_id, name: it.product_name } : it.product_id)}
+                            onChange={(val) => handleProductSelect(i, val)}
+                            onKeyDown={(e) => onKeyNav(e, i, "product")}
+                            products={products}
+                            onRefreshProducts={fetchProducts}
+                            inputProps={{ autoComplete: "off", autoCapitalize: "off", autoCorrect: "off", spellCheck: false }}
+                          />
+                        </div>
+                        {it.product_id && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSubstituteModalTarget({
+                                rowIndex: i,
+                                id: it.product_id,
+                                name: it.product_name || it.product?.name,
+                                formulation: it.product?.formulation,
+                                price: it.price,
+                                quantity: it.current_quantity,
+                              })
+                            }
+                            className={`h-7 px-1.5 rounded-md border text-[10px] font-bold flex items-center gap-0.5 shrink-0 transition ${
+                              Number(it.current_quantity) <= 0
+                                ? "bg-amber-500 text-white border-amber-600 animate-pulse"
+                                : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
+                            }`}
+                            title="Find Generic / Salt Formulation Substitutes"
+                          >
+                            <ArrowsRightLeftIcon className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
 
@@ -2432,6 +2476,29 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
           const fn = expiredOverridePrompt?.execute;
           setExpiredOverridePrompt(null);
           if (fn) fn(overrideCreds);
+        }}
+      />
+
+      <SubstituteProductsModal
+        open={Boolean(substituteModalTarget)}
+        product={substituteModalTarget}
+        onClose={() => setSubstituteModalTarget(null)}
+        allowSwap={true}
+        onSelectSubstitute={async (sub, mode) => {
+          const targetIdx = substituteModalTarget?.rowIndex;
+          setSubstituteModalTarget(null);
+          upsertProducts([sub]);
+          if (mode === "swap" && targetIdx != null) {
+            await handleProductSelect(targetIdx, sub);
+            toast.success(`Swapped row ${targetIdx + 1} with ${sub.name}`);
+          } else {
+            const newIdx = form.items.length;
+            addRow();
+            setTimeout(() => {
+              handleProductSelect(newIdx, sub);
+            }, 30);
+            toast.success(`Added substitute ${sub.name}`);
+          }
         }}
       />
     </>

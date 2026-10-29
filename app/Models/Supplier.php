@@ -10,6 +10,8 @@ class Supplier extends Model
         'name',
         'address',
         'phone',
+        'tax_number',
+        'tax_status',
         'email',
         'credit_limit',
         'credit_days',

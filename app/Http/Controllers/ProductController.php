@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Product;
+use App\Models\ProductSupplier;
 use App\Models\PurchaseInvoiceItem;
 use App\Models\PurchaseReturnItem;
 use App\Models\SaleInvoiceItem;
@@ -26,7 +27,7 @@ class ProductController extends Controller
 
         $existingCols = array_flip(Schema::getColumnListing('products'));
         $desiredCols = [
-            'id','name','product_code','barcode','formulation','rack','narcotic','pack_size',
+            'id','name','product_code','barcode','formulation','rack','storage_location_id','narcotic','pack_size',
             'unit_purchase_price','unit_sale_price',
             'pack_purchase_price','pack_sale_price',
             'whole_sale_pack_price','whole_sale_unit_price',
@@ -38,6 +39,9 @@ class ProductController extends Controller
         $relations = ['brand:id,name', 'supplier:id,name'];
         if (isset($existingCols['category_id']) && Schema::hasTable('categories')) {
             $relations[] = 'category:id,name';
+        }
+        if (isset($existingCols['storage_location_id']) && Schema::hasTable('storage_locations')) {
+            $relations[] = 'storageLocation:id,code,name,type';
         }
 
         $query = Product::select($selectCols ?: ['*'])
@@ -128,8 +132,7 @@ class ProductController extends Controller
         $available = 0;
 
         if ($batch !== '' && $batch !== '__unbatched__') {
-            $record = $batches->firstWhere('batch_number', $batch);
-            $available = (int) ($record->quantity ?? 0);
+            $available = (int) $batches->where('batch_number', $batch)->sum('quantity');
         } else {
             // When no batch is selected, user is selling unbatched stock if batches exist,
             // or entire product stock if product has no batches.
@@ -162,19 +165,24 @@ class ProductController extends Controller
 
         $existingCols = array_flip(Schema::getColumnListing('products'));
         $desiredCols = [
-            'id','product_code','barcode','name','formulation','rack','image',
+            'id','product_code','barcode','name','formulation','rack','storage_location_id','image',
             'category_id','brand_id','supplier_id',
             'quantity','pack_size',
         ];
         $selectCols = array_values(array_filter($desiredCols, fn(string $c) => isset($existingCols[$c])));
 
+        $indexRelations = [
+            'category:id,name',
+            'brand:id,name',
+            'supplier:id,name',
+        ];
+        if (isset($existingCols['storage_location_id']) && Schema::hasTable('storage_locations')) {
+            $indexRelations[] = 'storageLocation:id,code,name,type';
+        }
+
         $q = Product::query()
             ->select($selectCols ?: ['*'])
-            ->with([
-                'category:id,name',
-                'brand:id,name',
-                'supplier:id,name',
-            ])
+            ->with($indexRelations)
             ->withCount('batches');
 
         $hasBarcode     = isset($existingCols['barcode']);
@@ -210,7 +218,12 @@ class ProductController extends Controller
             $q->whereHas('brand', fn(Builder $b) => $b->where('name', 'like', $qBrand.'%'));
         }
         if ($qSupplier !== '') {
-            $q->whereHas('supplier', fn(Builder $s) => $s->where('name', 'like', $qSupplier.'%'));
+            $q->where(function (Builder $sq) use ($qSupplier) {
+                $sq->whereHas('supplier', fn(Builder $s) => $s->where('name', 'like', $qSupplier.'%'));
+                if (Schema::hasTable('product_suppliers')) {
+                    $sq->orWhereHas('suppliers', fn(Builder $s) => $s->where('name', 'like', $qSupplier.'%'));
+                }
+            });
         }
         if ($qFormulation !== '' && $hasFormulation) {
             $q->where('formulation', 'like', '%'.$qFormulation.'%');
@@ -268,8 +281,14 @@ class ProductController extends Controller
             'brand_id' => 'required|exists:brands,id',
             'supplier_id' => 'required|exists:suppliers,id',
             'rack' => 'nullable|string',
+            'storage_location_id' => 'nullable|integer|exists:storage_locations,id',
             'barcode' => 'required|unique:products,barcode',
         ]);
+
+        if (empty($validated['storage_location_id']) && Schema::hasTable('storage_locations')) {
+            $validated['storage_location_id'] = \App\Models\StorageLocation::where('is_default', true)->value('id')
+                ?? \App\Models\StorageLocation::orderBy('id')->value('id');
+        }
 
         if ($request->hasFile('image')) {
             $path = $request->file('image')->store('products', 'public');
@@ -278,12 +297,29 @@ class ProductController extends Controller
 
         $product = Product::create($validated);
 
+        if (!empty($product->supplier_id) && Schema::hasTable('product_suppliers')) {
+            ProductSupplier::updateOrCreate(
+                ['product_id' => $product->id, 'supplier_id' => $product->supplier_id],
+                [
+                    'last_purchase_price' => $product->unit_purchase_price,
+                    'is_preferred'        => true,
+                ]
+            );
+        }
+
         return response()->json($product, 201);
     }
 
     public function show($id)
     {
-        $product = Product::with(['brand','category','supplier'])->findOrFail($id);
+        $relations = ['brand', 'category', 'supplier'];
+        if (Schema::hasTable('product_suppliers')) {
+            $relations[] = 'productSuppliers.supplier:id,name';
+        }
+        if (Schema::hasTable('storage_locations')) {
+            $relations[] = 'storageLocation:id,code,name,type,default_rack';
+        }
+        $product = Product::with($relations)->findOrFail($id);
         $this->authorize('view', $product);
         return response()->json($product);
     }
@@ -316,6 +352,7 @@ class ProductController extends Controller
             'brand_id' => 'required|exists:brands,id',
             'supplier_id' => 'required|exists:suppliers,id',
             'rack' => 'nullable|string',
+            'storage_location_id' => 'nullable|integer|exists:storage_locations,id',
             'barcode' => ['required', Rule::unique('products', 'barcode')->ignore($product->id)],
         ]);
 
@@ -327,6 +364,16 @@ class ProductController extends Controller
             $validated['image'] = $path;
         }
         $product->update($validated);
+
+        if (!empty($product->supplier_id) && Schema::hasTable('product_suppliers')) {
+            ProductSupplier::updateOrCreate(
+                ['product_id' => $product->id, 'supplier_id' => $product->supplier_id],
+                [
+                    'last_purchase_price' => $product->unit_purchase_price,
+                    'is_preferred'        => true,
+                ]
+            );
+        }
 
         return response()->json($product);
     }
@@ -582,5 +629,214 @@ class ProductController extends Controller
 
             fclose($out);
         }, $file, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    /**
+     * One-Click Generic / Formulation Substitute Lookup for POS & Sale Invoices.
+     * GET /api/products/{product}/substitutes
+     */
+    public function substitutes(Request $request, Product $product)
+    {
+        $user = $request->user();
+        if (
+            !$user
+            || (
+                !$user->hasRole(['Admin', 'admin', 'super-admin'])
+                && !$user->can('product.view')
+                && !$user->can('barcode-pos.view')
+                && !$user->can('barcode-pos.create')
+                && !$user->can('sale-invoice.view')
+                && !$user->can('sale-invoice.create')
+                && !$user->can('sale-invoice.update')
+            )
+        ) {
+            abort(403, 'This action is unauthorized.');
+        }
+
+        $formulation = trim((string) ($product->formulation ?? ''));
+        $today = now()->toDateString();
+
+        $query = Product::with([
+            'brand:id,name',
+            'category:id,name',
+            'supplier:id,name',
+            'batches' => function ($bq) use ($today) {
+                $bq->where('quantity', '>', 0)
+                   ->orderByRaw("CASE WHEN expiry_date IS NOT NULL AND expiry_date >= '{$today}' THEN 0 ELSE 1 END")
+                   ->orderBy('expiry_date', 'asc');
+            },
+        ])->where('id', '!=', $product->id);
+
+        $matchType = 'formulation';
+
+        if ($formulation !== '') {
+            // Split formulation into primary salt tokens (e.g. "Paracetamol 500mg" -> "Paracetamol")
+            $primarySalt = trim(preg_replace('/\b\d+(\.\d+)?\s*(mg|ml|mcg|g|iu|%)\b/i', '', $formulation));
+            $query->where(function (Builder $q) use ($formulation, $primarySalt) {
+                $q->where('formulation', 'like', '%' . $formulation . '%');
+                if ($primarySalt !== '' && strlen($primarySalt) >= 3 && strtolower($primarySalt) !== strtolower($formulation)) {
+                    $q->orWhere('formulation', 'like', '%' . $primarySalt . '%');
+                }
+            });
+        } elseif (!empty($product->category_id)) {
+            $matchType = 'category';
+            $query->where('category_id', $product->category_id);
+        } else {
+            return response()->json([
+                'product' => [
+                    'id'              => $product->id,
+                    'name'            => $product->name,
+                    'formulation'     => $product->formulation,
+                    'unit_sale_price' => (float) ($product->unit_sale_price ?? 0),
+                    'quantity'        => (int) ($product->quantity ?? 0),
+                ],
+                'match_type'  => 'none',
+                'substitutes' => [],
+            ]);
+        }
+
+        $substitutes = $query
+            ->orderByRaw('CASE WHEN COALESCE(quantity, 0) > 0 THEN 0 ELSE 1 END')
+            ->orderBy('unit_sale_price', 'asc')
+            ->limit(25)
+            ->get()
+            ->map(function (Product $sub) use ($product, $formulation) {
+                $fefoBatch = $sub->batches->first(fn ($b) => !$b->is_expired && (int) $b->quantity > 0)
+                    ?? $sub->batches->first();
+
+                $effectiveUnitPrice = ($fefoBatch && $fefoBatch->unit_sale_price !== null && (float) $fefoBatch->unit_sale_price > 0)
+                    ? (float) $fefoBatch->unit_sale_price
+                    : (float) ($sub->unit_sale_price ?? 0);
+
+                $basePrice = (float) ($product->unit_sale_price ?? 0);
+                $priceDiff = round($effectiveUnitPrice - $basePrice, 2);
+
+                $isExactFormulation = $formulation !== ''
+                    && strtolower(trim((string) $sub->formulation)) === strtolower($formulation);
+
+                return [
+                    'id'                    => $sub->id,
+                    'name'                  => $sub->name,
+                    'product_code'          => $sub->product_code,
+                    'barcode'               => $sub->barcode,
+                    'formulation'           => $sub->formulation,
+                    'is_exact_formulation'  => $isExactFormulation,
+                    'rack'                  => $sub->rack,
+                    'pack_size'             => (int) ($sub->pack_size ?? 1),
+                    'quantity'              => (int) ($sub->quantity ?? 0),
+                    'unit_sale_price'       => $effectiveUnitPrice,
+                    'pack_sale_price'       => (float) ($sub->pack_sale_price ?? 0),
+                    'whole_sale_unit_price' => (float) ($sub->whole_sale_unit_price ?? 0),
+                    'whole_sale_pack_price' => (float) ($sub->whole_sale_pack_price ?? 0),
+                    'price_diff'            => $priceDiff,
+                    'brand'                 => $sub->brand,
+                    'category'              => $sub->category,
+                    'Earliest_expiry'       => $fefoBatch?->expiry_date,
+                    'fefo_batch'            => $fefoBatch ? [
+                        'id'              => $fefoBatch->id,
+                        'batch_number'    => $fefoBatch->batch_number,
+                        'expiry_date'     => $fefoBatch->expiry_date,
+                        'quantity'        => (int) $fefoBatch->quantity,
+                        'unit_sale_price' => $effectiveUnitPrice,
+                    ] : null,
+                ];
+            });
+
+        return response()->json([
+            'product' => [
+                'id'              => $product->id,
+                'name'            => $product->name,
+                'formulation'     => $product->formulation,
+                'category_id'     => $product->category_id,
+                'unit_sale_price' => (float) ($product->unit_sale_price ?? 0),
+                'quantity'        => (int) ($product->quantity ?? 0),
+            ],
+            'match_type'  => $matchType,
+            'substitutes' => $substitutes,
+        ]);
+    }
+
+    /**
+     * List all mapped suppliers for a product (Multi-Supplier Catalog).
+     * GET /api/products/{product}/suppliers
+     */
+    public function getSuppliers(Product $product)
+    {
+        $this->authorize('view', $product);
+
+        if (!Schema::hasTable('product_suppliers')) {
+            return response()->json([]);
+        }
+
+        $links = ProductSupplier::with('supplier:id,name,phone,email')
+            ->where('product_id', $product->id)
+            ->orderByDesc('is_preferred')
+            ->orderBy('id')
+            ->get();
+
+        return response()->json($links);
+    }
+
+    /**
+     * Add or update a supplier mapping for a product.
+     * POST /api/products/{product}/suppliers
+     */
+    public function saveSupplier(Request $request, Product $product)
+    {
+        $this->authorize('update', $product);
+
+        $validated = $request->validate([
+            'supplier_id'         => ['required', 'integer', 'exists:suppliers,id'],
+            'supplier_sku'        => ['nullable', 'string', 'max:100'],
+            'last_purchase_price' => ['nullable', 'numeric', 'min:0'],
+            'lead_time_days'      => ['nullable', 'integer', 'min:0', 'max:365'],
+            'min_order_qty'       => ['nullable', 'integer', 'min:1'],
+            'is_preferred'        => ['nullable', 'boolean'],
+            'notes'               => ['nullable', 'string', 'max:255'],
+        ]);
+
+        if (!empty($validated['is_preferred'])) {
+            ProductSupplier::where('product_id', $product->id)
+                ->where('supplier_id', '!=', $validated['supplier_id'])
+                ->update(['is_preferred' => false]);
+        }
+
+        $record = ProductSupplier::updateOrCreate(
+            [
+                'product_id'  => $product->id,
+                'supplier_id' => $validated['supplier_id'],
+            ],
+            [
+                'supplier_sku'        => $validated['supplier_sku'] ?? null,
+                'last_purchase_price' => $validated['last_purchase_price'] ?? $product->unit_purchase_price,
+                'lead_time_days'      => $validated['lead_time_days'] ?? null,
+                'min_order_qty'       => $validated['min_order_qty'] ?? 1,
+                'is_preferred'        => (bool) ($validated['is_preferred'] ?? false),
+                'notes'               => $validated['notes'] ?? null,
+            ]
+        );
+
+        return response()->json($record->load('supplier:id,name,phone,email'), 201);
+    }
+
+    /**
+     * Remove a secondary supplier mapping from a product.
+     * DELETE /api/products/{product}/suppliers/{supplierId}
+     */
+    public function removeSupplier(Product $product, int $supplierId)
+    {
+        $this->authorize('update', $product);
+
+        if ((int) $product->supplier_id === $supplierId) {
+            return response()->json([
+                'message' => 'Cannot remove the primary supplier. Change the product primary supplier first.',
+            ], 422);
+        }
+
+        ProductSupplier::where('product_id', $product->id)
+            ->where('supplier_id', $supplierId)
+            ->delete();
+
+        return response()->json(['message' => 'Supplier mapping removed']);
     }
 }

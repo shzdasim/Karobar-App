@@ -540,6 +540,10 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
       expiry_date: b?.expiry_date ?? b?.expiry ?? "",
       available_units: Number(b?.available_units ?? b?.available_quantity ?? b?.quantity ?? 0),
       pack_size: Number(b?.pack_size ?? 0),
+      unit_sale_price: b?.unit_sale_price != null ? Number(b.unit_sale_price) : null,
+      pack_sale_price: b?.pack_sale_price != null ? Number(b.pack_sale_price) : null,
+      whole_sale_unit_price: b?.whole_sale_unit_price != null ? Number(b.whole_sale_unit_price) : null,
+      whole_sale_pack_price: b?.whole_sale_pack_price != null ? Number(b.whole_sale_pack_price) : null,
       is_expired: Boolean(b?.is_expired || (b?.expiry_date && b?.expiry_date < new Date().toISOString().slice(0, 10))),
       is_fefo_recommended: Boolean(b?.is_fefo_recommended),
       is_unbatched: Boolean(b?.is_unbatched),
@@ -1160,6 +1164,14 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
         : Boolean(fefoBatch?.is_unbatched);
 
       const batchAvailableUnits = Number(fefoBatch?.available_units ?? displayAvailableUnits);
+      const effectivePackPrice =
+        !isCustomPrice && !allocatedIsUnbatched && fefoBatch && Number(fefoBatch.whole_sale_pack_price) > 0
+          ? Number(fefoBatch.whole_sale_pack_price)
+          : packPrice;
+      const effectiveUnitPrice =
+        !isCustomPrice && !allocatedIsUnbatched && fefoBatch && Number(fefoBatch.whole_sale_unit_price) > 0
+          ? Number(fefoBatch.whole_sale_unit_price)
+          : unitPrice;
 
       // Default to 1 Pack if at least 1 pack is in stock and packSize > 1, otherwise 1 Unit
       const defaultPackQty = isSameProd
@@ -1181,8 +1193,8 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
             freshProductData?.name ?? selected?.name ?? items[rowIndex]?.product_name ?? "",
           product: freshProductData ?? (selected?.id ? selected : null),
           pack_size: packSize,
-          pack_price: packPrice,
-          price: unitPrice,
+          pack_price: effectivePackPrice,
+          price: effectiveUnitPrice,
           batch_number: allocatedBatchNumber,
           is_unbatched: allocatedIsUnbatched,
           expiry: allocatedExpiry,
@@ -1236,7 +1248,7 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
           unbatchedAvailable = 0;
         }
       }
-      handleBatchSelectWithCalculatedAvailable(rowIndex, "", unbatchedAvailable, "", true);
+      handleBatchSelectWithCalculatedAvailable(rowIndex, "", unbatchedAvailable, "", true, unbatchedItem);
       return;
     }
 
@@ -1265,12 +1277,12 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
           res?.data?.available_units ?? res?.data?.available ?? res?.data?.quantity ?? 0
         );
         if (Number.isFinite(apiAvailable)) {
-          handleBatchSelectWithCalculatedAvailable(rowIndex, batchNum, apiAvailable, batchExpiry, false);
+          handleBatchSelectWithCalculatedAvailable(rowIndex, batchNum, apiAvailable, batchExpiry, false, b);
           return;
         }
       } catch {}
 
-      handleBatchSelectWithCalculatedAvailable(rowIndex, batchNum, baseAvailable, batchExpiry, false);
+      handleBatchSelectWithCalculatedAvailable(rowIndex, batchNum, baseAvailable, batchExpiry, false, b);
     } catch {}
   };
 
@@ -1279,7 +1291,8 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
     batchNum,
     baseAvailable,
     batchExpiry = "",
-    isUnbatched = false
+    isUnbatched = false,
+    batchPricingObj = null
   ) => {
     const available = Number(baseAvailable || 0);
     const exp = isUnbatched ? "" : batchExpiry || asISODate(form.items[rowIndex]?.expiry || "");
@@ -1287,8 +1300,19 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
 
     setForm((prev) => {
       const items = [...prev.items];
+      const currentRow = items[rowIndex] || {};
+      const nextPackPrice =
+        !currentRow.is_custom_price && batchPricingObj && Number(batchPricingObj.whole_sale_pack_price) > 0
+          ? Number(batchPricingObj.whole_sale_pack_price)
+          : currentRow.pack_price;
+      const nextUnitPrice =
+        !currentRow.is_custom_price && batchPricingObj && Number(batchPricingObj.whole_sale_unit_price) > 0
+          ? Number(batchPricingObj.whole_sale_unit_price)
+          : currentRow.price;
       const updated = {
-        ...items[rowIndex],
+        ...currentRow,
+        pack_price: nextPackPrice,
+        price: nextUnitPrice,
         batch_number: batchNum,
         is_unbatched: isUnbatched,
         expiry: exp,

@@ -24,6 +24,7 @@ import {
   Squares2X2Icon,
   XMarkIcon,
   ShareIcon,
+  ArrowsRightLeftIcon,
 } from "@heroicons/react/24/solid";
 import { useTheme } from "@/context/ThemeContext";
 import { useCurrency } from "@/context/CurrencyContext";
@@ -32,6 +33,7 @@ import { posSound, useBarcodeScanner } from "@/utils/posScanner";
 import CustomerSearch from "@/components/CustomerSearch";
 import ProductSearchInput from "@/components/ProductSearchInput";
 import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
+import SubstituteProductsModal from "@/components/SubstituteProductsModal.jsx";
 
 export default function BarcodePos() {
   const navigate = useNavigate();
@@ -57,6 +59,7 @@ export default function BarcodePos() {
   // Cart & Line Items state
   const [items, setItems] = useState([]);
   const [flashedRowId, setFlashedRowId] = useState(null);
+  const [substituteTargetRow, setSubstituteTargetRow] = useState(null);
 
   // Customer search & selection
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
@@ -285,49 +288,74 @@ export default function BarcodePos() {
   };
 
   // Add or increment item in cart
-  const handleProductResolved = useCallback((product) => {
+  const handleProductResolved = useCallback((product, replaceUid = null) => {
     if (!product || !product.id) return;
 
+    const addQty =
+      product.is_weight_barcode && Number(product.parsed_quantity) > 0
+        ? Number(product.parsed_quantity)
+        : 1;
+
+    if ((Number(product.quantity) || 0) <= 0) {
+      toast(`"${product.name}" has 0 stock — click ⇄ Substitutes on the row to swap with an in-stock alternative`, {
+        icon: "⚠️",
+        duration: 4000,
+      });
+    }
+
     setItems((prevItems) => {
-      const existingIndex = prevItems.findIndex((it) => it.product_id === product.id);
+      if (!replaceUid) {
+        const existingIndex = prevItems.findIndex((it) => it.product_id === product.id);
 
-      if (existingIndex > -1) {
-        // Item already in cart -> increment quantity
-        const updated = [...prevItems];
-        const current = updated[existingIndex];
-        const newQty = (Number(current.quantity) || 0) + 1;
-        const subTotal = (Number(current.price) || 0) * newQty * (1 - (Number(current.item_discount_percentage) || 0) / 100);
+        if (existingIndex > -1) {
+          // Item already in cart -> increment quantity
+          const updated = [...prevItems];
+          const current = updated[existingIndex];
+          const newQty = Math.round(((Number(current.quantity) || 0) + addQty) * 1000) / 1000;
+          const subTotal = (Number(current.price) || 0) * newQty * (1 - (Number(current.item_discount_percentage) || 0) / 100);
 
-        updated[existingIndex] = {
-          ...current,
-          quantity: newQty,
-          sub_total: Math.round(subTotal * 100) / 100,
-        };
+          updated[existingIndex] = {
+            ...current,
+            quantity: newQty,
+            is_weight_barcode: Boolean(current.is_weight_barcode || product.is_weight_barcode),
+            sub_total: Math.round(subTotal * 100) / 100,
+          };
 
-        posSound.playIncrement();
-        triggerPulse(product, "incremented");
-        setFlashedRowId(current.uid);
-        setTimeout(() => setFlashedRowId(null), 700);
-        return updated;
+          posSound.playIncrement();
+          triggerPulse(product, "incremented");
+          setFlashedRowId(current.uid);
+          setTimeout(() => setFlashedRowId(null), 700);
+          return updated;
+        }
       }
 
-      // New item -> add to cart
+      // New item -> add to cart (or replace existing row on swap)
       const bestBatch = product.selected_batch || (product.batches && product.batches[0]) || null;
-      const unitPrice = Number(product.unit_sale_price) || 0;
-      const rowUid = `pos_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const baseUnitPrice = Number(product.product_unit_sale_price ?? product.unit_sale_price) || 0;
+      const unitPrice =
+        bestBatch && Number(bestBatch.unit_sale_price) > 0
+          ? Number(bestBatch.unit_sale_price)
+          : Number(product.unit_sale_price) || 0;
+      const rowUid = replaceUid || `pos_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
       const newItem = {
         uid: rowUid,
         product_id: product.id,
         product_name: product.name,
+        formulation: product.formulation || "",
+        rack: product.rack || "",
+        total_stock: Number(product.quantity ?? 0),
         barcode: product.barcode || product.product_code || "",
         product_code: product.product_code || "",
         brand_name: product.brand?.name || "—",
         pack_size: Number(product.pack_size) || 1,
         price: unitPrice,
-        quantity: 1,
+        product_unit_sale_price: baseUnitPrice,
+        quantity: addQty,
+        is_weight_barcode: Boolean(product.is_weight_barcode),
+        weight_grams: product.weight_grams || null,
         item_discount_percentage: 0,
-        sub_total: unitPrice,
+        sub_total: Math.round(unitPrice * addQty * 100) / 100,
         batch_number: bestBatch ? bestBatch.batch_number : "",
         expiry_date: bestBatch ? bestBatch.expiry_date : "",
         selected_batch_id: bestBatch ? bestBatch.id : null,
@@ -340,6 +368,9 @@ export default function BarcodePos() {
       triggerPulse(product, "added");
       setFlashedRowId(rowUid);
       setTimeout(() => setFlashedRowId(null), 700);
+      if (replaceUid) {
+        return prevItems.map((it) => (it.uid === replaceUid ? newItem : it));
+      }
       return [newItem, ...prevItems];
     });
   }, []);
@@ -417,7 +448,7 @@ export default function BarcodePos() {
 
   // Cart item modifications
   const handleUpdateQuantity = (uid, newQty) => {
-    const qty = Math.max(1, Number(newQty) || 1);
+    const qty = Math.max(0.001, Math.round((Number(newQty) || 1) * 1000) / 1000);
     setItems((prev) =>
       prev.map((it) => {
         if (it.uid !== uid) return it;
@@ -475,25 +506,69 @@ export default function BarcodePos() {
       prev.map((it) => {
         if (it.uid !== uid) return it;
         if (batchId === "unassigned") {
+          const basePrice =
+            Number(it.product_unit_sale_price) > 0
+              ? Number(it.product_unit_sale_price)
+              : Number(it.price) || 0;
+          const subTotal =
+            basePrice * (Number(it.quantity) || 1) * (1 - (Number(it.item_discount_percentage) || 0) / 100);
           return {
             ...it,
             selected_batch_id: null,
             batch_number: "",
             expiry_date: "",
             is_fefo: false,
+            price: basePrice,
+            sub_total: Math.round(subTotal * 100) / 100,
           };
         }
         const found = itemBatches.find((b) => b.id === Number(batchId));
+        const nextPrice =
+          found && Number(found.unit_sale_price) > 0
+            ? Number(found.unit_sale_price)
+            : Number(it.price) || 0;
+        const subTotal =
+          nextPrice * (Number(it.quantity) || 1) * (1 - (Number(it.item_discount_percentage) || 0) / 100);
         return {
           ...it,
           selected_batch_id: found ? found.id : null,
           batch_number: found ? found.batch_number : "",
           expiry_date: found ? found.expiry_date : "",
           is_fefo: false,
+          price: nextPrice,
+          sub_total: Math.round(subTotal * 100) / 100,
         };
       })
     );
   };
+
+  // Swap or add a substitute product from SubstituteProductsModal
+  const handleSelectSubstitute = useCallback(
+    async (subProduct, mode = "swap") => {
+      if (!subProduct?.id) return;
+      const targetUid = mode === "swap" ? substituteTargetRow?.uid : null;
+      setSubstituteTargetRow(null);
+      try {
+        setIsSearching(true);
+        const { data } = await axios.get("/api/barcodes/scan", {
+          params: { product_id: subProduct.id },
+        });
+        if (data.found && data.product) {
+          handleProductResolved(data.product, targetUid);
+          toast.success(
+            mode === "swap"
+              ? `Swapped with substitute: ${data.product.name}`
+              : `Added substitute: ${data.product.name}`
+          );
+        }
+      } catch {
+        toast.error("Failed to load substitute product");
+      } finally {
+        setIsSearching(false);
+      }
+    },
+    [substituteTargetRow, handleProductResolved]
+  );
 
   // Quick Cash Tender buttons
   const handleQuickCash = (amount) => {
@@ -1114,10 +1189,16 @@ export default function BarcodePos() {
                     items.map((it, idx) => {
                       const isFlashed = flashedRowId === it.uid;
                       const batchOptions = [
-                        ...(it.batches || []).map((b) => ({
-                          value: String(b.id),
-                          label: `${b.batch_number} (${b.quantity}u, exp: ${b.expiry_date || "N/A"})`,
-                        })),
+                        ...(it.batches || []).map((b) => {
+                          const mrpPart =
+                            Number(b.unit_sale_price) > 0
+                              ? ` • MRP: ${Number(b.unit_sale_price).toFixed(2)}`
+                              : "";
+                          return {
+                            value: String(b.id),
+                            label: `${b.batch_number} (${b.quantity}u, exp: ${b.expiry_date || "N/A"}${mrpPart})`,
+                          };
+                        }),
                         ...(it.unassigned_quantity > 0 || !(it.batches && it.batches.length)
                           ? [
                               {
@@ -1147,7 +1228,7 @@ export default function BarcodePos() {
 
                           {/* Product Info */}
                           <td className="py-2 px-3">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className={`font-bold text-xs ${isDark ? "text-white" : "text-slate-900"}`}>
                                 {it.product_name}
                               </span>
@@ -1156,13 +1237,54 @@ export default function BarcodePos() {
                                   FEFO
                                 </span>
                               )}
+                              {it.is_weight_barcode && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-500/20 text-amber-600 dark:text-amber-400 tracking-wide">
+                                  ⚖️ Scale Weight
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSubstituteTargetRow({
+                                    uid: it.uid,
+                                    id: it.product_id,
+                                    name: it.product_name,
+                                    formulation: it.formulation,
+                                    price: it.price,
+                                    quantity: it.total_stock,
+                                  })
+                                }
+                                className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold transition ${
+                                  Number(it.total_stock) <= 0
+                                    ? "bg-amber-500 text-white hover:bg-amber-600 animate-pulse"
+                                    : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25"
+                                }`}
+                                title="Find Generic / Salt Substitutes"
+                              >
+                                <ArrowsRightLeftIcon className="w-2.5 h-2.5" />
+                                <span>Substitutes</span>
+                              </button>
                             </div>
-                            <div className={`text-[10px] font-mono flex items-center gap-1.5 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                            <div className={`text-[10px] font-mono flex items-center gap-1.5 flex-wrap ${isDark ? "text-slate-400" : "text-slate-500"}`}>
                               <span>SKU: {it.product_code || "—"}</span>
                               {it.brand_name && (
                                 <>
                                   <span>•</span>
                                   <span>{it.brand_name}</span>
+                                </>
+                              )}
+                              {it.formulation && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-emerald-600 dark:text-emerald-400 font-sans font-medium">
+                                    {it.formulation}
+                                  </span>
+                                </>
+                              )}
+                              {it.rack && (
+                                <>
+                                  <span>•</span>
+                                  <span>Rack: {it.rack}</span>
                                 </>
                               )}
                               {it.pack_size > 1 && (
@@ -2008,6 +2130,14 @@ export default function BarcodePos() {
         onClose={() => setShareQuoteDraftId(null)}
         documentType="quotation"
         documentId={shareQuoteDraftId}
+      />
+
+      <SubstituteProductsModal
+        open={Boolean(substituteTargetRow)}
+        product={substituteTargetRow}
+        onClose={() => setSubstituteTargetRow(null)}
+        onSelectSubstitute={handleSelectSubstitute}
+        allowSwap={true}
       />
     </div>
   );

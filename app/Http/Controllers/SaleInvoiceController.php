@@ -37,21 +37,42 @@ class SaleInvoiceController extends Controller
 
         $actualApplied = $deltaUnits;
 
-        $batch = null;
+        $matchingBatches = collect();
         if ($batchNo !== '') {
-            $batch = app(\App\Services\SaleStockAvailability::class)->matchBatch(
+            $matchingBatches = app(\App\Services\SaleStockAvailability::class)->matchingBatches(
                 Batch::where('product_id', $productId)->orderBy('id')->lockForUpdate()->get(),
                 ['product_id' => $productId, 'batch_number' => $batchNo, 'expiry' => $expiry]
             );
         }
 
-        if ($batch) {
-            $before = $this->i($batch->quantity);
-            $after  = $before + $deltaUnits;
-            if ($after < 0) throw \Illuminate\Validation\ValidationException::withMessages(['items' => 'Selected batch has insufficient stock.']);
-            $actualApplied = $after - $before;
-            $batch->quantity = $after;
-            $batch->save();
+        if ($matchingBatches->isNotEmpty()) {
+            if ($deltaUnits < 0) {
+                $remainingToDeduct = abs($deltaUnits);
+                $totalAvailable = (int) $matchingBatches->sum('quantity');
+                if ($totalAvailable < $remainingToDeduct) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['items' => 'Selected batch has insufficient stock.']);
+                }
+                foreach ($matchingBatches as $batch) {
+                    if ($remainingToDeduct <= 0) {
+                        break;
+                    }
+                    $before = $this->i($batch->quantity);
+                    $deduct = min($before, $remainingToDeduct);
+                    if ($deduct > 0) {
+                        $batch->quantity = $before - $deduct;
+                        $batch->save();
+                        $remainingToDeduct -= $deduct;
+                    }
+                }
+                $actualApplied = $deltaUnits;
+            } else {
+                $batch = $matchingBatches->first();
+                $before = $this->i($batch->quantity);
+                $after  = $before + $deltaUnits;
+                $actualApplied = $after - $before;
+                $batch->quantity = $after;
+                $batch->save();
+            }
         }
 
         if ($product = Product::lockForUpdate()->find($productId)) {

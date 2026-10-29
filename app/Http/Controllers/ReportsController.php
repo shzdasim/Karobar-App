@@ -2544,4 +2544,91 @@ class ReportsController extends Controller
             ? $pdf->download('net-profit-report.pdf')
             : $pdf->stream('net-profit-report.pdf');
     }
+
+    /**
+     * GET /api/reports/tax-return
+     * Statutory Tax & GST / VAT Return Report (Output Tax vs. Input Tax Credit).
+     */
+    public function taxReturn(Request $req, \App\Services\AccountingService $accountingService)
+    {
+        $this->authorizeReportAction([
+            'report.net-profit.view',
+            'report.sale-detail.view',
+            'report.purchase-detail.view',
+            'account.view',
+        ]);
+
+        $from = $req->query('from', Carbon::now()->startOfMonth()->toDateString());
+        $to   = $req->query('to', Carbon::now()->toDateString());
+        if ($from > $to) {
+            [$from, $to] = [$to, $from];
+        }
+
+        $data = $accountingService->getTaxReport($from, $to, [
+            'tax_scope' => $req->query('tax_scope', 'all'),
+        ]);
+
+        return response()->json($data);
+    }
+
+    /**
+     * GET /api/reports/tax-return/pdf
+     */
+    public function taxReturnPdf(Request $req, \App\Services\AccountingService $accountingService)
+    {
+        $this->authorizeReportAction([
+            'report.net-profit.export',
+            'report.net-profit.view',
+            'report.sale-detail.view',
+            'account.view',
+        ]);
+
+        $data = $this->taxReturn($req, $accountingService)->getData(true);
+        $meta = [
+            'from'        => $data['period']['from'] ?? Carbon::now()->startOfMonth()->toDateString(),
+            'to'          => $data['period']['to'] ?? Carbon::now()->toDateString(),
+            'generatedAt' => now()->format('Y-m-d H:i'),
+        ];
+
+        $pdf = Pdf::loadView('reports.tax_return_pdf', [
+            'data' => $data,
+            'meta' => $meta,
+        ])->setPaper('a4', 'portrait');
+
+        return $req->boolean('download')
+            ? $pdf->download("statutory-tax-return-{$meta['from']}-to-{$meta['to']}.pdf")
+            : $pdf->stream("statutory-tax-return-{$meta['from']}-to-{$meta['to']}.pdf");
+    }
+
+    /**
+     * GET /api/reports/financial-statements/pdf
+     */
+    public function financialStatementsPdf(Request $req, \App\Services\AccountingService $accountingService)
+    {
+        $this->authorizeReportAction(['report.net-profit.export', 'report.net-profit.view', 'account.view']);
+
+        $from = $req->query('from', Carbon::now()->startOfMonth()->toDateString());
+        $to   = $req->query('to', Carbon::now()->toDateString());
+        if ($from > $to) {
+            [$from, $to] = [$to, $from];
+        }
+
+        $trialBalance = $accountingService->getTrialBalance($from, $to);
+        $balanceSheet = $accountingService->getBalanceSheet($to);
+        $meta = [
+            'from'        => $from,
+            'to'          => $to,
+            'generatedAt' => now()->format('Y-m-d H:i'),
+        ];
+
+        $pdf = Pdf::loadView('reports.financial_statements_pdf', [
+            'trialBalance' => $trialBalance,
+            'balanceSheet' => $balanceSheet,
+            'meta'         => $meta,
+        ])->setPaper('a4', 'portrait');
+
+        return $req->boolean('download')
+            ? $pdf->download("financial-statements-{$from}-to-{$to}.pdf")
+            : $pdf->stream("financial-statements-{$from}-to-{$to}.pdf");
+    }
 }

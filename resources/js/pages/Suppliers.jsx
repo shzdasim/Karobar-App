@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
+import Select from "react-select";
 import {
   MagnifyingGlassIcon,
   CheckCircleIcon,
@@ -29,7 +30,7 @@ import { getThemeButtonClasses } from "@/utils/buttonStyles";
 
 export default function Suppliers() {
   const [suppliers, setSuppliers] = useState([]);
-  const [form, setForm] = useState({ name: "", address: "", phone: "", email: "", credit_limit: "", credit_days: "", opening_balance: "" });
+  const [form, setForm] = useState({ name: "", address: "", phone: "", email: "", tax_number: "", tax_status: "unregistered", credit_limit: "", credit_days: "", opening_balance: "" });
   const [editingId, setEditingId] = useState(null);
 
   const [loading, setLoading] = useState(false);
@@ -172,7 +173,7 @@ export default function Suppliers() {
   };
 
   const resetForm = () => {
-    setForm({ name: "", address: "", phone: "", email: "", credit_limit: "", credit_days: "", opening_balance: "" });
+    setForm({ name: "", address: "", phone: "", email: "", tax_number: "", tax_status: "unregistered", credit_limit: "", credit_days: "", opening_balance: "" });
     setEditingId(null);
     setTimeout(() => nameRef.current?.focus(), 0);
   };
@@ -216,6 +217,8 @@ export default function Suppliers() {
       address: s.address || "",
       phone: s.phone || "",
       email: s.email || "",
+      tax_number: s.tax_number || "",
+      tax_status: s.tax_status || "unregistered",
       credit_limit: s.credit_limit ?? "",
       credit_days: s.credit_days ?? "",
     });
@@ -427,6 +430,72 @@ return (
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                   className="w-full h-9"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-medium mb-1">Tax Status</label>
+                  <Select
+                    value={
+                      [
+                        { value: "unregistered", label: "Unregistered" },
+                        { value: "registered", label: "Tax Registered" },
+                        { value: "exempt", label: "Tax Exempt" },
+                      ].find((o) => o.value === (form.tax_status || "unregistered"))
+                    }
+                    onChange={(opt) => setForm({ ...form, tax_status: opt?.value || "unregistered" })}
+                    options={[
+                      { value: "unregistered", label: "Unregistered" },
+                      { value: "registered", label: "Tax Registered" },
+                      { value: "exempt", label: "Tax Exempt" },
+                    ]}
+                    isSearchable={false}
+                    menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                    menuPosition="fixed"
+                    styles={{
+                      control: (base) => ({
+                        ...base,
+                        minHeight: "36px",
+                        height: "36px",
+                        fontSize: "12px",
+                        borderRadius: "6px",
+                        backgroundColor: isDark ? "rgba(51,65,85,0.7)" : "rgba(255,255,255,0.7)",
+                        borderColor: isDark ? "#475569" : "#d1d5db",
+                      }),
+                      singleValue: (base) => ({
+                        ...base,
+                        color: isDark ? "#e2e8f0" : "#1f2937",
+                      }),
+                      menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                      menu: (base) => ({
+                        ...base,
+                        fontSize: "12px",
+                        backgroundColor: isDark ? "#1e293b" : "#ffffff",
+                      }),
+                      option: (base, state) => ({
+                        ...base,
+                        backgroundColor: state.isSelected
+                          ? "#2563eb"
+                          : state.isFocused
+                          ? isDark
+                            ? "#334155"
+                            : "#eff6ff"
+                          : "transparent",
+                        color: state.isSelected ? "#fff" : isDark ? "#e2e8f0" : "#1e293b",
+                      }),
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">NTN / STRN / Tax ID</label>
+                  <GlassInput
+                    type="text"
+                    placeholder="Optional Tax Number"
+                    value={form.tax_number || ""}
+                    onChange={(e) => setForm({ ...form, tax_number: e.target.value })}
+                    className="w-full h-9"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2">

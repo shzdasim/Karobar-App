@@ -1,6 +1,7 @@
 // src/pages/products/index.jsx
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import axios from "axios";
+import Select from "react-select";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
@@ -549,23 +550,58 @@ useEffect(() => {
           </div>
 
           {/* Page size */}
-          <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 dark:border-slate-600 dark:bg-slate-700/40">
-            <label htmlFor="products-page-size" className="text-xs font-medium">Show</label>
-            <select
-              id="products-page-size"
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-              className="cursor-pointer rounded-md border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 focus:ring-2 focus:border-transparent dark:border-slate-600 dark:bg-slate-700 dark:text-gray-200"
-              style={{
-                '--tw-ring-color': themeColors.primary,
-                accentColor: themeColors.primary,
-              }}
-            >
-              <option value={10}>10</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-            </select>
+          <div className="flex items-center gap-2">
+            <label htmlFor="products-page-size" className="text-xs font-medium text-gray-600 dark:text-slate-300">
+              Show
+            </label>
+            <div className="w-24">
+              <Select
+                inputId="products-page-size"
+                options={[
+                  { value: 10, label: "10" },
+                  { value: 25, label: "25" },
+                  { value: 50, label: "50" },
+                  { value: 100, label: "100" },
+                ]}
+                value={{ value: pageSize, label: String(pageSize) }}
+                onChange={(opt) => setPageSize(Number(opt?.value || 25))}
+                isSearchable={false}
+                classNamePrefix="rs"
+                styles={{
+                  control: (base) => ({
+                    ...base,
+                    minHeight: "34px",
+                    height: "34px",
+                    borderRadius: 10,
+                    backgroundColor: "var(--color-surface)",
+                    borderColor: "var(--color-border)",
+                    fontSize: "12px",
+                  }),
+                  valueContainer: (base) => ({ ...base, padding: "0 8px" }),
+                  indicatorsContainer: (base) => ({ ...base, height: "34px" }),
+                  singleValue: (base) => ({ ...base, color: "var(--color-text-primary)" }),
+                  menuPortal: (base) => ({ ...base, zIndex: 50 }),
+                  menu: (base) => ({
+                    ...base,
+                    backgroundColor: "var(--color-surface)",
+                    borderRadius: 12,
+                    border: "1px solid var(--color-border)",
+                    overflow: "hidden",
+                    fontSize: "12px",
+                  }),
+                  option: (base, state) => ({
+                    ...base,
+                    backgroundColor:
+                      state.isSelected || state.isFocused
+                        ? "color-mix(in srgb, var(--color-primary) 15%, var(--color-surface))"
+                        : "var(--color-surface)",
+                    color: "var(--color-text-primary)",
+                    cursor: "pointer",
+                  }),
+                }}
+                menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+              />
+            </div>
           </div>
         </div>
 

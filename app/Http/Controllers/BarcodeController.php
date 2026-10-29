@@ -387,6 +387,10 @@ class BarcodeController extends Controller
                ->orderBy('id', 'asc');
         };
 
+        $isWeightBarcode = false;
+        $parsedQuantity = 1;
+        $parsedWeightGrams = null;
+
         if (!empty($productId)) {
             $product = Product::with([
                 'brand:id,name',
@@ -405,6 +409,38 @@ class BarcodeController extends Controller
                   ->orWhere('product_code', $code);
             })
             ->first();
+
+            // Weight-Embedded EAN-13 Barcode Parsing (Prefixes 20–29: 2P IIIII WWWWW C)
+            if (!$product && preg_match('/^(2[0-9])(\d{5})(\d{5})(\d)$/', $code, $m)) {
+                $prefix = $m[1];
+                $plu = $m[2];
+                $weightRaw = (int) $m[3];
+                $pluStripped = ltrim($plu, '0') ?: '0';
+                $candidates = array_values(array_unique([
+                    $plu,
+                    $pluStripped,
+                    'PRD-' . str_pad($pluStripped, 4, '0', STR_PAD_LEFT),
+                    'PRD-' . $plu,
+                    $prefix . $plu,
+                ]));
+
+                $product = Product::with([
+                    'brand:id,name',
+                    'category:id,name',
+                    'batches' => $batchQuery,
+                ])
+                ->where(function ($q) use ($candidates) {
+                    $q->whereIn('barcode', $candidates)
+                      ->orWhereIn('product_code', $candidates);
+                })
+                ->first();
+
+                if ($product) {
+                    $isWeightBarcode = true;
+                    $parsedWeightGrams = $weightRaw;
+                    $parsedQuantity = $weightRaw > 0 ? round($weightRaw / 1000, 3) : 1;
+                }
+            }
         }
 
         if (!$product) {
@@ -415,6 +451,44 @@ class BarcodeController extends Controller
                 'message' => "Product with {$identifier} not found",
             ], 404);
         }
+
+        $defaultUnitSalePrice = (float) ($product->unit_sale_price ?? 0);
+        $defaultPackSalePrice = (float) ($product->pack_sale_price ?? 0);
+        $defaultWsUnitPrice   = (float) ($product->whole_sale_unit_price ?? 0);
+        $defaultWsPackPrice   = (float) ($product->whole_sale_pack_price ?? 0);
+        $defaultUnitCost      = (float) ($product->unit_purchase_price ?? 0);
+
+        $formatBatchPayload = function ($b, bool $isFefo = false) use (
+            $defaultUnitSalePrice,
+            $defaultPackSalePrice,
+            $defaultWsUnitPrice,
+            $defaultWsPackPrice,
+            $defaultUnitCost
+        ) {
+            return [
+                'id'                    => $b->id,
+                'batch_number'          => $b->batch_number,
+                'expiry_date'           => $b->expiry_date,
+                'quantity'              => (int) $b->quantity,
+                'is_expired'            => $b->is_expired ?? false,
+                'is_fefo'               => $isFefo,
+                'unit_sale_price'       => $b->unit_sale_price !== null && (float) $b->unit_sale_price > 0
+                    ? (float) $b->unit_sale_price
+                    : $defaultUnitSalePrice,
+                'pack_sale_price'       => $b->pack_sale_price !== null && (float) $b->pack_sale_price > 0
+                    ? (float) $b->pack_sale_price
+                    : $defaultPackSalePrice,
+                'whole_sale_unit_price' => $b->whole_sale_unit_price !== null && (float) $b->whole_sale_unit_price > 0
+                    ? (float) $b->whole_sale_unit_price
+                    : $defaultWsUnitPrice,
+                'whole_sale_pack_price' => $b->whole_sale_pack_price !== null && (float) $b->whole_sale_pack_price > 0
+                    ? (float) $b->whole_sale_pack_price
+                    : $defaultWsPackPrice,
+                'unit_purchase_price'   => $b->unit_purchase_price !== null && (float) $b->unit_purchase_price > 0
+                    ? (float) $b->unit_purchase_price
+                    : $defaultUnitCost,
+            ];
+        };
 
         // Determine FEFO recommended batch
         $today = now()->toDateString();
@@ -431,59 +505,56 @@ class BarcodeController extends Controller
 
         $selectedBatch = null;
         if ($fefoBatch) {
-            $selectedBatch = [
-                'id' => $fefoBatch->id,
-                'batch_number' => $fefoBatch->batch_number,
-                'expiry_date' => $fefoBatch->expiry_date,
-                'quantity' => (int) $fefoBatch->quantity,
-                'is_expired' => $fefoBatch->is_expired ?? false,
-                'is_fefo' => true,
-            ];
+            $selectedBatch = $formatBatchPayload($fefoBatch, true);
         } elseif ($unbatchedQty > 0 || $batches->isEmpty()) {
             $selectedBatch = [
-                'id' => null,
-                'batch_number' => '',
-                'expiry_date' => null,
-                'quantity' => $unbatchedQty,
-                'is_expired' => false,
-                'is_unbatched' => true,
+                'id'                    => null,
+                'batch_number'          => '',
+                'expiry_date'           => null,
+                'quantity'              => $unbatchedQty,
+                'is_expired'            => false,
+                'is_unbatched'          => true,
+                'unit_sale_price'       => $defaultUnitSalePrice,
+                'pack_sale_price'       => $defaultPackSalePrice,
+                'whole_sale_unit_price' => $defaultWsUnitPrice,
+                'whole_sale_pack_price' => $defaultWsPackPrice,
+                'unit_purchase_price'   => $defaultUnitCost,
             ];
         } elseif ($batches->isNotEmpty()) {
-            $first = $batches->first();
-            $selectedBatch = [
-                'id' => $first->id,
-                'batch_number' => $first->batch_number,
-                'expiry_date' => $first->expiry_date,
-                'quantity' => (int) $first->quantity,
-                'is_expired' => $first->is_expired ?? false,
-                'is_fefo' => false,
-            ];
+            $selectedBatch = $formatBatchPayload($batches->first(), false);
         }
+
+        $effectiveUnitSalePrice = ($selectedBatch && !empty($selectedBatch['unit_sale_price']) && $selectedBatch['unit_sale_price'] > 0)
+            ? (float) $selectedBatch['unit_sale_price']
+            : $defaultUnitSalePrice;
 
         return response()->json([
             'found' => true,
+            'is_weight_barcode' => $isWeightBarcode,
+            'parsed_quantity'   => $parsedQuantity,
+            'weight_grams'      => $parsedWeightGrams,
             'product' => [
-                'id' => $product->id,
-                'name' => $product->name,
-                'product_code' => $product->product_code,
-                'barcode' => $product->barcode,
-                'pack_size' => (int) ($product->pack_size ?? 1),
-                'unit_sale_price' => (float) ($product->unit_sale_price ?? 0),
-                'whole_sale_unit_price' => (float) ($product->whole_sale_unit_price ?? 0),
-                'quantity' => $totalProductQty,
-                'max_discount' => (float) ($product->max_discount ?? 100),
-                'is_narcotic' => (bool) ($product->is_narcotic ?? false),
-                'brand' => $product->brand,
-                'category' => $product->category,
-                'unassigned_quantity' => $unbatchedQty,
-                'selected_batch' => $selectedBatch,
-                'batches' => $batches->map(fn ($b) => [
-                    'id' => $b->id,
-                    'batch_number' => $b->batch_number,
-                    'expiry_date' => $b->expiry_date,
-                    'quantity' => (int) $b->quantity,
-                    'is_expired' => $b->is_expired ?? false,
-                ]),
+                'id'                        => $product->id,
+                'name'                      => $product->name,
+                'product_code'              => $product->product_code,
+                'barcode'                   => $product->barcode,
+                'formulation'               => $product->formulation,
+                'rack'                      => $product->rack,
+                'pack_size'                 => (int) ($product->pack_size ?? 1),
+                'unit_sale_price'           => $effectiveUnitSalePrice,
+                'product_unit_sale_price'   => $defaultUnitSalePrice,
+                'whole_sale_unit_price'     => (float) ($product->whole_sale_unit_price ?? 0),
+                'quantity'                  => $totalProductQty,
+                'max_discount'              => (float) ($product->max_discount ?? 100),
+                'is_narcotic'               => (bool) ($product->is_narcotic ?? ($product->narcotic === 'yes')),
+                'brand'                     => $product->brand,
+                'category'                  => $product->category,
+                'unassigned_quantity'       => $unbatchedQty,
+                'is_weight_barcode'         => $isWeightBarcode,
+                'parsed_quantity'           => $parsedQuantity,
+                'weight_grams'              => $parsedWeightGrams,
+                'selected_batch'            => $selectedBatch,
+                'batches'                   => $batches->map(fn ($b) => $formatBatchPayload($b, $fefoBatch && $b->id === $fefoBatch->id)),
             ],
         ]);
     }

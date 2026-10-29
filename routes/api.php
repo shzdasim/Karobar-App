@@ -4,6 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\MeController;
 use App\Http\Controllers\AccountController;
+use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BatchController;
 use App\Http\Controllers\BatchExpiryController;
@@ -35,6 +36,7 @@ use App\Http\Controllers\SaleInvoiceController;
 use App\Http\Controllers\SaleReturnController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\StockAdjustmentController;
+use App\Http\Controllers\StorageLocationController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\SupplierImportController;
 use App\Http\Controllers\SupplierLedgerController;
@@ -139,12 +141,23 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/suppliers/{supplier}/credit-summary', [SupplierController::class, 'creditSummary']);
     Route::apiResource('suppliers', SupplierController::class);
 
+    // Storage Locations (Shop Counter, Main Godown, Cold Fridge, etc.)
+    Route::get('storage-locations',                       [StorageLocationController::class, 'index']);
+    Route::post('storage-locations',                      [StorageLocationController::class, 'store']);
+    Route::put('storage-locations/{storageLocation}',     [StorageLocationController::class, 'update']);
+    Route::delete('storage-locations/{storageLocation}',  [StorageLocationController::class, 'destroy']);
+
     // Products & batches
     Route::get('products/new-code',                [ProductController::class, 'generateNewCode']);
     Route::get('products/{product}/batches',      [BatchController::class, 'index']);
     Route::post('products/{product}/batches',     [BatchController::class, 'store']);
     Route::put('batches/{batch}',                 [BatchController::class, 'update']);
+    Route::post('batches/{batch}/move-location',  [BatchController::class, 'moveLocation']);
     Route::delete('batches/{batch}',              [BatchController::class, 'destroy']);
+    Route::get('products/{product}/substitutes',  [ProductController::class, 'substitutes']);
+    Route::get('products/{product}/suppliers',    [ProductController::class, 'getSuppliers']);
+    Route::post('products/{product}/suppliers',   [ProductController::class, 'saveSupplier']);
+    Route::delete('products/{product}/suppliers/{supplierId}', [ProductController::class, 'removeSupplier']);
     Route::get('products/available-quantity',     [ProductController::class, 'availableQuantity']);
     Route::get('products/{product}/available-quantity', [ProductController::class, 'availableQuantity']);
     Route::get('/products/search',                [ProductController::class, 'search']);
@@ -207,6 +220,19 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('accounts/{id}/transactions',      [AccountController::class, 'transactions']);
     Route::post('accounts/transfer',              [AccountController::class, 'transfer']);
     Route::post('accounts/{id}/adjust',           [AccountController::class, 'adjust']);
+
+    // Double-Entry Accounting, Chart of Accounts, Journal Vouchers & Statutory Tax Rates
+    Route::get('accounting/overview',                               [AccountingController::class, 'overview']);
+    Route::get('accounting/chart-of-accounts',                      [AccountingController::class, 'chartOfAccounts']);
+    Route::post('accounting/chart-of-accounts',                     [AccountingController::class, 'storeAccount']);
+    Route::put('accounting/chart-of-accounts/{chartOfAccount}',     [AccountingController::class, 'updateAccount']);
+    Route::get('accounting/journal-entries',                        [AccountingController::class, 'journalEntries']);
+    Route::post('accounting/journal-entries',                       [AccountingController::class, 'storeJournalEntry']);
+    Route::post('accounting/journal-entries/{journalEntry}/reverse',[AccountingController::class, 'reverseJournalEntry']);
+    Route::get('accounting/tax-rates',                              [AccountingController::class, 'taxRates']);
+    Route::post('accounting/tax-rates',                             [AccountingController::class, 'storeTaxRate']);
+    Route::put('accounting/tax-rates/{taxRate}',                    [AccountingController::class, 'updateTaxRate']);
+    Route::delete('accounting/tax-rates/{taxRate}',                 [AccountingController::class, 'destroyTaxRate']);
 
     // Operating Expenses & Categories
     Route::get('expenses/summary',                [ExpenseController::class, 'summary']);
@@ -283,6 +309,9 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/reports/reorder/pdf',             [ReportsController::class, 'reorderReportPdf']);
     Route::get('/reports/net-profit',              [ReportsController::class, 'netProfit']);
     Route::get('/reports/net-profit/pdf',          [ReportsController::class, 'netProfitPdf']);
+    Route::get('/reports/tax-return',              [ReportsController::class, 'taxReturn']);
+    Route::get('/reports/tax-return/pdf',          [ReportsController::class, 'taxReturnPdf']);
+    Route::get('/reports/financial-statements/pdf',[ReportsController::class, 'financialStatementsPdf']);
     Route::put('/sale-invoices/{saleInvoice}/meta',[SaleInvoiceController::class, 'updateMeta']);
 
 

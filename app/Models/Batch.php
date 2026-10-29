@@ -11,6 +11,25 @@ class Batch extends Model
         'batch_number',
         'expiry_date',
         'quantity',
+        'storage_location_id',
+        'rack',
+        'pack_purchase_price',
+        'unit_purchase_price',
+        'pack_sale_price',
+        'unit_sale_price',
+        'whole_sale_pack_price',
+        'whole_sale_unit_price',
+    ];
+
+    protected $casts = [
+        'quantity'              => 'integer',
+        'storage_location_id'   => 'integer',
+        'pack_purchase_price'   => 'float',
+        'unit_purchase_price'   => 'float',
+        'pack_sale_price'       => 'float',
+        'unit_sale_price'       => 'float',
+        'whole_sale_pack_price' => 'float',
+        'whole_sale_unit_price' => 'float',
     ];
 
     protected $appends = [
@@ -73,5 +92,10 @@ class Batch extends Model
     public function product()
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function storageLocation()
+    {
+        return $this->belongsTo(StorageLocation::class, 'storage_location_id');
     }
 }

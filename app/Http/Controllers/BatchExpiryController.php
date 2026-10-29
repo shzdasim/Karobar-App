@@ -53,6 +53,7 @@ class BatchExpiryController extends Controller
         $supplierId = $request->query('supplier_id');
         $brandId = $request->query('brand_id');
         $categoryId = $request->query('category_id');
+        $storageLocationId = $request->query('storage_location_id');
         $hasCustom = $request->query('has_custom_warning');
         $sortBy = $request->query('sort_by', 'expiry_date');
         $sortDir = strtolower($request->query('sort_dir', 'asc')) === 'desc' ? 'desc' : 'asc';
@@ -61,6 +62,8 @@ class BatchExpiryController extends Controller
 
         $today = now()->startOfDay();
         $todayStr = $today->toDateString();
+        $hasStorageLocations = \Illuminate\Support\Facades\Schema::hasTable('storage_locations')
+            && \Illuminate\Support\Facades\Schema::hasColumn('batches', 'storage_location_id');
 
         // Base query: only batches with quantity > 0 and expiry_date set
         $query = DB::table('batches as b')
@@ -71,12 +74,20 @@ class BatchExpiryController extends Controller
             ->whereNotNull('b.expiry_date')
             ->where('b.quantity', '>', 0);
 
+        if ($hasStorageLocations) {
+            $query->leftJoin('storage_locations as sl', 'sl.id', '=', 'b.storage_location_id');
+        }
+
         if ($search !== '') {
-            $query->where(function ($q) use ($search) {
+            $query->where(function ($q) use ($search, $hasStorageLocations) {
                 $q->where('p.name', 'like', "%{$search}%")
                   ->orWhere('p.product_code', 'like', "%{$search}%")
                   ->orWhere('p.barcode', 'like', "%{$search}%")
                   ->orWhere('b.batch_number', 'like', "%{$search}%");
+                if ($hasStorageLocations) {
+                    $q->orWhere('b.rack', 'like', "%{$search}%")
+                      ->orWhere('sl.name', 'like', "%{$search}%");
+                }
             });
         }
 
@@ -89,13 +100,16 @@ class BatchExpiryController extends Controller
         if (!empty($categoryId)) {
             $query->where('p.category_id', $categoryId);
         }
+        if ($hasStorageLocations && !empty($storageLocationId)) {
+            $query->where('b.storage_location_id', $storageLocationId);
+        }
         if ($hasCustom === '1' || $hasCustom === 'true') {
             $query->whereNotNull('p.expiry_warning_days');
         } elseif ($hasCustom === '0' || $hasCustom === 'false') {
             $query->whereNull('p.expiry_warning_days');
         }
 
-        $allRows = $query->select(
+        $selectColumns = [
             'b.id as batch_id',
             'b.batch_number',
             'b.expiry_date',
@@ -110,6 +124,7 @@ class BatchExpiryController extends Controller
             'p.pack_purchase_price',
             'p.unit_sale_price',
             'p.avg_price',
+            'p.rack as product_rack',
             'p.expiry_warning_days as product_warning_days',
             'p.supplier_id',
             'p.brand_id',
@@ -117,8 +132,18 @@ class BatchExpiryController extends Controller
             DB::raw('COALESCE(s.name, "") as supplier_name'),
             DB::raw('COALESCE(s.phone, "") as supplier_phone'),
             DB::raw('COALESCE(br.name, "") as brand_name'),
-            DB::raw('COALESCE(c.name, "") as category_name')
-        )->get();
+            DB::raw('COALESCE(c.name, "") as category_name'),
+        ];
+
+        if ($hasStorageLocations) {
+            $selectColumns[] = 'b.storage_location_id';
+            $selectColumns[] = 'b.rack as batch_rack';
+            $selectColumns[] = DB::raw('COALESCE(sl.name, "") as storage_location_name');
+            $selectColumns[] = DB::raw('COALESCE(sl.code, "") as storage_location_code');
+            $selectColumns[] = DB::raw('COALESCE(sl.type, "shop") as storage_location_type');
+        }
+
+        $allRows = $query->select(...$selectColumns)->get();
 
         // Process rows in memory for accurate date math, financial value, and summary KPIs
         $summary = [

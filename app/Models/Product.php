@@ -34,8 +34,14 @@ class Product extends Model
         'brand_id',
         'supplier_id',
         'rack',
+        'storage_location_id',
         'barcode',
     ];
+
+    public function storageLocation()
+    {
+        return $this->belongsTo(StorageLocation::class, 'storage_location_id');
+    }
 
     public function brand()
     {
@@ -50,6 +56,26 @@ class Product extends Model
     public function supplier()
     {
         return $this->belongsTo(Supplier::class);
+    }
+
+    public function productSuppliers()
+    {
+        return $this->hasMany(ProductSupplier::class);
+    }
+
+    public function suppliers()
+    {
+        return $this->belongsToMany(Supplier::class, 'product_suppliers')
+            ->withPivot([
+                'id',
+                'supplier_sku',
+                'last_purchase_price',
+                'lead_time_days',
+                'min_order_qty',
+                'is_preferred',
+                'notes',
+            ])
+            ->withTimestamps();
     }
 
     public function batches()

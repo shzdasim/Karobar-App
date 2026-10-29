@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\Batch;
 use App\Models\Product;
 use App\Models\SaleInvoiceItem;
+use App\Models\StorageLocation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -14,7 +16,8 @@ class BatchController extends Controller
 {
     /**
      * List batches for a product, sorted using FEFO (First-Expiry, First-Out).
-     * Non-expired batches with stock appear first sorted by earliest expiry date.
+     * Non-expired batches with stock appear first sorted by earliest expiry date,
+     * preferring Shop Counter locations over Godown locations when expiry dates match.
      * Also returns X-Unbatched-Units, X-Batched-Units, and X-Total-Units in headers.
      */
     public function index(Request $request, Product $product)
@@ -49,16 +52,36 @@ class BatchController extends Controller
         }
 
         $today = now()->toDateString();
+        $hasLocations = Schema::hasTable('storage_locations') && Schema::hasColumn('batches', 'storage_location_id');
 
-        $batches = $product->batches()
+        $query = $product->batches();
+        if ($hasLocations) {
+            $query->with('storageLocation:id,code,name,type,default_rack');
+        }
+
+        if ($request->filled('storage_location_id')) {
+            $query->where('storage_location_id', (int) $request->query('storage_location_id'));
+        }
+
+        $batches = $query
             ->orderByRaw("CASE WHEN expiry_date IS NOT NULL AND expiry_date >= '{$today}' THEN 0 ELSE 1 END")
             ->orderBy('expiry_date', 'asc')
             ->orderBy('id', 'asc')
             ->get();
 
+        // When expiry dates are equal, prefer 'shop' storage locations before 'godown' locations for FEFO
+        if ($hasLocations) {
+            $batches = $batches->sortBy([
+                fn ($b) => ($b->expiry_date && substr((string) $b->expiry_date, 0, 10) >= $today) ? 0 : 1,
+                fn ($b) => (string) ($b->expiry_date ?? '9999-12-31'),
+                fn ($b) => ($b->storageLocation?->type === 'shop') ? 0 : (($b->storageLocation?->type === 'cold_storage') ? 1 : 2),
+                fn ($b) => (int) $b->id,
+            ])->values();
+        }
+
         // Flag the first eligible FEFO batch (non-expired with positive stock)
         $fefoRecommendedFound = false;
-        $batches = $batches->map(function ($batch) use (&$fefoRecommendedFound) {
+        $batches = $batches->map(function ($batch) use (&$fefoRecommendedFound, $product) {
             $isEligibleFefo = !$batch->is_expired && (int)$batch->quantity > 0;
             if ($isEligibleFefo && !$fefoRecommendedFound) {
                 $batch->is_fefo_recommended = true;
@@ -66,20 +89,46 @@ class BatchController extends Controller
             } else {
                 $batch->is_fefo_recommended = false;
             }
+            if ($batch->unit_sale_price === null && $product->unit_sale_price !== null) {
+                $batch->unit_sale_price = (float) $product->unit_sale_price;
+            }
+            if ($batch->pack_sale_price === null && $product->pack_sale_price !== null) {
+                $batch->pack_sale_price = (float) $product->pack_sale_price;
+            }
+            if ($batch->unit_purchase_price === null && $product->unit_purchase_price !== null) {
+                $batch->unit_purchase_price = (float) $product->unit_purchase_price;
+            }
+            if ($batch->pack_purchase_price === null && $product->pack_purchase_price !== null) {
+                $batch->pack_purchase_price = (float) $product->pack_purchase_price;
+            }
+            if ($batch->whole_sale_unit_price === null && $product->whole_sale_unit_price !== null) {
+                $batch->whole_sale_unit_price = (float) $product->whole_sale_unit_price;
+            }
+            if ($batch->whole_sale_pack_price === null && $product->whole_sale_pack_price !== null) {
+                $batch->whole_sale_pack_price = (float) $product->whole_sale_pack_price;
+            }
             return $batch;
         });
 
         $totalProductQty = (int) ($product->quantity ?? 0);
-        $totalBatchedQty = (int) $batches->sum('quantity');
+        $totalBatchedQty = (int) $product->batches()->sum('quantity');
         $unbatchedQty = max(0, $totalProductQty - $totalBatchedQty);
 
         // Include virtual unbatched item in the list only when caller explicitly requests it (e.g. POS sale forms)
         if ($request->boolean('include_unbatched') && $unbatchedQty > 0) {
             $unbatchedItem = new Batch([
-                'product_id'   => $product->id,
-                'batch_number' => '',
-                'expiry_date'  => null,
-                'quantity'     => $unbatchedQty,
+                'product_id'            => $product->id,
+                'batch_number'          => '',
+                'expiry_date'           => null,
+                'quantity'              => $unbatchedQty,
+                'storage_location_id'   => $product->storage_location_id,
+                'rack'                  => $product->rack,
+                'unit_sale_price'       => $product->unit_sale_price,
+                'pack_sale_price'       => $product->pack_sale_price,
+                'unit_purchase_price'   => $product->unit_purchase_price,
+                'pack_purchase_price'   => $product->pack_purchase_price,
+                'whole_sale_unit_price' => $product->whole_sale_unit_price,
+                'whole_sale_pack_price' => $product->whole_sale_pack_price,
             ]);
             $unbatchedItem->id = null;
             $unbatchedItem->is_unbatched = true;
@@ -103,25 +152,45 @@ class BatchController extends Controller
         $this->authorize('update', $product);
 
         $validated = $request->validate([
-            'batch_number' => ['required', 'string', 'max:100'],
-            'expiry_date'  => ['required', 'date'],
-            'quantity'     => ['nullable', 'integer', 'min:0'],
+            'batch_number'          => ['required', 'string', 'max:100'],
+            'expiry_date'           => ['required', 'date'],
+            'quantity'              => ['nullable', 'integer', 'min:0'],
+            'storage_location_id'   => ['nullable', 'integer', 'exists:storage_locations,id'],
+            'rack'                  => ['nullable', 'string', 'max:100'],
+            'unit_sale_price'       => ['nullable', 'numeric', 'min:0'],
+            'pack_sale_price'       => ['nullable', 'numeric', 'min:0'],
+            'unit_purchase_price'   => ['nullable', 'numeric', 'min:0'],
+            'pack_purchase_price'   => ['nullable', 'numeric', 'min:0'],
+            'whole_sale_unit_price' => ['nullable', 'numeric', 'min:0'],
+            'whole_sale_pack_price' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $batchNumber = trim($validated['batch_number']);
         $expiryDate = substr(trim($validated['expiry_date']), 0, 10);
         $qty = (int)($validated['quantity'] ?? 0);
 
-        return DB::transaction(function () use ($product, $batchNumber, $expiryDate, $qty) {
+        return DB::transaction(function () use ($product, $batchNumber, $expiryDate, $qty, $validated) {
             $product = Product::lockForUpdate()->findOrFail($product->id);
             $currentTotal = (int) ($product->quantity ?? 0);
             $alreadyBatched = (int) $product->batches()->sum('quantity');
 
+            $defaultLocationId = StorageLocation::where('is_default', true)->value('id')
+                ?? StorageLocation::orderBy('id')->value('id');
+            $locationId = array_key_exists('storage_location_id', $validated) && $validated['storage_location_id'] !== null
+                ? (int) $validated['storage_location_id']
+                : ($product->storage_location_id ?? $defaultLocationId);
+            $rack = array_key_exists('rack', $validated)
+                ? (trim((string) $validated['rack']) ?: null)
+                : $product->rack;
+
             /** @var Batch|null $existing */
-            $existing = Batch::lockForUpdate()
+            $existingQuery = Batch::lockForUpdate()
                 ->where('product_id', $product->id)
-                ->where('batch_number', $batchNumber)
-                ->first();
+                ->where('batch_number', $batchNumber);
+            if ($locationId !== null) {
+                $existingQuery->where('storage_location_id', $locationId);
+            }
+            $existing = $existingQuery->first();
 
             $existingBatchQty = $existing ? (int)$existing->quantity : 0;
             // Available unassigned units that have no batch assigned
@@ -134,18 +203,42 @@ class BatchController extends Controller
                 ]);
             }
 
+            $priceFields = [
+                'unit_sale_price',
+                'pack_sale_price',
+                'unit_purchase_price',
+                'pack_purchase_price',
+                'whole_sale_unit_price',
+                'whole_sale_pack_price',
+            ];
+
             if ($existing) {
                 $existing->expiry_date = $expiryDate;
                 $existing->quantity = $qty;
+                $existing->storage_location_id = $locationId;
+                $existing->rack = $rack;
+                foreach ($priceFields as $f) {
+                    if (array_key_exists($f, $validated) && $validated[$f] !== null) {
+                        $existing->{$f} = (float) $validated[$f];
+                    }
+                }
                 $existing->save();
                 $batch = $existing;
             } else {
-                $batch = Batch::create([
-                    'product_id'   => $product->id,
-                    'batch_number' => $batchNumber,
-                    'expiry_date'  => $expiryDate,
-                    'quantity'     => $qty,
-                ]);
+                $createPayload = [
+                    'product_id'          => $product->id,
+                    'batch_number'        => $batchNumber,
+                    'expiry_date'         => $expiryDate,
+                    'quantity'            => $qty,
+                    'storage_location_id' => $locationId,
+                    'rack'                => $rack,
+                ];
+                foreach ($priceFields as $f) {
+                    $createPayload[$f] = array_key_exists($f, $validated) && $validated[$f] !== null
+                        ? (float) $validated[$f]
+                        : $product->{$f};
+                }
+                $batch = Batch::create($createPayload);
             }
 
             // The product overall quantity is kept intact, taking batch quantity from unassigned stock.
@@ -156,7 +249,7 @@ class BatchController extends Controller
                 $product->save();
             }
 
-            return response()->json($batch->fresh(), 201);
+            return response()->json($batch->fresh(['storageLocation']), 201);
         });
     }
 
@@ -167,18 +260,35 @@ class BatchController extends Controller
     {
         $this->authorize('update', $batch->product);
 
+        $targetLocationId = $request->has('storage_location_id')
+            ? ($request->input('storage_location_id') !== null && $request->input('storage_location_id') !== ''
+                ? (int) $request->input('storage_location_id')
+                : null)
+            : $batch->storage_location_id;
+
         $validated = $request->validate([
             'batch_number' => [
                 'required',
                 'string',
                 'max:100',
-                Rule::unique('batches')->where('product_id', $batch->product_id)->ignore($batch->id),
+                Rule::unique('batches')
+                    ->where('product_id', $batch->product_id)
+                    ->where('storage_location_id', $targetLocationId)
+                    ->ignore($batch->id),
             ],
-            'expiry_date'  => ['required', 'date'],
-            'quantity'     => ['required', 'integer', 'min:0'],
+            'expiry_date'           => ['required', 'date'],
+            'quantity'              => ['required', 'integer', 'min:0'],
+            'storage_location_id'   => ['nullable', 'integer', 'exists:storage_locations,id'],
+            'rack'                  => ['nullable', 'string', 'max:100'],
+            'unit_sale_price'       => ['nullable', 'numeric', 'min:0'],
+            'pack_sale_price'       => ['nullable', 'numeric', 'min:0'],
+            'unit_purchase_price'   => ['nullable', 'numeric', 'min:0'],
+            'pack_purchase_price'   => ['nullable', 'numeric', 'min:0'],
+            'whole_sale_unit_price' => ['nullable', 'numeric', 'min:0'],
+            'whole_sale_pack_price' => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        return DB::transaction(function () use ($batch, $validated) {
+        return DB::transaction(function () use ($batch, $validated, $targetLocationId) {
             $product = Product::lockForUpdate()->findOrFail($batch->product_id);
             $currentTotal = (int) ($product->quantity ?? 0);
             $otherBatched = (int) $product->batches()->where('id', '!=', $batch->id)->sum('quantity');
@@ -194,6 +304,22 @@ class BatchController extends Controller
             $batch->batch_number = trim($validated['batch_number']);
             $batch->expiry_date  = substr(trim($validated['expiry_date']), 0, 10);
             $batch->quantity     = $newQty;
+            $batch->storage_location_id = $targetLocationId;
+            if (array_key_exists('rack', $validated)) {
+                $batch->rack = trim((string) $validated['rack']) ?: null;
+            }
+            foreach ([
+                'unit_sale_price',
+                'pack_sale_price',
+                'unit_purchase_price',
+                'pack_purchase_price',
+                'whole_sale_unit_price',
+                'whole_sale_pack_price',
+            ] as $f) {
+                if (array_key_exists($f, $validated) && $validated[$f] !== null) {
+                    $batch->{$f} = (float) $validated[$f];
+                }
+            }
             $batch->save();
 
             $newBatchedSum = (int) $product->batches()->sum('quantity');
@@ -202,7 +328,133 @@ class BatchController extends Controller
                 $product->save();
             }
 
-            return response()->json($batch->fresh(), 200);
+            return response()->json($batch->fresh(['storageLocation']), 200);
+        });
+    }
+
+    /**
+     * Move or split batch units from its current storage location to another storage location
+     * (e.g., move 50 units from Main Godown to Shop Counter).
+     * Preserves product total stock and copies all batch pricing & expiry fields.
+     */
+    public function moveLocation(Request $request, Batch $batch)
+    {
+        $user = $request->user();
+        if (
+            !$user
+            || (
+                !$user->hasRole(['Admin', 'admin', 'super-admin'])
+                && !$user->can('product.update')
+                && !$user->can('batch-expiry.update')
+                && !$user->can('stock-adjustment.create')
+            )
+        ) {
+            abort(403, 'This action is unauthorized.');
+        }
+
+        $validated = $request->validate([
+            'to_storage_location_id' => ['required', 'integer', 'exists:storage_locations,id'],
+            'quantity'               => ['required', 'integer', 'min:1'],
+            'rack'                   => ['nullable', 'string', 'max:100'],
+        ]);
+
+        return DB::transaction(function () use ($batch, $validated) {
+            $sourceBatch = Batch::lockForUpdate()->findOrFail($batch->id);
+            $sourceQty = (int) ($sourceBatch->quantity ?? 0);
+            $moveQty = (int) $validated['quantity'];
+            $toLocationId = (int) $validated['to_storage_location_id'];
+            $toLocation = StorageLocation::findOrFail($toLocationId);
+            $targetRack = array_key_exists('rack', $validated) && trim((string) $validated['rack']) !== ''
+                ? trim((string) $validated['rack'])
+                : ($toLocation->default_rack ?? $sourceBatch->rack);
+
+            if ($moveQty > $sourceQty) {
+                throw ValidationException::withMessages([
+                    'quantity' => ["Cannot move {$moveQty} units. Only {$sourceQty} units are available in this batch location."],
+                ]);
+            }
+
+            // If moving to the same location, just update rack
+            if ((int) $sourceBatch->storage_location_id === $toLocationId) {
+                $sourceBatch->rack = $targetRack;
+                $sourceBatch->save();
+
+                return response()->json([
+                    'message'      => 'Batch rack/location updated.',
+                    'source_batch' => $sourceBatch->fresh(['storageLocation']),
+                    'target_batch' => $sourceBatch->fresh(['storageLocation']),
+                ]);
+            }
+
+            // Check if a batch row with the same batch_number already exists at the destination location
+            $targetBatch = Batch::lockForUpdate()
+                ->where('product_id', $sourceBatch->product_id)
+                ->where('batch_number', $sourceBatch->batch_number)
+                ->where('storage_location_id', $toLocationId)
+                ->where('id', '!=', $sourceBatch->id)
+                ->first();
+
+            if ($targetBatch) {
+                $targetBatch->quantity = (int) $targetBatch->quantity + $moveQty;
+                if ($targetRack !== null) {
+                    $targetBatch->rack = $targetRack;
+                }
+                $targetBatch->save();
+
+                $sourceBatch->quantity = $sourceQty - $moveQty;
+                if ($sourceBatch->quantity <= 0) {
+                    $sourceBatch->delete();
+                    $sourceBatchResult = null;
+                } else {
+                    $sourceBatch->save();
+                    $sourceBatchResult = $sourceBatch->fresh(['storageLocation']);
+                }
+
+                return response()->json([
+                    'message'      => "Moved {$moveQty} units to {$toLocation->name}.",
+                    'source_batch' => $sourceBatchResult,
+                    'target_batch' => $targetBatch->fresh(['storageLocation']),
+                ]);
+            }
+
+            // Destination location does not yet have a row for this batch
+            if ($moveQty === $sourceQty) {
+                // Full move: simply reassign location & rack on existing row
+                $sourceBatch->storage_location_id = $toLocationId;
+                $sourceBatch->rack = $targetRack;
+                $sourceBatch->save();
+
+                return response()->json([
+                    'message'      => "Moved all {$moveQty} units to {$toLocation->name}.",
+                    'source_batch' => null,
+                    'target_batch' => $sourceBatch->fresh(['storageLocation']),
+                ]);
+            }
+
+            // Partial move: split into source and new destination batch row
+            $sourceBatch->quantity = $sourceQty - $moveQty;
+            $sourceBatch->save();
+
+            $newTargetBatch = Batch::create([
+                'product_id'            => $sourceBatch->product_id,
+                'batch_number'          => $sourceBatch->batch_number,
+                'expiry_date'           => $sourceBatch->expiry_date,
+                'quantity'              => $moveQty,
+                'storage_location_id'   => $toLocationId,
+                'rack'                  => $targetRack,
+                'pack_purchase_price'   => $sourceBatch->pack_purchase_price,
+                'unit_purchase_price'   => $sourceBatch->unit_purchase_price,
+                'pack_sale_price'       => $sourceBatch->pack_sale_price,
+                'unit_sale_price'       => $sourceBatch->unit_sale_price,
+                'whole_sale_pack_price' => $sourceBatch->whole_sale_pack_price,
+                'whole_sale_unit_price' => $sourceBatch->whole_sale_unit_price,
+            ]);
+
+            return response()->json([
+                'message'      => "Split and moved {$moveQty} units to {$toLocation->name}.",
+                'source_batch' => $sourceBatch->fresh(['storageLocation']),
+                'target_batch' => $newTargetBatch->fresh(['storageLocation']),
+            ]);
         });
     }
 

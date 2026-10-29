@@ -67,6 +67,8 @@ const CreateStockDisposal = lazy(() => import("../pages/StockDisposals/Create.js
 // Financial Accounts & Payment Vouchers
 const AccountsPage = lazy(() => import("../pages/Accounts/index.jsx"));
 const PaymentsPage = lazy(() => import("../pages/Payments/index.jsx"));
+const AccountingPage = lazy(() => import("../pages/Accounting/index.jsx"));
+const TaxReturnReport = lazy(() => import("../pages/Reports/TaxReturnReport.jsx"));
 // Cash Drawer
 const CashDrawerPage = lazy(() => import("../pages/CashDrawer/index.jsx"));
 const SupplierLedgerPage = lazy(() => import("../pages/Ledger/SupplierLedgerPage.jsx"));
@@ -574,6 +576,7 @@ export default function AppRoutes() {
       <Route path="reports/outstanding-aging" element={<ProtectedRoute><DashboardLayout><MissingReports type="outstanding-aging" /></DashboardLayout></ProtectedRoute>} />
       <Route path="reports/reorder" element={<ProtectedRoute><DashboardLayout><MissingReports type="reorder" /></DashboardLayout></ProtectedRoute>} />
       <Route path="reports/net-profit" element={<ProtectedRoute><DashboardLayout><NetProfitReport /></DashboardLayout></ProtectedRoute>} />
+      <Route path="reports/tax-return" element={<ProtectedRoute><DashboardLayout><TaxReturnReport /></DashboardLayout></ProtectedRoute>} />
       
       {/* Operating Expenses */}
       <Route path="expenses" element={<ProtectedRoute><DashboardLayout><ExpensesIndex /></DashboardLayout></ProtectedRoute>} />
@@ -721,6 +724,17 @@ export default function AppRoutes() {
         <ProtectedRoute>
           <DashboardLayout>
             <AccountsPage />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      {/* Double-Entry Accounting & General Ledger */}
+      <Route
+      path="/accounting"
+      element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <AccountingPage />
           </DashboardLayout>
         </ProtectedRoute>
       }

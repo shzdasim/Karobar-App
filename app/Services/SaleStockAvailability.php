@@ -139,10 +139,12 @@ class SaleStockAvailability
                     }
                 }
 
-                $batchRequested[$batch->id] = ($batchRequested[$batch->id] ?? 0) + $rowUnits;
-                $availableBatchQty = (int) $batch->quantity + ($batchRestored[$batch->id] ?? 0);
-                if ($batchRequested[$batch->id] > $availableBatchQty) {
-                    throw ValidationException::withMessages(["items.$index.quantity" => "Insufficient stock in batch {$batch->batch_number} for {$product->name}. Available: $availableBatchQty units; requested: {$batchRequested[$batch->id]} units."]);
+                $matchingBatches = $this->matchingBatches($batches, $row);
+                $batchGroupKey = $product->id . ':' . $batch->batch_number;
+                $batchRequested[$batchGroupKey] = ($batchRequested[$batchGroupKey] ?? 0) + $rowUnits;
+                $availableBatchQty = (int) $matchingBatches->sum('quantity') + (int) $matchingBatches->sum(fn ($b) => $batchRestored[$b->id] ?? 0);
+                if ($batchRequested[$batchGroupKey] > $availableBatchQty) {
+                    throw ValidationException::withMessages(["items.$index.quantity" => "Insufficient stock in batch {$batch->batch_number} for {$product->name}. Available: $availableBatchQty units; requested: {$batchRequested[$batchGroupKey]} units."]);
                 }
             } else {
                 // Selling unbatched stock
@@ -190,17 +192,49 @@ class SaleStockAvailability
         }
     }
 
-    public function matchBatch(Collection $batches, array $row): ?Batch
+    public function matchingBatches(Collection $batches, array $row): Collection
     {
         $number = trim((string) ($row['batch_number'] ?? $row['batch'] ?? ''));
         if ($number === '' || $number === '__unbatched__') {
-            return null;
+            return collect();
         }
         $expiry = substr(trim((string) ($row['expiry'] ?? $row['expiry_date'] ?? '')), 0, 10);
         $matches = $batches->filter(fn ($batch) => (int) $batch->product_id === (int) $row['product_id']
             && trim((string) $batch->batch_number) === $number
             && ($expiry === '' || substr((string) $batch->expiry_date, 0, 10) === $expiry));
 
-        return $matches->count() === 1 ? $matches->first() : null;
+        return $matches
+            ->sortByDesc(fn ($b) => ((int) $b->quantity > 0 ? 1000000 : 0) + (int) $b->quantity - (int) $b->id)
+            ->values();
+    }
+
+    public function matchBatch(Collection $batches, array $row): ?Batch
+    {
+        $number = trim((string) ($row['batch_number'] ?? $row['batch'] ?? ''));
+        if ($number === '' || $number === '__unbatched__') {
+            return null;
+        }
+        if (!empty($row['batch_id'])) {
+            $byId = $batches->first(fn ($b) => (int) $b->id === (int) $row['batch_id'] && (int) $b->product_id === (int) $row['product_id']);
+            if ($byId) {
+                return $byId;
+            }
+        }
+        $matches = $this->matchingBatches($batches, $row);
+        if ($matches->isEmpty()) {
+            return null;
+        }
+        if ($matches->count() === 1) {
+            return $matches->first();
+        }
+
+        if (!empty($row['storage_location_id'])) {
+            $byLoc = $matches->first(fn ($b) => (int) $b->storage_location_id === (int) $row['storage_location_id']);
+            if ($byLoc) {
+                return $byLoc;
+            }
+        }
+
+        return $matches->first();
     }
 }

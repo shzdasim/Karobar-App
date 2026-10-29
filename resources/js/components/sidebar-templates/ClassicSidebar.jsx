@@ -371,6 +371,12 @@ export default function ClassicSidebar({
             perm: "supplier-ledger.view",
           },
           {
+            name: "Double-Entry & GL",
+            path: "/accounting",
+            icon: <CalculatorIcon className="w-5 h-5" />,
+            permAny: ["account.view", "report.net-profit.view"],
+          },
+          {
             name: "Financial Accounts",
             path: "/accounts",
             icon: <BuildingLibraryIcon className="w-5 h-5" />,
@@ -396,6 +402,13 @@ export default function ClassicSidebar({
             subGroup: "Financial & Aging",
             icon: <CalculatorIcon className="w-5 h-5" />,
             perm: "report.net-profit.view",
+          },
+          {
+            name: "Statutory Tax Return",
+            path: "/reports/tax-return",
+            subGroup: "Financial & Aging",
+            icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />,
+            permAny: ["report.net-profit.view", "report.sale-detail.view", "account.view"],
           },
           {
             name: "Cost of Sale",

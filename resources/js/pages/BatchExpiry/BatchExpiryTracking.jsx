@@ -22,7 +22,13 @@ import {
   CurrencyDollarIcon,
   BuildingStorefrontIcon,
   TagIcon,
+  ArrowsRightLeftIcon,
 } from "@heroicons/react/24/outline";
+import {
+  MoveBatchLocationModal,
+  ManageStorageLocationsModal,
+  getLocationTypeMeta,
+} from "@/components/StorageLocationsModal.jsx";
 
 export default function BatchExpiryTracking() {
   const navigate = useNavigate();
@@ -206,6 +212,7 @@ export default function BatchExpiryTracking() {
   const [brandId, setBrandId] = useState("");
   const [selectedBrand, setSelectedBrand] = useState(null);
   const [categoryId, setCategoryId] = useState("");
+  const [storageLocationId, setStorageLocationId] = useState("");
   const [sortBy, setSortBy] = useState("expiry_date");
   const [sortDir, setSortDir] = useState("asc");
 
@@ -213,31 +220,35 @@ export default function BatchExpiryTracking() {
   const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
   const [brandSearchOpen, setBrandSearchOpen] = useState(false);
 
-  // Categories metadata for select
+  // Categories & Storage Locations metadata for select
   const [categories, setCategories] = useState([]);
+  const [storageLocations, setStorageLocations] = useState([]);
+  const [moveModalBatch, setMoveModalBatch] = useState(null);
+  const [manageLocationsOpen, setManageLocationsOpen] = useState(false);
 
-  // Modals for warning configuration
-  const [globalModalOpen, setGlobalModalOpen] = useState(false);
-  const [newGlobalDays, setNewGlobalDays] = useState(90);
-  const [savingGlobal, setSavingGlobal] = useState(false);
+  const fetchStorageLocations = useCallback(async () => {
+    try {
+      const locRes = await axios.get("/api/storage-locations");
+      setStorageLocations(Array.isArray(locRes.data) ? locRes.data : []);
+    } catch {
+      // ignore
+    }
+  }, []);
 
-  const [productModalOpen, setProductModalOpen] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [productDaysInput, setProductDaysInput] = useState("");
-  const [useDefaultChecked, setUseDefaultChecked] = useState(true);
-  const [savingProduct, setSavingProduct] = useState(false);
-
-  // Load categories metadata once
+  // Load categories & storage locations metadata once
   useEffect(() => {
     (async () => {
       try {
-        const catRes = await axios.get("/api/categories");
+        const [catRes] = await Promise.all([
+          axios.get("/api/categories"),
+          fetchStorageLocations(),
+        ]);
         setCategories(Array.isArray(catRes.data) ? catRes.data : []);
       } catch (err) {
         console.error("Failed to load categories:", err);
       }
     })();
-  }, []);
+  }, [fetchStorageLocations]);
 
   // Fetch batches with filters
   const fetchData = useCallback(async () => {
@@ -249,6 +260,7 @@ export default function BatchExpiryTracking() {
         supplier_id: supplierId || undefined,
         brand_id: brandId || undefined,
         category_id: categoryId || undefined,
+        storage_location_id: storageLocationId || undefined,
         sort_by: sortBy,
         sort_dir: sortDir,
         page,
@@ -268,7 +280,18 @@ export default function BatchExpiryTracking() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, search, supplierId, brandId, categoryId, sortBy, sortDir, page, perPage]);
+  }, [statusFilter, search, supplierId, brandId, categoryId, storageLocationId, sortBy, sortDir, page, perPage]);
+
+  // Modals for warning configuration
+  const [globalModalOpen, setGlobalModalOpen] = useState(false);
+  const [newGlobalDays, setNewGlobalDays] = useState(90);
+  const [savingGlobal, setSavingGlobal] = useState(false);
+
+  const [productModalOpen, setProductModalOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [productDaysInput, setProductDaysInput] = useState("");
+  const [useDefaultChecked, setUseDefaultChecked] = useState(true);
+  const [savingProduct, setSavingProduct] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -443,13 +466,24 @@ export default function BatchExpiryTracking() {
   const fmtNumber = (v) =>
     Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-  // React-select options for Category, Sort, and Per Page
+  // React-select options for Category, Storage Location, Sort, and Per Page
   const categoryOptions = useMemo(
     () => [
       { value: "", label: "All Categories" },
       ...categories.map((c) => ({ value: String(c.id), label: c.name })),
     ],
     [categories]
+  );
+
+  const locationFilterOptions = useMemo(
+    () => [
+      { value: "", label: "All Locations" },
+      ...storageLocations.map((loc) => ({
+        value: String(loc.id),
+        label: `${loc.name} (${loc.code})`,
+      })),
+    ],
+    [storageLocations]
   );
 
   const sortOptions = useMemo(
@@ -516,6 +550,17 @@ export default function BatchExpiryTracking() {
               <span className="font-bold text-amber-600 dark:text-amber-400">{summary.global_warning_days} Days</span>
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={() => setManageLocationsOpen(true)}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold theme-btn-secondary ${btnSecondary.className}`}
+            style={btnSecondary.style}
+            title="Manage Storage Locations (Shop, Godown, Fridge)"
+          >
+            <BuildingStorefrontIcon className="w-4 h-4 text-indigo-500" />
+            <span>Manage Locations</span>
+          </button>
 
           <button
             type="button"
@@ -678,8 +723,8 @@ export default function BatchExpiryTracking() {
           })}
         </div>
 
-        {/* Filter Controls Bar with Search, SupplierSearch modal trigger, BrandSearch modal trigger, Category & Sort */}
-        <div className={`p-3.5 border-b grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-center ${isDark ? "border-slate-700 bg-slate-800/40" : "border-slate-200 bg-white"}`}>
+        {/* Filter Controls Bar with Search, Location, SupplierSearch, BrandSearch, Category & Sort */}
+        <div className={`p-3.5 border-b grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-center ${isDark ? "border-slate-700 bg-slate-800/40" : "border-slate-200 bg-white"}`}>
           {/* Search */}
           <div className="relative">
             <MagnifyingGlassIcon className="w-4 h-4 absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
@@ -690,12 +735,33 @@ export default function BatchExpiryTracking() {
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              placeholder="Search product, batch, barcode..."
+              placeholder="Search product, batch, rack..."
               className={`w-full h-[38px] pl-9 pr-3 rounded-xl border text-xs focus:ring-2 focus:ring-blue-500/20 focus:outline-hidden transition-all ${
                 isDark
                   ? "bg-slate-800/80 border-slate-700 text-slate-200 placeholder-slate-400 focus:border-blue-500"
                   : "bg-white border-slate-200 text-slate-800 placeholder-slate-400 focus:border-blue-500"
               }`}
+            />
+          </div>
+
+          {/* Storage Location React-Select */}
+          <div>
+            <Select
+              value={
+                locationFilterOptions.find((o) => o.value === String(storageLocationId)) ||
+                locationFilterOptions[0]
+              }
+              onChange={(opt) => {
+                setStorageLocationId(opt?.value || "");
+                setPage(1);
+              }}
+              options={locationFilterOptions}
+              styles={selectStyles}
+              menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+              menuPosition="fixed"
+              placeholder="All Locations"
+              isSearchable={true}
+              aria-label="Filter by Storage Location"
             />
           </div>
 
@@ -836,6 +902,7 @@ export default function BatchExpiryTracking() {
                 <th className="py-3 px-3.5 font-semibold">#</th>
                 <th className="py-3 px-3.5 font-semibold">Product</th>
                 <th className="py-3 px-3.5 font-semibold">Batch & Expiry</th>
+                <th className="py-3 px-3.5 font-semibold">Location & Rack</th>
                 <th className="py-3 px-3.5 font-semibold text-center">Remaining Days</th>
                 <th className="py-3 px-3.5 font-semibold text-center">Quantity on Hand</th>
                 <th className="py-3 px-3.5 font-semibold">Supplier</th>
@@ -847,14 +914,14 @@ export default function BatchExpiryTracking() {
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700/60">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={10} className="py-12 text-center text-slate-400">
                     <ArrowPathIcon className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-500" />
                     Loading batches...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-500 dark:text-slate-400">
+                  <td colSpan={10} className="py-12 text-center text-slate-500 dark:text-slate-400">
                     <CheckCircleIcon className="w-8 h-8 mx-auto mb-2 text-emerald-500" />
                     No batches match the selected criteria.
                   </td>
@@ -864,6 +931,8 @@ export default function BatchExpiryTracking() {
                   const isExpired = row.days_remaining < 0;
                   const isCritical = !isExpired && row.days_remaining <= 30;
                   const isWarning = !isExpired && !isCritical && row.days_remaining <= row.effective_warning_days;
+                  const locMeta = getLocationTypeMeta(row.storage_location_type || "shop");
+                  const rackCode = row.batch_rack || row.product_rack || "";
 
                   return (
                     <tr
@@ -899,6 +968,22 @@ export default function BatchExpiryTracking() {
                         </div>
                         <div className="text-[11px] text-slate-500 dark:text-slate-400">
                           Exp: <span className="font-medium text-slate-700 dark:text-slate-300">{row.expiry_date}</span>
+                        </div>
+                      </td>
+
+                      {/* Storage Location & Rack */}
+                      <td className="py-3 px-3.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${locMeta.badgeClass}`}
+                          >
+                            {row.storage_location_name || "Shop Counter"}
+                          </span>
+                          {rackCode && (
+                            <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                              {rackCode}
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -979,9 +1064,19 @@ export default function BatchExpiryTracking() {
                         </div>
                       </td>
 
-                      {/* Actions: Theme Return & Quarantine/Dispose Buttons */}
+                      {/* Actions: Move Location, Return & Quarantine/Dispose Buttons */}
                       <td className="py-3 px-3.5 text-center">
                         <div className="inline-flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setMoveModalBatch(row)}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold theme-btn-secondary ${btnSecondary.className}`}
+                            style={btnSecondary.style}
+                            title="Move or split stock to another location (e.g. Godown to Shop)"
+                          >
+                            <ArrowsRightLeftIcon className="w-3.5 h-3.5 text-indigo-500" />
+                            <span>Move</span>
+                          </button>
                           {canCreatePurchaseReturn && (
                             <button
                               type="button"
@@ -1278,6 +1373,31 @@ export default function BatchExpiryTracking() {
         isOpen={brandSearchOpen}
         onClose={() => setBrandSearchOpen(false)}
         onSelect={handleBrandSelect}
+      />
+
+      {/* MODAL 5: Move / Split Batch Location */}
+      <MoveBatchLocationModal
+        isOpen={Boolean(moveModalBatch)}
+        onClose={() => setMoveModalBatch(null)}
+        batch={moveModalBatch}
+        storageLocations={storageLocations}
+        onMoved={fetchData}
+        isDark={isDark}
+        selectStyles={selectStyles}
+        packSize={moveModalBatch?.pack_size || 1}
+      />
+
+      {/* MODAL 6: Manage Storage Locations */}
+      <ManageStorageLocationsModal
+        isOpen={manageLocationsOpen}
+        onClose={() => setManageLocationsOpen(false)}
+        storageLocations={storageLocations}
+        onChanged={async () => {
+          await fetchStorageLocations();
+          await fetchData();
+        }}
+        isDark={isDark}
+        selectStyles={selectStyles}
       />
     </div>
   );

@@ -457,11 +457,18 @@ class PurchaseInvoiceController extends Controller
                         $productId,
                         $batchSource['batch'] ?? null,
                         $batchSource['expiry'] ?? null,
-                        $delta
+                        $delta,
+                        false,
+                        $newGroup ? $batchSource : []
                     );
 
                     if ($newGroup) {
                         $this->syncProductPricingFromItem($product, $batchSource);
+                        $this->syncProductSupplierLink(
+                            $productId,
+                            (int) ($data['supplier_id'] ?? 0),
+                            $batchSource
+                        );
                     }
                 }
 
@@ -810,9 +817,72 @@ class PurchaseInvoiceController extends Controller
                     'expiry_date'  => $item['expiry'],
                 ]);
 
+                if (!$batch->exists && \Illuminate\Support\Facades\Schema::hasColumn('batches', 'storage_location_id')) {
+                    $batch->storage_location_id = $item['storage_location_id'] ?? $product?->storage_location_id;
+                    $batch->rack = $item['rack'] ?? $product?->rack;
+                }
+
                 $batch->quantity = ($batch->exists ? (int) $batch->quantity : 0) + (int) $item['quantity'];
+                $this->applyBatchPricingFromItem($batch, $item, $product);
                 $batch->save();
             }
+
+            if (!empty($item['product_id']) && !empty($invoice->supplier_id)) {
+                $this->syncProductSupplierLink((int) $item['product_id'], (int) $invoice->supplier_id, $item);
+            }
+        }
+    }
+
+    private function applyBatchPricingFromItem(\App\Models\Batch $batch, array $item, ?Product $product = null): void
+    {
+        if (!\Illuminate\Support\Facades\Schema::hasColumn('batches', 'unit_sale_price')) {
+            return;
+        }
+
+        foreach ([
+            'pack_purchase_price',
+            'unit_purchase_price',
+            'pack_sale_price',
+            'unit_sale_price',
+            'whole_sale_pack_price',
+            'whole_sale_unit_price',
+        ] as $field) {
+            if (array_key_exists($field, $item) && $item[$field] !== null && $item[$field] !== '') {
+                $batch->{$field} = (float) $item[$field];
+            } elseif ($batch->{$field} === null && $product && $product->{$field} !== null) {
+                $batch->{$field} = (float) $product->{$field};
+            }
+        }
+    }
+
+    private function syncProductSupplierLink(int $productId, int $supplierId, array $item = []): void
+    {
+        if ($productId <= 0 || $supplierId <= 0 || !\Illuminate\Support\Facades\Schema::hasTable('product_suppliers')) {
+            return;
+        }
+
+        $unitCost = isset($item['unit_purchase_price']) && $item['unit_purchase_price'] !== ''
+            ? (float) $item['unit_purchase_price']
+            : (isset($item['avg_price']) && $item['avg_price'] !== '' ? (float) $item['avg_price'] : null);
+
+        $existing = \App\Models\ProductSupplier::where('product_id', $productId)
+            ->where('supplier_id', $supplierId)
+            ->first();
+
+        if ($existing) {
+            if ($unitCost !== null && $unitCost > 0) {
+                $existing->last_purchase_price = $unitCost;
+                $existing->save();
+            }
+        } else {
+            $hasAny = \App\Models\ProductSupplier::where('product_id', $productId)->exists();
+            \App\Models\ProductSupplier::create([
+                'product_id'          => $productId,
+                'supplier_id'         => $supplierId,
+                'last_purchase_price' => $unitCost,
+                'min_order_qty'       => 1,
+                'is_preferred'        => !$hasAny,
+            ]);
         }
     }
 
@@ -875,12 +945,12 @@ class PurchaseInvoiceController extends Controller
         ]);
     }
 
-    private function adjustBatchQuantity(int $productId, ?string $batch, ?string $expiry, int $delta, bool $allowNegative = false): void
+    private function adjustBatchQuantity(int $productId, ?string $batch, ?string $expiry, int $delta, bool $allowNegative = false, array $pricingSource = []): void
     {
         $batch = trim((string) $batch);
         $expiry = trim((string) $expiry);
 
-        if ($batch === '' || $expiry === '' || $delta === 0) {
+        if ($batch === '' || $expiry === '' || ($delta === 0 && empty($pricingSource))) {
             return;
         }
 
@@ -890,7 +960,7 @@ class PurchaseInvoiceController extends Controller
             ->first();
 
         if (!$batchModel) {
-            if ($delta < 0) {
+            if ($delta <= 0) {
                 return;
             }
 
@@ -902,8 +972,15 @@ class PurchaseInvoiceController extends Controller
             ]);
         }
 
-        $nextQty = (int) $batchModel->quantity + $delta;
-        $batchModel->quantity = $allowNegative ? $nextQty : max(0, $nextQty);
+        if ($delta !== 0) {
+            $nextQty = (int) $batchModel->quantity + $delta;
+            $batchModel->quantity = $allowNegative ? $nextQty : max(0, $nextQty);
+        }
+
+        if (!empty($pricingSource)) {
+            $this->applyBatchPricingFromItem($batchModel, $pricingSource);
+        }
+
         $batchModel->save();
     }
 
