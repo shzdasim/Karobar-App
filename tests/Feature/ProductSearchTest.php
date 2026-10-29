@@ -144,21 +144,30 @@ class ProductSearchTest extends TestCase
         $byRack = $this->listing(['q' => 'RACK-B4']);
         $this->assertSame([20], array_column($byRack['data'], 'id'));
 
-        // 2. Lookup search endpoint (/api/products/search) matches formulation, barcode, and rack
+        // 2. Lookup search endpoint (/api/products/search) matches product name only in typing order (starts-with)
+        $lookupName = app(ProductController::class)->search(
+            Request::create('/api/products/search', 'GET', ['q' => 'Aug'])
+        )->getData(true);
+        $this->assertSame([20], array_column($lookupName, 'id'));
+
+        $lookupMiddleName = app(ProductController::class)->search(
+            Request::create('/api/products/search', 'GET', ['q' => 'mentin'])
+        )->getData(true);
+        $this->assertSame([], array_column($lookupMiddleName, 'id'));
+
         $lookupSalt = app(ProductController::class)->search(
             Request::create('/api/products/search', 'GET', ['q' => 'Clavulanic'])
         )->getData(true);
-        $this->assertSame([20], array_column($lookupSalt, 'id'));
-        $this->assertSame('Amoxicillin 500mg + Clavulanic Acid 125mg', $lookupSalt[0]['formulation']);
+        $this->assertSame([], array_column($lookupSalt, 'id'));
 
         $lookupBarcode = app(ProductController::class)->search(
             Request::create('/api/products/search', 'GET', ['q' => '8964009988776'])
         )->getData(true);
-        $this->assertSame([20], array_column($lookupBarcode, 'id'));
+        $this->assertSame([], array_column($lookupBarcode, 'id'));
 
         $lookupRack = app(ProductController::class)->search(
             Request::create('/api/products/search', 'GET', ['q' => 'RACK-B4'])
         )->getData(true);
-        $this->assertSame([20], array_column($lookupRack, 'id'));
+        $this->assertSame([], array_column($lookupRack, 'id'));
     }
 }

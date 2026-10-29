@@ -60,30 +60,7 @@ class ProductController extends Controller
         }
 
         if ($q !== '') {
-            $hasBarcode     = isset($existingCols['barcode']);
-            $hasFormulation = isset($existingCols['formulation']);
-            $hasRack        = isset($existingCols['rack']);
-
-            $query->where(function (Builder $b) use ($q, $hasBarcode, $hasFormulation, $hasRack) {
-                $pattern = $q.'%'; // starts-with
-                $b->where('name', 'like', $pattern)
-                  ->orWhere('product_code', 'like', $pattern);
-                if ($hasBarcode) {
-                    $b->orWhere('barcode', 'like', $pattern);
-                }
-                if ($hasFormulation) {
-                    $b->orWhere('formulation', 'like', '%'.$q.'%');
-                }
-                if ($hasRack) {
-                    $b->orWhere('rack', 'like', $pattern);
-                }
-                if (Schema::hasTable('brands')) {
-                    $b->orWhereHas('brand', fn(Builder $brand) => $brand->where('name', 'like', $pattern));
-                }
-                if (Schema::hasTable('suppliers')) {
-                    $b->orWhereHas('supplier', fn(Builder $supplier) => $supplier->where('name', 'like', $pattern));
-                }
-            });
+            $query->where('name', 'like', $q.'%');
         }
 
         return response()->json($query->limit($limit)->get());

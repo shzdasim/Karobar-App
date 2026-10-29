@@ -209,34 +209,12 @@ const MIN_WIDTH = 640;
       return () => clearTimeout(debounceRef.current);
     }, [search, onRefreshProducts, isOpen]);
 
-    // Local filter (matches starts-with, with fallback to substring match)
+    // Local filter (matches product name only, in typing order / starts-with)
     const filtered = useMemo(() => {
       const q = (search || "").toLowerCase().trim();
       if (!q) return items;
-      const starts = (val) => (val ?? "").toString().toLowerCase().startsWith(q);
-      const includes = (val) => (val ?? "").toString().toLowerCase().includes(q);
-
-      const prefixMatches = items.filter(
-        (p) =>
-          starts(p?.name) ||
-          starts(p?.product_code) ||
-          starts(p?.barcode) ||
-          starts(p?.formulation) ||
-          starts(p?.rack) ||
-          starts(p?.brand?.name || p?.brand_name) ||
-          starts(p?.supplier?.name || p?.supplier_name)
-      );
-      if (prefixMatches.length > 0) return prefixMatches;
-
-      return items.filter(
-        (p) =>
-          includes(p?.name) ||
-          includes(p?.product_code) ||
-          includes(p?.barcode) ||
-          includes(p?.formulation) ||
-          includes(p?.rack) ||
-          includes(p?.brand?.name || p?.brand_name) ||
-          includes(p?.supplier?.name || p?.supplier_name)
+      return items.filter((p) =>
+        (p?.name ?? "").toString().toLowerCase().startsWith(q)
       );
     }, [items, search]);
 
@@ -539,12 +517,12 @@ const stopResize = () => {
                   <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 shrink-0" />
                   <input
                     ref={searchRef}
-                    aria-label="Search by product name, generic formula, code, barcode, or rack"
+                    aria-label="Search by product name"
                     onMouseDown={(e) => e.stopPropagation()}
                     type="text"
                     value={search}
                     onChange={handleSearchChange}
-                    placeholder="Search by product name, generic/formula, code, barcode, or rack..."
+                    placeholder="Search by product name..."
                     autoComplete="off"
                     autoCorrect="off"
                     autoCapitalize="off"
