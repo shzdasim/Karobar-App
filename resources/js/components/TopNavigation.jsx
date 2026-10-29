@@ -140,6 +140,7 @@ export default function TopNavigation() {
         { name: "Financial Accounts", path: "/accounts", icon: <BanknotesIcon className="w-5 h-5" />, perm: "account.view" },
         { name: "Operating Expenses", path: "/expenses", icon: <CurrencyDollarIcon className="w-5 h-5" />, perm: "expense.view" },
         { name: "Double-Entry & GL", path: "/accounting", icon: <CalculatorIcon className="w-5 h-5" />, permAny: ["account.view", "report.net-profit.view"] },
+        { name: "HR, Payroll & Commissions", path: "/hr-payroll", icon: <UserGroupIcon className="w-5 h-5" />, permAny: ["expense.view", "account.view", "user.view"] },
       ]
     },
     {

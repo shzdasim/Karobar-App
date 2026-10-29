@@ -476,6 +476,14 @@ class SaleInvoiceController extends Controller
                 $invoiceData['payment_method'] = $data['payment_method'] ?? 'cash';
             }
 
+            if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'salesman_id')) {
+                $invoiceData['salesman_id'] = !empty($request->input('salesman_id'))
+                    ? (int) $request->input('salesman_id')
+                    : (\Illuminate\Support\Facades\Schema::hasTable('employees')
+                        ? \App\Models\Employee::where('user_id', $request->user()->id)->value('id')
+                        : null);
+            }
+
             $invoice = SaleInvoice::create($invoiceData);
 
             $this->createItemsAndReduce($invoice, $data['items']);

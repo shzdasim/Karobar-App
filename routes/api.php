@@ -21,6 +21,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentHistoryController;
 use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\ExpenseController;
+use App\Http\Controllers\HrPayrollController;
 use App\Http\Controllers\InvoiceDraftController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\LicenseController;
@@ -240,6 +241,25 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('expenses/{expense}/receipt',      [ExpenseController::class, 'receipt']);
     Route::apiResource('expenses',                ExpenseController::class);
     Route::apiResource('expense-categories',      ExpenseCategoryController::class);
+
+    // Human Resources (HR), Attendance, Staff Advances, Payroll & Sales Commissions
+    Route::get('hr/overview',                           [HrPayrollController::class, 'overview']);
+    Route::get('hr/employees/new-code',                 [HrPayrollController::class, 'newEmployeeCode']);
+    Route::get('hr/employees',                          [HrPayrollController::class, 'employees']);
+    Route::post('hr/employees',                         [HrPayrollController::class, 'storeEmployee']);
+    Route::put('hr/employees/{employee}',               [HrPayrollController::class, 'updateEmployee']);
+    Route::delete('hr/employees/{employee}',            [HrPayrollController::class, 'destroyEmployee']);
+    Route::get('hr/attendance',                         [HrPayrollController::class, 'attendance']);
+    Route::post('hr/attendance',                        [HrPayrollController::class, 'saveAttendance']);
+    Route::post('hr/attendance/bulk',                   [HrPayrollController::class, 'saveBulkAttendance']);
+    Route::get('hr/advances',                           [HrPayrollController::class, 'advances']);
+    Route::post('hr/advances',                          [HrPayrollController::class, 'storeAdvance']);
+    Route::get('hr/commissions',                        [HrPayrollController::class, 'commissions']);
+    Route::get('hr/payroll-runs',                       [HrPayrollController::class, 'payrollRuns']);
+    Route::post('hr/payroll-runs/generate',             [HrPayrollController::class, 'generatePayrollRun']);
+    Route::put('hr/payroll-items/{payrollItem}',        [HrPayrollController::class, 'updatePayrollItem']);
+    Route::post('hr/payroll-items/{payrollItem}/pay',   [HrPayrollController::class, 'payPayrollItem']);
+    Route::post('hr/payroll-runs/{payrollRun}/pay-all', [HrPayrollController::class, 'payAllInRun']);
 
     // Sale returns
     Route::get('sale-returns/new-code',           [SaleReturnController::class, 'generateNewCode']);

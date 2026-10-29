@@ -8,6 +8,7 @@ class SaleInvoice extends Model
 {
     protected $fillable = [
         'user_id',
+        'salesman_id',
         'customer_id',
         'invoice_type',
         'payment_method',
@@ -50,6 +51,10 @@ class SaleInvoice extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+    public function salesman()
+    {
+        return $this->belongsTo(Employee::class, 'salesman_id');
     }
     public function items()
     {

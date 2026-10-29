@@ -409,6 +409,12 @@ export default function ClassicSidebar({
             icon: <CalculatorIcon className="w-5 h-5" />,
             permAny: ["account.view", "report.net-profit.view"],
           },
+          {
+            name: "HR, Payroll & Commissions",
+            path: "/hr-payroll",
+            icon: <UserGroupIcon className="w-5 h-5" />,
+            permAny: ["expense.view", "account.view", "user.view"],
+          },
         ],
       },
       {

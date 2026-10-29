@@ -70,6 +70,7 @@ const PaymentsPage = lazy(() => import("../pages/Payments/index.jsx"));
 const AccountingPage = lazy(() => import("../pages/Accounting/index.jsx"));
 const TaxReturnReport = lazy(() => import("../pages/Reports/TaxReturnReport.jsx"));
 const ProductBatchWorkbench = lazy(() => import("../pages/Batches/ProductBatchWorkbench.jsx"));
+const HrPayrollCenter = lazy(() => import("../pages/HrPayroll/HrPayrollCenter.jsx"));
 // Cash Drawer
 const CashDrawerPage = lazy(() => import("../pages/CashDrawer/index.jsx"));
 const SupplierLedgerPage = lazy(() => import("../pages/Ledger/SupplierLedgerPage.jsx"));
@@ -747,6 +748,17 @@ export default function AppRoutes() {
         <ProtectedRoute>
           <DashboardLayout>
             <AccountingPage />
+          </DashboardLayout>
+        </ProtectedRoute>
+      }
+      />
+      {/* HR, Payroll & Sales Commissions */}
+      <Route
+      path="/hr-payroll"
+      element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <HrPayrollCenter />
           </DashboardLayout>
         </ProtectedRoute>
       }

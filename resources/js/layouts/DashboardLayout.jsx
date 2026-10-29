@@ -167,6 +167,7 @@ export default function DashboardLayout({ children }) {
     "/customer-ledger": "Customer Ledger",
     "/accounts": "Financial Accounts",
     "/accounting": "Double-Entry Accounting & GL",
+    "/hr-payroll": "HR, Payroll & Sales Commissions",
     "/payments": "Payment Vouchers",
     "/cash-drawer": "Cash Drawer",
     "/expenses": "Operating Expenses",

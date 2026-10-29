@@ -44,9 +44,7 @@ class ExpenseService
 
             // Resolve target account
             $account = null;
-            if ($paymentMethod === 'cash') {
-                $account = $this->accountService->getDefaultAccount('cash');
-            } elseif (!empty($data['account_id'])) {
+            if (!empty($data['account_id'])) {
                 $account = Account::find($data['account_id']);
             }
             if (!$account) {
