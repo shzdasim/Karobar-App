@@ -34,12 +34,14 @@ import {
 } from "@heroicons/react/24/outline";
 import { usePermissions } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
+import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 
 export default function TopNavigation() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { loading: permsLoading, has } = usePermissions();
   const { theme } = useTheme();
+  const { hasWholesale } = useSaleSystem();
   const [openDropdown, setOpenDropdown] = useState(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const [hoveredDropdown, setHoveredDropdown] = useState(null);
@@ -78,18 +80,16 @@ export default function TopNavigation() {
   // Organized menu with sections and items - Matching sidebar structure
   const menuSections = useMemo(() => [
     {
-      name: "Management",
+      name: "Items & Masters",
       key: "core",
       icon: <CubeIcon className="w-5 h-5" />,
       items: [
         { name: "Products", path: "/products", icon: <CubeIcon className="w-5 h-5" />, perm: "product.view" },
-        { name: "Barcode Studio", path: "/barcode-labels", icon: <QrCodeIcon className="w-5 h-5" />, permAny: ["barcode.view", "barcode.print"] },
-        { name: "Expiry & Tracking", path: "/batch-expiry", icon: <ClockIcon className="w-5 h-5" />, perm: "batch-expiry.view" },
-        { name: "Quarantine & Disposal", path: "/stock-disposals", icon: <ClockIcon className="w-5 h-5" />, perm: "stock-disposal.view" },
         { name: "Categories", path: "/categories", icon: <Squares2X2Icon className="w-5 h-5" />, perm: "category.view" },
         { name: "Brands", path: "/brands", icon: <TagIcon className="w-5 h-5" />, perm: "brand.view" },
         { name: "Suppliers", path: "/suppliers", icon: <TruckIcon className="w-5 h-5" />, perm: "supplier.view" },
         { name: "Customers", path: "/customers", icon: <UserPlusIcon className="w-5 h-5" />, perm: "customer.view" },
+        { name: "Barcode Studio", path: "/barcode-labels", icon: <QrCodeIcon className="w-5 h-5" />, permAny: ["barcode.view", "barcode.print"] },
       ]
     },
     {
@@ -97,9 +97,13 @@ export default function TopNavigation() {
       key: "invoices",
       icon: <DocumentTextIcon className="w-5 h-5" />,
       items: [
-        { name: "Purchase Invoice", path: "/purchase-invoices", icon: <ClipboardDocumentListIcon className="w-5 h-5" />, perm: "purchase-invoice.view" },
-        { name: "Sale Invoice", path: "/sale-invoices", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, perm: "sale-invoice.view" },
         { name: "⚡ Barcode POS", path: "/sale-invoices/pos", icon: <QrCodeIcon className="w-5 h-5" />, permAny: ["barcode-pos.view", "barcode-pos.create"] },
+        { name: "Sale Invoices", path: "/sale-invoices", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, perm: "sale-invoice.view" },
+        ...(hasWholesale
+          ? [{ name: "Wholesale Invoices", path: "/wholesale-invoices", icon: <BuildingStorefrontIcon className="w-5 h-5" />, perm: "sale-invoice.view" }]
+          : []),
+        { name: "Purchase Invoices", path: "/purchase-invoices", icon: <ClipboardDocumentListIcon className="w-5 h-5" />, perm: "purchase-invoice.view" },
+        { name: "Purchase Orders", path: "/purchase-orders", icon: <ClipboardDocumentCheckIcon className="w-5 h-5" />, perm: "purchase-order.view" },
       ]
     },
     {
@@ -107,32 +111,34 @@ export default function TopNavigation() {
       key: "returns",
       icon: <ArrowUturnLeftIcon className="w-5 h-5" />,
       items: [
-        { name: "Purchase Return", path: "/purchase-returns", icon: <ArrowUturnDownIcon className="w-5 h-5" />, perm: "purchase-return.view" },
-        { name: "Sale Return", path: "/sale-returns", icon: <ArrowUturnLeftIcon className="w-5 h-5" />, perm: "sale-return.view" },
+        { name: "Sale Returns", path: "/sale-returns", icon: <ArrowUturnLeftIcon className="w-5 h-5" />, perm: "sale-return.view" },
+        { name: "Purchase Returns", path: "/purchase-returns", icon: <ArrowUturnDownIcon className="w-5 h-5" />, perm: "purchase-return.view" },
       ]
     },
     {
-      name: "Transactions",
+      name: "Stock & Inventory",
       key: "transactions",
       icon: <ShoppingCartIcon className="w-5 h-5" />,
       items: [
-        { name: "Purchase Orders", path: "/purchase-orders", icon: <ClipboardDocumentCheckIcon className="w-5 h-5" />, perm: "purchase-order.view" },
+        { name: "Batch & Expiry", path: "/batch-expiry", icon: <ClockIcon className="w-5 h-5" />, perm: "batch-expiry.view" },
         { name: "User Demands", path: "/user-demands", icon: <ClipboardDocumentCheckIcon className="w-5 h-5" />, perm: "user-demands.view" },
         { name: "Stock Adjustments", path: "/stock-adjustments", icon: <ArrowsRightLeftIcon className="w-5 h-5" />, perm: "stock-adjustment.view" },
         { name: "Stocktake Sessions", path: "/stocktake-sessions", icon: <ClipboardDocumentCheckIcon className="w-5 h-5" />, perm: "stocktake.view" },
+        { name: "Quarantine & Disposal", path: "/stock-disposals", icon: <ClockIcon className="w-5 h-5" />, perm: "stock-disposal.view" },
       ]
     },
     {
-      name: "Finance",
+      name: "Finance & Ledgers",
       key: "finance",
       icon: <CurrencyDollarIcon className="w-5 h-5" />,
       items: [
-        { name: "Supplier Ledger", path: "/supplier-ledger", icon: <BuildingStorefrontIcon className="w-5 h-5" />, perm: "supplier-ledger.view" },
         { name: "Customer Ledger", path: "/customer-ledger", icon: <UsersIcon className="w-5 h-5" />, perm: "customer-ledger.view" },
-        { name: "Financial Accounts", path: "/accounts", icon: <BanknotesIcon className="w-5 h-5" />, perm: "account.view" },
+        { name: "Supplier Ledger", path: "/supplier-ledger", icon: <BuildingStorefrontIcon className="w-5 h-5" />, perm: "supplier-ledger.view" },
         { name: "Payment Vouchers", path: "/payments", icon: <BanknotesIcon className="w-5 h-5" />, perm: "payment.view" },
-        { name: "Operating Expenses", path: "/expenses", icon: <CurrencyDollarIcon className="w-5 h-5" />, perm: "expense.view" },
         { name: "Cash Drawer", path: "/cash-drawer", icon: <BanknotesIcon className="w-5 h-5" />, perm: "cash-drawer.view" },
+        { name: "Financial Accounts", path: "/accounts", icon: <BanknotesIcon className="w-5 h-5" />, perm: "account.view" },
+        { name: "Operating Expenses", path: "/expenses", icon: <CurrencyDollarIcon className="w-5 h-5" />, perm: "expense.view" },
+        { name: "Double-Entry & GL", path: "/accounting", icon: <CalculatorIcon className="w-5 h-5" />, permAny: ["account.view", "report.net-profit.view"] },
       ]
     },
     {
@@ -141,33 +147,34 @@ export default function TopNavigation() {
       icon: <ChartBarIcon className="w-5 h-5" />,
       items: [
         { name: "Net Profit (P&L)", path: "/reports/net-profit", icon: <CalculatorIcon className="w-5 h-5" />, perm: "report.net-profit.view" },
-        { name: "Current Stock", path: "/reports/current-stock", icon: <CubeIcon className="w-5 h-5" />, perm: "report.current-stock.view" },
+        { name: "Statutory Tax Return", path: "/reports/tax-return", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, permAny: ["report.net-profit.view", "report.sale-detail.view", "account.view"] },
         { name: "Cost of Sale", path: "/reports/cost-of-sale", icon: <CalculatorIcon className="w-5 h-5" />, perm: "report.cost-of-sale.view" },
         { name: "Cost of Sale Detail", path: "/reports/cost-of-sale-detail", icon: <DocumentTextIcon className="w-5 h-5" />, perm: "report.cost-of-sale-detail.view" },
-        { name: "Purchase Detail", path: "/reports/purchase-detail", icon: <ClipboardDocumentIcon className="w-5 h-5" />, perm: "report.purchase-detail.view" },
+        { name: "Outstanding Aging", path: "/reports/outstanding-aging", icon: <BanknotesIcon className="w-5 h-5" />, perm: "report.outstanding-aging.view" },
         { name: "Sale Detail", path: "/reports/sale-detail", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, perm: "report.sale-detail.view" },
-        { name: "Stock Adjustment", path: "/reports/stock-adjustment", icon: <ArrowsRightLeftIcon className="w-5 h-5" />, perm: "report.stock-adjustment.view" },
+        { name: "Purchase Detail", path: "/reports/purchase-detail", icon: <ClipboardDocumentIcon className="w-5 h-5" />, perm: "report.purchase-detail.view" },
+        { name: "Purchase Summary", path: "/reports/purchase-summary", icon: <ClipboardDocumentListIcon className="w-5 h-5" />, perm: "report.purchase-summary.view" },
+        { name: "Sale Returns Report", path: "/reports/sale-returns", icon: <ArrowUturnLeftIcon className="w-5 h-5" />, perm: "report.sale-returns.view" },
+        { name: "Purchase Returns Report", path: "/reports/purchase-returns", icon: <ArrowUturnDownIcon className="w-5 h-5" />, perm: "report.purchase-returns.view" },
+        { name: "Current Stock", path: "/reports/current-stock", icon: <CubeIcon className="w-5 h-5" />, perm: "report.current-stock.view" },
+        { name: "Low Stock & Reorder", path: "/reports/reorder", icon: <CubeIcon className="w-5 h-5" />, perm: "report.reorder.view" },
         { name: "Product Comprehensive", path: "/reports/product-comprehensive", icon: <ReportIcon className="w-5 h-5" />, perm: "report.product-comprehensive.view" },
         { name: "Near Expiry Product", path: "/reports/near-expiry-product", icon: <ClockIcon className="w-5 h-5" />, perm: "report.near-expiry-product.view" },
-        { name: "Purchase Returns", path: "/reports/purchase-returns", icon: <ArrowUturnDownIcon className="w-5 h-5" />, perm: "report.purchase-returns.view" },
-        { name: "Sale Returns", path: "/reports/sale-returns", icon: <ArrowUturnLeftIcon className="w-5 h-5" />, perm: "report.sale-returns.view" },
-        { name: "Purchase Summary", path: "/reports/purchase-summary", icon: <ClipboardDocumentListIcon className="w-5 h-5" />, perm: "report.purchase-summary.view" },
-        { name: "Outstanding Aging", path: "/reports/outstanding-aging", icon: <BanknotesIcon className="w-5 h-5" />, perm: "report.outstanding-aging.view" },
-        { name: "Low Stock & Reorder", path: "/reports/reorder", icon: <CubeIcon className="w-5 h-5" />, perm: "report.reorder.view" },
+        { name: "Stock Adjustment Report", path: "/reports/stock-adjustment", icon: <ArrowsRightLeftIcon className="w-5 h-5" />, perm: "report.stock-adjustment.view" },
       ]
     },
     {
-      name: "System",
+      name: "System & Settings",
       key: "system",
       icon: <Cog6ToothIcon className="w-5 h-5" />,
       items: [
         { name: "Settings", path: "/settings", icon: <Cog6ToothIcon className="w-5 h-5" />, perm: "settings.view" },
-        { name: "Backups & Storage", path: "/backups", icon: <ServerIcon className="w-5 h-5" />, perm: "backup.view" },
         { name: "Users", path: "/users", icon: <UserGroupIcon className="w-5 h-5" />, permAny: ["user.view", "user.manage"] },
         { name: "Roles", path: "/roles", icon: <KeyIcon className="w-5 h-5" />, perm: "role.view" },
+        { name: "Backups & Storage", path: "/backups", icon: <ServerIcon className="w-5 h-5" />, perm: "backup.view" },
       ]
     },
-  ], []);
+  ], [hasWholesale]);
 
   // Flat menu for Dashboard
   const flatMenu = useMemo(() => [

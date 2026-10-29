@@ -53,17 +53,18 @@ import { useTheme } from "@/context/ThemeContext";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 
 const FAVORITES_STORAGE_KEY = "karobar_sidebar_favorites";
-const EXPANDED_SECTIONS_STORAGE_KEY = "karobar_sidebar_expanded_sections";
+const EXPANDED_SECTIONS_STORAGE_KEY = "karobar_sidebar_expanded_sections_v2";
 
 // Section color mapping
 const SECTION_CONFIG = {
   favorites: { key: "primary" },
-  daily: { key: "primary" },
-  catalog: { key: "secondary" },
+  items: { key: "primary" },
+  invoices: { key: "secondary" },
+  returns: { key: "tertiary" },
   inventory: { key: "primary" },
-  finance: { key: "tertiary" },
-  reports: { key: "primary" },
-  system: { key: "secondary" },
+  finance: { key: "secondary" },
+  reports: { key: "tertiary" },
+  system: { key: "primary" },
 };
 
 const getThemeColor = (theme, colorKey, variant = "color") => {
@@ -111,8 +112,9 @@ export default function ClassicSidebar({
     }
     return {
       favorites: true,
-      daily: true,
-      catalog: false,
+      items: true,
+      invoices: true,
+      returns: true,
       inventory: false,
       finance: false,
       reports: false,
@@ -123,8 +125,9 @@ export default function ClassicSidebar({
   // Track which collapsed panels have finished their exit transition so we can set `hidden`
   const [hiddenPanels, setHiddenPanels] = useState(() => ({
     favorites: !expandedSections.favorites,
-    daily: !expandedSections.daily,
-    catalog: !expandedSections.catalog,
+    items: !expandedSections.items,
+    invoices: !expandedSections.invoices,
+    returns: !expandedSections.returns,
     inventory: !expandedSections.inventory,
     finance: !expandedSections.finance,
     reports: !expandedSections.reports,
@@ -160,19 +163,67 @@ export default function ClassicSidebar({
     ...new Set([logoUrl, "/storage/logos/logo.png", "/logo.png"].filter(Boolean)),
   ];
 
-  // Organized, workflow-sorted menu definition
+  // Cleanly grouped, domain-sorted menu definition:
+  // 1. Items & Masters (all item & party creation in one tab)
+  // 2. Invoices (all invoices, orders & POS in one tab)
+  // 3. Returns (all returns in one tab)
+  // 4. Stock & Inventory (batch/expiry, demands, adjustments, stocktake, disposal)
+  // 5. Finance & Ledgers (customer/supplier ledgers, payments, cash drawer, accounts, expenses, GL)
+  // 6. Reports (all reports in one tab)
+  // 7. System & Settings (settings, users, roles, backups)
   const rawSections = useMemo(
     () => [
       {
-        key: "daily",
-        name: "Daily Operations",
-        icon: <BoltIcon className="w-4 h-4" />,
+        key: "items",
+        name: "Items & Masters",
+        icon: <CubeIcon className="w-4 h-4" />,
         items: [
           {
-            name: "Dashboard",
-            path: "/dashboard",
-            icon: <HomeIcon className="w-5 h-5" />,
+            name: "Products",
+            path: "/products",
+            icon: <CubeIcon className="w-5 h-5" />,
+            perm: "product.view",
+            quickCreatePath: "/products/create",
+            quickCreatePerm: "product.create",
+            quickCreateLabel: "Add Product",
           },
+          {
+            name: "Categories",
+            path: "/categories",
+            icon: <Squares2X2Icon className="w-5 h-5" />,
+            perm: "category.view",
+          },
+          {
+            name: "Brands",
+            path: "/brands",
+            icon: <TagIcon className="w-5 h-5" />,
+            perm: "brand.view",
+          },
+          {
+            name: "Suppliers",
+            path: "/suppliers",
+            icon: <TruckIcon className="w-5 h-5" />,
+            perm: "supplier.view",
+          },
+          {
+            name: "Customers",
+            path: "/customers",
+            icon: <UserPlusIcon className="w-5 h-5" />,
+            perm: "customer.view",
+          },
+          {
+            name: "Barcode Studio",
+            path: "/barcode-labels",
+            icon: <QrCodeIcon className="w-5 h-5" />,
+            permAny: ["barcode.view", "barcode.print"],
+          },
+        ],
+      },
+      {
+        key: "invoices",
+        name: "Invoices",
+        icon: <DocumentTextIcon className="w-4 h-4" />,
+        items: [
           {
             name: "⚡ Barcode POS",
             path: "/sale-invoices/pos",
@@ -217,59 +268,6 @@ export default function ClassicSidebar({
             quickCreatePerm: "purchase-invoice.create",
             quickCreateLabel: "Create Purchase Invoice",
           },
-        ],
-      },
-      {
-        key: "catalog",
-        name: "Catalog & Parties",
-        icon: <CubeIcon className="w-4 h-4" />,
-        items: [
-          {
-            name: "Products",
-            path: "/products",
-            icon: <CubeIcon className="w-5 h-5" />,
-            perm: "product.view",
-            quickCreatePath: "/products/create",
-            quickCreatePerm: "product.create",
-            quickCreateLabel: "Add Product",
-          },
-          {
-            name: "Categories",
-            path: "/categories",
-            icon: <Squares2X2Icon className="w-5 h-5" />,
-            perm: "category.view",
-          },
-          {
-            name: "Brands",
-            path: "/brands",
-            icon: <TagIcon className="w-5 h-5" />,
-            perm: "brand.view",
-          },
-          {
-            name: "Barcode Studio",
-            path: "/barcode-labels",
-            icon: <QrCodeIcon className="w-5 h-5" />,
-            permAny: ["barcode.view", "barcode.print"],
-          },
-          {
-            name: "Customers",
-            path: "/customers",
-            icon: <UserPlusIcon className="w-5 h-5" />,
-            perm: "customer.view",
-          },
-          {
-            name: "Suppliers",
-            path: "/suppliers",
-            icon: <TruckIcon className="w-5 h-5" />,
-            perm: "supplier.view",
-          },
-        ],
-      },
-      {
-        key: "inventory",
-        name: "Inventory & Stock",
-        icon: <ShoppingCartIcon className="w-4 h-4" />,
-        items: [
           {
             name: "Purchase Orders",
             path: "/purchase-orders",
@@ -279,48 +277,13 @@ export default function ClassicSidebar({
             quickCreatePerm: "purchase-order.create",
             quickCreateLabel: "Create Purchase Order",
           },
-          {
-            name: "User Demands",
-            path: "/user-demands",
-            icon: <HandRaisedIcon className="w-5 h-5" />,
-            perm: "user-demands.view",
-            quickCreatePath: "/user-demands/create",
-            quickCreatePerm: "user-demands.create",
-            quickCreateLabel: "New Product Demand",
-          },
-          {
-            name: "Batch & Expiry",
-            path: "/batch-expiry",
-            icon: <ClockIcon className="w-5 h-5" />,
-            perm: "batch-expiry.view",
-          },
-          {
-            name: "Quarantine & Disposal",
-            path: "/stock-disposals",
-            icon: <ShieldExclamationIcon className="w-5 h-5" />,
-            perm: "stock-disposal.view",
-            quickCreatePath: "/stock-disposals/create",
-            quickCreatePerm: "stock-disposal.create",
-            quickCreateLabel: "New Disposal",
-          },
-          {
-            name: "Stock Adjustments",
-            path: "/stock-adjustments",
-            icon: <ArrowsRightLeftIcon className="w-5 h-5" />,
-            perm: "stock-adjustment.view",
-            quickCreatePath: "/stock-adjustments/create",
-            quickCreatePerm: "stock-adjustment.create",
-            quickCreateLabel: "Add Stock Adjustment",
-          },
-          {
-            name: "Stocktake Sessions",
-            path: "/stocktake-sessions",
-            icon: <ClipboardDocumentCheckIcon className="w-5 h-5" />,
-            perm: "stocktake.view",
-            quickCreatePath: "/stocktake-sessions/create",
-            quickCreatePerm: "stocktake.create",
-            quickCreateLabel: "New Stocktake Session",
-          },
+        ],
+      },
+      {
+        key: "returns",
+        name: "Returns",
+        icon: <ArrowUturnLeftIcon className="w-4 h-4" />,
+        items: [
           {
             name: "Sale Returns",
             path: "/sale-returns",
@@ -342,22 +305,59 @@ export default function ClassicSidebar({
         ],
       },
       {
+        key: "inventory",
+        name: "Stock & Inventory",
+        icon: <ShoppingCartIcon className="w-4 h-4" />,
+        items: [
+          {
+            name: "Batch & Expiry",
+            path: "/batch-expiry",
+            icon: <ClockIcon className="w-5 h-5" />,
+            perm: "batch-expiry.view",
+          },
+          {
+            name: "User Demands",
+            path: "/user-demands",
+            icon: <HandRaisedIcon className="w-5 h-5" />,
+            perm: "user-demands.view",
+            quickCreatePath: "/user-demands/create",
+            quickCreatePerm: "user-demands.create",
+            quickCreateLabel: "New Product Demand",
+          },
+          {
+            name: "Stock Adjustments",
+            path: "/stock-adjustments",
+            icon: <ArrowsRightLeftIcon className="w-5 h-5" />,
+            perm: "stock-adjustment.view",
+            quickCreatePath: "/stock-adjustments/create",
+            quickCreatePerm: "stock-adjustment.create",
+            quickCreateLabel: "Add Stock Adjustment",
+          },
+          {
+            name: "Stocktake Sessions",
+            path: "/stocktake-sessions",
+            icon: <ClipboardDocumentCheckIcon className="w-5 h-5" />,
+            perm: "stocktake.view",
+            quickCreatePath: "/stocktake-sessions/create",
+            quickCreatePerm: "stocktake.create",
+            quickCreateLabel: "New Stocktake Session",
+          },
+          {
+            name: "Quarantine & Disposal",
+            path: "/stock-disposals",
+            icon: <ShieldExclamationIcon className="w-5 h-5" />,
+            perm: "stock-disposal.view",
+            quickCreatePath: "/stock-disposals/create",
+            quickCreatePerm: "stock-disposal.create",
+            quickCreateLabel: "New Disposal",
+          },
+        ],
+      },
+      {
         key: "finance",
         name: "Finance & Ledgers",
         icon: <CurrencyDollarIcon className="w-4 h-4" />,
         items: [
-          {
-            name: "Cash Drawer",
-            path: "/cash-drawer",
-            icon: <BanknotesIcon className="w-5 h-5" />,
-            perm: "cash-drawer.view",
-          },
-          {
-            name: "Payment Vouchers",
-            path: "/payments",
-            icon: <BanknotesIcon className="w-5 h-5" />,
-            perm: "payment.view",
-          },
           {
             name: "Customer Ledger",
             path: "/customer-ledger",
@@ -371,10 +371,16 @@ export default function ClassicSidebar({
             perm: "supplier-ledger.view",
           },
           {
-            name: "Double-Entry & GL",
-            path: "/accounting",
-            icon: <CalculatorIcon className="w-5 h-5" />,
-            permAny: ["account.view", "report.net-profit.view"],
+            name: "Payment Vouchers",
+            path: "/payments",
+            icon: <BanknotesIcon className="w-5 h-5" />,
+            perm: "payment.view",
+          },
+          {
+            name: "Cash Drawer",
+            path: "/cash-drawer",
+            icon: <BanknotesIcon className="w-5 h-5" />,
+            perm: "cash-drawer.view",
           },
           {
             name: "Financial Accounts",
@@ -388,82 +394,88 @@ export default function ClassicSidebar({
             icon: <CurrencyDollarIcon className="w-5 h-5" />,
             perm: "expense.view",
           },
+          {
+            name: "Double-Entry & GL",
+            path: "/accounting",
+            icon: <CalculatorIcon className="w-5 h-5" />,
+            permAny: ["account.view", "report.net-profit.view"],
+          },
         ],
       },
       {
         key: "reports",
-        name: "Reports Hub",
+        name: "Reports",
         icon: <ChartBarIcon className="w-4 h-4" />,
         items: [
-          // Financial & Aging
+          // Financial & Tax
           {
             name: "Net Profit (P&L)",
             path: "/reports/net-profit",
-            subGroup: "Financial & Aging",
+            subGroup: "Financial & Tax",
             icon: <CalculatorIcon className="w-5 h-5" />,
             perm: "report.net-profit.view",
           },
           {
             name: "Statutory Tax Return",
             path: "/reports/tax-return",
-            subGroup: "Financial & Aging",
+            subGroup: "Financial & Tax",
             icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />,
             permAny: ["report.net-profit.view", "report.sale-detail.view", "account.view"],
           },
           {
             name: "Cost of Sale",
             path: "/reports/cost-of-sale",
-            subGroup: "Financial & Aging",
+            subGroup: "Financial & Tax",
             icon: <CalculatorIcon className="w-5 h-5" />,
             perm: "report.cost-of-sale.view",
           },
           {
             name: "Cost of Sale Detail",
             path: "/reports/cost-of-sale-detail",
-            subGroup: "Financial & Aging",
+            subGroup: "Financial & Tax",
             icon: <DocumentTextIcon className="w-5 h-5" />,
             perm: "report.cost-of-sale-detail.view",
           },
           {
             name: "Outstanding Aging",
             path: "/reports/outstanding-aging",
-            subGroup: "Financial & Aging",
+            subGroup: "Financial & Tax",
             icon: <BanknotesIcon className="w-5 h-5" />,
             perm: "report.outstanding-aging.view",
           },
-          // Sales & Purchases
+          // Sales, Purchases & Returns
           {
             name: "Sale Detail",
             path: "/reports/sale-detail",
-            subGroup: "Sales & Purchases",
+            subGroup: "Sales, Purchases & Returns",
             icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />,
             perm: "report.sale-detail.view",
           },
           {
             name: "Purchase Detail",
             path: "/reports/purchase-detail",
-            subGroup: "Sales & Purchases",
+            subGroup: "Sales, Purchases & Returns",
             icon: <ClipboardDocumentIcon className="w-5 h-5" />,
             perm: "report.purchase-detail.view",
           },
           {
             name: "Purchase Summary",
             path: "/reports/purchase-summary",
-            subGroup: "Sales & Purchases",
+            subGroup: "Sales, Purchases & Returns",
             icon: <ClipboardDocumentListIcon className="w-5 h-5" />,
             perm: "report.purchase-summary.view",
           },
           {
-            name: "Sale Returns",
+            name: "Sale Returns Report",
             path: "/reports/sale-returns",
-            subGroup: "Sales & Purchases",
+            subGroup: "Sales, Purchases & Returns",
             icon: <ArrowUturnLeftIcon className="w-5 h-5" />,
             perm: "report.sale-returns.view",
           },
           {
-            name: "Purchase Returns",
+            name: "Purchase Returns Report",
             path: "/reports/purchase-returns",
-            subGroup: "Sales & Purchases",
+            subGroup: "Sales, Purchases & Returns",
             icon: <ArrowUturnDownIcon className="w-5 h-5" />,
             perm: "report.purchase-returns.view",
           },
@@ -497,7 +509,7 @@ export default function ClassicSidebar({
             perm: "report.near-expiry-product.view",
           },
           {
-            name: "Stock Adjustment",
+            name: "Stock Adjustment Report",
             path: "/reports/stock-adjustment",
             subGroup: "Inventory & Stock",
             icon: <ArrowsRightLeftIcon className="w-5 h-5" />,
@@ -507,7 +519,7 @@ export default function ClassicSidebar({
       },
       {
         key: "system",
-        name: "System & Access",
+        name: "System & Settings",
         icon: <Cog6ToothIcon className="w-4 h-4" />,
         items: [
           {
@@ -698,7 +710,7 @@ export default function ClassicSidebar({
   }, [allExpanded, visibleSections]);
 
   const getSectionTheme = (sectionKey) => {
-    const config = SECTION_CONFIG[sectionKey] || SECTION_CONFIG.daily;
+    const config = SECTION_CONFIG[sectionKey] || SECTION_CONFIG.items;
     const colorKey = config.key || "primary";
     return {
       key: colorKey,
@@ -879,6 +891,53 @@ export default function ClassicSidebar({
           aria-label="Main navigation"
           onKeyDown={handleKeyDown}
         >
+          {/* Standalone Pinned Dashboard Link */}
+          {(!searchQuery.trim() || "dashboard".includes(searchQuery.trim().toLowerCase())) && (
+            <div className="mb-1.5 pb-1.5 border-b border-gray-200/60 dark:border-slate-700/60">
+              <div
+                className="workspace-nav-row group/navitem relative flex items-center"
+                style={{ "--nav-accent": getThemeColor(theme, "primary", "color") }}
+              >
+                <Link
+                  to="/dashboard"
+                  onClick={() => {
+                    if (!isPinned && onRequestCloseDock) {
+                      onRequestCloseDock();
+                    }
+                  }}
+                  className={`workspace-nav-item flex-1 min-w-0 ${
+                    pathname === "/dashboard" || pathname.startsWith("/dashboard/")
+                      ? "workspace-nav-item-active"
+                      : ""
+                  }`}
+                  style={{ "--nav-accent": getThemeColor(theme, "primary", "color") }}
+                  aria-current={pathname === "/dashboard" ? "page" : undefined}
+                  title={effectiveCollapsed ? "Dashboard" : undefined}
+                >
+                  <span
+                    className={[
+                      "workspace-nav-icon shrink-0 relative",
+                      pathname === "/dashboard" ? "" : "text-gray-500 dark:text-gray-400",
+                    ].join(" ")}
+                    style={{
+                      color:
+                        pathname === "/dashboard"
+                          ? getThemeColor(theme, "primary", "color")
+                          : undefined,
+                    }}
+                  >
+                    <HomeIcon className="w-4.5 h-4.5" aria-hidden="true" />
+                  </span>
+                  {!effectiveCollapsed && (
+                    <span className="workspace-nav-title truncate font-semibold">
+                      Dashboard
+                    </span>
+                  )}
+                </Link>
+              </div>
+            </div>
+          )}
+
           {visibleSections.length === 0 ? (
             <div className="py-8 px-4 text-center text-xs text-slate-400 dark:text-slate-500">
               No menu items match &ldquo;{searchQuery}&rdquo;
