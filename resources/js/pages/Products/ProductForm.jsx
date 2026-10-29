@@ -610,8 +610,23 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
     () => (editingBatchId ? realBatches.find((b) => Number(b.id) === Number(editingBatchId)) : null),
     [editingBatchId, realBatches]
   );
+  const matchingBatchInForm = useMemo(() => {
+    if (editingBatchId || !newBatch.batch_number?.trim()) return null;
+    const typed = newBatch.batch_number.trim().toLowerCase();
+    const locId = Number(newBatch.storage_location_id || form.storage_location_id || 0);
+    return (
+      realBatches.find(
+        (b) =>
+          (b.batch_number || "").trim().toLowerCase() === typed &&
+          (!locId || Number(b.storage_location_id || 0) === locId)
+      ) || null
+    );
+  }, [editingBatchId, newBatch.batch_number, newBatch.storage_location_id, form.storage_location_id, realBatches]);
+
   const maxBatchAssignable = editingBatchObj
     ? unassignedStock + (parseInt(editingBatchObj.quantity, 10) || 0)
+    : matchingBatchInForm
+    ? unassignedStock + (parseInt(matchingBatchInForm.quantity, 10) || 0)
     : unassignedStock;
 
   const batchPickerOptions = useMemo(
@@ -750,8 +765,24 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
       return;
     }
     const requestedQty = newBatch.quantity !== "" ? parseInt(newBatch.quantity, 10) : 0;
-    if (totalStock > 0 && requestedQty > maxBatchAssignable) {
-      toast.error(`Cannot assign ${requestedQty} units. Only ${maxBatchAssignable} units are available for this batch.`);
+
+    if (!editingBatchId && !matchingBatchInForm) {
+      if (maxBatchAssignable <= 0) {
+        toast.error(
+          "Cannot add a new batch because this product has 0 unassigned stock available. Select an existing batch to edit or add stock via Purchase Invoice / Stock Adjustment."
+        );
+        return;
+      }
+      if (requestedQty <= 0) {
+        toast.error(`Batch quantity must be between 1 and ${maxBatchAssignable} unassigned units.`);
+        return;
+      }
+    }
+
+    if (requestedQty > maxBatchAssignable) {
+      toast.error(
+        `Cannot assign ${requestedQty} units. Only ${maxBatchAssignable} unassigned units are available for this batch.`
+      );
       return;
     }
 
@@ -793,10 +824,6 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
       setEditingBatchId(null);
       const bRes = await axios.get(`/api/products/${initialData.id}/batches`);
       setBatches(bRes.data);
-      const realTotalUnits = (bRes.data || [])
-        .filter((b) => !b.is_unbatched && b.batch_number && b.id != null)
-        .reduce((acc, b) => acc + (parseInt(b.quantity, 10) || 0), 0);
-      setForm((prev) => ({ ...prev, quantity: Math.max(parseInt(prev.quantity, 10) || 0, realTotalUnits) }));
     } catch (err) {
       const msg =
         err?.response?.data?.errors?.batch_number?.[0] ||
@@ -1417,9 +1444,9 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                           : "Add New Batch or Update Existing"}
                       </h3>
                       <p className="text-xs text-gray-500 dark:text-slate-400">
-                        {totalStock > 0
-                          ? `Up to ${maxBatchAssignable} units available to allocate to this batch`
-                          : "Enter batch details and optional unit pricing overrides"}
+                        {maxBatchAssignable > 0
+                          ? `Up to ${maxBatchAssignable} unassigned units available to allocate to this batch`
+                          : "0 unassigned units available — select an existing batch to edit or add stock first"}
                       </p>
                     </div>
                   </div>
@@ -1500,18 +1527,22 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                       >
                         Batch Quantity
                       </label>
-                      {totalStock > 0 && (
-                        <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                          Max: {maxBatchAssignable}
-                        </span>
-                      )}
+                      <span
+                        className={`text-[11px] font-semibold ${
+                          maxBatchAssignable > 0
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-amber-600 dark:text-amber-400"
+                        }`}
+                      >
+                        Max: {maxBatchAssignable}
+                      </span>
                     </div>
                     <GlassInput
                       id="batch-qty-input"
                       type="number"
                       min="0"
-                      max={totalStock > 0 ? maxBatchAssignable : undefined}
-                      placeholder={totalStock > 0 ? `Max ${maxBatchAssignable}` : "0"}
+                      max={maxBatchAssignable}
+                      placeholder={`Max ${maxBatchAssignable}`}
                       value={newBatch.quantity}
                       onChange={(e) => setNewBatch((p) => ({ ...p, quantity: e.target.value }))}
                       className="w-full text-sm font-mono tabular-nums bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"

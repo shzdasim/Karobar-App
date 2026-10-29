@@ -69,6 +69,7 @@ const AccountsPage = lazy(() => import("../pages/Accounts/index.jsx"));
 const PaymentsPage = lazy(() => import("../pages/Payments/index.jsx"));
 const AccountingPage = lazy(() => import("../pages/Accounting/index.jsx"));
 const TaxReturnReport = lazy(() => import("../pages/Reports/TaxReturnReport.jsx"));
+const ProductBatchWorkbench = lazy(() => import("../pages/Batches/ProductBatchWorkbench.jsx"));
 // Cash Drawer
 const CashDrawerPage = lazy(() => import("../pages/CashDrawer/index.jsx"));
 const SupplierLedgerPage = lazy(() => import("../pages/Ledger/SupplierLedgerPage.jsx"));
@@ -587,6 +588,17 @@ export default function AppRoutes() {
           <ProtectedRoute>
             <DashboardLayout>
               <BatchExpiryTracking />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      {/* Keyboard-Driven Product Batch Workbench */}
+      <Route
+        path="product-batches"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <ProductBatchWorkbench />
             </DashboardLayout>
           </ProtectedRoute>
         }

@@ -170,6 +170,7 @@ export default function DashboardLayout({ children }) {
     "/payments": "Payment Vouchers",
     "/cash-drawer": "Cash Drawer",
     "/expenses": "Operating Expenses",
+    "/product-batches": "Product Batches Workbench",
     "/reports/net-profit": "Profit & Loss Statement",
     "/reports/tax-return": "Statutory Tax & GST Return",
     "/stock-adjustments": "Stock Adjustments",

@@ -188,6 +188,12 @@ export default function ClassicSidebar({
             quickCreateLabel: "Add Product",
           },
           {
+            name: "Product Batches",
+            path: "/product-batches",
+            icon: <BoltIcon className="w-5 h-5" />,
+            permAny: ["product.view", "product.update", "batch-expiry.view"],
+          },
+          {
             name: "Categories",
             path: "/categories",
             icon: <Squares2X2Icon className="w-5 h-5" />,
@@ -314,6 +320,9 @@ export default function ClassicSidebar({
             path: "/batch-expiry",
             icon: <ClockIcon className="w-5 h-5" />,
             perm: "batch-expiry.view",
+            quickCreatePath: "/product-batches",
+            quickCreatePerm: "product.update",
+            quickCreateLabel: "Quick Add / Edit Batches",
           },
           {
             name: "User Demands",

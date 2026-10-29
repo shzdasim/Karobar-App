@@ -85,6 +85,7 @@ export default function TopNavigation() {
       icon: <CubeIcon className="w-5 h-5" />,
       items: [
         { name: "Products", path: "/products", icon: <CubeIcon className="w-5 h-5" />, perm: "product.view" },
+        { name: "Product Batches", path: "/product-batches", icon: <ClockIcon className="w-5 h-5" />, permAny: ["product.view", "product.update", "batch-expiry.view"] },
         { name: "Categories", path: "/categories", icon: <Squares2X2Icon className="w-5 h-5" />, perm: "category.view" },
         { name: "Brands", path: "/brands", icon: <TagIcon className="w-5 h-5" />, perm: "brand.view" },
         { name: "Suppliers", path: "/suppliers", icon: <TruckIcon className="w-5 h-5" />, perm: "supplier.view" },

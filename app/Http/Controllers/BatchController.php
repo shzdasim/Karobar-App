@@ -71,12 +71,29 @@ class BatchController extends Controller
 
         // When expiry dates are equal, prefer 'shop' storage locations before 'godown' locations for FEFO
         if ($hasLocations) {
-            $batches = $batches->sortBy([
-                fn ($b) => ($b->expiry_date && substr((string) $b->expiry_date, 0, 10) >= $today) ? 0 : 1,
-                fn ($b) => (string) ($b->expiry_date ?? '9999-12-31'),
-                fn ($b) => ($b->storageLocation?->type === 'shop') ? 0 : (($b->storageLocation?->type === 'cold_storage') ? 1 : 2),
-                fn ($b) => (int) $b->id,
-            ])->values();
+            $batches = $batches->sort(function ($a, $b) use ($today) {
+                $aExp = $a->expiry_date ? substr((string) $a->expiry_date, 0, 10) : null;
+                $bExp = $b->expiry_date ? substr((string) $b->expiry_date, 0, 10) : null;
+
+                $aValid = ($aExp && $aExp >= $today) ? 0 : 1;
+                $bValid = ($bExp && $bExp >= $today) ? 0 : 1;
+                if ($aValid !== $bValid) {
+                    return $aValid <=> $bValid;
+                }
+
+                $expCmp = ($aExp ?? '9999-12-31') <=> ($bExp ?? '9999-12-31');
+                if ($expCmp !== 0) {
+                    return $expCmp;
+                }
+
+                $aLocRank = ($a->storageLocation?->type === 'shop') ? 0 : (($a->storageLocation?->type === 'cold_storage') ? 1 : 2);
+                $bLocRank = ($b->storageLocation?->type === 'shop') ? 0 : (($b->storageLocation?->type === 'cold_storage') ? 1 : 2);
+                if ($aLocRank !== $bLocRank) {
+                    return $aLocRank <=> $bLocRank;
+                }
+
+                return ((int) $a->id) <=> ((int) $b->id);
+            })->values();
         }
 
         // Flag the first eligible FEFO batch (non-expired with positive stock)
@@ -171,7 +188,7 @@ class BatchController extends Controller
 
         return DB::transaction(function () use ($product, $batchNumber, $expiryDate, $qty, $validated) {
             $product = Product::lockForUpdate()->findOrFail($product->id);
-            $currentTotal = (int) ($product->quantity ?? 0);
+            $currentTotal = max(0, (int) ($product->quantity ?? 0));
             $alreadyBatched = (int) $product->batches()->sum('quantity');
 
             $defaultLocationId = StorageLocation::where('is_default', true)->value('id')
@@ -193,13 +210,26 @@ class BatchController extends Controller
             $existing = $existingQuery->first();
 
             $existingBatchQty = $existing ? (int)$existing->quantity : 0;
-            // Available unassigned units that have no batch assigned
-            $availableUnassigned = max(0, $currentTotal - ($alreadyBatched - $existingBatchQty));
+            $otherBatched = max(0, $alreadyBatched - $existingBatchQty);
+            // Available unassigned units that can be allocated to this batch
+            $availableUnassigned = max(0, $currentTotal - $otherBatched);
 
-            // If product has on-hand stock, the batch quantity takes from unassigned stock
-            if ($currentTotal > 0 && $qty > $availableUnassigned) {
+            if (!$existing) {
+                if ($availableUnassigned <= 0) {
+                    throw ValidationException::withMessages([
+                        'quantity' => ["Cannot add a new batch because this product has 0 unassigned stock available (Total on-hand: {$currentTotal}, already batched: {$otherBatched})."],
+                    ]);
+                }
+                if ($qty <= 0) {
+                    throw ValidationException::withMessages([
+                        'quantity' => ["Batch quantity must be at least 1 unit from unassigned stock (Available unassigned: {$availableUnassigned})."],
+                    ]);
+                }
+            }
+
+            if ($qty > $availableUnassigned) {
                 throw ValidationException::withMessages([
-                    'quantity' => ["Cannot assign {$qty} units to batch. Only {$availableUnassigned} unassigned units are available for this product (Total on-hand: {$currentTotal}, already batched: " . ($alreadyBatched - $existingBatchQty) . ")."],
+                    'quantity' => ["Cannot assign {$qty} units to batch. Only {$availableUnassigned} unassigned units are available for this batch (Total on-hand: {$currentTotal}, other batches: {$otherBatched})."],
                 ]);
             }
 
@@ -241,14 +271,7 @@ class BatchController extends Controller
                 $batch = Batch::create($createPayload);
             }
 
-            // The product overall quantity is kept intact, taking batch quantity from unassigned stock.
-            // If product had 0 stock, product quantity expands to cover the new batch.
-            $newBatchedSum = (int) $product->batches()->sum('quantity');
-            if ($currentTotal < $newBatchedSum) {
-                $product->quantity = $newBatchedSum;
-                $product->save();
-            }
-
+            // Product overall quantity is strictly preserved; batches only allocate from existing unassigned stock.
             return response()->json($batch->fresh(['storageLocation']), 201);
         });
     }
@@ -290,14 +313,15 @@ class BatchController extends Controller
 
         return DB::transaction(function () use ($batch, $validated, $targetLocationId) {
             $product = Product::lockForUpdate()->findOrFail($batch->product_id);
-            $currentTotal = (int) ($product->quantity ?? 0);
+            $currentTotal = max(0, (int) ($product->quantity ?? 0));
             $otherBatched = (int) $product->batches()->where('id', '!=', $batch->id)->sum('quantity');
             $newQty = (int) $validated['quantity'];
             $availableUnassigned = max(0, $currentTotal - $otherBatched);
 
-            if ($currentTotal > 0 && $newQty > $availableUnassigned) {
+            if ($newQty > $availableUnassigned) {
+                $unbatchedPool = max(0, $currentTotal - ($otherBatched + (int) $batch->quantity));
                 throw ValidationException::withMessages([
-                    'quantity' => ["Cannot assign {$newQty} units to batch. Only {$availableUnassigned} unassigned units are available for this product."],
+                    'quantity' => ["Cannot assign {$newQty} units to batch. Maximum assignable quantity is {$availableUnassigned} units (Current batch: {$batch->quantity}, unassigned stock: {$unbatchedPool})."],
                 ]);
             }
 
@@ -322,12 +346,7 @@ class BatchController extends Controller
             }
             $batch->save();
 
-            $newBatchedSum = (int) $product->batches()->sum('quantity');
-            if ($currentTotal < $newBatchedSum) {
-                $product->quantity = $newBatchedSum;
-                $product->save();
-            }
-
+            // Product overall quantity is strictly preserved; batches only allocate from existing unassigned stock.
             return response()->json($batch->fresh(['storageLocation']), 200);
         });
     }

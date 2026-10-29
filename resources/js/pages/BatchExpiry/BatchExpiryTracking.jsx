@@ -553,6 +553,17 @@ export default function BatchExpiryTracking() {
 
           <button
             type="button"
+            onClick={() => navigate("/product-batches")}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold theme-btn-primary ${btnPrimary.className}`}
+            style={btnPrimary.style}
+            title="Open Keyboard-Driven Quick Batch Workbench to Add or Edit Batches"
+          >
+            <PencilSquareIcon className="w-4 h-4" />
+            <span>⚡ Quick Add / Edit Batches</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setManageLocationsOpen(true)}
             className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold theme-btn-secondary ${btnSecondary.className}`}
             style={btnSecondary.style}
@@ -1064,9 +1075,23 @@ export default function BatchExpiryTracking() {
                         </div>
                       </td>
 
-                      {/* Actions: Move Location, Return & Quarantine/Dispose Buttons */}
+                      {/* Actions: Edit, Move Location, Return & Quarantine/Dispose Buttons */}
                       <td className="py-3 px-3.5 text-center">
                         <div className="inline-flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              navigate(
+                                `/product-batches?product_id=${row.product_id}&batch_id=${row.batch_id}`
+                              )
+                            }
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold theme-btn-secondary ${btnSecondary.className}`}
+                            style={btnSecondary.style}
+                            title="Edit this batch in Quick Batch Workbench"
+                          >
+                            <PencilSquareIcon className="w-3.5 h-3.5 text-blue-500" />
+                            <span>Edit</span>
+                          </button>
                           <button
                             type="button"
                             onClick={() => setMoveModalBatch(row)}

@@ -45,15 +45,17 @@ class BatchExpiryController extends Controller
      */
     public function index(Request $request)
     {
-        $this->authorizeExpiryAction('batch-expiry.view');
+        $this->authorizeExpiryAction(['batch-expiry.view', 'product.view', 'product.update']);
 
         $globalWarningDays = $this->getGlobalWarningDays();
         $statusFilter = $request->query('status', 'all'); // all, expired, critical, warning, safe
         $search = trim((string) $request->query('search', ''));
+        $productId = $request->query('product_id');
         $supplierId = $request->query('supplier_id');
         $brandId = $request->query('brand_id');
         $categoryId = $request->query('category_id');
         $storageLocationId = $request->query('storage_location_id');
+        $includeZeroQty = $request->boolean('include_zero_qty', false);
         $hasCustom = $request->query('has_custom_warning');
         $sortBy = $request->query('sort_by', 'expiry_date');
         $sortDir = strtolower($request->query('sort_dir', 'asc')) === 'desc' ? 'desc' : 'asc';
@@ -64,15 +66,19 @@ class BatchExpiryController extends Controller
         $todayStr = $today->toDateString();
         $hasStorageLocations = \Illuminate\Support\Facades\Schema::hasTable('storage_locations')
             && \Illuminate\Support\Facades\Schema::hasColumn('batches', 'storage_location_id');
+        $hasBatchPricing = \Illuminate\Support\Facades\Schema::hasColumn('batches', 'unit_sale_price');
 
-        // Base query: only batches with quantity > 0 and expiry_date set
+        // Base query: batches with expiry_date set
         $query = DB::table('batches as b')
             ->join('products as p', 'p.id', '=', 'b.product_id')
             ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
             ->leftJoin('brands as br', 'br.id', '=', 'p.brand_id')
             ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
-            ->whereNotNull('b.expiry_date')
-            ->where('b.quantity', '>', 0);
+            ->whereNotNull('b.expiry_date');
+
+        if (!$includeZeroQty) {
+            $query->where('b.quantity', '>', 0);
+        }
 
         if ($hasStorageLocations) {
             $query->leftJoin('storage_locations as sl', 'sl.id', '=', 'b.storage_location_id');
@@ -91,6 +97,9 @@ class BatchExpiryController extends Controller
             });
         }
 
+        if (!empty($productId)) {
+            $query->where('p.id', $productId);
+        }
         if (!empty($supplierId)) {
             $query->where('p.supplier_id', $supplierId);
         }
@@ -120,9 +129,11 @@ class BatchExpiryController extends Controller
             'p.barcode',
             'p.name as product_name',
             'p.pack_size',
+            'p.quantity as product_total_qty',
             'p.unit_purchase_price',
             'p.pack_purchase_price',
             'p.unit_sale_price',
+            'p.pack_sale_price',
             'p.avg_price',
             'p.rack as product_rack',
             'p.expiry_warning_days as product_warning_days',
@@ -135,8 +146,18 @@ class BatchExpiryController extends Controller
             DB::raw('COALESCE(c.name, "") as category_name'),
         ];
 
+        if ($hasBatchPricing) {
+            $selectColumns[] = 'b.unit_sale_price as batch_unit_sale_price';
+            $selectColumns[] = 'b.unit_purchase_price as batch_unit_purchase_price';
+            $selectColumns[] = 'b.pack_sale_price as batch_pack_sale_price';
+            $selectColumns[] = 'b.pack_purchase_price as batch_pack_purchase_price';
+            $selectColumns[] = 'b.whole_sale_unit_price as batch_whole_sale_unit_price';
+            $selectColumns[] = 'b.whole_sale_pack_price as batch_whole_sale_pack_price';
+        }
+
         if ($hasStorageLocations) {
             $selectColumns[] = 'b.storage_location_id';
+            $selectColumns[] = 'p.storage_location_id as product_storage_location_id';
             $selectColumns[] = 'b.rack as batch_rack';
             $selectColumns[] = DB::raw('COALESCE(sl.name, "") as storage_location_name');
             $selectColumns[] = DB::raw('COALESCE(sl.code, "") as storage_location_code');
@@ -182,19 +203,20 @@ class BatchExpiryController extends Controller
                 $status = 'safe';
             }
 
-            // Estimate unit cost
+            // Estimate unit cost (prefer batch-specific cost, then product cost)
             $packSize = max(1, (int) ($row->pack_size ?? 1));
-            $unitCost = (float) ($row->unit_purchase_price ?? 0);
+            $unitCost = (float) ($row->batch_unit_purchase_price ?? $row->unit_purchase_price ?? 0);
             if ($unitCost <= 0 && !empty($row->avg_price)) {
                 $unitCost = (float) $row->avg_price;
             }
             if ($unitCost <= 0 && !empty($row->pack_purchase_price)) {
                 $unitCost = (float) $row->pack_purchase_price / $packSize;
             }
+            $unitSalePrice = (float) ($row->batch_unit_sale_price ?? $row->unit_sale_price ?? 0);
 
             $qty = (int) $row->quantity;
             $valueAtRisk = round($qty * $unitCost, 2);
-            $retailValue = round($qty * (float) ($row->unit_sale_price ?? 0), 2);
+            $retailValue = round($qty * $unitSalePrice, 2);
 
             // Update global metrics (for all batches matching query filters before status tab)
             $summary['total_batches_tracked']++;
