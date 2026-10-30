@@ -131,8 +131,12 @@ export default function BarcodeIndex() {
   // Suppliers & Brands list for filtering purchase orders
   const [suppliersList, setSuppliersList] = useState([]);
   const [brandsList, setBrandsList] = useState([]);
+  const [loadingSuppliers, setLoadingSuppliers] = useState(false);
+  const [loadingBrands, setLoadingBrands] = useState(false);
   const [selectedSupplierOpt, setSelectedSupplierOpt] = useState({ value: null, label: "🏢 All Suppliers" });
   const [selectedBrandOpt, setSelectedBrandOpt] = useState({ value: null, label: "🏷️ All Brands" });
+  const supplierSearchTimerRef = useRef(null);
+  const brandSearchTimerRef = useRef(null);
 
   // Purchase Orders & Purchase Invoices list and selection
   const [importDocType, setImportDocType] = useState("purchase_invoices"); // "purchase_invoices" | "purchase_orders"
@@ -144,22 +148,122 @@ export default function BarcodeIndex() {
   const [poQtyMode, setPoQtyMode] = useState("units"); // "units" | "packs"
   const [poItemSelections, setPoItemSelections] = useState([]);
 
-  // Fetch suppliers and brands on mount
+  const mergeUniqueById = useCallback((prevList, incomingList) => {
+    const map = new Map();
+    (prevList || []).forEach((item) => {
+      if (item && item.id != null) map.set(Number(item.id), item);
+    });
+    (incomingList || []).forEach((item) => {
+      if (item && item.id != null) map.set(Number(item.id), item);
+    });
+    return Array.from(map.values()).sort((a, b) =>
+      String(a.name || "").localeCompare(String(b.name || ""))
+    );
+  }, []);
+
+  // Fetch all suppliers and brands on mount
   useEffect(() => {
     const loadFilters = async () => {
       try {
+        setLoadingSuppliers(true);
+        setLoadingBrands(true);
         const [supRes, brandRes] = await Promise.all([
-          axios.get("/api/suppliers/search", { params: { limit: 100 } }),
-          axios.get("/api/brands/search", { params: { limit: 100 } }),
+          axios
+            .get("/api/suppliers/search", { params: { limit: 5000 } })
+            .catch(() => axios.get("/api/suppliers", { params: { per_page: 5000 } })),
+          axios
+            .get("/api/brands/search", { params: { limit: 5000 } })
+            .catch(() => axios.get("/api/brands", { params: { per_page: 5000 } })),
         ]);
-        setSuppliersList(Array.isArray(supRes.data) ? supRes.data : []);
-        setBrandsList(Array.isArray(brandRes.data) ? brandRes.data : []);
+        const supRows = Array.isArray(supRes?.data?.data)
+          ? supRes.data.data
+          : Array.isArray(supRes?.data)
+          ? supRes.data
+          : [];
+        const brandRows = Array.isArray(brandRes?.data?.data)
+          ? brandRes.data.data
+          : Array.isArray(brandRes?.data)
+          ? brandRes.data
+          : [];
+        setSuppliersList((prev) => mergeUniqueById(prev, supRows));
+        setBrandsList((prev) => mergeUniqueById(prev, brandRows));
       } catch {
         // silent
+      } finally {
+        setLoadingSuppliers(false);
+        setLoadingBrands(false);
       }
     };
     loadFilters();
-  }, []);
+    return () => {
+      if (supplierSearchTimerRef.current) clearTimeout(supplierSearchTimerRef.current);
+      if (brandSearchTimerRef.current) clearTimeout(brandSearchTimerRef.current);
+    };
+  }, [mergeUniqueById]);
+
+  // Live server-side search when typing in Supplier Select
+  const handleSupplierInputChange = useCallback(
+    (inputValue, { action } = {}) => {
+      if (action !== "input-change") return;
+      const trimmed = String(inputValue || "").trim();
+      if (supplierSearchTimerRef.current) clearTimeout(supplierSearchTimerRef.current);
+      if (!trimmed) return;
+
+      supplierSearchTimerRef.current = setTimeout(async () => {
+        try {
+          setLoadingSuppliers(true);
+          const res = await axios
+            .get("/api/suppliers/search", { params: { q: trimmed, limit: 250 } })
+            .catch(() => axios.get("/api/suppliers", { params: { q: trimmed, per_page: 250 } }));
+          const rows = Array.isArray(res?.data?.data)
+            ? res.data.data
+            : Array.isArray(res?.data)
+            ? res.data
+            : [];
+          if (rows.length > 0) {
+            setSuppliersList((prev) => mergeUniqueById(prev, rows));
+          }
+        } catch {
+          // silent
+        } finally {
+          setLoadingSuppliers(false);
+        }
+      }, 180);
+    },
+    [mergeUniqueById]
+  );
+
+  // Live server-side search when typing in Brand Select so ALL brands are searchable
+  const handleBrandInputChange = useCallback(
+    (inputValue, { action } = {}) => {
+      if (action !== "input-change") return;
+      const trimmed = String(inputValue || "").trim();
+      if (brandSearchTimerRef.current) clearTimeout(brandSearchTimerRef.current);
+      if (!trimmed) return;
+
+      brandSearchTimerRef.current = setTimeout(async () => {
+        try {
+          setLoadingBrands(true);
+          const res = await axios
+            .get("/api/brands/search", { params: { q: trimmed, limit: 250 } })
+            .catch(() => axios.get("/api/brands", { params: { q_name: trimmed, per_page: 250 } }));
+          const rows = Array.isArray(res?.data?.data)
+            ? res.data.data
+            : Array.isArray(res?.data)
+            ? res.data
+            : [];
+          if (rows.length > 0) {
+            setBrandsList((prev) => mergeUniqueById(prev, rows));
+          }
+        } catch {
+          // silent
+        } finally {
+          setLoadingBrands(false);
+        }
+      }, 180);
+    },
+    [mergeUniqueById]
+  );
 
   // Fetch purchase orders & purchase invoices matching supplier and brand
   const fetchPurchaseOrders = useCallback(async (supplierId = null, brandId = null) => {
@@ -241,18 +345,21 @@ export default function BarcodeIndex() {
     }
     const po = opt.po;
     setSelectedPoData(po);
+    const activeBrandId = selectedBrandOpt?.value ? Number(selectedBrandOpt.value) : null;
 
     const items = (po.items || []).map((it) => {
       const p = it.product || {};
       const orderedUnits = Number(it.ordered_quantity ?? it.quantity ?? it.unit_quantity ?? 0) || 1;
       const packSize = Math.max(1, Number(it.pack_size || p.pack_size || 1));
       const orderedPacks = Math.max(1, Number(it.pack_quantity) || Math.round(orderedUnits / packSize));
+      const itemBrandId = p.brand_id != null ? Number(p.brand_id) : null;
 
       return {
         id: it.id,
         product_id: it.product_id,
         product_name: p.name || `Product #${it.product_id}`,
         barcode: p.barcode || p.product_code || "",
+        brand_id: itemBrandId,
         brand_name: p.brand?.name || "—",
         batch_number: it.batch || "",
         expiry_date: it.expiry ? String(it.expiry).slice(0, 10) : "",
@@ -260,7 +367,7 @@ export default function BarcodeIndex() {
         ordered_units: orderedUnits,
         ordered_packs: orderedPacks,
         import_quantity: poQtyMode === "packs" ? orderedPacks : orderedUnits,
-        selected: true,
+        selected: !activeBrandId || itemBrandId === activeBrandId,
         product: p,
       };
     });
@@ -1599,9 +1706,17 @@ export default function BarcodeIndex() {
                     <Select
                       value={selectedSupplierOpt}
                       onChange={(opt) => setSelectedSupplierOpt(opt || { value: null, label: "🏢 All Suppliers" })}
+                      onInputChange={handleSupplierInputChange}
                       options={supplierOptions}
                       styles={batchSelectStyles}
+                      isLoading={loadingSuppliers}
                       isSearchable
+                      isClearable={Boolean(selectedSupplierOpt?.value)}
+                      filterOption={(option, rawInput) => {
+                        const q = String(rawInput || "").trim().toLowerCase();
+                        if (!q) return true;
+                        return String(option?.label || "").toLowerCase().includes(q);
+                      }}
                       placeholder="Filter by Supplier…"
                       menuPortalTarget={typeof document !== "undefined" ? document.body : null}
                       menuPosition="fixed"
@@ -1616,10 +1731,30 @@ export default function BarcodeIndex() {
                     </label>
                     <Select
                       value={selectedBrandOpt}
-                      onChange={(opt) => setSelectedBrandOpt(opt || { value: null, label: "🏷️ All Brands" })}
+                      onChange={(opt) => {
+                        const resolved = opt || { value: null, label: "🏷️ All Brands" };
+                        setSelectedBrandOpt(resolved);
+                        const activeBrandId = resolved?.value ? Number(resolved.value) : null;
+                        setPoItemSelections((prev) =>
+                          prev.length > 0
+                            ? prev.map((item) => ({
+                                ...item,
+                                selected: !activeBrandId || Number(item.brand_id) === activeBrandId,
+                              }))
+                            : prev
+                        );
+                      }}
+                      onInputChange={handleBrandInputChange}
                       options={brandOptions}
                       styles={batchSelectStyles}
+                      isLoading={loadingBrands}
                       isSearchable
+                      isClearable={Boolean(selectedBrandOpt?.value)}
+                      filterOption={(option, rawInput) => {
+                        const q = String(rawInput || "").trim().toLowerCase();
+                        if (!q) return true;
+                        return String(option?.label || "").toLowerCase().includes(q);
+                      }}
                       placeholder="Filter by Brand…"
                       menuPortalTarget={typeof document !== "undefined" ? document.body : null}
                       menuPosition="fixed"

@@ -145,7 +145,7 @@ class BrandController extends Controller
         $this->authorize('lookup', Brand::class);
 
         $q     = trim($req->input('q', ''));
-        $limit = max(1, min((int)$req->input('limit', 50), 2000));
+        $limit = max(1, min((int)$req->input('limit', 50), 10000));
 
         $query = Brand::select(
             'id',
