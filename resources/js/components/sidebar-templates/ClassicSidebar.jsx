@@ -204,12 +204,18 @@ export default function ClassicSidebar({
             path: "/brands",
             icon: <TagIcon className="w-5 h-5" />,
             perm: "brand.view",
+            quickCreatePath: "/brands/create",
+            quickCreatePerm: "brand.create",
+            quickCreateLabel: "Add Brand",
           },
           {
             name: "Suppliers",
             path: "/suppliers",
             icon: <TruckIcon className="w-5 h-5" />,
             perm: "supplier.view",
+            quickCreatePath: "/suppliers/create",
+            quickCreatePerm: "supplier.create",
+            quickCreateLabel: "Add Supplier",
           },
           {
             name: "Customers",
@@ -231,7 +237,7 @@ export default function ClassicSidebar({
         icon: <DocumentTextIcon className="w-4 h-4" />,
         items: [
           {
-            name: "⚡ Barcode POS",
+            name: "Barcode POS",
             path: "/sale-invoices/pos",
             icon: <QrCodeIcon className="w-5 h-5" />,
             permAny: ["barcode-pos.view", "barcode-pos.create"],

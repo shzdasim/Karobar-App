@@ -84,6 +84,8 @@ export default function ProductBatchWorkbench() {
   const [productHighlightIdx, setProductHighlightIdx] = useState(0);
   const [searchingProducts, setSearchingProducts] = useState(false);
   const productDropdownContainerRef = useRef(null);
+  const productDropdownListRef = useRef(null);
+  const productRowRefs = useRef([]);
 
   // Selected Product & Its Batches State
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -186,6 +188,31 @@ export default function ProductBatchWorkbench() {
     document.addEventListener("mousedown", handleOutside);
     return () => document.removeEventListener("mousedown", handleOutside);
   }, []);
+
+  // Reset row refs when product search results change
+  useEffect(() => {
+    productRowRefs.current = [];
+  }, [productResults.length]);
+
+  // Keep highlighted product row scrolled into view when navigating with Up/Down arrow keys
+  useEffect(() => {
+    if (!productDropdownOpen || productHighlightIdx < 0) return;
+    const rowEl = productRowRefs.current[productHighlightIdx];
+    const containerEl = productDropdownListRef.current;
+    if (rowEl && containerEl) {
+      const rowTop = rowEl.offsetTop;
+      const rowBottom = rowTop + rowEl.offsetHeight;
+      const viewTop = containerEl.scrollTop;
+      const viewBottom = viewTop + containerEl.clientHeight;
+      if (rowTop < viewTop) {
+        containerEl.scrollTop = rowTop;
+      } else if (rowBottom > viewBottom) {
+        containerEl.scrollTop = rowBottom - containerEl.clientHeight;
+      }
+    } else if (rowEl) {
+      rowEl.scrollIntoView({ block: "nearest" });
+    }
+  }, [productHighlightIdx, productDropdownOpen, productResults.length]);
 
   // Load batches for a given product
   const loadProductAndBatches = useCallback(
@@ -763,23 +790,18 @@ export default function ProductBatchWorkbench() {
         isDark ? "bg-slate-900 text-slate-100" : "bg-slate-50 text-slate-800"
       }`}
     >
-      {/* Top Header & Keyboard Shortcuts Intelligence Strip */}
+      {/* Top Header & Keyboard Shortcuts */}
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 bg-white dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl p-3.5 shadow-xs">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-            <BoltIcon className="w-6 h-6" />
+            <CubeIcon className="w-6 h-6" />
           </div>
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-lg md:text-xl font-bold tracking-tight">
-                Product Batches — Keyboard Quick Workbench
-              </h1>
-              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
-                Keyboard Intelligent
-              </span>
-            </div>
+            <h1 className="text-lg md:text-xl font-bold tracking-tight">
+              Product Batches
+            </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Search any product, add or edit batches on a single screen, and navigate every field with Enter.
+              Manage product batch numbers, expiry dates, and stock locations.
             </p>
           </div>
         </div>
@@ -942,7 +964,10 @@ export default function ProductBatchWorkbench() {
 
             {/* Instant Keyboard Dropdown Results */}
             {productDropdownOpen && (
-              <div className="absolute left-0 right-0 mt-1.5 max-h-72 overflow-y-auto rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xl z-50 divide-y divide-slate-100 dark:divide-slate-700/60">
+              <div
+                ref={productDropdownListRef}
+                className="absolute left-0 right-0 mt-1.5 max-h-72 overflow-y-auto rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xl z-50 divide-y divide-slate-100 dark:divide-slate-700/60"
+              >
                 {searchingProducts && productResults.length === 0 ? (
                   <div className="p-4 text-center text-xs text-slate-400">
                     Searching products...
@@ -958,8 +983,13 @@ export default function ProductBatchWorkbench() {
                     return (
                       <button
                         key={p.id}
+                        ref={(el) => (productRowRefs.current[idx] = el)}
                         type="button"
-                        onMouseEnter={() => setProductHighlightIdx(idx)}
+                        onMouseMove={() => {
+                          if (productHighlightIdx !== idx) {
+                            setProductHighlightIdx(idx);
+                          }
+                        }}
                         onClick={() =>
                           loadProductAndBatches(p, { focusBatchInput: true })
                         }
@@ -1126,8 +1156,8 @@ export default function ProductBatchWorkbench() {
                 </span>
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
                   {editingBatchId
-                    ? `Editing Batch #${batchForm.batch_number}`
-                    : "Add New Batch (Enter ↵ Moves to Next Field)"}
+                    ? `Edit Batch #${batchForm.batch_number}`
+                    : "Add Batch"}
                 </span>
                 {editingBatchId && (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
@@ -1692,19 +1722,19 @@ export default function ProductBatchWorkbench() {
         </div>
       </div>
 
-      {/* BOTTOM FULL-WIDTH CARD: Global All-Products Batch Tracker & Quick Editor */}
+      {/* BOTTOM FULL-WIDTH CARD: All Product Batches */}
       <div className="bg-white dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl shadow-xs overflow-hidden">
         <div className="p-3.5 border-b border-slate-200/80 dark:border-slate-700/80 flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <CubeIcon className="w-4 h-4 text-indigo-500" />
-              <span>All Products Batch Directory & Expiry Tracker</span>
+              <span>All Product Batches</span>
               <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
                 {globalTotal} Batches
               </span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Click <strong>Edit in Workbench</strong> or <strong>+ Add Batch</strong> on any row to immediately load that product into the keyboard workbench above.
+              Click any row to edit its batch details or add a new batch above.
             </p>
           </div>
 
@@ -1818,7 +1848,7 @@ export default function ProductBatchWorkbench() {
                 <th className="py-2.5 px-3.5 font-semibold text-right">Batch Qty</th>
                 <th className="py-2.5 px-3.5 font-semibold text-right">Unit Cost</th>
                 <th className="py-2.5 px-3.5 font-semibold text-right">Unit MRP</th>
-                <th className="py-2.5 px-3.5 font-semibold text-right">Quick Workbench Actions</th>
+                <th className="py-2.5 px-3.5 font-semibold text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200/70 dark:divide-slate-700/60">

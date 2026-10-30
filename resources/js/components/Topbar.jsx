@@ -12,6 +12,7 @@ import {
   BuildingLibraryIcon,
   MagnifyingGlassIcon,
   CommandLineIcon,
+  CubeIcon,
   ExclamationTriangleIcon,
   HandRaisedIcon,
   XMarkIcon,
@@ -587,7 +588,12 @@ export default function Topbar({
       if (!e.altKey) return;
 
       // Alt+P opens Product Search Modal anywhere in the software (even when focused in forms)
-      if (e.code === "KeyP" || e.key.toLowerCase() === "p") {
+      // Except on Sale Invoice Show (/sale-invoices/:id), where Alt+P prints the invoice
+      if (e.code === "KeyP" || (e.key || "").toLowerCase() === "p") {
+        const cleanPath = (window.location.pathname || "").replace(/\/+$/, "");
+        if (/^\/sale-invoices\/\d+$/.test(cleanPath)) {
+          return;
+        }
         e.preventDefault();
         setProductSearchModalOpen((v) => !v);
         return;
@@ -676,8 +682,8 @@ export default function Topbar({
         className="workspace-topbar"
       >
         <div className="workspace-topbar-row">
-          {/* Left: Mobile hamburger + Page Title */}
-          <div className="flex items-center gap-2.5 min-w-0 shrink">
+          {/* Left: Navigation Toggle + Quick Search (Alt+K) + Product Lookup (Alt+P) */}
+          <div className="flex items-center gap-2 shrink-0">
             {/* Mobile menu button — visible on < lg */}
             <div className="lg:hidden shrink-0">
               <button
@@ -698,53 +704,49 @@ export default function Topbar({
                   onClick={onDesktopDockOpen}
                   aria-label="Toggle navigation dock"
                   title="Open Navigation Dock (or hover left screen edge)"
-                  className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-white/70 dark:bg-slate-800/70 border border-gray-200/70 dark:border-slate-600/70 text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-slate-700 focus:outline-none transition-all duration-150 cursor-pointer"
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-white/70 dark:bg-slate-800/70 border border-gray-200/70 dark:border-slate-600/70 text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-slate-700 focus:outline-none transition-all duration-150 cursor-pointer"
                 >
                   <Bars3Icon className="w-4 h-4" />
                 </button>
               </div>
             )}
 
-            {pageTitle && (
-              <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 truncate tracking-tight">
-                {pageTitle}
-              </h1>
-            )}
+            {/* Quick Page Navigation Search (Alt+K) */}
+            <button
+              type="button"
+              onClick={() => setPageSearchModalOpen(true)}
+              title="Quick Navigation — Go to any page or report (Alt+K)"
+              aria-label="Open page search"
+              aria-keyshortcuts="Alt+K"
+              className="inline-flex items-center gap-2 h-9 px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/70 hover:bg-slate-200/70 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-600 dark:text-slate-300 transition-all duration-150 cursor-pointer shrink-0 whitespace-nowrap"
+            >
+              <MagnifyingGlassIcon className="w-4 h-4 text-slate-400 shrink-0" />
+              <span className="hidden sm:inline font-medium">Search Pages</span>
+              <kbd className="hidden md:inline-block px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
+                Alt+K
+              </kbd>
+            </button>
+
+            {/* Quick Product Lookup (Alt+P) */}
+            <button
+              type="button"
+              onClick={() => setProductSearchModalOpen(true)}
+              title="Global Product & Batch Lookup (Alt+P)"
+              aria-label="Open product lookup"
+              aria-keyshortcuts="Alt+P"
+              className="inline-flex items-center gap-2 h-9 px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/70 hover:bg-slate-200/70 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-700 dark:text-slate-200 transition-all duration-150 cursor-pointer shrink-0 whitespace-nowrap"
+            >
+              <CubeIcon className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
+              <span className="hidden xl:inline">Products</span>
+              <kbd className="hidden md:inline-block px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
+                Alt+P
+              </kbd>
+            </button>
           </div>
 
-          {/* Right: Quick actions + Balance badges + Utilities + User (Single line fit) */}
+          {/* Right: 1) Financial Registers | 2) System Utilities | 3) License & User */}
           <div className="workspace-topbar-actions">
-            {/* Action: Purchase */}
-            {!permsLoading && has("purchase-invoice.create") && (
-              <button
-                type="button"
-                onClick={() => openInNewTab("/purchase-invoices/create")}
-                aria-label="Open purchase invoice"
-                aria-keyshortcuts="Alt+1"
-                title="Open Purchase Invoice (Alt+1) in a new tab"
-                className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 text-xs font-semibold theme-btn-secondary relative z-20 shrink-0"
-              >
-                <ClipboardDocumentListIcon className="w-4 h-4 shrink-0" />
-                <span className="hidden sm:inline">Purchase</span>
-              </button>
-            )}
-
-            {/* Action: Sale */}
-            {!permsLoading && has("sale-invoice.create") && (
-              <button
-                type="button"
-                onClick={() => openInNewTab("/sale-invoices/create/retail")}
-                aria-label="Open sale invoice"
-                aria-keyshortcuts="Alt+2"
-                title="Open Sale Invoice (Alt+2) in a new tab"
-                className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 text-xs font-semibold theme-btn-primary relative z-20 shrink-0"
-              >
-                <ShoppingCartIcon className="w-4 h-4 shrink-0" />
-                <span className="hidden sm:inline">Sale</span>
-              </button>
-            )}
-
-            {/* Cash Drawer register button / status badge */}
+            {/* Group 1: Financial Registers (Cash Drawer + Accounts) */}
             {!permsLoading && canViewDrawer && (
               <button
                 type="button"
@@ -756,12 +758,12 @@ export default function Topbar({
                 aria-label="Cash Drawer register"
                 title={
                   drawerStatus.isOpen
-                    ? `Cash Drawer Open: ${formatCurrency(drawerStatus.expected)}`
+                    ? `Cash Drawer Open: ${formatCurrency(drawerStatus.expected)} (Alt+D)`
                     : canOpenDrawerPopup
-                    ? "Cash Drawer is Closed (Click to Open Shift)"
+                    ? "Cash Drawer is Closed — Click to Open Shift (Alt+D)"
                     : "Cash Drawer is Closed"
                 }
-                className={`inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 text-xs font-semibold rounded-xl transition-all duration-150 relative z-20 shrink-0 border ${
+                className={`inline-flex items-center gap-1.5 h-9 px-2.5 text-xs font-semibold rounded-xl transition-all duration-150 relative z-20 shrink-0 whitespace-nowrap border ${
                   canOpenDrawerPopup ? "cursor-pointer" : "cursor-default"
                 } ${
                   drawerStatus.isOpen
@@ -774,88 +776,44 @@ export default function Topbar({
                 }`}
               >
                 <BanknotesIcon className="w-4 h-4 shrink-0" />
-                <span className="flex items-center gap-1.5">
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      drawerStatus.isOpen ? "bg-emerald-500 animate-pulse" : "bg-amber-400"
-                    }`}
-                  />
-                  <span className="hidden md:inline font-bold">
-                    {drawerStatus.isOpen ? formatCurrency(drawerStatus.expected) : "Drawer"}
-                  </span>
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    drawerStatus.isOpen ? "bg-emerald-500 animate-pulse" : "bg-amber-400"
+                  }`}
+                />
+                <span className="hidden lg:inline font-bold">
+                  {drawerStatus.isOpen ? formatCurrency(drawerStatus.expected) : "Drawer"}
                 </span>
               </button>
             )}
 
-            {/* Financial Accounts register button */}
             {!permsLoading && has("account.view") && (
               <button
                 type="button"
                 onClick={() => setAccountsModalOpen(true)}
                 aria-label="Financial Accounts register"
-                title={`Financial Accounts Register: ${formatCurrency(accountsStatus.total_balance)} across all accounts`}
-                className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 text-xs font-semibold rounded-xl transition-all duration-150 relative z-20 shrink-0 border bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20"
+                title={`Financial Accounts Register: ${formatCurrency(accountsStatus.total_balance)} across all accounts (Alt+A)`}
+                className="inline-flex items-center gap-1.5 h-9 px-2.5 text-xs font-semibold rounded-xl transition-all duration-150 relative z-20 shrink-0 whitespace-nowrap border bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 cursor-pointer"
               >
                 <BuildingLibraryIcon className="w-4 h-4 shrink-0" />
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-blue-500" />
-                  <span className="hidden md:inline font-bold">
-                    {formatCurrency(accountsStatus.total_balance)}
-                  </span>
+                <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                <span className="hidden lg:inline font-bold">
+                  {formatCurrency(accountsStatus.total_balance)}
                 </span>
               </button>
             )}
 
-            <div className="mx-0.5 h-5 w-px bg-slate-300/60 dark:bg-slate-700/60 shrink-0" />
+            {((!permsLoading && canViewDrawer) || (!permsLoading && has("account.view"))) && (
+              <div className="mx-0.5 h-5 w-px bg-slate-300/60 dark:bg-slate-700/60 shrink-0" />
+            )}
 
-            {/* Theme Toggle */}
-            <div className="shrink-0 flex items-center">
-              <ThemeToggle />
-            </div>
-
-            {/* Page Navigation Search button (Alt+K) */}
-            <button
-              type="button"
-              onClick={() => setPageSearchModalOpen(true)}
-              title="Go to Page (Alt+K)"
-              aria-label="Open page search"
-              aria-keyshortcuts="Alt+K"
-              className={`relative inline-flex items-center justify-center h-9 w-9 ${buttonStyleClass} transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 shrink-0 cursor-pointer ${isOutlined ? 'border-2' : 'shadow-xs'}`}
-              style={{
-                background: getButtonBg(themeColors.primary),
-                border: getButtonBorder(themeColors.primary),
-                color: getButtonTextColor(themeColors.primary),
-                borderRadius: 'var(--btn-radius, 0.75rem)',
-              }}
-            >
-              <MagnifyingGlassIcon className="w-4 h-4 shrink-0" />
-            </button>
-
-            {/* Keyboard Shortcuts Guide button */}
-            <button
-              type="button"
-              onClick={() => setShortcutsModalOpen(true)}
-              title="Keyboard Shortcuts (?)"
-              aria-label="Open keyboard shortcuts guide"
-              aria-keyshortcuts="?"
-              className={`relative inline-flex items-center justify-center h-9 w-9 ${buttonStyleClass} transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 shrink-0 ${isOutlined ? 'border-2' : 'shadow-xs'}`}
-              style={{
-                background: getButtonBg(themeColors.primary),
-                border: getButtonBorder(themeColors.primary),
-                color: getButtonTextColor(themeColors.primary),
-                borderRadius: 'var(--btn-radius, 0.75rem)',
-              }}
-            >
-              <CommandLineIcon className="w-4 h-4 shrink-0" />
-            </button>
-
-            {/* Notification Bell */}
+            {/* Group 2: System Utilities (Notification Bell, Shortcuts, Theme) */}
             <button
               type="button"
               onClick={() => setNotifOpen(true)}
-              title="Open Notification Center"
+              title="Notifications & Stock Alerts"
               aria-label="Open notification center"
-              className={`relative inline-flex items-center justify-center h-9 w-9 ${buttonStyleClass} transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 shrink-0 ${isOutlined ? 'border-2' : 'shadow-xs'}`}
+              className={`relative inline-flex items-center justify-center h-9 w-9 ${buttonStyleClass} transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 shrink-0 cursor-pointer ${isOutlined ? 'border-2' : 'shadow-xs'}`}
               style={{
                 background: getButtonBg(themeColors.primary),
                 border: getButtonBorder(themeColors.primary),
@@ -877,18 +835,39 @@ export default function Topbar({
               )}
             </button>
 
-            {/* License badge */}
+            <button
+              type="button"
+              onClick={() => setShortcutsModalOpen(true)}
+              title="Keyboard Shortcuts (?)"
+              aria-label="Open keyboard shortcuts guide"
+              aria-keyshortcuts="?"
+              className={`relative inline-flex items-center justify-center h-9 w-9 ${buttonStyleClass} transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 shrink-0 cursor-pointer ${isOutlined ? 'border-2' : 'shadow-xs'}`}
+              style={{
+                background: getButtonBg(themeColors.primary),
+                border: getButtonBorder(themeColors.primary),
+                color: getButtonTextColor(themeColors.primary),
+                borderRadius: 'var(--btn-radius, 0.75rem)',
+              }}
+            >
+              <CommandLineIcon className="w-4 h-4 shrink-0" />
+            </button>
+
+            <div className="shrink-0 flex items-center">
+              <ThemeToggle />
+            </div>
+
+            <div className="mx-0.5 h-5 w-px bg-slate-300/60 dark:bg-slate-700/60 shrink-0" />
+
+            {/* Group 3: License & User Account */}
             <button
               type="button"
               onClick={() => navigate("/settings#license")}
-              className="inline-flex items-center gap-1.5 h-9 px-2.5 text-xs font-semibold theme-btn-tertiary relative z-20 shrink-0"
-              title={licValid ? "License is active" : "License required – click to activate"}
+              className="inline-flex items-center gap-1.5 h-9 px-2.5 text-xs font-semibold theme-btn-tertiary relative z-20 shrink-0 whitespace-nowrap"
+              title={licLoading ? "Checking license…" : licValid ? `License active (${leftTxt} left)` : "License required – click to activate"}
             >
               <ClockIcon className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden xl:inline">{licLoading ? "Checking…" : licValid ? `${leftTxt} left` : "Activate"}</span>
+              <span className="hidden 2xl:inline">{licLoading ? "Checking…" : licValid ? `${leftTxt} left` : "Activate"}</span>
             </button>
-
-            <div className="mx-0.5 h-5 w-px bg-slate-300/60 dark:bg-slate-700/60 shrink-0" />
 
             {/* User menu */}
             <div className="relative shrink-0">

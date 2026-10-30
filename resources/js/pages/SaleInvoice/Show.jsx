@@ -377,19 +377,19 @@ export default function SaleInvoiceShow() {
     const onKey = (e) => {
       if (!e.altKey) return;
       const k = (e.key || "").toLowerCase();
-      if (k === "b") { e.preventDefault(); navigate(-1); }
-      if (k === "p") { e.preventDefault(); handlePrint(); }
-      if (k === "e") {
+      if (k === "b" || e.code === "KeyB") { e.preventDefault(); navigate(-1); }
+      if (k === "p" || e.code === "KeyP") { e.preventDefault(); handlePrint(); }
+      if (k === "e" || e.code === "KeyE") {
         if (!can.update) return;
         e.preventDefault();
         navigate(`/sale-invoices/${id}/edit`);
       }
-      if (k === "d") {
+      if (k === "d" || e.code === "KeyD") {
         if (!can.delete) return;
         e.preventDefault();
         openDeleteModal();
       }
-      if (k === "n") {
+      if (k === "n" || e.code === "KeyN") {
         if (!can.create) return;
         e.preventDefault();
         // Navigate based on the current invoice's sale_type
@@ -400,18 +400,18 @@ export default function SaleInvoiceShow() {
           navigate("/sale-invoices/create/retail");
         }
       }
-      if (k === "f") {
+      if (k === "f" || e.code === "KeyF") {
         e.preventDefault();
         setSearchOpen(true);
       }
-      if (k === "h") {
+      if (k === "h" || e.code === "KeyH") {
         e.preventDefault();
         setIsDraftsOpen((prev) => !prev);
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [navigate, id, can]);
+  }, [navigate, id, can, inv]);
 
   if (loading || permsLoading) return <div className="p-4 text-sm dark:text-gray-400">Loading…</div>;
   if (!inv) return <div className="p-4 text-sm dark:text-gray-400">Invoice not found.</div>;

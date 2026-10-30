@@ -115,11 +115,13 @@ export default function DashboardLayout({ children }) {
     "/dashboard": "Dashboard",
     "/profile": "Profile",
     "/suppliers": "Suppliers",
+    "/suppliers/create": "Add Supplier",
     "/customers": "Customers",
     "/products": "Products",
     "/products/create": "Add Product",
     "/categories": "Categories",
     "/brands": "Brands",
+    "/brands/create": "Add Brand",
     "/barcode-labels": "Barcode Studio",
     "/batch-expiry": "Batch Expiry & Tracking",
     "/stock-disposals": "Quarantine & Disposals",
@@ -171,7 +173,7 @@ export default function DashboardLayout({ children }) {
     "/payments": "Payment Vouchers",
     "/cash-drawer": "Cash Drawer",
     "/expenses": "Operating Expenses",
-    "/product-batches": "Product Batches Workbench",
+    "/product-batches": "Product Batches",
     "/reports/net-profit": "Profit & Loss Statement",
     "/reports/tax-return": "Statutory Tax & GST Return",
     "/stock-adjustments": "Stock Adjustments",
@@ -187,6 +189,8 @@ export default function DashboardLayout({ children }) {
     const cleanPath = (path || "").replace(/\/+$/, "") || "/dashboard";
     if (titles[cleanPath]) return titles[cleanPath];
     if (/^\/products\/\d+\/edit$/.test(cleanPath)) return "Edit Product";
+    if (/^\/brands\/\d+\/edit$/.test(cleanPath)) return "Edit Brand";
+    if (/^\/suppliers\/\d+\/edit$/.test(cleanPath)) return "Edit Supplier";
     if (/^\/stock-adjustments\/\d+$/.test(cleanPath)) return "Stock Adjustment Details";
     if (/^\/stocktake-sessions\/\d+\/review$/.test(cleanPath)) return "Stocktake Variance Review";
     if (/^\/stocktake-sessions\/\d+$/.test(cleanPath)) return "Stocktake Session";

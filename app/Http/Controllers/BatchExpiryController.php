@@ -67,6 +67,8 @@ class BatchExpiryController extends Controller
         $hasStorageLocations = \Illuminate\Support\Facades\Schema::hasTable('storage_locations')
             && \Illuminate\Support\Facades\Schema::hasColumn('batches', 'storage_location_id');
         $hasBatchPricing = \Illuminate\Support\Facades\Schema::hasColumn('batches', 'unit_sale_price');
+        $hasExpiryPolicy = \Illuminate\Support\Facades\Schema::hasColumn('brands', 'expiry_return_policy')
+            && \Illuminate\Support\Facades\Schema::hasColumn('suppliers', 'expiry_return_policy');
 
         // Base query: batches with expiry_date set
         $query = DB::table('batches as b')
@@ -155,6 +157,15 @@ class BatchExpiryController extends Controller
             $selectColumns[] = 'b.whole_sale_pack_price as batch_whole_sale_pack_price';
         }
 
+        if ($hasExpiryPolicy) {
+            $selectColumns[] = 'br.expiry_return_policy as brand_expiry_return_policy';
+            $selectColumns[] = 'br.expiry_return_months as brand_expiry_return_months';
+            $selectColumns[] = 'br.expiry_return_days as brand_expiry_return_days';
+            $selectColumns[] = 's.expiry_return_policy as supplier_expiry_return_policy';
+            $selectColumns[] = 's.expiry_return_months as supplier_expiry_return_months';
+            $selectColumns[] = 's.expiry_return_days as supplier_expiry_return_days';
+        }
+
         if ($hasStorageLocations) {
             $selectColumns[] = 'b.storage_location_id';
             $selectColumns[] = 'p.storage_location_id as product_storage_location_id';
@@ -188,16 +199,43 @@ class BatchExpiryController extends Controller
             $expiry = Carbon::parse($row->expiry_date)->startOfDay();
             $daysRemaining = (int) $today->diffInDays($expiry, false);
 
+            // Resolve Brand / Supplier Expiry Return Policy
+            $resolvedPolicy = 'before_expiry';
+            $resolvedPolicyMonths = 3;
+            $resolvedPolicyDays = 90;
+            if ($hasExpiryPolicy) {
+                if (!empty($row->brand_id) && !empty($row->brand_expiry_return_policy)) {
+                    $resolvedPolicy = (string) $row->brand_expiry_return_policy;
+                    $resolvedPolicyMonths = (int) ($row->brand_expiry_return_months ?? 3);
+                    $resolvedPolicyDays = (int) ($row->brand_expiry_return_days ?? 90);
+                } elseif (!empty($row->supplier_id) && !empty($row->supplier_expiry_return_policy)) {
+                    $resolvedPolicy = (string) $row->supplier_expiry_return_policy;
+                    $resolvedPolicyMonths = (int) ($row->supplier_expiry_return_months ?? 3);
+                    $resolvedPolicyDays = (int) ($row->supplier_expiry_return_days ?? 90);
+                }
+            }
+
+            $intimationMeta = BrandController::evaluateBatchIntimation(
+                $row->expiry_date,
+                $resolvedPolicy,
+                $resolvedPolicyMonths,
+                $resolvedPolicyDays
+            );
+
+            $policyWarningDays = $resolvedPolicy === 'before_expiry' && $resolvedPolicyDays > 0
+                ? $resolvedPolicyDays + 30
+                : $globalWarningDays;
+
             $warningDays = $row->product_warning_days !== null
                 ? (int) $row->product_warning_days
-                : $globalWarningDays;
+                : max($globalWarningDays, $policyWarningDays);
 
             // Determine status
             if ($daysRemaining < 0) {
                 $status = 'expired';
-            } elseif ($daysRemaining <= 30) {
+            } elseif ($daysRemaining <= 30 || $intimationMeta['intimation_status'] === 'return_window_open') {
                 $status = 'critical';
-            } elseif ($daysRemaining <= $warningDays) {
+            } elseif ($daysRemaining <= $warningDays || $intimationMeta['is_intimation_due']) {
                 $status = 'warning';
             } else {
                 $status = 'safe';
@@ -243,6 +281,13 @@ class BatchExpiryController extends Controller
             $item['effective_warning_days'] = $warningDays;
             $item['has_custom_warning'] = $row->product_warning_days !== null;
             $item['status'] = $status;
+            $item['expiry_return_policy'] = $resolvedPolicy;
+            $item['expiry_return_months'] = $resolvedPolicyMonths;
+            $item['expiry_return_days'] = $resolvedPolicyDays;
+            $item['expiry_policy_label'] = \App\Models\Brand::formatExpiryPolicyLabel($resolvedPolicy, $resolvedPolicyMonths, $resolvedPolicyDays);
+            $item['return_deadline_date'] = $intimationMeta['return_deadline_date'];
+            $item['days_until_return_deadline'] = $intimationMeta['days_until_return_deadline'];
+            $item['intimation_status'] = $intimationMeta['intimation_status'];
             $item['unit_cost'] = round($unitCost, 2);
             $item['value_at_risk'] = $valueAtRisk;
             $item['retail_value'] = $retailValue;

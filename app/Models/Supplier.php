@@ -15,13 +15,34 @@ class Supplier extends Model
         'email',
         'credit_limit',
         'credit_days',
+        'expiry_return_policy',
+        'expiry_return_months',
+        'expiry_return_days',
+        'expiry_return_notes',
     ];
 
     protected $casts = [
-        'credit_limit' => 'decimal:2',
-        'credit_days'  => 'integer',
+        'credit_limit'         => 'decimal:2',
+        'credit_days'          => 'integer',
+        'expiry_return_months' => 'integer',
+        'expiry_return_days'   => 'integer',
     ];
 
-    public function products() { return $this->hasMany(\App\Models\Product::class); }
+    protected $appends = [
+        'expiry_policy_label',
+    ];
 
+    public function products()
+    {
+        return $this->hasMany(\App\Models\Product::class);
+    }
+
+    public function getExpiryPolicyLabelAttribute(): string
+    {
+        return Brand::formatExpiryPolicyLabel(
+            $this->expiry_return_policy,
+            $this->expiry_return_months,
+            $this->expiry_return_days
+        );
+    }
 }

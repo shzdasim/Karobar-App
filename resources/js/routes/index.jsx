@@ -10,10 +10,14 @@ const Login = lazy(() => import("../pages/Login.jsx"));
 const ForgotPassword = lazy(() => import("../pages/ForgotPassword.jsx"));
 const ResetPassword = lazy(() => import("../pages/ResetPassword.jsx"));
 const Profile = lazy(() => import("../pages/Profile.jsx"));
-const Suppliers = lazy(() => import("../pages/Suppliers.jsx"));
+const Suppliers = lazy(() => import("../pages/Suppliers/index.jsx"));
+const CreateSupplier = lazy(() => import("../pages/Suppliers/Create.jsx"));
+const EditSupplier = lazy(() => import("../pages/Suppliers/Edit.jsx"));
 const Customers = lazy(() => import("../pages/Customers.jsx"));
 const Categories = lazy(() => import("../pages/Categories.jsx"));
-const Brands = lazy(() => import("../pages/Brands.jsx"));
+const Brands = lazy(() => import("../pages/Brands/index.jsx"));
+const CreateBrand = lazy(() => import("../pages/Brands/Create.jsx"));
+const EditBrand = lazy(() => import("../pages/Brands/Edit.jsx"));
 const ProductsIndex = lazy(() => import("../pages/Products/index.jsx"));
 const CreateProduct = lazy(() => import("../pages/Products/Create.jsx"));
 const EditProduct = lazy(() => import("../pages/Products/Edit.jsx"));
@@ -154,6 +158,26 @@ export default function AppRoutes() {
     }
   />
   <Route
+    path="/suppliers/create"
+    element={
+      <ProtectedRoute>
+        <DashboardLayout>
+          <CreateSupplier />
+        </DashboardLayout>
+      </ProtectedRoute>
+    }
+  />
+  <Route
+    path="/suppliers/:id/edit"
+    element={
+      <ProtectedRoute>
+        <DashboardLayout>
+          <EditSupplier />
+        </DashboardLayout>
+      </ProtectedRoute>
+    }
+  />
+  <Route
     path="/customers"
     element={
       <ProtectedRoute>
@@ -181,6 +205,26 @@ export default function AppRoutes() {
       <ProtectedRoute>
         <DashboardLayout>
           <Brands />
+        </DashboardLayout>
+      </ProtectedRoute>
+    }
+  />
+  <Route
+    path="/brands/create"
+    element={
+      <ProtectedRoute>
+        <DashboardLayout>
+          <CreateBrand />
+        </DashboardLayout>
+      </ProtectedRoute>
+    }
+  />
+  <Route
+    path="/brands/:id/edit"
+    element={
+      <ProtectedRoute>
+        <DashboardLayout>
+          <EditBrand />
         </DashboardLayout>
       </ProtectedRoute>
     }

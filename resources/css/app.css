@@ -493,7 +493,7 @@ body:has(.workspace-shell) { transform: none; }
 .workspace-mobile-drawer { z-index: 60; }
 .workspace-topbar-slot { position: relative; z-index: 30; }
 .workspace-topbar { min-height: 54px; padding: 8px 14px; border: 1px solid var(--workspace-edge); border-radius: 16px; background: var(--workspace-surface); box-shadow: inset 0 1px 0 var(--workspace-edge), var(--workspace-shadow); display: flex; align-items: center; }
-.workspace-topbar-row { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-width: 0; }
+.workspace-topbar-row { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-width: 0; }
 .workspace-search { flex: 1; min-width: min(220px, 100%); max-width: 480px; }
 .workspace-search > div > div:first-child { min-height: 36px; max-width: none; border-radius: 12px; }
 .workspace-topbar-actions { display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; margin-left: auto; flex-shrink: 0; }
