@@ -4,6 +4,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import { usePermissions, Guard } from "@/api/usePermissions.js"; // 🔒
 import SaleReturnForm from "./SaleReturnForm";
+import PageSkeleton from "@/components/PageSkeleton.jsx";
 
 export default function EditSaleReturn() {
   const { id } = useParams();
@@ -45,9 +46,9 @@ export default function EditSaleReturn() {
     navigate("/sale-returns");
   };
 
-  if (permsLoading) return <div className="p-6">Loading…</div>;              // 🔒
+  if (permsLoading) return <PageSkeleton />;              // 🔒
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don’t have permission to view sale returns.</div>; // 🔒
-  if (loading) return <div className="p-6">Loading...</div>;
+  if (loading) return <PageSkeleton />;
   if (fetchErr) return <div className="p-6 text-red-600">{fetchErr}</div>;
 
   return (

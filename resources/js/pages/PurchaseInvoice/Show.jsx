@@ -5,6 +5,7 @@ import axios from "axios";
 import { DocumentTextIcon, MagnifyingGlassIcon, PencilSquareIcon, TrashIcon, PlusIcon, ArrowLeftIcon, ClockIcon, ArrowUturnLeftIcon, BanknotesIcon, PrinterIcon, ShareIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
+import PageSkeleton from "@/components/PageSkeleton.jsx";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import PurchaseInvoiceSearch from "@/components/PurchaseInvoiceSearch.jsx";
@@ -270,7 +271,7 @@ export default function PurchaseInvoiceShow() {
     return () => document.removeEventListener("keydown", onKey);
   }, [navigate, id, can]);
 
-  if (loading || permsLoading) return <div className="p-4 text-sm dark:text-gray-400">Loading…</div>;
+  if (loading || permsLoading) return <PageSkeleton />;
   if (!inv) return <div className="p-4 text-sm dark:text-gray-400">Invoice not found.</div>;
 
   const fmt = (v) => ((v ?? "") === "" ? "" : String(v));

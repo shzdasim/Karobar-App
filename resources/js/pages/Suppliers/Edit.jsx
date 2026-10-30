@@ -10,6 +10,7 @@ import {
 import SupplierForm from "./SupplierForm.jsx";
 import { ExpiryIntimationTable } from "@/components/ExpiryReturnPolicyFields.jsx";
 import { usePermissions } from "@/api/usePermissions.js";
+import PageSkeleton from "@/components/PageSkeleton.jsx";
 
 export default function EditSupplier() {
   const { id } = useParams();
@@ -70,7 +71,7 @@ export default function EditSupplier() {
     }
   };
 
-  if (permsLoading || loading) return <div className="p-6">Loading…</div>;
+  if (permsLoading || loading) return <PageSkeleton />;
   if (!can.view) {
     return (
       <div className="p-6 text-sm text-gray-700">

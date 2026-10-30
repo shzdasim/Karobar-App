@@ -5,6 +5,7 @@ import DashboardLayout from "../layouts/DashboardLayout.jsx";
 import ProtectedRoute from "../components/ProtectedRoute.jsx";
 import AuthGuard from "../components/AuthGuard.jsx";
 import SaleSystemGuard from "../components/SaleSystemGuard.jsx";
+import PageSkeleton from "../components/PageSkeleton.jsx";
 
 const ROUTE_PRELOADERS = new Map();
 const preloadedPaths = new Set();
@@ -118,11 +119,7 @@ const EditRole = registerLazy(() => import("../pages/roles/Edit.jsx"));
 const ActivateLicense = registerLazy(() => import("../pages/ActivateLicense.jsx"), ["/activate"]);
 
 function RouteFallback() {
-  return (
-    <div className="flex items-center justify-center min-h-[40vh] text-sm text-slate-500 dark:text-slate-400">
-      Loading…
-    </div>
-  );
+  return <PageSkeleton fullScreen />;
 }
 
 export default function AppRoutes() {
@@ -171,7 +168,7 @@ export default function AppRoutes() {
         <Route
           path="/sale-invoices/pos"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute fullScreen>
               <BarcodePos />
             </ProtectedRoute>
           }
@@ -179,7 +176,7 @@ export default function AppRoutes() {
         <Route
           path="/sale-invoices/barcode-pos"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute fullScreen>
               <BarcodePos />
             </ProtectedRoute>
           }
@@ -188,7 +185,7 @@ export default function AppRoutes() {
         {/* Persistent Dashboard Layout Shell — keeps Sidebar & Topbar mounted across navigations */}
         <Route
           element={
-            <ProtectedRoute>
+            <ProtectedRoute shellOnly>
               <DashboardLayout />
             </ProtectedRoute>
           }

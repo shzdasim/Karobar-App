@@ -24,6 +24,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { useCurrency } from "@/context/CurrencyContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { GlassCard, DeleteConfirmationModal } from "@/components";
+import PageSkeleton from "@/components/PageSkeleton.jsx";
 import DocumentHistoryModal from "@/components/DocumentHistoryModal.jsx";
 
 const getContrastText = (hexColor) => {
@@ -175,12 +176,7 @@ export default function ShowStockAdjustment() {
   };
 
   if (permsLoading || loading) {
-    return (
-      <div className="p-8 flex flex-col items-center justify-center gap-2 text-slate-400">
-        <ArrowPathIcon className="w-6 h-6 animate-spin" />
-        <span className="text-sm">Loading stock adjustment voucher…</span>
-      </div>
-    );
+    return <PageSkeleton />;
   }
 
   if (!can.view) {

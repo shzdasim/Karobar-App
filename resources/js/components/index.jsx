@@ -40,4 +40,5 @@ export { default as TopNavigation } from "./TopNavigation.jsx";
 export { default as ThemeToggle } from "./ThemeToggle.jsx";
 export { default as ProtectedRoute } from "./ProtectedRoute.jsx";
 export { default as AuthGuard } from "./AuthGuard.jsx";
+export { default as PageSkeleton } from "./PageSkeleton.jsx";
 export { GlassCard, GlassSectionHeader, GlassToolbar, GlassInput, GlassBtn } from "./Glass.jsx";

@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { useParams, useNavigate } from "react-router-dom";
 import ProductForm from "./ProductForm";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
+import PageSkeleton from "@/components/PageSkeleton.jsx";
 
 export default function EditProduct() {
   const { id } = useParams();
@@ -59,9 +60,9 @@ export default function EditProduct() {
     }
   };
 
-  if (permsLoading) return <div className="p-6">Loading…</div>;
+  if (permsLoading) return <PageSkeleton />;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view products.</div>;
-  if (loading) return <div className="p-6">Loading product…</div>;
+  if (loading) return <PageSkeleton />;
   if (fetchErr) return <div className="p-6 text-red-600">{fetchErr}</div>;
 
   return (

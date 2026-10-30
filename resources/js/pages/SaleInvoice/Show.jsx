@@ -6,6 +6,7 @@ import { MagnifyingGlassIcon, PrinterIcon, PencilSquareIcon, TrashIcon, PlusIcon
 import toast from "react-hot-toast";
 // 🔒 permissions
 import { usePermissions, Guard } from "@/api/usePermissions.js";
+import PageSkeleton from "@/components/PageSkeleton.jsx";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 // Search modal
@@ -413,7 +414,7 @@ export default function SaleInvoiceShow() {
     return () => document.removeEventListener("keydown", onKey);
   }, [navigate, id, can, inv]);
 
-  if (loading || permsLoading) return <div className="p-4 text-sm dark:text-gray-400">Loading…</div>;
+  if (loading || permsLoading) return <PageSkeleton />;
   if (!inv) return <div className="p-4 text-sm dark:text-gray-400">Invoice not found.</div>;
 
   const fmt = (v) => ((v ?? "") === "" ? "" : String(v));

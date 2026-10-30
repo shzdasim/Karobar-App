@@ -4,6 +4,8 @@ import axios from "axios";
 import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "../components/Sidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
+import ProtectedRoute from "../components/ProtectedRoute.jsx";
+import PageSkeleton from "../components/PageSkeleton.jsx";
 import { Toaster } from "react-hot-toast";
 
 const SIDEBAR_PIN_STORAGE_KEY = "karobar_sidebar_pinned";
@@ -352,15 +354,11 @@ export default function DashboardLayout({ children }) {
         <main className="workspace-content">
           <div className="workspace-page">
             <Toaster position="top-right" reverseOrder={false} />
-            <Suspense
-              fallback={
-                <div className="flex items-center justify-center min-h-[40vh] text-sm text-slate-500 dark:text-slate-400">
-                  Loading…
-                </div>
-              }
-            >
-              {children ?? <Outlet />}
-            </Suspense>
+            <ProtectedRoute>
+              <Suspense fallback={<PageSkeleton />}>
+                {children ?? <Outlet />}
+              </Suspense>
+            </ProtectedRoute>
           </div>
         </main>
       </div>

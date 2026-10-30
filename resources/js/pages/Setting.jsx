@@ -12,6 +12,7 @@ import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
 import { usePermissions } from "@/api/usePermissions.js"; // 🔒
 import { useLicense } from "@/context/LicenseContext.jsx"; // 🔒 license context
 import { useTheme } from "@/context/ThemeContext.jsx"; // 🎨 theme context
+import PageSkeleton from "@/components/PageSkeleton.jsx";
 
 import {
   ArrowDownOnSquareIcon,
@@ -342,11 +343,7 @@ export default function Setting() {
   const saveDisabled = !can.update || saving;
 
   if (permsLoading) {
-    return (
-      <div className="settings-page">
-        <p className="settings-hint">Loading…</p>
-      </div>
-    );
+    return <PageSkeleton />;
   }
   if (!can.view) {
     return (
@@ -356,11 +353,7 @@ export default function Setting() {
     );
   }
   if (loading) {
-    return (
-      <div className="settings-page">
-        <p className="settings-hint">Loading settings…</p>
-      </div>
-    );
+    return <PageSkeleton />;
   }
 
   const disableInputs = !can.update || saving;

@@ -2,6 +2,7 @@ import React from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useLicense } from "../context/LicenseContext.jsx";
 import { usePermissions } from "../api/usePermissions.js";
+import PageSkeleton from "./PageSkeleton.jsx";
 
 const ROUTE_PERMISSION_MAP = {
   "/products": ["product.view"],
@@ -85,7 +86,13 @@ function resolveRoutePermissions(pathname) {
   return null;
 }
 
-export default function ProtectedRoute({ children, permission, permissionAny }) {
+export default function ProtectedRoute({
+  children,
+  permission,
+  permissionAny,
+  shellOnly = false,
+  fullScreen = false,
+}) {
   const token = localStorage.getItem("token");
   const location = useLocation();
   const { loading: licenseLoading, valid: licenseValid } = useLicense();
@@ -96,28 +103,26 @@ export default function ProtectedRoute({ children, permission, permissionAny }) 
     return <Navigate to="/" replace />;
   }
 
-  // Enforce route-level or prop-level permissions once loaded
-  const requiredPerms =
-    permissionAny ||
-    (permission ? [permission] : resolveRoutePermissions(location.pathname));
+  // Enforce route-level or prop-level permissions once loaded (unless shellOnly)
+  if (!shellOnly) {
+    const requiredPerms =
+      permissionAny ||
+      (permission ? [permission] : resolveRoutePermissions(location.pathname));
 
-  if (requiredPerms && requiredPerms.length > 0) {
-    if (permsLoading) {
-      return (
-        <div className="flex items-center justify-center min-h-[40vh] text-sm text-slate-500 dark:text-slate-400">
-          Checking permissions…
-        </div>
-      );
-    }
-    const isAllowed = requiredPerms.some((perm) => has(perm));
-    if (!isAllowed) {
-      return (
-        <div className="p-6">
-          <div className="rounded-xl border border-rose-200 bg-rose-50/80 dark:border-rose-900/50 dark:bg-rose-950/30 p-4 text-sm text-rose-700 dark:text-rose-300">
-            You do not have permission to access this page ({requiredPerms.join(" or ")}).
+    if (requiredPerms && requiredPerms.length > 0) {
+      if (permsLoading) {
+        return <PageSkeleton fullScreen={fullScreen} />;
+      }
+      const isAllowed = requiredPerms.some((perm) => has(perm));
+      if (!isAllowed) {
+        return (
+          <div className="p-6">
+            <div className="rounded-xl border border-rose-200 bg-rose-50/80 dark:border-rose-900/50 dark:bg-rose-950/30 p-4 text-sm text-rose-700 dark:text-rose-300">
+              You do not have permission to access this page ({requiredPerms.join(" or ")}).
+            </div>
           </div>
-        </div>
-      );
+        );
+      }
     }
   }
 

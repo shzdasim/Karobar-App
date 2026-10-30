@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import SaleInvoiceRetailForm from "./SaleInvoiceRetailForm.jsx";
 import SaleInvoiceWholesaleForm from "./SaleInvoiceWholesaleForm.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
+import PageSkeleton from "@/components/PageSkeleton.jsx";
 
 export default function EditSaleInvoice() {
   const { id } = useParams();
@@ -63,9 +64,9 @@ export default function EditSaleInvoice() {
     }
   };
 
-  if (permsLoading) return <div className="p-6">Loading…</div>;
+  if (permsLoading) return <PageSkeleton />;
   if (!can.view) return <div className="p-6 text-sm text-gray-700">You don't have permission to view sale invoices.</div>;
-  if (loading) return <div className="p-6">Loading invoice…</div>;
+  if (loading) return <PageSkeleton />;
   if (fetchErr) return <div className="p-6 text-red-600">{fetchErr}</div>;
 
   // Render the appropriate form based on sale type

@@ -4167,4 +4167,58 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   }
 }
 
+/* ============================================================================
+   PAGE SKELETON LOADER — isolated layout/paint containment & smooth shimmer
+   ========================================================================== */
+.kd-page-skeleton {
+  contain: layout style paint;
+  width: 100%;
+}
+
+.kd-skeleton-bone {
+  position: relative;
+  overflow: hidden;
+  background-color: rgba(203, 213, 225, 0.55);
+}
+
+.dark .kd-skeleton-bone {
+  background-color: rgba(51, 65, 85, 0.55);
+}
+
+.kd-skeleton-bone::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.55) 50%,
+    transparent 100%
+  );
+  animation: kd-skeleton-shimmer 1.5s infinite ease-in-out;
+}
+
+.dark .kd-skeleton-bone::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(148, 163, 184, 0.16) 50%,
+    transparent 100%
+  );
+}
+
+@keyframes kd-skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kd-skeleton-bone::after {
+    animation: none;
+  }
+}
+
+
 
