@@ -66,12 +66,16 @@ class StocktakeService
         $session->items()->delete();
 
         $products = $this->resolveProducts($session);
+        $productIds = $products->pluck('id')->all();
+        $batchesByProduct = !empty($productIds)
+            ? Batch::whereIn('product_id', $productIds)->get()->groupBy('product_id')
+            : collect();
 
         $rows = [];
         $now  = now();
 
         foreach ($products as $product) {
-            $batches = Batch::where('product_id', $product->id)->get();
+            $batches = $batchesByProduct->get($product->id, collect());
 
             if ($batches->isNotEmpty()) {
                 // One item per batch

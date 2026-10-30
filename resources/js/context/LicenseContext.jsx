@@ -51,12 +51,15 @@ export function LicenseProvider({ children }) {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  // tick once per second to update remaining time
+  // Only tick when a finite expiresAt exists; use 60s interval when >24h remains to avoid 1-second global re-renders
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    if (!status.expiresAt) return undefined;
+    const msLeft = status.expiresAt - Date.now();
+    const intervalMs = msLeft > 86_400_000 ? 60_000 : 1_000;
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
     return () => clearInterval(id);
-  }, []);
+  }, [status.expiresAt]);
 
   const remainingMs = useMemo(() => {
     if (!status.expiresAt) return null;
@@ -74,8 +77,13 @@ export function LicenseProvider({ children }) {
     }
   }, [status.valid, status.expiresAt, remainingMs]);
 
+  const contextValue = useMemo(
+    () => ({ ...status, remainingMs, refresh }),
+    [status, remainingMs, refresh]
+  );
+
   return (
-    <LicenseCtx.Provider value={{ ...status, remainingMs, refresh }}>
+    <LicenseCtx.Provider value={contextValue}>
       {children}
     </LicenseCtx.Provider>
   );

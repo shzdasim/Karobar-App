@@ -41,6 +41,7 @@ class RoleController extends Controller
         $perPage = $perPage > 0 && $perPage <= 200 ? $perPage : 15;
 
         $q = Role::query()->where('guard_name', 'sanctum')
+            ->withCount('permissions')
             ->when($search, fn($qq) => $qq->where('name', 'like', "%{$search}%"))
             ->orderBy('id', 'desc');
 
@@ -52,7 +53,7 @@ class RoleController extends Controller
                 'id' => $r->id,
                 'name' => $r->name,
                 'guard_name' => $r->guard_name,
-                'permissions_count' => $r->permissions()->count(),
+                'permissions_count' => (int) ($r->permissions_count ?? 0),
             ])->all();
 
         return response()->json([

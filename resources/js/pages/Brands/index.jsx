@@ -121,16 +121,23 @@ export default function BrandsIndex() {
     [page, pageSize, qName, policyFilter]
   );
 
+  const didMountFiltersRef = useRef(false);
+
   useEffect(() => {
     if (permsLoading || !can.view) return;
     if (controllerRef.current) controllerRef.current.abort();
     const ctrl = new AbortController();
     controllerRef.current = ctrl;
     fetchBrands(ctrl.signal);
-  }, [page, pageSize, policyFilter, permsLoading, can.view, fetchBrands]);
+    return () => ctrl.abort();
+  }, [page, pageSize, policyFilter, permsLoading, can.view]);
 
   useEffect(() => {
     if (permsLoading || !can.view) return;
+    if (!didMountFiltersRef.current) {
+      didMountFiltersRef.current = true;
+      return;
+    }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       setPage(1);
@@ -140,7 +147,7 @@ export default function BrandsIndex() {
       fetchBrands(ctrl.signal);
     }, 300);
     return () => clearTimeout(debounceRef.current);
-  }, [qName, permsLoading, can.view, fetchBrands]);
+  }, [qName, permsLoading, can.view]);
 
   const handleDelete = async (b) => {
     if (!can.delete)

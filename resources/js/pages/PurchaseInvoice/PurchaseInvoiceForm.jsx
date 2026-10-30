@@ -1,7 +1,7 @@
 import { arrangePurchaseInvoiceRows, purchaseInvoiceArrangements } from "../../utils/purchaseInvoiceArrangement";
 import { useInvoiceErrors, InvoiceErrorSummary, InvoiceRowError } from "../../components/InvoiceErrors";
 // /src/pages/purchases/PurchaseInvoiceForm.jsx
-import { Fragment, useState, useEffect, useRef, useMemo } from "react";
+import { Fragment, lazy, Suspense, useState, useEffect, useRef, useMemo } from "react";
 import axios from "axios";
 import Select from "react-select";
 import toast from "react-hot-toast";
@@ -11,14 +11,15 @@ import { recalcItem, recalcFooter } from "../../Formula/PurchaseInvoice.js";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
-import ProductFormModal from "../../components/ProductFormModal.jsx";
 import SupplierSearch from "../../components/SupplierSearch.jsx";
 import useRowDragAndDrop from "./useRowDragAndDrop.jsx";
 import { useInvoiceDraft } from "@/hooks/useInvoiceDraft.js";
 import InvoiceDraftIndicator from "@/components/InvoiceDraftIndicator.jsx";
-import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
-import PreShiftDrawerPromptModal from "@/components/PreShiftDrawerPromptModal.jsx";
 import PaymentAccountSelector from "../../components/PaymentAccountSelector.jsx";
+
+const ProductFormModal = lazy(() => import("../../components/ProductFormModal.jsx"));
+const InvoiceDraftsModal = lazy(() => import("@/components/InvoiceDraftsModal.jsx"));
+const PreShiftDrawerPromptModal = lazy(() => import("@/components/PreShiftDrawerPromptModal.jsx"));
 import { BuildingStorefrontIcon, TrashIcon, PlusCircleIcon, CheckIcon } from "@heroicons/react/24/solid";
 
 // Six-dot grip shown on drag handles
@@ -417,8 +418,9 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
   }, [form, paidTouched, arrangement, displayOrder, products, selectedSupplier]);
 
   const fetchSuppliers = async () => {
-    const res = await axios.get("/api/suppliers");
-    setSuppliers(res.data);
+    const res = await axios.get("/api/suppliers/search", { params: { limit: 100 } });
+    const list = Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : [];
+    setSuppliers(list);
   };
 
   const fetchProducts = async (q = "") => {
@@ -2534,18 +2536,6 @@ const contRect = container.getBoundingClientRect();
         </div>
       </div>
 
-      {/* Product Form Modal */}
-      <ProductFormModal
-        open={showProductModal}
-        onClose={() => setShowProductModal(false)}
-        onProductCreated={(newProduct) => {
-          // Refresh products list
-          fetchProducts();
-          // Update local products state
-          setProducts(prev => [...(prev || []), newProduct]);
-        }}
-      />
-
       {/* Supplier Search Modal */}
       <SupplierSearch
         isOpen={supplierSearchOpen}
@@ -2553,33 +2543,51 @@ const contRect = container.getBoundingClientRect();
         onSelect={handleSupplierSelect}
       />
 
-      {/* Held Drafts Modal */}
-      {isDraftingEnabled && (
-        <InvoiceDraftsModal
-          isOpen={draftHook.isDraftsModalOpen}
-          onClose={() => draftHook.setIsDraftsModalOpen(false)}
-          drafts={draftHook.draftsList}
-          activeDraftId={draftHook.activeDraftId}
-          onResumeDraft={(id) => draftHook.loadDraft(id)}
-          onDiscardDraft={(id) => draftHook.discardDraft(id)}
-          onStartBlank={handleStartBlank}
-          type="purchase"
-        />
-      )}
+      <Suspense fallback={null}>
+        {/* Product Form Modal */}
+        {showProductModal && (
+          <ProductFormModal
+            open={showProductModal}
+            onClose={() => setShowProductModal(false)}
+            onProductCreated={(newProduct) => {
+              // Refresh products list
+              fetchProducts();
+              // Update local products state
+              setProducts(prev => [...(prev || []), newProduct]);
+            }}
+          />
+        )}
 
-      {/* Pre-Shift Edit Cash Drawer Prompt */}
-      <PreShiftDrawerPromptModal
-        isOpen={!!drawerPrompt?.isOpen}
-        onClose={() => setDrawerPrompt(null)}
-        onConfirm={(updateDrawer) => {
-          const fn = drawerPrompt?.execute;
-          setDrawerPrompt(null);
-          if (fn) fn(updateDrawer);
-        }}
-        oldCash={drawerPrompt?.oldCash}
-        newCash={drawerPrompt?.newCash}
-        cashDelta={drawerPrompt?.cashDelta}
-      />
+        {/* Held Drafts Modal */}
+        {isDraftingEnabled && draftHook.isDraftsModalOpen && (
+          <InvoiceDraftsModal
+            isOpen={draftHook.isDraftsModalOpen}
+            onClose={() => draftHook.setIsDraftsModalOpen(false)}
+            drafts={draftHook.draftsList}
+            activeDraftId={draftHook.activeDraftId}
+            onResumeDraft={(id) => draftHook.loadDraft(id)}
+            onDiscardDraft={(id) => draftHook.discardDraft(id)}
+            onStartBlank={handleStartBlank}
+            type="purchase"
+          />
+        )}
+
+        {/* Pre-Shift Edit Cash Drawer Prompt */}
+        {!!drawerPrompt?.isOpen && (
+          <PreShiftDrawerPromptModal
+            isOpen={!!drawerPrompt?.isOpen}
+            onClose={() => setDrawerPrompt(null)}
+            onConfirm={(updateDrawer) => {
+              const fn = drawerPrompt?.execute;
+              setDrawerPrompt(null);
+              if (fn) fn(updateDrawer);
+            }}
+            oldCash={drawerPrompt?.oldCash}
+            newCash={drawerPrompt?.newCash}
+            cashDelta={drawerPrompt?.cashDelta}
+          />
+        )}
+      </Suspense>
     </form>
   );
 }

@@ -16,6 +16,7 @@ use Illuminate\Validation\ValidationException;
 class AccountingService
 {
     protected AccountService $accountService;
+    protected $lastTreasuryAccounts = null;
 
     public function __construct(AccountService $accountService)
     {
@@ -284,16 +285,9 @@ class AccountingService
         $totalCashAndBanks = round((float) $treasuryAccounts->sum('current_balance'), 2);
 
         // 2. Accounts Receivable (Customer Net Balances)
-        $totalReceivables = 0.0;
-        if (Schema::hasTable('customer_ledgers')) {
-            $customerIds = DB::table('customer_ledgers')->distinct()->pluck('customer_id');
-            foreach ($customerIds as $cid) {
-                if ($cid) {
-                    $totalReceivables += \App\Models\CustomerLedger::getCustomerNetBalance((int) $cid);
-                }
-            }
-        }
-        $totalReceivables = round($totalReceivables, 2);
+        $totalReceivables = \App\Support\SchemaCache::hasTable('customer_ledgers')
+            ? \App\Models\CustomerLedger::getTotalReceivablesBalance()
+            : 0.0;
 
         // 3. Accounts Payable (Supplier Net Balances)
         $totalPayables = 0.0;
@@ -446,6 +440,7 @@ class AccountingService
         $to = Carbon::parse($toDate)->toDateString();
 
         $ops = $this->computeOperationalMetrics($from, $to);
+        $this->lastTreasuryAccounts = $ops['treasury_accounts'] ?? collect();
         $accounts = ChartOfAccount::where('is_active', true)->orderBy('code')->get();
 
         // Aggregate manual JournalEntryLine amounts up to $to (excluding lines already synced to Treasury Account if system_key === cash_and_banks)
@@ -636,7 +631,7 @@ class AccountingService
         $asOf = Carbon::parse($asOfDate)->toDateString();
         $yearStart = substr($asOf, 0, 4) . '-01-01';
         $tb = $this->getTrialBalance($yearStart, $asOf);
-        $ops = $this->computeOperationalMetrics($yearStart, $asOf);
+        $treasuryAccounts = $this->lastTreasuryAccounts ?? collect();
 
         $assets = [];
         $liabilities = [];
@@ -654,7 +649,7 @@ class AccountingService
                 $assets[] = array_merge($row, [
                     'amount'       => $amount,
                     'sub_accounts' => $row['system_key'] === 'cash_and_banks'
-                        ? $ops['treasury_accounts']->map(fn ($a) => [
+                        ? $treasuryAccounts->map(fn ($a) => [
                             'id'      => $a->id,
                             'name'    => $a->name,
                             'type'    => $a->type,

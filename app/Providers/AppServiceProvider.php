@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -19,6 +20,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        try {
+            if (DB::getDriverName() === 'sqlite') {
+                DB::statement('PRAGMA temp_store = MEMORY;');
+                DB::statement('PRAGMA cache_size = -20000;');
+            }
+        } catch (\Throwable) {
+            // Ignore when DB connection is not yet initialized
+        }
     }
 }

@@ -46,18 +46,20 @@ class CustomerLedger extends Model
      */
     public static function getCustomerNetBalance(int $customerId): float
     {
-        // Get invoice totals (invoices where customer owes money)
-        $invoiceRows = self::where('customer_id', $customerId)
+        $invAgg = DB::table('customer_ledgers')
+            ->where('customer_id', $customerId)
             ->whereIn('entry_type', ['invoice', 'manual'])
-            ->get();
+            ->selectRaw('
+                COALESCE(SUM(COALESCE(invoice_total, 0)), 0) as total_invoiced,
+                COALESCE(SUM(CASE WHEN COALESCE(total_received, 0) < COALESCE(invoice_total, 0) THEN COALESCE(total_received, 0) ELSE COALESCE(invoice_total, 0) END), 0) as received_on_inv
+            ')
+            ->first();
 
-        $totalInvoiced = $invoiceRows->sum('invoice_total');
-        $receivedOnInv = $invoiceRows->sum(function ($r) {
-            return min((float)($r->total_received ?? 0), (float)($r->invoice_total ?? 0));
-        });
+        $totalInvoiced = (float) ($invAgg->total_invoiced ?? 0);
+        $receivedOnInv = (float) ($invAgg->received_on_inv ?? 0);
 
         // Get payments (money received from customer)
-        $paymentsCred = self::where('customer_id', $customerId)
+        $paymentsCred = (float) self::where('customer_id', $customerId)
             ->where('entry_type', 'payment')
             ->sum(DB::raw('COALESCE(credited_amount, 0)'));
 
@@ -66,6 +68,48 @@ class CustomerLedger extends Model
 
         // Return 0 if negative (customer has credit)
         return $netBalance > 0 ? round($netBalance, 2) : 0.0;
+    }
+
+    /**
+     * Compute total positive customer receivables across all customers in 2 grouped SQL queries.
+     */
+    public static function getTotalReceivablesBalance(): float
+    {
+        $invRows = DB::table('customer_ledgers')
+            ->whereNotNull('customer_id')
+            ->whereIn('entry_type', ['invoice', 'manual'])
+            ->selectRaw('
+                customer_id,
+                SUM(COALESCE(invoice_total, 0)) as total_inv,
+                SUM(CASE WHEN COALESCE(total_received, 0) < COALESCE(invoice_total, 0) THEN COALESCE(total_received, 0) ELSE COALESCE(invoice_total, 0) END) as received_on_inv
+            ')
+            ->groupBy('customer_id')
+            ->get()
+            ->keyBy('customer_id');
+
+        $payRows = DB::table('customer_ledgers')
+            ->whereNotNull('customer_id')
+            ->where('entry_type', 'payment')
+            ->selectRaw('customer_id, SUM(COALESCE(credited_amount, 0)) as total_credited')
+            ->groupBy('customer_id')
+            ->get()
+            ->keyBy('customer_id');
+
+        $totalReceivables = 0.0;
+        $allCustIds = $invRows->keys()->merge($payRows->keys())->unique();
+        foreach ($allCustIds as $cid) {
+            if (!$cid) {
+                continue;
+            }
+            $inv = $invRows->get($cid);
+            $pay = $payRows->get($cid);
+            $net = (($inv->total_inv ?? 0) - ($inv->received_on_inv ?? 0)) - ($pay->total_credited ?? 0);
+            if ($net > 0) {
+                $totalReceivables += round((float) $net, 2);
+            }
+        }
+
+        return round($totalReceivables, 2);
     }
 
     public function customer(): BelongsTo

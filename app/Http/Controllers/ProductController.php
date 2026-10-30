@@ -25,7 +25,7 @@ class ProductController extends Controller
         $ids   = $req->input('ids'); // can be array or comma-separated
         $limit = max(1, min((int)$req->input('limit', 30), 1000));
 
-        $existingCols = array_flip(Schema::getColumnListing('products'));
+        $existingCols = array_flip(\App\Support\SchemaCache::getColumnListing('products'));
         $desiredCols = [
             'id','name','product_code','barcode','formulation','rack','storage_location_id','narcotic','pack_size',
             'unit_purchase_price','unit_sale_price',
@@ -37,17 +37,17 @@ class ProductController extends Controller
         $selectCols = array_values(array_filter($desiredCols, fn(string $c) => isset($existingCols[$c])));
 
         $relations = ['brand:id,name', 'supplier:id,name'];
-        if (isset($existingCols['category_id']) && Schema::hasTable('categories')) {
+        if (isset($existingCols['category_id']) && \App\Support\SchemaCache::hasTable('categories')) {
             $relations[] = 'category:id,name';
         }
-        if (isset($existingCols['storage_location_id']) && Schema::hasTable('storage_locations')) {
+        if (isset($existingCols['storage_location_id']) && \App\Support\SchemaCache::hasTable('storage_locations')) {
             $relations[] = 'storageLocation:id,code,name,type';
         }
 
         $query = Product::select($selectCols ?: ['*'])
             ->with($relations)
             ->orderBy('name');
-        if (Schema::hasTable('batches') && Schema::hasColumn('batches', 'quantity')) {
+        if (\App\Support\SchemaCache::hasTable('batches') && \App\Support\SchemaCache::hasColumn('batches', 'quantity')) {
             $query->withSum('batches', 'quantity');
         }
 
@@ -143,7 +143,7 @@ class ProductController extends Controller
         $qRack        = trim((string)$req->input('q_rack', ''));
         $lowStock     = (int) $req->input('low_stock', 0);
 
-        $existingCols = array_flip(Schema::getColumnListing('products'));
+        $existingCols = array_flip(\App\Support\SchemaCache::getColumnListing('products'));
         $desiredCols = [
             'id','product_code','barcode','name','formulation','rack','storage_location_id','image',
             'category_id','brand_id','supplier_id',
@@ -156,7 +156,7 @@ class ProductController extends Controller
             'brand:id,name',
             'supplier:id,name',
         ];
-        if (isset($existingCols['storage_location_id']) && Schema::hasTable('storage_locations')) {
+        if (isset($existingCols['storage_location_id']) && \App\Support\SchemaCache::hasTable('storage_locations')) {
             $indexRelations[] = 'storageLocation:id,code,name,type';
         }
 
@@ -164,7 +164,7 @@ class ProductController extends Controller
             ->select($selectCols ?: ['*'])
             ->with($indexRelations)
             ->withCount('batches');
-        if (Schema::hasTable('batches') && Schema::hasColumn('batches', 'quantity')) {
+        if (\App\Support\SchemaCache::hasTable('batches') && \App\Support\SchemaCache::hasColumn('batches', 'quantity')) {
             $q->withSum('batches', 'quantity');
         }
 
@@ -203,7 +203,7 @@ class ProductController extends Controller
         if ($qSupplier !== '') {
             $q->where(function (Builder $sq) use ($qSupplier) {
                 $sq->whereHas('supplier', fn(Builder $s) => $s->where('name', 'like', $qSupplier.'%'));
-                if (Schema::hasTable('product_suppliers')) {
+                if (\App\Support\SchemaCache::hasTable('product_suppliers')) {
                     $sq->orWhereHas('suppliers', fn(Builder $s) => $s->where('name', 'like', $qSupplier.'%'));
                 }
             });
@@ -222,11 +222,11 @@ class ProductController extends Controller
         // quantity has dropped below pack_size. Matches the dashboard count and
         // the low-stock notification logic.
         if ($lowStock === 1) {
-            $purchasedProductIds = PurchaseInvoiceItem::query()
-                ->distinct()
-                ->pluck('product_id');
-
-            $q->whereIn('id', $purchasedProductIds)
+            $q->whereExists(function ($sub) {
+                    $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                        ->from('purchase_invoice_items as pii')
+                        ->whereColumn('pii.product_id', 'products.id');
+                })
                 ->whereNotNull('quantity')
                 ->whereColumn('quantity', '<', 'pack_size');
         }

@@ -1,8 +1,11 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { flushSync } from 'react-dom';
 import axios from 'axios';
 import { getButtonTextColor } from '@/utils/buttonStyles';
-import { ThemeCurtainStage } from '@/mascot';
+
+const ThemeCurtainStage = lazy(() =>
+  import('@/mascot').then((m) => ({ default: m.ThemeCurtainStage }))
+);
 
 const ThemeContext = createContext(null);
 
@@ -542,24 +545,45 @@ export function ThemeProvider({ children }) {
     }
   }, []);
 
-  const value = {
-    theme,
-    loading,
-    error,
-    fetchTheme,
-    updateTheme,
-    saveTheme,
-    activateTheme,
-    toggleTheme,
-    setDarkMode,
-    isDark,
-    isTransitioning: Boolean(curtainTransition?.active),
-  };
+  const isTransitioning = Boolean(curtainTransition?.active);
+
+  const value = useMemo(
+    () => ({
+      theme,
+      loading,
+      error,
+      fetchTheme,
+      updateTheme,
+      saveTheme,
+      activateTheme,
+      toggleTheme,
+      setDarkMode,
+      isDark,
+      isTransitioning,
+    }),
+    [
+      theme,
+      loading,
+      error,
+      fetchTheme,
+      updateTheme,
+      saveTheme,
+      activateTheme,
+      toggleTheme,
+      setDarkMode,
+      isDark,
+      isTransitioning,
+    ]
+  );
 
   return (
     <ThemeContext.Provider value={value}>
       {children}
-      <ThemeCurtainStage transition={curtainTransition} />
+      {curtainTransition ? (
+        <Suspense fallback={null}>
+          <ThemeCurtainStage transition={curtainTransition} />
+        </Suspense>
+      ) : null}
     </ThemeContext.Provider>
   );
 }

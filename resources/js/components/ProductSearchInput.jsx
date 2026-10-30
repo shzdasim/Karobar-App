@@ -16,6 +16,26 @@ import {
 } from "@heroicons/react/24/solid";
 import { GlassToolbar } from "@/components/glass";
 
+let sharedPrefsCache = null;
+let sharedPrefsPromise = null;
+
+function loadSharedModalPreferences() {
+  if (sharedPrefsCache) return Promise.resolve(sharedPrefsCache);
+  if (sharedPrefsPromise) return sharedPrefsPromise;
+  sharedPrefsPromise = axios
+    .get("/api/preferences")
+    .then(({ data }) => {
+      sharedPrefsCache = data?.preferences || {};
+      sharedPrefsPromise = null;
+      return sharedPrefsCache;
+    })
+    .catch(() => {
+      sharedPrefsPromise = null;
+      return {};
+    });
+  return sharedPrefsPromise;
+}
+
 const ProductSearchInput = forwardRef(
   ({ value, onChange, products, onRefreshProducts, onKeyDown: onKeyDownProp, className = "" }, ref) => {
     const [display, setDisplay] = useState("");
@@ -49,46 +69,46 @@ const MIN_WIDTH = 640;
     });
     const [windowSize, setWindowSize] = useState({ width: 960, height: 600 });
 
-    // Load saved modal size & position from DB preferences on mount
+    // Load saved modal size & position from DB preferences lazily when modal opens
     useEffect(() => {
+      if (!isOpen) return undefined;
       let cancelled = false;
-      (async () => {
-        try {
-          const { data } = await axios.get("/api/preferences");
-          const prefs = data?.preferences || {};
-          const savedSize = prefs[PREF_KEY_SIZE];
-          const savedPos = prefs[PREF_KEY_POS];
-          if (!cancelled) {
-            if (savedSize && Number(savedSize.width) && Number(savedSize.height)) {
-              setWindowSize({
-                width: Math.max(MIN_WIDTH, Number(savedSize.width)),
-                height: Math.max(MIN_HEIGHT, Number(savedSize.height)),
-              });
-            }
-            if (savedPos && savedPos.x != null && savedPos.y != null) {
-              setWindowPos({
-                x: Number(savedPos.x),
-                y: Number(savedPos.y),
-              });
-            }
-          }
-        } catch (_) {
-          /* ignore - fall back to defaults */
+      loadSharedModalPreferences().then((prefs) => {
+        if (cancelled || !prefs) return;
+        const savedSize = prefs[PREF_KEY_SIZE];
+        const savedPos = prefs[PREF_KEY_POS];
+        if (savedSize && Number(savedSize.width) && Number(savedSize.height)) {
+          setWindowSize({
+            width: Math.max(MIN_WIDTH, Number(savedSize.width)),
+            height: Math.max(MIN_HEIGHT, Number(savedSize.height)),
+          });
         }
-      })();
+        if (savedPos && savedPos.x != null && savedPos.y != null) {
+          setWindowPos({
+            x: Number(savedPos.x),
+            y: Number(savedPos.y),
+          });
+        }
+      });
       return () => {
         cancelled = true;
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [isOpen]);
 
-// Persist size & position to DB on drag/resize end
+    // Persist size & position to DB on drag/resize end
     const savePreferences = async (overrides = {}) => {
+      const nextPos = overrides.pos || windowPos;
+      const nextSize = overrides.size || windowSize;
+      if (sharedPrefsCache) {
+        sharedPrefsCache[PREF_KEY_POS] = nextPos;
+        sharedPrefsCache[PREF_KEY_SIZE] = nextSize;
+      }
       try {
         await axios.put("/api/preferences", {
           preferences: {
-            [PREF_KEY_POS]: overrides.pos || windowPos,
-            [PREF_KEY_SIZE]: overrides.size || windowSize,
+            [PREF_KEY_POS]: nextPos,
+            [PREF_KEY_SIZE]: nextSize,
           },
         });
       } catch (_) {
@@ -197,10 +217,11 @@ const MIN_WIDTH = 640;
     }, [isOpen, onRefreshProducts, search]);
 
     useEffect(() => {
+      if (!isOpen || !onRefreshProducts) return undefined;
       const handler = () => onRefreshProducts?.(search);
       window.addEventListener("product:created", handler);
       return () => window.removeEventListener("product:created", handler);
-    }, [onRefreshProducts, search]);
+    }, [isOpen, onRefreshProducts, search]);
 
     useEffect(() => {
       if (!onRefreshProducts || !isOpen) return;
@@ -209,14 +230,15 @@ const MIN_WIDTH = 640;
       return () => clearTimeout(debounceRef.current);
     }, [search, onRefreshProducts, isOpen]);
 
-    // Local filter (matches product name only, in typing order / starts-with)
+    // Local filter (matches product name only, in typing order / starts-with) — skip when modal is closed
     const filtered = useMemo(() => {
+      if (!isOpen) return [];
       const q = (search || "").toLowerCase().trim();
       if (!q) return items;
       return items.filter((p) =>
         (p?.name ?? "").toString().toLowerCase().startsWith(q)
       );
-    }, [items, search]);
+    }, [isOpen, items, search]);
 
     // Infinite scroll
     useEffect(() => {

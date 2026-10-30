@@ -64,11 +64,11 @@ class BatchExpiryController extends Controller
 
         $today = now()->startOfDay();
         $todayStr = $today->toDateString();
-        $hasStorageLocations = \Illuminate\Support\Facades\Schema::hasTable('storage_locations')
-            && \Illuminate\Support\Facades\Schema::hasColumn('batches', 'storage_location_id');
-        $hasBatchPricing = \Illuminate\Support\Facades\Schema::hasColumn('batches', 'unit_sale_price');
-        $hasExpiryPolicy = \Illuminate\Support\Facades\Schema::hasColumn('brands', 'expiry_return_policy')
-            && \Illuminate\Support\Facades\Schema::hasColumn('suppliers', 'expiry_return_policy');
+        $hasStorageLocations = \App\Support\SchemaCache::hasTable('storage_locations')
+            && \App\Support\SchemaCache::hasColumn('batches', 'storage_location_id');
+        $hasBatchPricing = \App\Support\SchemaCache::hasColumn('batches', 'unit_sale_price');
+        $hasExpiryPolicy = \App\Support\SchemaCache::hasColumn('brands', 'expiry_return_policy')
+            && \App\Support\SchemaCache::hasColumn('suppliers', 'expiry_return_policy');
 
         // Base query: batches with expiry_date set
         $query = DB::table('batches as b')
@@ -222,20 +222,16 @@ class BatchExpiryController extends Controller
                 $resolvedPolicyDays
             );
 
-            $policyWarningDays = $resolvedPolicy === 'before_expiry' && $resolvedPolicyDays > 0
-                ? $resolvedPolicyDays + 30
-                : $globalWarningDays;
-
             $warningDays = $row->product_warning_days !== null
                 ? (int) $row->product_warning_days
-                : max($globalWarningDays, $policyWarningDays);
+                : $globalWarningDays;
 
             // Determine status
             if ($daysRemaining < 0) {
                 $status = 'expired';
-            } elseif ($daysRemaining <= 30 || $intimationMeta['intimation_status'] === 'return_window_open') {
+            } elseif ($daysRemaining <= 30) {
                 $status = 'critical';
-            } elseif ($daysRemaining <= $warningDays || $intimationMeta['is_intimation_due']) {
+            } elseif ($daysRemaining <= $warningDays || ($resolvedPolicyDays > 90 && $intimationMeta['is_intimation_due'])) {
                 $status = 'warning';
             } else {
                 $status = 'safe';
@@ -426,6 +422,10 @@ class BatchExpiryController extends Controller
             ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
             ->whereNotNull('b.expiry_date')
             ->where('b.quantity', '>', 0)
+            ->whereRaw(
+                "b.expiry_date <= date(?, '+' || COALESCE(p.expiry_warning_days, ?) || ' days')",
+                [$today->toDateString(), $globalWarningDays]
+            )
             ->select(
                 'b.id as batch_id',
                 'b.batch_number',
@@ -439,6 +439,7 @@ class BatchExpiryController extends Controller
                 'p.supplier_id',
                 DB::raw('COALESCE(s.name, "") as supplier_name')
             )
+            ->orderBy('b.expiry_date')
             ->get();
 
         $expiredList = [];

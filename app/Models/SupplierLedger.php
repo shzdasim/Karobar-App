@@ -60,86 +60,111 @@ class SupplierLedger extends Model
      */
     public static function getSupplierNetBalance(int $supplierId): float
     {
-        $rows = self::with(['purchaseInvoice:id,invoice_number,posted_number,total_amount,total_paid,status'])
-            ->where('supplier_id', $supplierId)
-            ->get();
+        $balances = self::getBulkSupplierNetBalances([$supplierId]);
+        return $balances[$supplierId] ?? 0.0;
+    }
+
+    /**
+     * Calculate net payable balances for multiple suppliers in bulk (eliminates N+1 loops).
+     *
+     * @param  array<int, int>  $supplierIds
+     * @return array<int, float>
+     */
+    public static function getBulkSupplierNetBalances(array $supplierIds): array
+    {
+        $supplierIds = array_values(array_unique(array_filter(array_map('intval', $supplierIds))));
+        if (empty($supplierIds)) {
+            return [];
+        }
+
+        $rowsBySupplier = self::with(['purchaseInvoice:id,invoice_number,posted_number,total_amount,total_paid,status'])
+            ->whereIn('supplier_id', $supplierIds)
+            ->get()
+            ->groupBy('supplier_id');
+
+        $allLinkedInvIds = [];
+        foreach ($rowsBySupplier as $sRows) {
+            foreach ($sRows as $r) {
+                if (!empty($r->purchase_invoice_id)) {
+                    $allLinkedInvIds[(int) $r->purchase_invoice_id] = (int) $r->purchase_invoice_id;
+                }
+            }
+        }
+
+        $unlinkedBySupplier = PurchaseInvoice::query()
+            ->whereIn('supplier_id', $supplierIds)
+            ->where('invoice_type', 'credit')
+            ->where(function ($q) {
+                $q->whereNull('status')->orWhere('status', '!=', 'reversed');
+            })
+            ->when(!empty($allLinkedInvIds), fn ($q) => $q->whereNotIn('id', array_values($allLinkedInvIds)))
+            ->get(['id', 'supplier_id', 'total_amount', 'total_paid'])
+            ->groupBy('supplier_id');
+
+        $allInvIdsForAlloc = $allLinkedInvIds;
+        foreach ($unlinkedBySupplier as $uList) {
+            foreach ($uList as $uInv) {
+                $allInvIdsForAlloc[(int) $uInv->id] = (int) $uInv->id;
+            }
+        }
 
         $allocatedByInvoice = collect();
-        $invIds = $rows->pluck('purchase_invoice_id')->filter()->unique()->values()->all();
-        if (!empty($invIds) && \Illuminate\Support\Facades\Schema::hasTable('payment_allocations') && \Illuminate\Support\Facades\Schema::hasTable('payments')) {
+        if (!empty($allInvIdsForAlloc) && \App\Support\SchemaCache::hasTable('payment_allocations') && \App\Support\SchemaCache::hasTable('payments')) {
             $allocatedByInvoice = PaymentAllocation::query()
                 ->where('invoice_type', 'purchase_invoice')
-                ->whereIn('invoice_id', $invIds)
+                ->whereIn('invoice_id', array_values($allInvIdsForAlloc))
                 ->whereHas('payment', fn ($q) => $q->where('status', 'posted'))
                 ->selectRaw('invoice_id, SUM(amount) as total_allocated')
                 ->groupBy('invoice_id')
                 ->pluck('total_allocated', 'invoice_id');
         }
 
-        $totalInvoiced = 0.0;
-        $paidOnInvoice = 0.0;
-        $paymentsDebited = 0.0;
+        $result = [];
+        foreach ($supplierIds as $supplierId) {
+            $rows = $rowsBySupplier->get($supplierId, collect());
+            $totalInvoiced = 0.0;
+            $paidOnInvoice = 0.0;
+            $paymentsDebited = 0.0;
 
-        foreach ($rows as $row) {
-            if ($row->entry_type === 'invoice' && $row->purchaseInvoice) {
-                $inv = $row->purchaseInvoice;
-                if (($inv->status ?? null) === 'reversed') {
-                    continue;
+            foreach ($rows as $row) {
+                if ($row->entry_type === 'invoice' && $row->purchaseInvoice) {
+                    $inv = $row->purchaseInvoice;
+                    if (($inv->status ?? null) === 'reversed') {
+                        continue;
+                    }
+                    $invTotal = (float) ($inv->total_amount ?? $row->invoice_total ?? 0);
+                    $rawPaid = (float) ($inv->total_paid ?? $row->total_paid ?? 0);
+                    $allocated = (float) ($allocatedByInvoice[$inv->id] ?? 0);
+                    $paidOnInv = max(0.0, min($rawPaid - $allocated, $invTotal));
+
+                    $totalInvoiced += $invTotal;
+                    $paidOnInvoice += $paidOnInv;
+                } elseif (in_array($row->entry_type, ['invoice', 'manual'], true)) {
+                    $invTotal = (float) ($row->invoice_total ?? 0);
+                    $paidOnInv = min((float) ($row->total_paid ?? 0), $invTotal);
+
+                    $totalInvoiced += $invTotal;
+                    $paidOnInvoice += $paidOnInv;
+                } elseif ($row->entry_type === 'payment') {
+                    $paymentsDebited += (float) ($row->debited_amount ?? 0);
                 }
-                $invTotal = (float) ($inv->total_amount ?? $row->invoice_total ?? 0);
-                $rawPaid = (float) ($inv->total_paid ?? $row->total_paid ?? 0);
-                $allocated = (float) ($allocatedByInvoice[$inv->id] ?? 0);
-                $paidOnInv = max(0.0, min($rawPaid - $allocated, $invTotal));
-
-                $totalInvoiced += $invTotal;
-                $paidOnInvoice += $paidOnInv;
-            } elseif (in_array($row->entry_type, ['invoice', 'manual'], true)) {
-                $invTotal = (float) ($row->invoice_total ?? 0);
-                $paidOnInv = min((float) ($row->total_paid ?? 0), $invTotal);
-
-                $totalInvoiced += $invTotal;
-                $paidOnInvoice += $paidOnInv;
-            } elseif ($row->entry_type === 'payment') {
-                $paymentsDebited += (float) ($row->debited_amount ?? 0);
-            }
-        }
-
-        // Include any credit purchase invoices that do not yet have a ledger row
-        $unlinkedInvoices = PurchaseInvoice::query()
-            ->where('supplier_id', $supplierId)
-            ->where('invoice_type', 'credit')
-            ->where(function ($q) {
-                $q->whereNull('status')->orWhere('status', '!=', 'reversed');
-            })
-            ->when(!empty($invIds), fn ($q) => $q->whereNotIn('id', $invIds))
-            ->get(['id', 'total_amount', 'total_paid']);
-
-        if ($unlinkedInvoices->isNotEmpty()) {
-            $unlinkedIds = $unlinkedInvoices->pluck('id')->all();
-            $unlinkedAlloc = collect();
-            if (\Illuminate\Support\Facades\Schema::hasTable('payment_allocations') && \Illuminate\Support\Facades\Schema::hasTable('payments')) {
-                $unlinkedAlloc = PaymentAllocation::query()
-                    ->where('invoice_type', 'purchase_invoice')
-                    ->whereIn('invoice_id', $unlinkedIds)
-                    ->whereHas('payment', fn ($q) => $q->where('status', 'posted'))
-                    ->selectRaw('invoice_id, SUM(amount) as total_allocated')
-                    ->groupBy('invoice_id')
-                    ->pluck('total_allocated', 'invoice_id');
             }
 
+            $unlinkedInvoices = $unlinkedBySupplier->get($supplierId, collect());
             foreach ($unlinkedInvoices as $uInv) {
                 $uTotal = (float) ($uInv->total_amount ?? 0);
                 $uRawPaid = (float) ($uInv->total_paid ?? 0);
-                $uAlloc = (float) ($unlinkedAlloc[$uInv->id] ?? 0);
+                $uAlloc = (float) ($allocatedByInvoice[$uInv->id] ?? 0);
                 $uPaidOnInv = max(0.0, min($uRawPaid - $uAlloc, $uTotal));
 
                 $totalInvoiced += $uTotal;
                 $paidOnInvoice += $uPaidOnInv;
             }
+
+            $netBalance = ($totalInvoiced - $paidOnInvoice) - $paymentsDebited;
+            $result[$supplierId] = $netBalance > 0 ? round($netBalance, 2) : 0.0;
         }
 
-        $netBalance = ($totalInvoiced - $paidOnInvoice) - $paymentsDebited;
-
-        return $netBalance > 0 ? round($netBalance, 2) : 0.0;
+        return $result;
     }
 }

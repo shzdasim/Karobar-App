@@ -1,10 +1,8 @@
 // src/components/Topbar.jsx
-import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import React, { Suspense, lazy, useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import {
-  ClipboardDocumentListIcon,
-  ShoppingCartIcon,
   ClockIcon,
   BellIcon,
   Bars3Icon,
@@ -22,14 +20,15 @@ import { useLicense } from "@/context/LicenseContext.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { usePermissions } from "@/api/usePermissions.js";
-import ProductSearchModal from "@/components/ProductSearchModal.jsx";
-import PageSearchModal from "@/components/PageSearchModal.jsx";
-import KeyboardShortcutsModal from "@/components/KeyboardShortcutsModal.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
-import NotificationCenter from "./NotificationCenter.jsx";
-import CashDrawerModal from "./CashDrawerModal.jsx";
-import AccountsModal from "./AccountsModal.jsx";
 import axios from "axios";
+
+const ProductSearchModal = lazy(() => import("@/components/ProductSearchModal.jsx"));
+const PageSearchModal = lazy(() => import("@/components/PageSearchModal.jsx"));
+const KeyboardShortcutsModal = lazy(() => import("@/components/KeyboardShortcutsModal.jsx"));
+const NotificationCenter = lazy(() => import("./NotificationCenter.jsx"));
+const CashDrawerModal = lazy(() => import("./CashDrawerModal.jsx"));
+const AccountsModal = lazy(() => import("./AccountsModal.jsx"));
 
 function formatRemaining(ms) {
   if (ms == null) return "Perpetual";
@@ -62,7 +61,6 @@ export default function Topbar({
   const hasBaselinedNotifsRef = useRef(false);
 
   const navigate = useNavigate();
-  const location = useLocation();
   const { user, logout } = useAuth();
   const { theme } = useTheme();
   const { formatCurrency } = useCurrency();
@@ -94,7 +92,9 @@ export default function Topbar({
   // Keyboard Shortcuts Modal state (opens anywhere with ?)
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
 
-  const fetchDrawerStatus = async () => {
+  const canViewAccounts = has("account.view");
+
+  const fetchDrawerStatus = useCallback(async () => {
     if (permsLoading || !canViewDrawer) {
       setDrawerStatus((prev) => ({ ...prev, loading: false }));
       return;
@@ -109,10 +109,10 @@ export default function Topbar({
     } catch {
       setDrawerStatus((prev) => ({ ...prev, loading: false }));
     }
-  };
+  }, [permsLoading, canViewDrawer]);
 
-  const fetchAccountsStatus = async () => {
-    if (permsLoading || !has("account.view")) {
+  const fetchAccountsStatus = useCallback(async () => {
+    if (permsLoading || !canViewAccounts) {
       setAccountsStatus((prev) => ({ ...prev, loading: false }));
       return;
     }
@@ -125,9 +125,10 @@ export default function Topbar({
     } catch {
       setAccountsStatus((prev) => ({ ...prev, loading: false }));
     }
-  };
+  }, [permsLoading, canViewAccounts]);
 
   useEffect(() => {
+    if (permsLoading) return undefined;
     fetchDrawerStatus();
     fetchAccountsStatus();
     const onDrawerChanged = () => {
@@ -152,13 +153,7 @@ export default function Topbar({
       window.removeEventListener("accounts-changed", onAccountsChanged);
       window.removeEventListener("storage", onStorage);
     };
-  }, []);
-
-  // Also auto-refresh drawer and accounts balance on navigation (e.g. after invoice creation)
-  useEffect(() => {
-    fetchDrawerStatus();
-    fetchAccountsStatus();
-  }, [location.pathname, permsLoading]);
+  }, [permsLoading, fetchDrawerStatus, fetchAccountsStatus]);
 
   const showLiveNotificationCard = useCallback(
     ({ id, category, badge, title, subtitle, meta, primaryLabel, onPrimary, secondaryLabel, onSecondary }) => {
@@ -335,6 +330,8 @@ export default function Topbar({
           expiryRes.status === "fulfilled" ? Number(expiryRes.value.data?.count || 0) : 0;
 
         setNotifCount(lowStockCount + demandCount + expiryCount);
+        window.__karobarExpiryAlertCount = expiryCount;
+        window.dispatchEvent(new CustomEvent("expiry-alert-count", { detail: expiryCount }));
 
         const seen = getSeenSet();
 
@@ -935,54 +932,61 @@ export default function Topbar({
         </div>
       </header>
 
-      {/* Notification Center side panel */}
-      <NotificationCenter
-        open={notifOpen}
-        onClose={() => setNotifOpen(false)}
-        initialTab={notifInitialTab}
-      />
+      {/* Lazy-loaded Topbar Modals — only mounted & downloaded when opened */}
+      <Suspense fallback={null}>
+        {notifOpen && (
+          <NotificationCenter
+            open={notifOpen}
+            onClose={() => setNotifOpen(false)}
+            initialTab={notifInitialTab}
+          />
+        )}
 
-      {/* Cash Drawer Shift Modal (only opens when user has open/close/transaction permission) */}
-      {canOpenDrawerPopup && (
-        <CashDrawerModal
-          isOpen={drawerModalOpen}
-          onClose={() => setDrawerModalOpen(false)}
-          onSessionUpdated={fetchDrawerStatus}
-        />
-      )}
+        {canOpenDrawerPopup && drawerModalOpen && (
+          <CashDrawerModal
+            isOpen={drawerModalOpen}
+            onClose={() => setDrawerModalOpen(false)}
+            onSessionUpdated={fetchDrawerStatus}
+          />
+        )}
 
-      {/* Financial Accounts Modal */}
-      <AccountsModal
-        isOpen={accountsModalOpen}
-        onClose={() => setAccountsModalOpen(false)}
-        onAccountUpdated={() => {
-          fetchAccountsStatus();
-          fetchDrawerStatus();
-        }}
-        onOpenCashDrawer={() => {
-          if (canOpenDrawerPopup) {
-            setDrawerModalOpen(true);
-          }
-        }}
-      />
+        {accountsModalOpen && (
+          <AccountsModal
+            isOpen={accountsModalOpen}
+            onClose={() => setAccountsModalOpen(false)}
+            onAccountUpdated={() => {
+              fetchAccountsStatus();
+              fetchDrawerStatus();
+            }}
+            onOpenCashDrawer={() => {
+              if (canOpenDrawerPopup) {
+                setDrawerModalOpen(true);
+              }
+            }}
+          />
+        )}
 
-      {/* Product Search Modal (Alt+P anywhere) */}
-      <ProductSearchModal
-        isOpen={productSearchModalOpen}
-        onClose={() => setProductSearchModalOpen(false)}
-      />
+        {productSearchModalOpen && (
+          <ProductSearchModal
+            isOpen={productSearchModalOpen}
+            onClose={() => setProductSearchModalOpen(false)}
+          />
+        )}
 
-      {/* Page Navigation Search Modal (Alt+K anywhere) */}
-      <PageSearchModal
-        isOpen={pageSearchModalOpen}
-        onClose={() => setPageSearchModalOpen(false)}
-      />
+        {pageSearchModalOpen && (
+          <PageSearchModal
+            isOpen={pageSearchModalOpen}
+            onClose={() => setPageSearchModalOpen(false)}
+          />
+        )}
 
-      {/* Keyboard Shortcuts Modal (?) */}
-      <KeyboardShortcutsModal
-        isOpen={shortcutsModalOpen}
-        onClose={() => setShortcutsModalOpen(false)}
-      />
+        {shortcutsModalOpen && (
+          <KeyboardShortcutsModal
+            isOpen={shortcutsModalOpen}
+            onClose={() => setShortcutsModalOpen(false)}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

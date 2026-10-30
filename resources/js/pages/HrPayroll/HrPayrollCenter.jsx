@@ -301,16 +301,19 @@ export default function HrPayrollCenter() {
   }, [fetchCoreData]);
 
   useEffect(() => {
+    if (activeTab !== "attendance") return;
     fetchAttendanceSheet(attendanceDate);
-  }, [attendanceDate, fetchAttendanceSheet]);
+  }, [activeTab, attendanceDate, fetchAttendanceSheet]);
 
   useEffect(() => {
+    if (activeTab !== "payroll") return;
     fetchPayrollAndAdvances();
-  }, [fetchPayrollAndAdvances]);
+  }, [activeTab, fetchPayrollAndAdvances]);
 
   useEffect(() => {
+    if (activeTab !== "commissions") return;
     fetchCommissions();
-  }, [fetchCommissions]);
+  }, [activeTab, fetchCommissions]);
 
   // Filtered employees for Tab 1
   const filteredEmployees = useMemo(() => {

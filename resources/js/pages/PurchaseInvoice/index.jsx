@@ -263,6 +263,8 @@ export default function PurchaseInvoicesIndex() {
     }
   }, [page, pageSize, qPosted, qSupplier]);
 
+  const didMountFiltersRef = useRef(false);
+
   // Fetch on page or pageSize change
   useEffect(() => {
     if (permsLoading || !can.view) return;
@@ -272,9 +274,13 @@ export default function PurchaseInvoicesIndex() {
     return () => ctrl.abort();
   }, [page, pageSize, permsLoading, can.view]);
 
-  // Debounce on filter change only
+  // Debounce on filter change only (skip initial mount to avoid double-fetch)
   useEffect(() => {
     if (permsLoading || !can.view) return;
+    if (!didMountFiltersRef.current) {
+      didMountFiltersRef.current = true;
+      return;
+    }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const ctrl = new AbortController();
     debounceRef.current = setTimeout(() => {

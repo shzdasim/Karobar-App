@@ -234,6 +234,9 @@ export default function ProductsIndex() {
 }, [page, pageSize, search, lowStockOnly]);
 
 
+// Track initial mount for filter debounce to avoid mount-time double fetch
+const didMountFiltersRef = useRef(false);
+
 // Fetch when page or pageSize changes
 useEffect(() => {
   if (permsLoading || !can.view) return;
@@ -243,9 +246,13 @@ useEffect(() => {
   return () => ctrl.abort();
 }, [page, pageSize, permsLoading, can.view]);
 
-// Debounce only when filters change (reset to page 1)
+// Debounce only when filters change after initial mount (reset to page 1)
 useEffect(() => {
   if (permsLoading || !can.view) return;
+  if (!didMountFiltersRef.current) {
+    didMountFiltersRef.current = true;
+    return;
+  }
   const ctrl = new AbortController();
   if (debounceRef.current) clearTimeout(debounceRef.current);
   debounceRef.current = setTimeout(() => {

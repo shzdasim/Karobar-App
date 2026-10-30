@@ -1,7 +1,7 @@
 // src/layouts/DashboardLayout.jsx
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
-import { useLocation } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "../components/Sidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
 import { Toaster } from "react-hot-toast";
@@ -359,7 +359,7 @@ export default function DashboardLayout({ children }) {
                 </div>
               }
             >
-              {children}
+              {children ?? <Outlet />}
             </Suspense>
           </div>
         </main>

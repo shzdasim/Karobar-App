@@ -458,7 +458,7 @@ const daysInPeriod = useMemo(() => {
       const days = Math.max(1, inclusiveDaysUTC(f, t));
       const prevTo = addDays(f, -1);
       const prevFrom = addDays(prevTo, -(days - 1));
-      const prevParams = { date_from: prevFrom, date_to: prevTo };
+      const prevParams = { date_from: prevFrom, date_to: prevTo, totals_only: 1 };
 
       const [summaryRes, prevRes, metricsRes, topRes, brandRes, invoiceRes] = await Promise.allSettled([
         axios.get("/api/dashboard/summary", { params }),

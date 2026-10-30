@@ -4143,3 +4143,28 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   }
 }
 
+/* ============================================================================
+   LAYOUT & RENDER CONTAINMENT — defers off-screen table/report rendering
+   and isolates modal/widget reflows from triggering document-wide layout passes
+   ========================================================================== */
+:is(.products-panel, .settings-block, .people-permission-group) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto none auto 300px;
+}
+
+:is(.workspace-sidebar, .workspace-topbar, [role="dialog"], [role="menu"]) {
+  contain: layout style;
+}
+
+.cv-hidden-panel {
+  display: none;
+}
+
+@supports (content-visibility: hidden) {
+  .cv-hidden-panel {
+    display: block;
+    content-visibility: hidden;
+  }
+}
+
+

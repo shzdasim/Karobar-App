@@ -815,16 +815,25 @@ class PaymentService
      */
     public function syncMissingReturnCreditPayments(?string $partyType = null, ?int $partyId = null): void
     {
-        if (!Schema::hasTable('payments')) {
+        if (!\App\Support\SchemaCache::hasTable('payments')) {
             return;
         }
 
         $settlementService = app(ReturnSettlementService::class);
 
-        if (($partyType === null || $partyType === 'customer') && Schema::hasTable('sale_returns') && Schema::hasColumn('sale_returns', 'settlement_mode')) {
+        if (($partyType === null || $partyType === 'customer') && \App\Support\SchemaCache::hasTable('sale_returns') && \App\Support\SchemaCache::hasColumn('sale_returns', 'settlement_mode')) {
+            $existingSrIds = Payment::query()
+                ->where('idempotency_key', 'like', 'sale_return:%')
+                ->pluck('idempotency_key')
+                ->map(fn ($k) => (int) substr((string) $k, strlen('sale_return:')))
+                ->filter()
+                ->values()
+                ->all();
+
             $saleReturnQuery = SaleReturn::whereIn('settlement_mode', ['credit_note', 'invoice_offset'])
                 ->where('credited_amount', '>', 0)
-                ->whereNotNull('customer_id');
+                ->whereNotNull('customer_id')
+                ->when(!empty($existingSrIds), fn ($q) => $q->whereNotIn('id', $existingSrIds));
 
             if ($partyType === 'customer' && $partyId !== null) {
                 $saleReturnQuery->where('customer_id', $partyId);
@@ -832,23 +841,28 @@ class PaymentService
 
             $saleReturns = $saleReturnQuery->get();
             foreach ($saleReturns as $sr) {
-                $key = "sale_return:{$sr->id}";
-                $exists = Payment::where('idempotency_key', $key)->exists();
-                if (!$exists) {
-                    $settlementService->syncSaleReturnCreditPayment(
-                        $sr,
-                        round((float) $sr->credited_amount, 2),
-                        (string) $sr->settlement_mode,
-                        Auth::user()
-                    );
-                }
+                $settlementService->syncSaleReturnCreditPayment(
+                    $sr,
+                    round((float) $sr->credited_amount, 2),
+                    (string) $sr->settlement_mode,
+                    Auth::user()
+                );
             }
         }
 
-        if (($partyType === null || $partyType === 'supplier') && Schema::hasTable('purchase_returns') && Schema::hasColumn('purchase_returns', 'settlement_mode')) {
+        if (($partyType === null || $partyType === 'supplier') && \App\Support\SchemaCache::hasTable('purchase_returns') && \App\Support\SchemaCache::hasColumn('purchase_returns', 'settlement_mode')) {
+            $existingPrIds = Payment::query()
+                ->where('idempotency_key', 'like', 'purchase_return:%')
+                ->pluck('idempotency_key')
+                ->map(fn ($k) => (int) substr((string) $k, strlen('purchase_return:')))
+                ->filter()
+                ->values()
+                ->all();
+
             $purchaseReturnQuery = PurchaseReturn::whereIn('settlement_mode', ['credit_note', 'invoice_offset'])
                 ->where('credited_amount', '>', 0)
-                ->whereNotNull('supplier_id');
+                ->whereNotNull('supplier_id')
+                ->when(!empty($existingPrIds), fn ($q) => $q->whereNotIn('id', $existingPrIds));
 
             if ($partyType === 'supplier' && $partyId !== null) {
                 $purchaseReturnQuery->where('supplier_id', $partyId);
@@ -856,16 +870,12 @@ class PaymentService
 
             $purchaseReturns = $purchaseReturnQuery->get();
             foreach ($purchaseReturns as $pr) {
-                $key = "purchase_return:{$pr->id}";
-                $exists = Payment::where('idempotency_key', $key)->exists();
-                if (!$exists) {
-                    $settlementService->syncPurchaseReturnCreditPayment(
-                        $pr,
-                        round((float) $pr->credited_amount, 2),
-                        (string) $pr->settlement_mode,
-                        Auth::user()
-                    );
-                }
+                $settlementService->syncPurchaseReturnCreditPayment(
+                    $pr,
+                    round((float) $pr->credited_amount, 2),
+                    (string) $pr->settlement_mode,
+                    Auth::user()
+                );
             }
         }
     }
@@ -990,7 +1000,8 @@ class PaymentService
     {
         $invoices = SaleInvoice::where('customer_id', $customerId)
             ->where('invoice_type', 'credit')
-            ->where('status', '!=', 'reversed')
+            ->where(fn ($q) => $q->whereNull('status')->orWhere('status', '!=', 'reversed'))
+            ->whereRaw('COALESCE(total, 0) - COALESCE(total_receive, 0) > 0.01')
             ->orderBy('date', 'asc')
             ->orderBy('id', 'asc')
             ->get();
@@ -1006,6 +1017,7 @@ class PaymentService
                     'id'            => $inv->id,
                     'posted_number' => $inv->posted_number ?: "#{$inv->id}",
                     'date'          => $inv->date,
+                    'due_date'      => $inv->due_date ? (string) $inv->due_date : $inv->date,
                     'total'         => $total,
                     'received'      => $received,
                     'due'           => $remaining,
@@ -1023,7 +1035,8 @@ class PaymentService
     {
         $invoices = PurchaseInvoice::where('supplier_id', $supplierId)
             ->where('invoice_type', 'credit')
-            ->where('status', '!=', 'reversed')
+            ->where(fn ($q) => $q->whereNull('status')->orWhere('status', '!=', 'reversed'))
+            ->whereRaw('COALESCE(total_amount, 0) - COALESCE(total_paid, 0) > 0.01')
             ->orderBy('posted_date', 'asc')
             ->orderBy('id', 'asc')
             ->get();
@@ -1039,6 +1052,7 @@ class PaymentService
                     'id'            => $inv->id,
                     'posted_number' => $inv->posted_number ?: ($inv->invoice_number ?: "#{$inv->id}"),
                     'date'          => $inv->posted_date,
+                    'due_date'      => $inv->due_date ? (string) $inv->due_date : $inv->posted_date,
                     'total'         => $total,
                     'paid'          => $paid,
                     'due'           => $remaining,

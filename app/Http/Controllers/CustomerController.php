@@ -25,6 +25,8 @@ class CustomerController extends Controller
               ->orWhere('phone', 'like', "%{$q}%")
               ->orWhere('email', 'like', "%{$q}%");
         });
+    } else {
+        $builder->orderByRaw("CASE WHEN id = 1 OR UPPER(name) LIKE '%WALK-IN%' THEN 0 ELSE 1 END ASC");
     }
 
     $builder->orderBy('name');
@@ -131,8 +133,7 @@ class CustomerController extends Controller
         $oldestDue = null;
 
         foreach ($openInvoices as $inv) {
-            $invObj = \App\Models\SaleInvoice::find($inv['id']);
-            $dueDate = $invObj?->due_date ? $invObj->due_date->toDateString() : $inv['date'];
+            $dueDate = $inv['due_date'] ?? $inv['date'];
             if ($dueDate < $today) {
                 $totalOverdue += (float)$inv['due'];
                 $overdueCount++;

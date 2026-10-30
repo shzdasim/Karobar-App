@@ -19,17 +19,7 @@ class SupplierController extends Controller
         $limit = max(1, min((int)$req->input('limit', 50), 2000));
         $page  = (int)$req->input('page', 0);
 
-        $query = Supplier::select(
-            'id',
-            'name',
-            'address',
-            'phone',
-            'email',
-            'expiry_return_policy',
-            'expiry_return_months',
-            'expiry_return_days',
-            'expiry_return_notes'
-        )->orderBy('name');
+        $query = Supplier::query()->orderBy('name');
 
         if ($q !== '') {
             $query->where('name', 'like', "%{$q}%");
@@ -52,12 +42,12 @@ class SupplierController extends Controller
 
         $suppliers = Supplier::withCount('products')->orderBy('name')->get();
 
-        $hasLedgerTable = Schema::hasTable('supplier_ledgers');
+        $hasLedgerTable = \App\Support\SchemaCache::hasTable('supplier_ledgers');
 
         if ($suppliers->isNotEmpty()) {
+            $supplierIds = $suppliers->pluck('id')->all();
             $batches = collect();
-            if (Schema::hasTable('batches')) {
-                $supplierIds = $suppliers->pluck('id')->all();
+            if (\App\Support\SchemaCache::hasTable('batches')) {
                 $batches = DB::table('batches as b')
                     ->join('products as p', 'p.id', '=', 'b.product_id')
                     ->leftJoin('brands as br', 'br.id', '=', 'p.brand_id')
@@ -75,6 +65,10 @@ class SupplierController extends Controller
                     ->get()
                     ->groupBy('supplier_id');
             }
+
+            $bulkPayables = $hasLedgerTable
+                ? \App\Models\SupplierLedger::getBulkSupplierNetBalances($supplierIds)
+                : [];
 
             foreach ($suppliers as $supplier) {
                 $supBatches = $batches->get($supplier->id, collect());
@@ -100,9 +94,7 @@ class SupplierController extends Controller
                 $supplier->setAttribute('intimation_due_units', $dueUnits);
                 $supplier->setAttribute(
                     'current_payable',
-                    $hasLedgerTable
-                        ? \App\Models\SupplierLedger::getSupplierNetBalance($supplier->id)
-                        : 0.0
+                    $bulkPayables[$supplier->id] ?? 0.0
                 );
             }
         }
@@ -133,7 +125,16 @@ class SupplierController extends Controller
             'expiry_return_notes'  => 'nullable|string|max:500',
         ]);
 
-        $data = BrandController::normalizeExpiryPolicyPayload($data);
+        if (\App\Support\SchemaCache::hasColumn('suppliers', 'expiry_return_policy')) {
+            $data = BrandController::normalizeExpiryPolicyPayload($data);
+        } else {
+            unset(
+                $data['expiry_return_policy'],
+                $data['expiry_return_months'],
+                $data['expiry_return_days'],
+                $data['expiry_return_notes']
+            );
+        }
 
         $openingBalance = round((float) ($data['opening_balance'] ?? 0), 2);
         unset($data['opening_balance']);
@@ -230,8 +231,7 @@ class SupplierController extends Controller
 
         $openInvoices = app(\App\Services\PaymentService::class)->getOpenInvoicesForSupplier($supplier->id);
         foreach ($openInvoices as $inv) {
-            $invObj = \App\Models\PurchaseInvoice::find($inv['id']);
-            $dueDate = $invObj?->due_date ? $invObj->due_date->toDateString() : $inv['date'];
+            $dueDate = $inv['due_date'] ?? $inv['date'];
             if ($dueDate && $dueDate < $today) {
                 $totalOverdue += (float)$inv['due'];
                 $overdueCount++;

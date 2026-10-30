@@ -42,11 +42,6 @@ class NotificationController extends Controller
 
         $limit = max(1, min((int) $request->query('limit', 100), 1000));
 
-        // Only consider "running products" — products purchased via a purchase invoice.
-        $purchasedProductIds = DB::table('purchase_invoice_items')
-            ->distinct()
-            ->pluck('product_id');
-
         // Respect per-user dismissed notifications.
         $user = $this->currentUser();
         $dismissed = $user->getPreference('dismissed_low_stock', []);
@@ -54,8 +49,12 @@ class NotificationController extends Controller
             $dismissed = [];
         }
 
-$buildQuery = function ($query) use ($purchasedProductIds, $dismissed) {
-            $query->whereIn('p.id', $purchasedProductIds)
+        $buildQuery = function ($query) use ($dismissed) {
+            $query->whereExists(function ($sub) {
+                    $sub->select(DB::raw(1))
+                        ->from('purchase_invoice_items as pii')
+                        ->whereColumn('pii.product_id', 'p.id');
+                })
                 ->whereNotNull('p.quantity')
                 ->whereColumn('p.quantity', '<', 'p.pack_size');
 
@@ -147,15 +146,15 @@ $countQuery = $buildQuery(DB::table('products as p'));
         }
 
         // Collect all currently eligible product ids and mark them dismissed.
-        $purchasedProductIds = DB::table('purchase_invoice_items')
-            ->distinct()
-            ->pluck('product_id');
-
-        $currentLowStockIds = DB::table('products')
-            ->whereIn('id', $purchasedProductIds)
-            ->whereNotNull('quantity')
-            ->whereColumn('quantity', '<', 'pack_size')
-            ->pluck('id')
+        $currentLowStockIds = DB::table('products as p')
+            ->whereExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('purchase_invoice_items as pii')
+                    ->whereColumn('pii.product_id', 'p.id');
+            })
+            ->whereNotNull('p.quantity')
+            ->whereColumn('p.quantity', '<', 'p.pack_size')
+            ->pluck('p.id')
             ->map(fn ($id) => (int) $id)
             ->toArray();
 

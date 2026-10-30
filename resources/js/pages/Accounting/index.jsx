@@ -146,6 +146,7 @@ export default function AccountingPage() {
   const [classFilter, setClassFilter] = useState(ACCOUNT_CLASS_OPTIONS[0]);
   const [glSourceFilter, setGlSourceFilter] = useState(GL_SOURCE_OPTIONS[0]);
   const [glSearch, setGlSearch] = useState("");
+  const [debouncedGlSearch, setDebouncedGlSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState(null);
   const [treasuryAccounts, setTreasuryAccounts] = useState([]);
@@ -179,6 +180,11 @@ export default function AccountingPage() {
   const [taxTypeOpt, setTaxTypeOpt] = useState(TAX_TYPE_OPTIONS[0]);
   const [savingTax, setSavingTax] = useState(false);
 
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedGlSearch(glSearch), 300);
+    return () => clearTimeout(id);
+  }, [glSearch]);
+
   const fetchOverview = useCallback(async () => {
     setLoading(true);
     try {
@@ -188,7 +194,7 @@ export default function AccountingPage() {
             from,
             to,
             source: glSourceFilter.value,
-            q: glSearch || undefined,
+            q: debouncedGlSearch || undefined,
           },
         }),
         axios.get("/api/accounts?active_only=1").catch(() => ({ data: { accounts: [] } })),
@@ -201,7 +207,7 @@ export default function AccountingPage() {
     } finally {
       setLoading(false);
     }
-  }, [from, to, glSourceFilter.value, glSearch]);
+  }, [from, to, glSourceFilter.value, debouncedGlSearch]);
 
   useEffect(() => {
     fetchOverview();

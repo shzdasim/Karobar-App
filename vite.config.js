@@ -32,8 +32,13 @@ export default defineConfig({
                             priority: 20,
                         },
                         {
+                            name: 'vendor',
+                            test: /node_modules[\\/](clsx|@floating-ui|prop-types|react-is|hoist-non-react-statics|tiny-invariant)[\\/]/,
+                            priority: 18,
+                        },
+                        {
                             name: 'vendor-charts',
-                            test: /node_modules[\\/](recharts|d3-[^\\/]+|victory-vendor|decimal\.js-light|eventemitter3|tiny-invariant)[\\/]/,
+                            test: /node_modules[\\/](recharts|d3-[^\\/]+|victory-vendor)[\\/]/,
                             priority: 15,
                         },
                         {
@@ -43,17 +48,12 @@ export default defineConfig({
                         },
                         {
                             name: 'vendor-datepicker',
-                            test: /node_modules[\\/](react-datepicker|date-fns|@floating-ui)[\\/]/,
+                            test: /node_modules[\\/](react-datepicker|date-fns)[\\/]/,
                             priority: 15,
                         },
                         {
                             name: 'vendor-select',
                             test: /node_modules[\\/](react-select|@emotion|memoize-one)[\\/]/,
-                            priority: 15,
-                        },
-                        {
-                            name: 'vendor-icons',
-                            test: /node_modules[\\/]@heroicons[\\/]/,
                             priority: 15,
                         },
                         {

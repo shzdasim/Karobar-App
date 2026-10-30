@@ -1,6 +1,6 @@
 import { useInvoiceErrors, InvoiceErrorSummary, InvoiceRowError } from "../../components/InvoiceErrors";
 // /src/pages/sales/SaleInvoiceWholesaleForm.jsx - True B2B Wholesale Sale Invoice Form
-import { useEffect, useRef, useState, useMemo } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { TrashIcon, PlusIcon, CheckIcon } from "@heroicons/react/24/outline";
@@ -15,12 +15,13 @@ import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 import { useInvoiceDraft } from "@/hooks/useInvoiceDraft.js";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import InvoiceDraftIndicator from "@/components/InvoiceDraftIndicator.jsx";
-import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
-import PreShiftDrawerPromptModal from "@/components/PreShiftDrawerPromptModal.jsx";
-import CreditOverrideModal from "@/components/CreditOverrideModal.jsx";
-import DiscountOverrideModal from "@/components/DiscountOverrideModal.jsx";
-import ExpiredStockOverrideModal from "@/components/ExpiredStockOverrideModal.jsx";
 import PaymentAccountSelector from "../../components/PaymentAccountSelector.jsx";
+
+const InvoiceDraftsModal = lazy(() => import("@/components/InvoiceDraftsModal.jsx"));
+const PreShiftDrawerPromptModal = lazy(() => import("@/components/PreShiftDrawerPromptModal.jsx"));
+const CreditOverrideModal = lazy(() => import("@/components/CreditOverrideModal.jsx"));
+const DiscountOverrideModal = lazy(() => import("@/components/DiscountOverrideModal.jsx"));
+const ExpiredStockOverrideModal = lazy(() => import("@/components/ExpiredStockOverrideModal.jsx"));
 
 export const PAYMENT_METHOD_OPTIONS = [
   { value: "cash", label: "Cash" },
@@ -505,8 +506,8 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
   /* -------- data -------- */
   const fetchCustomers = async () => {
     try {
-      const res = await axios.get("/api/customers");
-      let list = Array.isArray(res.data) ? res.data : [];
+      const res = await axios.get("/api/customers/search", { params: { limit: 50 } });
+      let list = Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : [];
       list = list.slice().sort((a, b) => (a?.id ?? 0) - (b?.id ?? 0));
       setCustomers(list);
       customersRef.current = list;
@@ -598,6 +599,12 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
       total: res.data.total,
     };
     const loaded = normalizeFormLoaded(res.data);
+    if (res.data?.customer?.id) {
+      setCustomers((prev) => {
+        const exists = prev.some((c) => String(c.id) === String(res.data.customer.id));
+        return exists ? prev : [res.data.customer, ...prev];
+      });
+    }
     const tr = Math.round(Number(loaded?.total_receive ?? 0));
     const tt = Math.round(Number(loaded?.total ?? 0));
     const shouldSync = loaded?.total_receive === "" || tr === tt;
@@ -3089,76 +3096,88 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
         }}
       />
 
-      {/* Held Drafts Modal */}
-      <InvoiceDraftsModal
-        isOpen={draftHook.isDraftsModalOpen}
-        onClose={() => draftHook.setIsDraftsModalOpen(false)}
-        drafts={draftHook.draftsList}
-        activeDraftId={draftHook.activeDraftId}
-        onResumeDraft={(id) => draftHook.loadDraft(id)}
-        onDiscardDraft={(id) => draftHook.discardDraft(id)}
-        onStartBlank={handleStartBlank}
-        type="sale_wholesale"
-      />
+      <Suspense fallback={null}>
+        {/* Held Drafts Modal */}
+        {draftHook.isDraftsModalOpen && (
+          <InvoiceDraftsModal
+            isOpen={draftHook.isDraftsModalOpen}
+            onClose={() => draftHook.setIsDraftsModalOpen(false)}
+            drafts={draftHook.draftsList}
+            activeDraftId={draftHook.activeDraftId}
+            onResumeDraft={(id) => draftHook.loadDraft(id)}
+            onDiscardDraft={(id) => draftHook.discardDraft(id)}
+            onStartBlank={handleStartBlank}
+            type="sale_wholesale"
+          />
+        )}
 
-      {/* Pre-Shift Edit Cash Drawer Prompt */}
-      <PreShiftDrawerPromptModal
-        isOpen={!!drawerPrompt?.isOpen}
-        onClose={() => setDrawerPrompt(null)}
-        onConfirm={(updateDrawer) => {
-          const fn = drawerPrompt?.execute;
-          setDrawerPrompt(null);
-          if (fn) fn(updateDrawer);
-        }}
-        oldCash={drawerPrompt?.oldCash}
-        newCash={drawerPrompt?.newCash}
-        cashDelta={drawerPrompt?.cashDelta}
-        invoiceCreatedAt={drawerPrompt?.invoiceCreatedAt}
-        shiftOpenedAt={drawerPrompt?.shiftOpenedAt}
-      />
+        {/* Pre-Shift Edit Cash Drawer Prompt */}
+        {!!drawerPrompt?.isOpen && (
+          <PreShiftDrawerPromptModal
+            isOpen={!!drawerPrompt?.isOpen}
+            onClose={() => setDrawerPrompt(null)}
+            onConfirm={(updateDrawer) => {
+              const fn = drawerPrompt?.execute;
+              setDrawerPrompt(null);
+              if (fn) fn(updateDrawer);
+            }}
+            oldCash={drawerPrompt?.oldCash}
+            newCash={drawerPrompt?.newCash}
+            cashDelta={drawerPrompt?.cashDelta}
+            invoiceCreatedAt={drawerPrompt?.invoiceCreatedAt}
+            shiftOpenedAt={drawerPrompt?.shiftOpenedAt}
+          />
+        )}
 
-      {/* Credit Limit / Status Approval Override Modal */}
-      <CreditOverrideModal
-        isOpen={!!creditOverridePrompt?.isOpen}
-        onClose={() => setCreditOverridePrompt(null)}
-        onConfirm={(overrideCreds) => {
-          const fn = creditOverridePrompt?.execute;
-          setCreditOverridePrompt(null);
-          if (fn) fn(overrideCreds);
-        }}
-        message={creditOverridePrompt?.message}
-        creditLimit={creditOverridePrompt?.creditLimit}
-        currentBalance={creditOverridePrompt?.currentBalance}
-        excessAmount={creditOverridePrompt?.excessAmount}
-        isHold={creditOverridePrompt?.isHold}
-      />
+        {/* Credit Limit / Status Approval Override Modal */}
+        {!!creditOverridePrompt?.isOpen && (
+          <CreditOverrideModal
+            isOpen={!!creditOverridePrompt?.isOpen}
+            onClose={() => setCreditOverridePrompt(null)}
+            onConfirm={(overrideCreds) => {
+              const fn = creditOverridePrompt?.execute;
+              setCreditOverridePrompt(null);
+              if (fn) fn(overrideCreds);
+            }}
+            message={creditOverridePrompt?.message}
+            creditLimit={creditOverridePrompt?.creditLimit}
+            currentBalance={creditOverridePrompt?.currentBalance}
+            excessAmount={creditOverridePrompt?.excessAmount}
+            isHold={creditOverridePrompt?.isHold}
+          />
+        )}
 
-      {/* Discount Limit Approval Override Modal */}
-      <DiscountOverrideModal
-        isOpen={!!discountOverridePrompt?.isOpen}
-        onClose={() => setDiscountOverridePrompt(null)}
-        onConfirm={(overrideCreds) => {
-          const fn = discountOverridePrompt?.execute;
-          setDiscountOverridePrompt(null);
-          if (fn) fn(overrideCreds);
-        }}
-        message={discountOverridePrompt?.message}
-        productName={discountOverridePrompt?.productName}
-        maxDiscount={discountOverridePrompt?.maxDiscount}
-        requestedDiscount={discountOverridePrompt?.requestedDiscount}
-      />
+        {/* Discount Limit Approval Override Modal */}
+        {!!discountOverridePrompt?.isOpen && (
+          <DiscountOverrideModal
+            isOpen={!!discountOverridePrompt?.isOpen}
+            onClose={() => setDiscountOverridePrompt(null)}
+            onConfirm={(overrideCreds) => {
+              const fn = discountOverridePrompt?.execute;
+              setDiscountOverridePrompt(null);
+              if (fn) fn(overrideCreds);
+            }}
+            message={discountOverridePrompt?.message}
+            productName={discountOverridePrompt?.productName}
+            maxDiscount={discountOverridePrompt?.maxDiscount}
+            requestedDiscount={discountOverridePrompt?.requestedDiscount}
+          />
+        )}
 
-      {/* Expired Stock Approval Override Modal */}
-      <ExpiredStockOverrideModal
-        open={!!expiredOverridePrompt?.isOpen}
-        onClose={() => setExpiredOverridePrompt(null)}
-        data={expiredOverridePrompt?.data}
-        onConfirmOverride={(overrideCreds) => {
-          const fn = expiredOverridePrompt?.execute;
-          setExpiredOverridePrompt(null);
-          if (fn) fn(overrideCreds);
-        }}
-      />
+        {/* Expired Stock Approval Override Modal */}
+        {!!expiredOverridePrompt?.isOpen && (
+          <ExpiredStockOverrideModal
+            open={!!expiredOverridePrompt?.isOpen}
+            onClose={() => setExpiredOverridePrompt(null)}
+            data={expiredOverridePrompt?.data}
+            onConfirmOverride={(overrideCreds) => {
+              const fn = expiredOverridePrompt?.execute;
+              setExpiredOverridePrompt(null);
+              if (fn) fn(overrideCreds);
+            }}
+          />
+        )}
+      </Suspense>
     </>
   );
 }

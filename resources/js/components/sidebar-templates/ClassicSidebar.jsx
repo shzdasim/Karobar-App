@@ -51,6 +51,7 @@ import { StarIcon as StarSolidIcon } from "@heroicons/react/24/solid";
 import { usePermissions } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
+import { preloadRoute } from "@/routes/index.jsx";
 
 const FAVORITES_STORAGE_KEY = "karobar_sidebar_favorites";
 const EXPANDED_SECTIONS_STORAGE_KEY = "karobar_sidebar_expanded_sections_v2";
@@ -90,7 +91,9 @@ export default function ClassicSidebar({
   const { theme } = useTheme();
   const { hasWholesale } = useSaleSystem();
   const { loading: permsLoading, has } = usePermissions();
-  const [expiryAlertCount, setExpiryAlertCount] = useState(0);
+  const [expiryAlertCount, setExpiryAlertCount] = useState(
+    () => Number(window.__karobarExpiryAlertCount || 0)
+  );
 
   // Favorites state persisted in localStorage
   const [favorites, setFavorites] = useState(() => {
@@ -138,23 +141,12 @@ export default function ClassicSidebar({
   const effectiveCollapsed = isPinned ? collapsed : false;
 
   useEffect(() => {
-    let mounted = true;
-    const fetchAlertCount = async () => {
-      try {
-        const { data } = await axios.get("/api/notifications/expiry-alerts", {
-          params: { limit: 1 },
-        });
-        if (mounted) setExpiryAlertCount(Number(data?.count || 0));
-      } catch {
-        /* ignore */
-      }
+    const onExpiryCount = (e) => {
+      setExpiryAlertCount(Number(e?.detail || 0));
     };
-    fetchAlertCount();
-    const onChanged = () => fetchAlertCount();
-    window.addEventListener("notifications-changed", onChanged);
+    window.addEventListener("expiry-alert-count", onExpiryCount);
     return () => {
-      mounted = false;
-      window.removeEventListener("notifications-changed", onChanged);
+      window.removeEventListener("expiry-alert-count", onExpiryCount);
     };
   }, []);
 
@@ -921,6 +913,8 @@ export default function ClassicSidebar({
               >
                 <Link
                   to="/dashboard"
+                  onMouseEnter={() => preloadRoute("/dashboard")}
+                  onFocus={() => preloadRoute("/dashboard")}
                   onClick={() => {
                     if (!isPinned && onRequestCloseDock) {
                       onRequestCloseDock();
@@ -1085,6 +1079,7 @@ export default function ClassicSidebar({
                               ref={(el) => {
                                 itemRefs.current[uniqueKey] = el;
                               }}
+                              onMouseEnter={() => preloadRoute(item.path)}
                               onClick={() => {
                                 if (!isPinned && onRequestCloseDock) {
                                   onRequestCloseDock();
@@ -1100,7 +1095,10 @@ export default function ClassicSidebar({
                                   : ""
                               }`}
                               style={{ "--nav-accent": sectionConfig.baseColor }}
-                              onFocus={() => setFocusedKey(uniqueKey)}
+                              onFocus={() => {
+                                setFocusedKey(uniqueKey);
+                                preloadRoute(item.path);
+                              }}
                               aria-current={active ? "page" : undefined}
                               title={effectiveCollapsed ? item.name : undefined}
                             >
@@ -1149,6 +1147,8 @@ export default function ClassicSidebar({
                                 {item.canQuickCreate && (
                                   <button
                                     type="button"
+                                    onMouseEnter={() => preloadRoute(item.quickCreatePath)}
+                                    onFocus={() => preloadRoute(item.quickCreatePath)}
                                     onClick={(e) => {
                                       e.preventDefault();
                                       e.stopPropagation();

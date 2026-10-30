@@ -1355,16 +1355,14 @@ class ReportsController extends Controller
         $brandId = $req->query('brand_id');
         $supplierId = $req->query('supplier_id');
 
-        // Build query for all products (filtering done client-side for transparency)
+        // Filter products with quantity > 0 directly in SQL using index
         $products = Product::with(['category:id,name', 'brand:id,name', 'supplier:id,name'])
+            ->where('quantity', '>', 0)
             ->when($categoryId, fn($q) => $q->where('category_id', $categoryId))
             ->when($brandId, fn($q) => $q->where('brand_id', $brandId))
             ->when($supplierId, fn($q) => $q->where('supplier_id', $supplierId))
             ->orderBy('name', 'asc')
             ->get();
-
-        // Filter products with quantity > 0 client-side for display
-        $products = $products->filter(fn($p) => (int)($p->quantity ?? 0) > 0);
 
         // Transform data for frontend
         $rows = $products->map(function ($p) {
@@ -1431,8 +1429,9 @@ class ReportsController extends Controller
         $brandId = $req->query('brand_id');
         $supplierId = $req->query('supplier_id');
 
-        // Build query for all products (filtering done for products with quantity > 0)
+        // Build query for products with quantity > 0 directly in SQL
         $query = Product::with(['category:id,name', 'brand:id,name', 'supplier:id,name'])
+            ->where('quantity', '>', 0)
             ->when($categoryId, fn($q) => $q->where('category_id', $categoryId))
             ->when($brandId, fn($q) => $q->where('brand_id', $brandId))
             ->when($supplierId, fn($q) => $q->where('supplier_id', $supplierId))

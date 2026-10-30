@@ -289,9 +289,9 @@ class SaleInvoiceController extends Controller
         $qSaleType    = trim((string) $request->query('sale_type'));
         $qInvoiceType = trim((string) $request->query('invoice_type'));
 
-        // Pagination parameters
-        $page     = (int) $request->query('page', 1);
-        $perPage  = (int) $request->query('per_page', 10);
+        // Pagination parameters (capped at 200 to prevent unbounded memory hydration)
+        $page     = max(1, (int) $request->query('page', 1));
+        $perPage  = max(1, min((int) $request->query('per_page', 10), 200));
 
         $query = SaleInvoice::with(['customer'])->orderByDesc('id');
 

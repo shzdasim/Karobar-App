@@ -38,8 +38,13 @@ class UserDemandController extends Controller
         $status = $request->query('status'); // pending | ordered | fulfilled | cancelled
         $limit  = max(1, min((int) $request->query('limit', 100), 1000));
 
-$query = UserDemand::with(['product:id,name,product_code,quantity,brand_id,supplier_id', 'customer:id,name', 'requester:id,name'])
-            ->orderByDesc('id');
+        $query = UserDemand::with([
+            'product:id,name,product_code,quantity,brand_id,supplier_id',
+            'product.brand:id,name',
+            'product.supplier:id,name',
+            'customer:id,name',
+            'requester:id,name',
+        ])->orderByDesc('id');
 
         if ($status && in_array($status, ['pending', 'ordered', 'fulfilled', 'cancelled'], true)) {
             $query->where('status', $status);
@@ -52,12 +57,22 @@ $query = UserDemand::with(['product:id,name,product_code,quantity,brand_id,suppl
             $d->append('product_brand_name')->append('product_supplier_name');
         });
 
+        $statusCounts = UserDemand::query()
+            ->selectRaw('status, COUNT(*) as cnt')
+            ->groupBy('status')
+            ->pluck('cnt', 'status');
+
+        $pendingCount   = (int) ($statusCounts['pending'] ?? 0);
+        $orderedCount   = (int) ($statusCounts['ordered'] ?? 0);
+        $fulfilledCount = (int) ($statusCounts['fulfilled'] ?? 0);
+        $cancelledCount = (int) ($statusCounts['cancelled'] ?? 0);
+
         return response()->json([
-            'count'           => UserDemand::count(),
-            'pending_count'   => UserDemand::where('status', 'pending')->count(),
-            'ordered_count'   => UserDemand::where('status', 'ordered')->count(),
-            'fulfilled_count' => UserDemand::where('status', 'fulfilled')->count(),
-            'cancelled_count' => UserDemand::where('status', 'cancelled')->count(),
+            'count'           => (int) $statusCounts->sum(),
+            'pending_count'   => $pendingCount,
+            'ordered_count'   => $orderedCount,
+            'fulfilled_count' => $fulfilledCount,
+            'cancelled_count' => $cancelledCount,
             'rows'            => $rows,
         ]);
     }

@@ -388,9 +388,14 @@ export default function SaleInvoicesIndex({ defaultSaleType = "" }) {
   }, [navigate, can.create, hasWholesale, saleSystemLoading]);
 
   // ===== search + pagination =====
-  // Debounce on filter change only
+  const didMountFiltersRef = useRef(false);
+  // Debounce on filter change only (skip initial mount to avoid double-fetch)
   useEffect(() => {
     if (permsLoading || !can.view) return;
+    if (!didMountFiltersRef.current) {
+      didMountFiltersRef.current = true;
+      return;
+    }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const ctrl = new AbortController();
     debounceRef.current = setTimeout(() => {

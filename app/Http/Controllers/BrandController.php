@@ -58,12 +58,30 @@ class BrandController extends Controller
         int $policyMonths,
         int $policyDays
     ): array {
-        $today = Carbon::today()->startOfDay();
+        static $memo = [];
+        static $cachedTodayStr = null;
+        static $cachedToday = null;
+
+        $todayStr = Carbon::hasTestNow() ? Carbon::today()->toDateString() : date('Y-m-d');
+        $cacheKey = "{$todayStr}|{$expiryDateStr}|{$policy}|{$policyMonths}|{$policyDays}";
+        if (isset($memo[$cacheKey])) {
+            return $memo[$cacheKey];
+        }
+
+        if ($cachedTodayStr !== $todayStr || $cachedToday === null) {
+            $cachedTodayStr = $todayStr;
+            $cachedToday = Carbon::parse($todayStr)->startOfDay();
+        }
+        $today = $cachedToday;
         $expiry = Carbon::parse($expiryDateStr)->startOfDay();
         $daysRemaining = (int) $today->diffInDays($expiry, false);
 
+        if (count($memo) > 2048) {
+            $memo = [];
+        }
+
         if ($policy === 'non_returnable') {
-            return [
+            return $memo[$cacheKey] = [
                 'days_remaining'             => $daysRemaining,
                 'return_deadline_date'       => null,
                 'days_until_return_deadline' => null,
@@ -74,7 +92,7 @@ class BrandController extends Controller
 
         if ($policy === 'accepts_expired') {
             $isDue = $daysRemaining <= 30;
-            return [
+            return $memo[$cacheKey] = [
                 'days_remaining'             => $daysRemaining,
                 'return_deadline_date'       => $expiry->toDateString(),
                 'days_until_return_deadline' => $daysRemaining,
@@ -113,7 +131,7 @@ class BrandController extends Controller
             $isDue = false;
         }
 
-        return [
+        return $memo[$cacheKey] = [
             'days_remaining'             => $daysRemaining,
             'return_deadline_date'       => $deadline->toDateString(),
             'days_until_return_deadline' => $daysUntilDeadline,

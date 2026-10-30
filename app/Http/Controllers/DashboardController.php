@@ -53,33 +53,80 @@ class DashboardController extends Controller
             'date_to'   => ['nullable', 'date', 'after_or_equal:date_from'],
         ]);
 
-        // ---- Totals (use your actual columns) ----
-        $salesTotal = (float) SaleInvoice::whereBetween('date', [$from, $to])->sum('total');
+        $totalsOnly = $request->boolean('totals_only');
 
-        // Sales split by payment type:
-        //   debit  = cash/paid now, credit = sale on account (pay later)
-        $salesCredit = (float) SaleInvoice::whereBetween('date', [$from, $to])
-            ->where('invoice_type', 'credit')
-            ->sum('total');
+        if ($totalsOnly) {
+            $salesAgg = SaleInvoice::whereBetween('date', [$from, $to])
+                ->selectRaw("COALESCE(SUM(total), 0) as total, COALESCE(SUM(CASE WHEN invoice_type = 'credit' THEN total ELSE 0 END), 0) as credit_total")
+                ->first();
+            $purchasesAgg = PurchaseInvoice::whereBetween(DB::raw('DATE(COALESCE(posted_date, created_at))'), [$from, $to])
+                ->selectRaw("COALESCE(SUM(total_amount), 0) as total, COALESCE(SUM(CASE WHEN invoice_type = 'credit' THEN total_amount ELSE 0 END), 0) as credit_total")
+                ->first();
+            $saleReturnsTotal = (float) SaleReturn::whereBetween('date', [$from, $to])->sum('total');
+            $purchaseReturnsTotal = (float) PurchaseReturn::whereDate('date', '>=', $from)->whereDate('date', '<=', $to)->sum('total');
+
+            $salesTotal = (float) ($salesAgg->total ?? 0);
+            $salesCredit = (float) ($salesAgg->credit_total ?? 0);
+            $purchasesTotal = (float) ($purchasesAgg->total ?? 0);
+            $purchasesCredit = (float) ($purchasesAgg->credit_total ?? 0);
+
+            return response()->json([
+                'totals' => [
+                    'sales'            => $salesTotal,
+                    'purchases'        => $purchasesTotal,
+                    'sale_returns'     => $saleReturnsTotal,
+                    'purchase_returns' => $purchaseReturnsTotal,
+                    'net_sales'        => $salesTotal - $saleReturnsTotal,
+                    'sales_credit'     => $salesCredit,
+                    'sales_debit'      => $salesTotal - $salesCredit,
+                    'purchases_credit' => $purchasesCredit,
+                    'purchases_debit'  => $purchasesTotal - $purchasesCredit,
+                ],
+                'series' => [
+                    'sales'            => [],
+                    'purchases'        => [],
+                    'sale_returns'     => [],
+                    'purchase_returns' => [],
+                ],
+            ]);
+        }
+
+        // ---- Single-pass grouped queries (compute both daily series and period totals in 4 queries instead of 10) ----
+        $salesRows = SaleInvoice::selectRaw("DATE(date) as date, COALESCE(SUM(total), 0) as value, COALESCE(SUM(CASE WHEN invoice_type = 'credit' THEN total ELSE 0 END), 0) as credit_value")
+            ->whereBetween('date', [$from, $to])
+            ->groupBy(DB::raw('DATE(date)'))
+            ->orderBy('date')
+            ->get();
+
+        $purchaseRows = PurchaseInvoice::selectRaw("DATE(COALESCE(posted_date, created_at)) as date, COALESCE(SUM(total_amount), 0) as value, COALESCE(SUM(CASE WHEN invoice_type = 'credit' THEN total_amount ELSE 0 END), 0) as credit_value")
+            ->whereBetween(DB::raw('DATE(COALESCE(posted_date, created_at))'), [$from, $to])
+            ->groupBy(DB::raw('DATE(COALESCE(posted_date, created_at))'))
+            ->orderBy('date')
+            ->get();
+
+        $saleReturnRows = SaleReturn::selectRaw('DATE(date) as date, COALESCE(SUM(total), 0) as value')
+            ->whereBetween('date', [$from, $to])
+            ->groupBy(DB::raw('DATE(date)'))
+            ->orderBy('date')
+            ->get();
+
+        $purchaseReturnRows = PurchaseReturn::selectRaw('DATE(date) as date, COALESCE(SUM(total), 0) as value')
+            ->whereDate('date', '>=', $from)
+            ->whereDate('date', '<=', $to)
+            ->groupBy(DB::raw('DATE(date)'))
+            ->orderBy('date')
+            ->get();
+
+        $salesTotal = (float) $salesRows->sum('value');
+        $salesCredit = (float) $salesRows->sum('credit_value');
         $salesDebit = $salesTotal - $salesCredit;
 
-        // Purchases use posted_date; fall back to created_at if null
-        $purchasesTotal = (float) PurchaseInvoice::whereBetween(
-            DB::raw('DATE(COALESCE(posted_date, created_at))'),
-            [$from, $to]
-        )->sum('total_amount');
-
-        // Purchases split by payment type:
-        //   debit  = paid now (cash), credit = purchase on account (owe supplier)
-        $purchasesCredit = (float) PurchaseInvoice::whereBetween(
-            DB::raw('DATE(COALESCE(posted_date, created_at))'),
-            [$from, $to]
-        )->where('invoice_type', 'credit')
-            ->sum('total_amount');
+        $purchasesTotal = (float) $purchaseRows->sum('value');
+        $purchasesCredit = (float) $purchaseRows->sum('credit_value');
         $purchasesDebit = $purchasesTotal - $purchasesCredit;
 
-        $saleReturnsTotal = (float) SaleReturn::whereBetween('date', [$from, $to])->sum('total');
-        $purchaseReturnsTotal = (float) PurchaseReturn::whereDate('date', '>=', $from)->whereDate('date', '<=', $to)->sum('total');
+        $saleReturnsTotal = (float) $saleReturnRows->sum('value');
+        $purchaseReturnsTotal = (float) $purchaseReturnRows->sum('value');
 
         $totals = [
             'sales'            => $salesTotal,
@@ -93,35 +140,10 @@ class DashboardController extends Controller
             'purchases_debit'  => $purchasesDebit,
         ];
 
-        // ---- Series (group by business date) ----
-        $salesSeries = SaleInvoice::selectRaw('DATE(date) as date, SUM(total) as value')
-            ->whereBetween('date', [$from, $to])
-            ->groupBy(DB::raw('DATE(date)'))
-            ->orderBy('date')
-            ->get()
-            ->map(fn ($r) => ['date' => $r->date, 'value' => (float) $r->value]);
-
-        $purchaseSeries = PurchaseInvoice::selectRaw('DATE(COALESCE(posted_date, created_at)) as date, SUM(total_amount) as value')
-            ->whereBetween(DB::raw('DATE(COALESCE(posted_date, created_at))'), [$from, $to])
-            ->groupBy(DB::raw('DATE(COALESCE(posted_date, created_at))'))
-            ->orderBy('date')
-            ->get()
-            ->map(fn ($r) => ['date' => $r->date, 'value' => (float) $r->value]);
-
-        $saleReturnSeries = SaleReturn::selectRaw('DATE(date) as date, SUM(total) as value')
-            ->whereBetween('date', [$from, $to])
-            ->groupBy(DB::raw('DATE(date)'))
-            ->orderBy('date')
-            ->get()
-            ->map(fn ($r) => ['date' => (string) $r->date, 'value' => (float) $r->value]);
-
-        $purchaseReturnSeries = PurchaseReturn::selectRaw('DATE(date) as date, SUM(total) as value')
-            ->whereDate('date', '>=', $from)
-            ->whereDate('date', '<=', $to)
-            ->groupBy(DB::raw('DATE(date)'))
-            ->orderBy('date')
-            ->get()
-            ->map(fn ($r) => ['date' => substr($r->date, 0, 10), 'value' => (float) $r->value]);
+        $salesSeries = $salesRows->map(fn ($r) => ['date' => $r->date, 'value' => (float) $r->value]);
+        $purchaseSeries = $purchaseRows->map(fn ($r) => ['date' => $r->date, 'value' => (float) $r->value]);
+        $saleReturnSeries = $saleReturnRows->map(fn ($r) => ['date' => (string) $r->date, 'value' => (float) $r->value]);
+        $purchaseReturnSeries = $purchaseReturnRows->map(fn ($r) => ['date' => substr($r->date, 0, 10), 'value' => (float) $r->value]);
 
         return response()->json([
             'totals' => $totals,
@@ -148,13 +170,13 @@ public function nearExpiry(Request $request)
     $today = now()->toDateString();
     $to    = now()->copy()->addMonths($months)->toDateString();
 
-    $q = DB::table('batches as b')
-        ->join('products as p', 'p.id', '=', 'b.product_id')
-        ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
-        ->leftJoin('brands as br', 'br.id', '=', 'p.brand_id')
-        ->whereNotNull('b.expiry_date')
-        ->whereBetween(DB::raw('DATE(b.expiry_date)'), [$today, $to])
-        ->where('b.quantity', '>', 0); // Only show products with available quantity > 0
+        $q = DB::table('batches as b')
+            ->join('products as p', 'p.id', '=', 'b.product_id')
+            ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
+            ->leftJoin('brands as br', 'br.id', '=', 'p.brand_id')
+            ->whereNotNull('b.expiry_date')
+            ->whereBetween('b.expiry_date', [$today, $to])
+            ->where('b.quantity', '>', 0); // Only show products with available quantity > 0
 
     if (!empty($supplierId)) $q->where('p.supplier_id', $supplierId);
     if (!empty($brandId))    $q->where('p.brand_id', $brandId);
@@ -204,8 +226,13 @@ public function nearExpiryFilters(Request $request)
             'report.sale-detail.view',
             'report.purchase-detail.view',
         ]);
-        $saleCount = SaleInvoice::count();
-        $purchaseCount = PurchaseInvoice::count();
+        $counts = DB::selectOne('
+            SELECT
+                (SELECT COUNT(*) FROM sale_invoices) as sale_invoices,
+                (SELECT COUNT(*) FROM purchase_invoices) as purchase_invoices
+        ');
+        $saleCount = (int) ($counts->sale_invoices ?? 0);
+        $purchaseCount = (int) ($counts->purchase_invoices ?? 0);
         
         return response()->json([
             'sale_invoices' => $saleCount,
@@ -236,7 +263,7 @@ public function nearExpiryFilters(Request $request)
             ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
             ->whereBetween('si.date', [$from, $to]);
 
-        if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'status')) {
+        if (\App\Support\SchemaCache::hasColumn('sale_invoices', 'status')) {
             $query->where(function ($q) {
                 $q->whereNull('si.status')->orWhere('si.status', '!=', 'reversed');
             });
@@ -280,63 +307,57 @@ public function nearExpiryFilters(Request $request)
         $from = $request->query('date_from', $today);
         $to = $request->query('date_to', $today);
 
-        // Count all products in the system
-        $activeProducts = DB::table('products')->count();
-
-        // Total suppliers
-        $supplierCount = DB::table('suppliers')->count();
-
-        // Total customers
-        $customerCount = DB::table('customers')->count();
-
-        // Total brands
-        $brandCount = DB::table('brands')->count();
-
-        // Total categories
-        $categoryCount = DB::table('categories')->count();
-
-        // Total users
-        $userCount = DB::table('users')->count();
-
-        // Near expiry count (within 3 months)
-        $nearExpiryCount = DB::table('batches as b')
-            ->whereNotNull('b.expiry_date')
-            ->where('b.expiry_date', '>', $today)
-            ->where('b.expiry_date', '<=', now()->addMonths(3)->toDateString())
-            ->count();
-
-        // Low stock count — running products (ever purchased) whose on-hand
-        // quantity has dropped below pack_size. Mirrors the notification logic.
-        $purchasedProductIds = DB::table('purchase_invoice_items')
-            ->distinct()
-            ->pluck('product_id');
-
-        $lowStockCount = DB::table('products')
-            ->whereIn('id', $purchasedProductIds)
-            ->whereNotNull('quantity')
-            ->whereColumn('quantity', '<', 'pack_size')
-            ->count();
-
-        // Amount of stock adjustment documents posted
-        $stockAdjustmentCount = DB::table('stock_adjustments')->count();
-
-        // User-demands still awaiting action
-        $pendingDemandsCount = DB::table('user_demands')
-            ->where('status', 'pending')
-            ->count();
-
-        // Approx stock on hand (units) and valuation
-        $stockUnits = (float) DB::table('products')->sum('quantity');
-
         $canViewValuation = $request->user()?->hasRole(['Admin', 'admin', 'super-admin'])
             || $request->user()?->can('product.view')
             || $request->user()?->can('report.current-stock.view');
 
-        $stockValue = $canViewValuation
-            ? (float) DB::table('products')
-                ->selectRaw('COALESCE(SUM(COALESCE(quantity,0) * COALESCE(avg_price, unit_purchase_price, pack_purchase_price, 0)), 0) as value')
-                ->value('value')
-            : null;
+        // Combine all 3 product table aggregates (count, units, valuation) into a single scan
+        $productStats = DB::table('products')
+            ->selectRaw(
+                $canViewValuation
+                    ? 'COUNT(*) as active_products, COALESCE(SUM(quantity), 0) as stock_units, COALESCE(SUM(COALESCE(quantity,0) * COALESCE(avg_price, unit_purchase_price, pack_purchase_price, 0)), 0) as stock_value'
+                    : 'COUNT(*) as active_products, COALESCE(SUM(quantity), 0) as stock_units'
+            )
+            ->first();
+
+        $activeProducts = (int) ($productStats->active_products ?? 0);
+        $stockUnits = (float) ($productStats->stock_units ?? 0);
+        $stockValue = $canViewValuation ? (float) ($productStats->stock_value ?? 0) : null;
+
+        // Combine simple entity counts into 1 scalar-subquery round-trip
+        $threeMonthsOut = now()->addMonths(3)->toDateString();
+        $counts = DB::selectOne("
+            SELECT
+                (SELECT COUNT(*) FROM suppliers) as suppliers,
+                (SELECT COUNT(*) FROM customers) as customers,
+                (SELECT COUNT(*) FROM brands) as brands,
+                (SELECT COUNT(*) FROM categories) as categories,
+                (SELECT COUNT(*) FROM users) as users,
+                (SELECT COUNT(*) FROM stock_adjustments) as stock_adjustments,
+                (SELECT COUNT(*) FROM user_demands WHERE status = 'pending') as pending_demands,
+                (SELECT COUNT(*) FROM batches b WHERE b.expiry_date IS NOT NULL AND b.expiry_date > ? AND b.expiry_date <= ?) as near_expiry
+        ", [$today, $threeMonthsOut]);
+
+        $supplierCount = (int) ($counts->suppliers ?? 0);
+        $customerCount = (int) ($counts->customers ?? 0);
+        $brandCount = (int) ($counts->brands ?? 0);
+        $categoryCount = (int) ($counts->categories ?? 0);
+        $userCount = (int) ($counts->users ?? 0);
+        $stockAdjustmentCount = (int) ($counts->stock_adjustments ?? 0);
+        $pendingDemandsCount = (int) ($counts->pending_demands ?? 0);
+        $nearExpiryCount = (int) ($counts->near_expiry ?? 0);
+
+        // Low stock count — running products (ever purchased) whose on-hand
+        // quantity has dropped below pack_size. Mirrors the notification logic.
+        $lowStockCount = DB::table('products as p')
+            ->whereExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('purchase_invoice_items as pii')
+                    ->whereColumn('pii.product_id', 'p.id');
+            })
+            ->whereNotNull('p.quantity')
+            ->whereColumn('p.quantity', '<', 'p.pack_size')
+            ->count();
 
         return response()->json([
             'active_products'    => $activeProducts,

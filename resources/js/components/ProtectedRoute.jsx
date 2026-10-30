@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import React from "react";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useLicense } from "../context/LicenseContext.jsx";
 import { usePermissions } from "../api/usePermissions.js";
-import axios from "axios";
 
 const ROUTE_PERMISSION_MAP = {
   "/products": ["product.view"],
@@ -92,39 +91,6 @@ export default function ProtectedRoute({ children, permission, permissionAny }) 
   const { loading: licenseLoading, valid: licenseValid } = useLicense();
   const { loading: permsLoading, has } = usePermissions();
 
-  // Local state to track license status independently
-  const [isLicenseValid, setIsLicenseValid] = useState(null);
-  const [checkingLicense, setCheckingLicense] = useState(true);
-
-  // Check license status explicitly
-  const checkLicense = useCallback(async () => {
-    if (!token) {
-      setCheckingLicense(false);
-      return;
-    }
-
-    try {
-      const response = await axios.get("/api/license/status", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setIsLicenseValid(response.data.valid === true);
-    } catch (error) {
-      // On API error, be permissive - let the user in
-      // Server-side middleware will handle enforcement
-      console.warn("License check failed:", error);
-      setIsLicenseValid(true); // Allow access, server will enforce
-    } finally {
-      setCheckingLicense(false);
-    }
-  }, [token]);
-
-  useEffect(() => {
-    // Only check license if LicenseContext is done loading
-    if (!licenseLoading) {
-      checkLicense();
-    }
-  }, [licenseLoading, checkLicense]);
-
   // Check authentication first
   if (!token) {
     return <Navigate to="/" replace />;
@@ -155,15 +121,17 @@ export default function ProtectedRoute({ children, permission, permissionAny }) 
     }
   }
 
+  const content = children ?? <Outlet />;
+
   // While checking license status, show children
-  if (checkingLicense || licenseLoading) {
-    return children;
+  if (licenseLoading) {
+    return content;
   }
 
   // If we have an explicit license check result and it's invalid, redirect
-  if (isLicenseValid === false && !licenseValid) {
+  if (!licenseValid) {
     return <Navigate to="/activate" replace />;
   }
 
-  return children;
+  return content;
 }

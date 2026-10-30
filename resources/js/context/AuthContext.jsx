@@ -1,5 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 import axios from "axios";
+import { clearApiCache } from "./axiosSetup.js";
+import { invalidatePermissionsCache } from "../api/usePermissions.js";
 
 const AuthContext = createContext();
 
@@ -35,9 +37,11 @@ export function AuthProvider({ children }) {
         localStorage.removeItem("user");
       });
     }
-  }, [token]);
+  }, [token, user]);
 
-  const login = (userData, tokenValue, additionalData = {}) => {
+  const login = useCallback((userData, tokenValue, additionalData = {}) => {
+    clearApiCache();
+    invalidatePermissionsCache();
     localStorage.setItem("token", tokenValue);
     localStorage.setItem("user", JSON.stringify(userData));
     try {
@@ -55,9 +59,11 @@ export function AuthProvider({ children }) {
       // Redirect to activation page
       window.location.href = "/activate";
     }
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
+    clearApiCache();
+    invalidatePermissionsCache();
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     localStorage.removeItem("token_expires_at");
@@ -76,10 +82,15 @@ export function AuthProvider({ children }) {
 
     setUser(null);
     delete axios.defaults.headers.common["Authorization"];
-  };
+  }, []);
+
+  const contextValue = useMemo(
+    () => ({ user, token, setUser, login, logout }),
+    [user, token, login, logout]
+  );
 
   return (
-    <AuthContext.Provider value={{ user, token, setUser, login, logout }}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
