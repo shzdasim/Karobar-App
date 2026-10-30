@@ -300,7 +300,7 @@ class AccountingService
         if (Schema::hasTable('supplier_ledgers')) {
             $invRows = DB::table('supplier_ledgers')
                 ->whereIn('entry_type', ['invoice', 'manual'])
-                ->selectRaw('supplier_id, SUM(COALESCE(invoice_total, 0)) as total_inv, SUM(MIN(COALESCE(total_paid, 0), COALESCE(invoice_total, 0))) as paid_on_inv')
+                ->selectRaw('supplier_id, SUM(COALESCE(invoice_total, 0)) as total_inv, SUM(CASE WHEN COALESCE(total_paid, 0) < COALESCE(invoice_total, 0) THEN COALESCE(total_paid, 0) ELSE COALESCE(invoice_total, 0) END) as paid_on_inv')
                 ->groupBy('supplier_id')
                 ->get()
                 ->keyBy('supplier_id');

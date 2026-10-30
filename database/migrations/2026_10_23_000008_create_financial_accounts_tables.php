@@ -67,14 +67,24 @@ return new class extends Migration
         }
 
         if (Schema::hasTable('sale_returns') && !Schema::hasColumn('sale_returns', 'account_id')) {
-            Schema::table('sale_returns', function (Blueprint $table) {
-                $table->unsignedBigInteger('account_id')->nullable()->after('payment_method')->index();
+            $hasPaymentMethod = Schema::hasColumn('sale_returns', 'payment_method');
+            Schema::table('sale_returns', function (Blueprint $table) use ($hasPaymentMethod) {
+                $col = $table->unsignedBigInteger('account_id')->nullable();
+                if ($hasPaymentMethod) {
+                    $col->after('payment_method');
+                }
+                $col->index();
             });
         }
 
         if (Schema::hasTable('purchase_returns') && !Schema::hasColumn('purchase_returns', 'account_id')) {
-            Schema::table('purchase_returns', function (Blueprint $table) {
-                $table->unsignedBigInteger('account_id')->nullable()->after('payment_method')->index();
+            $hasPaymentMethod = Schema::hasColumn('purchase_returns', 'payment_method');
+            Schema::table('purchase_returns', function (Blueprint $table) use ($hasPaymentMethod) {
+                $col = $table->unsignedBigInteger('account_id')->nullable();
+                if ($hasPaymentMethod) {
+                    $col->after('payment_method');
+                }
+                $col->index();
             });
         }
 

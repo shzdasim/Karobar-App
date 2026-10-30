@@ -837,8 +837,8 @@ class PaymentService
                 if (!$exists) {
                     $settlementService->syncSaleReturnCreditPayment(
                         $sr,
-                        (string) $sr->settlement_mode,
                         round((float) $sr->credited_amount, 2),
+                        (string) $sr->settlement_mode,
                         Auth::user()
                     );
                 }
@@ -861,8 +861,8 @@ class PaymentService
                 if (!$exists) {
                     $settlementService->syncPurchaseReturnCreditPayment(
                         $pr,
-                        (string) $pr->settlement_mode,
                         round((float) $pr->credited_amount, 2),
+                        (string) $pr->settlement_mode,
                         Auth::user()
                     );
                 }

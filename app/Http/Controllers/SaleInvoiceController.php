@@ -99,6 +99,7 @@ class SaleInvoiceController extends Controller
         // Capture every product before any stock depletion can reset its average.
         $costs ??= $snapshots->productCosts($items);
         $legacy = $originalItems !== null && $originalItems->every(fn ($item) => $item->cost_price_snapshot === null);
+        $itemColumns = array_flip(\Illuminate\Support\Facades\Schema::getColumnListing('sale_invoice_items'));
         foreach ($items as $raw) {
             $matches = $originalItems === null ? collect() : $originalItems->where('product_id', $raw['product_id']);
             $cost = $legacy ? null : ($matches->isNotEmpty() ? $snapshots->originalCost($originalItems, $raw) : $costs->get($raw['product_id'], 0));
@@ -123,7 +124,8 @@ class SaleInvoiceController extends Controller
                 'is_custom_price'          => $raw['is_custom_price'] ?? false,
             ];
 
-            $item = $invoice->items()->create($payload);
+            $dbPayload = $itemColumns ? array_intersect_key($payload, $itemColumns) : $payload;
+            $item = $invoice->items()->create($dbPayload);
 
             $units = $this->unitsFromArray($payload);
             $this->applyStockDeltaSmart(
@@ -341,11 +343,11 @@ class SaleInvoiceController extends Controller
         $data = $request->validate([
             'draft_id'            => 'nullable|integer|exists:invoice_drafts,id',
             'customer_id'         => 'required|exists:customers,id',
-            'invoice_type'        => 'nullable|string|in:credit,debit,default:debit',
+            'invoice_type'        => 'nullable|string|in:credit,debit',
             'payment_method'      => 'nullable|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
             'account_id'          => 'nullable|integer|exists:accounts,id',
-            'sale_type'           => 'nullable|string|in:retail,wholesale,default:retail',
-            'wholesale_type'      => 'nullable|string|in:unit,pack,default:unit',
+            'sale_type'           => 'nullable|string|in:retail,wholesale',
+            'wholesale_type'      => 'nullable|string|in:unit,pack',
             'date'                => 'required|date',
             'due_date'            => 'nullable|date',
             'credit_override'     => 'nullable|boolean',

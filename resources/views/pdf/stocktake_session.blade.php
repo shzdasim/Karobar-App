@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Stocktake Session Report - {{ $session->reference_number }}</title>
+  <title>Stocktake Session Report - {{ $session->reference_no ?? $session->reference_number }}</title>
   <style>
     @page { margin: 14mm 12mm; }
     body { font-family: DejaVu Sans, sans-serif; font-size: 10.5px; color: #1e293b; line-height: 1.4; }
@@ -36,7 +36,7 @@
           {{ $hideSystemQty ? 'Blind Physical Count Sheet' : 'Stocktake Variance Report' }}
         </div>
         <div class="store-meta" style="margin-top:4px;">
-          Ref #: <strong>{{ $session->reference_number }}</strong><br>
+          Ref #: <strong>{{ $session->reference_no ?? $session->reference_number }}</strong><br>
           Status: <strong>{{ strtoupper(str_replace('_', ' ', $session->status ?? '')) }}</strong>
         </div>
       </td>
@@ -76,7 +76,7 @@
           @if(!$hideSystemQty)
             <td class="text-right">{{ $it->variance_qty !== null ? (($it->variance_qty > 0 ? '+' : '') . number_format((int)$it->variance_qty)) : '—' }}</td>
             <td class="text-right">
-              {{ $it->variance_qty !== null ? 'Rs. ' . number_format((float)$it->variance_qty * (float)($it->unit_cost ?? 0), 2) : '—' }}
+              {{ $it->variance_qty !== null ? 'Rs. ' . number_format((float)$it->variance_qty * (float)($it->unit_purchase_price ?? $it->unit_cost ?? 0), 2) : '—' }}
             </td>
           @endif
         </tr>

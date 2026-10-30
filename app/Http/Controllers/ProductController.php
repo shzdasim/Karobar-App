@@ -46,8 +46,10 @@ class ProductController extends Controller
 
         $query = Product::select($selectCols ?: ['*'])
             ->with($relations)
-            ->withSum('batches', 'quantity')
             ->orderBy('name');
+        if (Schema::hasTable('batches') && Schema::hasColumn('batches', 'quantity')) {
+            $query->withSum('batches', 'quantity');
+        }
 
         // If ids are provided → return exactly those (no limit)
         if ($ids) {
@@ -161,8 +163,10 @@ class ProductController extends Controller
         $q = Product::query()
             ->select($selectCols ?: ['*'])
             ->with($indexRelations)
-            ->withCount('batches')
-            ->withSum('batches', 'quantity');
+            ->withCount('batches');
+        if (Schema::hasTable('batches') && Schema::hasColumn('batches', 'quantity')) {
+            $q->withSum('batches', 'quantity');
+        }
 
         $hasBarcode     = isset($existingCols['barcode']);
         $hasFormulation = isset($existingCols['formulation']);
