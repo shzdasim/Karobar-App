@@ -45,12 +45,12 @@
       <th>Opening Float</th>
       <td class="text-right">Rs. {{ number_format((float)($session->opening_balance ?? 0), 2) }}</td>
       <th>Expected Drawer Balance</th>
-      <td class="text-right"><strong>Rs. {{ number_format((float)($session->expected_balance ?? 0), 2) }}</strong></td>
+      <td class="text-right"><strong>Rs. {{ number_format((float)($session->closing_balance_expected ?? $session->expected_balance ?? 0), 2) }}</strong></td>
     </tr>
     <tr>
       <th>Actual Counted Closing Cash</th>
       <td class="text-right">
-        {{ $session->actual_closing_balance !== null ? 'Rs. ' . number_format((float)$session->actual_closing_balance, 2) : 'Pending Closure' }}
+        {{ ($session->closing_balance_actual ?? $session->actual_closing_balance) !== null ? 'Rs. ' . number_format((float)($session->closing_balance_actual ?? $session->actual_closing_balance), 2) : 'Pending Closure' }}
       </td>
       <th>Variance (Over / Short)</th>
       <td class="text-right">
@@ -59,28 +59,51 @@
     </tr>
   </table>
 
-  <h3 style="font-size:12px; margin: 10px 0 6px 0;">Shift Cash Movements Log</h3>
+  @php
+    $cashInTypes = ['cash_sale', 'customer_payment', 'purchase_return', 'cash_in'];
+    $runningBalance = (float)($session->opening_balance ?? 0);
+  @endphp
+
+  <h3 style="font-size:12px; margin: 10px 0 6px 0;">Shift Cash Movements Log (Chronological Order)</h3>
   <table class="tx-table">
     <thead>
       <tr>
-        <th>Time</th>
-        <th>Type</th>
-        <th>Direction</th>
+        <th style="width: 30px;">#</th>
+        <th style="width: 115px;">Time</th>
+        <th style="width: 110px;">Type</th>
+        <th style="width: 55px;">Flow</th>
         <th>Notes / Reference</th>
-        <th class="text-right">Amount</th>
+        <th class="text-right" style="width: 95px;">Amount</th>
+        <th class="text-right" style="width: 100px;">Balance</th>
       </tr>
     </thead>
     <tbody>
-      @forelse($session->transactions as $tx)
+      <tr style="background: #f8fafc; font-weight: bold;">
+        <td>—</td>
+        <td>{{ $session->opened_at ? \Carbon\Carbon::parse($session->opened_at)->format('d M Y h:i A') : '-' }}</td>
+        <td>DRAWER OPENED</td>
+        <td>OPEN</td>
+        <td>Opening Float{{ $session->notes ? ' — ' . $session->notes : '' }}</td>
+        <td class="text-right">—</td>
+        <td class="text-right">Rs. {{ number_format($runningBalance, 2) }}</td>
+      </tr>
+      @forelse($session->transactions as $idx => $tx)
+        @php
+          $isCashIn = in_array($tx->type, $cashInTypes, true);
+          $amt = (float)($tx->amount ?? 0);
+          $runningBalance += $isCashIn ? $amt : -$amt;
+        @endphp
         <tr>
+          <td>{{ $idx + 1 }}</td>
           <td>{{ $tx->created_at ? \Carbon\Carbon::parse($tx->created_at)->format('d M Y h:i A') : '-' }}</td>
           <td>{{ strtoupper(str_replace('_', ' ', $tx->type ?? '')) }}</td>
-          <td>{{ strtoupper($tx->direction ?? '') }}</td>
+          <td>{{ $isCashIn ? 'IN' : 'OUT' }}</td>
           <td>{{ $tx->notes ?: ($tx->reference_type ? $tx->reference_type . ' #' . $tx->reference_id : '—') }}</td>
-          <td class="text-right">{{ $tx->direction === 'out' ? '-' : '+' }} Rs. {{ number_format((float)($tx->amount ?? 0), 2) }}</td>
+          <td class="text-right">{{ $isCashIn ? '+' : '-' }} Rs. {{ number_format($amt, 2) }}</td>
+          <td class="text-right"><strong>Rs. {{ number_format($runningBalance, 2) }}</strong></td>
         </tr>
       @empty
-        <tr><td colspan="5" style="text-align:center;">No cash transactions recorded during this shift.</td></tr>
+        <tr><td colspan="7" style="text-align:center;">No cash transactions recorded during this shift.</td></tr>
       @endforelse
     </tbody>
   </table>

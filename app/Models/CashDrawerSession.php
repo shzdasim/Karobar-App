@@ -34,7 +34,9 @@ class CashDrawerSession extends Model
 
     public function transactions()
     {
-        return $this->hasMany(CashDrawerTransaction::class, 'session_id')->orderBy('id', 'desc');
+        return $this->hasMany(CashDrawerTransaction::class, 'session_id')
+            ->orderBy('created_at', 'asc')
+            ->orderBy('id', 'asc');
     }
 }
 

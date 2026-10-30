@@ -24,6 +24,24 @@ const TRANSACTION_TYPE_OPTIONS = [
   { value: "cash_out", label: "Cash Out (Petty Cash / Expense / Withdrawal)" },
 ];
 
+const CASH_IN_TYPES = ["cash_sale", "customer_payment", "purchase_return", "cash_in"];
+
+function sortAndAttachRunningBalance(transactions, openingBalance = 0) {
+  const sorted = [...(transactions || [])].sort((a, b) => {
+    const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
+    if (tA !== tB) return tA - tB;
+    return (Number(a.id) || 0) - (Number(b.id) || 0);
+  });
+  let running = Number(openingBalance) || 0;
+  return sorted.map((tx, idx) => {
+    const amt = Number(tx.amount) || 0;
+    const isPlus = CASH_IN_TYPES.includes(tx.type);
+    running += isPlus ? amt : -amt;
+    return { ...tx, seq: idx + 1, balance_after: running };
+  });
+}
+
 export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
   const { formatCurrency } = useCurrency();
   const { isDark, theme } = useTheme();
@@ -170,8 +188,9 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
       return;
     }
 
-    const rowsHtml = (transactions || []).map((tx, idx) => {
-      const isPlus = ["cash_sale", "customer_payment", "purchase_return", "cash_in"].includes(tx.type);
+    const orderedTxns = sortAndAttachRunningBalance(transactions || [], session.opening_balance);
+    const rowsHtml = orderedTxns.map((tx, idx) => {
+      const isPlus = CASH_IN_TYPES.includes(tx.type);
       const timeStr = new Date(tx.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       return `
         <tr>
@@ -181,6 +200,9 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
           <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.notes || (tx.reference_type ? tx.reference_type + ' #' + (tx.reference_id || '') : '-')}</td>
           <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; color: ${isPlus ? '#10b981' : '#f43f5e'}; font-weight: bold;">
             ${isPlus ? '+' : '-'}${formatCurrency(tx.amount)}
+          </td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; font-weight: 700;">
+            ${formatCurrency(tx.balance_after)}
           </td>
         </tr>
       `;
@@ -249,7 +271,7 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
 
         ${session.notes ? `<div style="font-size: 11px; margin: 8px 0; background: #f8fafc; padding: 6px; border-radius: 4px;"><strong>Notes:</strong> ${session.notes}</div>` : ''}
 
-        <div class="section-title">Itemized Shift Transactions (${transactions?.length || 0})</div>
+        <div class="section-title">Itemized Shift Transactions (${orderedTxns.length})</div>
         <table class="tx-table">
           <thead>
             <tr>
@@ -258,10 +280,11 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
               <th style="width: 120px;">Type</th>
               <th>Description / Reference</th>
               <th style="width: 90px; text-align: right;">Amount</th>
+              <th style="width: 95px; text-align: right;">Balance</th>
             </tr>
           </thead>
           <tbody>
-            ${rowsHtml || '<tr><td colspan="5" style="text-align:center; padding: 12px; color: #94a3b8;">No transactions in this shift</td></tr>'}
+            ${rowsHtml || '<tr><td colspan="6" style="text-align:center; padding: 12px; color: #94a3b8;">No transactions in this shift</td></tr>'}
           </tbody>
         </table>
 
@@ -783,8 +806,8 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                 </h4>
                 {session?.transactions?.length > 0 ? (
                   <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                    {session.transactions.map((tx) => {
-                      const isPlus = ["cash_sale", "customer_payment", "purchase_return", "cash_in"].includes(tx.type);
+                    {sortAndAttachRunningBalance(session.transactions, session.opening_balance).map((tx) => {
+                      const isPlus = CASH_IN_TYPES.includes(tx.type);
                       return (
                         <div
                           key={tx.id}
@@ -793,6 +816,9 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                           }`}
                         >
                           <div>
+                            <span className={`mr-1.5 font-mono text-[10px] ${isDark ? "text-slate-400" : "text-gray-400"}`}>
+                              #{tx.seq}
+                            </span>
                             <span className="font-semibold capitalize">
                               {tx.type.replace("_", " ")}
                             </span>
@@ -805,9 +831,14 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                               {new Date(tx.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </div>
                           </div>
-                          <span className={`font-bold ${isPlus ? "text-emerald-500" : "text-rose-500"}`}>
-                            {isPlus ? "+" : "-"}{formatCurrency(tx.amount)}
-                          </span>
+                          <div className="text-right">
+                            <div className={`font-bold ${isPlus ? "text-emerald-500" : "text-rose-500"}`}>
+                              {isPlus ? "+" : "-"}{formatCurrency(tx.amount)}
+                            </div>
+                            <div className={`text-[10px] font-medium ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+                              Bal: {formatCurrency(tx.balance_after)}
+                            </div>
+                          </div>
                         </div>
                       );
                     })}
@@ -1023,7 +1054,7 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                 (() => {
                   const repSession = detailedReport.session;
                   const repSummary = detailedReport.summary;
-                  const repTxns = detailedReport.transactions || [];
+                  const repTxns = sortAndAttachRunningBalance(detailedReport.transactions || [], repSession.opening_balance);
                   const isClosed = repSession.status === "closed";
                   const repDiff = Number(repSession.difference || 0);
 
@@ -1225,16 +1256,17 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                                 <th className="p-2.5">Type</th>
                                 <th className="p-2.5">Reference / Notes</th>
                                 <th className="p-2.5">Cashier</th>
-                                <th className="p-2.5 pr-3 text-right">Amount</th>
+                                <th className="p-2.5 text-right">Amount</th>
+                                <th className="p-2.5 pr-3 text-right">Balance</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-slate-800 text-[11px]">
                               {filteredTxns.length > 0 ? (
                                 filteredTxns.map((tx, idx) => {
-                                  const isPlus = ["cash_sale", "customer_payment", "purchase_return", "cash_in"].includes(tx.type);
+                                  const isPlus = CASH_IN_TYPES.includes(tx.type);
                                   return (
                                     <tr key={tx.id} className={isDark ? "hover:bg-slate-800/40" : "hover:bg-gray-50/80"}>
-                                      <td className="p-2.5 pl-3 font-mono text-gray-400">#{idx + 1}</td>
+                                      <td className="p-2.5 pl-3 font-mono text-gray-400">#{tx.seq ?? idx + 1}</td>
                                       <td className="p-2.5 whitespace-nowrap text-gray-500 dark:text-slate-400">
                                         {new Date(tx.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                       </td>
@@ -1255,17 +1287,20 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                                       <td className="p-2.5 text-gray-500 dark:text-slate-400 whitespace-nowrap">
                                         {tx.user?.name || "Cashier"}
                                       </td>
-                                      <td className={`p-2.5 pr-3 text-right font-bold whitespace-nowrap ${
+                                      <td className={`p-2.5 text-right font-bold whitespace-nowrap ${
                                         isPlus ? "text-emerald-500" : "text-rose-500"
                                       }`}>
                                         {isPlus ? "+" : "-"}{formatCurrency(tx.amount)}
+                                      </td>
+                                      <td className="p-2.5 pr-3 text-right font-bold whitespace-nowrap text-gray-700 dark:text-slate-200">
+                                        {formatCurrency(tx.balance_after)}
                                       </td>
                                     </tr>
                                   );
                                 })
                               ) : (
                                 <tr>
-                                  <td colSpan={6} className="p-6 text-center text-gray-400 italic">
+                                  <td colSpan={7} className="p-6 text-center text-gray-400 italic">
                                     No transactions match the criteria.
                                   </td>
                                 </tr>

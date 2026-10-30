@@ -57,9 +57,12 @@ class CashDrawerController extends Controller
             ]);
         }
 
-        $session->load(['transactions' => function ($q) {
-            $q->latest()->limit(50);
-        }, 'user']);
+        $session->load([
+            'transactions' => function ($q) {
+                $q->reorder('created_at', 'asc')->orderBy('id', 'asc')->with('user');
+            },
+            'user',
+        ]);
 
         return response()->json([
             'is_open' => true,
@@ -217,12 +220,15 @@ class CashDrawerController extends Controller
     public function show(Request $request, $id)
     {
         $this->authorizeDrawerAction('cash-drawer.view');
-        $session = CashDrawerSession::with(['user', 'transactions.user'])->findOrFail($id);
+        $session = CashDrawerSession::with([
+            'user',
+            'transactions' => fn($q) => $q->reorder('created_at', 'asc')->orderBy('id', 'asc')->with('user'),
+        ])->findOrFail($id);
 
         return response()->json([
             'session'      => $session,
             'summary'      => $this->cashDrawerService->getSessionSummary($session),
-            'transactions' => $session->transactions()->with(['user'])->orderBy('id', 'asc')->get(),
+            'transactions' => $session->transactions,
         ]);
     }
 }

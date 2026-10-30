@@ -89,10 +89,16 @@ function fmtDate(dt) {
   });
 }
 
-/** Attach a running `balance_after` to each transaction (mutates a copy). */
+/** Sort transactions strictly in chronological order (created_at ASC, id ASC) and attach running `balance_after`. */
 function attachRunningBalance(transactions, openingBalance) {
+  const sorted = [...(transactions || [])].sort((a, b) => {
+    const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
+    if (tA !== tB) return tA - tB;
+    return (Number(a.id) || 0) - (Number(b.id) || 0);
+  });
   let running = parseFloat(openingBalance) || 0;
-  return transactions.map((txn) => {
+  return sorted.map((txn) => {
     const amt = parseFloat(txn.amount) || 0;
     if (CASH_IN_TYPES.includes(txn.type)) {
       running += amt;

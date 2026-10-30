@@ -980,7 +980,10 @@ class DocumentShareService
 
     private function resolveCashDrawerSession(int $id, ?Setting $setting, string $storeName): array
     {
-        $session = \App\Models\CashDrawerSession::with(['user', 'transactions.user'])->findOrFail($id);
+        $session = \App\Models\CashDrawerSession::with([
+            'user',
+            'transactions' => fn($q) => $q->reorder('created_at', 'asc')->orderBy('id', 'asc')->with('user'),
+        ])->findOrFail($id);
         $docNo = 'SHIFT-' . $session->id;
         $openedStr = $session->opened_at ? Carbon::parse($session->opened_at)->format('d M Y h:i A') : '-';
 

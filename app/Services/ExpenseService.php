@@ -148,6 +148,13 @@ class ExpenseService
                     $user
                 );
             }
+            // 2. Resolve new drawer session if cash
+            $newSession = null;
+            if ($newMethod === 'cash') {
+                $newSession = $this->cashDrawerService->getCurrentSession($user);
+            }
+
+            $existingDrawerTx = null;
             if ($oldMethod === 'cash' && $oldSessionId) {
                 $oldTx = CashDrawerTransaction::where('session_id', $oldSessionId)
                     ->where('reference_type', Expense::class)
@@ -155,18 +162,17 @@ class ExpenseService
                     ->first();
                 if ($oldTx) {
                     $session = CashDrawerSession::find($oldSessionId);
-                    $oldTx->delete();
-                    if ($session && $session->status === 'open') {
-                        $this->cashDrawerService->recalculateExpectedBalance($session);
-                        $this->accountService->syncCashDrawerBalance($session);
+                    if ($newMethod === 'cash' && $newSession && (int) $oldSessionId === (int) $newSession->id && $session && $session->status === 'open') {
+                        // Preserve original chronological position in the drawer log
+                        $existingDrawerTx = $oldTx;
+                    } else {
+                        $oldTx->delete();
+                        if ($session && $session->status === 'open') {
+                            $this->cashDrawerService->recalculateExpectedBalance($session);
+                            $this->accountService->syncCashDrawerBalance($session);
+                        }
                     }
                 }
-            }
-
-            // 2. Resolve new drawer session if cash
-            $newSession = null;
-            if ($newMethod === 'cash') {
-                $newSession = $this->cashDrawerService->getCurrentSession($user);
             }
 
             // 3. Update expense fields
@@ -204,15 +210,24 @@ class ExpenseService
                 );
             }
             if ($newMethod === 'cash' && $newSession) {
-                $this->cashDrawerService->recordTransaction(
-                    $newSession,
-                    'cash_out',
-                    $newAmount,
-                    Expense::class,
-                    $expense->id,
-                    "Expense: {$category->name}" . ($expense->payee ? " ({$expense->payee})" : ""),
-                    $user
-                );
+                $drawerNote = "Expense: {$category->name}" . ($expense->payee ? " ({$expense->payee})" : "");
+                if ($existingDrawerTx) {
+                    $existingDrawerTx->update([
+                        'amount' => $newAmount,
+                        'notes'  => $drawerNote,
+                    ]);
+                    $this->cashDrawerService->recalculateExpectedBalance($newSession);
+                } else {
+                    $this->cashDrawerService->recordTransaction(
+                        $newSession,
+                        'cash_out',
+                        $newAmount,
+                        Expense::class,
+                        $expense->id,
+                        $drawerNote,
+                        $user
+                    );
+                }
                 $this->accountService->syncCashDrawerBalance($newSession);
             }
 
