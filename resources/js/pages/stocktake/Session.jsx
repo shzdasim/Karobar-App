@@ -135,7 +135,7 @@ export default function StocktakeSession() {
     try {
       const [sessionRes, itemsRes] = await Promise.all([
         axios.get(`/api/stocktake-sessions/${id}`),
-        axios.get(`/api/stocktake-sessions/${id}/items`),
+        axios.get(`/api/stocktake-sessions/${id}/items`, { params: { per_page: 2000 } }),
       ]);
       setSession(sessionRes.data);
       const itemList = Array.isArray(itemsRes.data?.data) ? itemsRes.data.data : (Array.isArray(itemsRes.data) ? itemsRes.data : []);
@@ -218,6 +218,7 @@ export default function StocktakeSession() {
           it.product?.name?.toLowerCase().includes(q) ||
           it.product?.barcode?.toLowerCase().includes(q) ||
           it.product?.product_code?.toLowerCase().includes(q) ||
+          it.product?.brand?.name?.toLowerCase().includes(q) ||
           it.batch_number?.toLowerCase().includes(q)
       );
     }
@@ -399,7 +400,9 @@ export default function StocktakeSession() {
               {session.reference_no}
             </h1>
             <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-              {session.session_type === "full" ? "Full Stocktake" : "Cycle Count"}
+              {session.session_type === "full"
+                ? "Full Stocktake"
+                : `Cycle Count${session.scope_type ? ` — ${session.scope_type.charAt(0).toUpperCase() + session.scope_type.slice(1)}: ${session.scope_name || "#" + session.scope_id}` : ""}`}
               {session.is_blind && (
                 <span className="ml-2 inline-flex items-center gap-0.5 text-orange-500 font-medium">
                   <EyeSlashIcon className="w-3.5 h-3.5" /> Blind Mode

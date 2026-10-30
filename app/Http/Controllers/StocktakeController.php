@@ -27,10 +27,24 @@ class StocktakeController extends Controller
         $query = StocktakeSession::query()
             ->withCount('items')
             ->withCount(['items as counted_items_count' => fn($q) => $q->where('status', 'counted')])
-            ->when($q !== '', fn($qq) =>
-                $qq->where('reference_no', 'like', "%{$q}%")
-                   ->orWhere('notes', 'like', "%{$q}%")
-            )
+            ->when($q !== '', function ($qq) use ($q) {
+                $qq->where(function ($sub) use ($q) {
+                    $sub->where('reference_no', 'like', "%{$q}%")
+                        ->orWhere('notes', 'like', "%{$q}%")
+                        ->orWhere(function ($b) use ($q) {
+                            $b->where('scope_type', 'brand')
+                              ->whereIn('scope_id', \App\Models\Brand::where('name', 'like', "%{$q}%")->select('id'));
+                        })
+                        ->orWhere(function ($c) use ($q) {
+                            $c->where('scope_type', 'category')
+                              ->whereIn('scope_id', \App\Models\Category::where('name', 'like', "%{$q}%")->select('id'));
+                        })
+                        ->orWhere(function ($s) use ($q) {
+                            $s->where('scope_type', 'supplier')
+                              ->whereIn('scope_id', \App\Models\Supplier::where('name', 'like', "%{$q}%")->select('id'));
+                        });
+                });
+            })
             ->when($status, fn($qq) => $qq->where('status', $status))
             ->orderByDesc('id');
 
@@ -42,7 +56,8 @@ class StocktakeController extends Controller
     public function show(int $id, Request $request): JsonResponse
     {
         $session = StocktakeSession::with([
-            'items.product:id,name,barcode,rack,unit_purchase_price,avg_price,category_id,brand_id,supplier_id',
+            'items.product:id,name,product_code,barcode,rack,unit_purchase_price,avg_price,category_id,brand_id,supplier_id',
+            'items.product.brand:id,name',
             'user:id,name',
             'stockAdjustment:id,posted_number',
         ])->findOrFail($id);
@@ -169,7 +184,8 @@ class StocktakeController extends Controller
 
         $query = $session->items()
             ->with([
-                'product:id,name,barcode,rack,unit_purchase_price',
+                'product:id,name,product_code,barcode,rack,unit_purchase_price,brand_id,category_id,supplier_id',
+                'product.brand:id,name',
                 'counter:id,name',
             ]);
 

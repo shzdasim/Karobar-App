@@ -70,6 +70,8 @@ export default function CreateStocktake() {
   const [categories, setCategories] = useState([]);
   const [brands, setBrands] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [selectedScopeOption, setSelectedScopeOption] = useState(null);
+  const [scopeSearchLoading, setScopeSearchLoading] = useState(false);
 
   // React-Select styles
   const selectStyles = useMemo(() => ({
@@ -98,24 +100,65 @@ export default function CreateStocktake() {
       setReferenceNo(data.reference_no);
     }).catch(() => {});
 
-    axios.get("/api/categories").then(({ data }) => {
-      const list = data?.data || data || [];
-      setCategories(list.map((c) => ({ value: c.id, label: c.name })));
-    }).catch(() => {});
+    axios.get("/api/categories/search", { params: { limit: 2000 } })
+      .catch(() => axios.get("/api/categories"))
+      .then(({ data }) => {
+        const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+        setCategories(list.map((c) => ({ value: c.id, label: c.name })));
+      }).catch(() => {});
 
-    axios.get("/api/brands").then(({ data }) => {
-      const list = data?.data || data || [];
-      setBrands(list.map((b) => ({ value: b.id, label: b.name })));
-    }).catch(() => {});
+    axios.get("/api/brands/search", { params: { limit: 2000 } })
+      .catch(() => axios.get("/api/brands", { params: { per_page: 2000 } }))
+      .then(({ data }) => {
+        const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+        setBrands(list.map((b) => ({ value: b.id, label: b.name })));
+      }).catch(() => {});
 
-    axios.get("/api/suppliers").then(({ data }) => {
-      const list = data?.data || data || [];
-      setSuppliers(list.map((s) => ({ value: s.id, label: s.name })));
-    }).catch(() => {});
+    axios.get("/api/suppliers/search", { params: { limit: 2000 } })
+      .catch(() => axios.get("/api/suppliers"))
+      .then(({ data }) => {
+        const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+        setSuppliers(list.map((s) => ({ value: s.id, label: s.name })));
+      }).catch(() => {});
   }, []);
 
   // Reset scope when session type or scope type changes
-  useEffect(() => { setScopeId(null); }, [sessionType, scopeType]);
+  useEffect(() => {
+    setScopeId(null);
+    setSelectedScopeOption(null);
+  }, [sessionType, scopeType]);
+
+  // Live server-side search when typing in scope select
+  const handleScopeInputChange = (inputValue, { action }) => {
+    if (action !== "input-change") return;
+    const trimmed = (inputValue || "").trim();
+    if (!trimmed) return;
+
+    const endpoint =
+      scopeType === "category"
+        ? "/api/categories/search"
+        : scopeType === "brand"
+        ? "/api/brands/search"
+        : "/api/suppliers/search";
+
+    setScopeSearchLoading(true);
+    axios
+      .get(endpoint, { params: { q: trimmed, limit: 200 } })
+      .then(({ data }) => {
+        const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+        const mapped = list.map((item) => ({ value: item.id, label: item.name }));
+        const mergeUnique = (prev) => {
+          const map = new Map(prev.map((o) => [o.value, o]));
+          mapped.forEach((o) => map.set(o.value, o));
+          return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+        };
+        if (scopeType === "category") setCategories(mergeUnique);
+        else if (scopeType === "brand") setBrands(mergeUnique);
+        else if (scopeType === "supplier") setSuppliers(mergeUnique);
+      })
+      .catch(() => {})
+      .finally(() => setScopeSearchLoading(false));
+  };
 
   const scopeOptions = useMemo(() => {
     if (scopeType === "category") return categories;
@@ -232,10 +275,16 @@ export default function CreateStocktake() {
                 </label>
                 <Select
                   options={scopeOptions}
-                  value={scopeOptions.find((o) => o.value === scopeId) || null}
-                  onChange={(opt) => setScopeId(opt?.value || null)}
+                  value={selectedScopeOption || scopeOptions.find((o) => o.value === scopeId) || null}
+                  onChange={(opt) => {
+                    setScopeId(opt?.value || null);
+                    setSelectedScopeOption(opt || null);
+                  }}
+                  onInputChange={handleScopeInputChange}
+                  isLoading={scopeSearchLoading}
                   styles={selectStyles}
                   isClearable
+                  isSearchable
                   placeholder={`Search ${scopeType}…`}
                   noOptionsMessage={() => `No ${scopeType}s found`}
                 />

@@ -17,7 +17,7 @@ class CategoryController extends Controller
         $this->authorize('lookup', Category::class);
 
         $q     = trim($req->input('q', ''));
-        $limit = max(1, min((int)$req->input('limit', 20), 100));
+        $limit = max(1, min((int)$req->input('limit', 50), 2000));
 
         $query = Category::select('id','name')->orderBy('name');
 

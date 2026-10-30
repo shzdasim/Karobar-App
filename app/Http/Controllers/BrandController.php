@@ -127,7 +127,7 @@ class BrandController extends Controller
         $this->authorize('lookup', Brand::class);
 
         $q     = trim($req->input('q', ''));
-        $limit = max(1, min((int)$req->input('limit', 20), 100));
+        $limit = max(1, min((int)$req->input('limit', 50), 2000));
 
         $query = Brand::select(
             'id',
@@ -149,8 +149,8 @@ class BrandController extends Controller
     {
         $this->authorize('viewAny', Brand::class);
 
-        $perPage = max(1, min((int)$req->input('per_page', 25), 100));
-        $qName = trim((string)$req->input('q_name', ''));
+        $perPage = max(1, min((int)$req->input('per_page', 25), 2000));
+        $qName = trim((string)($req->input('q_name') ?? $req->input('q', '')));
         $policyFilter = trim((string)$req->input('policy', 'all'));
 
         $q = Brand::query()
