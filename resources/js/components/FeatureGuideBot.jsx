@@ -23,6 +23,7 @@ import {
   getGuideBotMascotStyle,
   setGuideBotMascotStyle,
   useGuideBotOpenState,
+  useBottomMascotEnabledState,
 } from "./GuideBotTrigger.jsx";
 import {
   SCREEN_GUIDES,
@@ -568,6 +569,7 @@ function RoamingCubeCompanion({ onOpen, screenTitle }) {
 }
 export default function FeatureGuideBot({ isOpen, onClose }) {
   const [, setSharedIsOpen] = useGuideBotOpenState();
+  const [bottomMascotEnabled] = useBottomMascotEnabledState();
   const location = useLocation();
   const navigate = useNavigate();
   const { isDark } = useTheme();
@@ -1086,6 +1088,7 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
   );
 
   if (!isOpen && !isRendered) {
+    if (!bottomMascotEnabled) return null;
     return (
       <RoamingCubeCompanion
         onOpen={() => setSharedIsOpen(true)}

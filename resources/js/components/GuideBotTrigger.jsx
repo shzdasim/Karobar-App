@@ -3,6 +3,66 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 
 const MASCOT_STYLE_KEY = "karobar_guide_bot_mascot_style";
 const OPEN_STATE_KEY = "karobar_guide_bot_is_open";
+const BOTTOM_MASCOT_ENABLED_KEY = "karobar_bottom_mascot_enabled";
+
+/**
+ * Shared persistent setting for enabling/disabling ONLY the bottom roaming Cube mascot.
+ * Defaults to `true` (ON). Does not affect the Topbar "Guide Bot" button or popup.
+ */
+export function getBottomMascotEnabled() {
+  try {
+    return localStorage.getItem(BOTTOM_MASCOT_ENABLED_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+export function setBottomMascotEnabled(enabled) {
+  const resolved = Boolean(enabled);
+  try {
+    localStorage.setItem(BOTTOM_MASCOT_ENABLED_KEY, resolved ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+  window.dispatchEvent(
+    new CustomEvent("guide-bot-bottom-mascot-changed", { detail: resolved })
+  );
+  return resolved;
+}
+
+export function useBottomMascotEnabledState() {
+  const [enabled, setEnabledState] = useState(() => getBottomMascotEnabled());
+
+  const setEnabled = useCallback((nextVal) => {
+    setEnabledState((prev) => {
+      const resolved = typeof nextVal === "function" ? nextVal(prev) : Boolean(nextVal);
+      return setBottomMascotEnabled(resolved);
+    });
+  }, []);
+
+  useEffect(() => {
+    const onSync = (e) => {
+      if (typeof e?.detail === "boolean") {
+        setEnabledState(e.detail);
+      } else {
+        setEnabledState(getBottomMascotEnabled());
+      }
+    };
+    const onStorage = (e) => {
+      if (e.key === BOTTOM_MASCOT_ENABLED_KEY) {
+        setEnabledState(getBottomMascotEnabled());
+      }
+    };
+    window.addEventListener("guide-bot-bottom-mascot-changed", onSync);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("guide-bot-bottom-mascot-changed", onSync);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  return [enabled, setEnabled];
+}
 
 /**
  * Shared persistent open-state hook so the Guide Bot stays open across all page

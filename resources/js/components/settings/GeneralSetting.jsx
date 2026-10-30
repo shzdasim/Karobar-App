@@ -8,8 +8,12 @@ import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
 import "filepond/dist/filepond.min.css";
 import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
 import { GlassInput } from "@/components/Glass.jsx";
-import { BuildingStorefrontIcon, BanknotesIcon } from "@heroicons/react/24/solid";
+import { BuildingStorefrontIcon, BanknotesIcon, SparklesIcon } from "@heroicons/react/24/solid";
 import { useTheme } from "@/context/ThemeContext";
+import {
+  GuideBotAvatar,
+  useBottomMascotEnabledState,
+} from "@/components/GuideBotTrigger.jsx";
 
 registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);
 
@@ -39,6 +43,16 @@ export default function GeneralSetting({
   licenseRef,
 }) {
   const { isDark, theme } = useTheme();
+  const [bottomMascotEnabled, setBottomMascotEnabled] = useBottomMascotEnabledState();
+
+  const handleToggleBottomMascot = (nextChecked) => {
+    setBottomMascotEnabled(nextChecked);
+    toast.success(
+      nextChecked
+        ? "Bottom roaming mascot enabled"
+        : "Bottom roaming mascot hidden (Topbar Guide Bot stays active)"
+    );
+  };
 
   const selectStyles = useMemo(() => ({
     control: (base, state) => ({
@@ -411,6 +425,110 @@ export default function GeneralSetting({
                 </span>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ===== Bottom Roaming Mascot (Cube Companion) ===== */}
+      <div className="settings-block">
+        <div className="settings-block-heading">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="settings-block-icon">
+              <SparklesIcon />
+            </div>
+            <div className="min-w-0">
+              <h2 className="settings-block-title">Bottom Roaming Mascot</h2>
+              <p className="settings-block-note">
+                Show or hide the animated Cube mascot at the bottom of the screen. The top navigation bar Guide Bot button remains active.
+              </p>
+            </div>
+          </div>
+          <span
+            className="settings-chip"
+            style={{
+              "--settings-chip": bottomMascotEnabled ? "#10b981" : "#64748b",
+            }}
+          >
+            {bottomMascotEnabled ? "ON" : "OFF"}
+          </span>
+        </div>
+
+        <div className="settings-body">
+          <div
+            className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
+              isDark
+                ? "bg-slate-800/50 border-slate-700/60"
+                : "bg-slate-50/80 border-slate-200/90"
+            }`}
+          >
+            <div className="flex items-center gap-4 min-w-0">
+              <div
+                className={`w-16 h-16 rounded-2xl border flex items-center justify-center shrink-0 transition-opacity ${
+                  isDark
+                    ? "bg-slate-900/90 border-slate-700"
+                    : "bg-white border-slate-200 shadow-2xs"
+                } ${bottomMascotEnabled ? "opacity-100" : "opacity-45 grayscale"}`}
+              >
+                <GuideBotAvatar
+                  className="w-12 h-14"
+                  fullBody={true}
+                  interactive={false}
+                  waving={bottomMascotEnabled}
+                />
+              </div>
+              <div className="min-w-0">
+                <label
+                  htmlFor="setting-bottom-mascot-switch"
+                  className={`text-sm font-bold cursor-pointer block ${
+                    isDark ? "text-slate-100" : "text-slate-900"
+                  }`}
+                >
+                  Show Bottom Roaming Cube Mascot
+                </label>
+                <p className="settings-hint mt-0.5">
+                  When turned off, only the bottom roaming character is hidden. You can still open Guide Bot anytime from the top bar or with <kbd className="px-1.5 py-0.5 text-[11px] font-mono rounded bg-slate-200/80 dark:bg-slate-700">Alt+G</kbd>.
+                </p>
+              </div>
+            </div>
+
+            <label
+              htmlFor="setting-bottom-mascot-switch"
+              className="inline-flex items-center gap-3 cursor-pointer shrink-0 select-none"
+            >
+              <input
+                id="setting-bottom-mascot-switch"
+                type="checkbox"
+                {...{ switch: "" }}
+                checked={bottomMascotEnabled}
+                onChange={(e) => handleToggleBottomMascot(e.target.checked)}
+                className="sr-only peer"
+              />
+              <span
+                aria-hidden="true"
+                className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors duration-200 ${
+                  bottomMascotEnabled
+                    ? "bg-emerald-500"
+                    : isDark
+                    ? "bg-slate-700"
+                    : "bg-slate-300"
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200 ${
+                    bottomMascotEnabled ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </span>
+              <span
+                className={`text-xs font-extrabold uppercase tracking-wider w-8 ${
+                  bottomMascotEnabled
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-slate-500 dark:text-slate-400"
+                }`}
+              >
+                {bottomMascotEnabled ? "On" : "Off"}
+              </span>
+            </label>
           </div>
         </div>
       </div>
