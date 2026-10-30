@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\MeController;
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\AssistantController;
 use App\Http\Controllers\BatchController;
 use App\Http\Controllers\BatchExpiryController;
 use App\Http\Controllers\BackupController;
@@ -506,4 +507,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/stock-disposals/{id}',             [\App\Http\Controllers\StockDisposalController::class, 'show']);
     Route::post('/stock-disposals/{id}/dispose',    [\App\Http\Controllers\StockDisposalController::class, 'dispose']);
     Route::post('/stock-disposals/{id}/restore',    [\App\Http\Controllers\StockDisposalController::class, 'restore']);
+
+    // Nova + Cube — authenticated, licensed assistant endpoint.
+    Route::post('/assistant/chat', [AssistantController::class, 'chat'])->middleware('throttle:12,1');
 });

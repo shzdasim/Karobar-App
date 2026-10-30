@@ -41,4 +41,12 @@ return [
         'api_version'     => env('WHATSAPP_API_VERSION', 'v20.0'),
     ],
 
+
+    'ollama' => [
+        'base_url' => env('OLLAMA_BASE_URL', 'http://127.0.0.1:11434'),
+        'model' => env('OLLAMA_MODEL', 'qwen3.5:4b'),
+        'timeout' => (int) env('OLLAMA_TIMEOUT', 120),
+    ],
+
+
 ];

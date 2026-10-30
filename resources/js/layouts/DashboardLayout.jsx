@@ -6,6 +6,7 @@ import Sidebar from "../components/Sidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
 import ProtectedRoute from "../components/ProtectedRoute.jsx";
 import PageSkeleton from "../components/PageSkeleton.jsx";
+import AssistantWidget from "../components/assistant/AssistantWidget.jsx";
 import { Toaster } from "react-hot-toast";
 
 const SIDEBAR_PIN_STORAGE_KEY = "karobar_sidebar_pinned";
@@ -362,6 +363,7 @@ export default function DashboardLayout({ children }) {
           </div>
         </main>
       </div>
+      <AssistantWidget />
     </div>
   );
 }
