@@ -212,7 +212,7 @@ export default function AssistantWidget() {
               rows={1} maxLength={4000} aria-label="Message" />
             <button type="submit" className="ka-send" disabled={!draft.trim() || loading} aria-label="Send message"><PaperAirplaneIcon /></button>
           </form>
-          <div className="ka-footer">AI can make mistakes. Verify important business figures in your ERP records.</div>
+          <div className="ka-footer">Runs on your server with a local Ollama model — no paid AI API. Verify important business figures in your ERP records.</div>
         </section>
       )}
     </div>

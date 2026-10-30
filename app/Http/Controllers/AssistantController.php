@@ -19,13 +19,6 @@ class AssistantController extends Controller
             'page' => ['nullable', 'string', 'max:180'],
         ]);
 
-        $apiKey = config('services.openai.key');
-        if (!is_string($apiKey) || trim($apiKey) === '') {
-            return response()->json([
-                'message' => 'Nova and Cube need an OpenAI API key. Add OPENAI_API_KEY to the server environment, then clear the Laravel config cache.',
-            ], 503);
-        }
-
         $agent = $validated['agent'];
         $messages = array_slice(array_map(
             static fn (array $message) => [
@@ -76,48 +69,57 @@ class AssistantController extends Controller
         $instructions = $this->buildInstructions($agent, $currentPage, $allowedNavigation, $knowledge);
 
         try {
-            $response = Http::withToken($apiKey)
-                ->acceptJson()
-                ->timeout((int) config('services.openai.timeout', 45))
-                ->post('https://api.openai.com/v1/responses', [
-                    'model' => config('services.openai.model', 'gpt-6.1-sol'),
-                    'instructions' => $instructions,
-                    'input' => $messages,
-                    'reasoning' => ['effort' => 'high'],
-                    'max_output_tokens' => 1400,
-                    'store' => false,
-                    'text' => [
-                        'format' => [
-                            'type' => 'json_schema',
-                            'name' => 'karobar_assistant_reply',
-                            'strict' => true,
-                            'schema' => $this->responseSchema(),
-                        ],
+            $baseUrl = rtrim((string) config('services.ollama.base_url', 'http://127.0.0.1:11434'), '/');
+            $model = (string) config('services.ollama.model', 'qwen3.5:4b');
+            $timeout = max(30, (int) config('services.ollama.timeout', 120));
+
+            $response = Http::acceptJson()
+                ->connectTimeout(5)
+                ->timeout($timeout)
+                ->post($baseUrl . '/api/chat', [
+                    'model' => $model,
+                    'messages' => array_merge(
+                        [['role' => 'system', 'content' => $instructions]],
+                        $messages
+                    ),
+                    'stream' => false,
+                    'format' => $this->responseSchema(),
+                    'options' => [
+                        'temperature' => 0.2,
+                        'num_ctx' => 8192,
                     ],
+                    'think' => false,
+                    'keep_alive' => '10m',
                 ]);
 
             if ($response->failed()) {
-                Log::warning('Karobar assistant provider request failed.', [
+                Log::warning('Karobar local Ollama request failed.', [
                     'status' => $response->status(),
                     'agent' => $agent,
+                    'model' => $model,
                 ]);
+
+                if ($response->status() === 404) {
+                    return response()->json([
+                        'message' => 'The local AI model is not installed yet. On the server running Ollama, run: ollama pull ' . $model,
+                    ], 503);
+                }
+
                 return response()->json([
-                    'message' => 'The assistant could not respond right now. Check the server API configuration and try again.',
+                    'message' => 'The local AI service returned an error. Check that Ollama is running and the configured model is installed.',
                 ], 502);
             }
 
-            $textPart = collect($response->json('output', []))
-                ->filter(static fn (array $item) => ($item['type'] ?? null) === 'message')
-                ->flatMap(static fn (array $item) => $item['content'] ?? [])
-                ->first(static fn (array $part) => ($part['type'] ?? null) === 'output_text');
-
-            $rawText = is_array($textPart) ? ($textPart['text'] ?? null) : null;
+            $rawText = $response->json('message.content');
             $answer = is_string($rawText) ? json_decode($rawText, true) : null;
 
             if (!is_array($answer) || !isset($answer['reply']) || !is_string($answer['reply'])) {
-                Log::warning('Karobar assistant returned an invalid structured response.', ['agent' => $agent]);
+                Log::warning('Karobar local AI returned an invalid structured response.', [
+                    'agent' => $agent,
+                    'model' => $model,
+                ]);
                 return response()->json([
-                    'message' => 'The assistant returned an unreadable response. Please try again.',
+                    'message' => 'The local AI returned an unreadable response. Please try again.',
                 ], 502);
             }
 
@@ -162,13 +164,21 @@ class AssistantController extends Controller
                 'navigation' => $navigation,
                 'handoff_to' => $handoff,
             ]);
+        } catch (\Illuminate\Http\Client\ConnectionException $exception) {
+            Log::warning('Karobar could not connect to the local Ollama service.', [
+                'agent' => $agent,
+                'exception' => get_class($exception),
+            ]);
+            return response()->json([
+                'message' => 'The free local AI service is not reachable. Make sure Ollama is running and OLLAMA_BASE_URL points to it.',
+            ], 503);
         } catch (\Throwable $exception) {
-            Log::error('Karobar assistant provider request failed unexpectedly.', [
+            Log::error('Karobar local assistant request failed unexpectedly.', [
                 'exception' => get_class($exception),
                 'agent' => $agent,
             ]);
             return response()->json([
-                'message' => 'The assistant service is temporarily unavailable. Please try again shortly.',
+                'message' => 'The local AI service is temporarily unavailable. Please try again shortly.',
             ], 502);
         }
     }
