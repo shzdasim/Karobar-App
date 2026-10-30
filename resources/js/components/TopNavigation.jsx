@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { Suspense, lazy, useState, useRef, useEffect, useMemo } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   HomeIcon,
@@ -35,6 +35,9 @@ import {
 import { usePermissions } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
+import { GuideBotTopbarButton, useGuideBotOpenState } from "./GuideBotTrigger.jsx";
+
+const FeatureGuideBot = lazy(() => import("./FeatureGuideBot.jsx"));
 
 export default function TopNavigation() {
   const { pathname } = useLocation();
@@ -43,6 +46,7 @@ export default function TopNavigation() {
   const { theme } = useTheme();
   const { hasWholesale } = useSaleSystem();
   const [openDropdown, setOpenDropdown] = useState(null);
+  const [guideBotOpen, setGuideBotOpen] = useGuideBotOpenState();
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const [hoveredDropdown, setHoveredDropdown] = useState(null);
   const buttonRefs = useRef({});
@@ -384,8 +388,24 @@ export default function TopNavigation() {
               );
             })}
           </nav>
+
+          {/* Right: Screen-Aware Bilingual Guide Bot */}
+          <div className="flex items-center px-3 border-l border-gray-200/60 dark:border-slate-700/60 shrink-0">
+            <GuideBotTopbarButton
+              onClick={() => setGuideBotOpen((v) => !v)}
+              isOpen={guideBotOpen}
+              compact
+            />
+          </div>
         </div>
       </div>
+
+      <Suspense fallback={null}>
+        <FeatureGuideBot
+          isOpen={guideBotOpen}
+          onClose={() => setGuideBotOpen(false)}
+        />
+      </Suspense>
 
       {/* Fixed Position Dropdown Overlay - Enhanced with dynamic theme colors */}
       {openDropdown && (() => {

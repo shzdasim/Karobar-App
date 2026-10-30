@@ -1,5 +1,5 @@
 // resources/js/pages/SaleInvoice/BarcodePos.jsx
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { Suspense, lazy, useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
@@ -34,6 +34,9 @@ import CustomerSearch from "@/components/CustomerSearch";
 import ProductSearchInput from "@/components/ProductSearchInput";
 import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 import SubstituteProductsModal from "@/components/SubstituteProductsModal.jsx";
+import { GuideBotTopbarButton, useGuideBotOpenState } from "@/components/GuideBotTrigger.jsx";
+
+const FeatureGuideBot = lazy(() => import("@/components/FeatureGuideBot.jsx"));
 
 export default function BarcodePos() {
   const navigate = useNavigate();
@@ -42,6 +45,7 @@ export default function BarcodePos() {
   const { loading: permsLoading, has } = usePermissions();
   const canCreatePosSale = !permsLoading && has("barcode-pos.create");
   const canCreateStandardSale = !permsLoading && has("sale-invoice.create");
+  const [guideBotOpen, setGuideBotOpen] = useGuideBotOpenState();
 
   // Scanner & Audio state
   const [isScannerActive, setIsScannerActive] = useState(true);
@@ -930,6 +934,13 @@ export default function BarcodePos() {
 
         {/* Center / Right Quick Bar */}
         <div className="flex items-center gap-2">
+          {/* Screen-Aware Bilingual Guide Bot (English & اردو) */}
+          <GuideBotTopbarButton
+            onClick={() => setGuideBotOpen(true)}
+            isOpen={guideBotOpen}
+            pageTitle="POS Terminal"
+          />
+
           {/* Parked Carts Button */}
           <button
             type="button"
@@ -2139,6 +2150,13 @@ export default function BarcodePos() {
         onSelectSubstitute={handleSelectSubstitute}
         allowSwap={true}
       />
+
+      <Suspense fallback={null}>
+        <FeatureGuideBot
+          isOpen={guideBotOpen}
+          onClose={() => setGuideBotOpen(false)}
+        />
+      </Suspense>
     </div>
   );
 }

@@ -1,0 +1,2046 @@
+// resources/js/data/guideBotIntelligence.js
+// Trained Bilingual (English + Urdu + Roman Urdu) NLU & ERP Question-Answering Engine for Karobar App ERP v2.
+
+/**
+ * Stopwords excluded during semantic scoring so filler words ("how", "can", "who", "what", "kaise")
+ * never cause false-positive substring matches.
+ */
+const STOP_WORDS = new Set([
+  "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+  "in", "on", "at", "to", "for", "of", "with", "by", "from", "about",
+  "as", "into", "like", "through", "after", "over", "between", "out",
+  "against", "during", "without", "before", "under", "around", "among",
+  "i", "me", "my", "we", "our", "you", "your", "it", "its", "they", "them",
+  "can", "could", "should", "would", "may", "might", "must", "will", "shall",
+  "do", "does", "did", "done", "doing", "have", "has", "had", "having",
+  "get", "gets", "got", "make", "makes", "made", "want", "need", "please",
+  "tell", "show", "explain", "guide", "where", "when", "why", "which",
+  "ka", "ki", "ke", "ko", "se", "mein", "me", "par", "pe", "hai", "hain",
+  "ho", "hota", "hoti", "hote", "tha", "thi", "the", "kar", "kare", "karein",
+  "karen", "karna", "karni", "karne", "kya", "kis", "kahan", "kab", "kyun",
+  "aur", "ya", "bhi", "toh", "ye", "yeh", "wo", "woh", "is", "us", "apna",
+  "کا", "کی", "کے", "کو", "سے", "میں", "پر", "ہے", "ہیں", "ہو", "ہوتا", "ہوتی",
+  "کر", "کریں", "کرنا", "کرنے", "کیا", "کس", "کہاں", "کب", "کیوں", "اور", "یا",
+  "بھی", "تو", "یہ", "وہ", "اس", "اپنا", "اپنے", "مجھے", "بتائیں", "بتاؤ"
+]);
+
+/**
+ * Lightweight English + Roman Urdu stemmer so plurals/inflections match cleanly.
+ */
+export function stemToken(word) {
+  if (!word || word.length <= 2) return word;
+  let w = word.toLowerCase();
+  // Common Roman Urdu / Urdu transliteration normalizations
+  if (w === "udhaar" || w === "udhar" || w === "qarz" || w === "baqaya") return "udhar";
+  if (w === "khata" || w === "khaata" || w === "khate") return "khata";
+  if (w === "wapsi" || w === "waapsi" || w === "wapas") return "return";
+  if (w === "parchi" || w === "raseed") return "receipt";
+  if (w === "tankhwah" || w === "tankhah" || w === "pagar") return "salary";
+  if (w === "hazri" || w === "haazri") return "attendance";
+  if (w === "munafa" || w === "nafa" || w === "faida") return "profit";
+  if (w === "kharcha" || w === "kharche" || w === "akhrajat") return "expense";
+  if (w === "maal" || w === "saman") return "stock";
+  if (w === "dawai" || w === "dawa" || w === "medicine" || w === "medicines") return "medicine";
+  if (w === "goli" || w === "goliyan" || w === "tablets") return "tablet";
+  if (w === "galla" || w === "galle") return "drawer";
+
+  // English morphological suffixes
+  if (w.endsWith("ies") && w.length > 4) return w.slice(0, -3) + "y";
+  if (w.endsWith("ing") && w.length > 5) return w.slice(0, -3);
+  if (w.endsWith("es") && w.length > 4 && (w.endsWith("ches") || w.endsWith("shes") || w.endsWith("xes") || w.endsWith("ses"))) {
+    return w.slice(0, -2);
+  }
+  if (w.endsWith("s") && !w.endsWith("ss") && !w.endsWith("us") && !w.endsWith("is") && w.length > 3) {
+    return w.slice(0, -1);
+  }
+  return w;
+}
+
+/**
+ * Tokenizes any English / Urdu / Roman Urdu string into clean normalized words and stems.
+ */
+export function analyzeQuery(rawText = "") {
+  const cleaned = (rawText || "")
+    .toLowerCase()
+    .replace(/[?؟!.,;:()"'“”‘’[\]{}\\/|+=-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const rawWords = cleaned ? cleaned.split(" ") : [];
+  const wordSet = new Set(rawWords);
+  const stemSet = new Set(rawWords.map(stemToken));
+  const meaningfulWords = rawWords.filter((w) => !STOP_WORDS.has(w) && w.length > 1);
+  const meaningfulStems = meaningfulWords.map(stemToken);
+
+  const isHowQuery =
+    /\b(how|kaise|kesay|kese|tareeqa|tarika|steps|step|way)\b/.test(cleaned) ||
+    cleaned.includes("کیسے") ||
+    cleaned.includes("طریقہ") ||
+    cleaned.includes("کس طرح");
+
+  const isDifferenceQuery =
+    /\b(difference|different|vs|versus|compare|farq)\b/.test(cleaned) ||
+    cleaned.includes("فرق") ||
+    cleaned.includes("موازنہ");
+
+  const isImpactQuery =
+    /\b(impact|affect|effect|happen|behind the scenes)\b/.test(cleaned) ||
+    cleaned.includes("اثر");
+
+  return {
+    cleaned,
+    rawWords,
+    wordSet,
+    stemSet,
+    meaningfulWords,
+    meaningfulStems,
+    isHowQuery,
+    isDifferenceQuery,
+    isImpactQuery,
+  };
+}
+
+/**
+ * Checks if a multi-word phrase or single word exists on true word boundaries in the query.
+ */
+function hasBoundedPhrase(cleanedQuery, wordSet, stemSet, phrase) {
+  const norm = phrase.toLowerCase().trim();
+  if (!norm) return false;
+  if (!norm.includes(" ")) {
+    return wordSet.has(norm) || stemSet.has(stemToken(norm));
+  }
+  // Multi-word phrase: check word-bounded presence in cleanedQuery
+  const paddedQuery = ` ${cleanedQuery} `;
+  return paddedQuery.includes(` ${norm} `);
+}
+
+/**
+ * Deeply Trained Intent Knowledge Base for Karobar App ERP v2.
+ * Each intent has:
+ * - id: unique identifier
+ * - phrases: high-precision multi-word phrases (English, Urdu, Roman Urdu)
+ * - requiredGroups: optional array of token groups where EVERY group must match at least 1 token (for compositional understanding!)
+ * - keywords: supporting domain tokens (matched strictly on word/stem boundaries, never raw substrings!)
+ * - negativePhrases: phrases that disqualify this intent
+ * - title, en, ur, links
+ */
+export const TRAINED_ERP_INTENTS = [
+  // ==========================================================================
+  // 0. CONVERSATIONAL & BOT IDENTITY INTENTS
+  // ==========================================================================
+  {
+    id: "greeting_hello",
+    phrases: [
+      "hello", "hi", "hey", "salam", "assalam o alaikum", "assalamualaikum",
+      "aoa", "good morning", "good evening", "اسلام علیکم", "السلام علیکم", "ہیلو"
+    ],
+    keywords: [],
+    onlyWhenShort: true,
+    title: {
+      en: "Assalam-o-Alaikum! I'm Karo — Your Karobar ERP AI Guide",
+      ur: "السلام علیکم! میں کارو (Karo) ہوں — آپ کا کاروبار ERP گائیڈ",
+    },
+    en: "Hello! I am **Karo**, your trained bilingual (English & اردو) AI assistant for **Karobar App ERP v2**.\n\nYou can ask me anything about your software—for example:\n• **Purchasing:** *\"How to make a Purchase Order?\"*, *\"How to add new stock (Purchase Invoice)?\"*, *\"How do bonus units work?\"*\n• **Sales & POS:** *\"How to sell loose tablets?\"*, *\"How to give a discount?\"*, *\"How to hold a bill?\"*, *\"How to find substitute medicine?\"*\n• **Inventory & Expiry:** *\"How to print barcode stickers?\"*, *\"How to check near-expiry batches?\"*, *\"How to enter opening stock?\"*\n• **Finance & HR:** *\"How to check customer udhar khata?\"*, *\"How to pay a supplier?\"*, *\"How to mark attendance & pay salary?\"*",
+    ur: "خوش آمدید! میں **کارو (Karo)** ہوں، جو **کاروبار ایپ ERP** کے تمام فیچرز پر مکمل طور پر ٹرینڈ ہے۔\n\nآپ مجھ سے انگلش، اردو یا رومن اردو میں کوئی بھی سوال پوچھ سکتے ہیں، مثلاً:\n• **خریداری اور اسٹاک:** *\"پرچیز آرڈر (PO) کیسے بنائیں؟\"*، *\"نیا اسٹاک اور پرچیز بل کیسے ڈالیں؟\"*، *\"بونس یونٹس کیسے کام کرتے ہیں؟\"*\n• **سیلز اور POS:** *\"کھلی گولیاں (Loose Tablets) کیسے بیچیں؟\"*، *\"بل میں ڈسکاؤنٹ کیسے دیں؟\"*، *\"بل ہولڈ کیسے کریں؟\"*\n• **انوینٹری اور بارکوڈ:** *\"بارکوڈ اسٹیکر کیسے پرنٹ کریں؟\"*، *\"قریب ایکسپائری مال کیسے چیک کریں؟\"*\n• **کھاتے اور اسٹاف:** *\"گاہک کا ادھار کھاتہ کیسے دیکھیں؟\"*، *\"سپلائر کو پیمنٹ کیسے کریں؟\"*، *\"تنخواہ اور حاضری کیسے لگائیں؟\"*",
+    links: [
+      { path: "/sale-invoices/pos", en: "Open Barcode POS", ur: "بارکوڈ POS کھولیں" },
+      { path: "/purchase-invoices/create", en: "Add Stock (Purchase Invoice)", ur: "نیا اسٹاک ڈالیں" },
+      { path: "/reports/net-profit", en: "Profit & Loss Report", ur: "نفع و نقصان کی رپورٹ" },
+    ],
+  },
+
+  {
+    id: "bot_identity_capabilities",
+    phrases: [
+      "who are you", "what are you", "what can you do", "what is your name",
+      "introduce yourself", "tum kaun ho", "aap kaun hain", "ap kon ho",
+      "آپ کون ہیں", "تم کون ہو", "آپ کیا کر سکتے ہیں", "تمہارا نام کیا ہے"
+    ],
+    keywords: ["karo"],
+    title: {
+      en: "About Karo — Karobar ERP Intelligence Assistant",
+      ur: "کارو (Karo) کا تعارف — کاروبار ERP اسسٹنٹ",
+    },
+    en: "I am **Karo (`کارو`)**, the built-in AI assistant trained on every module, workflow, accounting rule, and keyboard shortcut in **Karobar App ERP v2**.\n\n**What I can do for you:**\n1. **Sense Your Active Screen:** I automatically detect which page you are on and explain its features, step-by-step usage, and stock/accounting impact.\n2. **Answer Any Workflow Question:** Ask me how to perform any task in English, Urdu (`اردو`), or Roman Urdu.\n3. **Take You Directly to Any Screen:** Every answer includes one-click action buttons that open the exact screen you need while keeping our window open.",
+    ur: "میرا نام **کارو (`کارو`)** ہے اور مجھے **Karobar App ERP v2** کے تمام ماڈیولز، اکاؤنٹنگ اصولوں اور ورک فلو پر ٹرین کیا گیا ہے۔\n\n**میں آپ کی کیا مدد کر سکتا ہوں:**\n1. **موجودہ اسکرین کی پہچان:** آپ جس صفحے پر موجود ہوں، میں اس کا مقصد، استعمال کا طریقہ اور کھاتوں پر اثر بتاتا ہوں۔\n2. **ہر سوال کا فوری جواب:** آپ انگلش، اردو یا رومن اردو میں کسی بھی فیچر کے بارے میں سوال پوچھ سکتے ہیں۔\n3. **فوری نیویگیشن:** ہر جواب کے ساتھ متعلقہ اسکرین کھولنے کا بٹن موجود ہوتا ہے تاکہ آپ ایک کلک سے اس صفحے پر جا سکیں۔",
+    links: [
+      { path: "/dashboard", en: "Dashboard", ur: "ڈیش بورڈ" },
+      { path: "/products", en: "Products Catalog", ur: "پروڈکٹس کیٹلاگ" },
+    ],
+  },
+
+  // ==========================================================================
+  // 1. PURCHASING, PROCUREMENT, PO vs GRN, BONUS & DEMANDS
+  // ==========================================================================
+  {
+    id: "po_vs_purchase_invoice",
+    phrases: [
+      "difference between purchase order and purchase invoice",
+      "purchase order vs purchase invoice",
+      "po vs purchase invoice",
+      "po and purchase invoice difference",
+      "po aur purchase invoice mein farq",
+      "پرچیز آرڈر اور پرچیز انوائس میں فرق"
+    ],
+    requiredGroups: [["po", "order", "آرڈر"], ["invoice", "bill", "grn", "انوائس", "بل"], ["difference", "vs", "farq", "فرق"]],
+    keywords: [],
+    title: {
+      en: "Purchase Order (PO) vs. Purchase Invoice (GRN)",
+      ur: "پرچیز آرڈر (PO) اور پرچیز انوائس (بل) میں فرق",
+    },
+    en: "Here is the exact difference in Karobar ERP:\n\n1. **Purchase Order (`/purchase-orders`):**\n   • A **Purchase Order (PO)** is a **demand list / order sheet** you prepare and send to your supplier or order booker.\n   • **Impact:** Creating a PO **does NOT increase product stock** and **does NOT create a supplier payable** in the ledger yet.\n\n2. **Purchase Invoice / GRN (`/purchase-invoices/create` or `Alt+1`):**\n   • A **Purchase Invoice** is recorded when the supplier physically delivers the goods and bill to your shop.\n   • **Impact:** Saving a Purchase Invoice **immediately increases your batch stock**, records batch numbers & expiry dates, and **updates your Supplier Ledger / General Ledger**.\n   • **Tip:** You can convert any saved PO into a Purchase Invoice in one click!",
+    ur: "کاروبار ایپ میں ان دونوں کا فرق بہت واضح ہے:\n\n1. **پرچیز آرڈر (`Purchase Order — /purchase-orders`):**\n   • پرچیز آرڈر (PO) وہ **ڈیمانڈ لسٹ یا آرڈر شیٹ** ہے جو آپ سپلائر یا آرڈر بُکر کو مال منگوانے کے لیے بھیجتے ہیں۔\n   • **اثر:** پرچیز آرڈر بنانے سے **اسٹاک میں اضافہ نہیں ہوتا** اور نہ ہی سپلائر کے کھاتے میں رقم جمع ہوتی ہے۔\n\n2. **پرچیز انوائس (`Purchase Invoice — /purchase-invoices/create` یا `Alt+1`):**\n   • جب سپلائر دکان پر مال اور بل پہنچا دے، تب آپ **Purchase Invoice** درج کرتے ہیں۔\n   • **اثر:** اسے محفوظ کرتے ہی **اسٹاک اور بیچ فوری بڑھ جاتے ہیں** اور سپلائر کے کھاتے (Ledger) میں بل درج ہو جاتا ہے۔ آپ کسی بھی PO کو ایک کلک سے پرچیز انوائس میں تبدیل کر سکتے ہیں!",
+    links: [
+      { path: "/purchase-orders", en: "Open Purchase Orders (PO)", ur: "پرچیز آرڈرز (PO) کھولیں" },
+      { path: "/purchase-invoices/create", en: "Create Purchase Invoice (Add Stock)", ur: "پرچیز انوائس بنائیں (اسٹاک ڈالیں)" },
+    ],
+  },
+
+  {
+    id: "create_purchase_order",
+    phrases: [
+      "purchase order", "make purchase order", "create purchase order",
+      "new purchase order", "how to order supplier", "draft po", "create po",
+      "make a po", "supplier order sheet", "purchase order kaise", "po kaise",
+      "پرچیز آرڈر", "پرچیز آرڈر کیسے بنائیں", "سپلائر آرڈر"
+    ],
+    requiredGroups: [["purchase", "supplier", "پرچیز", "سپلائر"], ["order", "po", "آرڈر"]],
+    keywords: ["po", "purchase order"],
+    title: {
+      en: "How to Create a Purchase Order (PO)",
+      ur: "پرچیز آرڈر (Purchase Order - PO) بنانے کا طریقہ",
+    },
+    en: "To create a **Purchase Order (PO)** for a supplier:\n\n1. Open **Purchase Orders** (`/purchase-orders`) from the sidebar (**Invoices → Purchase Orders**).\n2. Select the **Supplier** and **Order Date**.\n3. Add the products and required quantities manually, **OR** click **Load Low-Stock / Smart Suggestions** to auto-fill items that need restocking from that supplier.\n4. Click **Save Purchase Order** to store it, print the PDF, or send it directly to the supplier on **WhatsApp**.\n5. **When goods arrive:** Click **Convert to Purchase Invoice (GRN)** on that PO to enter batch/expiry details and add the stock into inventory.",
+    ur: "سپلائر کے لیے **پرچیز آرڈر (PO)** بنانے کا مرحلہ وار طریقہ:\n\n1. سائیڈ بار سے **Purchase Orders** (`/purchase-orders`) کھولیں۔\n2. اپنا **Supplier (سپلائر)** اور تاریخ منتخب کریں۔\n3. مطلوبہ پروڈکٹس اور مقدار درج کریں، یا **Auto-Suggest Low Stock** بٹن دبائیں تاکہ کم اسٹاک والے آئٹمز خودکار شامل ہو جائیں۔\n4. **Save Purchase Order** پر کلک کریں اور آرڈر کا PDF پرنٹ نکالیں یا **WhatsApp** پر سپلائر کو بھیج دیں۔\n5. **جب مال پہنچ جائے:** اسی آرڈر کے آگے **Convert to Purchase Invoice** پر کلک کر کے بیچ اور ایکسپائری درج کریں تاکہ اسٹاک جمع ہو جائے۔",
+    links: [
+      { path: "/purchase-orders", en: "Open Purchase Orders", ur: "پرچیز آرڈر اسکرین کھولیں" },
+      { path: "/purchase-orders/forecast", en: "Smart Reorder Forecast", ur: "سمارٹ ری آرڈر فورکاسٹ" },
+    ],
+  },
+
+  {
+    id: "smart_reorder_forecast",
+    phrases: [
+      "smart reorder", "reorder forecast", "sales velocity", "auto order forecast",
+      "how much to order", "forecast purchase order", "سمارٹ ری آرڈر", "آرڈر فورکاسٹ"
+    ],
+    requiredGroups: [["forecast", "velocity", "فورکاسٹ"], ["order", "reorder", "stock", "آرڈر", "اسٹاک"]],
+    keywords: ["forecast"],
+    title: {
+      en: "Smart Reorder & Sales-Velocity Forecast",
+      ur: "سمارٹ ری آرڈر اور سیلز فورکاسٹ (Smart Forecast)",
+    },
+    en: "**Smart Reorder Forecast (`/purchase-orders/forecast`)** calculates exactly how much stock you should order based on your real sales speed:\n\n1. Open **Smart Reorder Forecast** (`/purchase-orders/forecast`).\n2. Choose your **Sales Lookback Period** (e.g., last 30 days of sales) and **Target Coverage Days** (e.g., stock needed for the next 15 days), and optionally filter by **Supplier** or **Brand**.\n3. The system compares each item's daily sales rate against current on-hand stock and recommends the exact **Suggested Order Quantity**.\n4. Review/adjust quantities and click **Generate Purchase Order** or export to PDF.",
+    ur: "**سمارٹ ری آرڈر فورکاسٹ (`/purchase-orders/forecast`)** آپ کی روزانہ کی فروخت کی رفتار کے مطابق خودکار بتاتا ہے کہ کون سا مال کتنا منگوانا چاہیے:\n\n1. **Smart Reorder Forecast** (`/purchase-orders/forecast`) کھولیں۔\n2. پچھلی سیلز کی مدت (Lookback Days) اور اگلے کتنے دنوں کا اسٹاک چاہیے (Target Days) منتخب کریں، اور چاہیں تو سپلائر یا برانڈ فلٹر لگائیں۔\n3. سسٹم موجودہ اسٹاک اور روزانہ کی کھپت کا موازنہ کر کے **تجویز کردہ آرڈر مقدار (Suggested Qty)** نکال دے گا۔\n4. ایک کلک سے پرچیز آرڈر (PO) بنائیں یا فہرست پرنٹ کریں۔",
+    links: [
+      { path: "/purchase-orders/forecast", en: "Open Smart Reorder Forecast", ur: "سمارٹ ری آرڈر فورکاسٹ کھولیں" },
+      { path: "/reports/reorder", en: "Low Stock Report", ur: "کم اسٹاک رپورٹ" },
+    ],
+  },
+
+  {
+    id: "add_stock_purchase_invoice",
+    phrases: [
+      "purchase invoice", "create purchase invoice", "new purchase invoice",
+      "add stock", "add new stock", "how to add stock", "receive stock",
+      "inward stock", "enter supplier bill", "enter purchase bill", "grn",
+      "naya stock", "stock kaise add", "stock kaise dalein", "maal kaise dalein",
+      "purchase bill kaise", "پرچیز انوائس", "نیا اسٹاک", "نیا مال کیسے ڈالیں",
+      "اسٹاک کیسے ڈالیں", "خریداری کا بل کیسے بنائیں", "پرچیز بل"
+    ],
+    requiredGroups: [["add", "new", "enter", "inward", "receive", "dalna", "dalein", "ڈالیں", "شامل"], ["stock", "inventory", "purchase", "maal", "اسٹاک", "مال", "خریداری"]],
+    keywords: ["grn", "purchase invoice"],
+    negativePhrases: ["purchase order", "پرچیز آرڈر"],
+    title: {
+      en: "How to Add New Stock (Create Purchase Invoice / GRN)",
+      ur: "نیا اسٹاک اور خریداری کا بل (Purchase Invoice) درج کرنے کا طریقہ",
+    },
+    en: "To add new stock bought from a supplier into your inventory:\n\n1. Open **Create Purchase Invoice** (`/purchase-invoices/create`) or press **`Alt + 1`** from anywhere.\n2. Select the **Supplier**, enter the supplier's **Invoice / Reference #**, and verify the **Invoice Date**.\n3. Search and select each **Product**, then enter:\n   • **Batch Number** & **Expiry Date**\n   • **Pack / Unit Quantity** & **Bonus Units** (free scheme units)\n   • **Purchase Cost**, **Sale Price (MRP)**, **Discount %**, and **Tax/WHT %**\n4. At the bottom, enter **Paid Amount** (if paying cash/bank now) or leave `0` for **Credit (Payable)**, then click **Save (`Ctrl+S`)**.\n\n**Result:** Your product & batch stock increases immediately, and the supplier's ledger is updated automatically.",
+    ur: "سپلائر سے خریدا گیا نیا مال (Stock) سسٹم میں ڈالنے کا طریقہ:\n\n1. **Create Purchase Invoice** (`/purchase-invoices/create`) کھولیں یا کی بورڈ سے **`Alt + 1`** دبائیں۔\n2. **Supplier (سپلائر)** منتخب کریں اور سپلائر کا بل نمبر اور تاریخ درج کریں۔\n3. ہر پروڈکٹ کو سرچ کر کے شامل کریں اور درج ذیل تفصیلات لکھیں:\n   • **بیچ نمبر (Batch #)** اور **ایکسپائری تاریخ (Expiry Date)**\n   • **پیک یا یونٹ کی مقدار** اور **بونس یونٹس (Bonus Units)**\n   • **قیمتِ خرید (Cost)**، **قیمتِ فروخت (Sale Price)** اور ڈسکاؤنٹ/ٹیکس\n4. نیچے اگر نقد ادائیگی کی ہے تو **Paid Amount** لکھیں ورنہ ادھار کے لیے `0` چھوڑ کر **Save (`Ctrl+S`)** دبا دیں۔\n\n**نتیجہ:** تمام آئٹمز کا اسٹاک اور بیچ فوری بڑھ جائیں گے اور سپلائر کے کھاتے میں بل درج ہو جائے گا۔",
+    links: [
+      { path: "/purchase-invoices/create", en: "Create Purchase Invoice (Alt+1)", ur: "نیا پرچیز بل بنائیں (Alt+1)" },
+      { path: "/purchase-invoices", en: "All Purchase Invoices", ur: "تمام پرچیز بل دیکھیں" },
+      { path: "/stock-adjustments/create", en: "Opening Stock / Adjustment", ur: "اوپننگ اسٹاک / ایڈجسٹمنٹ" },
+    ],
+  },
+
+  {
+    id: "bonus_units_scheme",
+    phrases: [
+      "bonus unit", "bonus units", "free units", "free scheme", "trade offer",
+      "add bonus", "bonus in purchase", "bonus in sale", "بونس یونٹس", "فری اسکیم"
+    ],
+    keywords: ["bonus"],
+    title: {
+      en: "How Bonus Units (Free Scheme / Trade Offer) Work",
+      ur: "بونس یونٹس (Bonus / Free Scheme) کیسے کام کرتے ہیں؟",
+    },
+    en: "Karobar ERP supports **Bonus Units** on both Purchase Invoices and Wholesale/Retail Sale Invoices:\n\n1. **On Purchase Invoices (`/purchase-invoices/create`):**\n   • Enter billed quantity in **Qty** and free scheme units in the **Bonus** column (e.g., `10 + 2 Bonus`).\n   • **Stock & Cost Impact:** All `12` units are added to your inventory batch, while you are only billed for `10` units—automatically lowering your effective unit cost!\n\n2. **On Sale Invoices (`/sale-invoices/create/wholesale` or `retail`):**\n   • Enter promotional free units in the **Bonus** column.\n   • **Impact:** Those bonus units are deducted from batch stock at `Rs. 0` charge to the customer.",
+    ur: "کاروبار ایپ میں خریداری اور فروخت دونوں بلوں میں **بونس یونٹس (Bonus Units)** کی سہولت موجود ہے:\n\n1. **پرچیز انوائس میں (`/purchase-invoices/create`):**\n   • خریدی گئی مقدار **Qty** میں لکھیں اور کمپنی کی طرف سے ملنے والے مفت یونٹس **Bonus** کے خانے میں لکھیں (مثلاً `10 + 2 بونس`)۔\n   • **اثر:** آپ کے اسٹاک میں پورے `12` یونٹس جمع ہوں گے جبکہ بل صرف `10` یونٹس کا بنے گا۔\n\n2. **سیل انوائس میں (`/sale-invoices/create/wholesale`):**\n   • گاہک کو دیے جانے والے فری اسکیم یونٹس **Bonus** کالم میں لکھیں؛ وہ اسٹاک سے کم ہو جائیں گے لیکن گاہک سے ان کی قیمت چارج نہیں ہو گی۔",
+    links: [
+      { path: "/purchase-invoices/create", en: "Create Purchase Invoice", ur: "نیا پرچیز بل بنائیں" },
+      { path: "/sale-invoices/create/wholesale", en: "Create Wholesale Invoice", ur: "نیا ہول سیل بل بنائیں" },
+    ],
+  },
+
+  {
+    id: "purchase_return_supplier",
+    phrases: [
+      "purchase return", "return to supplier", "return items to supplier",
+      "supplier return", "return expired to supplier", "debit note",
+      "supplier ko maal wapas", "purchase return kaise",
+      "پرچیز ریٹرن", "سپلائر کو مال واپس", "ڈیبٹ نوٹ"
+    ],
+    requiredGroups: [["return", "wapsi", "wapas", "واپس", "واپسی", "ریٹرن"], ["supplier", "purchase", "distributor", "سپلائر", "پرچیز", "ڈسٹری بیوٹر"]],
+    keywords: ["debit note"],
+    title: {
+      en: "How to Return Goods to a Supplier (Purchase Return / Debit Note)",
+      ur: "سپلائر کو مال واپس کرنے (Purchase Return) کا طریقہ",
+    },
+    en: "To return damaged, slow-moving, or near-expiry stock back to a supplier:\n\n1. Open **Create Purchase Return** (`/purchase-returns/create`) or press **`Alt + R`**.\n2. Select the **Supplier** (or load items from the original Purchase Invoice).\n3. Pick the exact **Product & Batch** being returned and enter the **Return Quantity**.\n4. Choose whether the supplier gave a **Cash/Bank Refund** or a **Payable Ledger Deduction (Debit Note)**.\n5. Click **Save**.\n\n**Impact:** The returned units are immediately deducted from that batch's stock, and your Supplier Payable balance is reduced.",
+    ur: "خراب، زائد المیعاد (Near-Expiry) یا فالتو مال سپلائر کو واپس کرنے کا طریقہ:\n\n1. **Create Purchase Return** (`/purchase-returns/create`) کھولیں یا **`Alt + R`** دبائیں۔\n2. اپنا **Supplier (سپلائر)** منتخب کریں (یا اصل پرچیز بل لوڈ کریں)۔\n3. واپس کیے جانے والے پروڈکٹ کا **بیچ (Batch)** اور **مقدار (Return Qty)** درج کریں۔\n4. منتخب کریں کہ سپلائر سے نقد رقم واپس ملی ہے یا کھاتے (Payable Balance) میں کٹوتی کرنی ہے۔\n5. **Save** بٹن دبائیں۔ اسٹاک فوری کم ہو جائے گا اور سپلائر کے کھاتے سے رقم منہا ہو جائے گی۔",
+    links: [
+      { path: "/purchase-returns/create", en: "Create Purchase Return (Alt+R)", ur: "نئی پرچیز ریٹرن بنائیں (Alt+R)" },
+      { path: "/purchase-returns", en: "Purchase Returns History", ur: "پرچیز ریٹرنز کی فہرست" },
+    ],
+  },
+
+  {
+    id: "customer_demand_short_book",
+    phrases: [
+      "user demand", "user demands", "customer demand", "short book", "shortbook",
+      "missing medicine", "requested item", "out of stock request", "want book",
+      "demand kaise likhein", "کسٹمر ڈیمانڈ", "شارٹ بک", "مانگی گئی ادویات"
+    ],
+    requiredGroups: [["demand", "short", "request", "missing", "ڈیمانڈ", "شارٹ"], ["customer", "item", "product", "medicine", "book", "گاہک", "آئٹم", "بک"]],
+    keywords: ["shortbook", "user demand"],
+    title: {
+      en: "How to Record Customer Product Demands (Short Book)",
+      ur: "گاہک کی ڈیمانڈز (Short Book / User Demands) درج کرنے کا طریقہ",
+    },
+    en: "When a customer asks for an item that is out of stock or not yet in your catalog, record it in the **Short Book (`User Demands`)**:\n\n1. Open **Record Customer Demand** (`/user-demands/create`) or **Customer Demands List** (`/user-demands`).\n2. Select an existing product or type the name of the **New Requested Item**, enter the **Quantity Requested**, optional **Customer Name/Phone**, and **Urgency/Notes**.\n3. Click **Save**.\n4. When preparing your next **Purchase Order**, check `/user-demands` to order all requested items and mark them **Fulfilled** once stocked!",
+    ur: "جب کوئی گاہک ایسی دوائی یا آئٹم مانگے جو اس وقت اسٹاک میں نہ ہو تو اسے **شارٹ بک (`User Demands`)** میں درج کریں:\n\n1. **Record Customer Demand** (`/user-demands/create`) کھولیں۔\n2. پروڈکٹ کا نام، مطلوبہ مقدار، گاہک کا نام/فون نمبر اور نوٹ لکھ کر **Save** کریں۔\n3. نیا مال منگواتے وقت **User Demands** (`/user-demands`) کی فہرست دیکھ کر سپلائر کو آرڈر لکھوائیں اور مال آنے پر اسے **Fulfilled (مکمل)** مارک کر دیں۔",
+    links: [
+      { path: "/user-demands/create", en: "Record New Customer Demand", ur: "نئی کسٹمر ڈیمانڈ درج کریں" },
+      { path: "/user-demands", en: "View All Customer Demands", ur: "تمام کسٹمر ڈیمانڈز دیکھیں" },
+    ],
+  },
+
+  // ==========================================================================
+  // 2. SALES, BARCODE POS, LOOSE TABLETS, DISCOUNTS, HOLD BILL, SUBSTITUTES & RETURNS
+  // ==========================================================================
+  {
+    id: "how_to_make_sale_billing",
+    phrases: [
+      "how to make a sale", "how to create sale invoice", "make sale bill",
+      "create sale invoice", "pos vs retail", "retail vs wholesale",
+      "sale bill kaise", "bill kaise banayein", "سیل بل کیسے بنائیں", "بل کیسے کاٹیں"
+    ],
+    requiredGroups: [["make", "create", "new", "kaise", "بنائیں", "کاٹیں"], ["sale", "pos", "invoice", "billing", "سیل", "بل"]],
+    negativePhrases: ["purchase", "return", "edit", "delete", "پرچیز", "ریٹرن"],
+    keywords: ["pos"],
+    title: {
+      en: "3 Ways to Bill Customers (POS vs. Retail vs. Wholesale)",
+      ur: "گاہک کا سیل بل بنانے کے 3 طریقے (POS، ریٹیل اور ہول سیل)",
+    },
+    en: "Karobar ERP gives you **3 specialized billing screens** depending on your counter workflow:\n\n1. **High-Speed Barcode POS (`/sale-invoices/pos`):**\n   • Best for fast walk-in counter billing with a barcode scanner, instant FEFO batch pick, Hold/Recall carts (`F8`), and thermal receipt printing (`Ctrl+P`).\n2. **Create Retail Sale Invoice (`/sale-invoices/create/retail` or `Alt+2`):**\n   • Full-page tabular invoice form ideal for detailed walk-in or credit customer bills.\n3. **Create Wholesale (B2B) Invoice (`/sale-invoices/create/wholesale` or `Alt+3`):**\n   • Designed for B2B distributors/clinics with Wholesale Prices, Bonus Units, Credit Limit checks, and Salesman Commission tracking.",
+    ur: "کاروبار ایپ میں سیل بل بنانے کے **3 بہترین طریقے** موجود ہیں:\n\n1. **بارکوڈ POS ٹرمینل (`/sale-invoices/pos`):**\n   • کاؤنٹر پر تیز ترین بارکوڈ اسکیننگ، فوری بلنگ، بل ہولڈ (`F8`) اور تھرمل سلپ پرنٹنگ (`Ctrl+P`) کے لیے۔\n2. **ریٹیل سیل انوائس (`/sale-invoices/create/retail` یا `Alt+2`):**\n   • تفصیلی ریٹیل بل اور ادھار/نقد گاہکوں کے لیے مکمل انوائس فارم۔\n3. **ہول سیل (B2B) انوائس (`/sale-invoices/create/wholesale` یا `Alt+3`):**\n   • ہول سیل ریٹ، بونس یونٹس، کریڈٹ لمٹ اور سیلز مین کمیشن کے ساتھ بل بنانے کے لیے۔",
+    links: [
+      { path: "/sale-invoices/pos", en: "Open Barcode POS", ur: "بارکوڈ POS کھولیں" },
+      { path: "/sale-invoices/create/retail", en: "Create Retail Invoice (Alt+2)", ur: "ریٹیل بل بنائیں (Alt+2)" },
+      { path: "/sale-invoices/create/wholesale", en: "Create Wholesale Invoice (Alt+3)", ur: "ہول سیل بل بنائیں (Alt+3)" },
+    ],
+  },
+
+  {
+    id: "sell_loose_tablets_pack_vs_unit",
+    phrases: [
+      "sell loose", "loose tablet", "loose tablets", "single tablet", "open strip",
+      "pack size", "unit vs pack", "pack vs unit", "khuli goli", "khuli goliyan",
+      "کھلی گولیاں", "کھلی گولی کیسے بیچیں", "پیک سائز اور یونٹ"
+    ],
+    requiredGroups: [["loose", "single", "unit", "pack", "tablet", "goli", "کھلی", "گولی", "یونٹ"]],
+    keywords: ["loose", "tablet"],
+    title: {
+      en: "How to Sell Loose Tablets / Single Units vs. Full Packs",
+      ur: "کھلی گولیاں (Loose Units) اور پورا ڈبہ (Pack) بیچنے کا طریقہ",
+    },
+    en: "Karobar ERP handles **Full Packs (Boxes)** and **Loose Units (Tablets / Strips)** automatically through **Pack Size**:\n\n1. **When Creating/Editing the Product (`/products/create`):**\n   • Set **Pack Size** to the number of units inside 1 box (e.g., `30` tablets per box).\n   • Enter the **Pack Price**—the system automatically calculates the exact **Unit Price** per tablet (`Pack Price ÷ Pack Size`).\n2. **When Billing in POS or Sale Invoice:**\n   • Enter **Packs** (if selling whole boxes) or **Units** (e.g., `4` loose tablets) in the quantity fields.\n   • Inventory is tracked at the **Unit level**, so selling `4` tablets out of a `30`-tablet box cleanly leaves `26` units (`0 Packs, 26 Units`) in stock!",
+    ur: "کاروبار ایپ میں **پورا ڈبہ (Pack)** اور **کھلی گولیاں (Loose Units)** بیچنا انتہائی آسان ہے:\n\n1. **پروڈکٹ بناتے وقت (`/products/create`):**\n   • **Pack Size** میں ڈبے کے اندر موجود کل گولیوں یا یونٹس کی تعداد لکھیں (مثلاً ایک ڈبے میں `30` گولیاں)۔\n   • سسٹم خودکار طور پر ایک گولی کی قیمت (**Unit Price**) نکال لیتا ہے۔\n2. **بل بناتے وقت (POS یا Sale Invoice میں):**\n   • اگر پورا ڈبہ بیچنا ہو تو **Pack** لکھیں، اور اگر کھلی گولیاں دینی ہوں تو **Unit** کے خانے میں گولیوں کی تعداد (مثلاً `4`) لکھ دیں۔\n   • اسٹاک خودکار طور پر یونٹس کے حساب سے کم ہو جائے گا (مثلاً `30` میں سے `4` نکل کر `26` گولیاں باقی رہ جائیں گی)۔",
+    links: [
+      { path: "/sale-invoices/pos", en: "Open Barcode POS", ur: "بارکوڈ POS کھولیں" },
+      { path: "/products/create", en: "Add Product (Set Pack Size)", ur: "پروڈکٹ بنائیں (Pack Size)" },
+    ],
+  },
+
+  {
+    id: "how_to_give_discount",
+    phrases: [
+      "how to give discount", "give discount", "apply discount", "item discount",
+      "invoice discount", "bill discount", "max discount", "discount override",
+      "discount kaise dein", "ڈسکاؤنٹ کیسے دیں", "رعایت دینے کا طریقہ"
+    ],
+    requiredGroups: [["discount", "riayat", "ڈسکاؤنٹ", "رعایت"]],
+    keywords: ["discount"],
+    title: {
+      en: "How to Give Item-Level or Whole-Bill Discounts",
+      ur: "بل میں آئٹم یا پورے بل پر ڈسکاؤنٹ (Discount) دینے کا طریقہ",
+    },
+    en: "You can give discounts in **2 ways** on POS, Retail, and Wholesale invoices:\n\n1. **Item-Level Discount (Per Line):**\n   • In the invoice row, enter either **Discount %** (e.g., `5%`) or **Discount Amount (Rs.)**—both fields sync automatically.\n2. **Whole-Bill / Flat Invoice Discount:**\n   • In the bottom summary footer of the invoice, enter a flat **Bill Discount** amount or percentage.\n\n**Security Note:** If a cashier enters a discount higher than the **Max Allowed Discount %** configured in **Settings (`/settings#sale`)**, the system prompts for a Manager Override PIN.",
+    ur: "آپ POS، ریٹیل اور ہول سیل بلوں میں **2 طرح سے ڈسکاؤنٹ** دے سکتے ہیں:\n\n1. **ہر آئٹم پر الگ ڈسکاؤنٹ (Line Discount):**\n   • پروڈکٹ کی لائن میں **Disc %** (فیصد) یا **Disc Rs** (روپے) درج کریں—دونوں خودکار حساب کر لیتے ہیں۔\n2. **مکمل بل پر ڈسکاؤنٹ (Total Bill Discount):**\n   • بل کے نیچے ٹوٹل کے حصے میں مجموعی ڈسکاؤنٹ درج کریں۔\n\n**نوٹ:** آپ **Settings (`/settings#sale`)** میں زیادہ سے زیادہ ڈسکاؤنٹ کی حد (Max Discount %) بھی مقرر کر سکتے ہیں۔",
+    links: [
+      { path: "/sale-invoices/pos", en: "Barcode POS", ur: "بارکوڈ POS" },
+      { path: "/sale-invoices/create/retail", en: "Retail Sale Invoice", ur: "ریٹیل سیل انوائس" },
+      { path: "/settings#sale", en: "Discount & Sale Rules", ur: "ڈسکاؤنٹ اور سیل اصول" },
+    ],
+  },
+
+  {
+    id: "hold_park_recall_bill",
+    phrases: [
+      "hold bill", "how to hold a bill", "park bill", "hold invoice", "save draft bill",
+      "recall held bill", "resume held bill", "hold cart", "bill hold kaise",
+      "بل ہولڈ کیسے کریں", "بل روکنے کا طریقہ"
+    ],
+    requiredGroups: [["hold", "park", "draft", "recall", "ہولڈ"], ["bill", "invoice", "cart", "sale", "بل", "انوائس"]],
+    keywords: ["f8"],
+    title: {
+      en: "How to Hold (Park) & Recall a Customer Bill",
+      ur: "گاہک کا بل ہولڈ (Hold / Park) اور دوبارہ اوپن کرنے کا طریقہ",
+    },
+    en: "If a customer at the counter is still shopping or forgot their wallet, you can **Hold (Park)** their bill without losing items:\n\n1. **In Barcode POS (`/sale-invoices/pos`):**\n   • Press **`F8`** (or click the **Hold Bill** button). Your cart is saved to the Held Queue and the screen clears immediately for the next customer.\n   • To resume: click the **Held Bills** badge at the top to restore the cart in one click.\n2. **In Retail & Wholesale Invoice Forms:**\n   • Press **`Alt + H`** (or click **Hold / Drafts**) to park the current invoice and recall it anytime.",
+    ur: "اگر کاؤنٹر پر موجود گاہک مزید چیزیں لے رہا ہو اور آپ نے اگلے گاہک کا بل بنانا ہو تو بل کو **Hold (ہولڈ)** کریں:\n\n1. **بارکوڈ POS میں (`/sale-invoices/pos`):**\n   • کی بورڈ سے **`F8`** دبائیں یا **Hold Bill** بٹن پر کلک کریں۔ موجودہ بل محفوظ ہو جائے گا اور اسکرین نئے گاہک کے لیے خالی ہو جائے گی۔\n   • واپس لانے کے لیے اوپر **Held Bills** بٹن پر کلک کر کے بل دوبارہ لوڈ کر لیں۔\n2. **ریٹیل اور ہول سیل فارم میں:**\n   • **`Alt + H`** دبا کر بل ڈرافٹ/ہولڈ میں محفوظ کریں۔",
+    links: [
+      { path: "/sale-invoices/pos", en: "Open Barcode POS (F8 Hold)", ur: "بارکوڈ POS کھولیں" },
+      { path: "/sale-invoices/create/retail", en: "Create Retail Invoice (Alt+H)", ur: "ریٹیل بل کھولیں" },
+    ],
+  },
+
+  {
+    id: "substitute_alternative_medicine",
+    phrases: [
+      "substitute medicine", "find substitute", "alternative medicine", "generic salt",
+      "same formula", "same salt", "out of stock alternative", "متبادل دوائی",
+      "ہم فارمولا دوائی", "فارمولیشن سرچ"
+    ],
+    requiredGroups: [["substitute", "alternative", "generic", "formula", "formulation", "salt", "متبادل", "فارمولا"]],
+    keywords: ["substitute", "formulation", "salt"],
+    title: {
+      en: "How to Find Substitute / Alternative Medicines (Same Generic Salt)",
+      ur: "ہم فارمولا متبادل دوائی (Substitute Medicine) تلاش کرنے کا طریقہ",
+    },
+    en: "When a requested medicine is out of stock, Karobar ERP can find **Substitute / Generic Alternatives** with the exact same active salt:\n\n1. **Setup:** When adding/editing products (`/products/create`), fill in the **Formulation / Generic Salt** field (e.g., *Paracetamol 500mg* or *Omeprazole 20mg*).\n2. **At the Counter (POS or Retail Invoice):**\n   • Search by the generic salt name directly in the product search box, **OR**\n   • Click the **Substitutes / Alternatives** action on an out-of-stock item to see all in-stock brands sharing the same formulation, along with their available batch quantities and prices!",
+    ur: "اگر کوئی دوائی ختم ہو گئی ہو تو اسی فارمولے (Salt) کی دوسری کمپنی کی **متبادل دوائی (Substitute)** تلاش کرنے کا طریقہ:\n\n1. **پروڈکٹ کارڈ میں:** پروڈکٹ بناتے وقت **Formulation / Generic Salt** کے خانے میں دوائی کا فارمولا درج کریں۔\n2. **بل بناتے وقت (POS یا Sale Invoice میں):**\n   • سرچ بار میں براہِ راست فارمولا لکھ کر سرچ کریں، یا\n   • آئٹم کے آگے **Substitute / Alternatives** بٹن پر کلک کریں—سسٹم اسی فارمولے کی تمام دستیاب ادویات، ان کا اسٹاک اور قیمتیں دکھا دے گا۔",
+    links: [
+      { path: "/sale-invoices/pos", en: "Open Barcode POS", ur: "بارکوڈ POS کھولیں" },
+      { path: "/products", en: "Products Catalog", ur: "پروڈکٹس کیٹلاگ" },
+    ],
+  },
+
+  {
+    id: "edit_or_delete_invoice",
+    phrases: [
+      "edit invoice", "how to edit an invoice", "edit sale invoice", "edit purchase invoice",
+      "delete invoice", "delete a sale invoice", "modify bill", "correct wrong bill",
+      "cancel invoice", "void invoice", "bill edit kaise", "bill delete kaise",
+      "بل ایڈٹ کیسے کریں", "بل ڈیلیٹ کیسے کریں", "بل میں تبدیلی"
+    ],
+    requiredGroups: [["edit", "delete", "modify", "change", "cancel", "void", "ایڈٹ", "ڈیلیٹ", "تبدیل"], ["invoice", "bill", "sale", "purchase", "بل", "انوائس"]],
+    keywords: [],
+    title: {
+      en: "How to Edit or Delete a Sale / Purchase Invoice",
+      ur: "سیل یا پرچیز بل میں ترمیم (Edit) یا ڈیلیٹ کرنے کا طریقہ",
+    },
+    en: "To modify or delete an existing invoice:\n\n1. **For Sale Invoices:** Open **Sale Invoices List** (`/sale-invoices`), search by Invoice # or Customer, and click the **Edit (Pencil)** icon (`/sale-invoices/:id/edit`) or **Delete** icon.\n2. **For Purchase Invoices:** Open **Purchase Invoices List** (`/purchase-invoices`), find the supplier bill, and click **Edit** (`/purchase-invoices/:id/edit`) or **Delete**.\n\n**What happens automatically:**\n• Editing or deleting an invoice **automatically reverses the old batch stock & ledger entries** and posts the corrected quantities and balances so your stock and General Ledger never go out of sync!\n• *Note:* Staff users only see Edit/Delete buttons if their **Role (`/roles`)** grants `sale-invoice.edit` / `sale-invoice.delete` permission.",
+    ur: "پہلے سے بنے ہوئے سیل یا پرچیز بل میں تبدیلی (Edit) یا اسے ختم (Delete) کرنے کا طریقہ:\n\n1. **سیل بل کے لیے:** **Sale Invoices** (`/sale-invoices`) کی فہرست کھولیں، بل نمبر تلاش کریں اور آگے بنے **Edit (پنسل)** یا **Delete** آئیکن پر کلک کریں۔\n2. **پرچیز بل کے لیے:** **Purchase Invoices** (`/purchase-invoices`) میں جا کر متعلقہ بل کے آگے **Edit** یا **Delete** دبائیں۔\n\n**خودکار اثر:** بل ایڈٹ یا ڈیلیٹ کرنے سے سسٹم **خودکار طور پر اسٹاک، بیچ اور کھاتوں (Ledger) کا حساب درست کر دیتا ہے**۔ (یہ بٹن صرف ان یوزرز کو نظر آتے ہیں جن کے رول میں اس کی اجازت ہو)۔",
+    links: [
+      { path: "/sale-invoices", en: "Open Sale Invoices List", ur: "سیل انوائسز کی فہرست" },
+      { path: "/purchase-invoices", en: "Open Purchase Invoices List", ur: "پرچیز انوائسز کی فہرست" },
+      { path: "/roles", en: "Roles & Permissions", ur: "رولز اور اختیارات" },
+    ],
+  },
+
+  {
+    id: "sale_return_customer_refund",
+    phrases: [
+      "sale return", "sales return", "return sold items", "customer return",
+      "customer refund", "bikay hue maal ki wapsi", "sale return kaise",
+      "سیل ریٹرن", "گاہک کی واپسی", "فروخت شدہ مال کی واپسی"
+    ],
+    requiredGroups: [["return", "refund", "wapsi", "wapas", "واپسی", "واپس", "ریٹرن"], ["sale", "sold", "customer", "item", "سیل", "گاہک", "فروخت"]],
+    negativePhrases: ["supplier", "purchase", "سپلائر", "پرچیز"],
+    keywords: ["sale return"],
+    title: {
+      en: "How to Process a Customer Sale Return & Refund",
+      ur: "گاہک سے مال واپس لینے (Sale Return) اور رقم واپسی کا طریقہ",
+    },
+    en: "When a customer returns sold items:\n\n1. Open **Create Sale Return** (`/sale-returns/create`) or press **`Alt + S`**.\n2. Search the original **Sale Invoice #** (recommended, as it auto-loads exact sold batches and prices) or select the **Customer** and **Product/Batch** manually.\n3. Enter the **Return Quantity**.\n4. Choose the settlement mode:\n   • **Cash / Bank Refund:** Deducts cash from your Cash Drawer/Bank.\n   • **Credit Ledger Adjustment:** Reduces the customer's unpaid receivable (`Udhar`) balance.\n5. Click **Save**—the returned units are added right back into batch inventory!",
+    ur: "جب کوئی گاہک خریدا ہوا مال واپس لائے تو **Sale Return** درج کرنے کا طریقہ:\n\n1. **Create Sale Return** (`/sale-returns/create`) کھولیں یا کی بورڈ سے **`Alt + S`** دبائیں۔\n2. اصل **Sale Invoice #** سرچ کر کے لوڈ کریں یا گاہک اور پروڈکٹ منتخب کریں۔\n3. واپس آنے والی مقدار (**Return Qty**) درج کریں۔\n4. منتخب کریں کہ گاہک کو **نقد رقم (Cash Refund)** واپس دی ہے یا اس کے **ادھار کھاتے (Credit Balance)** میں سے رقم کم کرنی ہے۔\n5. **Save** پر کلک کریں—واپس آنے والا مال خودکار طور پر دوبارہ اسٹاک میں جمع ہو جائے گا۔",
+    links: [
+      { path: "/sale-returns/create", en: "Create Sale Return (Alt+S)", ur: "نئی سیل ریٹرن بنائیں (Alt+S)" },
+      { path: "/sale-returns", en: "Sale Returns History", ur: "سیل ریٹرنز کی فہرست" },
+    ],
+  },
+
+  // ==========================================================================
+  // 3. PRODUCTS, BARCODE STICKERS, BATCHES, EXPIRY/FEFO & STOCK AUDITS
+  // ==========================================================================
+  {
+    id: "print_barcode_stickers",
+    phrases: [
+      "print barcode", "barcode sticker", "barcode label", "barcode studio",
+      "how to print barcode", "how to print sticker", "generate barcode",
+      "barcode kaise print", "بارکوڈ اسٹیکر", "بارکوڈ کیسے پرنٹ کریں", "لیبل پرنٹنگ"
+    ],
+    requiredGroups: [["barcode", "sticker", "label", "بارکوڈ", "اسٹیکر", "لیبل"]],
+    keywords: ["barcode", "sticker"],
+    title: {
+      en: "How to Generate & Print Barcode Stickers (Barcode Studio)",
+      ur: "بارکوڈ اسٹیکرز (Barcode Labels) بنانے اور پرنٹ کرنے کا طریقہ",
+    },
+    en: "To design and print barcode stickers for your products:\n\n1. Open **Barcode Studio** (`/barcode-labels`) from the sidebar (**Items → Barcode Labels**).\n2. Search and select the **Products** (and specific **Batches**) you want to print labels for, and set the **Label Quantity** for each.\n3. Choose what appears on the sticker: **Store Name**, **Product Name**, **Retail Price (MRP)**, **Batch / Expiry**, and **Barcode Graphic**.\n4. Pick your label paper layout (Thermal Roll `38×25mm`, `50×25mm`, or A4 Sticker Sheet) and click **Print Labels**!",
+    ur: "پروڈکٹس پر لگانے کے لیے **بارکوڈ اسٹیکرز (Barcode Stickers)** پرنٹ کرنے کا طریقہ:\n\n1. سائیڈ بار سے **Barcode Studio** (`/barcode-labels`) کھولیں۔\n2. جن پروڈکٹس کے اسٹیکر نکالنے ہیں انہیں منتخب کریں اور ہر ایک کے اسٹیکرز کی تعداد لکھیں۔\n3. اسٹیکر پر دکھائی دینے والی معلومات منتخب کریں (دکان کا نام، آئٹم کا نام، قیمت، ایکسپائری اور بارکوڈ)۔\n4. اپنے اسٹیکر پیپر کا سائز منتخب کریں اور **Print Labels** بٹن دبا کر پرنٹ نکال لیں۔",
+    links: [
+      { path: "/barcode-labels", en: "Open Barcode Studio", ur: "بارکوڈ اسٹوڈیو کھولیں" },
+      { path: "/products", en: "Products Catalog", ur: "پروڈکٹس کیٹلاگ" },
+    ],
+  },
+
+  {
+    id: "add_new_product_catalog",
+    phrases: [
+      "add product", "add new product", "create product", "register medicine",
+      "new item", "product kaise add", "naya product",
+      "نیا پروڈکٹ کیسے شامل کریں", "نئی دوائی رجسٹر کریں"
+    ],
+    requiredGroups: [["add", "create", "new", "register", "naya", "نیا", "شامل"], ["product", "medicine", "item", "پروڈکٹ", "دوائی", "آئٹم"]],
+    negativePhrases: ["demand", "short", "stock", "purchase", "ڈیمانڈ", "اسٹاک"],
+    keywords: [],
+    title: {
+      en: "How to Register a New Product / Medicine",
+      ur: "کیٹلاگ میں نیا پروڈکٹ یا دوائی شامل کرنے کا طریقہ",
+    },
+    en: "To add a new product to your master catalog:\n\n1. Open **Add New Product** (`/products/create`).\n2. Enter **Product Name**, **Barcode / SKU** (scan or auto-generate), and **Formulation / Generic Salt**.\n3. Select **Category**, **Brand / Company**, **Supplier**, and **Rack / Shelf #**.\n4. Set **Pack Size** (units per box, e.g., `1` or `30`), **Purchase Price**, **Retail Price**, and **Wholesale Price** (margin % calculates automatically).\n5. Click **Save**.",
+    ur: "سسٹم میں نیا پروڈکٹ یا دوائی رجسٹر کرنے کا طریقہ:\n\n1. **Add New Product** (`/products/create`) کھولیں۔\n2. پروڈکٹ کا **نام**، **بارکوڈ** اور **فارمولیشن (Salt)** درج کریں۔\n3. **کیٹیگری**، **برانڈ (کمپنی)**، **سپلائر** اور **ریک نمبر (Rack #)** منتخب کریں۔\n4. **Pack Size** (ڈبے میں یونٹس کی تعداد)، **قیمتِ خرید** اور **قیمتِ فروخت** درج کر کے **Save** پر کلک کریں۔",
+    links: [
+      { path: "/products/create", en: "Add New Product", ur: "نیا پروڈکٹ شامل کریں" },
+      { path: "/products", en: "Products Catalog", ur: "پروڈکٹس کی فہرست" },
+    ],
+  },
+
+  {
+    id: "bulk_import_excel_csv",
+    phrases: [
+      "import excel", "import csv", "bulk import", "upload products excel",
+      "import customers", "import suppliers", "excel se import",
+      "ایکسل سے امپورٹ", "بلک امپورٹ"
+    ],
+    requiredGroups: [["import", "upload", "excel", "csv", "امپورٹ", "ایکسل"]],
+    keywords: ["import", "csv", "excel"],
+    title: {
+      en: "How to Bulk Import Products, Customers, Suppliers, Brands & Categories (Excel/CSV)",
+      ur: "ایکسل (Excel / CSV) فائل سے ڈیٹا ایک ساتھ امپورٹ کرنے کا طریقہ",
+    },
+    en: "You can bulk-upload hundreds of records in seconds using **CSV / Excel Import**:\n\n1. Open the module you want to import into: **Products (`/products`)**, **Customers (`/customers`)**, **Suppliers (`/suppliers`)**, **Brands (`/brands`)**, or **Categories (`/categories`)**.\n2. Click the **Import** button at the top right.\n3. Click **Download Sample Template** inside the modal to see the exact column headers.\n4. Select your `.csv` / `.xlsx` file and click **Upload & Import**.",
+    ur: "ایکسل یا CSV فائل کے ذریعے سینکڑوں پروڈکٹس، گاہک یا سپلائرز ایک ساتھ اپلوڈ کرنے کا طریقہ:\n\n1. متعلقہ صفحہ کھولیں: **Products (`/products`)**، **Customers (`/customers`)**، **Suppliers (`/suppliers`)**، **Brands (`/brands`)** یا **Categories (`/categories`)**۔\n2. اوپر دائیں جانب **Import** بٹن پر کلک کریں۔\n3. نمونے کی فائل کے لیے **Download Sample Template** پر کلک کریں، اس میں اپنا ڈیٹا ڈالیں اور فائل اپلوڈ کر دیں۔",
+    links: [
+      { path: "/products", en: "Import Products", ur: "پروڈکٹس امپورٹ کریں" },
+      { path: "/customers", en: "Import Customers", ur: "گاہک امپورٹ کریں" },
+      { path: "/suppliers", en: "Import Suppliers", ur: "سپلائرز امپورٹ کریں" },
+    ],
+  },
+
+  {
+    id: "check_expiry_fefo",
+    phrases: [
+      "check expiry", "how to check expiry", "near expiry", "expired items",
+      "expired stock", "batch expiry", "fefo", "first expired first out",
+      "expiry kaise check", "ایکسپائری کیسے چیک کریں", "قریب ایکسپائری"
+    ],
+    requiredGroups: [["expiry", "expired", "expire", "fefo", "ایکسپائری", "ایکسپائر"]],
+    keywords: ["expiry", "fefo"],
+    title: {
+      en: "How to Track Batch Expiry & How FEFO Works",
+      ur: "بیچ ایکسپائری (Batch Expiry) چیک کرنے اور FEFO کا طریقہ کار",
+    },
+    en: "Karobar ERP protects your store from expiry losses in **3 ways**:\n\n1. **Batch Expiry Radar (`/batch-expiry`):**\n   • Live color-coded dashboard showing **Already Expired (Red)**, **Expiring in ≤30 Days**, **31–90 Days**, and **91–180 Days** batches, with one-click actions to **Return to Supplier** or **Quarantine/Dispose**.\n2. **Printable Near-Expiry Report (`/reports/near-expiry-product`):**\n   • Filter expiring batches by **Supplier** or **Brand** and print a PDF for distributor return claims.\n3. **Automatic FEFO in POS & Sales:**\n   • During billing, the system automatically selects the **earliest expiring batch first (FEFO)** and warns/blocks expired batches.",
+    ur: "کاروبار ایپ میں ایکسپائری کو کنٹرول کرنے کے **3 طاقتور فیچرز** موجود ہیں:\n\n1. **بیچ ایکسپائری ریڈار (`/batch-expiry`):**\n   • یہاں آپ ایکسپائر شدہ، 30 دن، 90 دن اور 180 دن میں ایکسپائر ہونے والے تمام بیچز الگ الگ رنگوں میں دیکھ سکتے ہیں اور وہیں سے سپلائر کو واپس (Purchase Return) یا تلف (Dispose) کر سکتے ہیں۔\n2. **قریب ایکسپائری رپورٹ (`/reports/near-expiry-product`):**\n   • سپلائر یا کمپنی کے لحاظ سے قریب ایکسپائری مال کی لسٹ پرنٹ کریں۔\n3. **خودکار FEFO اصول:**\n   • سیل بل بناتے وقت سسٹم خودکار طور پر وہ بیچ پہلے منتخب کرتا ہے جس کی ایکسپائری قریب ہو۔",
+    links: [
+      { path: "/batch-expiry", en: "Open Batch Expiry Radar", ur: "بیچ ایکسپائری ریڈار کھولیں" },
+      { path: "/reports/near-expiry-product", en: "Near-Expiry Report", ur: "قریب ایکسپائری رپورٹ" },
+      { path: "/product-batches", en: "Product Batches Workbench", ur: "پروڈکٹ بیچز ورک بینچ" },
+    ],
+  },
+
+  {
+    id: "opening_stock_adjustment",
+    phrases: [
+      "opening stock", "how to enter opening stock", "stock adjustment",
+      "adjust stock", "manual stock correction", "fix stock quantity",
+      "opening stock kaise", "اوپننگ اسٹاک", "اسٹاک ایڈجسٹمنٹ"
+    ],
+    requiredGroups: [["opening", "adjustment", "adjust", "correct", "اوپننگ", "ایڈجسٹمنٹ"], ["stock", "inventory", "qty", "اسٹاک"]],
+    keywords: ["opening stock", "stock adjustment"],
+    title: {
+      en: "How to Enter Opening Stock or Manual Stock Adjustments",
+      ur: "اوپننگ اسٹاک (Opening Stock) یا اسٹاک ایڈجسٹمنٹ درج کرنے کا طریقہ",
+    },
+    en: "To enter initial **Opening Stock** (without a supplier bill) or fix a manual stock count discrepancy:\n\n1. Open **Create Stock Adjustment** (`/stock-adjustments/create`).\n2. Search and select the **Product** and **Batch** (or create a batch in **Product Batches** `/product-batches`).\n3. Choose the adjustment type:\n   • **Addition (+):** Increases stock (use for Opening Stock or found units).\n   • **Deduction (−):** Decreases stock (use for minor shrinkage/audit corrections).\n4. Enter the **Quantity**, **Unit Cost**, and **Reason Note**, then click **Save**.\n\n**Impact:** Updates product/batch stock immediately and posts an Inventory Adjustment entry to the General Ledger.",
+    ur: "بغیر سپلائر بل کے **ابتدائی اسٹاک (Opening Stock)** ڈالنے یا اسٹاک کی کمی بیشی درست کرنے کا طریقہ:\n\n1. **Create Stock Adjustment** (`/stock-adjustments/create`) کھولیں۔\n2. پروڈکٹ اور بیچ منتخب کریں۔\n3. اسٹاک بڑھانے کے لیے **Addition (+)** (جیسے اوپننگ اسٹاک کے لیے) یا کم کرنے کے لیے **Deduction (−)** منتخب کریں۔\n4. مقدار اور وجہ (Reason) لکھ کر **Save** دبائیں۔\n\n*(نوٹ: آپ **Product Batches** `/product-batches` اسکرین سے بھی براہِ راست نیا بیچ اور اوپننگ اسٹاک ڈال سکتے ہیں)*۔",
+    links: [
+      { path: "/stock-adjustments/create", en: "Create Stock Adjustment", ur: "اسٹاک ایڈجسٹمنٹ بنائیں" },
+      { path: "/product-batches", en: "Product Batches Workbench", ur: "پروڈکٹ بیچز ورک بینچ" },
+      { path: "/stocktake-sessions", en: "Physical Stocktake Audit", ur: "فزیکل اسٹاک آڈٹ" },
+    ],
+  },
+
+  {
+    id: "physical_stocktake_audit",
+    phrases: [
+      "stocktake", "stock take", "physical stock audit", "physical count",
+      "shelf count", "inventory audit session", "اسٹاک ٹیک", "فزیکل اسٹاک آڈٹ"
+    ],
+    requiredGroups: [["stocktake", "audit", "physical", "count", "آڈٹ", "گنتی"]],
+    keywords: ["stocktake"],
+    title: {
+      en: "How to Run a Physical Stocktake (Shelf Audit Session)",
+      ur: "دکان کے اسٹاک کی فزیکل گنتی اور آڈٹ (Stocktake Session) کا طریقہ",
+    },
+    en: "To audit your physical shelves against system stock:\n\n1. Open **Stocktake Sessions** (`/stocktake-sessions`) and click **+ New Stocktake Session** (`/stocktake-sessions/create`).\n2. Scope the audit by **All Products**, a specific **Category**, **Brand**, or **Rack Location**.\n3. In the active counting screen, enter the **Physical Counted Quantity** for each item.\n4. Click **Review Variances** to see exact **Surplus (+)**, **Shortage (−)**, and value differences.\n5. Click **Approve & Sync Stock** to automatically post all stock adjustments in one click!",
+    ur: "شیلف میں موجود مال کی گنتی کو کمپیوٹر اسٹاک سے ملانے (Audit) کا طریقہ:\n\n1. **Stocktake Sessions** (`/stocktake-sessions/create`) کھول کر نیا آڈٹ سیشن شروع کریں۔\n2. پوری دکان یا کسی مخصوص کیٹیگری/برانڈ کا انتخاب کریں۔\n3. ہر آئٹم کی شیلف پر موجود حقیقی تعداد (**Counted Qty**) درج کریں۔\n4. **Review** اسکرین پر کم یا زیادہ نکلنے والے مال (Variance) کا جائزہ لیں اور **Approve & Sync** دبا کر ایک کلک سے پورا اسٹاک برابر کر لیں۔",
+    links: [
+      { path: "/stocktake-sessions", en: "Open Stocktake Sessions", ur: "اسٹاک ٹیک آڈٹ کھولیں" },
+      { path: "/stocktake-sessions/create", en: "Start New Stocktake", ur: "نیا آڈٹ شروع کریں" },
+    ],
+  },
+
+  {
+    id: "stock_disposal_quarantine",
+    phrases: [
+      "stock disposal", "dispose expired", "quarantine stock", "quarantine batch",
+      "write off damaged", "damaged stock", "broken medicine", "تلف کرنا",
+      "ایکسپائر مال تلف کریں", "کوارنٹائن"
+    ],
+    requiredGroups: [["disposal", "dispose", "quarantine", "write off", "damaged", "تلف", "کوارنٹائن"]],
+    keywords: ["disposal", "quarantine"],
+    title: {
+      en: "How to Quarantine or Dispose Expired / Damaged Stock",
+      ur: "ایکسپائر یا ٹوٹ پھوٹ کا شکار مال کوارنٹائن اور تلف (Dispose) کرنے کا طریقہ",
+    },
+    en: "When batches expire or break and cannot be returned to the supplier:\n\n1. Open **Stock Disposals & Quarantine** (`/stock-disposals`) or click **New Disposal** (`/stock-disposals/create`).\n2. **Quarantine:** Moves unsafe/near-expiry batches out of sellable POS stock so cashiers cannot accidentally bill them while you await supplier claim settlement.\n3. **Permanent Disposal (Write-Off):** Permanently removes the expired/damaged units from inventory, records the loss in the **General Ledger**, and prints an official **Disposal Certificate**.",
+    ur: "ایکسپائر یا خراب ہونے والے مال کو سیل سے روکنے (Quarantine) یا مستقل تلف (Dispose) کرنے کا طریقہ:\n\n1. **Stock Disposals & Quarantine** (`/stock-disposals/create`) کھولیں۔\n2. **Quarantine (کوارنٹائن):** مشکوک یا ایکسپائر بیچ کو قابلِ فروخت اسٹاک سے الگ کر دیتا ہے تاکہ غلطی سے سیل نہ ہو سکے۔\n3. **Disposal (تلف کرنا):** خراب یا ایکسپائر مال کو مستقل طور پر اسٹاک سے خارج کرتا ہے، نقصان کی جنرل لیجر انٹری کرتا ہے اور سرکاری ریکارڈ کے لیے **Disposal Certificate** پرنٹ کرتا ہے۔",
+    links: [
+      { path: "/stock-disposals", en: "Open Stock Disposals & Quarantine", ur: "اسٹاک ڈسپوزل کھولیں" },
+      { path: "/stock-disposals/create", en: "Create Stock Disposal", ur: "نیا ڈسپوزل اندراج کریں" },
+    ],
+  },
+
+  // ==========================================================================
+  // 4. LEDGERS (UDHAR KHATA), PAYMENTS, CASH DRAWER, ACCOUNTS & ACCOUNTING
+  // ==========================================================================
+  {
+    id: "customer_udhar_ledger_payment",
+    phrases: [
+      "customer ledger", "customer udhar", "udhar khata", "check customer balance",
+      "receive money from customer", "receive payment from customer", "customer payment",
+      "customer recovery", "wasooli", "udhar kaise wasool", "customer khata",
+      "گاہک کا ادھار کھاتہ", "کسٹمر لیجر", "گاہک سے وصولی", "ادھار کھاتہ کیسے دیکھیں"
+    ],
+    requiredGroups: [["customer", "udhar", "receivable", "wasool", "wasooli", "گاہک", "کسٹمر", "ادھار", "وصولی"], ["ledger", "khata", "balance", "payment", "money", "receive", "کھاتہ", "لیجر", "بیلنس", "پیمنٹ", "وصول"]],
+    keywords: ["udhar", "customer ledger"],
+    title: {
+      en: "How to Check Customer Udhar Khata & Receive Customer Payments",
+      ur: "گاہک کا ادھار کھاتہ (Customer Ledger) دیکھنے اور وصولی درج کرنے کا طریقہ",
+    },
+    en: "To check a customer's credit (`Udhar`) balance or record a payment received from a customer:\n\n1. Open **Customer Ledger (Udhar Khata)** (`/customer-ledger`) from the sidebar (**Finance → Customer Ledger**).\n2. Select the **Customer** to view their complete chronological statement (Opening Balance, Credit Invoices, Returns, Payments Received, and Running Balance).\n3. **To Receive Payment:** Click **+ Record Payment / Receipt** (or open `/payments`), enter the **Amount Received**, select the destination account (**Cash Drawer**, **Bank**, or **JazzCash/EasyPaisa**), and click **Save**.\n4. You can also **Print Statement PDF** or send a **WhatsApp Payment Reminder** directly from the ledger!",
+    ur: "گاہک کا ادھار کھاتہ چیک کرنے اور بقایا رقم کی وصولی درج کرنے کا طریقہ:\n\n1. سائیڈ بار سے **Customer Ledger** (`/customer-ledger`) کھولیں۔\n2. مطلوبہ **Customer (گاہک)** منتخب کریں—آپ کے سامنے اس کے تمام بل، واپسی، وصولیاں اور موجودہ بقایا بیلنس آ جائے گا۔\n3. **رقم وصول کرنے کے لیے:** اوپر **+ Record Payment** بٹن پر کلک کریں، وصول شدہ رقم لکھیں، اکاؤنٹ (**کیش ڈراور** یا **بینک/والٹ**) منتخب کریں اور **Save** دبائیں۔\n4. آپ یہیں سے کھاتے کا **PDF پرنٹ** نکال سکتے ہیں یا گاہک کو **WhatsApp** پر بقایا بل کا پیغام بھیج سکتے ہیں۔",
+    links: [
+      { path: "/customer-ledger", en: "Open Customer Ledger (Udhar Khata)", ur: "کسٹمر کھاتہ کھولیں" },
+      { path: "/payments", en: "Payment Vouchers", ur: "پیمنٹ واؤچرز" },
+      { path: "/reports/outstanding-aging", en: "Outstanding Aging Report", ur: "بقایاجات ایجنگ رپورٹ" },
+    ],
+  },
+
+  {
+    id: "supplier_ledger_pay_supplier",
+    phrases: [
+      "supplier ledger", "pay supplier", "how to pay supplier", "supplier payment",
+      "supplier balance", "supplier khata", "distributor payment", "vendor payment",
+      "supplier ko payment", "سپلائر کو پیمنٹ", "سپلائر کا کھاتہ", "ڈسٹری بیوٹر کو ادائیگی"
+    ],
+    requiredGroups: [["supplier", "distributor", "vendor", "سپلائر", "ڈسٹری بیوٹر"], ["pay", "payment", "ledger", "khata", "balance", "پیمنٹ", "ادائیگی", "کھاتہ", "لیجر", "بیلنس"]],
+    keywords: ["supplier ledger"],
+    title: {
+      en: "How to Check Supplier Balance & Pay a Supplier",
+      ur: "سپلائر کا کھاتہ (Supplier Ledger) چیک کرنے اور پیمنٹ کرنے کا طریقہ",
+    },
+    en: "To view what you owe a supplier or record a payment to a distributor:\n\n1. Open **Supplier Ledger** (`/supplier-ledger`) from the sidebar (**Finance → Supplier Ledger**).\n2. Select the **Supplier** to inspect all Purchase Invoices, Purchase Returns, past payments, and net **Payable Balance**.\n3. **To Pay the Supplier:** Click **+ Record Payment** (or open **Payment Vouchers** `/payments`), enter the **Payment Amount**, choose the payment source (**Cash Drawer** or **Bank Account**), add any cheque/reference note, and click **Save**.\n4. The payment immediately deducts from your Cash/Bank account and reduces your Supplier Payable balance.",
+    ur: "سپلائر یا ڈسٹری بیوٹر کا بقایا بیلنس دیکھنے اور اسے رقم ادا کرنے کا طریقہ:\n\n1. سائیڈ بار سے **Supplier Ledger** (`/supplier-ledger`) کھولیں۔\n2. اپنا **Supplier (سپلائر)** منتخب کریں تاکہ تمام پرچیز بل اور واجب الادا بیلنس سامنے آ جائے۔\n3. **پیمنٹ درج کرنے کے لیے:** **+ Record Payment** بٹن دبائیں (یا `/payments` کھولیں)، ادا کردہ رقم لکھیں، جس اکاؤنٹ (**کیش ڈراور** یا **بینک**) سے رقم دی ہے وہ منتخب کریں اور **Save** کر دیں۔\n4. رقم فوری طور پر سپلائر کے کھاتے سے کم ہو جائے گی اور آپ پیمنٹ سلپ بھی پرنٹ کر سکتے ہیں۔",
+    links: [
+      { path: "/supplier-ledger", en: "Open Supplier Ledger", ur: "سپلائر کھاتہ کھولیں" },
+      { path: "/payments", en: "Open Payment Vouchers", ur: "پیمنٹ واؤچرز کھولیں" },
+    ],
+  },
+
+  {
+    id: "cash_drawer_shift_z_report",
+    phrases: [
+      "cash drawer", "open cash drawer", "close cash drawer", "open shift",
+      "close shift", "z report", "opening float", "galla", "daily cash count",
+      "کیش ڈراور", "گلہ کھولیں", "شفٹ کلوزنگ"
+    ],
+    requiredGroups: [["cash", "shift", "drawer", "galla", "z report", "کیش", "ڈراور", "گلہ", "شفٹ"]],
+    keywords: ["drawer", "galla"],
+    title: {
+      en: "How to Open & Close the Cash Drawer Shift (Z-Report)",
+      ur: "کیش ڈراور (Cash Drawer / گلہ) شفٹ کھولنے اور بند کرنے کا طریقہ",
+    },
+    en: "To track physical counter cash across cashier shifts:\n\n1. Open **Cash Drawer** (`/cash-drawer`) or press **`Alt + D`** from the topbar.\n2. **Start of Day (Open Shift):** Enter your **Opening Cash Float** (change money in the drawer) and click **Open Shift**.\n3. **During the Day:** Every cash Sale, Sale Return refund, Customer Receipt, Supplier Payment, and Expense automatically updates the **Expected Cash in Drawer**.\n4. **End of Day (Close Shift):** Count the physical cash notes in the till, enter the **Counted Cash**, review any **Over / Short variance**, and click **Close Shift & Print Z-Report**.",
+    ur: "کاؤنٹر کے گلے (Cash Drawer) کا روزانہ حساب رکھنے کا طریقہ:\n\n1. **Cash Drawer** (`/cash-drawer`) کھولیں یا کی بورڈ سے **`Alt + D`** دبائیں۔\n2. **صبح شفٹ شروع کرتے وقت:** گلے میں موجود ابتدائی نقدی (**Opening Float**) لکھ کر **Open Shift** پر کلک کریں۔\n3. **دن بھر کے دوران:** تمام نقد سیلز، واپسی، وصولیاں اور اخراجات خودکار طور پر گلے کے بیلنس میں شامل ہوتے رہیں گے۔\n4. **رات کو دکان بند کرتے وقت:** گلے کی نقدی گن کر **Closing Count** درج کریں، فرق چیک کریں اور **Close Shift (Z-Report)** پرنٹ کر لیں۔",
+    links: [
+      { path: "/cash-drawer", en: "Open Cash Drawer (Alt+D)", ur: "کیش ڈراور کھولیں (Alt+D)" },
+      { path: "/accounts", en: "Financial Accounts (Alt+A)", ur: "بینک اور کیش اکاؤنٹس" },
+    ],
+  },
+
+  {
+    id: "bank_accounts_fund_transfer",
+    phrases: [
+      "transfer money", "cash to bank", "bank to cash", "deposit cash in bank",
+      "bank account", "mobile wallet", "jazzcash", "easypaisa", "financial accounts",
+      "کیش سے بینک ٹرانسفر", "بینک اکاؤنٹ کیسے بنائیں"
+    ],
+    requiredGroups: [["transfer", "deposit", "bank", "wallet", "jazzcash", "easypaisa", "account", "ٹرانسفر", "بینک", "اکاؤنٹ"]],
+    keywords: ["transfer", "jazzcash", "easypaisa"],
+    title: {
+      en: "How to Manage Bank / Wallet Accounts & Transfer Funds (Cash ↔ Bank)",
+      ur: "بینک / والٹ اکاؤنٹس بنانے اور کیش سے بینک میں رقم منتقل کرنے کا طریقہ",
+    },
+    en: "To manage your **Bank Accounts**, **Mobile Wallets (JazzCash / EasyPaisa)**, and **Cash Drawer** balances:\n\n1. Open **Financial Accounts** (`/accounts`) or press **`Alt + A`** from anywhere.\n2. **Add a Bank or Wallet:** Click **+ Add Account**, choose the type (`Bank`, `Mobile Wallet`, or `Cash`), enter the Account Title/Number and Opening Balance, and click **Save**.\n3. **Transfer Money (e.g., Cash Drawer → Bank Deposit):** Click **Transfer Funds**, select **From Account** (e.g., Cash Drawer) and **To Account** (e.g., Meezan Bank), enter the **Amount**, and click **Transfer**.",
+    ur: "بینک اکاؤنٹس، جاز کیش/ایزی پیسہ اور کیش ٹرانسفر منیج کرنے کا طریقہ:\n\n1. **Financial Accounts** (`/accounts`) کھولیں یا **`Alt + A`** دبائیں۔\n2. **نیا اکاؤنٹ بنانے کے لیے:** **+ Add Account** پر کلک کر کے بینک یا موبائل والٹ کا نام اور ابتدائی بیلنس درج کریں۔\n3. **کیش سے بینک میں رقم جمع کروانے کے لیے:** **Transfer Funds** بٹن دبائیں، کس اکاؤنٹ سے کس اکاؤنٹ میں رقم بھیجنی ہے منتخب کریں اور رقم لکھ کر محفوظ کریں۔",
+    links: [
+      { path: "/accounts", en: "Open Financial Accounts (Alt+A)", ur: "فنانشل اکاؤنٹس کھولیں (Alt+A)" },
+      { path: "/accounting", en: "Double-Entry Accounting", ur: "ڈبل انٹری اکاؤنٹنگ" },
+    ],
+  },
+
+  {
+    id: "record_shop_expenses",
+    phrases: [
+      "shop rent", "electricity bill", "add expense", "record expense",
+      "operating expense", "daily expense", "tea expense", "kharcha kaise",
+      "دکان کا خرچہ", "کرایہ اور بجلی کا بل", "اخراجات کیسے درج کریں"
+    ],
+    requiredGroups: [["expense", "rent", "electricity", "bill", "kharcha", "خرچہ", "اخراجات", "کرایہ", "بجلی"]],
+    negativePhrases: ["purchase invoice", "sale invoice"],
+    keywords: ["expense", "kharcha"],
+    title: {
+      en: "How to Record Store Expenses (Rent, Electricity, Refreshments, Freight)",
+      ur: "دکان کے روزمرہ اخراجات (کرایہ، بجلی کا بل، چائے پانی) درج کرنے کا طریقہ",
+    },
+    en: "To record store overhead expenses:\n\n1. Open **Operating Expenses** (`/expenses`) from the sidebar (**Finance → Expenses**).\n2. Click **Expense Categories** if you want to create a custom category (e.g., *Shop Rent*, *Electricity Bill*, *Staff Tea*, *Packaging*).\n3. Click **+ Add Expense**, select the **Category**, **Date**, **Amount**, **Payment Account** (Cash Drawer or Bank), and **Notes**, then click **Save**.\n\n**Impact:** Automatically deducts from the selected Cash/Bank account and subtracts from Gross Profit on your **Profit & Loss Report (`/reports/net-profit`)**.",
+    ur: "دکان کے اخراجات (جیسے کرایہ، بجلی کا بل، چائے پانی، پیکنگ یا مرمت) ریکارڈ کرنے کا طریقہ:\n\n1. سائیڈ بار سے **Operating Expenses** (`/expenses`) کھولیں۔\n2. **+ Add Expense** پر کلک کریں۔\n3. خرچے کی **کیٹیگری (Category)**، **تاریخ**، **رقم**، **ادائیگی کا اکاؤنٹ** (کیش ڈراور یا بینک) اور تفصیل لکھ کر **Save** دبائیں۔\n\n**اثر:** یہ رقم کیش یا بینک سے کم ہو جاتی ہے اور **نفع و نقصان کی رپورٹ (`/reports/net-profit`)** میں شامل ہو کر خالص منافع دکھاتی ہے۔",
+    links: [
+      { path: "/expenses", en: "Open Operating Expenses", ur: "کاروباری اخراجات کھولیں" },
+      { path: "/reports/net-profit", en: "Profit & Loss Report", ur: "نفع و نقصان کی رپورٹ" },
+    ],
+  },
+
+  {
+    id: "double_entry_accounting_gl_jv",
+    phrases: [
+      "double entry", "general ledger", "chart of accounts", "journal voucher",
+      "manual jv", "trial balance", "balance sheet", "owner capital", "owner drawing",
+      "ڈبل انٹری اکاؤنٹنگ", "جنرل لیجر", "ٹرائل بیلنس", "بیلنس شیٹ"
+    ],
+    requiredGroups: [["accounting", "ledger", "journal", "voucher", "trial", "capital", "coa", "اکاؤنٹنگ", "لیجر", "بیلنس شیٹ"]],
+    keywords: ["jv", "coa", "trial balance", "balance sheet"],
+    title: {
+      en: "How Double-Entry Accounting, General Ledger & Journal Vouchers (JV) Work",
+      ur: "ڈبل انٹری اکاؤنٹنگ، جنرل لیجر اور جرنل واؤچر (JV) کا طریقہ کار",
+    },
+    en: "**Double-Entry Accounting (`/accounting`)** is your IFRS-compliant financial engine:\n\n1. **100% Automated Operational Postings:** Every Sale, Purchase, Return, Payment, Expense, and Payroll transaction automatically posts a balanced `Debit = Credit` Journal Voucher to the General Ledger.\n2. **Chart of Accounts (COA):** Organized into `1000 Assets`, `2000 Liabilities`, `3000 Equity`, `4000 Revenue`, and `5000 Expenses`.\n3. **Manual Journal Vouchers (JV):** Click **+ Post Journal Voucher** in `/accounting` to record **Owner Capital injections**, **Owner Drawings**, **Depreciation**, or fixed asset adjustments.\n4. **Financial Statements:** View and print your real-time **Trial Balance**, **Balance Sheet**, and **Income Statement**.",
+    ur: "**ڈبل انٹری اکاؤنٹنگ (`/accounting`)** میں آپ کے کاروبار کا مکمل مالیاتی حساب خودکار طریقے سے بنتا ہے:\n\n1. **خودکار جنرل لیجر انٹری:** جب بھی آپ سیل، پرچیز، ریٹرن، پیمنٹ، خرچہ یا تنخواہ درج کرتے ہیں تو سسٹم خودکار طور پر جنرل لیجر میں اس کی ڈبل انٹری (`Debit = Credit`) کر دیتا ہے۔\n2. **مینوئل جرنل واؤچر (JV):** اگر کاروبار میں نیا سرمایہ (Capital) ڈالنا ہو یا ذاتی استعمال (Drawing) کی انٹری کرنی ہو تو `/accounting` میں **+ Post Journal Voucher** استعمال کریں۔\n3. **ٹرائل بیلنس اور بیلنس شیٹ:** ایک کلک سے مکمل ٹرائل بیلنس اور بیلنس شیٹ چیک اور پرنٹ کریں۔",
+    links: [
+      { path: "/accounting", en: "Open Accounting & GL", ur: "ڈبل انٹری اکاؤنٹنگ کھولیں" },
+      { path: "/reports/net-profit", en: "Profit & Loss Report", ur: "نفع و نقصان کی رپورٹ" },
+    ],
+  },
+
+  // ==========================================================================
+  // 5. HR, STAFF ATTENDANCE, MONTHLY PAYROLL & SALESPERSON COMMISSIONS
+  // ==========================================================================
+  {
+    id: "mark_staff_attendance",
+    phrases: [
+      "mark attendance", "how to mark attendance", "daily attendance",
+      "staff attendance", "employee attendance", "hazri kaise",
+      "حاضری کیسے لگائیں", "ملازمین کی حاضری"
+    ],
+    requiredGroups: [["attendance", "present", "absent", "hazri", "حاضری"]],
+    keywords: ["attendance", "hazri"],
+    title: {
+      en: "How to Mark Daily Staff Attendance",
+      ur: "عملے کی روزانہ حاضری (Daily Attendance) لگانے کا طریقہ",
+    },
+    en: "To mark daily attendance for your staff:\n\n1. Open **HR & Payroll Center** (`/hr-payroll`) and switch to **Tab 2: Daily Attendance** (`/hr-payroll?tab=attendance`).\n2. Select the **Attendance Date**.\n3. Mark each employee as **Present**, **Late**, **Half-Day**, **Absent**, **Paid Leave**, or **Holiday** (or click **Mark All Present** for one-click entry).\n4. Click **Save Attendance**.\n\n**Impact:** Absent and Half-Day records automatically calculate pro-rated deductions when you generate **Monthly Payroll** at month-end!",
+    ur: "دکان کے ملازمین کی روزانہ حاضری لگانے کا طریقہ:\n\n1. **HR & Payroll Center** (`/hr-payroll?tab=attendance`) کھولیں اور **Attendance** ٹیب پر کلک کریں۔\n2. تاریخ منتخب کریں اور ہر ملازم کے آگے **Present (حاضر)**، **Late**، **Half-Day**، **Absent (غیر حاضر)** یا **Leave (چھٹی)** نشان زد کریں (یا سب کو حاضر کرنے کے لیے **Mark All Present** دبائیں)۔\n3. **Save Attendance** پر کلک کریں۔ مہینے کے آخر میں تنخواہ بناتے وقت چھٹیوں کی کٹوتی خودکار ہو جائے گی۔",
+    links: [
+      { path: "/hr-payroll", en: "Open HR & Attendance Center", ur: "ایچ آر اور حاضری کھولیں" },
+    ],
+  },
+
+  {
+    id: "pay_staff_salary_payroll_commission",
+    phrases: [
+      "pay staff salary", "how to pay salary", "monthly payroll", "generate payroll",
+      "salary advance", "staff salary", "sales commission", "salesman commission",
+      "tankhwah kaise dein", "تنخواہ کیسے دیں", "ماہانہ پے رول", "سیلز کمیشن"
+    ],
+    requiredGroups: [["salary", "payroll", "commission", "advance", "employee", "staff", "tankhwah", "تنخواہ", "پے رول", "کمیشن", "ملازم"]],
+    keywords: ["salary", "payroll", "commission", "tankhwah"],
+    title: {
+      en: "How to Manage Employees, Salary Advances, Monthly Payroll & Sales Commissions",
+      ur: "ملازمین کی تنخواہ (Payroll)، ایڈوانس اور سیلز کمیشن دینے کا طریقہ",
+    },
+    en: "All staff compensation is managed in **HR & Payroll Center (`/hr-payroll`)**:\n\n1. **Add Employees & Salary Advances (`Tab 1 — Directory`):**\n   • Register each staff member with their **Basic Salary**, **Allowances**, and **Sales Commission Rule** (`% of Sale`, `% of Profit`, or `Fixed per Invoice`).\n   • If an employee takes a mid-month loan/advance, click **Issue Salary Advance**.\n2. **Generate & Pay Monthly Salary (`Tab 3 — Monthly Payroll`):**\n   • Select the **Month** and click **Generate Payroll**. The system automatically deducts **Absent Days** and **Salary Advances** and adds **Earned Commissions**.\n   • Click **Disburse / Pay Salary** to pay from **Cash Drawer** or **Bank** and print the **Salary Slip**.\n3. **Sales Commissions (`Tab 4 — Commissions`):**\n   • Track and settle salesperson commissions earned on wholesale/retail invoices.",
+    ur: "اسٹاف کی تنخواہ، ایڈوانس اور کمیشن کا مکمل انتظام **HR & Payroll Center (`/hr-payroll`)** میں ہوتا ہے:\n\n1. **ملازم کا اندراج اور ایڈوانس (`Directory ٹیب`):**\n   • ملازم کا نام، بنیادی تنخواہ، الاؤنس اور کمیشن کا اصول درج کریں۔ اگر ملازم مہینے کے درمیان **ایڈوانس (پیشگی رقم)** لے تو وہ بھی یہیں سے درج کریں۔\n2. **ماہانہ تنخواہ کی تیاری اور ادائیگی (`Payroll ٹیب`):**\n   • مہینہ منتخب کر کے **Generate Payroll** دبائیں۔ سسٹم خودکار طور پر غیر حاضری اور ایڈوانس کاٹ کر اور کمیشن شامل کر کے خالص تنخواہ نکال دے گا۔\n   • **Pay / Disburse** پر کلک کر کے کیش یا بینک سے تنخواہ ادا کریں اور سلپ پرنٹ کریں۔",
+    links: [
+      { path: "/hr-payroll", en: "Open HR & Payroll Center", ur: "ایچ آر اور پے رول سینٹر کھولیں" },
+      { path: "/expenses", en: "Operating Expenses", ur: "کاروباری اخراجات" },
+    ],
+  },
+
+  // ==========================================================================
+  // 6. REPORTS & ANALYTICS (TODAY SALE, PROFIT, LOW STOCK, VALUATION, TAX)
+  // ==========================================================================
+  {
+    id: "check_today_sales_report",
+    phrases: [
+      "check today sale", "how to check today sale", "today sales", "daily sale",
+      "aaj ki sale", "sale report", "sales detail report",
+      "آج کی سیل کیسے دیکھیں", "سیل رپورٹ"
+    ],
+    requiredGroups: [["today", "daily", "check", "report", "detail", "aaj", "آج", "رپورٹ", "چیک"], ["sale", "sales", "سیل", "فروخت"]],
+    negativePhrases: ["return", "create", "make"],
+    keywords: ["sale detail"],
+    title: {
+      en: "How to Check Today's Sales & Detailed Sales Reports",
+      ur: "آج کی سیل (Today's Sales) اور تفصیلی سیل رپورٹ دیکھنے کا طریقہ",
+    },
+    en: "You can check today's sales in **3 places**:\n\n1. **Dashboard (`/dashboard`):** Set the top-right date filter to **Today** to see Total Sales Revenue, Gross Profit, Returns, and Net Collections at a glance.\n2. **Sales Detail Report (`/reports/sale-detail`):** Pick any date range (e.g., Today) and filter by **Customer**, **Product**, **Brand**, or **Cashier/User** to see every sold item and print a PDF.\n3. **Sale Invoices List (`/sale-invoices`):** Browse, reprint, or inspect every individual invoice billed today.",
+    ur: "آج کی کل سیل اور فروخت کی تفصیل دیکھنے کے **3 طریقے** ہیں:\n\n1. **ڈیش بورڈ (`/dashboard`):** اوپر تاریخ کا فلٹر **Today (آج)** پر سیٹ کریں تاکہ آج کی کل سیل، منافع اور وصولیاں سامنے آ جائیں۔\n2. **سیلز تفصیلی رپورٹ (`/reports/sale-detail`):** تاریخ، گاہک، پروڈکٹ یا کیشیئر کے لحاظ سے مکمل رپورٹ دیکھیں اور PDF پرنٹ نکالیں۔\n3. **سیل انوائسز لسٹ (`/sale-invoices`):** آج بننے والے تمام بلوں کی فہرست دیکھیں۔",
+    links: [
+      { path: "/reports/sale-detail", en: "Open Sales Detail Report", ur: "سیل تفصیلی رپورٹ کھولیں" },
+      { path: "/dashboard", en: "Open Dashboard", ur: "ڈیش بورڈ کھولیں" },
+      { path: "/sale-invoices", en: "All Sale Invoices", ur: "تمام سیل انوائسز" },
+    ],
+  },
+
+  {
+    id: "check_profit_and_loss_margin",
+    phrases: [
+      "check profit", "how to check profit", "net profit", "profit and loss",
+      "income statement", "cost of sale", "item margin", "munafa kaise check",
+      "منافع کیسے چیک کریں", "نفع و نقصان کی رپورٹ"
+    ],
+    requiredGroups: [["profit", "loss", "margin", "cogs", "munafa", "nafa", "منافع", "نفع"]],
+    keywords: ["profit", "munafa", "cogs"],
+    title: {
+      en: "How to Check Net Profit (P&L) & Item-Wise Profit Margins",
+      ur: "کاروبار کا خالص منافع (Net Profit) اور آئٹم وائز مارجن چیک کرنے کا طریقہ",
+    },
+    en: "Karobar ERP provides **3 profitability reports**:\n\n1. **Profit & Loss Statement (`/reports/net-profit`):**\n   • Shows `Gross Sales − Sale Returns = Net Revenue`, minus `Batch Cost of Goods Sold (COGS) = Gross Profit`, minus `Operating Expenses = Net Profit` for any date range.\n2. **Cost of Sale Summary (`/reports/cost-of-sale`):**\n   • Compares invoice-wise Sale Value vs. Purchase Cost and Gross Margin %.\n3. **Cost of Sale Detail (`/reports/cost-of-sale-detail`):**\n   • Shows item-by-item profit earned on every sold product.",
+    ur: "اپنے کاروبار کا منافع چیک کرنے کے لیے یہ **3 رپورٹس** استعمال کریں:\n\n1. **نفع و نقصان کی رپورٹ (`/reports/net-profit`):**\n   • منتخب تاریخوں کی کل سیل میں سے فروخت شدہ مال کی اصل لاگت (COGS) اور دکان کے اخراجات نکال کر **خالص منافع (Net Profit)** دکھاتی ہے۔\n2. **لاگتِ فروخت کا خلاصہ (`/reports/cost-of-sale`):**\n   • ہر بل پر حاصل ہونے والا منافع اور مارجن فیصد دکھاتی ہے۔\n3. **آئٹم وائز منافع کی رپورٹ (`/reports/cost-of-sale-detail`):**\n   • ہر فروخت شدہ پروڈکٹ پر ملنے والا منافع الگ الگ دکھاتی ہے۔",
+    links: [
+      { path: "/reports/net-profit", en: "Open Profit & Loss (P&L)", ur: "نفع و نقصان (P&L) کھولیں" },
+      { path: "/reports/cost-of-sale", en: "Cost of Sale (COGS)", ur: "لاگتِ فروخت (COGS)" },
+      { path: "/reports/cost-of-sale-detail", en: "Item-Wise Profit Detail", ur: "آئٹم وائز منافع رپورٹ" },
+    ],
+  },
+
+  {
+    id: "check_low_stock_shortage",
+    phrases: [
+      "low stock", "how to check low stock", "out of stock", "shortage items",
+      "reorder report", "kam stock", "کم اسٹاک", "ختم ہونے والا مال"
+    ],
+    requiredGroups: [["low", "shortage", "reorder", "out", "kam", "کم", "ختم"], ["stock", "item", "product", "اسٹاک", "مال"]],
+    keywords: ["low stock", "reorder"],
+    title: {
+      en: "How to Check Low-Stock & Out-of-Stock Items",
+      ur: "کم اسٹاک (Low Stock) اور ختم ہونے والے آئٹمز چیک کرنے کا طریقہ",
+    },
+    en: "To see all products that are running low or out of stock:\n\n1. **Low Stock & Reorder Report (`/reports/reorder`):** Lists every item whose stock has fallen below its pack/reorder threshold. You can filter by **Supplier** and print the list for your order booker.\n2. **Smart Reorder Forecast (`/purchase-orders/forecast`):** Calculates suggested order quantities based on daily sales velocity and creates a Purchase Order in one click.\n3. **Products Catalog (`/products`):** Toggle the **Low Stock** filter chip at the top of the catalog.",
+    ur: "کم اسٹاک والے آئٹمز چیک کرنے کے **3 آسان طریقے** ہیں:\n\n1. **کم اسٹاک رپورٹ (`/reports/reorder`):** ان تمام اشیاء کی فہرست دکھاتی ہے جن کا اسٹاک کم یا ختم ہو چکا ہے؛ اسے سپلائر کے لحاظ سے فلٹر کر کے پرنٹ نکال سکتے ہیں۔\n2. **سمارٹ ری آرڈر فورکاسٹ (`/purchase-orders/forecast`):** سیلز کی رفتار کے مطابق خودکار پرچیز آرڈر تیار کرتا ہے۔\n3. **پروڈکٹس کیٹلاگ (`/products`):** اوپر **Low Stock** فلٹر بٹن آن کریں۔",
+    links: [
+      { path: "/reports/reorder", en: "Open Low Stock Report", ur: "کم اسٹاک رپورٹ کھولیں" },
+      { path: "/purchase-orders/forecast", en: "Smart Reorder Forecast", ur: "سمارٹ ری آرڈر فورکاسٹ" },
+      { path: "/products", en: "Products Catalog", ur: "پروڈکٹس کیٹلاگ" },
+    ],
+  },
+
+  {
+    id: "current_stock_valuation_history",
+    phrases: [
+      "current stock value", "stock valuation", "total inventory value",
+      "product history", "stock card", "item movement history",
+      "موجودہ اسٹاک کی مالیت", "پروڈکٹ کی مکمل ہسٹری"
+    ],
+    requiredGroups: [["valuation", "value", "current", "history", "comprehensive", "card", "مالیت", "ہسٹری"], ["stock", "inventory", "product", "اسٹاک", "پروڈکٹ"]],
+    keywords: ["valuation", "comprehensive"],
+    title: {
+      en: "How to Check Current Stock Valuation & Item Movement History",
+      ur: "موجودہ اسٹاک کی کل مالیت اور پروڈکٹ کی مکمل ہسٹری دیکھنے کا طریقہ",
+    },
+    en: "1. **Current Stock & Valuation Report (`/reports/current-stock`):**\n   • Shows every product's on-hand quantity along with **Total Purchase Cost Value** and **Total Retail Value** of your entire store (filterable by Category, Brand, or Supplier).\n2. **Product Comprehensive History / Stock Card (`/reports/product-comprehensive`):**\n   • Select any single product to trace every **Purchase, Sale, Return, Adjustment, and Disposal** unit-by-unit.",
+    ur: "1. **موجودہ اسٹاک اور مالیت کی رپورٹ (`/reports/current-stock`):**\n   • پوری دکان میں موجود مال کی تعداد، کل قیمتِ خرید (**Total Cost Value**) اور کل قیمتِ فروخت (**Total Sale Value**) دکھاتی ہے۔\n2. **پروڈکٹ کی مکمل ہسٹری (`/reports/product-comprehensive`):**\n   • کسی بھی ایک آئٹم کا مکمل کھاتہ (کب خریدا، کس کو بیچا، کتنا واپس آیا اور موجودہ اسٹاک کیسے بنا) دکھاتی ہے۔",
+    links: [
+      { path: "/reports/current-stock", en: "Current Stock Valuation Report", ur: "موجودہ اسٹاک رپورٹ" },
+      { path: "/reports/product-comprehensive", en: "Product History (Stock Card)", ur: "پروڈکٹ ہسٹری رپورٹ" },
+    ],
+  },
+
+  {
+    id: "tax_gst_return_report",
+    phrases: [
+      "tax report", "tax return", "gst report", "sales tax", "withholding tax",
+      "wht report", "fbr tax", "ٹیکس رپورٹ", "جی ایس ٹی گوشوارہ"
+    ],
+    requiredGroups: [["tax", "gst", "wht", "withholding", "fbr", "ٹیکس", "جی ایس ٹی"]],
+    keywords: ["gst", "wht", "tax"],
+    title: {
+      en: "How to Check Statutory Tax / GST & Withholding Tax (WHT) Reports",
+      ur: "ٹیکس اور جی ایس ٹی (GST / WHT) گوشوارہ رپورٹ دیکھنے کا طریقہ",
+    },
+    en: "Open **Statutory Tax & GST Return Report (`/reports/tax-return`)** to view your complete tax summary for any filing period:\n\n• **Output Sales Tax:** Total GST collected on Sale Invoices.\n• **Input Tax & WHT:** Total tax paid on Purchase Invoices.\n• **Net Tax Liability:** Automatically calculates `Output Tax − Input Tax = Net Tax Payable` (or refundable carry-forward credit) with a printable PDF schedule.",
+    ur: "کسی بھی مہینے کا ٹیکس حساب دیکھنے کے لیے **Tax & GST Return Report (`/reports/tax-return`)** کھولیں:\n\n• یہ رپورٹ سیل بلوں پر وصول کیے گئے **Output Tax** اور خریداری کے بلوں پر ادا کیے گئے **Input Tax / WHT** کا موازنہ کر کے واجب الادا ٹیکس کا مکمل حساب اور PDF پرنٹ فراہم کرتی ہے۔",
+    links: [
+      { path: "/reports/tax-return", en: "Open Tax & GST Return Report", ur: "ٹیکس گوشوارہ رپورٹ کھولیں" },
+      { path: "/accounting", en: "Double-Entry Accounting", ur: "ڈبل انٹری اکاؤنٹنگ" },
+    ],
+  },
+
+  // ==========================================================================
+  // 7. SETTINGS, PASSWORD, PRINTER, USERS/ROLES, BACKUPS & LICENSE
+  // ==========================================================================
+  {
+    id: "change_password_user_profile",
+    phrases: [
+      "change password", "how to change password", "reset password", "update password",
+      "update profile", "change my name", "password kaise badlein",
+      "پاس ورڈ کیسے بدلیں", "پاس ورڈ تبدیل کریں"
+    ],
+    requiredGroups: [["password", "profile", "پاس ورڈ", "پروفائل"]],
+    keywords: ["password"],
+    title: {
+      en: "How to Change Your Password or Update Staff Passwords",
+      ur: "اپنا یا اسٹاف کا پاس ورڈ تبدیل کرنے کا طریقہ",
+    },
+    en: "1. **To change your own password:** Open **My Profile (`/profile`)** (or click your avatar in the top-right bar), enter your **Current Password** and **New Password**, and click **Save Changes**.\n2. **To reset a staff member's password (Admin):** Open **Staff Login Users (`/users`)**, click **Edit** next to that staff user, type a new password, and click **Save**.",
+    ur: "1. **اپنا پاس ورڈ بدلنے کے لیے:** اوپر دائیں کونے سے **Profile (`/profile`)** کھولیں، موجودہ پاس ورڈ اور نیا پاس ورڈ لکھ کر **Save** دبائیں۔\n2. **کسی ملازم کا پاس ورڈ بدلنے کے لیے:** **Users (`/users`)** میں جا کر اس یوزر کے آگے **Edit** پر کلک کریں اور نیا پاس ورڈ سیٹ کر دیں۔",
+    links: [
+      { path: "/profile", en: "Open My Profile", ur: "اپنی پروفائل کھولیں" },
+      { path: "/users", en: "Manage Staff Users", ur: "اسٹاف یوزرز منیج کریں" },
+    ],
+  },
+
+  {
+    id: "printer_receipt_template_settings",
+    phrases: [
+      "printer setting", "thermal printer", "80mm receipt", "a4 invoice print",
+      "receipt template", "invoice logo", "shop name on bill", "printer kaise set",
+      "پرنٹر سیٹنگ", "تھرمل پرنٹر", "بل کا ڈیزائن"
+    ],
+    requiredGroups: [["printer", "thermal", "receipt", "template", "logo", "پرنٹر", "تھرمل", "رسید"]],
+    keywords: ["printer", "thermal"],
+    title: {
+      en: "How to Configure Thermal (80mm) / A4 Printer & Receipt Templates",
+      ur: "تھرمل پرنٹر، A4 پرنٹ اور بل کا ڈیزائن (Logo / Template) سیٹ کرنے کا طریقہ",
+    },
+    en: "To customize your printed bills and receipt layout:\n\n1. Open **System Settings (`/settings`)**.\n2. **In the General Tab:** Upload your **Store Logo**, set your **Store Name**, **Phone**, **Address**, **License #**, and **Invoice Footer Note**.\n3. **In the Printer Setting Tab:**\n   • Choose default paper size: **Thermal 80mm** or **A4 Full Page**.\n   • Pick your preferred invoice design: **Standard**, **Detailed**, **Compact**, **Bold**, **Barcode**, or **Minimal**.\n4. Click **Save Settings**.",
+    ur: "بل پر اپنی دکان کا نام، لوگو اور پرنٹر سائز سیٹ کرنے کا طریقہ:\n\n1. **System Settings (`/settings`)** کھولیں۔\n2. **General ٹیب میں:** دکان کا نام، فون نمبر، پتہ، لائسنس نمبر، لوگو اور بل کے نیچے چھپنے والا نوٹ درج کریں۔\n3. **Printer Setting ٹیب میں:** **Thermal (80mm)** یا **A4** سائز منتخب کریں اور بل کا ڈیزائن (Standard، Detailed، Compact وغیرہ) چن کر **Save** دبائیں۔",
+    links: [
+      { path: "/settings", en: "Open System Settings", ur: "سسٹم سیٹنگز کھولیں" },
+    ],
+  },
+
+  {
+    id: "staff_users_roles_permissions",
+    phrases: [
+      "add user", "create cashier account", "staff login", "roles and permissions",
+      "restrict cashier", "hide profit from cashier", "user permission",
+      "نیا یوزر کیسے بنائیں", "کیشیئر کے اختیارات"
+    ],
+    requiredGroups: [["user", "cashier", "role", "permission", "login", "یوزر", "رول", "اختیارات", "کیشیئر"]],
+    negativePhrases: ["demand"],
+    keywords: ["role", "permission"],
+    title: {
+      en: "How to Create Staff Logins & Restrict Cashier Permissions (Roles)",
+      ur: "کیشیئر یا اسٹاف کا لاگ ان بنانے اور اختیارات (Permissions) محدود کرنے کا طریقہ",
+    },
+    en: "To give staff their own login while hiding sensitive screens (like Net Profit or Invoice Deletion):\n\n1. **Step 1 — Define the Role (`/roles`):**\n   • Open **Roles & Permissions (`/roles`)** and click **+ Create Role** (e.g., *Cashier* or *Salesman*).\n   • Check only the actions they should have (e.g., allow `POS & Sale Invoice Create`, and uncheck `Delete`, `Reports`, or `Settings`), then click **Save**.\n2. **Step 2 — Create the User Login (`/users`):**\n   • Open **Staff Login Users (`/users/create`)**, enter the staff member's Name, Email, Password, and assign their **Role**.",
+    ur: "ملازمین کے لیے الگ لاگ ان بنانے اور ان کے اختیارات کنٹرول کرنے کا طریقہ:\n\n1. **پہلا مرحلہ — رول بنائیں (`/roles`):**\n   • **Roles & Permissions (`/roles/create`)** کھولیں، رول کا نام (مثلاً *Cashier*) رکھیں اور صرف وہ اختیارات ٹک (Check) کریں جن کی اجازت دینی ہے (مثلاً بل بنانے کی اجازت، لیکن ڈیلیٹ یا منافع دیکھنے کی اجازت بند)۔\n2. **دوسرا مرحلہ — یوزر بنائیں (`/users`):**\n   • **Users (`/users/create`)** کھول کر ملازم کا نام، ای میل، پاس ورڈ لکھیں اور اسے وہ رول دے دیں۔",
+    links: [
+      { path: "/roles", en: "Open Roles & Permissions", ur: "رولز اور اختیارات کھولیں" },
+      { path: "/users", en: "Open Staff Users", ur: "اسٹاف یوزرز کھولیں" },
+    ],
+  },
+
+  {
+    id: "database_backup_restore",
+    phrases: [
+      "backup database", "how to backup", "create backup", "restore backup",
+      "download backup", "data safety", "cloud backup", "ڈیٹا بیک اپ", "بیک اپ کیسے لیں"
+    ],
+    requiredGroups: [["backup", "restore", "بیک اپ", "ری اسٹور"]],
+    keywords: ["backup", "restore"],
+    title: {
+      en: "How to Backup & Restore Your Business Database",
+      ur: "سافٹ ویئر کے ڈیٹا کا بیک اپ (Backup) لینے اور ری اسٹور کرنے کا طریقہ",
+    },
+    en: "To keep your ERP database 100% safe:\n\n1. Open **Backups & Storage (`/backups`)** from the sidebar (**System → Backups**).\n2. Click **Create Backup Now** to generate an instant snapshot of all your products, invoices, ledgers, and settings.\n3. Click **Download** on the backup row to save a copy onto an external USB flash drive or cloud folder.\n4. You can also enable **Automated Backup Schedules** or click **Restore** to recover from a backup archive.",
+    ur: "اپنے کاروباری ڈیٹا کو محفوظ رکھنے کے لیے بیک اپ لینے کا طریقہ:\n\n1. سائیڈ بار سے **Backups (`/backups`)** کھولیں۔\n2. **Create Backup Now** بٹن پر کلک کریں—چند سیکنڈ میں پورے ڈیٹا کا بیک اپ تیار ہو جائے گا۔\n3. **Download** بٹن دبا کر بیک اپ فائل کو اپنی USB یا دوسری ڈرائیو میں محفوظ کر لیں۔",
+    links: [
+      { path: "/backups", en: "Open Backups & Restore", ur: "ڈیٹا بیک اپ کھولیں" },
+    ],
+  },
+
+  {
+    id: "keyboard_shortcuts_master",
+    phrases: [
+      "keyboard shortcut", "keyboard shortcuts", "all shortcuts", "shortcut keys",
+      "hotkeys", "fast keys", "کی بورڈ شارٹ کٹس", "شارٹ کٹ بٹن"
+    ],
+    requiredGroups: [["shortcut", "hotkey", "شارٹ کٹ"]],
+    keywords: ["shortcut", "hotkey"],
+    title: {
+      en: "All Keyboard Shortcuts in Karobar App ERP",
+      ur: "کاروبار ایپ کے تمام اہم کی بورڈ شارٹ کٹس",
+    },
+    en: "Use these keyboard shortcuts anywhere in Karobar ERP for high-speed operation:\n\n• **`Alt + G`** — Open/Close Karo AI Assistant\n• **`Alt + K`** — Quick Go-To-Page Command Palette\n• **`Alt + P`** — Global Product, Price & Batch Lookup\n• **`Alt + 1`** — Create Purchase Invoice (Add Stock)\n• **`Alt + 2`** — Create Retail Sale Invoice\n• **`Alt + 3`** — Create Wholesale Sale Invoice\n• **`Alt + S`** — Create Customer Sale Return\n• **`Alt + R`** — Create Supplier Purchase Return\n• **`Alt + A`** — Quick Financial Accounts Popup\n• **`Alt + D`** — Open Cash Drawer Shift Modal\n• **`F2` / `F8` / `Ctrl + S` / `Ctrl + P`** — Search / Hold / Save / Print on POS & Invoices",
+    ur: "تیز رفتار کام کے لیے یہ کی بورڈ شارٹ کٹس استعمال کریں:\n\n• **`Alt + G`** — کارو اے آئی گائیڈ کھولیں/بند کریں\n• **`Alt + K`** — کسی بھی صفحے پر فوری جائیں\n• **`Alt + P`** — کوئی بھی پروڈکٹ، قیمت یا بیچ سرچ کریں\n• **`Alt + 1`** — نیا پرچیز بل بنائیں (اسٹاک ڈالیں)\n• **`Alt + 2`** — نیا ریٹیل سیل بل بنائیں\n• **`Alt + 3`** — نیا ہول سیل بل بنائیں\n• **`Alt + S`** — نئی سیل ریٹرن بنائیں\n• **`Alt + R`** — نئی پرچیز ریٹرن بنائیں\n• **`Alt + A`** — بینک اور کیش اکاؤنٹس دیکھیں\n• **`Alt + D`** — کیش ڈراور کھولیں",
+    links: [
+      { path: "/sale-invoices/pos", en: "Open Barcode POS", ur: "بارکوڈ POS کھولیں" },
+      { path: "/dashboard", en: "Dashboard", ur: "ڈیش بورڈ" },
+    ],
+  },
+
+  {
+    id: "customer_credit_limit_hold",
+    phrases: [
+      "credit limit", "set credit limit", "customer credit limit", "block udhar",
+      "stop over credit", "udhar limit", "گاہک کی ادھار لمٹ", "کریڈٹ لمٹ کیسے لگائیں"
+    ],
+    requiredGroups: [["credit", "udhar", "ادھار", "کریڈٹ"], ["limit", "block", "hold", "max", "لمٹ", "حد"]],
+    keywords: ["credit limit"],
+    title: {
+      en: "How to Set Customer Credit Limits (Udhar Limit)",
+      ur: "گاہک کے ادھار کی حد (Credit Limit) مقرر کرنے کا طریقہ",
+    },
+    en: "To prevent customers from exceeding their allowed credit (`Udhar`) balance:\n\n1. Open **Customers (`/customers`)** from the sidebar.\n2. When adding or editing a customer, enter their maximum allowed balance in the **Credit Limit** field and click **Save**.\n3. In **System Settings (`/settings#sale`)**, you can configure whether exceeding the Credit Limit shows a **Warning** or **Strictly Blocks** the credit invoice unless overridden by a manager.",
+    ur: "گاہک کے لیے ادھار کی حد (Credit Limit) مقرر کرنے کا طریقہ:\n\n1. سائیڈ بار سے **Customers (`/customers`)** کھولیں۔\n2. گاہک کا ریکارڈ بناتے یا ایڈٹ کرتے وقت **Credit Limit** کے خانے میں زیادہ سے زیادہ ادھار کی رقم لکھ کر **Save** کریں۔\n3. جب اس گاہک کا ادھار مقررہ حد سے بڑھے گا تو بل بناتے وقت سسٹم فوری الرٹ دے گا۔",
+    links: [
+      { path: "/customers", en: "Open Customers & Credit Limits", ur: "گاہک اور کریڈٹ لمٹ کھولیں" },
+      { path: "/customer-ledger", en: "Customer Ledger", ur: "کسٹمر کھاتہ" },
+    ],
+  },
+
+  {
+    id: "overdue_aging_recovery_report",
+    phrases: [
+      "overdue invoice", "overdue bills", "aging report", "outstanding aging",
+      "old udhar", "recovery list", "purana udhar", "ایجنگ رپورٹ", "پرانا ادھار"
+    ],
+    requiredGroups: [["overdue", "aging", "old", "recovery", "purana", "ایجنگ", "پرانا", "ریکوری"]],
+    keywords: ["aging", "overdue"],
+    title: {
+      en: "How to Check Overdue Bills & 30/60/90-Day Aging Reports",
+      ur: "پرانے بقایاجات (Aging Report) اور واجب الادا بلوں کی ریکوری لسٹ",
+    },
+    en: "To follow up on old unpaid balances:\n\n1. **Outstanding Aging Report (`/reports/outstanding-aging`):** Groups customer receivables and supplier payables into **0–30**, **31–60**, **61–90**, and **90+ Days Overdue** buckets.\n2. **Overdue Collections Work Queue (`/reports/overdue-work-queue`):** Lists every credit invoice that has passed its promised **Due Date** so recovery staff can call customers directly.",
+    ur: "پرانے ادھار کی ریکوری کے لیے یہ **2 رپورٹس** دیکھیں:\n\n1. **بقایاجات ایجنگ رپورٹ (`/reports/outstanding-aging`):** گاہکوں کے ادھار کو `30`، `60` اور `90+` دنوں کے حساب سے الگ الگ دکھاتی ہے۔\n2. **واجب الادا وصولیوں کی فہرست (`/reports/overdue-work-queue`):** ان بلوں کی فہرست جن کی ادائیگی کی تاریخ (Due Date) گزر چکی ہے۔",
+    links: [
+      { path: "/reports/outstanding-aging", en: "Outstanding Aging Report", ur: "ایجنگ رپورٹ کھولیں" },
+      { path: "/reports/overdue-work-queue", en: "Overdue Work Queue", ur: "واجب الادا وصولیاں" },
+    ],
+  },
+
+  {
+    id: "rack_shelf_storage_locations",
+    phrases: [
+      "rack number", "shelf location", "storage location", "godown to shop",
+      "cold storage", "move batch location", "ریک نمبر", "گودام سے دکان"
+    ],
+    requiredGroups: [["rack", "shelf", "location", "godown", "warehouse", "cold", "ریک", "شیلف", "گودام", "لوکیشن"]],
+    keywords: ["rack", "godown"],
+    title: {
+      en: "How to Manage Rack Numbers, Godown & Cold Storage Locations",
+      ur: "ریک نمبر (Rack #) اور گودام / فریج لوکیشن منیج کرنے کا طریقہ",
+    },
+    en: "1. **Product Rack / Shelf #:** Set the **Rack** field when adding/editing a product (`/products/create`) so cashiers see the exact shelf number during POS billing.\n2. **Multi-Location Batch Storage (`/product-batches`):** Open **Product Batches Workbench (`/product-batches`)** to assign or transfer batches between **Main Shop Floor**, **Cold Storage / Fridge**, and **Warehouse / Godown**.",
+    ur: "1. **شیلف / ریک نمبر:** پروڈکٹ بناتے وقت **Rack** کے خانے میں ریک نمبر لکھیں تاکہ بل بناتے وقت دوائی کی جگہ فوری نظر آئے۔\n2. **گودام، دکان اور فریج لوکیشن (`/product-batches`):** **Product Batches** اسکرین سے کسی بھی بیچ کو گودام سے دکان یا کولڈ سٹوریج (فریج) میں منتقل کریں۔",
+    links: [
+      { path: "/product-batches", en: "Open Product Batches & Locations", ur: "پروڈکٹ بیچز اور لوکیشنز" },
+      { path: "/products", en: "Products Catalog", ur: "پروڈکٹس کیٹلاگ" },
+    ],
+  },
+
+  {
+    id: "batch_different_mrp_pricing",
+    phrases: [
+      "new batch price", "different price for batch", "manage batches",
+      "edit batch", "unassigned stock", "نیا بیچ اور نئی قیمت", "بیچ کیسے ایڈٹ کریں"
+    ],
+    requiredGroups: [["batch", "بیچ"], ["price", "mrp", "cost", "edit", "manage", "unassigned", "قیمت", "ایڈٹ"]],
+    keywords: ["unassigned"],
+    title: {
+      en: "How to Manage Product Batches & Batch-Specific Pricing (MRP)",
+      ur: "پروڈکٹ کے مختلف بیچز اور ہر بیچ کی الگ قیمت (MRP) منیج کرنے کا طریقہ",
+    },
+    en: "In Karobar ERP, each batch of a product can carry its own **Expiry Date**, **Purchase Cost**, and **Retail Price (MRP)**:\n\n1. Open **Product Batches Workbench (`/product-batches`)**.\n2. Search and select the **Product** at the top.\n3. You can add a new batch, edit an existing batch's **Qty / Cost / MRP / Expiry**, or assign **Unassigned Stock** to a named batch.",
+    ur: "کاروبار ایپ میں ایک ہی پروڈکٹ کے مختلف بیچز کی الگ ایکسپائری اور الگ قیمت (MRP) رکھی جا سکتی ہے:\n\n1. **Product Batches Workbench (`/product-batches`)** کھولیں۔\n2. پروڈکٹ منتخب کریں—یہاں آپ نیا بیچ ڈال سکتے ہیں یا کسی بھی موجودہ بیچ کی قیمت، مقدار اور ایکسپائری تبدیل کر سکتے ہیں۔",
+    links: [
+      { path: "/product-batches", en: "Open Product Batches Workbench", ur: "پروڈکٹ بیچز ورک بینچ کھولیں" },
+    ],
+  },
+
+  {
+    id: "theme_dark_mode_colors",
+    phrases: [
+      "dark mode", "light mode", "change theme", "change color", "button style",
+      "ڈارک موڈ", "تھیم کا رنگ کیسے بدلیں"
+    ],
+    requiredGroups: [["dark", "light", "theme", "color", "ڈارک", "تھیم", "رنگ"]],
+    keywords: ["theme", "dark mode"],
+    title: {
+      en: "How to Switch Dark / Light Mode & Customize Brand Theme Colors",
+      ur: "ڈارک موڈ (Dark Mode) اور سافٹ ویئر کے رنگ تبدیل کرنے کا طریقہ",
+    },
+    en: "1. **Quick Dark / Light Toggle:** Click the **Sun / Moon** icon in the top navigation bar.\n2. **Custom Brand Colors & Button Styles:** Open **System Settings (`/settings`)** and switch to the **Theme Setting** tab to customize Primary, Secondary, and Tertiary colors across the entire app.",
+    ur: "1. **ڈارک یا لائٹ موڈ:** اوپر ٹاپ بار میں موجود **سورج / چاند** کے بٹن پر کلک کریں۔\n2. **سافٹ ویئر کے رنگ بدلنے کے لیے:** **System Settings (`/settings`)** میں **Theme Setting** ٹیب کھول کر اپنی پسند کے رنگ منتخب کریں۔",
+    links: [
+      { path: "/settings", en: "Open Theme Settings", ur: "تھیم سیٹنگز کھولیں" },
+    ],
+  },
+
+  {
+    id: "whatsapp_share_invoice_ledger",
+    phrases: [
+      "send on whatsapp", "whatsapp invoice", "share bill whatsapp",
+      "whatsapp reminder", "واٹس ایپ پر بل کیسے بھیجیں"
+    ],
+    requiredGroups: [["whatsapp", "واٹس ایپ"]],
+    keywords: ["whatsapp"],
+    title: {
+      en: "How to Share Invoices, Purchase Orders & Ledger Reminders on WhatsApp",
+      ur: "بل، پرچیز آرڈر اور ادھار کھاتے کا پیغام واٹس ایپ (WhatsApp) پر بھیجنے کا طریقہ",
+    },
+    en: "You can share documents via **WhatsApp** from multiple screens:\n\n1. **Sale & Purchase Invoices (`/sale-invoices`, `/purchase-invoices`):** Open or view any invoice and click the **WhatsApp** share button.\n2. **Purchase Orders (`/purchase-orders`):** Send your PO directly to the supplier's WhatsApp number.\n3. **Customer Ledger (`/customer-ledger`):** Send an instant balance reminder message to a customer on WhatsApp.",
+    ur: "آپ سافٹ ویئر سے براہِ راست **WhatsApp** پر تفصیلات بھیج سکتے ہیں:\n\n1. **سیل اور پرچیز بل:** کسی بھی بل کو کھول کر **WhatsApp** بٹن دبائیں۔\n2. **پرچیز آرڈر (`/purchase-orders`):** سپلائر کو مال کا آرڈر واٹس ایپ کریں۔\n3. **کسٹمر کھاتہ (`/customer-ledger`):** گاہک کو بقایا بل کی یاد دہانی واٹس ایپ پر بھیجیں۔",
+    links: [
+      { path: "/sale-invoices", en: "Sale Invoices", ur: "سیل انوائسز" },
+      { path: "/customer-ledger", en: "Customer Ledger", ur: "کسٹمر کھاتہ" },
+      { path: "/purchase-orders", en: "Purchase Orders", ur: "پرچیز آرڈرز" },
+    ],
+  },
+
+  {
+    id: "software_license_activation",
+    phrases: [
+      "activate license", "software license", "machine id", "renew license",
+      "license key", "لائسنس ایکٹیویٹ کیسے کریں", "مشین آئی ڈی"
+    ],
+    requiredGroups: [["license", "activate", "machine id", "لائسنس", "ایکٹیویٹ"]],
+    keywords: ["license"],
+    title: {
+      en: "How to Activate or Renew Your Software License",
+      ur: "سافٹ ویئر لائسنس ایکٹیویٹ یا رینیو کرنے کا طریقہ",
+    },
+    en: "To view your Machine ID or enter a new License Key:\n\n1. Open **License Activation (`/activate`)** or **System Settings → License Tab (`/settings#license`)**.\n2. Copy your **Machine ID** and send it to your vendor.\n3. Paste the provided cryptographic **License Key** and click **Activate**.",
+    ur: "سافٹ ویئر لائسنس ایکٹیویٹ کرنے کا طریقہ:\n\n1. **License Activation (`/activate`)** یا **Settings → License (`/settings#license`)** کھولیں۔\n2. اپنی **Machine ID** کاپی کریں اور فراہم کردہ **License Key** پیسٹ کر کے **Activate** پر کلک کریں۔",
+    links: [
+      { path: "/activate", en: "Open License Activation", ur: "لائسنس ایکٹیویشن کھولیں" },
+      { path: "/settings#license", en: "Settings — License Tab", ur: "لائسنس سیٹنگز" },
+    ],
+  },
+
+  {
+    id: "thank_you_acknowledgement",
+    phrases: [
+      "thank you", "thanks", "thx", "shukriya", "jazakallah", "good job",
+      "شکریہ", "جزاک اللہ", "بہت شکریہ"
+    ],
+    keywords: ["thanks", "shukriya"],
+    onlyWhenShort: true,
+    title: {
+      en: "You're Most Welcome! — Karo AI Guide",
+      ur: "بہت شکریہ! میں ہمیشہ آپ کی خدمت میں حاضر ہوں",
+    },
+    en: "You're very welcome! Anytime you have a question about **Karobar App ERP**, just press **`Alt + G`** or type your question below.",
+    ur: "آپ کا بہت شکریہ! جب بھی آپ کو **کاروبار ایپ ERP** کے کسی فیچر کے بارے میں کچھ پوچھنا ہو تو **`Alt + G`** دبائیں یا نیچے اپنا سوال لکھیں۔",
+    links: [
+      { path: "/dashboard", en: "Dashboard", ur: "ڈیش بورڈ" },
+    ],
+  },
+
+  // ==========================================================================
+  // 8. TROUBLESHOOTING, LIMITATIONS, DESTRUCTIVE GUARDRAILS & COMPARISONS
+  // ==========================================================================
+  {
+    id: "troubleshoot_wrong_total_calculation",
+    phrases: [
+      "why is my total wrong", "my totals look wrong", "total is wrong",
+      "wrong calculation", "tax is wrong", "bill total mismatch",
+      "بل کا ٹوٹل غلط", "حساب غلط آ رہا ہے"
+    ],
+    requiredGroups: [["wrong", "mismatch", "incorrect", "error", "غلط", "فرق"], ["total", "calculation", "tax", "bill", "balance", "ٹوٹل", "حساب", "بل"]],
+    keywords: [],
+    preferredAgent: "nova",
+    handoffWorkflowId: "create_retail_invoice",
+    title: {
+      en: "Diagnosing Invoice Total or Calculation Differences",
+      ur: "بل کے ٹوٹل یا حساب میں فرق کی تشخیص (Troubleshooting)",
+    },
+    en: "Let's narrow down which part of the total looks unexpected:\n\n1. **Pack vs. Loose Unit Quantity:** Check whether the quantity was entered in **Packs (Boxes)** or **Loose Units**. If Pack Size is `30`, entering `1` in Packs bills the full box, whereas `1` in Units bills a single tablet.\n2. **Line Discount vs. Bill Discount:** Check both the row-level `Disc % / Rs` column and the bottom summary `Bill Discount` field.\n3. **Tax / WHT Profile:** Check if an item-level GST % or invoice-level Withholding Tax % is applied.\n4. **Previous Customer Balance:** On credit bills, the printed receipt shows **Current Bill Total** + **Previous Udhar Balance = Net Payable**.\n\n*If you want, **Cube** can walk you through the invoice calculation fields step-by-step.*",
+    ur: "آئیے چیک کرتے ہیں کہ بل کے ٹوٹل میں فرق کس وجہ سے آ رہا ہے:\n\n1. **پیک بمقابلہ کھلے یونٹس (Pack vs. Unit):** چیک کریں کہ مقدار **Pack** میں لکھی گئی ہے یا **Unit** میں۔\n2. **ڈسکاؤنٹ:** آئٹم کی لائن والا ڈسکاؤنٹ اور بل کے نیچے والا مجموعی ڈسکاؤنٹ دونوں چیک کریں۔\n3. **ٹیکس (GST / WHT):** دیکھیں کہ آئٹم یا بل پر ٹیکس فیصد تو شامل نہیں۔\n4. **پچھلا بقایا بیلنس (Previous Balance):** ادھار بلوں پر موجودہ بل کے ساتھ گاہک کا پچھلا بقایا ملا کر کل رقم دکھائی جاتی ہے۔\n\n*اگر آپ چاہیں تو **Cube** آپ کو بل کے تمام خانوں کا مرحلہ وار ڈیمو دکھا سکتا ہے۔*",
+    links: [
+      { path: "/sale-invoices/create/retail", en: "Inspect Retail Invoice Form", ur: "ریٹیل بل فارم چیک کریں" },
+      { path: "/settings#sale", en: "Check Sale & Tax Rules", ur: "سیل اور ٹیکس سیٹنگز" },
+    ],
+  },
+
+  {
+    id: "assistant_limitations_transparency",
+    phrases: [
+      "what are your limitations", "your limitations", "what can you not do",
+      "are you human", "are you a real person", "can you delete my data",
+      "آپ کی حدود کیا ہیں", "کیا آپ انسان ہیں"
+    ],
+    requiredGroups: [["limitation", "cannot", "human", "boundary", "حدود", "انسان"]],
+    keywords: ["limitations"],
+    preferredAgent: "cube",
+    title: {
+      en: "Cube — Capabilities & Safety Boundaries",
+      ur: "کیوب (Cube) کی صلاحیتیں اور حفاظتی حدود",
+    },
+    en: "**Cube** is your AI software assistant and interactive demonstrator built for **Karobar App ERP v2** (not a human operator):\n\n• **What Cube does:** Answers your questions concisely, diagnoses issues, explains how screens work, and runs grounded, step-by-step interactive walkthroughs.\n• **Safety Boundaries:**\n  1. **No Silent Destructive Actions:** Cube will never silently delete customers, void invoices, or post ledger entries without your explicit action on the screen.\n  2. **Observed vs. Documented Truth:** Cube clearly badges whether an instruction is **🟢 Observed on your current screen** or **📘 Documented for Karobar v2026.10**.",
+    ur: "**کیوب (Cube)** کاروبار ایپ کا مخصوص اے آئی اسسٹنٹ اور انٹرایکٹو گائیڈ ہے:\n\n• **Cube کا کام:** آپ کے سوالات کو سمجھنا، مسائل کی تشخیص کرنا، سافٹ ویئر کے فیچرز کی وضاحت کرنا اور مرحلہ وار عملی ڈیمو (Walkthrough) دکھانا۔\n• **حفاظتی اصول:** اسسٹنٹ کبھی بھی آپ کی اجازت کے بغیر کوئی بل، گاہک یا کھاتہ خودکار طور پر ڈیلیٹ یا تبدیل نہیں کرتا، اور ہمیشہ واضح بتاتا ہے کہ معلومات آپ کی موجودہ اسکرین سے دیکھی گئی ہیں یا دستاویزات سے۔",
+    links: [
+      { path: "/dashboard", en: "Dashboard", ur: "ڈیش بورڈ" },
+    ],
+  },
+
+  {
+    id: "destructive_action_guardrail",
+    phrases: [
+      "delete this customer", "delete customer", "delete all products",
+      "wipe database", "do this for me", "delete supplier",
+      "گاہک ڈیلیٹ کر دیں", "ڈیٹا ختم کریں"
+    ],
+    requiredGroups: [["delete", "wipe", "remove", "destroy", "ڈیلیٹ", "ختم"], ["customer", "supplier", "database", "all", "گاہک", "سپلائر", "ڈیٹا"]],
+    keywords: [],
+    preferredAgent: "nova",
+    riskLevel: "high_destructive",
+    title: {
+      en: "🛡️ Safety Guardrail: Destructive Action vs. Non-Destructive Guide",
+      ur: "🛡️ حفاظتی وارننگ: ریکارڈ ڈیلیٹ کرنے کے اثرات اور محفوظ طریقہ",
+    },
+    en: "Deleting a master record (such as a **Customer**, **Supplier**, or **Product**) affects historical invoices and ledger statements, so **I do not execute deletions automatically**.\n\n**What will be affected if you delete a record:**\n• If a Customer or Supplier already has posted invoices or ledger transactions, the system protects accounting integrity by preventing orphan ledger entries.\n• **How to perform it safely yourself:** Open **Customers (`/customers`)** or **Suppliers (`/suppliers`)**, locate the unused record, and click the **Delete** icon—the app will ask for your confirmation first.",
+    ur: "کسی گاہک، سپلائر یا پروڈکٹ کو ڈیلیٹ کرنے سے کھاتوں اور پرانے بلوں پر اثر پڑتا ہے، اس لیے **اسسٹنٹ خودکار طور پر کوئی ریکارڈ ڈیلیٹ نہیں کرتا**۔\n\n**محفوظ طریقہ کار:**\n• اگر کسی گاہک یا سپلائر کے کھاتے میں لین دین موجود ہو تو سسٹم اکاؤنٹنگ کو محفوظ رکھنے کے لیے اسے غلطی سے ڈیلیٹ ہونے سے روکتا ہے۔\n• غیر استعمال شدہ ریکارڈ ہٹانے کے لیے متعلقہ صفحہ (`/customers` یا `/suppliers`) کھول کر خود تصدیق (Confirm) کے بعد ڈیلیٹ کریں۔",
+    links: [
+      { path: "/customers", en: "Open Customers", ur: "گاہکوں کی فہرست" },
+      { path: "/suppliers", en: "Open Suppliers", ur: "سپلائرز کی فہرست" },
+    ],
+  },
+
+  {
+    id: "compare_adjustment_stocktake_disposal",
+    phrases: [
+      "difference between stock adjustment and stocktake",
+      "difference between stock adjustment",
+      "stock adjustment vs stocktake",
+      "transfer vs adjustment", "adjustment vs disposal",
+      "which stock feature should i use", "compare stock adjustment",
+      "اسٹاک ایڈجسٹمنٹ اور اسٹاک ٹیک میں فرق",
+      "اسٹاک ایڈجسٹمنٹ، اسٹاک ٹیک اور ڈسپوزل میں کیا فرق ہے"
+    ],
+    requiredGroups: [["adjustment", "stocktake", "disposal", "transfer", "ایڈجسٹمنٹ", "آڈٹ", "تلف"], ["difference", "vs", "compare", "why", "فرق", "موازنہ"]],
+    keywords: ["difference", "vs", "compare", "stocktake", "disposal", "فرق"],
+    preferredAgent: "cube",
+    title: {
+      en: "Comparison: Stock Adjustment vs. Stocktake vs. Disposal vs. Transfer",
+      ur: "موازنہ: اسٹاک ایڈجسٹمنٹ، اسٹاک ٹیک آڈٹ، ڈسپوزل اور لوکیشن ٹرانسفر میں فرق",
+    },
+    en: "Each inventory tool preserves a distinct audit trail in Karobar ERP:\n\n1. **Location Transfer (`/product-batches`):** Moves stock between *Godown*, *Shop Floor*, and *Cold Storage* without changing total company stock.\n2. **Stock Adjustment (`/stock-adjustments/create`):** Quick manual `+ / −` correction for **Opening Stock** or single-item count fixes.\n3. **Stocktake Session (`/stocktake-sessions`):** Structured shelf-by-shelf physical counting sheet that calculates variances across an entire Category or Brand.\n4. **Stock Disposal (`/stock-disposals/create`):** Quarantines or writes off **expired / broken** stock and generates an official Disposal Certificate.",
+    ur: "کاروبار ایپ میں اسٹاک کے ان 4 ٹولز کا فرق درج ذیل ہے:\n\n1. **لوکیشن ٹرانسفر (`/product-batches`):** گودام سے دکان یا فریج میں مال منتقل کرنے کے لیے (اس سے کل اسٹاک تبدیل نہیں ہوتا)۔\n2. **اسٹاک ایڈجسٹمنٹ (`/stock-adjustments/create`):** اوپننگ اسٹاک ڈالنے یا کسی ایک آئٹم کی فوری کمی بیشی درست کرنے کے لیے۔\n3. **اسٹاک ٹیک سیشن (`/stocktake-sessions`):** پوری دکان یا کیٹیگری کی شیلف گنتی (Audit) کر کے فرق نکالنے کے لیے۔\n4. **اسٹاک ڈسپوزل (`/stock-disposals/create`):** ایکسپائر یا ٹوٹ پھوٹ کا شکار مال کوارنٹائن یا تلف کرنے کے لیے۔",
+    links: [
+      { path: "/stock-adjustments/create", en: "Stock Adjustment", ur: "اسٹاک ایڈجسٹمنٹ" },
+      { path: "/stocktake-sessions", en: "Stocktake Audit", ur: "اسٹاک ٹیک آڈٹ" },
+      { path: "/stock-disposals", en: "Stock Disposals", ur: "اسٹاک ڈسپوزل" },
+    ],
+  },
+];
+
+// ============================================================================
+// VERSIONED DEMO MANIFESTS (Product Version: 2026.10) FOR CUBE WALKTHROUGHS
+// Grounded step-by-step workflows with screen paths, DOM targets & checkpoints
+// ============================================================================
+export const PRODUCT_VERSION = "2026.10";
+
+export const DEMO_MANIFESTS = {
+  create_purchase_order: {
+    id: "create_purchase_order",
+    product_version: PRODUCT_VERSION,
+    title: {
+      en: "Interactive Demo: Create a Purchase Order (PO)",
+      ur: "عملی ڈیمو: سپلائر کے لیے پرچیز آرڈر (PO) بنانا",
+    },
+    primaryScreen: "/purchase-orders",
+    steps: [
+      {
+        step: 1,
+        screen: "/purchase-orders",
+        screenLabel: { en: "Purchase Orders", ur: "پرچیز آرڈرز" },
+        target: "select, input[placeholder*='Supplier' i], input[type='text']",
+        title: { en: "Select Supplier & Order Date", ur: "سپلائر اور تاریخ منتخب کریں" },
+        instruction: {
+          en: "Open Purchase Orders (`/purchase-orders`) and select the Supplier/Distributor you want to order from.",
+          ur: "Purchase Orders (`/purchase-orders`) کھولیں اور اپنا سپلائر منتخب کریں۔",
+        },
+        observedInstruction: {
+          en: "I can see you're on the Purchase Orders screen. Start by choosing the Supplier and Order Date at the top.",
+          ur: "آپ اس وقت پرچیز آرڈر اسکرین پر موجود ہیں۔ سب سے اوپر سپلائر اور تاریخ منتخب کریں۔",
+        },
+        checkpoint: {
+          en: "Remember: A Purchase Order is a demand sheet—it won't alter your live stock until goods arrive.",
+          ur: "یاد رکھیں: پرچیز آرڈر سے ابھی اسٹاک میں کوئی تبدیلی نہیں ہو گی۔",
+        },
+      },
+      {
+        step: 2,
+        screen: "/purchase-orders",
+        screenLabel: { en: "Purchase Orders", ur: "پرچیز آرڈرز" },
+        target: "input[placeholder*='product' i], input[placeholder*='search' i], button",
+        title: { en: "Add Products or Load Low-Stock Suggestions", ur: "پروڈکٹس شامل کریں یا کم اسٹاک لوڈ کریں" },
+        instruction: {
+          en: "Search and add items manually, or click 'Load Low-Stock / Smart Suggestions' to auto-fill items that need reordering.",
+          ur: "مطلوبہ آئٹمز سرچ کر کے شامل کریں یا کم اسٹاک والے آئٹمز خودکار لوڈ کریں۔",
+        },
+        observedInstruction: {
+          en: "Now search for products in the item selector or click the Low-Stock suggestion button to populate your order rows.",
+          ur: "اب پروڈکٹ سرچ باکس میں آئٹمز شامل کریں یا آٹو سجیشن بٹن دبائیں۔",
+        },
+        checkpoint: {
+          en: "Verify the order quantities and estimated purchase rates.",
+          ur: "ہر آئٹم کی مطلوبہ مقدار چیک کر لیں۔",
+        },
+      },
+      {
+        step: 3,
+        screen: "/purchase-orders",
+        screenLabel: { en: "Purchase Orders", ur: "پرچیز آرڈرز" },
+        target: "button[type='submit'], button",
+        title: { en: "Save PO, Share on WhatsApp, or Convert to GRN", ur: "آرڈر محفوظ کریں، واٹس ایپ کریں یا بل میں بدلیں" },
+        instruction: {
+          en: "Click Save Purchase Order. You can send the PDF to your supplier on WhatsApp, and click 'Convert to Purchase Invoice' when goods arrive.",
+          ur: "Save بٹن دبا کر آرڈر محفوظ کریں۔ مال آنے پر اسے ایک کلک سے پرچیز انوائس میں تبدیل کر لیں۔",
+        },
+        observedInstruction: {
+          en: "Click the Save button to store this PO, then use the row actions to print, WhatsApp, or convert it into a Purchase Invoice.",
+          ur: "Save بٹن پر کلک کریں اور فہرست میں سے پرنٹ یا واٹس ایپ آپشن استعمال کریں۔",
+        },
+        checkpoint: {
+          en: "Walkthrough complete! Your PO is ready without prematurely inflating stock.",
+          ur: "ڈیمو مکمل! آپ کا پرچیز آرڈر تیار ہے۔",
+        },
+      },
+    ],
+  },
+
+  create_purchase_invoice: {
+    id: "create_purchase_invoice",
+    product_version: PRODUCT_VERSION,
+    title: {
+      en: "Interactive Demo: Add New Stock (Purchase Invoice / GRN)",
+      ur: "عملی ڈیمو: نیا اسٹاک اور پرچیز بل (GRN) درج کرنا",
+    },
+    primaryScreen: "/purchase-invoices/create",
+    steps: [
+      {
+        step: 1,
+        screen: "/purchase-invoices/create",
+        screenLabel: { en: "Create Purchase Invoice", ur: "نیا پرچیز بل" },
+        target: "input[type='text'], select",
+        title: { en: "Select Supplier & Supplier Bill #", ur: "سپلائر اور بل نمبر درج کریں" },
+        instruction: {
+          en: "Open Create Purchase Invoice (`/purchase-invoices/create` or `Alt+1`), select the Supplier, and enter their Invoice/Bill reference number.",
+          ur: "Create Purchase Invoice (`/purchase-invoices/create`) کھولیں، سپلائر منتخب کریں اور بل نمبر لکھیں۔",
+        },
+        observedInstruction: {
+          en: "I can see you're on the Create Purchase Invoice form. Select the Supplier and enter the supplier's Bill # in the top header fields.",
+          ur: "آپ اس وقت پرچیز انوائس فارم پر ہیں۔ سب سے اوپر سپلائر اور اس کا بل نمبر درج کریں۔",
+        },
+        checkpoint: {
+          en: "Matching the supplier's physical invoice number makes ledger audits effortless.",
+          ur: "سپلائر کا اصل بل نمبر لکھنے سے کھاتہ ملانا آسان رہتا ہے۔",
+        },
+      },
+      {
+        step: 2,
+        screen: "/purchase-invoices/create",
+        screenLabel: { en: "Create Purchase Invoice", ur: "نیا پرچیز بل" },
+        target: "table input, input[placeholder*='product' i], input[placeholder*='batch' i]",
+        title: { en: "Enter Product, Batch #, Expiry, Qty & Bonus", ur: "پروڈکٹ، بیچ نمبر، ایکسپائری، مقدار اور بونس لکھیں" },
+        instruction: {
+          en: "Add each received product and fill in Batch Number, Expiry Date, Pack/Unit Quantity, Bonus Units, Purchase Cost, and Retail Price (MRP).",
+          ur: "پروڈکٹ منتخب کریں اور بیچ نمبر، ایکسپائری تاریخ، مقدار، بونس یونٹس اور قیمتِ خرید و فروخت درج کریں۔",
+        },
+        observedInstruction: {
+          en: "In the item table on your screen, search a product and enter its Batch #, Expiry Date, Quantity, optional Bonus units, Cost, and MRP.",
+          ur: "نیچے دیے گئے ٹیبل میں پروڈکٹ سرچ کریں اور بیچ، ایکسپائری، مقدار اور قیمتیں درج کریں۔",
+        },
+        checkpoint: {
+          en: "Bonus units increase your physical batch stock at zero extra cost!",
+          ur: "بونس یونٹس مفت اسٹاک کے طور پر آپ کے بیچ میں جمع ہو جاتے ہیں۔",
+        },
+      },
+      {
+        step: 3,
+        screen: "/purchase-invoices/create",
+        screenLabel: { en: "Create Purchase Invoice", ur: "نیا پرچیز بل" },
+        target: "button[type='submit'], button",
+        title: { en: "Enter Paid Amount (or 0 for Credit) & Save", ur: "ادا شدہ رقم لکھیں (یا ادھار رکھیں) اور Save دبائیں" },
+        instruction: {
+          en: "Enter any cash/bank Paid Amount (or leave 0 for supplier credit payable) and press Save (`Ctrl+S`).",
+          ur: "اگر نقد ادائیگی کی ہے تو Paid Amount لکھیں ورنہ ادھار کے لیے 0 چھوڑ کر Save (`Ctrl+S`) دبائیں۔",
+        },
+        observedInstruction: {
+          en: "Review the bottom totals on your screen, enter Paid Amount if paying now, and click Save (`Ctrl+S`) to post stock and ledger entries.",
+          ur: "بل کے نیچے کل رقم چیک کریں اور Save بٹن دبا کر اسٹاک جمع کر لیں۔",
+        },
+        checkpoint: {
+          en: "Walkthrough complete! Batch stock and Supplier Ledger update immediately on Save.",
+          ur: "ڈیمو مکمل! محفوظ کرتے ہی اسٹاک اور سپلائر کھاتہ اپڈیٹ ہو جائے گا۔",
+        },
+      },
+    ],
+  },
+
+  pos_counter_billing: {
+    id: "pos_counter_billing",
+    product_version: PRODUCT_VERSION,
+    title: {
+      en: "Interactive Demo: High-Speed Barcode POS Billing",
+      ur: "عملی ڈیمو: بارکوڈ POS ٹرمینل پر تیز بلنگ",
+    },
+    primaryScreen: "/sale-invoices/pos",
+    steps: [
+      {
+        step: 1,
+        screen: "/sale-invoices/pos",
+        screenLabel: { en: "Barcode POS Terminal", ur: "بارکوڈ POS ٹرمینل" },
+        target: "input[type='text'], input[type='search']",
+        title: { en: "Scan Barcode or Search Medicine (F2)", ur: "بارکوڈ اسکین کریں یا نام سے سرچ کریں (F2)" },
+        instruction: {
+          en: "Open Barcode POS (`/sale-invoices/pos`). Scan an item's barcode or press `F2` to search by name or generic salt.",
+          ur: "بارکوڈ POS (`/sale-invoices/pos`) کھولیں اور بارکوڈ اسکین کریں یا `F2` دبا کر نام سے سرچ کریں۔",
+        },
+        observedInstruction: {
+          en: "I can see you're on the Barcode POS terminal. Scan a barcode or type in the search bar (`F2`)—the earliest expiring batch (FEFO) is picked automatically.",
+          ur: "آپ اس وقت بارکوڈ POS پر موجود ہیں۔ آئٹم اسکین کریں یا سرچ بار میں نام لکھیں۔",
+        },
+        checkpoint: {
+          en: "FEFO automatically selects the batch expiring soonest to prevent expiry loss.",
+          ur: "سسٹم خودکار طور پر قریب ایکسپائری والا بیچ پہلے منتخب کرتا ہے۔",
+        },
+      },
+      {
+        step: 2,
+        screen: "/sale-invoices/pos",
+        screenLabel: { en: "Barcode POS Terminal", ur: "بارکوڈ POS ٹرمینل" },
+        target: "table input, input[type='number']",
+        title: { en: "Adjust Pack / Loose Units & Discount", ur: "پیک یا کھلی گولیوں کی تعداد اور ڈسکاؤنٹ درج کریں" },
+        instruction: {
+          en: "Set Pack or Loose Unit quantities and optional discount. If the customer needs to pause, press `F8` to Hold the bill.",
+          ur: "پورا ڈبہ یا کھلی گولیوں کی تعداد لکھیں۔ اگر بل روکنا ہو تو `F8` (Hold) دبائیں۔",
+        },
+        observedInstruction: {
+          en: "In your active POS cart, adjust Pack/Unit quantities or line discount, or press `F8` if you want to park this cart.",
+          ur: "کارٹ میں مقدار یا ڈسکاؤنٹ ایڈجسٹ کریں۔",
+        },
+        checkpoint: {
+          en: "Selling loose units automatically deducts from the pack's unit count.",
+          ur: "کھلی گولیاں بیچنے سے ڈبے کے یونٹس خودکار کم ہو جاتے ہیں۔",
+        },
+      },
+      {
+        step: 3,
+        screen: "/sale-invoices/pos",
+        screenLabel: { en: "Barcode POS Terminal", ur: "بارکوڈ POS ٹرمینل" },
+        target: "button[type='submit'], button",
+        title: { en: "Collect Cash / Bank Payment & Print Receipt (Ctrl+P)", ur: "نقد یا بینک رقم وصول کریں اور سلپ پرنٹ کریں" },
+        instruction: {
+          en: "Enter Cash Received to see instant Change Due, then press `Ctrl+P` (Save & Print) or `Ctrl+S` (Save).",
+          ur: "وصول شدہ رقم درج کریں اور `Ctrl+P` دبا کر بل محفوظ اور پرنٹ کر لیں۔",
+        },
+        observedInstruction: {
+          en: "Complete the checkout panel on your screen and press `Ctrl+P` to print the thermal receipt.",
+          ur: "ادائیگی کی رقم لکھیں اور `Ctrl+P` دبا کر رسید پرنٹ کریں۔",
+        },
+        checkpoint: {
+          en: "Walkthrough complete! Stock, Cash Drawer, COGS, and General Ledger are all updated.",
+          ur: "ڈیمو مکمل! اسٹاک اور کیش ڈراور خودکار اپڈیٹ ہو چکے ہیں۔",
+        },
+      },
+    ],
+  },
+
+  create_retail_invoice: {
+    id: "create_retail_invoice",
+    product_version: PRODUCT_VERSION,
+    title: {
+      en: "Interactive Demo: Create a Retail / Credit Sale Invoice",
+      ur: "عملی ڈیمو: ریٹیل یا ادھار سیل انوائس بنانا",
+    },
+    primaryScreen: "/sale-invoices/create/retail",
+    steps: [
+      {
+        step: 1,
+        screen: "/sale-invoices/create/retail",
+        screenLabel: { en: "Create Retail Sale Invoice", ur: "ریٹیل سیل انوائس" },
+        target: "select, input[type='text']",
+        title: { en: "Choose Walk-In or Credit Customer", ur: "نقد یا ادھار والا گاہک منتخب کریں" },
+        instruction: {
+          en: "Open Create Retail Invoice (`/sale-invoices/create/retail` or `Alt+2`) and select either Walk-In Customer or a named Customer for Udhar/Credit.",
+          ur: "Create Retail Invoice (`/sale-invoices/create/retail`) کھولیں اور گاہک منتخب کریں۔",
+        },
+        observedInstruction: {
+          en: "I can see you're on the Retail Sale Invoice screen. Choose your Customer at the top to load their discount rules and credit limit.",
+          ur: "آپ اس وقت ریٹیل سیل بل اسکرین پر ہیں۔ سب سے اوپر گاہک منتخب کریں۔",
+        },
+        checkpoint: {
+          en: "Named customers allow partial payment or full credit (`Udhar`) tracking.",
+          ur: "رجسٹرڈ گاہک منتخب کرنے سے ادھار کھاتہ خودکار منیج ہوتا ہے۔",
+        },
+      },
+      {
+        step: 2,
+        screen: "/sale-invoices/create/retail",
+        screenLabel: { en: "Create Retail Sale Invoice", ur: "ریٹیل سیل انوائس" },
+        target: "table input, input[placeholder*='product' i]",
+        title: { en: "Add Products, Verify Batch & Check Line Totals", ur: "آئٹمز شامل کریں اور بیچ و ٹوٹل چیک کریں" },
+        instruction: {
+          en: "Search products, pick the batch, enter Pack or Unit quantity, and verify row discounts and tax.",
+          ur: "پروڈکٹس شامل کریں، بیچ اور مقدار لکھیں اور ڈسکاؤنٹ چیک کریں۔",
+        },
+        observedInstruction: {
+          en: "Add products into the invoice rows on your screen and verify Pack vs. Unit quantities and line discounts.",
+          ur: "بل کی لائنوں میں پروڈکٹ اور مقدار درج کریں۔",
+        },
+        checkpoint: {
+          en: "Each line shows live available batch stock and expiry date.",
+          ur: "ہر لائن میں موجودہ اسٹاک اور ایکسپائری نظر آتی ہے۔",
+        },
+      },
+      {
+        step: 3,
+        screen: "/sale-invoices/create/retail",
+        screenLabel: { en: "Create Retail Sale Invoice", ur: "ریٹیل سیل انوائس" },
+        target: "button[type='submit'], button",
+        title: { en: "Set Received Amount & Save / Print", ur: "وصول شدہ رقم لکھیں اور بل محفوظ کریں" },
+        instruction: {
+          en: "Enter Received Amount (any unpaid balance goes to Customer Udhar Ledger) and click Save & Print (`Ctrl+P`).",
+          ur: "وصول شدہ رقم لکھیں (باقی رقم خودکار ادھار کھاتے میں جائے گی) اور Save دبائیں۔",
+        },
+        observedInstruction: {
+          en: "Check the bottom payment summary on your screen and click Save (`Ctrl+S`) or Save & Print (`Ctrl+P`).",
+          ur: "نیچے ٹوٹل اور وصولی چیک کر کے Save & Print پر کلک کریں۔",
+        },
+        checkpoint: {
+          en: "Walkthrough complete!",
+          ur: "ڈیمو مکمل!",
+        },
+      },
+    ],
+  },
+
+  customer_udhar_recovery: {
+    id: "customer_udhar_recovery",
+    product_version: PRODUCT_VERSION,
+    title: {
+      en: "Interactive Demo: Check Customer Udhar & Record Payment",
+      ur: "عملی ڈیمو: گاہک کا ادھار کھاتہ اور وصولی درج کرنا",
+    },
+    primaryScreen: "/customer-ledger",
+    steps: [
+      {
+        step: 1,
+        screen: "/customer-ledger",
+        screenLabel: { en: "Customer Ledger", ur: "کسٹمر کھاتہ" },
+        target: "select, input[type='text']",
+        title: { en: "Select Customer to View Statement", ur: "کھاتہ دیکھنے کے لیے گاہک منتخب کریں" },
+        instruction: {
+          en: "Open Customer Ledger (`/customer-ledger`) and select the Customer from the dropdown.",
+          ur: "Customer Ledger (`/customer-ledger`) کھولیں اور گاہک منتخب کریں۔",
+        },
+        observedInstruction: {
+          en: "I can see you're on the Customer Ledger page. Select a customer at the top to load their bill-by-bill statement.",
+          ur: "آپ اس وقت کسٹمر لیجر اسکرین پر ہیں۔ اوپر سے گاہک منتخب کریں۔",
+        },
+        checkpoint: {
+          en: "You'll see Opening Balance, Credit Sales, Returns, Payments, and Net Receivable.",
+          ur: "یہاں آپ کو گاہک کے تمام بل اور کل بقایا بیلنس نظر آئے گا۔",
+        },
+      },
+      {
+        step: 2,
+        screen: "/customer-ledger",
+        screenLabel: { en: "Customer Ledger", ur: "کسٹمر کھاتہ" },
+        target: "button",
+        title: { en: "Click Record Payment & Choose Cash/Bank Account", ur: "Record Payment دبائیں اور رقم و اکاؤنٹ درج کریں" },
+        instruction: {
+          en: "Click '+ Record Payment', enter the received amount, choose Cash Drawer or Bank/Wallet, and click Save.",
+          ur: "'+ Record Payment' بٹن پر کلک کریں، وصول شدہ رقم اور کیش/بینک اکاؤنٹ لکھ کر Save کریں۔",
+        },
+        observedInstruction: {
+          en: "Click the Record Payment button on your screen to post the customer's payment into Cash Drawer or Bank.",
+          ur: "اپنی اسکرین پر موجود Record Payment بٹن دبائیں اور وصولی محفوظ کریں۔",
+        },
+        checkpoint: {
+          en: "Walkthrough complete! The customer's Udhar balance decreases immediately.",
+          ur: "ڈیمو مکمل! گاہک کا بقایا بیلنس فوری کم ہو جائے گا۔",
+        },
+      },
+    ],
+  },
+};
+
+/**
+ * Maps an intent ID or query to a matching Cube Demo Manifest ID when a walkthrough is available.
+ */
+export function resolveWorkflowIdForIntent(intentId = "", cleanedQuery = "", currentPath = "") {
+  if (intentId === "create_purchase_order" || intentId === "po_vs_purchase_invoice" || intentId === "smart_reorder_forecast") {
+    return "create_purchase_order";
+  }
+  if (intentId === "add_stock_purchase_invoice" || intentId === "bonus_units_scheme") {
+    return "create_purchase_invoice";
+  }
+  if (intentId === "how_to_make_sale_billing" || intentId === "sell_loose_tablets_pack_vs_unit" || intentId === "hold_park_recall_bill") {
+    return currentPath === "/sale-invoices/create/retail" ? "create_retail_invoice" : "pos_counter_billing";
+  }
+  if (intentId === "how_to_give_discount" || intentId === "troubleshoot_wrong_total_calculation") {
+    return "create_retail_invoice";
+  }
+  if (intentId === "customer_udhar_ledger_payment" || intentId === "customer_credit_limit_hold") {
+    return "customer_udhar_recovery";
+  }
+  if (cleanedQuery.includes("purchase order") || cleanedQuery.includes("پرچیز آرڈر")) {
+    return "create_purchase_order";
+  }
+  if (cleanedQuery.includes("purchase invoice") || cleanedQuery.includes("add stock") || cleanedQuery.includes("نیا اسٹاک")) {
+    return "create_purchase_invoice";
+  }
+  if (cleanedQuery.includes("udhar") || cleanedQuery.includes("customer ledger") || cleanedQuery.includes("ادھار")) {
+    return "customer_udhar_recovery";
+  }
+  if (cleanedQuery.includes("pos") || cleanedQuery.includes("sale") || cleanedQuery.includes("سیل")) {
+    return "pos_counter_billing";
+  }
+  if (currentPath.startsWith("/purchase-orders")) return "create_purchase_order";
+  if (currentPath.startsWith("/purchase-invoices")) return "create_purchase_invoice";
+  if (currentPath.startsWith("/customer-ledger")) return "customer_udhar_recovery";
+  if (currentPath.startsWith("/sale-invoices/create")) return "create_retail_invoice";
+  return "pos_counter_billing";
+}
+
+/**
+ * Router-First Query Orchestrator (`routeUserQuery`):
+ * Evaluates intent, risk, evidence tier, and interactive walkthrough triggers BEFORE response generation.
+ */
+export function routeUserQuery(
+  queryText = "",
+  currentAgent = "cube",
+  currentGuide = null,
+  allScreenGuides = {},
+  hasActiveDemo = false
+) {
+  const raw = (queryText || "").trim();
+  if (!raw) return null;
+
+  const analysis = analyzeQuery(raw);
+  const { cleaned } = analysis;
+  const currentPath = currentGuide?.key || "/dashboard";
+
+  // 1. Check Explicit Demonstration / Interactive Walkthrough Request
+  const wantsInteractiveDemo =
+    /\b(show me|walk me through|step by step demo|interactive demo|take me through|demonstrate)\b/.test(cleaned) ||
+    cleaned === "show me" ||
+    cleaned.includes("ڈیمو دکھائیں") ||
+    cleaned.includes("مرحلہ وار سکھائیں") ||
+    cleaned.includes("چل کر دکھائیں");
+
+  // 2. Get the grounded answer from the trained engine
+  const baseAnswer = answerWithTrainedEngine(raw, currentGuide, allScreenGuides);
+
+  // Find matching top intent metadata (for riskLevel / workflowId)
+  let topIntent = null;
+  let topScore = 0;
+  for (const intent of TRAINED_ERP_INTENTS) {
+    const sc = scoreTrainedIntent(intent, analysis);
+    if (sc > topScore) {
+      topScore = sc;
+      topIntent = intent;
+    }
+  }
+
+  const intentId = topIntent && topScore >= 24 ? topIntent.id : "screen_contextual";
+  const risk = topIntent?.riskLevel || "low";
+  const workflowId =
+    topIntent?.handoffWorkflowId ||
+    resolveWorkflowIdForIntent(intentId, cleaned, currentPath);
+
+  // Determine Evidence Tier (Observed in Live UI vs Documented v2026.10)
+  const primaryAnswerPath = baseAnswer?.links?.[0]?.path || currentPath;
+  const isObservedInCurrentUi =
+    primaryAnswerPath === currentPath ||
+    cleaned.includes("this screen") ||
+    cleaned.includes("یہ اسکرین");
+
+  const evidenceTier = isObservedInCurrentUi
+    ? "observed_ui_state"
+    : "documented_version_2026_10";
+
+  const evidenceBadge = isObservedInCurrentUi
+    ? {
+        en: `🟢 Observed on current screen (${currentGuide?.title?.en || currentPath})`,
+        ur: `🟢 آپ کی موجودہ اسکرین (${currentGuide?.title?.ur || currentPath}) کے مطابق`,
+      }
+    : {
+        en: `📘 Grounded in Karobar Docs (v${PRODUCT_VERSION})`,
+        ur: `📘 کاروبار ایپ مستند گائیڈ (v${PRODUCT_VERSION})`,
+      };
+
+  return {
+    agent: "cube",
+    intentId,
+    risk,
+    confidence: topScore >= 45 ? 0.96 : 0.82,
+    evidenceTier,
+    evidenceBadge,
+    handoffOccurred: false,
+    handoffFrom: null,
+    handoffReason: null,
+    workflowId,
+    startDemoNow: wantsInteractiveDemo,
+    answer: {
+      ...baseAnswer,
+      evidenceBadge,
+      workflowId,
+      risk,
+    },
+  };
+}
+
+
+/**
+ * Scores a single trained intent against the analyzed user query.
+ * Uses strict word/stem boundaries so short words never match inside unrelated words.
+ */
+function scoreTrainedIntent(intent, analysis) {
+  const { cleaned, rawWords, wordSet, stemSet } = analysis;
+  if (!cleaned) return 0;
+
+  if (intent.onlyWhenShort && rawWords.length > 5) {
+    return 0;
+  }
+
+  // Disqualify if any negativePhrase matches on word boundaries
+  if (intent.negativePhrases?.length) {
+    for (const neg of intent.negativePhrases) {
+      if (hasBoundedPhrase(cleaned, wordSet, stemSet, neg)) {
+        return -100;
+      }
+    }
+  }
+
+  let score = 0;
+
+  // 1. High-precision phrase matching (word-bounded)
+  if (intent.phrases?.length) {
+    for (const phrase of intent.phrases) {
+      const p = phrase.toLowerCase().trim();
+      if (cleaned === p) {
+        score += 140;
+      } else if (hasBoundedPhrase(cleaned, wordSet, stemSet, p)) {
+        const wordCount = p.split(" ").length;
+        score += 55 + wordCount * 22;
+      }
+    }
+  }
+
+  // 2. Compositional requiredGroups (every group must have at least 1 matching word/stem)
+  if (intent.requiredGroups?.length) {
+    let allGroupsMatched = true;
+    let matchedGroupTokens = 0;
+    for (const group of intent.requiredGroups) {
+      let groupHit = false;
+      for (const candidate of group) {
+        if (hasBoundedPhrase(cleaned, wordSet, stemSet, candidate)) {
+          groupHit = true;
+          matchedGroupTokens += 1;
+        }
+      }
+      if (!groupHit) {
+        allGroupsMatched = false;
+        break;
+      }
+    }
+    if (allGroupsMatched) {
+      score += 65 + intent.requiredGroups.length * 18 + matchedGroupTokens * 6;
+    }
+  }
+
+  // 3. Supporting keywords (strictly word-bounded)
+  if (intent.keywords?.length) {
+    for (const kw of intent.keywords) {
+      if (hasBoundedPhrase(cleaned, wordSet, stemSet, kw)) {
+        score += 24;
+      }
+    }
+  }
+
+  return score;
+}
+
+/**
+ * Synthesizes a targeted, intelligent answer from a `SCREEN_GUIDES` entry
+ * tailored to whether the user asked "how to", "impact", "features", or general overview.
+ */
+export function buildTailoredScreenAnswer(guide, analysis = null, customTip = null) {
+  if (!guide) return null;
+
+  const isHow = analysis?.isHowQuery;
+  const isImpact = analysis?.isImpactQuery;
+
+  const enParts = [];
+  const urParts = [];
+
+  if (isHow && guide.steps?.en?.length) {
+    enParts.push(`**Step-by-Step on ${guide.title.en} (\`${guide.key}\`):**`);
+    enParts.push(guide.steps.en.map((s, i) => `${i + 1}. ${s}`).join("\n"));
+    if (guide.impacts?.en) {
+      enParts.push(`**Result:** ${guide.impacts.en}`);
+    }
+  } else if (isImpact && guide.impacts?.en) {
+    enParts.push(`**Stock & Accounting Impact:** ${guide.impacts.en}`);
+    enParts.push(guide.summary.en);
+  } else {
+    enParts.push(guide.summary.en);
+    if (guide.steps?.en?.length) {
+      enParts.push(
+        `**How to use:**\n` + guide.steps.en.map((s, i) => `${i + 1}. ${s}`).join("\n")
+      );
+    }
+    if (guide.impacts?.en) {
+      enParts.push(`**Stock & Ledger Impact:** ${guide.impacts.en}`);
+    }
+  }
+
+  if (isHow && guide.steps?.ur?.length) {
+    urParts.push(`**${guide.title.ur} — استعمال کا مرحلہ وار طریقہ:**`);
+    urParts.push(guide.steps.ur.map((s, i) => `${i + 1}. ${s}`).join("\n"));
+    if (guide.impacts?.ur) {
+      urParts.push(`**نتیجہ:** ${guide.impacts.ur}`);
+    }
+  } else if (isImpact && guide.impacts?.ur) {
+    urParts.push(`**اسٹاک اور کھاتوں پر اثر:** ${guide.impacts.ur}`);
+    urParts.push(guide.summary.ur);
+  } else {
+    urParts.push(guide.summary.ur);
+    if (guide.steps?.ur?.length) {
+      urParts.push(
+        `**استعمال کا طریقہ:**\n` + guide.steps.ur.map((s, i) => `${i + 1}. ${s}`).join("\n")
+      );
+    }
+    if (guide.impacts?.ur) {
+      urParts.push(`**کھاتے اور اسٹاک پر اثر:** ${guide.impacts.ur}`);
+    }
+  }
+
+  if (customTip?.en) enParts.push(customTip.en);
+  if (customTip?.ur) urParts.push(customTip.ur);
+
+  const primaryLink =
+    guide.key && !guide.key.includes(":")
+      ? [{ path: guide.key, en: `Open ${guide.title.en}`, ur: `${guide.title.ur} کھولیں` }]
+      : [];
+  const extraLinks = (guide.relatedRoutes || [])
+    .filter((r) => r.path !== guide.key)
+    .slice(0, 2);
+
+  return {
+    title: guide.title,
+    en: enParts.join("\n\n"),
+    ur: urParts.join("\n\n"),
+    links: [...primaryLink, ...extraLinks],
+  };
+}
+
+/**
+ * Scores a `SCREEN_GUIDES` entry using strict word-boundary token matching (never substring matching!).
+ */
+function scoreScreenGuide(guide, analysis) {
+  const { meaningfulWords, meaningfulStems } = analysis;
+  if (!meaningfulWords.length) return 0;
+
+  const titleAnalysis = analyzeQuery(`${guide.title.en} ${guide.title.ur} ${guide.key}`);
+  const bodyAnalysis = analyzeQuery(
+    `${guide.section.en} ${guide.section.ur} ${guide.summary.en} ${guide.summary.ur} ${(guide.steps?.en || []).join(" ")} ${(guide.features?.en || []).join(" ")}`
+  );
+
+  let score = 0;
+  let titleHits = 0;
+
+  for (let i = 0; i < meaningfulWords.length; i++) {
+    const w = meaningfulWords[i];
+    const st = meaningfulStems[i];
+
+    if (titleAnalysis.wordSet.has(w) || titleAnalysis.stemSet.has(st)) {
+      score += 28;
+      titleHits += 1;
+    } else if (bodyAnalysis.wordSet.has(w) || bodyAnalysis.stemSet.has(st)) {
+      score += 9;
+    }
+  }
+
+  if (titleHits >= 2) {
+    score += 25;
+  }
+
+  return score;
+}
+
+/**
+ * Main Entry Point: Answers any user question in English, Urdu, or Roman Urdu
+ * using the trained Karobar ERP Intelligence Engine.
+ */
+export function answerWithTrainedEngine(
+  queryText = "",
+  currentGuide = null,
+  allScreenGuides = {}
+) {
+  const raw = (queryText || "").trim();
+  if (!raw) return null;
+
+  const analysis = analyzeQuery(raw);
+  const { cleaned } = analysis;
+  const fallbackGuide = currentGuide || allScreenGuides["/dashboard"];
+
+  // 1. Explicit "Explain this screen / current page" intent
+  if (
+    cleaned.includes("this screen") ||
+    cleaned.includes("this page") ||
+    cleaned.includes("current screen") ||
+    cleaned.includes("yeh screen") ||
+    cleaned.includes("ye screen") ||
+    cleaned.includes("یہ اسکرین") ||
+    cleaned.includes("یہ صفحہ") ||
+    cleaned === "what does this do"
+  ) {
+    return buildTailoredScreenAnswer(fallbackGuide, analysis);
+  }
+
+  // 2. Score all Trained ERP Intents
+  let bestIntent = null;
+  let bestIntentScore = 0;
+
+  for (const intent of TRAINED_ERP_INTENTS) {
+    const sc = scoreTrainedIntent(intent, analysis);
+    if (sc > bestIntentScore) {
+      bestIntentScore = sc;
+      bestIntent = intent;
+    }
+  }
+
+  if (bestIntent && bestIntentScore >= 45) {
+    return {
+      title: bestIntent.title,
+      en: bestIntent.en,
+      ur: bestIntent.ur,
+      links: bestIntent.links || [],
+    };
+  }
+
+  // 3. Check FAQ entries across all screens (word-bounded)
+  for (const guide of Object.values(allScreenGuides)) {
+    for (const faq of guide.faqs || []) {
+      const faqAnalysis = analyzeQuery(`${faq.q.en} ${faq.q.ur}`);
+      let hits = 0;
+      for (const st of analysis.meaningfulStems) {
+        if (faqAnalysis.stemSet.has(st) && st.length > 2) {
+          hits += 1;
+        }
+      }
+      if (hits >= 3) {
+        return {
+          title: faq.q,
+          en: `${faq.a.en}\n\n**Screen:** ${guide.title.en} (\`${guide.key}\`)`,
+          ur: `${faq.a.ur}\n\n**متعلقہ اسکرین:** ${guide.title.ur}`,
+          links: [
+            ...(guide.key.includes(":")
+              ? []
+              : [{ path: guide.key, en: `Open ${guide.title.en}`, ur: `${guide.title.ur} کھولیں` }]),
+            ...(guide.relatedRoutes || []).slice(0, 2),
+          ],
+        };
+      }
+    }
+  }
+
+  // 4. Score all Screen Guides on word/stem boundaries
+  let bestGuide = null;
+  let bestGuideScore = 0;
+
+  for (const guide of Object.values(allScreenGuides)) {
+    const gScore = scoreScreenGuide(guide, analysis);
+    if (gScore > bestGuideScore) {
+      bestGuideScore = gScore;
+      bestGuide = guide;
+    }
+  }
+
+  if (bestGuide && bestGuideScore >= 28) {
+    return buildTailoredScreenAnswer(bestGuide, analysis);
+  }
+
+  // 5. If weak intent match (24..44), still prefer the trained intent over a generic fallback
+  if (bestIntent && bestIntentScore >= 24) {
+    return {
+      title: bestIntent.title,
+      en: bestIntent.en,
+      ur: bestIntent.ur,
+      links: bestIntent.links || [],
+    };
+  }
+
+  // 6. Helpful Guided Directory Response (never dumps an unrelated screen title!)
+  return {
+    title: {
+      en: `How Can I Help You on ${fallbackGuide?.title?.en || "Karobar ERP"}?`,
+      ur: `${fallbackGuide?.title?.ur || "کاروبار ایپ"} — میں آپ کی کیا مدد کر سکتا ہوں؟`,
+    },
+    en: `I want to make sure I give you the exact answer for **"${raw}"**.\n\nHere is what your current screen (**${fallbackGuide?.title?.en}**) does:\n${fallbackGuide?.summary?.en}\n\n💡 **Or ask me directly about any Karobar workflow:**\n• **Purchasing:** *"How to make a Purchase Order"*, *"How to add new stock"*, *"How to return items to supplier"*\n• **Sales & POS:** *"How to sell loose tablets"*, *"How to give discount"*, *"How to hold a bill"*, *"How to find substitute medicine"*\n• **Finance & HR:** *"How to check customer udhar"*, *"How to pay supplier"*, *"How to mark attendance & pay salary"*`,
+    ur: `آپ کے سوال **"${raw}"** کے حوالے سے رہنمائی:\n\nآپ اس وقت **${fallbackGuide?.title?.ur}** اسکرین پر موجود ہیں:\n${fallbackGuide?.summary?.ur}\n\n💡 **آپ مجھ سے کوئی بھی مخصوص سوال پوچھ سکتے ہیں:**\n• **خریداری:** *"پرچیز آرڈر کیسے بنائیں"*, *"نیا اسٹاک کیسے ڈالیں"*, *"سپلائر کو مال واپس کیسے کریں"*\n• **سیلز اور POS:** *"کھلی گولیاں کیسے بیچیں"*, *"ڈسکاؤنٹ کیسے دیں"*, *"بل ہولڈ کیسے کریں"*\n• **کھاتے اور اسٹاف:** *"گاہک کا ادھار کھاتہ"*, *"سپلائر کو پیمنٹ"*, *"ملازمین کی حاضری اور تنخواہ"*`,
+    links: [
+      ...(fallbackGuide?.key && !fallbackGuide.key.includes(":")
+        ? [{ path: fallbackGuide.key, en: `Current: ${fallbackGuide.title.en}`, ur: `${fallbackGuide.title.ur}` }]
+        : []),
+      { path: "/sale-invoices/pos", en: "Barcode POS", ur: "بارکوڈ POS" },
+      { path: "/purchase-invoices/create", en: "Add Stock (Purchase Invoice)", ur: "نیا اسٹاک ڈالیں" },
+    ],
+  };
+}
+
+
+

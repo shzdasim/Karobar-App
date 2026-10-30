@@ -28,6 +28,8 @@ export const CategoryImportModel = withLazyModal(() => import("./CategoryImportM
 export const SupplierImportModal = withLazyModal(() => import("./SupplierImportModal.jsx"));
 export const ProductSearchModal = withLazyModal(() => import("./ProductSearchModal.jsx"));
 export const PageSearchModal = withLazyModal(() => import("./PageSearchModal.jsx"));
+export const FeatureGuideBot = withLazyModal(() => import("./FeatureGuideBot.jsx"));
+export { GuideBotTopbarButton, GuideBotAvatar } from "./GuideBotTrigger.jsx";
 
 export { default as TextSearch } from "./TextSearch.jsx";
 export { default as ProductSearch } from "./ProductSearch.jsx";

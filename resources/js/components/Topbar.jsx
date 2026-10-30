@@ -21,11 +21,13 @@ import { useTheme } from "@/context/ThemeContext.jsx";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { usePermissions } from "@/api/usePermissions.js";
 import ThemeToggle from "./ThemeToggle.jsx";
+import { GuideBotTopbarButton, useGuideBotOpenState } from "./GuideBotTrigger.jsx";
 import axios from "axios";
 
 const ProductSearchModal = lazy(() => import("@/components/ProductSearchModal.jsx"));
 const PageSearchModal = lazy(() => import("@/components/PageSearchModal.jsx"));
 const KeyboardShortcutsModal = lazy(() => import("@/components/KeyboardShortcutsModal.jsx"));
+const FeatureGuideBot = lazy(() => import("@/components/FeatureGuideBot.jsx"));
 const NotificationCenter = lazy(() => import("./NotificationCenter.jsx"));
 const CashDrawerModal = lazy(() => import("./CashDrawerModal.jsx"));
 const AccountsModal = lazy(() => import("./AccountsModal.jsx"));
@@ -91,6 +93,9 @@ export default function Topbar({
 
   // Keyboard Shortcuts Modal state (opens anywhere with ?)
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
+
+  // Screen-Aware Bilingual Feature Guide Bot state (opens anywhere with Alt+G and stays open across pages)
+  const [guideBotOpen, setGuideBotOpen] = useGuideBotOpenState();
 
   const canViewAccounts = has("account.view");
 
@@ -619,6 +624,13 @@ export default function Topbar({
         return;
       }
 
+      // Alt+G opens the Screen-Aware Bilingual Guide Bot anywhere
+      if (e.code === "KeyG" || e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        setGuideBotOpen((v) => !v);
+        return;
+      }
+
       if (isTyping) return;
 
       if (e.code === "Digit1" || e.code === "Numpad1") {
@@ -636,16 +648,19 @@ export default function Topbar({
     const onOpenSearch = () => setProductSearchModalOpen(true);
     const onOpenPageSearch = () => setPageSearchModalOpen(true);
     const onOpenShortcuts = () => setShortcutsModalOpen(true);
+    const onOpenGuideBot = () => setGuideBotOpen(true);
 
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("open-product-search", onOpenSearch);
     window.addEventListener("open-page-search", onOpenPageSearch);
     window.addEventListener("open-shortcuts-modal", onOpenShortcuts);
+    window.addEventListener("open-guide-bot", onOpenGuideBot);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("open-product-search", onOpenSearch);
       window.removeEventListener("open-page-search", onOpenPageSearch);
       window.removeEventListener("open-shortcuts-modal", onOpenShortcuts);
+      window.removeEventListener("open-guide-bot", onOpenGuideBot);
     };
   }, []);
 
@@ -739,6 +754,13 @@ export default function Topbar({
                 Alt+P
               </kbd>
             </button>
+
+            {/* Screen-Aware Bilingual Guide Bot (English + اردو) (Alt+G) */}
+            <GuideBotTopbarButton
+              onClick={() => setGuideBotOpen((v) => !v)}
+              isOpen={guideBotOpen}
+              pageTitle={pageTitle}
+            />
           </div>
 
           {/* Right: 1) Financial Registers | 2) System Utilities | 3) License & User */}
@@ -986,6 +1008,11 @@ export default function Topbar({
             onClose={() => setShortcutsModalOpen(false)}
           />
         )}
+
+        <FeatureGuideBot
+          isOpen={guideBotOpen}
+          onClose={() => setGuideBotOpen(false)}
+        />
       </Suspense>
     </div>
   );

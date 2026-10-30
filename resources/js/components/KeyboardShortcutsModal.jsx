@@ -33,6 +33,12 @@ const SHORTCUT_CATEGORIES = [
         badge: "Everywhere",
       },
       {
+        keys: ["Alt", "G"],
+        label: "Karobar Screen Guide Bot (EN / اردو)",
+        description: "Open the screen-aware bilingual assistant that explains the active page in English and Urdu",
+        badge: "Everywhere",
+      },
+      {
         keys: ["?"],
         label: "Keyboard Shortcuts Guide",
         description: "Open this keyboard shortcuts quick reference modal",
