@@ -72,7 +72,8 @@ const PRESENTER_FRAMES = [
  * - `fullBody={false}`: Compact solid-black Cube head icon for the Topbar button.
  * - `fullBody={true}`: Full-Body Cube character with a matching solid-black geometric
  *   cube torso, glowing chest core/equalizer, articulated swinging/waving cube arms,
- *   and stepping white-soled cube boots for roaming at the bottom of the app & presenting.
+ *   stepping white-soled cube boots, and 8 entertaining desktop-robot tricks:
+ *   ('backflip' | 'dance' | 'hoverboard' | 'juggle' | 'shades' | 'charge' | 'scan' | 'sleep' | 'wake')
  */
 export function GuideBotAvatar({
   className = "w-9 h-8",
@@ -84,6 +85,7 @@ export function GuideBotAvatar({
   walking = false,
   walkDirection = "right",
   waving = false,
+  trick = null,
 }) {
   const svgRef = useRef(null);
   const [gaze, setGaze] = useState({ x: 0, y: 0 });
@@ -163,11 +165,15 @@ export function GuideBotAvatar({
       setBigSmile(frame.bigSmile);
 
       if (idleMs > 1200) {
-        if (walking) {
+        if (walking || trick === "hoverboard") {
           setGaze({
             x: walkDirection === "left" ? -2.8 : 2.8,
             y: 0.2,
           });
+        } else if (trick === "scan") {
+          setGaze({ x: idx % 2 === 0 ? -2.5 : 2.5, y: -1.8 });
+        } else if (trick === "juggle") {
+          setGaze({ x: idx % 2 === 0 ? -2.2 : 2.2, y: -1.6 });
         } else {
           setGaze({ x: frame.x, y: frame.y });
         }
@@ -175,17 +181,21 @@ export function GuideBotAvatar({
     }, presenter ? 1500 : 1900);
 
     return () => window.clearInterval(timer);
-  }, [presenter, walking, walkDirection]);
+  }, [presenter, walking, walkDirection, trick]);
 
-  // Update gaze immediately when starting to walk while cursor is idle
+  // Update gaze immediately when starting to walk or perform a directional trick
   useEffect(() => {
-    if (walking && Date.now() - lastMouseMoveRef.current > 900) {
+    if ((walking || trick === "hoverboard") && Date.now() - lastMouseMoveRef.current > 900) {
       setGaze({
         x: walkDirection === "left" ? -2.8 : 2.8,
         y: 0.2,
       });
+    } else if (trick === "scan") {
+      setGaze({ x: 0, y: -1.8 });
+    } else if (trick === "juggle") {
+      setGaze({ x: 0, y: -1.5 });
     }
-  }, [walking, walkDirection]);
+  }, [walking, walkDirection, trick]);
 
   // 3. Natural Periodic Eye Blinking
   useEffect(() => {
@@ -216,9 +226,11 @@ export function GuideBotAvatar({
     };
   }, []);
 
-  // 4. Animated Talking Mouth when `speaking` is true
+  // 4. Animated Talking / Dancing / Charging Equalizer Phase
   useEffect(() => {
-    if (!speaking || typeof window === "undefined") {
+    const shouldAnimateBars =
+      speaking || trick === "dance" || trick === "charge" || trick === "juggle";
+    if (!shouldAnimateBars || typeof window === "undefined") {
       setTalkPhase(0);
       return;
     }
@@ -226,17 +238,38 @@ export function GuideBotAvatar({
       setTalkPhase((prev) => (prev + 1) % 3);
     }, 170);
     return () => window.clearInterval(talkTimer);
-  }, [speaking]);
+  }, [speaking, trick]);
 
   const activeStyle = forceStyle || mascotStyle;
-  const showArcs = isHovered || happyArcs;
-  const isWaving = waving || isHovered || speaking;
+  const isSleeping = trick === "sleep";
+  const isWake = trick === "wake";
+  const showArcs =
+    !isSleeping &&
+    !isWake &&
+    (isHovered ||
+      happyArcs ||
+      trick === "backflip" ||
+      trick === "dance" ||
+      trick === "charge");
+  const isWaving =
+    waving || isHovered || speaking || trick === "shades";
 
   // =========================================================================
   // FULL-BODY CUBE CHARACTER (for Bottom Roaming Companion & Popup Stage)
   // =========================================================================
   if (fullBody) {
-    const leanDeg = walking ? (walkDirection === "left" ? -3.2 : 3.2) : 0;
+    const leanDeg =
+      walking || trick === "hoverboard"
+        ? walkDirection === "left"
+          ? trick === "hoverboard"
+            ? -6.5
+            : -3.2
+          : trick === "hoverboard"
+          ? 6.5
+          : 3.2
+        : 0;
+
+    const trickClass = trick ? `cube-trick-${trick}` : "";
 
     return (
       <svg
@@ -246,320 +279,698 @@ export function GuideBotAvatar({
         xmlns="http://www.w3.org/2000/svg"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
-        className={`guide-bot-avatar guide-bot-fullbody select-none ${
-          walking ? "cube-is-walking" : "cube-is-idle"
-        } ${isWaving ? "cube-is-waving" : ""} ${className}`}
+        className={`guide-bot-avatar guide-bot-fullbody overflow-visible select-none ${
+          walking && trick !== "hoverboard" ? "cube-is-walking" : "cube-is-idle"
+        } ${isWaving ? "cube-is-waving" : ""} ${trickClass} ${className}`}
         aria-hidden="true"
       >
+        <defs>
+          <linearGradient id="cubeScanBeamGrad" x1="50%" y1="100%" x2="50%" y2="0%">
+            <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.55" />
+            <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="cubeBoardGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#06b6d4" />
+            <stop offset="50%" stopColor="#3b82f6" />
+            <stop offset="100%" stopColor="#10b981" />
+          </linearGradient>
+        </defs>
+
         {/* Soft Ground Shadow */}
         <ellipse
           cx="34"
           cy="79.5"
-          rx={walking ? "19" : "17"}
+          rx={trick === "hoverboard" ? "24" : walking ? "19" : "17"}
           ry="3.2"
-          fill="rgba(15, 23, 42, 0.24)"
+          fill={trick === "hoverboard" ? "rgba(6, 182, 212, 0.38)" : "rgba(15, 23, 42, 0.24)"}
           className="cube-ground-shadow"
         />
 
         {/* =============================================================== */}
-        {/* CUBE LEGS & WHITE-SOLED BOOTS (Alternating Walk Cycle)          */}
+        {/* HOVERBOARD PROP (Trick 3: Neon Hover-Skateboard under boots)     */}
         {/* =============================================================== */}
-        <g className="cube-legs-group">
-          {/* Left Leg */}
-          <g className="cube-leg cube-leg-left" style={{ transformOrigin: "26px 62px" }}>
-            <rect
-              x="21.5"
-              y="60"
-              width="9"
-              height="13"
-              rx="3.5"
-              fill="#09090b"
-              stroke="#27272a"
-              strokeWidth="1.2"
-            />
-            {/* Left Boot */}
-            <rect
-              x="19.5"
-              y="71"
-              width="12"
-              height="6"
-              rx="3"
-              fill="#09090b"
-              stroke="#27272a"
-              strokeWidth="1.1"
-            />
-            {/* Crisp White Sneaker Sole Accent */}
-            <rect x="21" y="74.8" width="9" height="1.6" rx="0.8" fill="#ffffff" opacity="0.92" />
-          </g>
-
-          {/* Right Leg */}
-          <g className="cube-leg cube-leg-right" style={{ transformOrigin: "42px 62px" }}>
-            <rect
-              x="37.5"
-              y="60"
-              width="9"
-              height="13"
-              rx="3.5"
-              fill="#09090b"
-              stroke="#27272a"
-              strokeWidth="1.2"
-            />
-            {/* Right Boot */}
-            <rect
-              x="36.5"
-              y="71"
-              width="12"
-              height="6"
-              rx="3"
-              fill="#09090b"
-              stroke="#27272a"
-              strokeWidth="1.1"
-            />
-            {/* Crisp White Sneaker Sole Accent */}
-            <rect x="38" y="74.8" width="9" height="1.6" rx="0.8" fill="#ffffff" opacity="0.92" />
-          </g>
-        </g>
-
-        {/* =============================================================== */}
-        {/* UPPER RIG: TORSO + ARMS + SIGNATURE CUBE HEAD                   */}
-        {/* =============================================================== */}
-        <g
-          className="cube-upper-rig"
-          style={{
-            transformOrigin: "34px 56px",
-            transform: `rotate(${leanDeg}deg)`,
-            transition: "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)",
-          }}
-        >
-          {/* Left Cube Arm */}
-          <g className="cube-arm cube-arm-left" style={{ transformOrigin: "16px 45px" }}>
-            <rect
-              x="10"
-              y="42.5"
-              width="7.5"
-              height="16.5"
-              rx="3.75"
-              fill="#09090b"
-              stroke="#27272a"
-              strokeWidth="1.2"
-            />
-            {/* Crisp White Wrist Cuff */}
-            <rect x="11.5" y="54" width="4.5" height="2" rx="1" fill="#ffffff" opacity="0.9" />
-          </g>
-
-          {/* Right Cube Arm (Swings when walking, raises to wave when hovered/speaking) */}
-          <g className="cube-arm cube-arm-right" style={{ transformOrigin: "52px 45px" }}>
-            <rect
-              x="50.5"
-              y="42.5"
-              width="7.5"
-              height="16.5"
-              rx="3.75"
-              fill="#09090b"
-              stroke="#27272a"
-              strokeWidth="1.2"
-            />
-            {/* Crisp White Wrist Cuff */}
-            <rect x="52" y="54" width="4.5" height="2" rx="1" fill="#ffffff" opacity="0.9" />
-          </g>
-
-          {/* Neck Joint */}
-          <rect x="28" y="38" width="12" height="6" rx="2" fill="#18181b" />
-
-          {/* Matching Rounded-Cube Torso */}
-          <rect
-            x="18.5"
-            y="41.5"
-            width="31"
-            height="21.5"
-            rx={activeStyle === "pixel" ? "3.5" : "6.5"}
-            fill="#09090b"
-            stroke="#27272a"
-            strokeWidth="1.3"
-          />
-
-          {/* Recessed Chest Core Screen */}
-          <rect
-            x="23.5"
-            y="45.5"
-            width="21"
-            height="13.5"
-            rx={activeStyle === "pixel" ? "2" : "4"}
-            fill="#18181b"
-            stroke="#27272a"
-            strokeWidth="1"
-          />
-
-          {/* Glowing Chest Equalizer / Core Bars */}
-          <g className="cube-chest-core">
-            <rect
-              x="27.2"
-              y={speaking && talkPhase === 1 ? "48.2" : "50.2"}
-              width="3"
-              height={speaking && talkPhase === 1 ? "8" : "4.2"}
-              rx="1.5"
-              fill="#38bdf8"
-            />
-            <rect
-              x="32.5"
-              y={speaking && talkPhase === 2 ? "47.5" : "48.5"}
-              width="3"
-              height={speaking && talkPhase === 2 ? "9.5" : "7.5"}
-              rx="1.5"
-              fill="#ffffff"
-            />
-            <rect
-              x="37.8"
-              y={speaking && talkPhase === 1 ? "48.8" : "50.2"}
-              width="3"
-              height={speaking && talkPhase === 1 ? "7" : "4.2"}
-              rx="1.5"
-              fill="#38bdf8"
-            />
-          </g>
-
-          {/* ============================================================= */}
-          {/* CUBE HEAD SILHOUETTE (shifted to center x=12..56, y=8..40)     */}
-          {/* ============================================================= */}
-          <g transform="translate(12, 8)">
-            {activeStyle === "pixel" ? (
-              <g fill="#09090b">
-                <rect x="8" y="0" width="6" height="4" rx="1" />
-                <rect x="30" y="0" width="6" height="4" rx="1" />
-                <rect
-                  x="4"
-                  y="3"
-                  width="36"
-                  height="28"
-                  rx="4"
-                  stroke="#27272a"
-                  strokeWidth="1.2"
-                />
-              </g>
-            ) : activeStyle === "bot" ? (
-              <g>
-                <rect x="20.5" y="-1" width="3" height="5" rx="1.5" fill="#09090b" />
-                <circle cx="22" cy="-1.5" r="2" fill="#38bdf8" />
-                <rect x="1" y="12" width="3" height="10" rx="1.5" fill="#09090b" />
-                <rect x="40" y="12" width="3" height="10" rx="1.5" fill="#09090b" />
-                <rect
-                  x="3.5"
-                  y="3"
-                  width="37"
-                  height="29"
-                  rx="11"
-                  fill="#09090b"
-                  stroke="#27272a"
-                  strokeWidth="1.3"
-                />
+        {trick === "hoverboard" && (
+          <g className="cube-prop-hoverboard">
+            {/* Speed trail lines behind the board */}
+            {walkDirection === "left" ? (
+              <g stroke="#38bdf8" strokeWidth="1.6" strokeLinecap="round" opacity="0.75">
+                <line x1="54" y1="74" x2="66" y2="74" className="cube-speed-line-1" />
+                <line x1="56" y1="78" x2="65" y2="78" className="cube-speed-line-2" />
               </g>
             ) : (
-              /* Default 'cube': Pure Solid Black Rounded Cube Head + Top Cube Node */
-              <g>
-                <rect
-                  x="18.5"
-                  y="-1.5"
-                  width="7"
-                  height="4.5"
-                  rx="2"
-                  fill="#09090b"
-                  stroke="#27272a"
-                  strokeWidth="1.1"
-                />
-                <circle cx="22" cy="0.5" r="1.2" fill="#ffffff" opacity="0.9" />
-                <rect
-                  x="2"
-                  y="2"
-                  width="40"
-                  height="31"
-                  rx="8.5"
-                  fill="#09090b"
-                  stroke="#27272a"
-                  strokeWidth="1.3"
-                />
+              <g stroke="#38bdf8" strokeWidth="1.6" strokeLinecap="round" opacity="0.75">
+                <line x1="2" y1="74" x2="14" y2="74" className="cube-speed-line-1" />
+                <line x1="3" y1="78" x2="12" y2="78" className="cube-speed-line-2" />
               </g>
             )}
+            {/* Hover-deck */}
+            <rect
+              x="12"
+              y="74.5"
+              width="44"
+              height="4.2"
+              rx="2.1"
+              fill="#09090b"
+              stroke="url(#cubeBoardGrad)"
+              strokeWidth="1.5"
+            />
+            {/* Glowing anti-gravity thrusters */}
+            <ellipse cx="21" cy="79.5" rx="4.5" ry="1.4" fill="#38bdf8" opacity="0.9" />
+            <ellipse cx="47" cy="79.5" rx="4.5" ry="1.4" fill="#10b981" opacity="0.9" />
+          </g>
+        )}
 
-            {/* Moving Solid White Eyes & Smile */}
-            <g
-              style={{
-                transform: `translate(${gaze.x}px, ${gaze.y}px)`,
-                transition: "transform 180ms cubic-bezier(0.22, 1, 0.36, 1)",
-              }}
-            >
+        {/* =============================================================== */}
+        {/* WHOLE-BODY RIG (Used for Backflip, Jump, Squat, Dance & Sleep)   */}
+        {/* =============================================================== */}
+        <g className="cube-whole-body-rig" style={{ transformOrigin: "34px 48px" }}>
+          {/* ============================================================= */}
+          {/* CUBE LEGS & WHITE-SOLED BOOTS                                 */}
+          {/* ============================================================= */}
+          <g className="cube-legs-group">
+            {/* Left Leg */}
+            <g className="cube-leg cube-leg-left" style={{ transformOrigin: "26px 62px" }}>
+              <rect
+                x="21.5"
+                y="60"
+                width="9"
+                height="13"
+                rx="3.5"
+                fill="#09090b"
+                stroke="#27272a"
+                strokeWidth="1.2"
+              />
+              {/* Left Boot */}
+              <rect
+                x="19.5"
+                y="71"
+                width="12"
+                height="6"
+                rx="3"
+                fill="#09090b"
+                stroke="#27272a"
+                strokeWidth="1.1"
+              />
+              {/* Crisp White Sneaker Sole Accent */}
+              <rect
+                x="21"
+                y="74.8"
+                width="9"
+                height="1.6"
+                rx="0.8"
+                fill="#ffffff"
+                opacity="0.92"
+              />
+            </g>
+
+            {/* Right Leg */}
+            <g className="cube-leg cube-leg-right" style={{ transformOrigin: "42px 62px" }}>
+              <rect
+                x="37.5"
+                y="60"
+                width="9"
+                height="13"
+                rx="3.5"
+                fill="#09090b"
+                stroke="#27272a"
+                strokeWidth="1.2"
+              />
+              {/* Right Boot */}
+              <rect
+                x="36.5"
+                y="71"
+                width="12"
+                height="6"
+                rx="3"
+                fill="#09090b"
+                stroke="#27272a"
+                strokeWidth="1.1"
+              />
+              {/* Crisp White Sneaker Sole Accent */}
+              <rect
+                x="38"
+                y="74.8"
+                width="9"
+                height="1.6"
+                rx="0.8"
+                fill="#ffffff"
+                opacity="0.92"
+              />
+            </g>
+          </g>
+
+          {/* ============================================================= */}
+          {/* UPPER RIG: TORSO + ARMS + SIGNATURE CUBE HEAD                 */}
+          {/* ============================================================= */}
+          <g
+            className="cube-upper-rig"
+            style={{
+              transformOrigin: "34px 56px",
+              transform: `rotate(${leanDeg}deg)`,
+              transition: "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)",
+            }}
+          >
+            {/* Trick 7: Curious Screen Scanner Hologram Cone */}
+            {trick === "scan" && (
+              <path
+                d="M 22 18 L -2 -18 L 70 -18 L 46 18 Z"
+                fill="url(#cubeScanBeamGrad)"
+                className="cube-scan-cone"
+              />
+            )}
+
+            {/* Left Cube Arm */}
+            <g className="cube-arm cube-arm-left" style={{ transformOrigin: "16px 45px" }}>
+              <rect
+                x="10"
+                y="42.5"
+                width="7.5"
+                height="16.5"
+                rx="3.75"
+                fill="#09090b"
+                stroke="#27272a"
+                strokeWidth="1.2"
+              />
+              {/* Crisp White Wrist Cuff */}
+              <rect x="11.5" y="54" width="4.5" height="2" rx="1" fill="#ffffff" opacity="0.9" />
+            </g>
+
+            {/* Right Cube Arm (Swings, waves, sips coffee, or salutes) */}
+            <g className="cube-arm cube-arm-right" style={{ transformOrigin: "52px 45px" }}>
+              <rect
+                x="50.5"
+                y="42.5"
+                width="7.5"
+                height="16.5"
+                rx="3.75"
+                fill="#09090b"
+                stroke="#27272a"
+                strokeWidth="1.2"
+              />
+              {/* Crisp White Wrist Cuff */}
+              <rect x="52" y="54" width="4.5" height="2" rx="1" fill="#ffffff" opacity="0.9" />
+
+              {/* Trick 6: Cute Steaming Coffee / Energy Mug in Right Hand */}
+              {trick === "charge" && (
+                <g transform="translate(48, 52)">
+                  <rect
+                    x="0"
+                    y="0"
+                    width="9"
+                    height="9"
+                    rx="2"
+                    fill="#ffffff"
+                    stroke="#09090b"
+                    strokeWidth="1.2"
+                  />
+                  <path
+                    d="M 9 2.2 H 11 A 1.8 1.8 0 0 1 11 6.8 H 9"
+                    stroke="#ffffff"
+                    strokeWidth="1.4"
+                    fill="none"
+                  />
+                  <rect x="2" y="2.5" width="5" height="4" rx="1" fill="#10b981" />
+                </g>
+              )}
+            </g>
+
+            {/* Neck Joint */}
+            <rect x="28" y="38" width="12" height="6" rx="2" fill="#18181b" />
+
+            {/* Matching Rounded-Cube Torso */}
+            <rect
+              x="18.5"
+              y="41.5"
+              width="31"
+              height="21.5"
+              rx={activeStyle === "pixel" ? "3.5" : "6.5"}
+              fill="#09090b"
+              stroke={trick === "charge" ? "#10b981" : "#27272a"}
+              strokeWidth="1.3"
+            />
+
+            {/* Recessed Chest Core Screen */}
+            <rect
+              x="23.5"
+              y="45.5"
+              width="21"
+              height="13.5"
+              rx={activeStyle === "pixel" ? "2" : "4"}
+              fill="#18181b"
+              stroke="#27272a"
+              strokeWidth="1"
+            />
+
+            {/* Glowing Chest Equalizer / Core Bars */}
+            <g className="cube-chest-core">
+              <rect
+                x="27.2"
+                y={
+                  (speaking || trick === "dance" || trick === "charge") && talkPhase === 1
+                    ? "47.8"
+                    : "50.2"
+                }
+                width="3"
+                height={
+                  (speaking || trick === "dance" || trick === "charge") && talkPhase === 1
+                    ? "8.6"
+                    : "4.2"
+                }
+                rx="1.5"
+                fill={trick === "charge" ? "#10b981" : "#38bdf8"}
+              />
+              <rect
+                x="32.5"
+                y={
+                  (speaking || trick === "dance" || trick === "charge") && talkPhase === 2
+                    ? "47.2"
+                    : "48.5"
+                }
+                width="3"
+                height={
+                  (speaking || trick === "dance" || trick === "charge") && talkPhase === 2
+                    ? "10"
+                    : "7.5"
+                }
+                rx="1.5"
+                fill="#ffffff"
+              />
+              <rect
+                x="37.8"
+                y={
+                  (speaking || trick === "dance" || trick === "charge") && talkPhase === 1
+                    ? "48.4"
+                    : "50.2"
+                }
+                width="3"
+                height={
+                  (speaking || trick === "dance" || trick === "charge") && talkPhase === 1
+                    ? "7.6"
+                    : "4.2"
+                }
+                rx="1.5"
+                fill={trick === "charge" ? "#10b981" : "#38bdf8"}
+              />
+            </g>
+
+            {/* =========================================================== */}
+            {/* CUBE HEAD SILHOUETTE (shifted to center x=12..56, y=8..40)   */}
+            {/* =========================================================== */}
+            <g transform="translate(12, 8)">
+              {activeStyle === "pixel" ? (
+                <g fill="#09090b">
+                  <rect x="8" y="0" width="6" height="4" rx="1" />
+                  <rect x="30" y="0" width="6" height="4" rx="1" />
+                  <rect
+                    x="4"
+                    y="3"
+                    width="36"
+                    height="28"
+                    rx="4"
+                    stroke="#27272a"
+                    strokeWidth="1.2"
+                  />
+                </g>
+              ) : activeStyle === "bot" ? (
+                <g>
+                  <rect x="20.5" y="-1" width="3" height="5" rx="1.5" fill="#09090b" />
+                  <circle cx="22" cy="-1.5" r="2" fill="#38bdf8" />
+                  <rect x="1" y="12" width="3" height="10" rx="1.5" fill="#09090b" />
+                  <rect x="40" y="12" width="3" height="10" rx="1.5" fill="#09090b" />
+                  <rect
+                    x="3.5"
+                    y="3"
+                    width="37"
+                    height="29"
+                    rx="11"
+                    fill="#09090b"
+                    stroke="#27272a"
+                    strokeWidth="1.3"
+                  />
+                </g>
+              ) : (
+                /* Default 'cube': Pure Solid Black Rounded Cube Head + Top Cube Node */
+                <g>
+                  <rect
+                    x="18.5"
+                    y="-1.5"
+                    width="7"
+                    height="4.5"
+                    rx="2"
+                    fill="#09090b"
+                    stroke="#27272a"
+                    strokeWidth="1.1"
+                  />
+                  <circle
+                    cx="22"
+                    cy="0.5"
+                    r="1.3"
+                    fill={trick === "charge" ? "#10b981" : trick === "scan" ? "#38bdf8" : "#ffffff"}
+                  />
+                  <rect
+                    x="2"
+                    y="2"
+                    width="40"
+                    height="31"
+                    rx="8.5"
+                    fill="#09090b"
+                    stroke="#27272a"
+                    strokeWidth="1.3"
+                  />
+                </g>
+              )}
+
+              {/* Moving Solid White Eyes & Smile */}
               <g
                 style={{
-                  transformOrigin: "22px 15px",
-                  transform: isBlinking ? "scaleY(0.08)" : "scaleY(1)",
-                  transition: "transform 110ms ease-in-out",
+                  transform: `translate(${gaze.x}px, ${gaze.y}px)`,
+                  transition: "transform 180ms cubic-bezier(0.22, 1, 0.36, 1)",
                 }}
               >
-                {showArcs ? (
-                  <g>
-                    <path
-                      d="M 11.5 16.5 Q 15.2 11.2 19.0 16.5"
-                      stroke="#ffffff"
-                      strokeWidth="2.8"
-                      strokeLinecap="round"
-                      fill="none"
-                    />
-                    <path
-                      d="M 25.0 16.5 Q 28.8 11.2 32.5 16.5"
-                      stroke="#ffffff"
-                      strokeWidth="2.8"
-                      strokeLinecap="round"
-                      fill="none"
-                    />
-                  </g>
-                ) : (
-                  <g>
+                <g
+                  style={{
+                    transformOrigin: "22px 15px",
+                    transform: isBlinking && !isSleeping ? "scaleY(0.08)" : "scaleY(1)",
+                    transition: "transform 110ms ease-in-out",
+                  }}
+                >
+                  {isSleeping ? (
+                    /* Trick 8: Peaceful Sleeping Downward Eye Arcs (︶ ︶) */
+                    <g>
+                      <path
+                        d="M 11.5 14.5 Q 15.2 19.2 19.0 14.5"
+                        stroke="#ffffff"
+                        strokeWidth="2.6"
+                        strokeLinecap="round"
+                        fill="none"
+                      />
+                      <path
+                        d="M 25.0 14.5 Q 28.8 19.2 32.5 14.5"
+                        stroke="#ffffff"
+                        strokeWidth="2.6"
+                        strokeLinecap="round"
+                        fill="none"
+                      />
+                    </g>
+                  ) : showArcs ? (
+                    /* Happy Laughing Eye Arcs (^ ^) */
+                    <g>
+                      <path
+                        d="M 11.5 16.5 Q 15.2 11.2 19.0 16.5"
+                        stroke="#ffffff"
+                        strokeWidth="2.8"
+                        strokeLinecap="round"
+                        fill="none"
+                      />
+                      <path
+                        d="M 25.0 16.5 Q 28.8 11.2 32.5 16.5"
+                        stroke="#ffffff"
+                        strokeWidth="2.8"
+                        strokeLinecap="round"
+                        fill="none"
+                      />
+                    </g>
+                  ) : trick === "hoverboard" ? (
+                    /* Cool Focused Squint Eyes when Gliding on Hoverboard */
+                    <g>
+                      <rect x="11.5" y="12.2" width="7" height="5.8" rx="2.4" fill="#ffffff" />
+                      <rect x="25.5" y="12.2" width="7" height="5.8" rx="2.4" fill="#ffffff" />
+                    </g>
+                  ) : (
+                    /* Crisp Solid White Rounded Eyes */
+                    <g>
+                      <rect
+                        x="11.8"
+                        y="10"
+                        width="6.4"
+                        height={isWake ? "10.8" : "9.6"}
+                        rx={activeStyle === "pixel" ? "1.5" : "3.2"}
+                        fill="#ffffff"
+                      />
+                      <rect
+                        x="25.8"
+                        y="10"
+                        width="6.4"
+                        height={isWake ? "10.8" : "9.6"}
+                        rx={activeStyle === "pixel" ? "1.5" : "3.2"}
+                        fill="#ffffff"
+                      />
+                    </g>
+                  )}
+                </g>
+
+                {/* Trick 5: Pixel "Deal With It" Sunglasses Overlay */}
+                {trick === "shades" && (
+                  <g className="cube-prop-shades">
+                    {/* Bridge & Frame */}
+                    <rect x="7" y="10.5" width="30" height="2.2" fill="#ffffff" />
+                    {/* Left Lens */}
                     <rect
-                      x="11.8"
-                      y="10"
-                      width="6.4"
-                      height="9.6"
-                      rx={activeStyle === "pixel" ? "1.5" : "3.2"}
-                      fill="#ffffff"
+                      x="9"
+                      y="10.5"
+                      width="11.5"
+                      height="8"
+                      rx="1.5"
+                      fill="#09090b"
+                      stroke="#ffffff"
+                      strokeWidth="1.6"
                     />
+                    {/* Right Lens */}
                     <rect
-                      x="25.8"
-                      y="10"
-                      width="6.4"
-                      height="9.6"
-                      rx={activeStyle === "pixel" ? "1.5" : "3.2"}
-                      fill="#ffffff"
+                      x="23.5"
+                      y="10.5"
+                      width="11.5"
+                      height="8"
+                      rx="1.5"
+                      fill="#09090b"
+                      stroke="#ffffff"
+                      strokeWidth="1.6"
+                    />
+                    {/* Lens Diagonal Shine Glint */}
+                    <line
+                      x1="11.5"
+                      y1="16.8"
+                      x2="15.5"
+                      y2="12"
+                      stroke="#38bdf8"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                    <line
+                      x1="26"
+                      y1="16.8"
+                      x2="30"
+                      y2="12"
+                      stroke="#38bdf8"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
                     />
                   </g>
                 )}
-              </g>
 
-              {speaking && talkPhase === 1 ? (
-                <path d="M 17.5 22.8 Q 22 28.8 26.5 22.8 Z" fill="#ffffff" />
-              ) : speaking && talkPhase === 2 ? (
-                <rect
-                  x="18.8"
-                  y="22.4"
-                  width="6.4"
-                  height="4.0"
-                  rx="2.0"
-                  fill="#ffffff"
-                />
-              ) : (
-                <path
-                  d={
-                    bigSmile || isHovered
-                      ? "M 17.5 23.2 Q 22 27.6 26.5 23.2"
-                      : "M 18.2 23.5 Q 22 26.5 25.8 23.5"
-                  }
-                  stroke="#ffffff"
-                  strokeWidth="2.4"
-                  strokeLinecap="round"
-                  fill="none"
-                />
-              )}
+                {/* Mouth Expression */}
+                {isSleeping ? (
+                  /* Peaceful sleeping 'o' mouth */
+                  <circle cx="22" cy="24.5" r="2.1" fill="#ffffff" opacity="0.85" />
+                ) : isWake ? (
+                  /* Startled 'O' mouth */
+                  <ellipse cx="22" cy="24.5" rx="3.2" ry="3.6" fill="#ffffff" />
+                ) : (speaking && talkPhase === 1) || trick === "backflip" ? (
+                  <path d="M 17.5 22.8 Q 22 28.8 26.5 22.8 Z" fill="#ffffff" />
+                ) : speaking && talkPhase === 2 ? (
+                  <rect
+                    x="18.8"
+                    y="22.4"
+                    width="6.4"
+                    height="4.0"
+                    rx="2.0"
+                    fill="#ffffff"
+                  />
+                ) : (
+                  <path
+                    d={
+                      bigSmile || isHovered || trick === "dance" || trick === "shades"
+                        ? "M 17.5 23.2 Q 22 27.6 26.5 23.2"
+                        : "M 18.2 23.5 Q 22 26.5 25.8 23.5"
+                    }
+                    stroke="#ffffff"
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                    fill="none"
+                  />
+                )}
+              </g>
             </g>
           </g>
         </g>
+
+        {/* =============================================================== */}
+        {/* FLOATING TRICK PARTICLES & PROPS (Outside rotating body rig)    */}
+        {/* =============================================================== */}
+
+        {/* Trick 1: Backflip Star Sparkles (✦) */}
+        {trick === "backflip" && (
+          <g className="cube-prop-sparkles">
+            <path
+              d="M 8 10 L 10 15 L 15 17 L 10 19 L 8 24 L 6 19 L 1 17 L 6 15 Z"
+              fill="#facc15"
+              className="cube-sparkle-1"
+            />
+            <path
+              d="M 59 6 L 60.5 10 L 64.5 11.5 L 60.5 13 L 59 17 L 57.5 13 L 53.5 11.5 L 57.5 10 Z"
+              fill="#38bdf8"
+              className="cube-sparkle-2"
+            />
+            <circle cx="14" cy="4" r="2" fill="#10b981" className="cube-sparkle-2" />
+          </g>
+        )}
+
+        {/* Trick 2: Floating Musical Notes (♪ ♫) during Dance Groove */}
+        {trick === "dance" && (
+          <g className="cube-prop-music">
+            <text
+              x="6"
+              y="18"
+              fill="#38bdf8"
+              fontSize="13"
+              fontWeight="900"
+              className="cube-float-item-1"
+            >
+              ♪
+            </text>
+            <text
+              x="52"
+              y="14"
+              fill="#10b981"
+              fontSize="14"
+              fontWeight="900"
+              className="cube-float-item-2"
+            >
+              ♫
+            </text>
+            <text
+              x="28"
+              y="4"
+              fill="#f59e0b"
+              fontSize="11"
+              fontWeight="900"
+              className="cube-float-item-3"
+            >
+              ♪
+            </text>
+          </g>
+        )}
+
+        {/* Trick 4: Cozmo-Style Orbiting Mini-Cubes during Juggle */}
+        {trick === "juggle" && (
+          <g className="cube-prop-juggle">
+            <rect
+              x="8"
+              y="26"
+              width="8.5"
+              height="8.5"
+              rx="2"
+              fill="#38bdf8"
+              stroke="#ffffff"
+              strokeWidth="1.2"
+              className="cube-juggle-orb-1"
+            />
+            <rect
+              x="51"
+              y="26"
+              width="8.5"
+              height="8.5"
+              rx="2"
+              fill="#10b981"
+              stroke="#ffffff"
+              strokeWidth="1.2"
+              className="cube-juggle-orb-2"
+            />
+            <rect
+              x="29.5"
+              y="4"
+              width="8"
+              height="8"
+              rx="2"
+              fill="#f59e0b"
+              stroke="#ffffff"
+              strokeWidth="1.2"
+              className="cube-juggle-orb-3"
+            />
+          </g>
+        )}
+
+        {/* Trick 6: Supercharge Floating Lightning Badge */}
+        {trick === "charge" && (
+          <g className="cube-prop-charge">
+            <g className="cube-float-item-1">
+              <rect
+                x="18"
+                y="-8"
+                width="32"
+                height="13"
+                rx="6.5"
+                fill="#09090b"
+                stroke="#10b981"
+                strokeWidth="1.2"
+              />
+              <text
+                x="34"
+                y="1.5"
+                textAnchor="middle"
+                fill="#10b981"
+                fontSize="8.5"
+                fontWeight="900"
+              >
+                ⚡100%
+              </text>
+            </g>
+          </g>
+        )}
+
+        {/* Trick 8: Floating Zzz Bubbles during Nap Mode */}
+        {trick === "sleep" && (
+          <g className="cube-prop-sleep">
+            <text
+              x="48"
+              y="18"
+              fill="#38bdf8"
+              fontSize="10"
+              fontWeight="900"
+              className="cube-float-item-1"
+            >
+              z
+            </text>
+            <text
+              x="54"
+              y="9"
+              fill="#60a5fa"
+              fontSize="12"
+              fontWeight="900"
+              className="cube-float-item-2"
+            >
+              Z
+            </text>
+            <text
+              x="60"
+              y="-1"
+              fill="#818cf8"
+              fontSize="14"
+              fontWeight="900"
+              className="cube-float-item-3"
+            >
+              Z
+            </text>
+          </g>
+        )}
+
+        {/* Wake-Up Startle Exclamation (!) */}
+        {trick === "wake" && (
+          <g className="cube-prop-wake">
+            <rect x="31.5" y="-11" width="5" height="9" rx="2.5" fill="#f59e0b" />
+            <circle cx="34" cy="1.5" r="2.4" fill="#f59e0b" />
+          </g>
+        )}
       </svg>
     );
   }

@@ -121,99 +121,149 @@ function FormattedBotMessage({ text, isUrdu = false }) {
 }
 
 const INTERACTIVE_OBSTACLE_SELECTOR =
-  'input, select, textarea, button, a[href], label, [role="button"], [role="combobox"], [role="tab"], [contenteditable="true"], .react-select__control';
+  'input, select, textarea, button, [role="button"], [role="combobox"], [contenteditable="true"], .react-select__control';
+
+// Stationary tricks performed along the bottom
+const STATIONARY_TRICKS = [
+  { id: "backflip", durationMs: 2600, badge: "360° Flip! 🤸" },
+  { id: "dance", durationMs: 3400, badge: "Robot Boogie ♪" },
+  { id: "juggle", durationMs: 3200, badge: "Cube Juggle 🎲" },
+  { id: "shades", durationMs: 3000, badge: "Cool Shades 🕶️" },
+  { id: "charge", durationMs: 3000, badge: "Supercharge ⚡" },
+  { id: "scan", durationMs: 2800, badge: "Screen Scan 🔍" },
+];
+
+const TRICK_BADGES = {
+  backflip: "360° Flip! 🤸",
+  dance: "Robot Boogie ♪",
+  juggle: "Cube Juggle 🎲",
+  shades: "Cool Shades 🕶️",
+  charge: "Supercharge ⚡",
+  scan: "Screen Scan 🔍",
+  hoverboard: "Hover-Glide 🛹",
+  sleep: "Resting... 💤",
+  wake: "Ready! ⚡",
+};
 
 /**
  * Bottom Free-Roaming Full-Body Cube Companion (`RoamingCubeCompanion`):
- * - Roams freely along the bottom of the app with a cute walking cycle and full Cube body.
- * - Never covers any input field, button, or interactive control:
- *   1. Scans DOM bounding boxes to pick only obstacle-free floor coordinates (and steps up above
- *      sticky bottom bars if the bottom strip is full of buttons).
- *   2. Evades immediately on `focusin`, `scroll`, or `mousemove` if an interactive control is
- *      beneath Cube or near the user's cursor.
+ * - Roams freely along the bottom of the app with a cute walking cycle, full Cube body,
+ *   and an autonomous Finite State Machine that performs 8 entertaining tricks:
+ *   ('backflip', 'dance', 'hoverboard', 'juggle', 'shades', 'charge', 'scan', 'sleep' + 'wake').
+ * - Never runs away from the user's cursor so it is always easy to watch and click.
+ * - Avoids covering fields/buttons by picking open floor slots and stepping aside only if
+ *   an overlapping input/control is focused.
  * - When clicked, opens the Guide Bot popup and disappears ("goes away") while the popup is open.
  */
 function RoamingCubeCompanion({ onOpen, screenTitle }) {
   const mascotBtnRef = useRef(null);
-  const posRef = useRef({ x: 320, bottomOffset: 6 });
+  const stateRef = useRef({
+    x: 320,
+    bottomOffset: 6,
+    isWalking: false,
+    walkDirection: "left",
+    moveDurationMs: 0,
+    activeTrick: "dance",
+    isVanishing: false,
+    isHovered: false,
+  });
   const roamTimerRef = useRef(null);
-  const walkEndTimerRef = useRef(null);
-  const lastEvadeTimeRef = useRef(0);
+  const actionEndTimerRef = useRef(null);
+  const lastTrickRef = useRef("dance");
+  const lastUserActivityRef = useRef(Date.now());
+  const stepCounterRef = useRef(0);
 
   const [state, setState] = useState(() => {
     const startX =
       typeof window !== "undefined"
-        ? Math.max(140, Math.min(window.innerWidth - 140, Math.round(window.innerWidth * 0.58)))
+        ? Math.max(140, Math.min(window.innerWidth - 140, Math.round(window.innerWidth * 0.56)))
         : 320;
-    return {
+    const initial = {
       x: startX,
       bottomOffset: 6,
       isWalking: false,
       walkDirection: "left",
       moveDurationMs: 0,
-      isEvading: false,
+      activeTrick: "dance",
       isVanishing: false,
       isHovered: false,
     };
+    stateRef.current = initial;
+    return initial;
   });
 
-  useEffect(() => {
-    posRef.current = { x: state.x, bottomOffset: state.bottomOffset };
-  }, [state.x, state.bottomOffset]);
+  const updateState = useCallback((patch) => {
+    setState((prev) => {
+      const next = typeof patch === "function" ? patch(prev) : { ...prev, ...patch };
+      stateRef.current = next;
+      return next;
+    });
+  }, []);
+
+  /**
+   * Picks a random stationary trick without repeating the previous trick back-to-back.
+   */
+  const pickNextTrick = useCallback(() => {
+    const candidates = STATIONARY_TRICKS.filter((t) => t.id !== lastTrickRef.current);
+    const chosen =
+      candidates[Math.floor(Math.random() * candidates.length)] || STATIONARY_TRICKS[0];
+    lastTrickRef.current = chosen.id;
+    return chosen;
+  }, []);
 
   /**
    * Scans the viewport bottom to find safe X coordinates (and bottomOffset) that do not
-   * cover any visible button, input, select, textarea, or link.
+   * cover any visible button, input, select, or textarea.
    */
-  const findSafeSpot = useCallback((avoidX = null, currentX = posRef.current.x) => {
+  const findSafeSpot = useCallback((avoidX = null, currentX = stateRef.current.x) => {
     if (typeof window === "undefined" || typeof document === "undefined") {
       return { x: 320, bottomOffset: 6 };
     }
 
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const cubeW = 64;
-    const cubeH = 76;
+    const cubeW = 68;
+    const cubeH = 78;
 
     // Respect left sidebar if present
-    let minX = 24;
+    let minX = 28;
     const sidebarEl = document.querySelector(".workspace-sidebar");
     if (sidebarEl) {
       const sbRect = sidebarEl.getBoundingClientRect();
       if (sbRect.width > 0 && sbRect.right > 0 && sbRect.left >= 0 && sbRect.right < vw * 0.5) {
-        minX = Math.max(24, Math.ceil(sbRect.right + 20));
+        minX = Math.max(28, Math.ceil(sbRect.right + 20));
       }
     }
-    const maxX = Math.max(minX + 40, vw - cubeW - 24);
+    const maxX = Math.max(minX + 40, vw - cubeW - 28);
 
-    // Collect visible interactive elements in the lower 200px of the viewport
+    // Collect visible interactive elements in the lower 160px of the viewport
     const allNodes = Array.from(document.querySelectorAll(INTERACTIVE_OBSTACLE_SELECTOR));
     const obstacles = [];
     for (let i = 0; i < allNodes.length; i++) {
       const el = allNodes[i];
       if (el.closest("[data-roaming-cube]")) continue;
       const r = el.getBoundingClientRect();
-      if (r.width <= 0 || r.height <= 0) continue;
-      if (r.bottom < vh - 210 || r.top > vh) continue;
+      if (r.width <= 0 || r.height <= 0 || r.width > vw * 0.85) continue;
+      if (r.bottom < vh - 160 || r.top > vh) continue;
       obstacles.push(r);
     }
 
-    const candidateBottomOffsets = [6, 62, 114];
+    const candidateBottomOffsets = [6, 62];
     for (const bOffset of candidateBottomOffsets) {
       const boxTop = vh - bOffset - cubeH;
       const boxBottom = vh - bOffset;
       const safeSlots = [];
 
       for (let candX = minX; candX <= maxX; candX += 32) {
-        const boxLeft = candX - 12;
-        const boxRight = candX + cubeW + 12;
+        const boxLeft = candX - 8;
+        const boxRight = candX + cubeW + 8;
 
         const hitsObstacle = obstacles.some(
           (r) =>
             r.right >= boxLeft &&
             r.left <= boxRight &&
-            r.bottom >= boxTop - 8 &&
-            r.top <= boxBottom + 4
+            r.bottom >= boxTop &&
+            r.top <= boxBottom
         );
 
         if (!hitsObstacle) {
@@ -222,9 +272,8 @@ function RoamingCubeCompanion({ onOpen, screenTitle }) {
       }
 
       if (safeSlots.length > 0) {
-        // If evading a specific X (cursor or focused input), pick the slot farthest from avoidX
         if (typeof avoidX === "number") {
-          const farSlots = safeSlots.filter((sx) => Math.abs(sx + cubeW / 2 - avoidX) >= 190);
+          const farSlots = safeSlots.filter((sx) => Math.abs(sx + cubeW / 2 - avoidX) >= 140);
           if (farSlots.length > 0) {
             farSlots.sort(
               (a, b) => Math.abs(b + cubeW / 2 - avoidX) - Math.abs(a + cubeW / 2 - avoidX)
@@ -233,9 +282,8 @@ function RoamingCubeCompanion({ onOpen, screenTitle }) {
           }
         }
 
-        // Otherwise pick a natural strolling slot at least 85px away from currentX
         const strollSlots = safeSlots.filter(
-          (sx) => Math.abs(sx - currentX) >= 85 && Math.abs(sx - currentX) <= 380
+          (sx) => Math.abs(sx - currentX) >= 90 && Math.abs(sx - currentX) <= 360
         );
         const pool = strollSlots.length > 0 ? strollSlots : safeSlots;
         const chosen = pool[Math.floor(Math.random() * pool.length)];
@@ -243,227 +291,226 @@ function RoamingCubeCompanion({ onOpen, screenTitle }) {
       }
     }
 
-    // Fallback if screen is densely packed: pick opposite corner margin
     const fallbackX =
       typeof avoidX === "number"
         ? avoidX > (minX + maxX) / 2
           ? minX
           : maxX
-        : maxX;
+        : Math.round((minX + maxX) * 0.62);
     return { x: fallbackX, bottomOffset: 6 };
   }, []);
 
-  /**
-   * Checks whether Cube's current bounding box overlaps any interactive control right now.
-   */
-  const isCurrentSpotOverlappingControl = useCallback(() => {
-    if (typeof window === "undefined" || typeof document === "undefined") return false;
-    const vh = window.innerHeight;
-    const { x, bottomOffset } = posRef.current;
-    const boxLeft = x - 8;
-    const boxRight = x + 72;
-    const boxTop = vh - bottomOffset - 80;
-    const boxBottom = vh - bottomOffset;
-
-    const nodes = document.querySelectorAll(INTERACTIVE_OBSTACLE_SELECTOR);
-    for (let i = 0; i < nodes.length; i++) {
-      const el = nodes[i];
-      if (el.closest("[data-roaming-cube]")) continue;
-      const r = el.getBoundingClientRect();
-      if (r.width <= 0 || r.height <= 0) continue;
-      if (
-        r.right >= boxLeft &&
-        r.left <= boxRight &&
-        r.bottom >= boxTop &&
-        r.top <= boxBottom
-      ) {
-        return true;
-      }
-    }
-    return false;
-  }, []);
-
-  /**
-   * Immediately steps Cube aside to a clear spot when a button or input is near/underneath.
-   */
-  const evadeFromX = useCallback(
-    (threatX) => {
-      const now = Date.now();
-      if (now - lastEvadeTimeRef.current < 260) return;
-      lastEvadeTimeRef.current = now;
-
-      const curX = posRef.current.x;
-      const next = findSafeSpot(threatX ?? curX, curX);
-      if (Math.abs(next.x - curX) < 12 && next.bottomOffset === posRef.current.bottomOffset) {
-        return;
-      }
-
-      if (walkEndTimerRef.current) window.clearTimeout(walkEndTimerRef.current);
-      const dir = next.x < curX ? "left" : "right";
-      setState((prev) => ({
-        ...prev,
-        x: next.x,
-        bottomOffset: next.bottomOffset,
-        isWalking: true,
-        walkDirection: dir,
-        moveDurationMs: 360,
-        isEvading: true,
-        isHovered: false,
-      }));
-
-      walkEndTimerRef.current = window.setTimeout(() => {
-        setState((prev) => ({
-          ...prev,
-          isWalking: false,
-          isEvading: false,
-        }));
-      }, 380);
-    },
-    [findSafeSpot]
-  );
-
-  // 1. Periodic Autonomous Strolling Loop along the bottom
+  // 1. Continuous, Unbreakable Trick & Strolling State Machine Loop
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    let isCancelled = false;
 
-    // Initial placement in a guaranteed obstacle-free spot
-    const initialSpot = findSafeSpot(null, posRef.current.x);
-    setState((prev) => ({
-      ...prev,
+    const clearTimers = () => {
+      if (roamTimerRef.current) window.clearTimeout(roamTimerRef.current);
+      if (actionEndTimerRef.current) window.clearTimeout(actionEndTimerRef.current);
+    };
+
+    const runCycle = (delayMs = 900) => {
+      if (isCancelled) return;
+      if (roamTimerRef.current) window.clearTimeout(roamTimerRef.current);
+
+      roamTimerRef.current = window.setTimeout(() => {
+        if (isCancelled) return;
+
+        if (typeof document !== "undefined" && document.hidden) {
+          runCycle(2500);
+          return;
+        }
+
+        const cur = stateRef.current;
+        if (cur.isVanishing) return;
+
+        // If user is hovering Cube right now, wait briefly and check again
+        if (cur.isHovered) {
+          runCycle(1200);
+          return;
+        }
+
+        // Check if user has been inactive for > 45s -> enter cozy nap mode
+        const inactiveMs = Date.now() - lastUserActivityRef.current;
+        if (inactiveMs > 45000) {
+          if (cur.activeTrick !== "sleep") {
+            updateState({
+              isWalking: false,
+              moveDurationMs: 0,
+              activeTrick: "sleep",
+            });
+          }
+          runCycle(3000);
+          return;
+        }
+
+        stepCounterRef.current += 1;
+        // Perform 2 tricks for every 1 stroll so Cube is always entertaining!
+        const doStationaryTrick = stepCounterRef.current % 3 !== 0;
+
+        if (doStationaryTrick) {
+          const trickSpec = pickNextTrick();
+          updateState({
+            isWalking: false,
+            moveDurationMs: 0,
+            activeTrick: trickSpec.id,
+          });
+
+          if (actionEndTimerRef.current) window.clearTimeout(actionEndTimerRef.current);
+          actionEndTimerRef.current = window.setTimeout(() => {
+            if (isCancelled) return;
+            updateState((prev) =>
+              prev.activeTrick === trickSpec.id ? { ...prev, activeTrick: null } : prev
+            );
+            runCycle(900);
+          }, trickSpec.durationMs);
+          return;
+        }
+
+        // Stroll (or glide on neon hoverboard!) to a new safe spot along the bottom
+        const nextSpot = findSafeSpot(null, cur.x);
+        const dist = Math.abs(nextSpot.x - cur.x);
+
+        if (dist < 30 && nextSpot.bottomOffset === cur.bottomOffset) {
+          const trickSpec = pickNextTrick();
+          updateState({
+            isWalking: false,
+            moveDurationMs: 0,
+            activeTrick: trickSpec.id,
+          });
+          if (actionEndTimerRef.current) window.clearTimeout(actionEndTimerRef.current);
+          actionEndTimerRef.current = window.setTimeout(() => {
+            if (isCancelled) return;
+            updateState({ activeTrick: null });
+            runCycle(900);
+          }, trickSpec.durationMs);
+          return;
+        }
+
+        const useHoverboard = dist >= 140 && Math.random() < 0.55;
+        const speedPxPerSec = useHoverboard ? 115 : 75;
+        const durationMs = Math.min(
+          3400,
+          Math.max(1200, Math.round((dist / speedPxPerSec) * 1000))
+        );
+        const dir = nextSpot.x < cur.x ? "left" : "right";
+
+        updateState({
+          x: nextSpot.x,
+          bottomOffset: nextSpot.bottomOffset,
+          isWalking: !useHoverboard,
+          walkDirection: dir,
+          moveDurationMs: durationMs,
+          activeTrick: useHoverboard ? "hoverboard" : null,
+        });
+
+        if (actionEndTimerRef.current) window.clearTimeout(actionEndTimerRef.current);
+        actionEndTimerRef.current = window.setTimeout(() => {
+          if (isCancelled) return;
+          updateState({
+            isWalking: false,
+            moveDurationMs: 0,
+            activeTrick: null,
+          });
+          // Immediately perform a trick upon arriving at the new spot!
+          runCycle(450);
+        }, durationMs);
+      }, delayMs);
+    };
+
+    // Place in an obstacle-free spot and kick off the first trick cycle
+    const initialSpot = findSafeSpot(null, stateRef.current.x);
+    updateState({
       x: initialSpot.x,
       bottomOffset: initialSpot.bottomOffset,
       moveDurationMs: 0,
-    }));
+      activeTrick: "dance",
+    });
+    runCycle(2600);
 
-    if (prefersReducedMotion) return;
-
-    const scheduleNextStroll = () => {
-      const pauseMs = 2800 + Math.floor(Math.random() * 2200);
-      roamTimerRef.current = window.setTimeout(() => {
-        setState((prev) => {
-          if (prev.isHovered || prev.isVanishing || prev.isEvading) {
-            scheduleNextStroll();
-            return prev;
-          }
-          const next = findSafeSpot(null, prev.x);
-          const dist = Math.abs(next.x - prev.x);
-          if (dist < 24 && next.bottomOffset === prev.bottomOffset) {
-            scheduleNextStroll();
-            return prev;
-          }
-          // Gentle walking speed (~65px per second)
-          const durationMs = Math.min(4200, Math.max(1400, Math.round((dist / 65) * 1000)));
-          const dir = next.x < prev.x ? "left" : "right";
-
-          if (walkEndTimerRef.current) window.clearTimeout(walkEndTimerRef.current);
-          walkEndTimerRef.current = window.setTimeout(() => {
-            setState((s) => ({ ...s, isWalking: false }));
-            scheduleNextStroll();
-          }, durationMs);
-
-          return {
-            ...prev,
-            x: next.x,
-            bottomOffset: next.bottomOffset,
-            isWalking: true,
-            walkDirection: dir,
-            moveDurationMs: durationMs,
-          };
-        });
-      }, pauseMs);
-    };
-
-    scheduleNextStroll();
     return () => {
-      if (roamTimerRef.current) window.clearTimeout(roamTimerRef.current);
-      if (walkEndTimerRef.current) window.clearTimeout(walkEndTimerRef.current);
+      isCancelled = true;
+      clearTimers();
     };
-  }, [findSafeSpot]);
+  }, [findSafeSpot, pickNextTrick, updateState]);
 
-  // 2. Evade whenever scroll, resize, or input focus would cause Cube to cover a field/button
+  // 2. Wake up from sleep on user activity & step aside ONLY if an overlapping input is focused
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const handleScrollOrResize = () => {
-      if (isCurrentSpotOverlappingControl()) {
-        evadeFromX(posRef.current.x);
+    const recordUserActivity = () => {
+      lastUserActivityRef.current = Date.now();
+      if (stateRef.current.activeTrick === "sleep") {
+        updateState({
+          activeTrick: "wake",
+          isWalking: false,
+        });
+        window.setTimeout(() => {
+          updateState((prev) =>
+            prev.activeTrick === "wake" ? { ...prev, activeTrick: "backflip" } : prev
+          );
+        }, 480);
       }
     };
 
     const handleFocusIn = (e) => {
+      recordUserActivity();
       const target = e.target;
       if (!target || typeof target.getBoundingClientRect !== "function") return;
       if (target.closest?.("[data-roaming-cube]")) return;
       const r = target.getBoundingClientRect();
-      if (r.bottom >= window.innerHeight - 190) {
-        const fieldCenterX = r.left + r.width / 2;
-        if (Math.abs(fieldCenterX - (posRef.current.x + 32)) < 165) {
-          evadeFromX(fieldCenterX);
-        }
+      const vh = window.innerHeight;
+      const cur = stateRef.current;
+      const cubeLeft = cur.x - 10;
+      const cubeRight = cur.x + 78;
+      const cubeTop = vh - cur.bottomOffset - 86;
+
+      // Only step aside if the focused field actually overlaps Cube's current position
+      if (r.bottom >= cubeTop && r.right >= cubeLeft && r.left <= cubeRight) {
+        const next = findSafeSpot(r.left + r.width / 2, cur.x);
+        const dir = next.x < cur.x ? "left" : "right";
+        updateState({
+          x: next.x,
+          bottomOffset: next.bottomOffset,
+          isWalking: true,
+          walkDirection: dir,
+          moveDurationMs: 420,
+          activeTrick: null,
+        });
+        window.setTimeout(() => {
+          updateState({ isWalking: false, moveDurationMs: 0 });
+        }, 440);
       }
     };
 
-    const handleMouseMove = (e) => {
-      const btn = mascotBtnRef.current;
-      if (!btn) return;
-      const rect = btn.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const dist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
-
-      if (dist > 125) return;
-
-      // Check 1: Is the user hovering/targeting an interactive control near Cube?
-      const hoveredInteractive = e.target?.closest?.(INTERACTIVE_OBSTACLE_SELECTOR);
-      if (hoveredInteractive && !hoveredInteractive.closest("[data-roaming-cube]")) {
-        evadeFromX(e.clientX);
-        return;
-      }
-
-      // Check 2: Is there any interactive field/button directly behind Cube at the cursor or Cube center?
-      if (typeof document.elementsFromPoint === "function") {
-        const samplePoints = [
-          [e.clientX, e.clientY],
-          [centerX, centerY],
-          [rect.left + 10, rect.bottom - 10],
-          [rect.right - 10, rect.bottom - 10],
-        ];
-        for (const [px, py] of samplePoints) {
-          if (px < 0 || py < 0 || px > window.innerWidth || py > window.innerHeight) continue;
-          const stack = document.elementsFromPoint(px, py);
-          const underlyingControl = stack.find(
-            (el) =>
-              !el.closest?.("[data-roaming-cube]") &&
-              el.matches?.(INTERACTIVE_OBSTACLE_SELECTOR)
-          );
-          if (underlyingControl) {
-            evadeFromX(px);
-            return;
-          }
-        }
-      }
-    };
-
-    window.addEventListener("scroll", handleScrollOrResize, { capture: true, passive: true });
-    window.addEventListener("resize", handleScrollOrResize, { passive: true });
     window.addEventListener("focusin", handleFocusIn, { passive: true });
-    window.addEventListener("mousemove", handleMouseMove, { passive: true });
+    window.addEventListener("keydown", recordUserActivity, { passive: true });
+    window.addEventListener("mousemove", recordUserActivity, { passive: true });
 
     return () => {
-      window.removeEventListener("scroll", handleScrollOrResize, { capture: true });
-      window.removeEventListener("resize", handleScrollOrResize);
       window.removeEventListener("focusin", handleFocusIn);
-      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("keydown", recordUserActivity);
+      window.removeEventListener("mousemove", recordUserActivity);
     };
-  }, [evadeFromX, isCurrentSpotOverlappingControl]);
+  }, [findSafeSpot, updateState]);
 
   const handleClickMascot = () => {
-    setState((prev) => ({ ...prev, isVanishing: true, isWalking: false }));
+    updateState({
+      isVanishing: true,
+      isWalking: false,
+      activeTrick: null,
+    });
     window.setTimeout(() => {
       onOpen?.();
     }, 140);
   };
+
+  const pillText = state.isHovered
+    ? "Ask Guide Bot ✨"
+    : state.activeTrick && TRICK_BADGES[state.activeTrick]
+    ? TRICK_BADGES[state.activeTrick]
+    : null;
 
   return (
     <div
@@ -473,9 +520,7 @@ function RoamingCubeCompanion({ onOpen, screenTitle }) {
         transform: `translate3d(${state.x}px, -${state.bottomOffset}px, 0)`,
         transitionProperty: "transform",
         transitionDuration: `${state.moveDurationMs}ms`,
-        transitionTimingFunction: state.isEvading
-          ? "cubic-bezier(0.22, 1, 0.36, 1)"
-          : "linear",
+        transitionTimingFunction: "linear",
       }}
     >
       <button
@@ -483,8 +528,8 @@ function RoamingCubeCompanion({ onOpen, screenTitle }) {
         type="button"
         data-roaming-cube="true"
         onClick={handleClickMascot}
-        onMouseEnter={() => setState((prev) => ({ ...prev, isHovered: true, isWalking: false }))}
-        onMouseLeave={() => setState((prev) => ({ ...prev, isHovered: false }))}
+        onMouseEnter={() => updateState({ isHovered: true })}
+        onMouseLeave={() => updateState({ isHovered: false })}
         aria-label="Open Guide Bot"
         title={screenTitle ? `Guide Bot — Explain ${screenTitle}` : "Click to open Guide Bot"}
         className={`group relative pointer-events-auto flex flex-col items-center cursor-pointer focus:outline-hidden transition-all duration-200 ${
@@ -493,24 +538,29 @@ function RoamingCubeCompanion({ onOpen, screenTitle }) {
             : "opacity-100 translate-y-0 scale-100 hover:-translate-y-1"
         }`}
       >
-        {/* Subtle Hover Speech Pill (only visible when hovering Cube) */}
+        {/* Trick / Hover Status Pill */}
         <span
-          className={`mb-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold whitespace-nowrap shadow-md border transition-all duration-150 pointer-events-none ${
-            state.isHovered
+          className={`mb-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-extrabold whitespace-nowrap shadow-md border transition-all duration-200 pointer-events-none ${
+            pillText
               ? "opacity-100 translate-y-0 scale-100"
               : "opacity-0 translate-y-1 scale-95"
-          } bg-slate-900 text-white border-slate-700 dark:bg-white dark:text-slate-900 dark:border-slate-200`}
+          } ${
+            state.isHovered
+              ? "bg-blue-600 text-white border-blue-400"
+              : "bg-slate-900/95 text-white border-slate-700 dark:bg-white/95 dark:text-slate-900 dark:border-slate-200"
+          }`}
         >
-          Guide Bot ✨
+          {pillText || "Guide Bot ✨"}
         </span>
 
-        {/* Full-Body Roaming Cube Mascot */}
+        {/* Full-Body Roaming Cube Mascot with Tricks */}
         <GuideBotAvatar
-          className="w-16 h-[76px] drop-shadow-lg"
+          className="w-[72px] h-[84px] drop-shadow-lg"
           fullBody={true}
-          walking={state.isWalking && !state.isHovered}
+          walking={state.isWalking}
           walkDirection={state.walkDirection}
           waving={state.isHovered}
+          trick={state.activeTrick}
         />
       </button>
     </div>

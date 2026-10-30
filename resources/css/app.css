@@ -4462,6 +4462,287 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   animation: cube-idle-breathe 2.4s ease-in-out infinite;
 }
 
+/* ============================================================================
+   ENTERTAINING CUBE TRICKS (Backflip, Dance, Hoverboard, Juggle, Shades, etc.)
+   ========================================================================== */
+
+/* Trick 1: Backflip (Anticipation crouch -> 360° leap -> Squash & Stretch land) */
+@keyframes cube-backflip-rig {
+  0% {
+    transform: translateY(0) scale(1, 1) rotate(0deg);
+  }
+  16% {
+    transform: translateY(5px) scale(1.12, 0.85) rotate(0deg);
+  }
+  52% {
+    transform: translateY(-28px) scale(0.96, 1.05) rotate(-180deg);
+  }
+  82% {
+    transform: translateY(3px) scale(1.1, 0.88) rotate(-360deg);
+  }
+  92% {
+    transform: translateY(-2px) scale(0.98, 1.02) rotate(-360deg);
+  }
+  100% {
+    transform: translateY(0) scale(1, 1) rotate(-360deg);
+  }
+}
+
+@keyframes cube-sparkle-pop {
+  0%, 20% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+.guide-bot-fullbody.cube-trick-backflip .cube-whole-body-rig {
+  animation: cube-backflip-rig 1.35s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.guide-bot-fullbody.cube-trick-backflip .cube-sparkle-1 {
+  transform-origin: 8px 17px;
+  animation: cube-sparkle-pop 1.35s ease-out infinite;
+}
+
+.guide-bot-fullbody.cube-trick-backflip .cube-sparkle-2 {
+  transform-origin: 59px 11px;
+  animation: cube-sparkle-pop 1.35s ease-out 0.15s infinite;
+}
+
+/* Trick 2: Robot Dance Groove + Floating Music Notes */
+@keyframes cube-dance-sway {
+  0%, 100% {
+    transform: translateY(0) rotate(-6deg);
+  }
+  25% {
+    transform: translateY(-4px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(0) rotate(6deg);
+  }
+  75% {
+    transform: translateY(-4px) rotate(0deg);
+  }
+}
+
+@keyframes cube-dance-arm-l {
+  0%, 100% {
+    transform: rotate(35deg);
+  }
+  50% {
+    transform: rotate(-115deg);
+  }
+}
+
+@keyframes cube-dance-arm-r {
+  0%, 100% {
+    transform: rotate(-115deg);
+  }
+  50% {
+    transform: rotate(35deg);
+  }
+}
+
+@keyframes cube-float-up {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.8);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(1.08);
+  }
+}
+
+.guide-bot-fullbody.cube-trick-dance .cube-whole-body-rig {
+  animation: cube-dance-sway 0.72s ease-in-out infinite;
+}
+
+.guide-bot-fullbody.cube-trick-dance .cube-arm-left {
+  animation: cube-dance-arm-l 0.72s ease-in-out infinite;
+}
+
+.guide-bot-fullbody.cube-trick-dance .cube-arm-right {
+  animation: cube-dance-arm-r 0.72s ease-in-out infinite;
+}
+
+.guide-bot-fullbody .cube-float-item-1 {
+  animation: cube-float-up 1.2s ease-out infinite;
+}
+
+.guide-bot-fullbody .cube-float-item-2 {
+  animation: cube-float-up 1.2s ease-out 0.38s infinite;
+}
+
+.guide-bot-fullbody .cube-float-item-3 {
+  animation: cube-float-up 1.2s ease-out 0.75s infinite;
+}
+
+/* Trick 3: Hoverboard Glide Bob */
+@keyframes cube-hoverboard-float {
+  0%, 100% {
+    transform: translateY(-2px);
+  }
+  50% {
+    transform: translateY(-5.5px);
+  }
+}
+
+.guide-bot-fullbody.cube-trick-hoverboard .cube-whole-body-rig,
+.guide-bot-fullbody.cube-trick-hoverboard .cube-prop-hoverboard {
+  animation: cube-hoverboard-float 0.65s ease-in-out infinite;
+}
+
+/* Trick 4: Cozmo-Style Mini-Cube Juggling */
+@keyframes cube-juggle-arc-1 {
+  0%, 100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate(12px, -22px) rotate(180deg);
+  }
+}
+
+@keyframes cube-juggle-arc-2 {
+  0%, 100% {
+    transform: translate(0, -20px) rotate(0deg);
+  }
+  50% {
+    transform: translate(-12px, 2px) rotate(-180deg);
+  }
+}
+
+@keyframes cube-juggle-arc-3 {
+  0%, 100% {
+    transform: translate(-10px, 6px) rotate(0deg);
+  }
+  50% {
+    transform: translate(10px, -12px) rotate(180deg);
+  }
+}
+
+.guide-bot-fullbody.cube-trick-juggle .cube-juggle-orb-1 {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: cube-juggle-arc-1 0.78s ease-in-out infinite;
+}
+
+.guide-bot-fullbody.cube-trick-juggle .cube-juggle-orb-2 {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: cube-juggle-arc-2 0.78s ease-in-out infinite;
+}
+
+.guide-bot-fullbody.cube-trick-juggle .cube-juggle-orb-3 {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: cube-juggle-arc-3 0.78s ease-in-out infinite;
+}
+
+.guide-bot-fullbody.cube-trick-juggle .cube-arm-left {
+  animation: cube-arm-swing-left 0.45s ease-in-out infinite;
+}
+
+.guide-bot-fullbody.cube-trick-juggle .cube-arm-right {
+  animation: cube-arm-swing-right 0.45s ease-in-out infinite;
+}
+
+/* Trick 5: Pixel "Deal With It" Shades Drop */
+@keyframes cube-shades-drop-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+  28%, 100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.guide-bot-fullbody.cube-trick-shades .cube-prop-shades {
+  animation: cube-shades-drop-in 2.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+/* Trick 6: Supercharge / Coffee Sip */
+@keyframes cube-charge-sip {
+  0%, 100% {
+    transform: rotate(-75deg);
+  }
+  45%, 65% {
+    transform: rotate(-112deg);
+  }
+}
+
+.guide-bot-fullbody.cube-trick-charge .cube-arm-right {
+  animation: cube-charge-sip 1.25s ease-in-out infinite;
+}
+
+/* Trick 7: Curious Screen Scanner Sweep */
+@keyframes cube-scan-sweep {
+  0%, 100% {
+    opacity: 0.45;
+    transform: rotate(-8deg);
+  }
+  50% {
+    opacity: 0.9;
+    transform: rotate(8deg);
+  }
+}
+
+.guide-bot-fullbody.cube-trick-scan .cube-scan-cone {
+  transform-origin: 34px 18px;
+  animation: cube-scan-sweep 1.2s ease-in-out infinite;
+}
+
+.guide-bot-fullbody.cube-trick-scan .cube-arm-right {
+  transform: rotate(-135deg);
+}
+
+/* Trick 8: Cozy Nap & Startled Wake-Up Hop */
+@keyframes cube-sleep-breathe {
+  0%, 100% {
+    transform: translateY(3px) scale(1.03, 0.96);
+  }
+  50% {
+    transform: translateY(4.5px) scale(1.06, 0.93);
+  }
+}
+
+@keyframes cube-wake-hop {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  35% {
+    transform: translateY(-12px) scale(0.95, 1.08);
+  }
+  75% {
+    transform: translateY(2px) scale(1.06, 0.94);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+.guide-bot-fullbody.cube-trick-sleep .cube-whole-body-rig {
+  animation: cube-sleep-breathe 2.6s ease-in-out infinite;
+}
+
+.guide-bot-fullbody.cube-trick-wake .cube-whole-body-rig {
+  animation: cube-wake-hop 0.45s cubic-bezier(0.22, 1, 0.36, 1) 1;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .guide-bot-drawer,
   :is(.guide-bot-drawer[open]):where(:not([data-closing])),
@@ -4473,13 +4754,6 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
     :is(.guide-bot-drawer[open]):where(:not([data-closing])) {
       transform: none;
     }
-  }
-  .guide-bot-fullbody .cube-leg-left,
-  .guide-bot-fullbody .cube-leg-right,
-  .guide-bot-fullbody .cube-arm-left,
-  .guide-bot-fullbody .cube-arm-right,
-  .guide-bot-fullbody .cube-upper-rig {
-    animation: none !important;
   }
 }
 
