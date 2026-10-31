@@ -183,5 +183,55 @@ class ErpPhase1FeaturesTest extends TestCase
         $listRes->assertStatus(200)
             ->assertJsonCount(1);
     }
+
+    public function test_formulation_select_deduplicates_spelling_and_assigns_to_multiple_products(): void
+    {
+        // 1. Create first product with "Omeprazole" -> saves formulation for next time
+        $prod1Res = $this->postJson('/api/products', [
+            'product_code' => 'PRD-0401',
+            'barcode'      => '8900401',
+            'name'         => 'Risek 20mg',
+            'formulation'  => 'Omeprazole',
+            'pack_size'    => 14,
+            'narcotic'     => 'no',
+            'category_id'  => $this->category->id,
+            'brand_id'     => $this->brand->id,
+            'supplier_id'  => $this->supplier->id,
+        ]);
+
+        $prod1Res->assertStatus(201)
+            ->assertJsonPath('formulation', 'Omeprazole');
+
+        // 2. Trying to save "omeprazole" (different case/spaces) via POST /api/formulations
+        // returns existing "Omeprazole" without creating a duplicate
+        $dupFormRes = $this->postJson('/api/formulations', [
+            'name' => '  omeprazole  ',
+        ]);
+        $dupFormRes->assertStatus(200)
+            ->assertJsonPath('name', 'Omeprazole')
+            ->assertJsonPath('is_existing', true);
+
+        // 3. Create second product with "OMEPRAZOLE" -> resolves to single canonical spelling "Omeprazole"
+        $prod2Res = $this->postJson('/api/products', [
+            'product_code' => 'PRD-0402',
+            'barcode'      => '8900402',
+            'name'         => 'Omega 20mg',
+            'formulation'  => 'OMEPRAZOLE',
+            'pack_size'    => 14,
+            'narcotic'     => 'no',
+            'category_id'  => $this->category->id,
+            'brand_id'     => $this->brand->id,
+            'supplier_id'  => $this->supplier->id,
+        ]);
+
+        $prod2Res->assertStatus(201)
+            ->assertJsonPath('formulation', 'Omeprazole');
+
+        // 4. GET /api/formulations only contains "Omeprazole" once
+        $listRes = $this->getJson('/api/formulations?q=omeprazole');
+        $listRes->assertStatus(200)
+            ->assertJsonCount(1)
+            ->assertJsonPath('0.name', 'Omeprazole');
+    }
 }
 

@@ -4,6 +4,7 @@ import axios from "axios";
 import { CubeIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import Select from "react-select";
 import AsyncSelect from "react-select/async";
+import CreatableSelect from "react-select/creatable";
 import toast from "react-hot-toast";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
@@ -20,6 +21,9 @@ const getContrastText = (hexColor) => {
 
 // 👉 Normalize Laravel paginate payloads (or plain arrays) to a simple array
 const asList = (payload) => (Array.isArray(payload) ? payload : (payload?.data ?? payload?.items ?? []));
+
+// 👉 Normalize formulation text (trim and collapse extra whitespace)
+const normalizeFormulation = (val) => String(val ?? "").trim().replace(/\s+/g, " ");
 
 const ProductFormModal = forwardRef(({ open, onClose, onProductCreated }, ref) => {
   const [form, setForm] = useState({
@@ -49,6 +53,9 @@ const ProductFormModal = forwardRef(({ open, onClose, onProductCreated }, ref) =
 
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [formulations, setFormulations] = useState([]);
+  const [formulationInput, setFormulationInput] = useState("");
+  const formulationEscapedRef = useRef(false);
   const [brandOption, setBrandOption] = useState(null);
   const [saving, setSaving] = useState(false);
   const [windowPos, setWindowPos] = useState(() => {
@@ -128,13 +135,15 @@ const supplierRef = useRef(null);
     if (open) {
       const fetchData = async () => {
         try {
-          const [catRes, supRes, codeRes] = await Promise.all([
+          const [catRes, supRes, formRes, codeRes] = await Promise.all([
             axios.get("/api/categories"),
             axios.get("/api/suppliers"),
+            axios.get("/api/formulations").catch(() => ({ data: [] })),
             axios.get("/api/products/new-code")
           ]);
           setCategories(asList(catRes.data));
           setSuppliers(asList(supRes.data));
+          setFormulations(asList(formRes.data));
           setForm(prev => ({
             ...prev,
             product_code: codeRes.data.product_code || "",
@@ -211,6 +220,7 @@ const handleEnterNav = (e, nextField) => {
   // Track open/closed state of each select menu using a ref (updates synchronously
   // so the Enter handler always sees the latest value).
   const selectMenuOpenRef = useRef({
+    formulation: false,
     category: false,
     brand: false,
     supplier: false,
@@ -218,6 +228,98 @@ const handleEnterNav = (e, nextField) => {
 
   const setSelectMenuOpen = (selectKey, isOpen) => {
     selectMenuOpenRef.current[selectKey] = isOpen;
+  };
+
+  const formulationOptions = useMemo(() => {
+    const map = new Map();
+    asList(formulations).forEach((item) => {
+      const name = normalizeFormulation(typeof item === "string" ? item : item?.name);
+      if (!name) return;
+      const key = name.toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, { value: name, label: name });
+      }
+    });
+
+    const current = normalizeFormulation(form?.formulation);
+    if (current) {
+      const currentKey = current.toLowerCase();
+      if (!map.has(currentKey)) {
+        map.set(currentKey, { value: current, label: current });
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) =>
+      a.label.localeCompare(b.label, undefined, { sensitivity: "base" })
+    );
+  }, [formulations, form?.formulation]);
+
+  const selectedFormulationOption = useMemo(() => {
+    const current = normalizeFormulation(form?.formulation);
+    if (!current) return null;
+    const currentKey = current.toLowerCase();
+    return (
+      formulationOptions.find((opt) => opt.value.toLowerCase() === currentKey) || {
+        value: current,
+        label: current,
+      }
+    );
+  }, [form?.formulation, formulationOptions]);
+
+  const isValidNewFormulation = (inputValue, selectValue, selectOptions) => {
+    const clean = normalizeFormulation(inputValue);
+    if (!clean) return false;
+    const lower = clean.toLowerCase();
+    const inValue = (Array.isArray(selectValue) ? selectValue : [selectValue])
+      .filter(Boolean)
+      .some((opt) => normalizeFormulation(opt.value || opt.label).toLowerCase() === lower);
+    const inOptions = (selectOptions || []).some(
+      (opt) => normalizeFormulation(opt.value || opt.label).toLowerCase() === lower
+    );
+    return !inValue && !inOptions;
+  };
+
+  const commitFormulationValue = async (rawInput, { focusNext = true } = {}) => {
+    const clean = normalizeFormulation(rawInput);
+    if (!clean) {
+      setForm((prev) => ({ ...prev, formulation: "" }));
+      return "";
+    }
+
+    const lower = clean.toLowerCase();
+    const existing = formulationOptions.find((opt) => opt.value.toLowerCase() === lower);
+    if (existing) {
+      setForm((prev) => ({ ...prev, formulation: existing.value }));
+      if (focusNext) focusNextField("pack_size");
+      return existing.value;
+    }
+
+    setForm((prev) => ({ ...prev, formulation: clean }));
+    setFormulations((prev) => {
+      if (prev.some((f) => normalizeFormulation(typeof f === "string" ? f : f?.name).toLowerCase() === lower)) {
+        return prev;
+      }
+      return [...prev, { name: clean }];
+    });
+    if (focusNext) focusNextField("pack_size");
+
+    try {
+      const res = await axios.post("/api/formulations", { name: clean });
+      const canonical = normalizeFormulation(res.data?.name) || clean;
+      setFormulations((prev) => {
+        const canonicalLower = canonical.toLowerCase();
+        const filtered = prev.filter(
+          (f) => normalizeFormulation(typeof f === "string" ? f : f?.name).toLowerCase() !== canonicalLower
+        );
+        return [...filtered, { id: res.data?.id, name: canonical }];
+      });
+      if (canonical !== clean) {
+        setForm((prev) => (prev.formulation === clean ? { ...prev, formulation: canonical } : prev));
+      }
+      return canonical;
+    } catch {
+      return clean;
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -230,16 +332,39 @@ const handleEnterNav = (e, nextField) => {
 
     try {
       setSaving(true);
+      const pending = normalizeFormulation(formulationInput);
+      let finalFormulation = form.formulation;
+      if (pending) {
+        setFormulationInput("");
+        const lower = pending.toLowerCase();
+        const existing = formulationOptions.find((opt) => opt.value.toLowerCase() === lower);
+        finalFormulation = existing ? existing.value : pending;
+      }
+      const payloadForm = { ...form, formulation: finalFormulation };
+
       const formData = new FormData();
-      Object.keys(form).forEach((key) => {
-        if (form[key] !== undefined && form[key] !== null) {
-          formData.append(key, form[key]);
+      Object.keys(payloadForm).forEach((key) => {
+        if (payloadForm[key] !== undefined && payloadForm[key] !== null) {
+          formData.append(key, payloadForm[key]);
         }
       });
 
       const { data } = await axios.post("/api/products", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
+
+      if (data?.formulation) {
+        const cleanSaved = normalizeFormulation(data.formulation);
+        if (cleanSaved) {
+          setFormulations((prev) => {
+            const lower = cleanSaved.toLowerCase();
+            if (prev.some((f) => normalizeFormulation(typeof f === "string" ? f : f?.name).toLowerCase() === lower)) {
+              return prev;
+            }
+            return [...prev, { name: cleanSaved }];
+          });
+        }
+      }
       
       toast.success("Product added successfully!");
       
@@ -589,21 +714,65 @@ style={{
               {isPharmacy && (
               <div>
                 <label htmlFor="modal-product-formulation" className="block text-xs font-medium mb-1 dark:text-slate-300">Formulation (Generic / Salt)</label>
-                <input
-                  id="modal-product-formulation"
+                <CreatableSelect
                   ref={formulationRef}
-                  type="text"
+                  inputId="modal-product-formulation"
                   name="formulation"
-                  value={form.formulation || ""}
-                  onChange={handleChange}
-                  onKeyDown={(e) => handleEnterNav(e, "pack_size")}
-                  placeholder="e.g. Paracetamol 500mg"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  enterKeyHint="next"
-                  className="w-full h-8 px-2 text-xs border rounded-sm dark:bg-slate-700 dark:text-slate-200"
+                  options={formulationOptions}
+                  value={selectedFormulationOption}
+                  inputValue={formulationInput}
+                  onInputChange={(newValue, actionMeta) => {
+                    if (actionMeta.action === "input-change") {
+                      formulationEscapedRef.current = false;
+                      setFormulationInput(newValue);
+                      return;
+                    }
+                    if (actionMeta.action === "input-blur") {
+                      const pending = normalizeFormulation(formulationInput || actionMeta.prevInputValue || "");
+                      setFormulationInput("");
+                      if (pending && !formulationEscapedRef.current) {
+                        commitFormulationValue(pending, { focusNext: false });
+                      }
+                      formulationEscapedRef.current = false;
+                      return;
+                    }
+                    if (actionMeta.action === "set-value" || actionMeta.action === "menu-close") {
+                      setFormulationInput("");
+                    }
+                  }}
+                  onChange={(opt) => {
+                    setFormulationInput("");
+                    setForm((prev) => ({ ...prev, formulation: opt?.value || "" }));
+                    if (opt?.value) {
+                      focusNextField("pack_size");
+                    }
+                  }}
+                  onCreateOption={(inputValue) => {
+                    setFormulationInput("");
+                    commitFormulationValue(inputValue, { focusNext: true });
+                  }}
+                  onMenuOpen={() => setSelectMenuOpen("formulation", true)}
+                  onMenuClose={() => setSelectMenuOpen("formulation", false)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      formulationEscapedRef.current = true;
+                      setFormulationInput("");
+                      return;
+                    }
+                    if (!normalizeFormulation(formulationInput)) {
+                      handleSelectEnterNav(e, "pack_size", "formulation");
+                    }
+                  }}
+                  isValidNewOption={isValidNewFormulation}
+                  formatCreateLabel={(inputValue) => `Add "${normalizeFormulation(inputValue)}"`}
+                  createOptionPosition="first"
+                  isClearable
+                  isSearchable
+                  placeholder="Search or type formulation..."
+                  noOptionsMessage={() => "Type formulation to add..."}
+                  classNamePrefix="rs"
+                  styles={getSmallSelectStyles(isDark)}
+                  menuPortalTarget={typeof document !== "undefined" ? document.body : null}
                 />
               </div>
               )}

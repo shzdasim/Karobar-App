@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Formulation;
 use App\Models\Product;
 use App\Models\ProductSupplier;
 use App\Models\PurchaseInvoiceItem;
@@ -268,6 +269,11 @@ class ProductController extends Controller
             'barcode' => 'required|unique:products,barcode',
         ]);
 
+        if (array_key_exists('formulation', $validated)) {
+            $resolvedFormulation = Formulation::resolveOrCreate($validated['formulation']);
+            $validated['formulation'] = $resolvedFormulation?->name;
+        }
+
         if (empty($validated['storage_location_id']) && Schema::hasTable('storage_locations')) {
             $validated['storage_location_id'] = \App\Models\StorageLocation::where('is_default', true)->value('id')
                 ?? \App\Models\StorageLocation::orderBy('id')->value('id');
@@ -338,6 +344,11 @@ class ProductController extends Controller
             'storage_location_id' => 'nullable|integer|exists:storage_locations,id',
             'barcode' => ['required', Rule::unique('products', 'barcode')->ignore($product->id)],
         ]);
+
+        if (array_key_exists('formulation', $validated)) {
+            $resolvedFormulation = Formulation::resolveOrCreate($validated['formulation']);
+            $validated['formulation'] = $resolvedFormulation?->name;
+        }
 
         if ($request->hasFile('image')) {
             if ($product->image) {

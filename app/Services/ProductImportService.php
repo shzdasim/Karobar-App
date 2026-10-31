@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Formulation;
 use App\Models\Product;
 use App\Models\Category;
 use App\Models\Brand;
@@ -440,10 +441,18 @@ class ProductImportService
         $qty = $this->toInt($data['quantity']);
         $maxDisc = $this->toInt($data['max_discount']);
 
+        $rawFormulation = $this->nullIfEmpty($data['formulation']);
+        $canonicalFormulation = null;
+        if ($rawFormulation !== null) {
+            $canonicalFormulation = !$strict
+                ? (Formulation::resolveOrCreate($rawFormulation)?->name ?? Formulation::normalizeName($rawFormulation))
+                : Formulation::normalizeName($rawFormulation);
+        }
+
         $normalized = [
             'product_code'        => $code,
             'name'                => $name,
-            'formulation'         => $this->nullIfEmpty($data['formulation']),
+            'formulation'         => $canonicalFormulation,
             'description'         => $this->nullIfEmpty($data['description']),
             'pack_size'           => $packSize,
             'quantity'            => $qty ?? 0,

@@ -21,6 +21,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentHistoryController;
 use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\ExpenseController;
+use App\Http\Controllers\FormulationController;
 use App\Http\Controllers\HrPayrollController;
 use App\Http\Controllers\InvoiceDraftController;
 use App\Http\Controllers\PaymentController;
@@ -123,10 +124,15 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::delete('/permissions/{permission}',     [PermissionController::class, 'destroy'])->middleware('permission:permission.delete');
 
     // Quick searches
-    Route::get('/brands/search',      [BrandController::class, 'search']);
-    Route::get('/categories/search',  [CategoryController::class, 'search']);
-    Route::get('/suppliers/search',   [SupplierController::class, 'search']);
-    Route::get('/customers/search',   [CustomerController::class, 'search']);
+    Route::get('/brands/search',        [BrandController::class, 'search']);
+    Route::get('/categories/search',    [CategoryController::class, 'search']);
+    Route::get('/suppliers/search',     [SupplierController::class, 'search']);
+    Route::get('/customers/search',     [CustomerController::class, 'search']);
+    Route::get('/formulations/search',  [FormulationController::class, 'search']);
+
+    // Formulations (canonical generic/salt dictionary)
+    Route::get('/formulations',         [FormulationController::class, 'index']);
+    Route::post('/formulations',        [FormulationController::class, 'store']);
 
     // Master data
     Route::get('/categories/export', [CategoryController::class, 'export'])->name('categories.export');
