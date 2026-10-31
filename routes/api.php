@@ -46,6 +46,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserPreferenceController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\UserDemandController;
+use App\Http\Controllers\CubeAssistantController;
 
 /*
 |--------------------------------------------------------------------------
@@ -339,6 +340,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/settings',                       [SettingController::class, 'show']);
     Route::post('/settings',                      [SettingController::class, 'update']);
     Route::post('/settings/test-smtp',            [SettingController::class, 'testSmtp']);
+    Route::post('/settings/test-cube-ai',         [SettingController::class, 'testCubeAi']);
 
     // Theme Settings (CRUD operations require license)
     Route::get('/theme-settings',                 [ThemeSettingController::class, 'index']);
@@ -506,4 +508,9 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/stock-disposals/{id}',             [\App\Http\Controllers\StockDisposalController::class, 'show']);
     Route::post('/stock-disposals/{id}/dispose',    [\App\Http\Controllers\StockDisposalController::class, 'dispose']);
     Route::post('/stock-disposals/{id}/restore',    [\App\Http\Controllers\StockDisposalController::class, 'restore']);
+
+    // -------------------------------------------------------------------------
+    // Cube Hybrid AI Assistant (Free-Quota Only)
+    // -------------------------------------------------------------------------
+    Route::post('/cube/ask', [CubeAssistantController::class, 'ask'])->middleware('throttle:30,1');
 });

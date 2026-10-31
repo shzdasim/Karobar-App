@@ -3,7 +3,8 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "vite build",
+        "build:cube-knowledge": "node scripts/build-cube-knowledge.mjs",
+        "build": "node scripts/build-cube-knowledge.mjs && vite build",
         "dev": "vite"
     },
     "devDependencies": {

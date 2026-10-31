@@ -833,7 +833,7 @@ export const MODAL_CONTEXT_GUIDES = {
 /**
  * Universal ERP Term & Control Dictionary used by the "Point & Explain (?)" Element Inspector.
  */
-const UNIVERSAL_CONTROL_DICTIONARY = [
+export const UNIVERSAL_CONTROL_DICTIONARY = [
   {
     keywords: ["intimat", "انٹیمیشن"],
     title: { en: "Supplier Expiry Intimation Status", ur: "سپلائر ایکسپائری انٹیمیشن اسٹیٹس" },

@@ -2,7 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CubeProviderUsage;
 use App\Models\Setting;
+use App\Services\Cube\CubeQuotaGuard;
+use App\Services\Cube\GeminiProvider;
+use App\Services\Cube\GroqProvider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
@@ -27,9 +31,16 @@ class SettingController extends Controller
             'currency_position' => 'before',
             'currency_decimal_places' => 2,
             'expiry_warning_days' => 90,
+            'cube_ai_enabled' => true,
+            'cube_groq_enabled' => true,
+            'cube_groq_model' => 'llama-3.3-70b-versatile',
+            'cube_groq_daily_limit' => 250,
+            'cube_gemini_enabled' => true,
+            'cube_gemini_model' => 'gemini-3.8-flash',
+            'cube_gemini_daily_limit' => 250,
         ]);
 
-        return response()->json($setting);
+        return response()->json($this->appendCubeMetadata($setting));
     }
 
     // GET /api/sale-system
@@ -95,6 +106,15 @@ class SettingController extends Controller
             'smtp_encryption'         => ['nullable', Rule::in(['tls', 'ssl', 'none', ''])],
             'smtp_from_address'       => ['nullable', 'email', 'max:255'],
             'smtp_from_name'          => ['nullable', 'string', 'max:255'],
+            'cube_ai_enabled'         => ['nullable', 'boolean'],
+            'cube_groq_enabled'       => ['nullable', 'boolean'],
+            'cube_groq_api_key'       => ['nullable', 'string', 'max:1000'],
+            'cube_groq_model'         => ['nullable', 'string', 'max:120'],
+            'cube_groq_daily_limit'   => ['nullable', 'integer', 'min:0', 'max:1000'],
+            'cube_gemini_enabled'     => ['nullable', 'boolean'],
+            'cube_gemini_api_key'     => ['nullable', 'string', 'max:1000'],
+            'cube_gemini_model'       => ['nullable', 'string', 'max:120'],
+            'cube_gemini_daily_limit' => ['nullable', 'integer', 'min:0', 'max:1000'],
             'logo'                    => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],
         ]);
 
@@ -119,8 +139,20 @@ class SettingController extends Controller
             'smtp_from_name',
         ];
 
-        // Fill non-SMTP fields first
-        $setting->fill(collect($validated)->except(array_merge(['logo'], $smtpFields))->toArray());
+        $cubeFields = [
+            'cube_ai_enabled',
+            'cube_groq_enabled',
+            'cube_groq_api_key',
+            'cube_groq_model',
+            'cube_groq_daily_limit',
+            'cube_gemini_enabled',
+            'cube_gemini_api_key',
+            'cube_gemini_model',
+            'cube_gemini_daily_limit',
+        ];
+
+        // Fill non-SMTP / non-Cube fields first
+        $setting->fill(collect($validated)->except(array_merge(['logo'], $smtpFields, $cubeFields))->toArray());
 
         // Fill SMTP fields safely if columns exist on the settings table
         if (Schema::hasColumn('settings', 'smtp_host')) {
@@ -148,6 +180,39 @@ class SettingController extends Controller
             }
             if ($request->has('smtp_from_name')) {
                 $setting->smtp_from_name = $request->input('smtp_from_name');
+            }
+        }
+
+        // Fill Cube AI fields safely if columns exist on the settings table
+        if (Schema::hasColumn('settings', 'cube_ai_enabled')) {
+            if ($request->has('cube_ai_enabled')) {
+                $setting->cube_ai_enabled = $request->boolean('cube_ai_enabled');
+            }
+            if ($request->has('cube_groq_enabled')) {
+                $setting->cube_groq_enabled = $request->boolean('cube_groq_enabled');
+            }
+            if ($request->has('cube_groq_api_key')) {
+                $setting->cube_groq_api_key = trim((string) $request->input('cube_groq_api_key'));
+            }
+            if ($request->has('cube_groq_model')) {
+                $setting->cube_groq_model = $request->input('cube_groq_model') ?: 'llama-3.3-70b-versatile';
+            }
+            if ($request->has('cube_groq_daily_limit')) {
+                $limit = $request->input('cube_groq_daily_limit');
+                $setting->cube_groq_daily_limit = ($limit !== null && $limit !== '') ? max(0, min(1000, (int) $limit)) : 250;
+            }
+            if ($request->has('cube_gemini_enabled')) {
+                $setting->cube_gemini_enabled = $request->boolean('cube_gemini_enabled');
+            }
+            if ($request->has('cube_gemini_api_key')) {
+                $setting->cube_gemini_api_key = trim((string) $request->input('cube_gemini_api_key'));
+            }
+            if ($request->has('cube_gemini_model')) {
+                $setting->cube_gemini_model = $request->input('cube_gemini_model') ?: 'gemini-3.8-flash';
+            }
+            if ($request->has('cube_gemini_daily_limit')) {
+                $limit = $request->input('cube_gemini_daily_limit');
+                $setting->cube_gemini_daily_limit = ($limit !== null && $limit !== '') ? max(0, min(1000, (int) $limit)) : 250;
             }
         }
         
@@ -180,8 +245,9 @@ class SettingController extends Controller
         }
         
         $setting->save();
+        $setting->applyCubeAiConfig();
 
-        return response()->json($setting->fresh());
+        return response()->json($this->appendCubeMetadata($setting->fresh()));
     }
 
     // POST /api/settings/test-smtp
@@ -232,5 +298,151 @@ class SettingController extends Controller
                 'message' => 'SMTP connection failed: ' . $e->getMessage(),
             ], 422);
         }
+    }
+
+    // POST /api/settings/test-cube-ai
+    public function testCubeAi(Request $request)
+    {
+        $this->authorize('update', Setting::class);
+
+        $validated = $request->validate([
+            'provider' => ['required', Rule::in(['groq', 'gemini'])],
+            'api_key'  => ['required', 'string', 'max:1000'],
+            'model'    => ['required', 'string', 'max:120'],
+        ]);
+
+        $provider = $validated['provider'];
+        $allowedModels = (array) config("cube.providers.{$provider}.allowed_free_models", []);
+        if (! app(CubeQuotaGuard::class)->isEligibleFreeModel($provider, $validated['model'], $allowedModels)) {
+            return response()->json([
+                'status'  => 'failed',
+                'message' => "Selected model '{$validated['model']}' is not in the verified free-tier allowlist for " . ucfirst($provider) . '.',
+            ], 422);
+        }
+
+        Setting::applyRuntimeCubeProvider($provider, [
+            'enabled'     => true,
+            'api_key'     => $validated['api_key'],
+            'model'       => $validated['model'],
+            'daily_limit' => 250,
+        ]);
+
+        $systemPrompt = 'You are Cube, the Karobar-App ERP training assistant. Respond ONLY with a valid JSON object: {"title_en":"Connected","title_ur":"منسلک","answer_en":"Cube AI connection verified.","answer_ur":"کیوب اے آئی کنکشن کامیاب رہا۔","source_ids":[]}';
+        $userPrompt = 'Verify connectivity and return the required JSON object.';
+
+        $result = $provider === 'groq'
+            ? app(GroqProvider::class)->generate($systemPrompt, $userPrompt)
+            : app(GeminiProvider::class)->generate($systemPrompt, $userPrompt);
+
+        if (($result['ok'] ?? false) === true) {
+            $verifiedModel = $result['model'] ?? $validated['model'];
+
+            try {
+                if (Schema::hasTable('settings') && Schema::hasColumn('settings', 'cube_ai_enabled')) {
+                    $setting = Setting::first();
+                    if ($setting) {
+                        $setting->cube_ai_enabled = true;
+                        if ($provider === 'groq') {
+                            $setting->cube_groq_enabled = true;
+                            $setting->cube_groq_api_key = trim($validated['api_key']);
+                            $setting->cube_groq_model = $verifiedModel;
+                            if (! $setting->cube_groq_daily_limit || $setting->cube_groq_daily_limit <= 0) {
+                                $setting->cube_groq_daily_limit = 250;
+                            }
+                        } else {
+                            $setting->cube_gemini_enabled = true;
+                            $setting->cube_gemini_api_key = trim($validated['api_key']);
+                            $setting->cube_gemini_model = $verifiedModel;
+                            if (! $setting->cube_gemini_daily_limit || $setting->cube_gemini_daily_limit <= 0) {
+                                $setting->cube_gemini_daily_limit = 250;
+                            }
+                        }
+                        $setting->save();
+                        $setting->applyCubeAiConfig();
+                    }
+                }
+
+                if (Schema::hasTable('cube_provider_usages')) {
+                    CubeProviderUsage::query()
+                        ->where('provider', $provider)
+                        ->whereDate('usage_date', now()->toDateString())
+                        ->update([
+                            'status'           => 'ready',
+                            'disabled_reason'  => null,
+                            'cooldown_until'   => null,
+                            'last_http_status' => 200,
+                            'last_error_code'  => null,
+                        ]);
+                }
+            } catch (\Throwable) {
+                // Ignore if usage or settings table not present
+            }
+
+            $switchedNote = $verifiedModel !== $validated['model']
+                ? " (auto-selected available model '{$verifiedModel}' on your account)"
+                : '';
+
+            return response()->json([
+                'status'           => 'connected',
+                'provider'         => $provider,
+                'model'            => $verifiedModel,
+                'available_models' => $result['available_models'] ?? [],
+                'message'          => ucfirst($provider) . " ({$verifiedModel}) connected and verified!{$switchedNote}",
+            ]);
+        }
+
+        $errCode = $result['error_code'] ?? ('HTTP ' . ($result['http_status'] ?? 500));
+        $errDetail = trim((string) ($result['error_message'] ?? ''));
+        $detailSuffix = $errDetail !== '' ? " — {$errDetail}" : '';
+
+        return response()->json([
+            'status'           => 'failed',
+            'provider'         => $provider,
+            'available_models' => $result['available_models'] ?? [],
+            'message'          => ucfirst($provider) . " connection failed ({$errCode}){$detailSuffix}. Please check your API key and free-tier model eligibility.",
+        ], 422);
+    }
+
+    protected function appendCubeMetadata(Setting $setting): array
+    {
+        $payload = $setting->toArray();
+
+        $today = now()->toDateString();
+        $groqUsage = null;
+        $geminiUsage = null;
+
+        try {
+            if (Schema::hasTable('cube_provider_usages')) {
+                $groqUsage = CubeProviderUsage::query()
+                    ->where('provider', 'groq')
+                    ->whereDate('usage_date', $today)
+                    ->first();
+                $geminiUsage = CubeProviderUsage::query()
+                    ->where('provider', 'gemini')
+                    ->whereDate('usage_date', $today)
+                    ->first();
+            }
+        } catch (\Throwable) {
+            // Ignore if table not migrated yet
+        }
+
+        $payload['cube_usage_summary'] = [
+            'groq' => [
+                'request_count' => (int) ($groqUsage?->request_count ?? 0),
+                'success_count' => (int) ($groqUsage?->success_count ?? 0),
+                'failure_count' => (int) ($groqUsage?->failure_count ?? 0),
+                'status'        => (string) ($groqUsage?->status ?? 'ready'),
+                'has_env_key'   => trim((string) env('GROQ_API_KEY', '')) !== '',
+            ],
+            'gemini' => [
+                'request_count' => (int) ($geminiUsage?->request_count ?? 0),
+                'success_count' => (int) ($geminiUsage?->success_count ?? 0),
+                'failure_count' => (int) ($geminiUsage?->failure_count ?? 0),
+                'status'        => (string) ($geminiUsage?->status ?? 'ready'),
+                'has_env_key'   => trim((string) env('GEMINI_API_KEY', '')) !== '',
+            ],
+        ];
+
+        return $payload;
     }
 }

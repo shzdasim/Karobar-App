@@ -72,20 +72,59 @@ export function analyzeQuery(rawText = "") {
   const meaningfulWords = rawWords.filter((w) => !STOP_WORDS.has(w) && w.length > 1);
   const meaningfulStems = meaningfulWords.map(stemToken);
 
+  const isHowMuchOrMany = /\b(how much|how many)\b/.test(cleaned);
+
   const isHowQuery =
-    /\b(how|kaise|kesay|kese|tareeqa|tarika|steps|step|way)\b/.test(cleaned) ||
+    (!isHowMuchOrMany && /\b(how|kaise|kesay|kese|tareeqa|tarika|steps|step|way)\b/.test(cleaned)) ||
+    /\b(how to check|how to see|how to view|how do i check)\b/.test(cleaned) ||
     cleaned.includes("کیسے") ||
     cleaned.includes("طریقہ") ||
     cleaned.includes("کس طرح");
 
   const isDifferenceQuery =
-    /\b(difference|different|vs|versus|compare|farq)\b/.test(cleaned) ||
+    /\b(difference|different|vs|versus|compare|comparison|farq|muwazna)\b/.test(cleaned) ||
     cleaned.includes("فرق") ||
     cleaned.includes("موازنہ");
 
   const isImpactQuery =
     /\b(impact|affect|effect|happen|behind the scenes)\b/.test(cleaned) ||
     cleaned.includes("اثر");
+
+  const isContextualFollowUp =
+    /\b(explain in detail|more detail|in detail|elaborate|clarify|still confused|what happens if|what if|suppose|scenario|best way|can i|should i|when should|why is|why does|how does|problem|issue|mistake|error|wrong|not working|why did that|why is that|another example|in my case|tafseel|mazeed|samjha dein|agar aisa|kya hum|kyun hota)\b/.test(
+      cleaned
+    ) ||
+    /^(and what|what about|so if|but what|or if|if i|when i|can we|aur agar|toh phir|agar main|agar customer|agar supplier)\b/.test(
+      cleaned
+    ) ||
+    cleaned.includes("مزید وضاحت") ||
+    cleaned.includes("تفصیل سے") ||
+    cleaned.includes("کیوں ضروری") ||
+    cleaned.includes("اگر ایسا ہو") ||
+    cleaned.includes("اس کے بعد کیا");
+
+  const asksLiveAmount =
+    /\b(how much|how many|what is my current|what is the current|what is the balance|tell me the balance|exact balance|exact stock|kitna hai|kitne hain|kitna stock|kitna balance|kitna munafa)\b/.test(
+      cleaned
+    ) ||
+    cleaned.includes("کتنا ہے") ||
+    cleaned.includes("کتنے ہیں") ||
+    cleaned.includes("کتنا اسٹاک") ||
+    cleaned.includes("کتنا بیلنس") ||
+    cleaned.includes("کتنا منافع");
+
+  const mentionsBusinessRecord =
+    /\b(stock|balance|udhar|profit|munafa|sale|sales|invoice|payable|receivable|salary|payroll|bank|cash|phone|number)\b/.test(
+      cleaned
+    ) ||
+    cleaned.includes("اسٹاک") ||
+    cleaned.includes("بیلنس") ||
+    cleaned.includes("ادھار") ||
+    cleaned.includes("منافع") ||
+    cleaned.includes("سیل") ||
+    cleaned.includes("تنخواہ");
+
+  const isLiveRecordQuery = !isHowQuery && asksLiveAmount && mentionsBusinessRecord;
 
   return {
     cleaned,
@@ -97,8 +136,38 @@ export function analyzeQuery(rawText = "") {
     isHowQuery,
     isDifferenceQuery,
     isImpactQuery,
+    isContextualFollowUp,
+    isLiveRecordQuery,
   };
 }
+
+export const MATCH_CATEGORIES = {
+  STRONG_INTENT: "strong_intent_match",
+  STRONG_INTENT_MATCH: "strong_intent_match",
+  FAQ: "faq_match",
+  FAQ_MATCH: "faq_match",
+  SCREEN_GUIDE: "screen_guide_match",
+  SCREEN_GUIDE_MATCH: "screen_guide_match",
+  PARTIAL: "partial_match",
+  PARTIAL_MATCH: "partial_match",
+  NONE: "no_reliable_match",
+  NO_RELIABLE_MATCH: "no_reliable_match",
+};
+
+export const MATCH_CATEGORY_LABELS = {
+  strong_intent_match: "Strong intent match",
+  faq_match: "FAQ match",
+  screen_guide_match: "Screen-guide match",
+  partial_match: "Partial match",
+  no_reliable_match: "No reliable match",
+};
+
+export const EVIDENCE_TYPES = {
+  DOCUMENTED_INFO: "documented_info",
+  CURRENT_SCREEN_CONTEXT: "current_screen_context",
+  LIVE_DOM_INSPECTION: "live_dom_inspection",
+  AI_GROUNDED_DOCS: "ai_grounded_docs",
+};
 
 /**
  * Checks if a multi-word phrase or single word exists on true word boundaries in the query.
@@ -1917,14 +1986,23 @@ export function resolveWorkflowIdForIntent(intentId = "", cleanedQuery = "", cur
   if (intentId === "customer_udhar_ledger_payment" || intentId === "customer_credit_limit_hold") {
     return "customer_udhar_recovery";
   }
-  if (intentId === "cash_drawer_shift_management") {
+  if (intentId === "cash_drawer_shift_management" || intentId === "cash_drawer_shift_z_report") {
     return "cash_drawer_shift";
   }
-  if (intentId === "record_daily_expenses") {
+  if (intentId === "record_daily_expenses" || intentId === "record_shop_expenses") {
     return "record_shop_expense";
   }
-  if (intentId === "opening_stock_and_adjustments") {
+  if (intentId === "opening_stock_and_adjustments" || intentId === "opening_stock_adjustment") {
     return "inventory_adjustment";
+  }
+  if (intentId === "add_new_product_catalog") {
+    return "manage_products";
+  }
+  if (intentId === "bank_accounts_fund_transfer") {
+    return "manage_accounts_transfer";
+  }
+  if (intentId === "supplier_payment_and_ledger") {
+    return "manage_suppliers";
   }
   if (cleanedQuery.includes("purchase order") || cleanedQuery.includes("پرچیز آرڈر")) {
     return "create_purchase_order";
@@ -1962,22 +2040,119 @@ export function resolveWorkflowIdForIntent(intentId = "", cleanedQuery = "", cur
 }
 
 /**
- * Router-First Query Orchestrator (`routeUserQuery`):
- * Evaluates intent, risk, evidence tier, and interactive walkthrough triggers BEFORE response generation.
+ * Builds an accurate evidence classification badge.
+ * Never labels static documentation as a live UI observation.
  */
-export function routeUserQuery(
+export function buildEvidenceBadge(evidenceType, currentGuide = null, providerLabel = null) {
+  const screenTitleEn = currentGuide?.title?.en || currentGuide?.key || "Current Screen";
+  const screenTitleUr = currentGuide?.title?.ur || currentGuide?.key || "موجودہ اسکرین";
+
+  switch (evidenceType) {
+    case EVIDENCE_TYPES.LIVE_DOM_INSPECTION:
+      return {
+        en: `🟢 Live DOM Inspection (${screenTitleEn})`,
+        ur: `🟢 لائیو اسکرین کنٹرول کا معائنہ (${screenTitleUr})`,
+      };
+    case EVIDENCE_TYPES.CURRENT_SCREEN_CONTEXT:
+      return {
+        en: `🧭 Current Screen Context (${screenTitleEn})`,
+        ur: `🧭 موجودہ اسکرین کا سیاق و سباق (${screenTitleUr})`,
+      };
+    case EVIDENCE_TYPES.AI_GROUNDED_DOCS:
+      return {
+        en: `✨ AI-Assisted Explanation • Grounded in Karobar Docs (v${PRODUCT_VERSION}${providerLabel ? ` • ${providerLabel}` : ""})`,
+        ur: `✨ اے آئی وضاحت • کاروبار ایپ مستند گائیڈ پر مبنی (v${PRODUCT_VERSION}${providerLabel ? ` • ${providerLabel}` : ""})`,
+      };
+    case EVIDENCE_TYPES.DOCUMENTED_INFO:
+    default:
+      return {
+        en: `📘 Documented in Karobar Knowledge Base (v${PRODUCT_VERSION})`,
+        ur: `📘 کاروبار ایپ مستند گائیڈ میں درج معلومات (v${PRODUCT_VERSION})`,
+      };
+  }
+}
+
+/**
+ * Builds a helpful instructional boundary response when a user asks Cube for live ERP figures
+ * (such as current stock quantities, live customer balances, or live profit figures).
+ */
+export function buildLiveRecordBoundaryAnswer(cleaned = "", currentGuide = null) {
+  const isStock = /\b(stock|inventory|quantity|qty|batch|panadol|medicine|item|اسٹاک|مقدار)\b/.test(cleaned);
+  const isCustomer = /\b(customer|receivable|udhar|گاہک|ادھار)\b/.test(cleaned);
+  const isSupplier = /\b(supplier|payable|vendor|سپلائر)\b/.test(cleaned);
+  const isProfitOrSales = /\b(profit|sale|revenue|income|expense|منافع|سیل)\b/.test(cleaned);
+
+  const links = [];
+  if (isStock) {
+    links.push(
+      { path: "/reports/current-stock", en: "Open Current Stock Report", ur: "موجودہ اسٹاک رپورٹ کھولیں" },
+      { path: "/products", en: "Open Products Catalog", ur: "پروڈکٹس لسٹ کھولیں" }
+    );
+  } else if (isCustomer) {
+    links.push(
+      { path: "/customer-ledger", en: "Open Customer Ledger", ur: "کسٹمر کھاتہ کھولیں" },
+      { path: "/reports/accounts-receivable-aging", en: "Receivable Aging Report", ur: "وصولیوں کی ایجنگ رپورٹ" }
+    );
+  } else if (isSupplier) {
+    links.push(
+      { path: "/supplier-ledger", en: "Open Supplier Ledger", ur: "سپلائر کھاتہ کھولیں" },
+      { path: "/reports/accounts-payable-aging", en: "Payable Aging Report", ur: "واجب الادا رپورٹس" }
+    );
+  } else if (isProfitOrSales) {
+    links.push(
+      { path: "/reports/net-profit", en: "Open Net Profit & Loss Report", ur: "نفع و نقصان رپورٹ کھولیں" },
+      { path: "/dashboard", en: "Open Executive Dashboard", ur: "ڈیش بورڈ کھولیں" }
+    );
+  } else {
+    links.push(
+      { path: "/reports/current-stock", en: "Current Stock Report", ur: "موجودہ اسٹاک رپورٹ" },
+      { path: "/customer-ledger", en: "Customer Ledger", ur: "کسٹمر کھاتہ" },
+      { path: "/accounts", en: "Financial Accounts", ur: "فنانشل اکاؤنٹس" }
+    );
+  }
+
+  return {
+    title: {
+      en: "How to Check Live Figures in Karobar ERP (Privacy & Data Boundary)",
+      ur: "کاروبار ایپ میں لائیو اعداد و شمار اور ریکارڈ چیک کرنے کا طریقہ",
+    },
+    en:
+      `Cube is your **software training and workflow assistant** — for your business privacy and security, Cube does not read or transmit live ERP records (such as exact stock quantities, customer balances, invoices, or account figures).\n\n` +
+      `**How to view your live figures directly:**\n` +
+      `1. **Live Stock Quantities & Batches:** Open **Current Stock Report** (\`/reports/current-stock\`) or **Products** (\`/products\`) and type the item name.\n` +
+      `2. **Customer Receivable / Udhar Balance:** Open **Customer Ledger** (\`/customer-ledger\`) and select the customer.\n` +
+      `3. **Supplier Payable Balance:** Open **Supplier Ledger** (\`/supplier-ledger\`) and select the supplier.\n` +
+      `4. **Cash, Bank & Profit Figures:** Open **Financial Accounts** (\`/accounts\`) or **Net Profit Report** (\`/reports/net-profit\`).\n\n` +
+      `Click any shortcut below to jump straight to the live screen:`,
+    ur:
+      `کیوب (Cube) آپ کا **سافٹ ویئر ٹریننگ اسسٹنٹ** ہے — آپ کے کاروباری ڈیٹا کے تحفظ کے لیے کیوب لائیو اسٹاک، گاہکوں کے کھاتے، بل یا اکاؤنٹ بیلنس تک رسائی نہیں رکھتا اور نہ ہی انہیں کسی بیرونی سروس کو بھیجتا ہے۔\n\n` +
+      `**لائیو اعداد و شمار خود دیکھنے کا طریقہ:**\n` +
+      `1. **موجودہ اسٹاک اور بیچ:** **Current Stock Report** (\`/reports/current-stock\`) یا **Products** (\`/products\`) کھول کر آئٹم سرچ کریں۔\n` +
+      `2. **گاہک کا ادھار بیلنس:** **Customer Ledger** (\`/customer-ledger\`) کھول کر گاہک منتخب کریں۔\n` +
+      `3. **سپلائر کا بقایا بیلنس:** **Supplier Ledger** (\`/supplier-ledger\`) کھولیں۔\n` +
+      `4. **کیش، بینک اور منافع:** **Financial Accounts** (\`/accounts\`) یا **Net Profit Report** (\`/reports/net-profit\`) دیکھیں۔\n\n` +
+      `متعلقہ اسکرین کھولنے کے لیے نیچے دیے گئے بٹن پر کلک کریں:`,
+    links,
+    sourceIds: ["policy:live_data_boundary"],
+  };
+}
+
+/**
+ * Evaluates a user query against local intents, FAQs, and screen guides,
+ * returning calibrated match quality metadata and the grounded local answer.
+ */
+export function evaluateLocalQuery(
   queryText = "",
-  currentAgent = "cube",
   currentGuide = null,
-  allScreenGuides = {},
-  hasActiveDemo = false
+  allScreenGuides = {}
 ) {
   const raw = (queryText || "").trim();
   if (!raw) return null;
 
   const analysis = analyzeQuery(raw);
   const { cleaned } = analysis;
-  const currentPath = currentGuide?.key || "/dashboard";
+  const fallbackGuide = currentGuide || allScreenGuides["/dashboard"] || Object.values(allScreenGuides)[0] || null;
+  const currentPath = currentGuide?.key || fallbackGuide?.key || "/dashboard";
 
   // 1. Check Explicit Demonstration / Interactive Walkthrough Request
   const wantsInteractiveDemo =
@@ -1987,64 +2162,474 @@ export function routeUserQuery(
     cleaned.includes("مرحلہ وار سکھائیں") ||
     cleaned.includes("چل کر دکھائیں");
 
-  // 2. Get the grounded answer from the trained engine
-  const baseAnswer = answerWithTrainedEngine(raw, currentGuide, allScreenGuides);
+  // 2. Score all Trained ERP Intents (tracking top and second-best scores)
+  let bestIntent = null;
+  let bestIntentScore = 0;
+  let secondBestIntentScore = 0;
 
-  // Find matching top intent metadata (for riskLevel / workflowId)
-  let topIntent = null;
-  let topScore = 0;
   for (const intent of TRAINED_ERP_INTENTS) {
     const sc = scoreTrainedIntent(intent, analysis);
-    if (sc > topScore) {
-      topScore = sc;
-      topIntent = intent;
+    if (sc > bestIntentScore) {
+      secondBestIntentScore = bestIntentScore;
+      bestIntentScore = sc;
+      bestIntent = intent;
+    } else if (sc > secondBestIntentScore) {
+      secondBestIntentScore = sc;
     }
   }
 
-  const intentId = topIntent && topScore >= 24 ? topIntent.id : "screen_contextual";
-  const risk = topIntent?.riskLevel || "low";
-  const workflowId =
-    topIntent?.handoffWorkflowId ||
-    resolveWorkflowIdForIntent(intentId, cleaned, currentPath);
+  const intentMargin = Math.max(0, bestIntentScore - secondBestIntentScore);
 
-  // Determine Evidence Tier (Observed in Live UI vs Documented v2026.10)
-  const primaryAnswerPath = baseAnswer?.links?.[0]?.path || currentPath;
-  const isObservedInCurrentUi =
-    primaryAnswerPath === currentPath ||
+  // 3. Check Live ERP Record Boundary (unless it's a clearly documented procedural how-to with very high intent score)
+  if (analysis.isLiveRecordQuery && bestIntentScore < 120) {
+    const boundaryAnswer = buildLiveRecordBoundaryAnswer(cleaned, fallbackGuide);
+    const evidenceType = EVIDENCE_TYPES.DOCUMENTED_INFO;
+    const evidenceBadge = buildEvidenceBadge(evidenceType, fallbackGuide);
+    return {
+      matchedIntentId: "live_data_privacy_boundary",
+      intentScore: 110,
+      secondBestScore: bestIntentScore,
+      matchMargin: Math.max(25, 110 - bestIntentScore),
+      answerSource: "privacy_boundary_guide",
+      matchCategory: MATCH_CATEGORIES.STRONG_INTENT_MATCH,
+      matchCategoryLabel: MATCH_CATEGORY_LABELS[MATCH_CATEGORIES.STRONG_INTENT_MATCH],
+      evidenceType,
+      evidenceBadge,
+      workflowId: null,
+      riskLevel: "low",
+      confidence: 0.96,
+      shouldCallAi: false,
+      wantsInteractiveDemo: false,
+      sourceIds: boundaryAnswer.sourceIds,
+      answer: {
+        ...boundaryAnswer,
+        evidenceBadge,
+        workflowId: null,
+        risk: "low",
+      },
+    };
+  }
+
+  // 4. Explicit "Explain this screen / current page" intent
+  const isCurrentScreenExplain =
     cleaned.includes("this screen") ||
-    cleaned.includes("یہ اسکرین");
+    cleaned.includes("this page") ||
+    cleaned.includes("current screen") ||
+    cleaned.includes("yeh screen") ||
+    cleaned.includes("ye screen") ||
+    cleaned.includes("یہ اسکرین") ||
+    cleaned.includes("یہ صفحہ") ||
+    cleaned === "what does this do";
 
-  const evidenceTier = isObservedInCurrentUi
-    ? "observed_ui_state"
-    : "documented_version_2026_10";
+  if (isCurrentScreenExplain && fallbackGuide) {
+    const screenAnswer = buildTailoredScreenAnswer(fallbackGuide, analysis);
+    const workflowId = resolveWorkflowIdForIntent("screen_contextual", cleaned, currentPath);
+    const evidenceType = EVIDENCE_TYPES.CURRENT_SCREEN_CONTEXT;
+    const evidenceBadge = buildEvidenceBadge(evidenceType, fallbackGuide);
+    return {
+      matchedIntentId: "current_screen_overview",
+      intentScore: 100,
+      secondBestScore: bestIntentScore,
+      matchMargin: Math.max(20, 100 - bestIntentScore),
+      answerSource: "current_screen_guide",
+      matchCategory: MATCH_CATEGORIES.SCREEN_GUIDE_MATCH,
+      matchCategoryLabel: MATCH_CATEGORY_LABELS[MATCH_CATEGORIES.SCREEN_GUIDE_MATCH],
+      evidenceType,
+      evidenceBadge,
+      workflowId,
+      riskLevel: "low",
+      confidence: 0.94,
+      shouldCallAi: false,
+      wantsInteractiveDemo,
+      sourceIds: [`screen:${fallbackGuide.key}`],
+      answer: {
+        ...screenAnswer,
+        sourceIds: [`screen:${fallbackGuide.key}`],
+        evidenceBadge,
+        workflowId,
+        risk: "low",
+      },
+    };
+  }
 
-  const evidenceBadge = isObservedInCurrentUi
-    ? {
-        en: `🟢 Observed on current screen (${currentGuide?.title?.en || currentPath})`,
-        ur: `🟢 آپ کی موجودہ اسکرین (${currentGuide?.title?.ur || currentPath}) کے مطابق`,
+  // 5. Score FAQs across all screens
+  let bestFaq = null;
+  let bestFaqGuide = null;
+  let bestFaqScore = 0;
+  let secondBestFaqScore = 0;
+
+  for (const guide of Object.values(allScreenGuides)) {
+    for (let idx = 0; idx < (guide.faqs || []).length; idx++) {
+      const faq = guide.faqs[idx];
+      const faqAnalysis = analyzeQuery(`${faq.q.en} ${faq.q.ur}`);
+      let hits = 0;
+      for (const st of analysis.meaningfulStems) {
+        if (faqAnalysis.stemSet.has(st) && st.length > 2) {
+          hits += 1;
+        }
       }
-    : {
-        en: `📘 Grounded in Karobar Docs (v${PRODUCT_VERSION})`,
-        ur: `📘 کاروبار ایپ مستند گائیڈ (v${PRODUCT_VERSION})`,
-      };
+      const queryComparison = faq.q.en.toLowerCase().trim().replace(/[^\p{L}\p{N}\s]/gu, "");
+      const exactFaqMatch = cleaned === queryComparison;
+      const sc = exactFaqMatch ? 130 : hits * 24 + (guide.key === currentPath ? 8 : 0);
+      if (sc > bestFaqScore) {
+        secondBestFaqScore = bestFaqScore;
+        bestFaqScore = sc;
+        bestFaq = { ...faq, faqId: `faq:${guide.key}#${idx}` };
+        bestFaqGuide = guide;
+      } else if (sc > secondBestFaqScore) {
+        secondBestFaqScore = sc;
+      }
+    }
+  }
+
+  // 6. Score all Screen Guides
+  let bestGuide = null;
+  let bestGuideScore = 0;
+  let secondBestGuideScore = 0;
+
+  for (const guide of Object.values(allScreenGuides)) {
+    const gScore = scoreScreenGuide(guide, analysis);
+    if (gScore > bestGuideScore) {
+      secondBestGuideScore = bestGuideScore;
+      bestGuideScore = gScore;
+      bestGuide = guide;
+    } else if (gScore > secondBestGuideScore) {
+      secondBestGuideScore = gScore;
+    }
+  }
+
+  // 7. Evaluate Strong Intent Match
+  // Strong intent match requires either a phrase/compositional hit (score >= 65)
+  // or two solid keyword hits (score >= 48) with a clear margin (>= 24).
+  const isStrongIntent =
+    bestIntent &&
+    (bestIntentScore >= 65 || (bestIntentScore >= 48 && intentMargin >= 24));
+
+  if (isStrongIntent) {
+    const scoreFactor = Math.min(1, Math.max(0, (bestIntentScore - 45) / 135));
+    const marginFactor = Math.min(1, Math.max(0, intentMargin / 85));
+    const confidence = Number(
+      Math.min(0.99, Math.max(0.76, 0.75 + scoreFactor * 0.17 + marginFactor * 0.07)).toFixed(2)
+    );
+    const workflowId =
+      bestIntent.handoffWorkflowId ||
+      resolveWorkflowIdForIntent(bestIntent.id, cleaned, currentPath);
+    const primaryLinkPath = bestIntent.links?.[0]?.path || "";
+    const evidenceType =
+      primaryLinkPath && primaryLinkPath === currentPath
+        ? EVIDENCE_TYPES.CURRENT_SCREEN_CONTEXT
+        : EVIDENCE_TYPES.DOCUMENTED_INFO;
+    const evidenceBadge = buildEvidenceBadge(evidenceType, fallbackGuide);
+    const riskLevel = bestIntent.riskLevel || "low";
+
+    // Escalate a strong intent match to AI only when the user explicitly requests a detailed follow-up,
+    // elaboration, or multi-module comparison that is not already a dedicated comparison intent.
+    const isCrossModuleComparison =
+      Boolean(analysis.isDifferenceQuery) &&
+      bestIntent.id !== "po_vs_purchase_invoice" &&
+      bestIntent.id !== "sell_loose_tablets_pack_vs_unit" &&
+      secondBestIntentScore >= 48;
+
+    const isComplexOrLooseMatch =
+      bestIntent.id !== "greeting_and_help" &&
+      (analysis.meaningfulWords.length >= 6 || bestIntentScore < 95);
+
+    const shouldCallAi =
+      (Boolean(analysis.isContextualFollowUp) ||
+        isCrossModuleComparison ||
+        isComplexOrLooseMatch) &&
+      !wantsInteractiveDemo;
+
+    return {
+      matchedIntentId: bestIntent.id,
+      intentScore: bestIntentScore,
+      secondBestScore: secondBestIntentScore,
+      matchMargin: intentMargin,
+      answerSource: "trained_intent",
+      matchCategory: MATCH_CATEGORIES.STRONG_INTENT_MATCH,
+      matchCategoryLabel: MATCH_CATEGORY_LABELS[MATCH_CATEGORIES.STRONG_INTENT_MATCH],
+      evidenceType,
+      evidenceBadge,
+      workflowId,
+      riskLevel,
+      confidence,
+      shouldCallAi,
+      wantsInteractiveDemo,
+      sourceIds: [`intent:${bestIntent.id}`],
+      answer: {
+        title: bestIntent.title,
+        en: bestIntent.en,
+        ur: bestIntent.ur,
+        links: bestIntent.links || [],
+        sourceIds: [`intent:${bestIntent.id}`],
+        evidenceBadge,
+        workflowId,
+        risk: riskLevel,
+      },
+    };
+  }
+
+  // 8. Evaluate FAQ Match (requires >= 3 meaningful stem hits or exact FAQ match -> score >= 72)
+  if (bestFaq && bestFaqGuide && bestFaqScore >= 72) {
+    const faqMargin = Math.max(0, bestFaqScore - secondBestFaqScore);
+    const confidence = Number(
+      Math.min(0.94, Math.max(0.74, 0.72 + Math.min(0.15, (bestFaqScore - 70) / 250) + Math.min(0.07, faqMargin / 100))).toFixed(2)
+    );
+    const evidenceType =
+      bestFaqGuide.key === currentPath
+        ? EVIDENCE_TYPES.CURRENT_SCREEN_CONTEXT
+        : EVIDENCE_TYPES.DOCUMENTED_INFO;
+    const evidenceBadge = buildEvidenceBadge(evidenceType, bestFaqGuide);
+    const workflowId = resolveWorkflowIdForIntent("faq_match", cleaned, bestFaqGuide.key);
+    const faqAnswer = {
+      title: bestFaq.q,
+      en: `${bestFaq.a.en}\n\n**Screen:** ${bestFaqGuide.title.en} (\`${bestFaqGuide.key}\`)`,
+      ur: `${bestFaq.a.ur}\n\n**متعلقہ اسکرین:** ${bestFaqGuide.title.ur}`,
+      links: [
+        ...(bestFaqGuide.key.includes(":")
+          ? []
+          : [{ path: bestFaqGuide.key, en: `Open ${bestFaqGuide.title.en}`, ur: `${bestFaqGuide.title.ur} کھولیں` }]),
+        ...(bestFaqGuide.relatedRoutes || []).slice(0, 2),
+      ],
+      sourceIds: [bestFaq.faqId, `screen:${bestFaqGuide.key}`],
+      evidenceBadge,
+      workflowId,
+      risk: "low",
+    };
+
+    return {
+      matchedIntentId: bestFaq.faqId,
+      intentScore: bestFaqScore,
+      secondBestScore: secondBestFaqScore,
+      matchMargin: faqMargin,
+      answerSource: "faq_database",
+      matchCategory: MATCH_CATEGORIES.FAQ_MATCH,
+      matchCategoryLabel: MATCH_CATEGORY_LABELS[MATCH_CATEGORIES.FAQ_MATCH],
+      evidenceType,
+      evidenceBadge,
+      workflowId,
+      riskLevel: "low",
+      confidence,
+      shouldCallAi: Boolean(analysis.isContextualFollowUp) && !wantsInteractiveDemo,
+      wantsInteractiveDemo,
+      sourceIds: [bestFaq.faqId, `screen:${bestFaqGuide.key}`],
+      answer: faqAnswer,
+    };
+  }
+
+  // 9. Evaluate Strong Screen-Guide Match (score >= 52: e.g. 2+ title hits or 1 title hit + 3 body hits)
+  const guideMargin = Math.max(0, bestGuideScore - secondBestGuideScore);
+  if (bestGuide && bestGuideScore >= 52 && guideMargin >= 18) {
+    const screenAnswer = buildTailoredScreenAnswer(bestGuide, analysis);
+    const evidenceType =
+      bestGuide.key === currentPath
+        ? EVIDENCE_TYPES.CURRENT_SCREEN_CONTEXT
+        : EVIDENCE_TYPES.DOCUMENTED_INFO;
+    const evidenceBadge = buildEvidenceBadge(evidenceType, bestGuide);
+    const workflowId = resolveWorkflowIdForIntent("screen_guide_match", cleaned, bestGuide.key);
+    const confidence = Number(
+      Math.min(0.91, Math.max(0.72, 0.70 + Math.min(0.14, (bestGuideScore - 50) / 180) + Math.min(0.07, guideMargin / 90))).toFixed(2)
+    );
+
+    return {
+      matchedIntentId: `screen:${bestGuide.key}`,
+      intentScore: bestGuideScore,
+      secondBestScore: secondBestGuideScore,
+      matchMargin: guideMargin,
+      answerSource: "screen_guide",
+      matchCategory: MATCH_CATEGORIES.SCREEN_GUIDE_MATCH,
+      matchCategoryLabel: MATCH_CATEGORY_LABELS[MATCH_CATEGORIES.SCREEN_GUIDE_MATCH],
+      evidenceType,
+      evidenceBadge,
+      workflowId,
+      riskLevel: "low",
+      confidence,
+      shouldCallAi: Boolean(analysis.isContextualFollowUp) && !wantsInteractiveDemo,
+      wantsInteractiveDemo,
+      sourceIds: [`screen:${bestGuide.key}`],
+      answer: {
+        ...screenAnswer,
+        sourceIds: [`screen:${bestGuide.key}`],
+        evidenceBadge,
+        workflowId,
+        risk: "low",
+      },
+    };
+  }
+
+  // 10. Evaluate Partial Match (intentScore 24..64 or screenGuideScore 28..51 or faqScore 48..71)
+  if ((bestIntent && bestIntentScore >= 24) || (bestGuide && bestGuideScore >= 28)) {
+    const useIntent = bestIntent && bestIntentScore >= (bestGuideScore >= 36 ? 36 : 24);
+    const partialScore = useIntent ? bestIntentScore : bestGuideScore;
+    const partialSecond = useIntent ? secondBestIntentScore : secondBestGuideScore;
+    const partialMargin = Math.max(0, partialScore - partialSecond);
+    const confidence = Number(
+      Math.min(0.68, Math.max(0.42, 0.40 + Math.min(0.20, partialScore / 120) + Math.min(0.08, partialMargin / 80))).toFixed(2)
+    );
+
+    const matchedId = useIntent ? bestIntent.id : `screen:${bestGuide.key}`;
+    const workflowId =
+      (useIntent ? bestIntent.handoffWorkflowId : null) ||
+      resolveWorkflowIdForIntent(matchedId, cleaned, currentPath);
+    const riskLevel = (useIntent && bestIntent.riskLevel) || "low";
+    const evidenceType =
+      !useIntent && bestGuide.key === currentPath
+        ? EVIDENCE_TYPES.CURRENT_SCREEN_CONTEXT
+        : EVIDENCE_TYPES.DOCUMENTED_INFO;
+    const evidenceBadge = buildEvidenceBadge(evidenceType, useIntent ? fallbackGuide : bestGuide);
+
+    const baseAns = useIntent
+      ? {
+          title: bestIntent.title,
+          en: bestIntent.en,
+          ur: bestIntent.ur,
+          links: bestIntent.links || [],
+        }
+      : buildTailoredScreenAnswer(bestGuide, analysis);
+
+    return {
+      matchedIntentId: matchedId,
+      intentScore: partialScore,
+      secondBestScore: partialSecond,
+      matchMargin: partialMargin,
+      answerSource: useIntent ? "trained_intent_partial" : "screen_guide_partial",
+      matchCategory: MATCH_CATEGORIES.PARTIAL_MATCH,
+      matchCategoryLabel: MATCH_CATEGORY_LABELS[MATCH_CATEGORIES.PARTIAL_MATCH],
+      evidenceType,
+      evidenceBadge,
+      workflowId,
+      riskLevel,
+      confidence,
+      // Partial matches are sent to AI for a better contextual explanation unless the user explicitly requested a deterministic walkthrough demo
+      shouldCallAi: !(wantsInteractiveDemo && workflowId),
+      wantsInteractiveDemo,
+      sourceIds: [useIntent ? `intent:${bestIntent.id}` : `screen:${bestGuide.key}`],
+      answer: {
+        ...baseAns,
+        sourceIds: [useIntent ? `intent:${bestIntent.id}` : `screen:${bestGuide.key}`],
+        evidenceBadge,
+        workflowId,
+        risk: riskLevel,
+      },
+    };
+  }
+
+  // 11. No Reliable Match — Local Fallback Directory
+  const evidenceType = EVIDENCE_TYPES.CURRENT_SCREEN_CONTEXT;
+  const evidenceBadge = buildEvidenceBadge(evidenceType, fallbackGuide);
+  const workflowId = resolveWorkflowIdForIntent("screen_contextual", cleaned, currentPath);
+  const fallbackAnswer = {
+    title: {
+      en: `How Can I Help You on ${fallbackGuide?.title?.en || "Karobar ERP"}?`,
+      ur: `${fallbackGuide?.title?.ur || "کاروبار ایپ"} — میں آپ کی کیا مدد کر سکتا ہوں؟`,
+    },
+    en: `I want to make sure I give you the exact answer for **"${raw}"**.\n\nHere is what your current screen (**${fallbackGuide?.title?.en || "Dashboard"}**) does:\n${fallbackGuide?.summary?.en || ""}\n\n💡 **Or ask me directly about any Karobar workflow:**\n• **Purchasing:** *"How to make a Purchase Order"*, *"How to add new stock"*, *"How to return items to supplier"*\n• **Sales & POS:** *"How to sell loose tablets"*, *"How to give discount"*, *"How to hold a bill"*, *"How to find substitute medicine"*\n• **Finance & HR:** *"How to check customer udhar"*, *"How to pay supplier"*, *"How to mark attendance & pay salary"*`,
+    ur: `آپ کے سوال **"${raw}"** کے حوالے سے رہنمائی:\n\nآپ اس وقت **${fallbackGuide?.title?.ur || "ڈیش بورڈ"}** اسکرین پر موجود ہیں:\n${fallbackGuide?.summary?.ur || ""}\n\n💡 **آپ مجھ سے کوئی بھی مخصوص سوال پوچھ سکتے ہیں:**\n• **خریداری:** *"پرچیز آرڈر کیسے بنائیں"*, *"نیا اسٹاک کیسے ڈالیں"*, *"سپلائر کو مال واپس کیسے کریں"*\n• **سیلز اور POS:** *"کھلی گولیاں کیسے بیچیں"*, *"ڈسکاؤنٹ کیسے دیں"*, *"بل ہولڈ کیسے کریں"*\n• **کھاتے اور اسٹاف:** *"گاہک کا ادھار کھاتہ"*, *"سپلائر کو پیمنٹ"*, *"ملازمین کی حاضری اور تنخواہ"*`,
+    links: [
+      ...(fallbackGuide?.key && !fallbackGuide.key.includes(":")
+        ? [{ path: fallbackGuide.key, en: `Current: ${fallbackGuide.title.en}`, ur: `${fallbackGuide.title.ur}` }]
+        : []),
+      { path: "/sale-invoices/pos", en: "Barcode POS", ur: "بارکوڈ POS" },
+      { path: "/purchase-invoices/create", en: "Add Stock (Purchase Invoice)", ur: "نیا اسٹاک ڈالیں" },
+    ],
+    sourceIds: fallbackGuide?.key ? [`screen:${fallbackGuide.key}`] : [],
+    evidenceBadge,
+    workflowId,
+    risk: "low",
+  };
+
+  return {
+    matchedIntentId: null,
+    intentScore: Math.max(0, bestIntentScore),
+    secondBestScore: Math.max(0, secondBestIntentScore),
+    matchMargin: 0,
+    answerSource: "local_fallback_directory",
+    matchCategory: MATCH_CATEGORIES.NO_RELIABLE_MATCH,
+    matchCategoryLabel: MATCH_CATEGORY_LABELS[MATCH_CATEGORIES.NO_RELIABLE_MATCH],
+    evidenceType,
+    evidenceBadge,
+    workflowId,
+    riskLevel: "low",
+    confidence: Number((0.15 + Math.min(0.10, Math.max(0, bestIntentScore) / 240)).toFixed(2)),
+    shouldCallAi: !(wantsInteractiveDemo && workflowId),
+    wantsInteractiveDemo,
+    sourceIds: fallbackGuide?.key ? [`screen:${fallbackGuide.key}`] : [],
+    answer: fallbackAnswer,
+  };
+}
+
+/**
+ * Router-First Query Orchestrator (`routeUserQuery`):
+ * Evaluates intent, match quality, risk, evidence classification, and interactive walkthrough triggers.
+ */
+export function routeUserQuery(
+  queryText = "",
+  currentAgent = "cube",
+  currentGuide = null,
+  allScreenGuides = {},
+  hasActiveDemo = false
+) {
+  const evaluation = evaluateLocalQuery(queryText, currentGuide, allScreenGuides);
+  if (!evaluation) return null;
+
+  const {
+    matchedIntentId,
+    intentScore,
+    secondBestScore,
+    matchMargin,
+    answerSource,
+    matchCategory,
+    matchCategoryLabel,
+    evidenceType,
+    evidenceBadge,
+    workflowId,
+    riskLevel,
+    confidence,
+    shouldCallAi,
+    wantsInteractiveDemo,
+    sourceIds,
+    answer,
+  } = evaluation;
 
   return {
     agent: "cube",
-    intentId,
-    risk,
-    confidence: topScore >= 45 ? 0.96 : 0.82,
-    evidenceTier,
+    intentId: matchedIntentId || "screen_contextual",
+    matchedIntentId,
+    intentScore,
+    secondBestScore,
+    matchMargin,
+    answerSource,
+    matchCategory,
+    matchCategoryLabel,
+    evidenceType,
+    evidenceTier: evidenceType,
     evidenceBadge,
+    risk: riskLevel,
+    riskLevel,
+    confidence,
+    shouldCallAi,
+    sourceIds,
     handoffOccurred: false,
     handoffFrom: null,
     handoffReason: null,
     workflowId,
-    startDemoNow: wantsInteractiveDemo,
+    startDemoNow: Boolean(wantsInteractiveDemo && workflowId),
     answer: {
-      ...baseAnswer,
+      ...answer,
+      matchedIntentId,
+      intentScore,
+      secondBestScore,
+      matchMargin,
+      answerSource,
+      matchCategory,
+      matchCategoryLabel,
+      evidenceType,
       evidenceBadge,
       workflowId,
-      risk,
+      risk: riskLevel,
+      riskLevel,
+      confidence,
+      sourceIds,
     },
   };
 }
@@ -2243,116 +2828,8 @@ export function answerWithTrainedEngine(
   currentGuide = null,
   allScreenGuides = {}
 ) {
-  const raw = (queryText || "").trim();
-  if (!raw) return null;
-
-  const analysis = analyzeQuery(raw);
-  const { cleaned } = analysis;
-  const fallbackGuide = currentGuide || allScreenGuides["/dashboard"];
-
-  // 1. Explicit "Explain this screen / current page" intent
-  if (
-    cleaned.includes("this screen") ||
-    cleaned.includes("this page") ||
-    cleaned.includes("current screen") ||
-    cleaned.includes("yeh screen") ||
-    cleaned.includes("ye screen") ||
-    cleaned.includes("یہ اسکرین") ||
-    cleaned.includes("یہ صفحہ") ||
-    cleaned === "what does this do"
-  ) {
-    return buildTailoredScreenAnswer(fallbackGuide, analysis);
-  }
-
-  // 2. Score all Trained ERP Intents
-  let bestIntent = null;
-  let bestIntentScore = 0;
-
-  for (const intent of TRAINED_ERP_INTENTS) {
-    const sc = scoreTrainedIntent(intent, analysis);
-    if (sc > bestIntentScore) {
-      bestIntentScore = sc;
-      bestIntent = intent;
-    }
-  }
-
-  if (bestIntent && bestIntentScore >= 45) {
-    return {
-      title: bestIntent.title,
-      en: bestIntent.en,
-      ur: bestIntent.ur,
-      links: bestIntent.links || [],
-    };
-  }
-
-  // 3. Check FAQ entries across all screens (word-bounded)
-  for (const guide of Object.values(allScreenGuides)) {
-    for (const faq of guide.faqs || []) {
-      const faqAnalysis = analyzeQuery(`${faq.q.en} ${faq.q.ur}`);
-      let hits = 0;
-      for (const st of analysis.meaningfulStems) {
-        if (faqAnalysis.stemSet.has(st) && st.length > 2) {
-          hits += 1;
-        }
-      }
-      if (hits >= 3) {
-        return {
-          title: faq.q,
-          en: `${faq.a.en}\n\n**Screen:** ${guide.title.en} (\`${guide.key}\`)`,
-          ur: `${faq.a.ur}\n\n**متعلقہ اسکرین:** ${guide.title.ur}`,
-          links: [
-            ...(guide.key.includes(":")
-              ? []
-              : [{ path: guide.key, en: `Open ${guide.title.en}`, ur: `${guide.title.ur} کھولیں` }]),
-            ...(guide.relatedRoutes || []).slice(0, 2),
-          ],
-        };
-      }
-    }
-  }
-
-  // 4. Score all Screen Guides on word/stem boundaries
-  let bestGuide = null;
-  let bestGuideScore = 0;
-
-  for (const guide of Object.values(allScreenGuides)) {
-    const gScore = scoreScreenGuide(guide, analysis);
-    if (gScore > bestGuideScore) {
-      bestGuideScore = gScore;
-      bestGuide = guide;
-    }
-  }
-
-  if (bestGuide && bestGuideScore >= 28) {
-    return buildTailoredScreenAnswer(bestGuide, analysis);
-  }
-
-  // 5. If weak intent match (24..44), still prefer the trained intent over a generic fallback
-  if (bestIntent && bestIntentScore >= 24) {
-    return {
-      title: bestIntent.title,
-      en: bestIntent.en,
-      ur: bestIntent.ur,
-      links: bestIntent.links || [],
-    };
-  }
-
-  // 6. Helpful Guided Directory Response (never dumps an unrelated screen title!)
-  return {
-    title: {
-      en: `How Can I Help You on ${fallbackGuide?.title?.en || "Karobar ERP"}?`,
-      ur: `${fallbackGuide?.title?.ur || "کاروبار ایپ"} — میں آپ کی کیا مدد کر سکتا ہوں؟`,
-    },
-    en: `I want to make sure I give you the exact answer for **"${raw}"**.\n\nHere is what your current screen (**${fallbackGuide?.title?.en}**) does:\n${fallbackGuide?.summary?.en}\n\n💡 **Or ask me directly about any Karobar workflow:**\n• **Purchasing:** *"How to make a Purchase Order"*, *"How to add new stock"*, *"How to return items to supplier"*\n• **Sales & POS:** *"How to sell loose tablets"*, *"How to give discount"*, *"How to hold a bill"*, *"How to find substitute medicine"*\n• **Finance & HR:** *"How to check customer udhar"*, *"How to pay supplier"*, *"How to mark attendance & pay salary"*`,
-    ur: `آپ کے سوال **"${raw}"** کے حوالے سے رہنمائی:\n\nآپ اس وقت **${fallbackGuide?.title?.ur}** اسکرین پر موجود ہیں:\n${fallbackGuide?.summary?.ur}\n\n💡 **آپ مجھ سے کوئی بھی مخصوص سوال پوچھ سکتے ہیں:**\n• **خریداری:** *"پرچیز آرڈر کیسے بنائیں"*, *"نیا اسٹاک کیسے ڈالیں"*, *"سپلائر کو مال واپس کیسے کریں"*\n• **سیلز اور POS:** *"کھلی گولیاں کیسے بیچیں"*, *"ڈسکاؤنٹ کیسے دیں"*, *"بل ہولڈ کیسے کریں"*\n• **کھاتے اور اسٹاف:** *"گاہک کا ادھار کھاتہ"*, *"سپلائر کو پیمنٹ"*, *"ملازمین کی حاضری اور تنخواہ"*`,
-    links: [
-      ...(fallbackGuide?.key && !fallbackGuide.key.includes(":")
-        ? [{ path: fallbackGuide.key, en: `Current: ${fallbackGuide.title.en}`, ur: `${fallbackGuide.title.ur}` }]
-        : []),
-      { path: "/sale-invoices/pos", en: "Barcode POS", ur: "بارکوڈ POS" },
-      { path: "/purchase-invoices/create", en: "Add Stock (Purchase Invoice)", ur: "نیا اسٹاک ڈالیں" },
-    ],
-  };
+  const evaluation = evaluateLocalQuery(queryText, currentGuide, allScreenGuides);
+  return evaluation ? evaluation.answer : null;
 }
 
 

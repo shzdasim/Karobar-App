@@ -23,6 +23,7 @@ import {
   Bars3Icon,
   ShoppingCartIcon,
   EnvelopeIcon,
+  SparklesIcon,
 } from "@heroicons/react/24/solid";
 
 // Setting Components
@@ -31,6 +32,7 @@ import SaleSystemSetting from "@/components/settings/SaleSystemSetting.jsx";
 import ThemeSetting from "@/components/settings/ThemeSetting.jsx";
 import PrinterSetting from "@/components/settings/PrinterSetting.jsx";
 import SmtpSetting from "@/components/settings/SmtpSetting.jsx";
+import CubeAiSetting from "@/components/settings/CubeAiSetting.jsx";
 import LicenseSetting from "@/components/settings/LicenseSetting.jsx";
 
 registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);
@@ -52,6 +54,7 @@ const SETTINGS_TABS = [
   { id: "navigation", label: "Theme Setting", icon: Bars3Icon },
   { id: "printer", label: "Printer Setting", icon: PrinterIcon },
   { id: "smtp", label: "Email / SMTP", icon: EnvelopeIcon },
+  { id: "cube", label: "Cube AI Bot", icon: SparklesIcon },
   { id: "license", label: "License", icon: DocumentTextIcon },
 ];
 
@@ -85,7 +88,18 @@ export default function Setting() {
     smtp_encryption: "tls",
     smtp_from_address: "",
     smtp_from_name: "",
+    cube_ai_enabled: true,
+    cube_groq_enabled: true,
+    cube_groq_api_key: "",
+    cube_groq_model: "llama-3.3-70b-versatile",
+    cube_groq_daily_limit: 250,
+    cube_gemini_enabled: true,
+    cube_gemini_api_key: "",
+    cube_gemini_model: "gemini-3.8-flash",
+    cube_gemini_daily_limit: 250,
   });
+
+  const [cubeUsageSummary, setCubeUsageSummary] = useState(null);
 
   // FilePond files (supports remote preload)
   const [files, setFiles] = useState([]);
@@ -101,6 +115,8 @@ export default function Setting() {
       setActiveTab("sale");
     } else if (window.location.hash === "#smtp") {
       setActiveTab("smtp");
+    } else if (window.location.hash === "#cube") {
+      setActiveTab("cube");
     }
   }, []);
 
@@ -221,7 +237,20 @@ export default function Setting() {
         smtp_encryption: data.smtp_encryption || "tls",
         smtp_from_address: data.smtp_from_address || "",
         smtp_from_name: data.smtp_from_name || "",
+        cube_ai_enabled: data.cube_ai_enabled !== undefined ? Boolean(data.cube_ai_enabled) : true,
+        cube_groq_enabled: data.cube_groq_enabled !== undefined ? Boolean(data.cube_groq_enabled) : true,
+        cube_groq_api_key: data.cube_groq_api_key || "",
+        cube_groq_model: data.cube_groq_model || "llama-3.3-70b-versatile",
+        cube_groq_daily_limit: data.cube_groq_daily_limit !== undefined && data.cube_groq_daily_limit !== null ? Number(data.cube_groq_daily_limit) : 250,
+        cube_gemini_enabled: data.cube_gemini_enabled !== undefined ? Boolean(data.cube_gemini_enabled) : true,
+        cube_gemini_api_key: data.cube_gemini_api_key || "",
+        cube_gemini_model: data.cube_gemini_model || "gemini-3.8-flash",
+        cube_gemini_daily_limit: data.cube_gemini_daily_limit !== undefined && data.cube_gemini_daily_limit !== null ? Number(data.cube_gemini_daily_limit) : 250,
       });
+
+      if (data.cube_usage_summary) {
+        setCubeUsageSummary(data.cube_usage_summary);
+      }
 
       // Preload existing logo into FilePond as remote file
       if (data.logo_url) {
@@ -284,6 +313,15 @@ export default function Setting() {
       fd.append("smtp_encryption", form.smtp_encryption || "tls");
       fd.append("smtp_from_address", form.smtp_from_address || "");
       fd.append("smtp_from_name", form.smtp_from_name || "");
+      fd.append("cube_ai_enabled", form.cube_ai_enabled ? "1" : "0");
+      fd.append("cube_groq_enabled", form.cube_groq_enabled ? "1" : "0");
+      fd.append("cube_groq_api_key", form.cube_groq_api_key || "");
+      fd.append("cube_groq_model", form.cube_groq_model || "llama-3.3-70b-versatile");
+      fd.append("cube_groq_daily_limit", String(form.cube_groq_daily_limit ?? 250));
+      fd.append("cube_gemini_enabled", form.cube_gemini_enabled ? "1" : "0");
+      fd.append("cube_gemini_api_key", form.cube_gemini_api_key || "");
+      fd.append("cube_gemini_model", form.cube_gemini_model || "gemini-3.8-flash");
+      fd.append("cube_gemini_daily_limit", String(form.cube_gemini_daily_limit ?? 250));
 
       // If user selected a new file (files[0].file will exist)
       if (files.length > 0 && files[0].file) {
@@ -293,6 +331,10 @@ export default function Setting() {
       const { data } = await axios.post("/api/settings", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
+
+      if (data?.cube_usage_summary) {
+        setCubeUsageSummary(data.cube_usage_summary);
+      }
 
       toast.success("✅ Settings saved!");
 
@@ -475,6 +517,16 @@ export default function Setting() {
             setForm={setForm}
             handleChange={handleChange}
             disableInputs={disableInputs}
+          />
+        )}
+
+        {activeTab === "cube" && (
+          <CubeAiSetting
+            form={form}
+            setForm={setForm}
+            handleChange={handleChange}
+            disableInputs={disableInputs}
+            usageSummary={cubeUsageSummary}
           />
         )}
 

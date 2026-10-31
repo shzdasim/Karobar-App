@@ -1,6 +1,7 @@
 // resources/js/components/FeatureGuideBot.jsx
 import React, { useState, useEffect, useRef, useMemo, useId, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import axios from "axios";
 import {
   SparklesIcon,
   XMarkIcon,
@@ -37,6 +38,8 @@ import {
   DEMO_MANIFESTS,
   PRODUCT_VERSION,
   MODAL_CONTEXT_GUIDES,
+  EVIDENCE_TYPES,
+  buildEvidenceBadge,
   explainDomElement,
 } from "@/data/guideBotKnowledge.js";
 
@@ -910,10 +913,11 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
             title: explanation.title,
             en: explanation.en,
             ur: explanation.ur,
-            evidenceBadge: {
-              en: `🟢 Inspected Live Control on ${displayedGuide?.title?.en || "Screen"}`,
-              ur: `🟢 موجودہ اسکرین کے کنٹرول کی لائیو وضاحت`,
-            },
+            evidenceType: EVIDENCE_TYPES.LIVE_DOM_INSPECTION,
+            evidenceBadge: buildEvidenceBadge(
+              EVIDENCE_TYPES.LIVE_DOM_INSPECTION,
+              displayedGuide
+            ),
             links: [],
           },
         ]);
@@ -1113,12 +1117,18 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
   };
 
   /**
-   * Handles user questions in Cube's Companion Drawer using the trained intelligence engine.
+   * Handles user questions in Cube's Companion Drawer using the 4-layer Hybrid Intelligence Architecture:
+   *   Layer 1: Local trained intelligence engine (`routeUserQuery`)
+   *   Layer 2: Groq Primary AI (via `POST /api/cube/ask`)
+   *   Layer 3: Google Gemini Backup AI (via `POST /api/cube/ask`)
+   *   Layer 4: Local knowledge fallback
    */
-  const handleAskSubmit = (e, presetQuery = null) => {
+  const handleAskSubmit = async (e, presetQuery = null, forceAi = false) => {
     if (e) e.preventDefault();
-    const raw = (presetQuery ?? questionInput).trim();
+    const raw = (presetQuery ?? questionInput).trim().slice(0, 2000);
     if (!raw) return;
+
+    const isUserTypedQuestion = presetQuery === null || forceAi;
 
     const routed = routeUserQuery({
       queryText: raw,
@@ -1128,9 +1138,9 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
       activeDemo,
     });
 
-    const reply = routed.answer || answerUserQuestion(raw, displayedGuide);
+    const localReply = routed.answer || answerUserQuestion(raw, displayedGuide);
 
-    // Launch or pause interactive demo based on query intent
+    // Deterministic walkthrough intelligence: never allow AI to invent selectors or workflow IDs
     if (routed.startDemoNow && routed.workflowId && DEMO_MANIFESTS[routed.workflowId]) {
       setActiveDemo({
         workflowId: routed.workflowId,
@@ -1140,6 +1150,20 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
     } else if (activeDemo && !routed.startDemoNow) {
       setActiveDemo((prev) => (prev ? { ...prev, pausedForDetour: true } : null));
     }
+
+    // Build up to 6 recent conversation messages for contextual follow-up understanding
+    const recentHistory = thread
+      .filter((item) => item && (item.role === "user" || item.kind === "qa"))
+      .slice(-6)
+      .map((item) => ({
+        role: item.role === "user" ? "user" : "assistant",
+        content: String(
+          item.role === "user"
+            ? item.text || (isUr ? item.label?.ur : item.label?.en) || ""
+            : (isUr ? item.ur : item.en) || item.en || ""
+        ).slice(0, 2000),
+      }))
+      .filter((item) => item.content.trim().length > 0);
 
     const userMsg = {
       id: `u-${Date.now()}`,
@@ -1155,24 +1179,128 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
     scrollToBottom();
 
     if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
-    typingTimerRef.current = window.setTimeout(() => {
-      setIsTyping(false);
+
+    // Keep greetings, live-data privacy boundary, explicit screen overview, interactive demos,
+    // and preset topic queries in Layer 1; send user-typed chat questions to Hybrid AI (Groq -> Gemini -> Local Fallback)
+    const isStrictlyLocalIntent =
+      routed.startDemoNow ||
+      routed.matchedIntentId === "greeting_and_help" ||
+      routed.matchedIntentId === "live_data_privacy_boundary" ||
+      routed.matchedIntentId === "current_screen_overview";
+
+    const shouldUseHybridAi =
+      forceAi ||
+      (!isStrictlyLocalIntent && (routed.shouldCallAi || isUserTypedQuestion));
+
+    if (!shouldUseHybridAi) {
+      typingTimerRef.current = window.setTimeout(() => {
+        setIsTyping(false);
+        const nextBotItem = {
+          id: `b-${Date.now()}`,
+          role: "bot",
+          kind: "qa",
+          questionText: raw,
+          title: localReply.title,
+          en: localReply.en,
+          ur: localReply.ur,
+          links: localReply.links || [],
+          evidenceType: routed.evidenceType,
+          evidenceBadge: routed.evidenceBadge,
+          matchCategory: routed.matchCategory,
+          matchedIntentId: routed.matchedIntentId,
+          confidence: routed.confidence,
+          sourceIds: routed.sourceIds || [],
+          providerStatus: "local_engine",
+          workflowId:
+            routed.workflowId && DEMO_MANIFESTS[routed.workflowId]
+              ? routed.workflowId
+              : null,
+        };
+        setThread((prev) => [...prev, nextBotItem]);
+        scrollToBottom();
+        window.setTimeout(() => setVisualTalking(false), 1800);
+      }, 220);
+      return;
+    }
+
+    // Layers 2, 3 & 4: Backend Hybrid AI (`POST /api/cube/ask`) with local fallback resilience
+    try {
+      const response = await axios.post("/api/cube/ask", {
+        question: raw,
+        language: isUr ? "ur" : "en",
+        current_route: displayedGuide?.key || location.pathname || "/dashboard",
+        history: recentHistory,
+        matched_intent_id: routed.matchedIntentId || null,
+        screen_guide_id: displayedGuide?.key || null,
+      });
+
+      const data = response?.data || {};
+      const resolvedWorkflowId =
+        data.workflow_id && DEMO_MANIFESTS[data.workflow_id]
+          ? data.workflow_id
+          : routed.workflowId && DEMO_MANIFESTS[routed.workflowId]
+          ? routed.workflowId
+          : null;
+
+      const resolvedLinks =
+        Array.isArray(data.links) && data.links.length > 0
+          ? data.links.filter(
+              (lnk) =>
+                lnk &&
+                typeof lnk.path === "string" &&
+                lnk.path.startsWith("/") &&
+                !lnk.path.includes(":")
+            )
+          : localReply.links || [];
+
       const nextBotItem = {
         id: `b-${Date.now()}`,
         role: "bot",
         kind: "qa",
         questionText: raw,
-        title: reply.title,
-        en: reply.en,
-        ur: reply.ur,
-        links: reply.links || [],
-        evidenceBadge: routed.evidenceBadge,
-        workflowId: routed.workflowId,
+        title: {
+          en: data.title_en || data.title?.en || localReply.title?.en || "Karobar ERP Guide",
+          ur: data.title_ur || data.title?.ur || localReply.title?.ur || "کاروبار ایپ رہنمائی",
+        },
+        en: data.answer_en || data.en || localReply.en,
+        ur: data.answer_ur || data.ur || localReply.ur,
+        links: resolvedLinks,
+        evidenceType: data.evidence_classification || routed.evidenceType,
+        evidenceBadge: data.evidence_badge || routed.evidenceBadge,
+        sourceIds: Array.isArray(data.source_ids) ? data.source_ids : routed.sourceIds || [],
+        providerStatus: data.provider_status || "local_fallback",
+        workflowId: resolvedWorkflowId,
       };
+
+      setIsTyping(false);
       setThread((prev) => [...prev, nextBotItem]);
       scrollToBottom();
       window.setTimeout(() => setVisualTalking(false), 1800);
-    }, 220);
+    } catch {
+      // Layer 4 Frontend Fallback: Cube never becomes unavailable if backend or network fails
+      setIsTyping(false);
+      const fallbackBotItem = {
+        id: `b-${Date.now()}`,
+        role: "bot",
+        kind: "qa",
+        questionText: raw,
+        title: localReply.title,
+        en: localReply.en,
+        ur: localReply.ur,
+        links: localReply.links || [],
+        evidenceType: routed.evidenceType,
+        evidenceBadge: routed.evidenceBadge,
+        sourceIds: routed.sourceIds || [],
+        providerStatus: "local_fallback",
+        workflowId:
+          routed.workflowId && DEMO_MANIFESTS[routed.workflowId]
+            ? routed.workflowId
+            : null,
+      };
+      setThread((prev) => [...prev, fallbackBotItem]);
+      scrollToBottom();
+      window.setTimeout(() => setVisualTalking(false), 1800);
+    }
   };
 
   const handleNavigateToRoute = (path) => {
@@ -1815,6 +1943,7 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
 
     // 6. SPECIFIC FAQ ANSWER
     if (msg.kind === "faq" && msg.faq) {
+      const faqQuestionText = isUr ? msg.faq.q.ur : msg.faq.q.en;
       return (
         <div
           key={msg.id}
@@ -1824,7 +1953,7 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
         >
           <div className="flex items-center gap-1.5 text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
             <QuestionMarkCircleIcon className="w-4 h-4 shrink-0" />
-            <span>{isUr ? msg.faq.q.ur : msg.faq.q.en}</span>
+            <span>{faqQuestionText}</span>
           </div>
           <p
             className={`text-[13px] leading-relaxed ${
@@ -1833,12 +1962,33 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
           >
             {isUr ? msg.faq.a.ur : msg.faq.a.en}
           </p>
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => handleAskSubmit(null, faqQuestionText, true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-extrabold bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-500/25 transition-all cursor-pointer"
+            >
+              <SparklesIcon className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                {isUr
+                  ? "کیوب اے آئی سے مزید تفصیلی وضاحت پوچھیں"
+                  : "Explain in Detail with Cube AI"}
+              </span>
+            </button>
+          </div>
         </div>
       );
     }
 
     // 7. FREE-TEXT Q&A REPLY
     const hasWalkthrough = Boolean(msg.workflowId && DEMO_MANIFESTS[msg.workflowId]);
+    const canEscalateToAi =
+      Boolean(msg.questionText) &&
+      msg.evidenceType !== EVIDENCE_TYPES.AI_GROUNDED_DOCS &&
+      msg.evidenceType !== "ai_grounded_docs" &&
+      msg.evidenceType !== EVIDENCE_TYPES.LIVE_DOM_INSPECTION &&
+      msg.matchedIntentId !== "live_data_privacy_boundary";
+
     return (
       <div
         key={msg.id}
@@ -1864,8 +2014,22 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
           isUrdu={isUr}
         />
 
-        {(hasWalkthrough || (msg.links && msg.links.length > 0)) && (
+        {(hasWalkthrough || canEscalateToAi || (msg.links && msg.links.length > 0)) && (
           <div className="flex flex-wrap gap-1.5 pt-1">
+            {canEscalateToAi && (
+              <button
+                type="button"
+                onClick={() => handleAskSubmit(null, msg.questionText, true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-extrabold bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-500/25 transition-all cursor-pointer"
+              >
+                <SparklesIcon className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  {isUr
+                    ? "کیوب اے آئی سے مزید تفصیل پوچھیں"
+                    : "Explain in Detail with Cube AI"}
+                </span>
+              </button>
+            )}
             {hasWalkthrough && (
               <button
                 type="button"

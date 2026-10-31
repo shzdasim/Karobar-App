@@ -3313,6 +3313,7 @@ export function resolveScreenGuide(pathname = "/dashboard", search = "", hash = 
       license: { en: "Active Section: License Settings", ur: "فعال حصہ: لائسنس سیٹنگز" },
       sale: { en: "Active Section: Sale System Rules", ur: "فعال حصہ: سیل سسٹم اصول" },
       smtp: { en: "Active Section: Email / SMTP", ur: "فعال حصہ: ای میل / SMTP" },
+      cube: { en: "Active Section: Cube AI Bot Settings", ur: "فعال حصہ: کیوب اے آئی سیٹنگز" },
     };
     if (tabMap[h]) {
       return { ...base, subContextBadge: tabMap[h] };
@@ -3360,13 +3361,29 @@ export function resolveScreenGuide(pathname = "/dashboard", search = "", hash = 
 
 import {
   answerWithTrainedEngine,
+  evaluateLocalQuery,
   routeUserQuery as routeUserQueryInternal,
   DEMO_MANIFESTS,
   PRODUCT_VERSION,
+  TRAINED_ERP_INTENTS,
+  MATCH_CATEGORIES,
+  MATCH_CATEGORY_LABELS,
+  EVIDENCE_TYPES,
+  buildEvidenceBadge,
   resolveWorkflowIdForIntent,
 } from "./guideBotIntelligence.js";
 
-export { DEMO_MANIFESTS, PRODUCT_VERSION, resolveWorkflowIdForIntent };
+export {
+  DEMO_MANIFESTS,
+  PRODUCT_VERSION,
+  TRAINED_ERP_INTENTS,
+  MATCH_CATEGORIES,
+  MATCH_CATEGORY_LABELS,
+  EVIDENCE_TYPES,
+  buildEvidenceBadge,
+  evaluateLocalQuery,
+  resolveWorkflowIdForIntent,
+};
 
 /**
  * Answers any user question in English, Urdu, or Roman Urdu using the

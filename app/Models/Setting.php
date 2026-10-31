@@ -35,11 +35,25 @@ class Setting extends Model
         'smtp_encryption',
         'smtp_from_address',
         'smtp_from_name',
+        'cube_ai_enabled',
+        'cube_groq_enabled',
+        'cube_groq_api_key',
+        'cube_groq_model',
+        'cube_groq_daily_limit',
+        'cube_gemini_enabled',
+        'cube_gemini_api_key',
+        'cube_gemini_model',
+        'cube_gemini_daily_limit',
     ];
 
     protected $casts = [
-        'smtp_enabled' => 'boolean',
-        'smtp_port'    => 'integer',
+        'smtp_enabled'            => 'boolean',
+        'smtp_port'               => 'integer',
+        'cube_ai_enabled'         => 'boolean',
+        'cube_groq_enabled'       => 'boolean',
+        'cube_groq_daily_limit'   => 'integer',
+        'cube_gemini_enabled'     => 'boolean',
+        'cube_gemini_daily_limit' => 'integer',
     ];
 
     protected $appends = ['logo_url'];
@@ -182,5 +196,64 @@ class Setting extends Model
         }
 
         return null;
+    }
+
+    /**
+     * Apply stored Cube AI settings from the database into runtime `config('cube.*')`.
+     * Database settings take precedence when configured in the Settings UI, while falling back
+     * to `.env` / `config/cube.php` defaults when DB fields are left empty.
+     */
+    public function applyCubeAiConfig(): void
+    {
+        if ($this->cube_ai_enabled !== null) {
+            config(['cube.ai_enabled' => (bool) $this->cube_ai_enabled]);
+        }
+
+        $groqKey = trim((string) ($this->cube_groq_api_key ?? ''));
+        if ($groqKey !== '' || $this->cube_groq_enabled === false) {
+            self::applyRuntimeCubeProvider('groq', [
+                'enabled'     => (bool) ($this->cube_groq_enabled ?? true),
+                'api_key'     => $groqKey !== '' ? $groqKey : (string) config('cube.providers.groq.api_key', ''),
+                'model'       => trim((string) ($this->cube_groq_model ?: config('cube.providers.groq.model', 'llama-3.3-70b-versatile'))),
+                'daily_limit' => $this->cube_groq_daily_limit !== null
+                    ? (int) $this->cube_groq_daily_limit
+                    : (int) config('cube.providers.groq.daily_limit', 250),
+            ]);
+        }
+
+        $geminiKey = trim((string) ($this->cube_gemini_api_key ?? ''));
+        if ($geminiKey !== '' || $this->cube_gemini_enabled === false) {
+            self::applyRuntimeCubeProvider('gemini', [
+                'enabled'     => (bool) ($this->cube_gemini_enabled ?? true),
+                'api_key'     => $geminiKey !== '' ? $geminiKey : (string) config('cube.providers.gemini.api_key', ''),
+                'model'       => trim((string) ($this->cube_gemini_model ?: config('cube.providers.gemini.model', 'gemini-3.8-flash'))),
+                'daily_limit' => $this->cube_gemini_daily_limit !== null
+                    ? (int) $this->cube_gemini_daily_limit
+                    : (int) config('cube.providers.gemini.daily_limit', 250),
+            ]);
+        }
+    }
+
+    /**
+     * Configure a specific Cube AI provider ('groq' or 'gemini') at runtime.
+     */
+    public static function applyRuntimeCubeProvider(string $provider, array $options): void
+    {
+        if (! in_array($provider, ['groq', 'gemini'], true)) {
+            return;
+        }
+
+        if (array_key_exists('enabled', $options)) {
+            config(["cube.providers.{$provider}.enabled" => (bool) $options['enabled']]);
+        }
+        if (array_key_exists('api_key', $options)) {
+            config(["cube.providers.{$provider}.api_key" => trim((string) $options['api_key'])]);
+        }
+        if (! empty($options['model'])) {
+            config(["cube.providers.{$provider}.model" => trim((string) $options['model'])]);
+        }
+        if (array_key_exists('daily_limit', $options)) {
+            config(["cube.providers.{$provider}.daily_limit" => max(0, min(1000, (int) $options['daily_limit']))]);
+        }
     }
 }
