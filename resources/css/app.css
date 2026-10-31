@@ -4369,6 +4369,14 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   animation: cube-dom-pulse 1.2s ease-in-out infinite;
 }
 
+.guide-bot-inspect-hover {
+  outline: 2.5px dashed #f59e0b !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.22) !important;
+  cursor: help !important;
+  border-radius: 0.4rem;
+}
+
 /* ============================================================================
    FULL-BODY ROAMING CUBE MASCOT: WALKING CYCLE, ARM SWING & WAVE ANIMATIONS
    ========================================================================== */

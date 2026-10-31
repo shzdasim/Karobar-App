@@ -50,10 +50,13 @@ class CashDrawerController extends Controller
         $session = $this->cashDrawerService->getCurrentSession($request->user());
 
         if (!$session) {
+            $lastClosed = $this->cashDrawerService->getLastClosedSession($request->user());
             return response()->json([
-                'is_open' => false,
-                'session' => null,
-                'summary' => null,
+                'is_open'             => false,
+                'session'             => null,
+                'summary'             => null,
+                'last_closed_session' => $lastClosed,
+                'last_closed_summary' => $lastClosed ? $this->cashDrawerService->getSessionSummary($lastClosed) : null,
             ]);
         }
 
@@ -63,6 +66,8 @@ class CashDrawerController extends Controller
             },
             'user',
         ]);
+
+        $this->cashDrawerService->enrichTransactions($session->transactions);
 
         return response()->json([
             'is_open' => true,
@@ -128,7 +133,7 @@ class CashDrawerController extends Controller
         $cashAccount = app(\App\Services\AccountService::class)->getDefaultAccount('cash');
         if ($cashAccount && $txn) {
             if ($data['type'] === 'cash_in') {
-                app(\App\Services\AccountService::class)->deposit(
+                $acctTxn = app(\App\Services\AccountService::class)->deposit(
                     $cashAccount,
                     (float) $data['amount'],
                     'cash_drawer_manual',
@@ -137,7 +142,7 @@ class CashDrawerController extends Controller
                     $request->user()
                 );
             } else {
-                app(\App\Services\AccountService::class)->withdraw(
+                $acctTxn = app(\App\Services\AccountService::class)->withdraw(
                     $cashAccount,
                     (float) $data['amount'],
                     'cash_drawer_manual',
@@ -147,6 +152,17 @@ class CashDrawerController extends Controller
                 );
             }
             $this->cashDrawerService->recalculateExpectedBalance($session->fresh());
+            if ($acctTxn) {
+                $syncedBalance = (float) ($cashAccount->fresh()?->current_balance ?? $acctTxn->balance_after);
+                if (abs((float) $acctTxn->balance_after - $syncedBalance) > 0.001) {
+                    $acctTxn->update(['balance_after' => $syncedBalance]);
+                }
+            }
+        }
+
+        if ($txn) {
+            $txn->load('user');
+            $this->cashDrawerService->enrichTransactions(collect([$txn]));
         }
 
         return response()->json([
@@ -224,6 +240,8 @@ class CashDrawerController extends Controller
             'user',
             'transactions' => fn($q) => $q->reorder('created_at', 'asc')->orderBy('id', 'asc')->with('user'),
         ])->findOrFail($id);
+
+        $this->cashDrawerService->enrichTransactions($session->transactions);
 
         return response()->json([
             'session'      => $session,

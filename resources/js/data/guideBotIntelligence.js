@@ -137,15 +137,15 @@ export const TRAINED_ERP_INTENTS = [
     keywords: [],
     onlyWhenShort: true,
     title: {
-      en: "Assalam-o-Alaikum! I'm Karo — Your Karobar ERP AI Guide",
-      ur: "السلام علیکم! میں کارو (Karo) ہوں — آپ کا کاروبار ERP گائیڈ",
+      en: "Assalam-o-Alaikum! I'm Cube — Your Karobar ERP AI Guide",
+      ur: "السلام علیکم! میں کیوب (Cube) ہوں — آپ کا کاروبار ERP گائیڈ",
     },
-    en: "Hello! I am **Karo**, your trained bilingual (English & اردو) AI assistant for **Karobar App ERP v2**.\n\nYou can ask me anything about your software—for example:\n• **Purchasing:** *\"How to make a Purchase Order?\"*, *\"How to add new stock (Purchase Invoice)?\"*, *\"How do bonus units work?\"*\n• **Sales & POS:** *\"How to sell loose tablets?\"*, *\"How to give a discount?\"*, *\"How to hold a bill?\"*, *\"How to find substitute medicine?\"*\n• **Inventory & Expiry:** *\"How to print barcode stickers?\"*, *\"How to check near-expiry batches?\"*, *\"How to enter opening stock?\"*\n• **Finance & HR:** *\"How to check customer udhar khata?\"*, *\"How to pay a supplier?\"*, *\"How to mark attendance & pay salary?\"*",
-    ur: "خوش آمدید! میں **کارو (Karo)** ہوں، جو **کاروبار ایپ ERP** کے تمام فیچرز پر مکمل طور پر ٹرینڈ ہے۔\n\nآپ مجھ سے انگلش، اردو یا رومن اردو میں کوئی بھی سوال پوچھ سکتے ہیں، مثلاً:\n• **خریداری اور اسٹاک:** *\"پرچیز آرڈر (PO) کیسے بنائیں؟\"*، *\"نیا اسٹاک اور پرچیز بل کیسے ڈالیں؟\"*، *\"بونس یونٹس کیسے کام کرتے ہیں؟\"*\n• **سیلز اور POS:** *\"کھلی گولیاں (Loose Tablets) کیسے بیچیں؟\"*، *\"بل میں ڈسکاؤنٹ کیسے دیں؟\"*، *\"بل ہولڈ کیسے کریں؟\"*\n• **انوینٹری اور بارکوڈ:** *\"بارکوڈ اسٹیکر کیسے پرنٹ کریں؟\"*، *\"قریب ایکسپائری مال کیسے چیک کریں؟\"*\n• **کھاتے اور اسٹاف:** *\"گاہک کا ادھار کھاتہ کیسے دیکھیں؟\"*، *\"سپلائر کو پیمنٹ کیسے کریں؟\"*، *\"تنخواہ اور حاضری کیسے لگائیں؟\"*",
+    en: "Hello! I am **Cube**, your trained bilingual (English & اردو) AI assistant for **Karobar App ERP v2**.\n\nYou can ask me anything about your software—for example:\n• **Purchasing:** *\"How to make a Purchase Order?\"*, *\"How to add new stock (Purchase Invoice)?\"*, *\"How do bonus units work?\"*\n• **Sales & POS:** *\"How to sell loose tablets?\"*, *\"How to give a discount?\"*, *\"How to hold a bill?\"*, *\"How to find substitute medicine?\"*\n• **Inventory & Expiry:** *\"How to print barcode stickers?\"*, *\"How to check near-expiry batches?\"*, *\"How to enter opening stock?\"*\n• **Finance & HR:** *\"How to check customer udhar khata?\"*, *\"How to close cash drawer shift?\"*, *\"How to mark attendance & pay salary?\"*",
+    ur: "خوش آمدید! میں **کیوب (Cube)** ہوں، جو **کاروبار ایپ ERP** کے تمام فیچرز پر مکمل طور پر ٹرینڈ ہے۔\n\nآپ مجھ سے انگلش، اردو یا رومن اردو میں کوئی بھی سوال پوچھ سکتے ہیں، مثلاً:\n• **خریداری اور اسٹاک:** *\"پرچیز آرڈر (PO) کیسے بنائیں؟\"*، *\"نیا اسٹاک اور پرچیز بل کیسے ڈالیں؟\"*، *\"بونس یونٹس کیسے کام کرتے ہیں؟\"*\n• **سیلز اور POS:** *\"کھلی گولیاں (Loose Tablets) کیسے بیچیں؟\"*، *\"بل میں ڈسکاؤنٹ کیسے دیں؟\"*، *\"بل ہولڈ کیسے کریں؟\"*\n• **انوینٹری اور بارکوڈ:** *\"بارکوڈ اسٹیکر کیسے پرنٹ کریں؟\"*، *\"قریب ایکسپائری مال کیسے چیک کریں؟\"*\n• **کھاتے اور اسٹاف:** *\"گاہک کا ادھار کھاتہ کیسے دیکھیں؟\"*، *\"کیش ڈراور شفٹ کیسے بند کریں؟\"*، *\"تنخواہ اور حاضری کیسے لگائیں؟\"*",
     links: [
       { path: "/sale-invoices/pos", en: "Open Barcode POS", ur: "بارکوڈ POS کھولیں" },
       { path: "/purchase-invoices/create", en: "Add Stock (Purchase Invoice)", ur: "نیا اسٹاک ڈالیں" },
-      { path: "/reports/net-profit", en: "Profit & Loss Report", ur: "نفع و نقصان کی رپورٹ" },
+      { path: "/cash-drawer", en: "Cash Drawer & Shifts", ur: "کیش ڈراور اور شفٹس" },
     ],
   },
 
@@ -156,13 +156,13 @@ export const TRAINED_ERP_INTENTS = [
       "introduce yourself", "tum kaun ho", "aap kaun hain", "ap kon ho",
       "آپ کون ہیں", "تم کون ہو", "آپ کیا کر سکتے ہیں", "تمہارا نام کیا ہے"
     ],
-    keywords: ["karo"],
+    keywords: ["cube", "karo"],
     title: {
-      en: "About Karo — Karobar ERP Intelligence Assistant",
-      ur: "کارو (Karo) کا تعارف — کاروبار ERP اسسٹنٹ",
+      en: "About Cube — Karobar ERP Intelligence Sidekick",
+      ur: "کیوب (Cube) کا تعارف — کاروبار ERP اسسٹنٹ",
     },
-    en: "I am **Karo (`کارو`)**, the built-in AI assistant trained on every module, workflow, accounting rule, and keyboard shortcut in **Karobar App ERP v2**.\n\n**What I can do for you:**\n1. **Sense Your Active Screen:** I automatically detect which page you are on and explain its features, step-by-step usage, and stock/accounting impact.\n2. **Answer Any Workflow Question:** Ask me how to perform any task in English, Urdu (`اردو`), or Roman Urdu.\n3. **Take You Directly to Any Screen:** Every answer includes one-click action buttons that open the exact screen you need while keeping our window open.",
-    ur: "میرا نام **کارو (`کارو`)** ہے اور مجھے **Karobar App ERP v2** کے تمام ماڈیولز، اکاؤنٹنگ اصولوں اور ورک فلو پر ٹرین کیا گیا ہے۔\n\n**میں آپ کی کیا مدد کر سکتا ہوں:**\n1. **موجودہ اسکرین کی پہچان:** آپ جس صفحے پر موجود ہوں، میں اس کا مقصد، استعمال کا طریقہ اور کھاتوں پر اثر بتاتا ہوں۔\n2. **ہر سوال کا فوری جواب:** آپ انگلش، اردو یا رومن اردو میں کسی بھی فیچر کے بارے میں سوال پوچھ سکتے ہیں۔\n3. **فوری نیویگیشن:** ہر جواب کے ساتھ متعلقہ اسکرین کھولنے کا بٹن موجود ہوتا ہے تاکہ آپ ایک کلک سے اس صفحے پر جا سکیں۔",
+    en: "I am **Cube (`کیوب`)**, the built-in AI sidekick trained on every module, field, formula, accounting rule, and keyboard shortcut in **Karobar App ERP v2**.\n\n**What I can do for you:**\n1. **Explain Every Field & Column:** Open the **Fields & Glossary** tab or click **Inspect (`?`)** in my header and click any button, input, or column on your screen.\n2. **Show Worked Numerical Examples & Accounting Impact:** See how every screen affects Stock, Party Ledgers, Cash Drawer, and Double-Entry GL.\n3. **Interactive Step-by-Step Walkthroughs:** Click **Start Walkthrough** to highlight controls directly on your live screen while you work!",
+    ur: "میرا نام **کیوب (`Cube`)** ہے اور مجھے **Karobar App ERP v2** کے تمام ماڈیولز، فیلڈز، فارمولوں اور اکاؤنٹنگ اصولوں پر ٹرین کیا گیا ہے۔\n\n**میں آپ کی کیا مدد کر سکتا ہوں:**\n1. **ہر فیلڈ اور کالم کی وضاحت:** میرے ہیڈر میں **Inspect (`?`)** بٹن دبا کر اسکرین کے کسی بھی بٹن یا خانے پر کلک کریں، میں اس کا مقصد بتاؤں گا۔\n2. **عملی مثالیں اور اکاؤنٹنگ اثر:** ہر اسکرین کا اسٹاک، کھاتوں، کیش ڈراور اور جنرل لیجر پر اثر واضح مثال کے ساتھ دیکھیں۔\n3. **لائیو ڈیمو گائیڈ:** آپ کے کام میں رکاوٹ ڈالے بغیر اسکرین کے بٹن ہائی لائٹ کر کے مرحلہ وار رہنمائی۔",
     links: [
       { path: "/dashboard", en: "Dashboard", ur: "ڈیش بورڈ" },
       { path: "/products", en: "Products Catalog", ur: "پروڈکٹس کیٹلاگ" },
@@ -1614,10 +1614,292 @@ export const DEMO_MANIFESTS = {
       },
     ],
   },
+
+  manage_suppliers: {
+    id: "manage_suppliers",
+    product_version: PRODUCT_VERSION,
+    title: {
+      en: "Interactive Demo: Add Supplier & Set Expiry Return Policy",
+      ur: "عملی ڈیمو: نیا سپلائر اور ایکسپائری واپسی کی پالیسی درج کرنا",
+    },
+    primaryScreen: "/suppliers",
+    steps: [
+      {
+        step: 1,
+        screen: "/suppliers",
+        screenLabel: { en: "Suppliers Directory", ur: "سپلائرز ڈائریکٹری" },
+        target: "a[href*='/suppliers/create'], button",
+        title: { en: "Click '+ Add Supplier' or Search Directory", ur: "'+ Add Supplier' پر کلک کریں یا فہرست میں سرچ کریں" },
+        instruction: {
+          en: "Open Suppliers (`/suppliers`) and click '+ Add Supplier' to register a distributor or pharmaceutical company.",
+          ur: "Suppliers (`/suppliers`) کھولیں اور نیا ڈسٹری بیوٹر شامل کرنے کے لیے '+ Add Supplier' دبائیں۔",
+        },
+        observedInstruction: {
+          en: "You are on the Suppliers Directory. Click '+ Add Supplier' at the top right, or inspect existing suppliers' Expiry Return Policy and Intimation badges in the table.",
+          ur: "آپ سپلائرز اسکرین پر موجود ہیں۔ نیا سپلائر بنانے کے لیے اوپر '+ Add Supplier' پر کلک کریں۔",
+        },
+        checkpoint: {
+          en: "Each supplier row shows their live Expiry Return Policy and whether near-expiry stock has been intimated.",
+          ur: "ہر سپلائر کے سامنے اس کی ایکسپائری واپسی کی پالیسی اور انٹیمیشن اسٹیٹس نظر آتا ہے۔",
+        },
+      },
+      {
+        step: 2,
+        screen: "/suppliers/create",
+        screenLabel: { en: "Create Supplier", ur: "نیا سپلائر فارم" },
+        target: "input[name='name'], input[type='text']",
+        title: { en: "Enter Supplier Name, Phone & Opening Payable", ur: "سپلائر کا نام، فون اور پرانا بقایا درج کریں" },
+        instruction: {
+          en: "Fill in the Distributor Name, Contact Person/Phone, and any historical Opening Payable Balance.",
+          ur: "سپلائر کا نام، فون نمبر اور اگر کوئی پرانا بقایا (Opening Balance) ہے تو وہ درج کریں۔",
+        },
+        observedInstruction: {
+          en: "Enter the Supplier Name, Phone, and any prior Opening Balance in the form fields on your screen.",
+          ur: "فارم میں سپلائر کا نام، فون نمبر اور ابتدائی کھاتہ بیلنس لکھیں۔",
+        },
+        checkpoint: {
+          en: "Opening Balance sets the starting credit in the Supplier Ledger (`/supplier-ledger`).",
+          ur: "اوپننگ بیلنس سپلائر کھاتے میں ابتدائی واجب الادا رقم کے طور پر درج ہو جائے گا۔",
+        },
+      },
+      {
+        step: 3,
+        screen: "/suppliers/create",
+        screenLabel: { en: "Create Supplier", ur: "نیا سپلائر فارم" },
+        target: "select, input[type='number'], button[type='submit']",
+        title: { en: "Configure Expiry Return Policy (Months Before/After) & Save", ur: "ایکسپائری واپسی کی مدت مقرر کریں اور Save دبائیں" },
+        instruction: {
+          en: "Set 'Months Before Expiry' (e.g. 3 months) or 'After Expiry' return policy and click Save.",
+          ur: "ایکسپائری سے کتنے ماہ پہلے یا بعد مال واپس ہو سکتا ہے (مثلاً 3 ماہ قبل) منتخب کریں اور Save دبائیں۔",
+        },
+        observedInstruction: {
+          en: "Set the supplier's Expiry Return Policy window and Intimation status, then click Save.",
+          ur: "ایکسپائری واپسی کے مہینے مقرر کر کے Save بٹن پر کلک کریں۔",
+        },
+        checkpoint: {
+          en: "Walkthrough complete! Batch Expiry Radar will now alert you before this supplier's return deadline closes.",
+          ur: "ڈیمو مکمل! اب سسٹم اس سپلائر کی ایکسپائری مدت ختم ہونے سے پہلے آپ کو الرٹ کرے گا۔",
+        },
+      },
+    ],
+  },
+
+  manage_products: {
+    id: "manage_products",
+    product_version: PRODUCT_VERSION,
+    title: {
+      en: "Interactive Demo: Add Product & Configure Pack Size",
+      ur: "عملی ڈیمو: نئی پروڈکٹ اور پیک سائز (Pack Size) شامل کرنا",
+    },
+    primaryScreen: "/products",
+    steps: [
+      {
+        step: 1,
+        screen: "/products",
+        screenLabel: { en: "Products Catalog", ur: "پروڈکٹس کیٹلاگ" },
+        target: "a[href*='/products/create'], input[type='search'], input[type='text']",
+        title: { en: "Search Catalog or Click '+ Add Product'", ur: "کیٹلاگ سرچ کریں یا '+ Add Product' دبائیں" },
+        instruction: {
+          en: "Open Products (`/products`) and click '+ Add Product' (`Alt+P`) to create a new item.",
+          ur: "Products (`/products`) کھولیں اور نیا آئٹم بنانے کے لیے '+ Add Product' پر کلک کریں۔",
+        },
+        observedInstruction: {
+          en: "You're on the Products Catalog. Click '+ Add Product' at the top right, or search existing items by Name, Generic Formula, or Barcode.",
+          ur: "آپ پروڈکٹس کیٹلاگ پر ہیں۔ نیا آئٹم شامل کرنے کے لیے '+ Add Product' بٹن دبائیں۔",
+        },
+        checkpoint: {
+          en: "Defining Generic Formula (Salt) enables 1-click Substitute Medicine search in POS!",
+          ur: "فارمولا (Generic Salt) لکھنے سے POS میں متبادل دوائی ایک کلک پر مل جاتی ہے۔",
+        },
+      },
+      {
+        step: 2,
+        screen: "/products/create",
+        screenLabel: { en: "Add Product", ur: "نئی پروڈکٹ فارم" },
+        target: "input[name*='pack' i], input[type='number'], input[type='text']",
+        title: { en: "Set Pack Size, Pack Cost & Pack Sale Price", ur: "پیک سائز، قیمتِ خرید اور قیمتِ فروخت درج کریں" },
+        instruction: {
+          en: "Enter Product Name, Generic Formula, Barcode, and Pack Size (e.g. 30 tablets per box). Single-unit price calculates automatically!",
+          ur: "پروڈکٹ کا نام، فارمولا، بارکوڈ اور Pack Size (ڈبے میں گولیوں کی تعداد) لکھیں۔ ایک گولی کی قیمت خودکار نکل آئے گی۔",
+        },
+        observedInstruction: {
+          en: "Fill in the Product Name, Category/Brand, Pack Size, and Pack Prices on your screen—watch Unit Price calculate automatically.",
+          ur: "پروڈکٹ کا نام، پیک سائز اور ڈبے کی قیمت لکھیں—سنگل یونٹ ریٹ خودکار بن جائے گا۔",
+        },
+        checkpoint: {
+          en: "Walkthrough complete! Once saved, add physical stock via Purchase Invoice (`Alt+1`).",
+          ur: "ڈیمو مکمل! پروڈکٹ محفوظ کرنے کے بعد Purchase Invoice کے ذریعے اسٹاک شامل کریں۔",
+        },
+      },
+    ],
+  },
+
+  cash_drawer_shift: {
+    id: "cash_drawer_shift",
+    product_version: PRODUCT_VERSION,
+    title: {
+      en: "Interactive Demo: Open, Audit & Reconcile Cash Drawer Shift",
+      ur: "عملی ڈیمو: کیش ڈراور شفٹ کھولنا، چیک کرنا اور کلوز کرنا",
+    },
+    primaryScreen: "/cash-drawer",
+    steps: [
+      {
+        step: 1,
+        screen: "/cash-drawer",
+        screenLabel: { en: "Cash Drawer & Shift Reconciliation", ur: "کیش ڈراور اور شفٹ کا حساب" },
+        target: "button",
+        title: { en: "Open Shift with Starting Float (or Carryover)", ur: "ابتدائی کیش (Opening Float) سے شفٹ اوپن کریں" },
+        instruction: {
+          en: "Open Cash Drawer (`/cash-drawer`), click 'Open Cash Drawer', and enter your starting cash float (or use the PKR Note Calculator / Last Shift Carryover).",
+          ur: "Cash Drawer (`/cash-drawer`) کھولیں اور ابتدائی نقدی (Opening Float) درج کر کے شفٹ شروع کریں۔",
+        },
+        observedInstruction: {
+          en: "You're on the Cash Drawer screen. If closed, click 'Open Cash Drawer'; if open, inspect your live Expected Cash formula banner at the top.",
+          ur: "آپ کیش ڈراور اسکرین پر ہیں۔ اگر شفٹ بند ہے تو 'Open Cash Drawer' دبائیں، یا اوپر متوقع کیش کا لائیو فارمولا دیکھیں۔",
+        },
+        checkpoint: {
+          en: "Formula: Expected Cash = Opening Float + Total Cash Inflows − Total Cash Outflows.",
+          ur: "فارمولا: متوقع کیش = اوپننگ فلوٹ + کل کیش ان − کل کیش آؤٹ۔",
+        },
+      },
+      {
+        step: 2,
+        screen: "/cash-drawer",
+        screenLabel: { en: "Cash Drawer & Shift Reconciliation", ur: "کیش ڈراور اور شفٹ کا حساب" },
+        target: "table, button",
+        title: { en: "Audit Inflows vs. Outflows & Click Category Cards to Filter", ur: "آمد و اخراج کے کارڈز اور واؤچر نمبرز چیک کریں" },
+        instruction: {
+          en: "Review the Cash Inflows vs. Cash Outflows breakdown cards. Click any category card to filter the transaction log by invoice/voucher.",
+          ur: "کیش ان اور کیش آؤٹ کے کارڈز چیک کریں۔ کسی بھی کارڈ پر کلک کر کے نیچے متعلقہ بلوں کی فہرست فلٹر کریں۔",
+        },
+        observedInstruction: {
+          en: "Click any category row inside the Green (Inflows) or Red (Outflows) breakdown cards on your screen to filter the chronological ledger below.",
+          ur: "سبز (کیش ان) یا سرخ (کیش آؤٹ) کارڈز میں کسی بھی کیٹیگری پر کلک کر کے نیچے لین دین فلٹر کریں۔",
+        },
+        checkpoint: {
+          en: "Every row shows its clickable Invoice/Voucher badge (`SI-...`, `EXP-...`, `PMT-...`) and customer/supplier name.",
+          ur: "ہر لائن میں بل یا واؤچر کا نمبر اور گاہک/سپلائر کا نام صاف نظر آتا ہے۔",
+        },
+      },
+      {
+        step: 3,
+        screen: "/cash-drawer",
+        screenLabel: { en: "Cash Drawer & Shift Reconciliation", ur: "کیش ڈراور اور شفٹ کا حساب" },
+        target: "button",
+        title: { en: "Close Shift, Count Notes & Download Official Z-Report PDF", ur: "نوٹ گن کر شفٹ کلوز کریں اور Z-Report نکالیں" },
+        instruction: {
+          en: "At shift end, click 'Close & Reconcile', use the PKR Denomination Calculator to enter your physical cash count, verify Variance, and download the Z-Report PDF.",
+          ur: "شفٹ کے اختتام پر 'Close & Reconcile' دبائیں، نوٹوں کی تعداد درج کریں اور Z-Report پی ڈی ایف ڈاؤن لوڈ کریں۔",
+        },
+        observedInstruction: {
+          en: "Click 'Close & Reconcile' at the top right when ending your shift, or click 'Z-Report PDF' on any closed shift in the history table.",
+          ur: "شفٹ بند کرنے کے لیے 'Close & Reconcile' دبائیں یا نیچے ہسٹری سے Z-Report PDF ڈاؤن لوڈ کریں۔",
+        },
+        checkpoint: {
+          en: "Walkthrough complete! Your Cash Drawer and Cash in Hand (`1000`) GL account stay 100% synchronized.",
+          ur: "ڈیمو مکمل! آپ کا کیش ڈراور اور جنرل لیجر کیش اکاؤنٹ مکمل طور پر سنک رہتے ہیں۔",
+        },
+      },
+    ],
+  },
+
+  record_shop_expense: {
+    id: "record_shop_expense",
+    product_version: PRODUCT_VERSION,
+    title: {
+      en: "Interactive Demo: Record Daily Shop Expense",
+      ur: "عملی ڈیمو: دکان کا روزمرہ خرچہ درج کرنا",
+    },
+    primaryScreen: "/expenses",
+    steps: [
+      {
+        step: 1,
+        screen: "/expenses",
+        screenLabel: { en: "Expenses & Petty Cash", ur: "اخراجات اور پیٹی کیش" },
+        target: "button, input[type='text']",
+        title: { en: "Open Expenses & Click '+ Add Expense'", ur: "اخراجات کھولیں اور '+ Add Expense' دبائیں" },
+        instruction: {
+          en: "Open Expenses (`/expenses`), click '+ Add Expense', select the Category (Rent, Electricity, Tea/Refreshments), and enter the Amount.",
+          ur: "Expenses (`/expenses`) کھولیں، '+ Add Expense' پر کلک کریں، کیٹیگری اور رقم درج کریں۔",
+        },
+        observedInstruction: {
+          en: "You're on the Expenses screen. Click '+ Add Expense' to record a shop outflow from Cash Drawer or Bank.",
+          ur: "آپ اخراجات کی اسکرین پر ہیں۔ نیا خرچہ درج کرنے کے لیے '+ Add Expense' بٹن دبائیں۔",
+        },
+        checkpoint: {
+          en: "Cash expenses automatically deduct from your open Cash Drawer (`Shop Expenses`) and Net Profit report!",
+          ur: "نقد اخراجات خودکار طور پر آپ کے کیش ڈراور اور خالص منافع سے منہا ہو جاتے ہیں۔",
+        },
+      },
+    ],
+  },
+
+  manage_accounts_transfer: {
+    id: "manage_accounts_transfer",
+    product_version: PRODUCT_VERSION,
+    title: {
+      en: "Interactive Demo: Transfer Cash Between Drawer & Bank",
+      ur: "عملی ڈیمو: کیش ڈراور اور بینک کے درمیان رقم ٹرانسفر کرنا",
+    },
+    primaryScreen: "/accounts",
+    steps: [
+      {
+        step: 1,
+        screen: "/accounts",
+        screenLabel: { en: "Financial Accounts & Treasury", ur: "فنانشل اکاؤنٹس اور ٹریژری" },
+        target: "button",
+        title: { en: "Review Account Cards & Click 'Transfer Funds'", ur: "اکاؤنٹ بیلنس دیکھیں اور 'Transfer' بٹن دبائیں" },
+        instruction: {
+          en: "Open Accounts (`/accounts`), inspect your Cash in Hand, Bank, and Wallet balances, and click 'Transfer' to deposit counter cash into the bank.",
+          ur: "Accounts (`/accounts`) کھولیں، کیش اور بینک بیلنس چیک کریں اور رقم منتقل کرنے کے لیے 'Transfer' پر کلک کریں۔",
+        },
+        observedInstruction: {
+          en: "You're on the Financial Accounts screen. Click the 'Transfer' button to move money between Cash in Hand and your Bank/Wallet accounts.",
+          ur: "آپ فنانشل اکاؤنٹس اسکرین پر ہیں۔ گلے سے بینک میں رقم جمع کرنے کے لیے 'Transfer' بٹن دبائیں۔",
+        },
+        checkpoint: {
+          en: "Internal transfers update both accounts and the active Cash Drawer without distorting Profit & Loss!",
+          ur: "انٹرنل ٹرانسفر سے دونوں اکاؤنٹس اور کیش ڈراور اپڈیٹ ہو جاتے ہیں اور منافع کی رپورٹ متاثر نہیں ہوتی۔",
+        },
+      },
+    ],
+  },
+
+  inventory_adjustment: {
+    id: "inventory_adjustment",
+    product_version: PRODUCT_VERSION,
+    title: {
+      en: "Interactive Demo: Adjust Stock or Enter Opening Inventory",
+      ur: "عملی ڈیمو: اسٹاک ایڈجسٹمنٹ یا ابتدائی اسٹاک درج کرنا",
+    },
+    primaryScreen: "/stock-adjustments/create",
+    steps: [
+      {
+        step: 1,
+        screen: "/stock-adjustments/create",
+        screenLabel: { en: "Create Stock Adjustment", ur: "نئی اسٹاک ایڈجسٹمنٹ" },
+        target: "input[type='text'], select",
+        title: { en: "Select Product, Choose Add (+) or Deduct (−) & Enter Reason", ur: "پروڈکٹ منتخب کریں، اضافہ/کمی اور وجہ لکھیں" },
+        instruction: {
+          en: "Open Create Stock Adjustment (`/stock-adjustments/create`), select the Product & Batch, choose Add (+) or Deduct (−), enter Quantity and Audit Reason, then Save.",
+          ur: "Create Stock Adjustment (`/stock-adjustments/create`) کھولیں، پروڈکٹ، مقدار اور وجہ لکھ کر Save دبائیں۔",
+        },
+        observedInstruction: {
+          en: "Select the product and batch on your screen, set Add (+) or Deduct (−), type the audit reason, and click Save.",
+          ur: "اسکرین پر پروڈکٹ اور بیچ منتخب کریں، مقدار اور وجہ لکھ کر Save پر کلک کریں۔",
+        },
+        checkpoint: {
+          en: "Live batch stock and Inventory Asset valuation update immediately on Save.",
+          ur: "محفوظ کرتے ہی اسٹاک اور انوینٹری ویلیو فوری اپڈیٹ ہو جائے گی۔",
+        },
+      },
+    ],
+  },
 };
 
 /**
  * Maps an intent ID or query to a matching Cube Demo Manifest ID when a walkthrough is available.
+ * Returns `null` when no walkthrough applies (never falls back to an unrelated screen's demo!).
  */
 export function resolveWorkflowIdForIntent(intentId = "", cleanedQuery = "", currentPath = "") {
   if (intentId === "create_purchase_order" || intentId === "po_vs_purchase_invoice" || intentId === "smart_reorder_forecast") {
@@ -1635,6 +1917,15 @@ export function resolveWorkflowIdForIntent(intentId = "", cleanedQuery = "", cur
   if (intentId === "customer_udhar_ledger_payment" || intentId === "customer_credit_limit_hold") {
     return "customer_udhar_recovery";
   }
+  if (intentId === "cash_drawer_shift_management") {
+    return "cash_drawer_shift";
+  }
+  if (intentId === "record_daily_expenses") {
+    return "record_shop_expense";
+  }
+  if (intentId === "opening_stock_and_adjustments") {
+    return "inventory_adjustment";
+  }
   if (cleanedQuery.includes("purchase order") || cleanedQuery.includes("پرچیز آرڈر")) {
     return "create_purchase_order";
   }
@@ -1644,14 +1935,30 @@ export function resolveWorkflowIdForIntent(intentId = "", cleanedQuery = "", cur
   if (cleanedQuery.includes("udhar") || cleanedQuery.includes("customer ledger") || cleanedQuery.includes("ادھار")) {
     return "customer_udhar_recovery";
   }
-  if (cleanedQuery.includes("pos") || cleanedQuery.includes("sale") || cleanedQuery.includes("سیل")) {
+  if (cleanedQuery.includes("cash drawer") || cleanedQuery.includes("z-report") || cleanedQuery.includes("galla") || cleanedQuery.includes("گلہ") || cleanedQuery.includes("ڈراور")) {
+    return "cash_drawer_shift";
+  }
+  if (cleanedQuery.includes("supplier") || cleanedQuery.includes("intimation") || cleanedQuery.includes("سپلائر")) {
+    return "manage_suppliers";
+  }
+  if (cleanedQuery.includes("expense") || cleanedQuery.includes("kharcha") || cleanedQuery.includes("خرچہ")) {
+    return "record_shop_expense";
+  }
+  if (cleanedQuery.includes("pos") || cleanedQuery.includes("barcode billing")) {
     return "pos_counter_billing";
   }
   if (currentPath.startsWith("/purchase-orders")) return "create_purchase_order";
   if (currentPath.startsWith("/purchase-invoices")) return "create_purchase_invoice";
-  if (currentPath.startsWith("/customer-ledger")) return "customer_udhar_recovery";
-  if (currentPath.startsWith("/sale-invoices/create")) return "create_retail_invoice";
-  return "pos_counter_billing";
+  if (currentPath.startsWith("/customer-ledger") || currentPath.startsWith("/customers")) return "customer_udhar_recovery";
+  if (currentPath.startsWith("/sale-invoices/pos")) return "pos_counter_billing";
+  if (currentPath.startsWith("/sale-invoices")) return "create_retail_invoice";
+  if (currentPath.startsWith("/suppliers")) return "manage_suppliers";
+  if (currentPath.startsWith("/products")) return "manage_products";
+  if (currentPath.startsWith("/cash-drawer")) return "cash_drawer_shift";
+  if (currentPath.startsWith("/expenses")) return "record_shop_expense";
+  if (currentPath.startsWith("/accounts")) return "manage_accounts_transfer";
+  if (currentPath.startsWith("/stock-adjustments")) return "inventory_adjustment";
+  return null;
 }
 
 /**
@@ -1842,6 +2149,9 @@ export function buildTailoredScreenAnswer(guide, analysis = null, customTip = nu
         `**How to use:**\n` + guide.steps.en.map((s, i) => `${i + 1}. ${s}`).join("\n")
       );
     }
+    if (guide.example?.en && guide.example.en !== guide.summary.en) {
+      enParts.push(`**${guide.example.title?.en || "Practical Example"}:**\n${guide.example.en}`);
+    }
     if (guide.impacts?.en) {
       enParts.push(`**Stock & Ledger Impact:** ${guide.impacts.en}`);
     }
@@ -1862,6 +2172,9 @@ export function buildTailoredScreenAnswer(guide, analysis = null, customTip = nu
       urParts.push(
         `**استعمال کا طریقہ:**\n` + guide.steps.ur.map((s, i) => `${i + 1}. ${s}`).join("\n")
       );
+    }
+    if (guide.example?.ur && guide.example.ur !== guide.summary.ur) {
+      urParts.push(`**${guide.example.title?.ur || "عملی مثال"}:**\n${guide.example.ur}`);
     }
     if (guide.impacts?.ur) {
       urParts.push(`**کھاتے اور اسٹاک پر اثر:** ${guide.impacts.ur}`);

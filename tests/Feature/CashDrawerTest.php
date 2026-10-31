@@ -1424,4 +1424,60 @@ class CashDrawerTest extends TestCase
         $updateRes->assertOk();
         $this->assertEquals(400, (float) SaleReturn::find($retId)->total);
     }
+
+    public function test_current_endpoint_returns_enriched_transactions_and_last_closed_session_when_closed(): void
+    {
+        $user = User::forceCreate([
+            'name'     => 'Enrich Cashier',
+            'email'    => 'enrichcashier@example.com',
+            'password' => bcrypt('secret123'),
+        ]);
+        $this->actingAs($user);
+
+        $session = app(CashDrawerService::class)->openSession($user, 5000);
+        $customer = Customer::create(['name' => 'Zain Pharmacy']);
+
+        $invoice = SaleInvoice::forceCreate([
+            'user_id'        => $user->id,
+            'customer_id'    => $customer->id,
+            'posted_number'  => 'SI-00999',
+            'date'           => now()->toDateString(),
+            'gross_amount'   => 1200,
+            'total'          => 1200,
+            'total_receive'  => 1200,
+            'status'         => 'posted',
+            'invoice_type'   => 'debit',
+            'payment_method' => 'cash',
+        ]);
+
+        app(CashDrawerService::class)->recordTransaction(
+            $session,
+            'cash_sale',
+            1200,
+            SaleInvoice::class,
+            $invoice->id,
+            'POS Sale SI-00999'
+        );
+
+        // 1. While open, current() returns enriched transactions with reference_label & party_name
+        $openRes = $this->getJson('/api/cash-drawer/current')->assertOk();
+        $this->assertTrue($openRes->json('is_open'));
+        $txns = $openRes->json('session.transactions');
+        $this->assertNotEmpty($txns);
+        $this->assertEquals('SI-00999', $txns[0]['reference_label']);
+        $this->assertEquals('Zain Pharmacy', $txns[0]['party_name']);
+        $this->assertEquals('Cash Sale Invoice', $txns[0]['category_label']);
+
+        // 2. Close the shift and verify current() returns last_closed_session & last_closed_summary
+        $this->postJson('/api/cash-drawer/close', [
+            'closing_balance_actual' => 6200,
+            'notes'                  => 'Balanced shift',
+        ])->assertOk();
+
+        $closedRes = $this->getJson('/api/cash-drawer/current')->assertOk();
+        $this->assertFalse($closedRes->json('is_open'));
+        $this->assertNotNull($closedRes->json('last_closed_session'));
+        $this->assertEquals(6200, (float) $closedRes->json('last_closed_session.closing_balance_actual'));
+        $this->assertEquals(1200, (float) $closedRes->json('last_closed_summary.cash_sales'));
+    }
 }

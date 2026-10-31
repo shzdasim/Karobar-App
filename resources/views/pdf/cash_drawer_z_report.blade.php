@@ -62,19 +62,64 @@
   @php
     $cashInTypes = ['cash_sale', 'customer_payment', 'purchase_return', 'cash_in'];
     $runningBalance = (float)($session->opening_balance ?? 0);
+    $drawerSvc = app(\App\Services\CashDrawerService::class);
+    $summary = isset($summary) && is_array($summary) ? $summary : $drawerSvc->getSessionSummary($session);
+    if ($session->relationLoaded('transactions') && $session->transactions) {
+      $drawerSvc->enrichTransactions($session->transactions);
+    }
   @endphp
+
+  <h3 style="font-size:12px; margin: 10px 0 6px 0;">Cash Flow Formula &amp; Category Breakdown</h3>
+  <table class="summary-table" style="margin-bottom: 14px;">
+    <tr>
+      <th colspan="2" style="background: #ecfdf5; color: #065f46;">Cash Inflows (+ Rs. {{ number_format((float)($summary['total_cash_in'] ?? 0), 2) }})</th>
+      <th colspan="2" style="background: #fef2f2; color: #991b1b;">Cash Outflows (- Rs. {{ number_format((float)($summary['total_cash_out'] ?? 0), 2) }})</th>
+    </tr>
+    <tr>
+      <td>Cash Sales</td>
+      <td class="text-right">Rs. {{ number_format((float)($summary['cash_sales'] ?? 0), 2) }}</td>
+      <td>Cash Purchases (GRN)</td>
+      <td class="text-right">Rs. {{ number_format((float)($summary['cash_purchases'] ?? 0), 2) }}</td>
+    </tr>
+    <tr>
+      <td>Customer Udhar Receipts</td>
+      <td class="text-right">Rs. {{ number_format((float)($summary['customer_payments'] ?? 0), 2) }}</td>
+      <td>Customer Cash Sale Returns</td>
+      <td class="text-right">Rs. {{ number_format((float)($summary['cash_returns'] ?? 0), 2) }}</td>
+    </tr>
+    <tr>
+      <td>Supplier Purchase Return Refunds</td>
+      <td class="text-right">Rs. {{ number_format((float)($summary['purchase_returns'] ?? 0), 2) }}</td>
+      <td>Supplier Ledger Payments</td>
+      <td class="text-right">Rs. {{ number_format((float)($summary['supplier_payments'] ?? 0), 2) }}</td>
+    </tr>
+    <tr>
+      <td>Manual Cash In / Bank Withdrawals</td>
+      <td class="text-right">Rs. {{ number_format((float)($summary['manual_cash_in'] ?? 0), 2) }}</td>
+      <td>Operating Shop Expenses</td>
+      <td class="text-right">Rs. {{ number_format((float)($summary['expenses'] ?? 0), 2) }}</td>
+    </tr>
+    <tr>
+      <td colspan="2" style="font-size: 9.5px; color: #475569;">
+        <strong>Formula:</strong> Opening ({{ number_format((float)($session->opening_balance ?? 0), 2) }}) + In ({{ number_format((float)($summary['total_cash_in'] ?? 0), 2) }}) - Out ({{ number_format((float)($summary['total_cash_out'] ?? 0), 2) }}) = <strong>Rs. {{ number_format((float)($summary['expected_balance'] ?? 0), 2) }}</strong>
+      </td>
+      <td>Staff Advances &amp; Manual Cash Out</td>
+      <td class="text-right">Rs. {{ number_format((float)(($summary['staff_advances'] ?? 0) + ($summary['manual_cash_out'] ?? 0)), 2) }}</td>
+    </tr>
+  </table>
 
   <h3 style="font-size:12px; margin: 10px 0 6px 0;">Shift Cash Movements Log (Chronological Order)</h3>
   <table class="tx-table">
     <thead>
       <tr>
-        <th style="width: 30px;">#</th>
-        <th style="width: 115px;">Time</th>
-        <th style="width: 110px;">Type</th>
-        <th style="width: 55px;">Flow</th>
-        <th>Notes / Reference</th>
-        <th class="text-right" style="width: 95px;">Amount</th>
-        <th class="text-right" style="width: 100px;">Balance</th>
+        <th style="width: 26px;">#</th>
+        <th style="width: 105px;">Time</th>
+        <th style="width: 95px;">Type</th>
+        <th style="width: 42px;">Flow</th>
+        <th style="width: 110px;">Ref / Party</th>
+        <th>Notes / Description</th>
+        <th class="text-right" style="width: 85px;">Amount</th>
+        <th class="text-right" style="width: 90px;">Balance</th>
       </tr>
     </thead>
     <tbody>
@@ -83,7 +128,8 @@
         <td>{{ $session->opened_at ? \Carbon\Carbon::parse($session->opened_at)->format('d M Y h:i A') : '-' }}</td>
         <td>DRAWER OPENED</td>
         <td>OPEN</td>
-        <td>Opening Float{{ $session->notes ? ' — ' . $session->notes : '' }}</td>
+        <td>Opening Float</td>
+        <td>{{ $session->notes ?: 'Initial cash float in drawer' }}</td>
         <td class="text-right">—</td>
         <td class="text-right">Rs. {{ number_format($runningBalance, 2) }}</td>
       </tr>
@@ -92,18 +138,21 @@
           $isCashIn = in_array($tx->type, $cashInTypes, true);
           $amt = (float)($tx->amount ?? 0);
           $runningBalance += $isCashIn ? $amt : -$amt;
+          $refDisplay = $tx->reference_label ?: ($tx->reference_type ? class_basename($tx->reference_type) . ' #' . $tx->reference_id : 'Manual');
+          $partyDisplay = $tx->party_name ? ' (' . $tx->party_name . ')' : '';
         @endphp
         <tr>
           <td>{{ $idx + 1 }}</td>
           <td>{{ $tx->created_at ? \Carbon\Carbon::parse($tx->created_at)->format('d M Y h:i A') : '-' }}</td>
           <td>{{ strtoupper(str_replace('_', ' ', $tx->type ?? '')) }}</td>
           <td>{{ $isCashIn ? 'IN' : 'OUT' }}</td>
-          <td>{{ $tx->notes ?: ($tx->reference_type ? $tx->reference_type . ' #' . $tx->reference_id : '—') }}</td>
+          <td><strong>{{ $refDisplay }}</strong>{{ $partyDisplay }}</td>
+          <td>{{ $tx->notes ?: ($tx->category_label ?: '—') }}</td>
           <td class="text-right">{{ $isCashIn ? '+' : '-' }} Rs. {{ number_format($amt, 2) }}</td>
           <td class="text-right"><strong>Rs. {{ number_format($runningBalance, 2) }}</strong></td>
         </tr>
       @empty
-        <tr><td colspan="7" style="text-align:center;">No cash transactions recorded during this shift.</td></tr>
+        <tr><td colspan="8" style="text-align:center;">No cash transactions recorded during this shift.</td></tr>
       @endforelse
     </tbody>
   </table>

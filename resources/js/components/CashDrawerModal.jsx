@@ -192,12 +192,16 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
     const rowsHtml = orderedTxns.map((tx, idx) => {
       const isPlus = CASH_IN_TYPES.includes(tx.type);
       const timeStr = new Date(tx.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const refText = tx.reference_label
+        ? `${tx.reference_label}${tx.party_name ? ` (${tx.party_name})` : ''}`
+        : (tx.reference_type ? tx.reference_type.split('\\').pop() + ' #' + (tx.reference_id || '') : '-');
+      const descText = tx.notes ? `${refText !== '-' ? refText + ' — ' : ''}${tx.notes}` : refText;
       return `
         <tr>
           <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">#${idx + 1}</td>
           <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${timeStr}</td>
           <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-transform: capitalize; font-weight: 600;">${(tx.type || '').replace('_', ' ')}</td>
-          <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.notes || (tx.reference_type ? tx.reference_type + ' #' + (tx.reference_id || '') : '-')}</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${descText}</td>
           <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; color: ${isPlus ? '#10b981' : '#f43f5e'}; font-weight: bold;">
             ${isPlus ? '+' : '-'}${formatCurrency(tx.amount)}
           </td>
@@ -257,7 +261,9 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
           <tr><td style="color: #f43f5e;">- Cash Purchases:</td><td style="text-align: right;">-${formatCurrency(summary.cash_purchases)}</td></tr>
           <tr><td style="color: #f43f5e;">- Cash Returns:</td><td style="text-align: right;">-${formatCurrency(summary.cash_returns)}</td></tr>
           <tr><td style="color: #f43f5e;">- Supplier Payments:</td><td style="text-align: right;">-${formatCurrency(summary.supplier_payments)}</td></tr>
-          <tr><td style="color: #f43f5e;">- Expenses / Cash Out:</td><td style="text-align: right;">-${formatCurrency(summary.manual_cash_out)}</td></tr>
+          <tr><td style="color: #f43f5e;">- Operating Shop Expenses:</td><td style="text-align: right;">-${formatCurrency(summary.expenses || 0)}</td></tr>
+          <tr><td style="color: #f43f5e;">- Staff Salary Advances:</td><td style="text-align: right;">-${formatCurrency(summary.staff_advances || 0)}</td></tr>
+          <tr><td style="color: #f43f5e;">- Manual Cash Out / Safe Drops:</td><td style="text-align: right;">-${formatCurrency(summary.manual_cash_out)}</td></tr>
           <tr class="bold" style="color: #f43f5e;"><td>Total Cash Outflow:</td><td style="text-align: right;">-${formatCurrency(summary.total_cash_out)}</td></tr>
           <tr class="total-row"><td style="padding: 6px 0;">Expected Cash in Drawer:</td><td style="text-align: right; padding: 6px 0;">${formatCurrency(summary.expected_balance)}</td></tr>
           ${isClosed ? `
@@ -599,6 +605,26 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                 </div>
               </div>
 
+              {sessionData?.last_closed_session && (
+                <div className={`p-3 rounded-xl border flex items-center justify-between text-xs ${
+                  isDark ? "bg-slate-800/60 border-slate-700 text-slate-200" : "bg-emerald-50/60 border-emerald-200 text-slate-800"
+                }`}>
+                  <div>
+                    <div className="font-bold">Last Shift (#{sessionData.last_closed_session.id}) Actual Closing Cash</div>
+                    <div className="text-[11px] opacity-80">
+                      Counted: <strong>{formatCurrency(sessionData.last_closed_session.closing_balance_actual ?? 0)}</strong>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOpeningBalance(String(sessionData.last_closed_session.closing_balance_actual ?? 0))}
+                    className="px-2.5 py-1.5 rounded-lg font-bold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
+                  >
+                    Use {formatCurrency(sessionData.last_closed_session.closing_balance_actual ?? 0)}
+                  </button>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider mb-1">
                   Opening Cash Float Amount
@@ -687,7 +713,7 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                   {formatCurrency(summary.expected_balance)}
                 </h3>
                 <p className={`text-xs mt-1 ${isDark ? "text-slate-400" : "text-gray-500"}`}>
-                  Opening float: <span className="font-semibold">{formatCurrency(summary.opening_balance)}</span> • {summary.transactions_count} cash transactions
+                  Formula: <span className="font-semibold">{formatCurrency(summary.opening_balance)}</span> (Float) + <span className="text-emerald-500 font-semibold">{formatCurrency(summary.total_cash_in)}</span> (In) − <span className="text-rose-500 font-semibold">{formatCurrency(summary.total_cash_out)}</span> (Out) • {summary.transactions_count} txns
                 </p>
               </div>
 
@@ -743,8 +769,12 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                       <span className="font-semibold">-{formatCurrency(summary.supplier_payments)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className={isDark ? "text-slate-400" : "text-gray-600"}>Expenses:</span>
+                      <span className={isDark ? "text-slate-400" : "text-gray-600"}>Shop Expenses:</span>
                       <span className="font-semibold">-{formatCurrency(summary.expenses || 0)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className={isDark ? "text-slate-400" : "text-gray-600"}>Staff Advances:</span>
+                      <span className="font-semibold">-{formatCurrency(summary.staff_advances || 0)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className={isDark ? "text-slate-400" : "text-gray-600"}>Manual Cash Out:</span>
@@ -822,6 +852,11 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                             <span className="font-semibold capitalize">
                               {tx.type.replace("_", " ")}
                             </span>
+                            {tx.reference_label && (
+                              <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-500/10 text-blue-500">
+                                {tx.reference_label}{tx.party_name ? ` • ${tx.party_name}` : ""}
+                              </span>
+                            )}
                             {tx.notes && (
                               <span className={`ml-2 text-[11px] ${isDark ? "text-slate-400" : "text-gray-500"}`}>
                                 • {tx.notes}
@@ -1212,8 +1247,12 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                               <span className="font-semibold">-{formatCurrency(repSummary.supplier_payments)}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className={isDark ? "text-slate-400" : "text-gray-600"}>Expenses:</span>
+                              <span className={isDark ? "text-slate-400" : "text-gray-600"}>Shop Expenses:</span>
                               <span className="font-semibold">-{formatCurrency(repSummary.expenses || 0)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className={isDark ? "text-slate-400" : "text-gray-600"}>Staff Advances:</span>
+                              <span className="font-semibold">-{formatCurrency(repSummary.staff_advances || 0)}</span>
                             </div>
                             <div className="flex justify-between">
                               <span className={isDark ? "text-slate-400" : "text-gray-600"}>Manual Cash Out:</span>
@@ -1254,7 +1293,7 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                                 <th className="p-2.5 pl-3">#</th>
                                 <th className="p-2.5">Time</th>
                                 <th className="p-2.5">Type</th>
-                                <th className="p-2.5">Reference / Notes</th>
+                                <th className="p-2.5">Reference & Party / Notes</th>
                                 <th className="p-2.5">Cashier</th>
                                 <th className="p-2.5 text-right">Amount</th>
                                 <th className="p-2.5 pr-3 text-right">Balance</th>
@@ -1280,9 +1319,16 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                                         </span>
                                       </td>
                                       <td className="p-2.5 max-w-xs truncate">
-                                        <span className="font-medium text-gray-700 dark:text-slate-200">
-                                          {tx.notes || (tx.reference_type ? `${tx.reference_type} #${tx.reference_id || ""}` : "-")}
-                                        </span>
+                                        <div className="flex flex-col">
+                                          {tx.reference_label && (
+                                            <span className="font-semibold text-blue-600 dark:text-blue-400">
+                                              {tx.reference_label}{tx.party_name ? ` • ${tx.party_name}` : ""}
+                                            </span>
+                                          )}
+                                          <span className="font-medium text-gray-700 dark:text-slate-200 truncate">
+                                            {tx.notes || tx.category_label || (!tx.reference_label && tx.reference_type ? `${tx.reference_type.split("\\").pop()} #${tx.reference_id || ""}` : "—")}
+                                          </span>
+                                        </div>
                                       </td>
                                       <td className="p-2.5 text-gray-500 dark:text-slate-400 whitespace-nowrap">
                                         {tx.user?.name || "Cashier"}

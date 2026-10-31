@@ -3242,6 +3242,27 @@ export const SCREEN_GUIDES = {
   },
 };
 
+import {
+  getBlueprintForGuide,
+  MODAL_CONTEXT_GUIDES,
+  explainDomElement,
+} from "./guideBotScreenBlueprints.js";
+
+// Enrich every screen guide in SCREEN_GUIDES with its 4-pillar Screen Blueprint
+// (fields glossary, worked numerical example, 4-pillar impactMatrix, commonMistake)
+Object.keys(SCREEN_GUIDES).forEach((routeKey) => {
+  const guide = SCREEN_GUIDES[routeKey];
+  const bp = getBlueprintForGuide(guide);
+  if (bp) {
+    guide.fields = bp.fields || [];
+    guide.example = bp.example || null;
+    guide.impactMatrix = bp.impactMatrix || null;
+    guide.commonMistake = bp.commonMistake || null;
+  }
+});
+
+export { getBlueprintForGuide, MODAL_CONTEXT_GUIDES, explainDomElement };
+
 export const MODULE_CATEGORIES = [
   { key: "all", en: "All Modules", ur: "تمام ماڈیولز" },
   { key: "overview", en: "Overview", ur: "ڈیش بورڈ اور پروفائل" },

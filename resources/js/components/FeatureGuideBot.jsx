@@ -16,6 +16,9 @@ import {
   ArrowsPointingOutIcon,
   ArrowsPointingInIcon,
   ChevronLeftIcon,
+  CursorArrowRaysIcon,
+  ExclamationTriangleIcon,
+  LightBulbIcon,
 } from "@heroicons/react/24/outline";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import {
@@ -33,6 +36,8 @@ import {
   routeUserQuery,
   DEMO_MANIFESTS,
   PRODUCT_VERSION,
+  MODAL_CONTEXT_GUIDES,
+  explainDomElement,
 } from "@/data/guideBotKnowledge.js";
 
 const LANG_STORAGE_KEY = "karobar_guide_bot_lang";
@@ -630,6 +635,15 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
   const [isTyping, setIsTyping] = useState(false);
   const [questionInput, setQuestionInput] = useState("");
 
+  // Active tab inside the upfront Screen Blueprint Card ('overview' | 'fields' | 'steps' | 'impact')
+  const [blueprintTab, setBlueprintTab] = useState("overview");
+
+  // Interactive "Point & Explain (?)" Element Inspector state
+  const [inspectMode, setInspectMode] = useState(false);
+
+  // Detect if a topbar modal (CashDrawerModal / AccountsModal) is currently open on screen
+  const [activeModalContext, setActiveModalContext] = useState(null);
+
   // Cube Companion Drawer state (conversational thread + progressive topic chips)
   const [usedTopics, setUsedTopics] = useState([]);
   const [thread, setThread] = useState([]);
@@ -645,9 +659,15 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
     return () => window.clearTimeout(t);
   }, []);
 
+  const scrollToBottom = useCallback(() => {
+    window.setTimeout(() => {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }, 45);
+  }, []);
+
   /**
    * Highlights a live DOM element on the user's current screen during a Cube Walkthrough.
-   * Never fabricates UI state: reports 'found' or 'not_found' honestly.
+   * Scoped strictly to `.workspace-page, main` so it never highlights Topbar or Sidebar controls!
    */
   const highlightElementOnScreen = useCallback((selector) => {
     if (!selector || typeof document === "undefined") return;
@@ -661,7 +681,41 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
 
     let target = null;
     try {
-      target = document.querySelector(selector);
+      const pageContainers = document.querySelectorAll(
+        ".workspace-page, main, [role='dialog']:not(.guide-bot-drawer)"
+      );
+      for (const container of pageContainers) {
+        const candidates = container.querySelectorAll(selector);
+        for (const el of candidates) {
+          if (
+            !el.closest(".guide-bot-drawer") &&
+            !el.closest(".workspace-sidebar") &&
+            !el.closest("aside") &&
+            !el.closest("[data-roaming-cube]") &&
+            el.offsetParent !== null
+          ) {
+            target = el;
+            break;
+          }
+        }
+        if (target) break;
+      }
+      if (!target) {
+        const fallbackCandidates = document.querySelectorAll(selector);
+        for (const el of fallbackCandidates) {
+          if (
+            !el.closest(".guide-bot-drawer") &&
+            !el.closest(".workspace-sidebar") &&
+            !el.closest("aside") &&
+            !el.closest("header") &&
+            !el.closest("[data-roaming-cube]") &&
+            el.offsetParent !== null
+          ) {
+            target = el;
+            break;
+          }
+        }
+      }
     } catch {
       target = null;
     }
@@ -689,6 +743,7 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
     (workflowId) => {
       if (!workflowId || !DEMO_MANIFESTS[workflowId]) return;
       setShowDirectory(false);
+      setInspectMode(false);
       setHighlightStatus(null);
       setActiveDemo({
         workflowId,
@@ -705,10 +760,17 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
     const key = displayedGuide?.key || "";
     if (key.startsWith("/purchase-orders")) return "create_purchase_order";
     if (key.startsWith("/purchase-invoices")) return "create_purchase_invoice";
-    if (key.startsWith("/sale-invoices")) return "pos_counter_billing";
+    if (key === "/sale-invoices/pos") return "pos_counter_billing";
+    if (key.startsWith("/sale-invoices")) return "create_retail_invoice";
     if (key.startsWith("/customer-ledger") || key.startsWith("/customers")) {
       return "customer_udhar_recovery";
     }
+    if (key.startsWith("/suppliers")) return "manage_suppliers";
+    if (key.startsWith("/products")) return "manage_products";
+    if (key.startsWith("/cash-drawer")) return "cash_drawer_shift";
+    if (key.startsWith("/expenses")) return "record_shop_expense";
+    if (key.startsWith("/accounts")) return "manage_accounts_transfer";
+    if (key.startsWith("/stock-adjustments")) return "inventory_adjustment";
     const found = Object.values(DEMO_MANIFESTS).find((m) =>
       m.steps?.some((s) => s.screen === key)
     );
@@ -722,6 +784,7 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
         typingTimerRef.current = null;
       }
       setIsTyping(false);
+      setBlueprintTab("overview");
       setUsedTopics([]);
       setThread([
         {
@@ -739,12 +802,134 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
   useEffect(() => {
     setPreviewKey(null);
     setShowDirectory(false);
+    setInspectMode(false);
     setHighlightStatus(null);
   }, [location.pathname, location.search, location.hash]);
 
   useEffect(() => {
     resetToGreeting(displayedGuide);
   }, [displayedGuide, resetToGreeting]);
+
+  // Sense when CashDrawerModal or AccountsModal is open in the DOM
+  useEffect(() => {
+    if (!isOpen || typeof document === "undefined") {
+      setActiveModalContext(null);
+      return;
+    }
+    const checkModals = () => {
+      const bodyText = document.body?.innerText || "";
+      if (
+        document.querySelector("[data-modal='cash-drawer']") ||
+        (bodyText.includes("Cash Register") && bodyText.includes("Detailed Report"))
+      ) {
+        setActiveModalContext(MODAL_CONTEXT_GUIDES.cash_drawer);
+      } else if (
+        document.querySelector("[data-modal='accounts']") ||
+        (bodyText.includes("Financial Accounts") && bodyText.includes("Transfer Funds"))
+      ) {
+        setActiveModalContext(MODAL_CONTEXT_GUIDES.accounts);
+      } else {
+        setActiveModalContext(null);
+      }
+    };
+    checkModals();
+    const timer = window.setInterval(checkModals, 1200);
+    return () => window.clearInterval(timer);
+  }, [isOpen, location.pathname]);
+
+  // Interactive "Point & Explain (?)" Element Inspector listener
+  useEffect(() => {
+    if (!inspectMode || !isOpen || typeof document === "undefined") return;
+
+    let hoveredEl = null;
+    const clearHover = () => {
+      if (hoveredEl) {
+        hoveredEl.classList.remove("guide-bot-inspect-hover");
+        hoveredEl = null;
+      }
+    };
+
+    const handleMouseOver = (e) => {
+      const target = e.target;
+      if (!target || target.closest?.(".guide-bot-drawer") || target.closest?.("[data-roaming-cube]")) {
+        clearHover();
+        return;
+      }
+      const interactive =
+        target.closest?.(
+          "button, a, input, select, textarea, label, th, td, [role='button'], [role='tab']"
+        ) || target;
+      if (interactive !== hoveredEl) {
+        clearHover();
+        hoveredEl = interactive;
+        hoveredEl.classList.add("guide-bot-inspect-hover");
+      }
+    };
+
+    const handleClickCapture = (e) => {
+      const target = e.target;
+      if (!target || target.closest?.(".guide-bot-drawer") || target.closest?.("[data-roaming-cube]")) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      clearHover();
+
+      const inspectedEl =
+        target.closest?.(
+          "button, a, input, select, textarea, label, th, td, [role='button'], [role='tab']"
+        ) || target;
+
+      document
+        .querySelectorAll(".guide-bot-dom-highlight")
+        .forEach((el) => el.classList.remove("guide-bot-dom-highlight"));
+      inspectedEl.classList.add("guide-bot-dom-highlight");
+      if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = window.setTimeout(() => {
+        inspectedEl.classList.remove("guide-bot-dom-highlight");
+      }, 3200);
+
+      const explanation = explainDomElement(inspectedEl, displayedGuide);
+      setInspectMode(false);
+      setShowDirectory(false);
+      if (explanation) {
+        setThread((prev) => [
+          ...prev,
+          {
+            id: `inspect-u-${Date.now()}`,
+            role: "user",
+            label: {
+              en: `🔍 Explain control: "${explanation.title.en.replace("UI Inspector: ", "")}"`,
+              ur: `🔍 اس کنٹرول کی وضاحت کریں: "${explanation.title.ur.replace("اسکرین انسپکٹر: ", "")}"`,
+            },
+          },
+          {
+            id: `inspect-b-${Date.now() + 1}`,
+            role: "bot",
+            kind: "qa",
+            title: explanation.title,
+            en: explanation.en,
+            ur: explanation.ur,
+            evidenceBadge: {
+              en: `🟢 Inspected Live Control on ${displayedGuide?.title?.en || "Screen"}`,
+              ur: `🟢 موجودہ اسکرین کے کنٹرول کی لائیو وضاحت`,
+            },
+            links: [],
+          },
+        ]);
+        triggerBotTalking(1600);
+        scrollToBottom();
+      }
+    };
+
+    document.addEventListener("mouseover", handleMouseOver, true);
+    document.addEventListener("click", handleClickCapture, true);
+    return () => {
+      clearHover();
+      document.removeEventListener("mouseover", handleMouseOver, true);
+      document.removeEventListener("click", handleClickCapture, true);
+    };
+  }, [inspectMode, isOpen, displayedGuide, triggerBotTalking, scrollToBottom]);
 
   useEffect(() => {
     return () => {
@@ -754,10 +939,11 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
   }, []);
 
   /**
-   * Smoothly animates the <dialog> out of the top layer before closing and unmounting.
+   * Smoothly animates the <dialog> out before closing and unmounting.
    */
   const runSmoothClose = useCallback(
     async (notifyParent = true) => {
+      setInspectMode(false);
       const dialog = dialogRef.current;
       if (!dialog) {
         setIsRendered(false);
@@ -821,51 +1007,42 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
     }
   }, [isOpen, isRendered, runSmoothClose, triggerBotTalking]);
 
-  // Open <dialog> in top layer when rendered, and route Esc (`cancel`) + backdrop clicks through `runSmoothClose`
+  // Open <dialog> as a NON-BLOCKING docked sidekick (`dialog.show()`) so the user can freely
+  // fill out forms, click buttons, and follow walkthroughs on the main page while Cube is open!
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog || !isRendered || !isOpen) return;
 
     dialog.removeAttribute("data-closing");
-    if (typeof dialog.showModal === "function" && !dialog.open) {
-      try {
-        dialog.showModal();
-      } catch {
+    if (!dialog.open) {
+      if (typeof dialog.show === "function") {
+        try {
+          dialog.show();
+        } catch {
+          dialog.setAttribute("open", "");
+        }
+      } else {
         dialog.setAttribute("open", "");
       }
     }
 
-    const handleCancel = (event) => {
-      event.preventDefault();
-      runSmoothClose(true);
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        if (inspectMode) {
+          event.preventDefault();
+          setInspectMode(false);
+          return;
+        }
+        event.preventDefault();
+        runSmoothClose(true);
+      }
     };
 
-    const handleDialogClick = (event) => {
-      if (event.target !== dialog) return;
-      const rect = dialog.getBoundingClientRect();
-      const isInsideContent =
-        rect.top <= event.clientY &&
-        event.clientY <= rect.top + rect.height &&
-        rect.left <= event.clientX &&
-        event.clientX <= rect.left + rect.width;
-      if (isInsideContent) return;
-      event.preventDefault();
-      runSmoothClose(true);
-    };
-
-    dialog.addEventListener("cancel", handleCancel);
-    dialog.addEventListener("click", handleDialogClick);
+    window.addEventListener("keydown", handleKeyDown);
     return () => {
-      dialog.removeEventListener("cancel", handleCancel);
-      dialog.removeEventListener("click", handleDialogClick);
+      window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isRendered, isOpen, runSmoothClose]);
-
-  const scrollToBottom = useCallback(() => {
-    window.setTimeout(() => {
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-    }, 45);
-  }, []);
+  }, [isRendered, isOpen, inspectMode, runSmoothClose]);
 
   /**
    * Handles progressive-disclosure chip clicks in Cube Drawer.
@@ -1110,8 +1287,16 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
         : "bg-white border-slate-200/90 text-slate-800"
     }`;
 
-    // 1. CONCISE 2-SENTENCE GREETING
+    // 1. UPFRONT 4-TAB SCREEN BLUEPRINT CARD (Overview + Example, Fields Glossary, Steps, 4-Pillar Impact)
     if (msg.kind === "greeting") {
+      const fields = guide.fields || [];
+      const steps = (isUr ? guide.steps?.ur : guide.steps?.en) || [];
+      const features = (isUr ? guide.features?.ur : guide.features?.en) || [];
+      const shortcuts = guide.shortcuts || [];
+      const impactMatrix = guide.impactMatrix || null;
+      const example = guide.example || null;
+      const commonMistake = guide.commonMistake || null;
+
       return (
         <div
           key={msg.id}
@@ -1119,35 +1304,382 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
           lang={isUr ? "ur" : "en"}
           className={cardBaseClass}
         >
-          <div className="flex items-center justify-between gap-2">
+          {/* Top Greeting & Action Bar */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-blue-600 dark:text-blue-400">
               <SparklesIcon className="w-3.5 h-3.5 shrink-0" />
               <span>
                 {isUr
-                  ? `السلام علیکم! یہ ${guide.title.ur} ہے`
-                  : `Hi! You're on ${guide.title.en}`}
+                  ? `مکمل گائیڈ: ${guide.title.ur}`
+                  : `Screen Blueprint: ${guide.title.en}`}
               </span>
             </span>
+
+            <button
+              type="button"
+              onClick={() => setInspectMode((v) => !v)}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10.5px] font-extrabold border transition-all cursor-pointer ${
+                inspectMode
+                  ? "bg-amber-500 text-white border-amber-400 shadow-xs animate-pulse"
+                  : isDark
+                  ? "bg-slate-800 hover:bg-slate-700 text-cyan-300 border-slate-700"
+                  : "bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border-cyan-200"
+              }`}
+              title={
+                isUr
+                  ? "اسکرین کے کسی بھی بٹن یا فیلڈ پر کلک کر کے اس کا مقصد جانیں"
+                  : "Click any button, field, or column on the page to explain it"
+              }
+            >
+              <CursorArrowRaysIcon className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                {inspectMode
+                  ? isUr
+                    ? "اب اسکرین پر کلک کریں..."
+                    : "Click any control on page..."
+                  : isUr
+                  ? "فیلڈ انسپکٹر (؟)"
+                  : "Inspect Element (?)"}
+              </span>
+            </button>
           </div>
 
-          <p
-            className={`text-[13.5px] leading-relaxed ${
-              isUr ? "guide-bot-urdu-block" : "guide-bot-body-en"
-            } text-slate-700 dark:text-slate-200`}
+          {/* 4-Pillar Blueprint Navigation Tabs */}
+          <div
+            role="tablist"
+            aria-label="Screen Blueprint Sections"
+            className={`grid grid-cols-4 gap-1 p-1 rounded-xl border ${
+              isDark
+                ? "bg-slate-950/70 border-slate-800"
+                : "bg-slate-100/90 border-slate-200/80"
+            }`}
           >
-            {isUr ? guide.summary.ur : guide.summary.en}
-          </p>
+            {[
+              {
+                id: "overview",
+                en: "Overview",
+                ur: "خلاصہ و مثال",
+              },
+              {
+                id: "fields",
+                en: `Fields (${fields.length})`,
+                ur: `فیلڈز (${fields.length})`,
+              },
+              {
+                id: "steps",
+                en: `Steps (${steps.length})`,
+                ur: `طریقہ (${steps.length})`,
+              },
+              {
+                id: "impact",
+                en: "GL Impact",
+                ur: "کھاتوں پر اثر",
+              },
+            ].map((tb) => {
+              const active = blueprintTab === tb.id;
+              return (
+                <button
+                  key={tb.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setBlueprintTab(tb.id)}
+                  className={`px-1.5 py-1 rounded-lg text-[11px] font-extrabold truncate transition-all cursor-pointer ${
+                    active
+                      ? "bg-blue-600 text-white shadow-2xs"
+                      : isDark
+                      ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                      : "text-slate-600 hover:bg-white hover:text-slate-900"
+                  } ${isUr ? "guide-bot-urdu-inline" : ""}`}
+                >
+                  {isUr ? tb.ur : tb.en}
+                </button>
+              );
+            })}
+          </div>
 
-          {isPreviewingOther && !guide.key.includes(":") && (
-            <div className="pt-1">
-              <button
-                type="button"
-                onClick={() => handleNavigateToRoute(guide.key)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white transition-all cursor-pointer shadow-xs"
+          {/* TAB 1: OVERVIEW + WORKED EXAMPLE + COMMON MISTAKE */}
+          {blueprintTab === "overview" && (
+            <div className="space-y-2.5 pt-0.5">
+              <div
+                className={`text-[13px] leading-relaxed ${
+                  isUr ? "guide-bot-urdu-block" : "guide-bot-body-en"
+                } text-slate-700 dark:text-slate-200`}
               >
-                <span>{isUr ? "یہ صفحہ کھولیں" : `Open ${guide.title.en}`}</span>
-                <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
-              </button>
+                <FormattedBotMessage
+                  text={isUr ? guide.summary.ur : guide.summary.en}
+                  isUrdu={isUr}
+                />
+              </div>
+
+              {example && (isUr ? example.ur : example.en) && (
+                <div
+                  className={`p-2.5 rounded-xl border space-y-1 ${
+                    isDark
+                      ? "bg-blue-950/30 border-blue-800/60 text-blue-100"
+                      : "bg-blue-50/70 border-blue-200 text-slate-800"
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-blue-700 dark:text-blue-300">
+                    <LightBulbIcon className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {isUr
+                        ? example.title?.ur || "عملی مثال:"
+                        : example.title?.en || "Practical Numerical Example:"}
+                    </span>
+                  </div>
+                  <div className="text-[12.5px]">
+                    <FormattedBotMessage
+                      text={isUr ? example.ur : example.en}
+                      isUrdu={isUr}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {commonMistake && (isUr ? commonMistake.ur : commonMistake.en) && (
+                <div
+                  className={`p-2.5 rounded-xl border flex items-start gap-2 text-[12px] ${
+                    isDark
+                      ? "bg-amber-950/30 border-amber-800/60 text-amber-200"
+                      : "bg-amber-50/80 border-amber-200 text-amber-900"
+                  }`}
+                >
+                  <ExclamationTriangleIcon className="w-4 h-4 shrink-0 text-amber-500 mt-0.5" />
+                  <div className={isUr ? "guide-bot-urdu-block" : ""}>
+                    <span className="font-extrabold">
+                      {isUr ? "اہم نکتہ: " : "Pro-Tip: "}
+                    </span>
+                    {renderInlineFormatting(
+                      isUr ? commonMistake.ur : commonMistake.en,
+                      "mistake"
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                {currentScreenWorkflowId && DEMO_MANIFESTS[currentScreenWorkflowId] && (
+                  <button
+                    type="button"
+                    onClick={() => startCubeDemo(currentScreenWorkflowId)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white transition-all cursor-pointer shadow-2xs"
+                  >
+                    <span aria-hidden="true">🎯</span>
+                    <span>
+                      {isUr
+                        ? "مرحلہ وار عملی ڈیمو شروع کریں"
+                        : "Start Interactive Walkthrough"}
+                    </span>
+                  </button>
+                )}
+
+                {isPreviewingOther && !guide.key.includes(":") && (
+                  <button
+                    type="button"
+                    onClick={() => handleNavigateToRoute(guide.key)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white transition-all cursor-pointer shadow-xs"
+                  >
+                    <span>{isUr ? "یہ صفحہ کھولیں" : `Open ${guide.title.en}`}</span>
+                    <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: FIELDS, COLUMNS & FORMULAS GLOSSARY */}
+          {blueprintTab === "fields" && (
+            <div className="space-y-2 pt-0.5">
+              <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                {isUr
+                  ? "اس اسکرین کے اہم خانوں، کالمز اور فارمولوں کی تفصیل:"
+                  : "Every key field, column, badge & formula on this screen:"}
+              </p>
+
+              {fields.length > 0 ? (
+                <div className="space-y-2">
+                  {fields.map((fld, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-2.5 rounded-xl border space-y-1 ${
+                        isDark
+                          ? "bg-slate-950/60 border-slate-800"
+                          : "bg-slate-50/80 border-slate-200/80"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400">
+                          {isUr ? fld.term.ur || fld.term.en : fld.term.en}
+                        </span>
+                        {fld.type && (
+                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wider bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                            {fld.type}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[12.5px] text-slate-700 dark:text-slate-200">
+                        <FormattedBotMessage
+                          text={isUr ? fld.ur || fld.en : fld.en}
+                          isUrdu={isUr}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  {isUr
+                    ? "کسی بھی بٹن یا فیلڈ پر کلک کرنے کے لیے اوپر 'فیلڈ انسپکٹر (؟)' دبائیں۔"
+                    : "Click 'Inspect Element (?)' above and click any control on the page to explain it."}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: STEP-BY-STEP WORKFLOW & SHORTCUTS */}
+          {blueprintTab === "steps" && (
+            <div className="space-y-2.5 pt-0.5">
+              {steps.length > 0 && (
+                <ol
+                  role="list"
+                  className={`space-y-2 text-[12.5px] ${
+                    isUr ? "guide-bot-urdu-block" : ""
+                  } text-slate-700 dark:text-slate-200`}
+                >
+                  {steps.map((step, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-bold shrink-0 mt-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                        {i + 1}
+                      </span>
+                      <span className="leading-relaxed">
+                        {renderInlineFormatting(step, `st-${i}`)}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+
+              {features.length > 0 && (
+                <div className="pt-1 border-t border-slate-200/70 dark:border-slate-800 space-y-1.5">
+                  <p className="text-[11px] font-extrabold text-indigo-600 dark:text-indigo-400">
+                    {isUr ? "اہم خصوصیات:" : "Key Capabilities:"}
+                  </p>
+                  <ul role="list" className="space-y-1.5 text-[12px] text-slate-600 dark:text-slate-300">
+                    {features.map((feat, i) => (
+                      <li key={i} className="flex items-start gap-1.5">
+                        <span className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 bg-indigo-500" />
+                        <span>{renderInlineFormatting(feat, `ft-${i}`)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {shortcuts.length > 0 && (
+                <div className="pt-1 border-t border-slate-200/70 dark:border-slate-800 space-y-1">
+                  <p className="text-[11px] font-extrabold text-blue-600 dark:text-blue-400">
+                    {isUr ? "کی بورڈ شارٹ کٹس:" : "Keyboard Shortcuts:"}
+                  </p>
+                  {shortcuts.map((sc, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between gap-2 text-xs py-0.5"
+                    >
+                      <span>{isUr ? sc.ur : sc.en}</span>
+                      <div className="flex items-center gap-1 shrink-0" dir="ltr">
+                        {sc.keys.map((k) => (
+                          <kbd
+                            key={k}
+                            className="px-1.5 py-0.5 text-[10px] font-mono font-bold rounded border bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700"
+                          >
+                            {k}
+                          </kbd>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 4: 4-PILLAR STOCK, PARTY LEDGER, TREASURY & GL IMPACT MATRIX */}
+          {blueprintTab === "impact" && (
+            <div className="space-y-2.5 pt-0.5">
+              {impactMatrix && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {[
+                    {
+                      key: "stock",
+                      icon: "📦",
+                      en: "Stock & Batches",
+                      ur: "اسٹاک اور بیچز",
+                      val: impactMatrix.stock,
+                    },
+                    {
+                      key: "ledger",
+                      icon: "📒",
+                      en: "Party Khata / Ledger",
+                      ur: "کسٹمر / سپلائر کھاتہ",
+                      val: impactMatrix.ledger,
+                    },
+                    {
+                      key: "treasury",
+                      icon: "💵",
+                      en: "Cash Drawer & Bank",
+                      ur: "کیش ڈراور اور بینک",
+                      val: impactMatrix.treasury,
+                    },
+                    {
+                      key: "gl",
+                      icon: "⚖️",
+                      en: "Double-Entry GL",
+                      ur: "جنرل لیجر (GL)",
+                      val: impactMatrix.gl,
+                    },
+                  ].map((item) => (
+                    <div
+                      key={item.key}
+                      className={`p-2 rounded-xl border space-y-0.5 ${
+                        isDark
+                          ? "bg-slate-950/60 border-slate-800"
+                          : "bg-slate-50 border-slate-200/80"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1 text-[11px] font-extrabold text-purple-600 dark:text-purple-400">
+                        <span>{item.icon}</span>
+                        <span>{isUr ? item.ur : item.en}</span>
+                      </div>
+                      <p
+                        className={`text-[12px] leading-snug text-slate-700 dark:text-slate-200 ${
+                          isUr ? "guide-bot-urdu-block" : ""
+                        }`}
+                      >
+                        {renderInlineFormatting(
+                          isUr ? item.val?.ur || item.val?.en : item.val?.en,
+                          `imp-${item.key}`
+                        )}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {guide.impacts && (
+                <div
+                  className={`p-2.5 rounded-xl border text-[12.5px] leading-relaxed ${
+                    isDark
+                      ? "bg-purple-950/25 border-purple-800/50 text-purple-100"
+                      : "bg-purple-50/70 border-purple-200 text-slate-800"
+                  }`}
+                >
+                  <FormattedBotMessage
+                    text={isUr ? guide.impacts.ur : guide.impacts.en}
+                    isUrdu={isUr}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1617,7 +2149,6 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
   return (
     <dialog
       ref={dialogRef}
-      {...{ closedby: "any" }}
       aria-labelledby={titleId}
       className={`guide-bot-drawer guide-bot-mode-cube border shadow-2xl ${
         isExpandedWidth ? "guide-bot-drawer-wide" : ""
@@ -1654,7 +2185,7 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
               <span>{isUr ? "کاروبار اسسٹنٹ" : "Cube Assistant"}</span>
             </span>
 
-            {/* Right Controls: Language (EN | اردو) + Cube Tools + Close */}
+            {/* Right Controls: Language (EN | اردو) + Inspect (?) + Directory + Width + Close */}
             <div className="flex items-center gap-1 shrink-0">
               <div
                 role="group"
@@ -1692,6 +2223,28 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
                   اردو
                 </button>
               </div>
+
+              {/* Interactive Point & Explain (?) Inspector Toggle */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDirectory(false);
+                  setInspectMode((v) => !v);
+                }}
+                title={
+                  isUr
+                    ? "اسکرین کے کسی بھی بٹن یا فیلڈ پر کلک کر کے اس کا مقصد جانیں"
+                    : "Point & Explain (?): Click any button, field, or column on the screen"
+                }
+                aria-pressed={inspectMode}
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  inspectMode
+                    ? "bg-amber-500 text-white shadow-2xs animate-pulse"
+                    : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-200/60 dark:hover:bg-slate-800"
+                }`}
+              >
+                <CursorArrowRaysIcon className="w-4 h-4" />
+              </button>
 
               {/* Directory & Width Controls */}
               <button
@@ -1931,6 +2484,54 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
               isDark ? "bg-slate-950/40" : "bg-slate-50/50"
             }`}
           >
+            {/* Active Inspect Mode Banner */}
+            {inspectMode && (
+              <div
+                dir={isUr ? "rtl" : "ltr"}
+                lang={isUr ? "ur" : "en"}
+                className="p-2.5 rounded-xl border bg-amber-500/15 border-amber-500/40 text-amber-900 dark:text-amber-200 flex items-center justify-between gap-2 text-xs font-bold"
+              >
+                <div className="flex items-center gap-2">
+                  <CursorArrowRaysIcon className="w-4 h-4 shrink-0 text-amber-500 animate-bounce" />
+                  <span>
+                    {isUr
+                      ? "اب اپنی اسکرین کے کسی بھی بٹن، خانے یا کالم پر کلک کریں!"
+                      : "Click any input, button, badge, or column header on the page to explain it!"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInspectMode(false)}
+                  className="px-2 py-0.5 rounded-md text-[10.5px] font-extrabold bg-amber-500 text-white cursor-pointer shrink-0"
+                >
+                  {isUr ? "منسوخ" : "Cancel"}
+                </button>
+              </div>
+            )}
+
+            {/* Open Modal Context Banner (CashDrawerModal / AccountsModal) */}
+            {activeModalContext && (
+              <div
+                dir={isUr ? "rtl" : "ltr"}
+                lang={isUr ? "ur" : "en"}
+                className={`p-3 rounded-2xl border space-y-1 ${
+                  isDark
+                    ? "bg-cyan-950/35 border-cyan-700/60 text-cyan-100"
+                    : "bg-cyan-50/90 border-cyan-300 text-slate-900"
+                }`}
+              >
+                <p className="text-[10.5px] font-extrabold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
+                  {isUr ? activeModalContext.badge.ur : activeModalContext.badge.en}
+                </p>
+                <div className="text-xs">
+                  <FormattedBotMessage
+                    text={isUr ? activeModalContext.summary.ur : activeModalContext.summary.en}
+                    isUrdu={isUr}
+                  />
+                </div>
+              </div>
+            )}
+
             {renderCubeDemoPlayer()}
 
             {thread.map((msg) => {

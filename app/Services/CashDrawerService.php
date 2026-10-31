@@ -29,6 +29,7 @@ class CashDrawerService
         'cash_purchase',
         'cash_return',
         'supplier_payment',
+        'expense',
         'cash_out',
     ];
 
@@ -53,6 +54,28 @@ class CashDrawerService
 
         // Fallback to the latest active open session
         return $query->latest('opened_at')->first();
+    }
+
+    /**
+     * Get the most recently closed cash drawer session for float carryover & closed-state summary.
+     */
+    public function getLastClosedSession(?User $user = null): ?CashDrawerSession
+    {
+        if (!Schema::hasTable('cash_drawer_sessions')) {
+            return null;
+        }
+
+        $query = CashDrawerSession::with(['user'])
+            ->where('status', 'closed');
+
+        if ($user) {
+            $userClosed = (clone $query)->where('user_id', $user->id)->latest('closed_at')->latest('id')->first();
+            if ($userClosed) {
+                return $userClosed;
+            }
+        }
+
+        return $query->latest('closed_at')->latest('id')->first();
     }
 
     /**
@@ -219,12 +242,19 @@ class CashDrawerService
         $expenses = (float) $transactions->filter(function ($t) {
             return $t->type === 'expense' || ($t->type === 'cash_out' && ($t->reference_type === \App\Models\Expense::class || $t->reference_type === 'expense'));
         })->sum('amount');
+        $staffAdvances = (float) $transactions->filter(function ($t) {
+            return $t->type === 'cash_out' && ($t->reference_type === \App\Models\EmployeeAdvance::class || $t->reference_type === 'employee_advance');
+        })->sum('amount');
         $cashOut = (float) $transactions->filter(function ($t) {
-            return $t->type === 'cash_out' && $t->reference_type !== \App\Models\Expense::class && $t->reference_type !== 'expense';
+            return $t->type === 'cash_out'
+                && $t->reference_type !== \App\Models\Expense::class
+                && $t->reference_type !== 'expense'
+                && $t->reference_type !== \App\Models\EmployeeAdvance::class
+                && $t->reference_type !== 'employee_advance';
         })->sum('amount');
 
         $totalCashIn = $cashSales + $customerPayments + $purchaseReturns + $cashIn;
-        $totalCashOut = $cashPurchases + $cashReturns + $supplierPayments + $expenses + $cashOut;
+        $totalCashOut = $cashPurchases + $cashReturns + $supplierPayments + $expenses + $staffAdvances + $cashOut;
         $expected = round((float) $session->opening_balance + $totalCashIn - $totalCashOut, 2);
 
         return [
@@ -244,6 +274,7 @@ class CashDrawerService
             'customer_payments' => $customerPayments,
             'supplier_payments' => $supplierPayments,
             'expenses'          => $expenses,
+            'staff_advances'    => $staffAdvances,
             'manual_cash_in'    => $cashIn,
             'manual_cash_out'   => $cashOut,
             'total_cash_in'     => $totalCashIn,
@@ -254,6 +285,148 @@ class CashDrawerService
             'notes'             => $session->notes,
             'transactions_count'=> $transactions->count(),
         ];
+    }
+
+    /**
+     * Batch-enrich a collection of CashDrawerTransactions with human-readable
+     * document numbers, party names, category explanations, and clickable URLs.
+     */
+    public function enrichTransactions($transactions)
+    {
+        if (!$transactions || $transactions->isEmpty()) {
+            return $transactions;
+        }
+
+        $saleInvIds = [];
+        $purchInvIds = [];
+        $saleRetIds = [];
+        $purchRetIds = [];
+        $paymentIds = [];
+        $expenseIds = [];
+        $advanceIds = [];
+
+        foreach ($transactions as $txn) {
+            $refType = (string) ($txn->reference_type ?? '');
+            $refId = (int) ($txn->reference_id ?? 0);
+            if ($refId <= 0) {
+                continue;
+            }
+            if ($refType === 'sale_invoice' || $refType === \App\Models\SaleInvoice::class) {
+                $saleInvIds[] = $refId;
+            } elseif ($refType === 'purchase_invoice' || $refType === \App\Models\PurchaseInvoice::class) {
+                $purchInvIds[] = $refId;
+            } elseif ($refType === 'sale_return' || $refType === \App\Models\SaleReturn::class) {
+                $saleRetIds[] = $refId;
+            } elseif ($refType === 'purchase_return' || $refType === \App\Models\PurchaseReturn::class) {
+                $purchRetIds[] = $refId;
+            } elseif ($refType === 'payment' || $refType === \App\Models\Payment::class) {
+                $paymentIds[] = $refId;
+            } elseif ($refType === 'expense' || $refType === \App\Models\Expense::class) {
+                $expenseIds[] = $refId;
+            } elseif ($refType === 'employee_advance' || $refType === \App\Models\EmployeeAdvance::class) {
+                $advanceIds[] = $refId;
+            }
+        }
+
+        $saleInvoices = !empty($saleInvIds) && Schema::hasTable('sale_invoices')
+            ? \App\Models\SaleInvoice::with('customer:id,name')->whereIn('id', array_unique($saleInvIds))->get()->keyBy('id')
+            : collect();
+        $purchInvoices = !empty($purchInvIds) && Schema::hasTable('purchase_invoices')
+            ? \App\Models\PurchaseInvoice::with('supplier:id,name')->whereIn('id', array_unique($purchInvIds))->get()->keyBy('id')
+            : collect();
+        $saleReturns = !empty($saleRetIds) && Schema::hasTable('sale_returns')
+            ? \App\Models\SaleReturn::with('customer:id,name')->whereIn('id', array_unique($saleRetIds))->get()->keyBy('id')
+            : collect();
+        $purchReturns = !empty($purchRetIds) && Schema::hasTable('purchase_returns')
+            ? \App\Models\PurchaseReturn::with('supplier:id,name')->whereIn('id', array_unique($purchRetIds))->get()->keyBy('id')
+            : collect();
+        $payments = !empty($paymentIds) && Schema::hasTable('payments')
+            ? \App\Models\Payment::with(['customer:id,name', 'supplier:id,name'])->whereIn('id', array_unique($paymentIds))->get()->keyBy('id')
+            : collect();
+        $expenses = !empty($expenseIds) && Schema::hasTable('expenses')
+            ? \App\Models\Expense::withTrashed()->with('category:id,name')->whereIn('id', array_unique($expenseIds))->get()->keyBy('id')
+            : collect();
+        $advances = !empty($advanceIds) && Schema::hasTable('employee_advances')
+            ? \App\Models\EmployeeAdvance::with('employee')->whereIn('id', array_unique($advanceIds))->get()->keyBy('id')
+            : collect();
+
+        foreach ($transactions as $txn) {
+            $refType = (string) ($txn->reference_type ?? '');
+            $refId = (int) ($txn->reference_id ?? 0);
+            $refLabel = null;
+            $partyName = null;
+            $refUrl = null;
+            $categoryLabel = null;
+
+            if ($refType === 'sale_invoice' || $refType === \App\Models\SaleInvoice::class) {
+                $inv = $saleInvoices->get($refId);
+                $refLabel = $inv?->posted_number ?: "SI-#{$refId}";
+                $partyName = $inv?->customer?->name ?: ($inv?->walk_in_customer_name ?: 'Walk-in Customer');
+                $refUrl = $refId > 0 ? "/sale-invoices/{$refId}" : null;
+                $categoryLabel = $txn->type === 'cash_return' ? 'Sale Invoice Refund / Reversal' : 'Cash Sale Invoice';
+            } elseif ($refType === 'purchase_invoice' || $refType === \App\Models\PurchaseInvoice::class) {
+                $inv = $purchInvoices->get($refId);
+                $refLabel = $inv?->posted_number ?: ($inv?->invoice_number ?: "PI-#{$refId}");
+                $partyName = $inv?->supplier?->name ?: 'Supplier';
+                $refUrl = $refId > 0 ? "/purchase-invoices/{$refId}" : null;
+                $categoryLabel = 'Cash Purchase Invoice (GRN)';
+            } elseif ($refType === 'sale_return' || $refType === \App\Models\SaleReturn::class) {
+                $ret = $saleReturns->get($refId);
+                $refLabel = $ret?->posted_number ?: "SR-#{$refId}";
+                $partyName = $ret?->customer?->name ?: 'Walk-in Customer';
+                $refUrl = $refId > 0 ? "/sale-returns/{$refId}" : null;
+                $categoryLabel = 'Cash Refund to Customer (Sale Return)';
+            } elseif ($refType === 'purchase_return' || $refType === \App\Models\PurchaseReturn::class) {
+                $ret = $purchReturns->get($refId);
+                $refLabel = $ret?->posted_number ?: "PR-#{$refId}";
+                $partyName = $ret?->supplier?->name ?: 'Supplier';
+                $refUrl = $refId > 0 ? "/purchase-returns/{$refId}" : null;
+                $categoryLabel = 'Cash Refund from Supplier (Purchase Return)';
+            } elseif ($refType === 'payment' || $refType === \App\Models\Payment::class) {
+                $pay = $payments->get($refId);
+                $refLabel = $pay?->payment_number ?: "PMT-#{$refId}";
+                if ($pay?->party_type === 'customer' || $txn->type === 'customer_payment') {
+                    $partyName = $pay?->customer?->name ?: 'Customer';
+                    $refUrl = $pay?->party_id ? "/customer-ledger?customer_id={$pay->party_id}" : '/customer-ledger';
+                    $categoryLabel = 'Customer Udhar Recovery';
+                } else {
+                    $partyName = $pay?->supplier?->name ?: 'Supplier';
+                    $refUrl = $pay?->party_id ? "/supplier-ledger?supplier_id={$pay->party_id}" : '/supplier-ledger';
+                    $categoryLabel = 'Supplier Ledger Payment';
+                }
+            } elseif ($refType === 'expense' || $refType === \App\Models\Expense::class) {
+                $exp = $expenses->get($refId);
+                $refLabel = $exp?->expense_number ?: "EXP-#{$refId}";
+                $partyName = $exp?->category?->name ?: ($exp?->payee ?: 'Shop Expense');
+                $refUrl = '/expenses';
+                $categoryLabel = 'Operating Shop Expense';
+            } elseif ($refType === 'employee_advance' || $refType === \App\Models\EmployeeAdvance::class) {
+                $adv = $advances->get($refId);
+                $refLabel = $adv?->advance_number ?: "ADV-#{$refId}";
+                $empName = $adv?->employee?->name
+                    ?: trim(($adv?->employee?->first_name ?? '') . ' ' . ($adv?->employee?->last_name ?? ''));
+                $partyName = $empName ?: 'Staff Member';
+                $refUrl = '/hr-payroll?tab=advances';
+                $categoryLabel = $txn->type === 'cash_in' ? 'Staff Advance Repayment' : 'Staff Salary Advance';
+            } elseif ($refType === 'account_transfer') {
+                $refLabel = $refId > 0 ? "TRF-#{$refId}" : 'Transfer';
+                $partyName = 'Treasury / Bank Transfer';
+                $refUrl = '/accounts';
+                $categoryLabel = $txn->type === 'cash_in' ? 'Cash Withdrawn from Bank to Drawer' : 'Cash Deposited from Drawer to Bank/Safe';
+            } else {
+                $refLabel = 'Manual Drawer Entry';
+                $partyName = $txn->user?->name ? "By {$txn->user->name}" : 'Cashier Entry';
+                $refUrl = null;
+                $categoryLabel = $txn->type === 'cash_in' ? 'Manual Cash Added to Drawer' : 'Manual Cash Removed from Drawer';
+            }
+
+            $txn->setAttribute('reference_label', $refLabel);
+            $txn->setAttribute('party_name', $partyName);
+            $txn->setAttribute('reference_url', $refUrl);
+            $txn->setAttribute('category_label', $categoryLabel);
+        }
+
+        return $transactions;
     }
 
     /**
