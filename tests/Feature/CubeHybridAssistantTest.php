@@ -854,6 +854,16 @@ JS;
 
         Sanctum::actingAs($this->user);
 
+        // Seed existing Brand and Supplier in the catalog (Cube must NEVER create new Brands or Suppliers)
+        $existingBrand = \App\Models\Brand::create([
+            'name' => 'GSK',
+            'expiry_return_policy' => 'before_expiry',
+            'expiry_return_months' => 3,
+        ]);
+        $existingSupplier = \App\Models\Supplier::create([
+            'name' => 'Ali Gohar',
+        ]);
+
         // Even if Groq AI tries to assume/guess pack_size=200, brand=GSK, category=Tablets, formulation=Paracetamol
         // when the user only typed "Add product Panadol 500mg Tablet", Cube MUST strip unstated assumptions and ask!
         Http::fake([
@@ -928,9 +938,9 @@ JS;
         // Product must NOT be created yet in DB
         $this->assertNull(\App\Models\Product::where('name', 'Panadol 500mg Tablet')->first());
 
-        // 1B. User replies with only pack_size and category -> Cube merges them and asks ONLY for remaining brand & supplier
+        // 1B. User replies with pack_size, category, and NON-EXISTENT brand & supplier -> Cube must NEVER create new Brand or Supplier!
         $step2Resp = $this->postJson('/api/cube/ask', [
-            'question' => 'pack size 200, category Tablets',
+            'question' => 'pack size 200, category Tablets, brand NonExistentBrandXYZ, supplier NonExistentSupplierXYZ',
             'language' => 'en',
             'current_route' => '/products',
         ]);
@@ -938,13 +948,20 @@ JS;
         $step2Resp->assertOk()
             ->assertJsonPath('provider_status', 'cube_task_needs_input')
             ->assertJsonPath('task_meta.missing_fields', ['brand', 'supplier'])
+            ->assertJsonPath('task_meta.invalid_brand', 'NonExistentBrandXYZ')
+            ->assertJsonPath('task_meta.invalid_supplier', 'NonExistentSupplierXYZ')
             ->assertJsonPath('task_meta.collected_fields.name', 'Panadol 500mg Tablet')
             ->assertJsonPath('task_meta.collected_fields.pack_size', 200)
             ->assertJsonPath('task_meta.collected_fields.category', 'Tablets');
 
+        // Verify no new Brand or Supplier was created, and product was not created yet
+        $this->assertFalse(\App\Models\Brand::where('name', 'NonExistentBrandXYZ')->exists());
+        $this->assertFalse(\App\Models\Supplier::where('name', 'NonExistentSupplierXYZ')->exists());
+        $this->assertSame(1, \App\Models\Brand::count());
+        $this->assertSame(1, \App\Models\Supplier::count());
         $this->assertNull(\App\Models\Product::where('name', 'Panadol 500mg Tablet')->first());
 
-        // 1C. User replies with the remaining required fields (brand & supplier) + optional prices/formulation/rack -> Product is now created!
+        // 1C. User replies with the EXISTING brand & supplier + optional prices/formulation/rack -> Product is now created!
         $createResp = $this->postJson('/api/cube/ask', [
             'question' => 'brand GSK, supplier Ali Gohar, formulation Paracetamol, pack purchase price 500, pack sale price 600, rack R-10',
             'language' => 'en',
@@ -958,6 +975,10 @@ JS;
 
         $panadol = \App\Models\Product::where('name', 'Panadol 500mg Tablet')->first();
         $this->assertNotNull($panadol);
+        $this->assertSame($existingBrand->id, (int) $panadol->brand_id);
+        $this->assertSame($existingSupplier->id, (int) $panadol->supplier_id);
+        $this->assertSame(1, \App\Models\Brand::count());
+        $this->assertSame(1, \App\Models\Supplier::count());
         $this->assertSame('Paracetamol', $panadol->formulation);
         $this->assertSame(200, (int) $panadol->pack_size);
         $this->assertEquals(600.0, (float) $panadol->pack_sale_price);

@@ -43,16 +43,16 @@ class CubeTaskExecutorService
             'hint_ur' => 'پروڈکٹ کی کیٹیگری، مثلاً `Tablets`, `Capsules`, `Syrups`',
         ],
         'brand' => [
-            'en' => 'Brand / Manufacturer',
-            'ur' => 'برانڈ / کمپنی (Brand)',
-            'hint_en' => 'Brand or manufacturer name, e.g., `GSK`, `Abbott`, `Getz`',
-            'hint_ur' => 'برانڈ یا کمپنی کا نام، مثلاً `GSK`, `Abbott`',
+            'en' => 'Brand / Manufacturer (Existing Only)',
+            'ur' => 'برانڈ / کمپنی (صرف پہلے سے موجود)',
+            'hint_en' => 'Must match an existing Brand in your catalog (Cube never creates new brands)',
+            'hint_ur' => 'آپ کے کیٹلاگ میں پہلے سے موجود برانڈ کا نام (کیوب نیا برانڈ خود نہیں بناتا)',
         ],
         'supplier' => [
-            'en' => 'Supplier / Distributor',
-            'ur' => 'سپلائر / ڈسٹری بیوٹر (Supplier)',
-            'hint_en' => 'Primary supplier/distributor name, e.g., `Ali Gohar`, `Premier`',
-            'hint_ur' => 'بنیادی سپلائر کا نام، مثلاً `Ali Gohar`, `Premier`',
+            'en' => 'Supplier / Distributor (Existing Only)',
+            'ur' => 'سپلائر / ڈسٹری بیوٹر (صرف پہلے سے موجود)',
+            'hint_en' => 'Must match an existing Supplier in your catalog (Cube never creates new suppliers)',
+            'hint_ur' => 'آپ کے کیٹلاگ میں پہلے سے موجود سپلائر کا نام (کیوب نیا سپلائر خود نہیں بناتا)',
         ],
     ];
     /**
@@ -927,8 +927,48 @@ SYSTEM;
     }
 
     /**
+     * Validates that any non-empty `brand` and `supplier` values in a product draft match
+     * an EXISTING Brand / Supplier record in the database.
+     * Cube NEVER creates a new Brand or Supplier when adding a product.
+     * If a provided brand/supplier does not exist in the catalog, its value is stored in
+     * `_invalid_brand` / `_invalid_supplier` and `brand` / `supplier` is reset to null so
+     * the user is asked to choose an existing brand/supplier.
+     *
+     * @param  array<string, mixed>  $draft
+     * @return array<string, mixed>
+     */
+    protected function validateCreateProductCatalogLinks(array $draft): array
+    {
+        $brandInput = trim((string) ($draft['brand'] ?? ''));
+        if ($brandInput !== '') {
+            $existingBrand = $this->findExistingBrand($brandInput);
+            if ($existingBrand) {
+                $draft['brand'] = $existingBrand->name;
+                unset($draft['_invalid_brand']);
+            } else {
+                $draft['_invalid_brand'] = $brandInput;
+                $draft['brand'] = null;
+            }
+        }
+
+        $supplierInput = trim((string) ($draft['supplier'] ?? ''));
+        if ($supplierInput !== '') {
+            $existingSupplier = $this->findExistingSupplier($supplierInput);
+            if ($existingSupplier) {
+                $draft['supplier'] = $existingSupplier->name;
+                unset($draft['_invalid_supplier']);
+            } else {
+                $draft['_invalid_supplier'] = $supplierInput;
+                $draft['supplier'] = null;
+            }
+        }
+
+        return $draft;
+    }
+
+    /**
      * Returns the list of required field keys (`name`, `pack_size`, `category`, `brand`, `supplier`)
-     * that are still missing for a product draft.
+     * that are still missing or do not match an existing catalog Brand/Supplier for a product draft.
      *
      * @param  array<string, mixed>  $rawItem
      * @return array<int, string>
@@ -950,11 +990,13 @@ SYSTEM;
             $missing[] = 'category';
         }
 
-        if (trim((string) ($rawItem['brand'] ?? '')) === '') {
+        $brandVal = trim((string) ($rawItem['brand'] ?? ''));
+        if ($brandVal === '' || $this->findExistingBrand($brandVal) === null) {
             $missing[] = 'brand';
         }
 
-        if (trim((string) ($rawItem['supplier'] ?? '')) === '') {
+        $supplierVal = trim((string) ($rawItem['supplier'] ?? ''));
+        if ($supplierVal === '' || $this->findExistingSupplier($supplierVal) === null) {
             $missing[] = 'supplier';
         }
 
@@ -1070,6 +1112,8 @@ SYSTEM;
      */
     protected function mergeReplyIntoProductDraft(array $draft, array $missingBefore, string $replyText): array
     {
+        unset($draft['_invalid_brand'], $draft['_invalid_supplier']);
+
         $cleanReply = preg_replace('/^(?:please\s+|cube\s+|plz\s+|can\s+you\s+)?(?:add|create|register|insert|make)\s+(?:a\s+)?(?:new\s+)?(?:product|products|medicine|medicines|item|items)\b\s*(?:named|called|:)?\s*/iu', '', $replyText) ?? $replyText;
 
         // 1. Extract explicitly labeled fields first
@@ -1147,7 +1191,8 @@ SYSTEM;
     /**
      * Executes creation of 1 or multiple products (non-destructive).
      * NEVER assumes missing required fields (`name`, `pack_size`, `category`, `brand`, `supplier`).
-     * If any required field is missing, stores the draft and asks the user for the missing fields.
+     * NEVER creates a new Brand or Supplier — `brand` and `supplier` must match existing records.
+     * If any required field is missing or brand/supplier does not exist, stores the draft and asks the user.
      *
      * @param  array<string, mixed>  $taskData
      * @return array<string, mixed>
@@ -1179,6 +1224,11 @@ SYSTEM;
             return $this->buildMissingCreateProductFieldsResponse($emptyDraft, $productVersion);
         }
 
+        // Validate that any provided `brand` and `supplier` exist in the catalog (never create new Brand or Supplier)
+        foreach ($rawItems as $idx => $candidate) {
+            $rawItems[$idx] = $this->validateCreateProductCatalogLinks($candidate);
+        }
+
         // Check if any product in the request is missing any required field (`name`, `pack_size`, `category`, `brand`, `supplier`)
         $hasMissingRequiredFields = false;
         foreach ($rawItems as $candidate) {
@@ -1204,7 +1254,7 @@ SYSTEM;
             return $this->buildMissingCreateProductFieldsResponse($rawItems, $productVersion);
         }
 
-        // All required fields are present! Clear any pending task draft and create the product(s).
+        // All required fields are present and Brand/Supplier exist! Clear any pending task draft and create the product(s).
         $this->clearPendingTask($user);
 
         $created = [];
@@ -1270,11 +1320,16 @@ SYSTEM;
             $categoryName = trim((string) $rawItem['category']);
             $category = $this->resolveOrCreateCategory($categoryName);
 
+            // Strictly use existing Brand and Supplier (validated above; never create new Brand or Supplier)
             $brandName = trim((string) $rawItem['brand']);
-            $brand = $this->resolveOrCreateBrand($brandName);
+            $brand = $this->findExistingBrand($brandName);
 
             $supplierName = trim((string) $rawItem['supplier']);
-            $supplier = $this->resolveOrCreateSupplier($supplierName);
+            $supplier = $this->findExistingSupplier($supplierName);
+
+            if (! $brand || ! $supplier) {
+                continue;
+            }
 
             $storageLocationId = null;
             if (Schema::hasTable('storage_locations')) {
@@ -1398,7 +1453,8 @@ SYSTEM;
 
     /**
      * Builds an interactive follow-up response asking the user for the exact required fields
-     * needed to complete adding the product(s), without assuming any values.
+     * needed to complete adding the product(s), without assuming any values and without creating
+     * new Brands or Suppliers.
      *
      * @param  array<int, array<string, mixed>>  $draftItems
      * @return array<string, mixed>
@@ -1407,6 +1463,8 @@ SYSTEM;
     {
         $firstDraft = is_array($draftItems[0] ?? null) ? $draftItems[0] : [];
         $missingFields = $this->getMissingCreateProductFields($firstDraft);
+        $invalidBrand = isset($firstDraft['_invalid_brand']) ? trim((string) $firstDraft['_invalid_brand']) : '';
+        $invalidSupplier = isset($firstDraft['_invalid_supplier']) ? trim((string) $firstDraft['_invalid_supplier']) : '';
 
         $collectedEn = [];
         $collectedUr = [];
@@ -1434,15 +1492,15 @@ SYSTEM;
             }
         }
 
-        // Fetch up to 3 existing catalog examples so the user knows what already exists in their store
+        // Fetch existing catalog items so the user can choose an existing Brand & Supplier
         $existingCategories = Schema::hasTable('categories')
-            ? Category::query()->orderBy('name')->limit(4)->pluck('name')->all()
+            ? Category::query()->orderBy('name')->limit(6)->pluck('name')->all()
             : [];
         $existingBrands = Schema::hasTable('brands')
-            ? Brand::query()->orderBy('name')->limit(4)->pluck('name')->all()
+            ? Brand::query()->orderBy('name')->limit(8)->pluck('name')->all()
             : [];
         $existingSuppliers = Schema::hasTable('suppliers')
-            ? Supplier::query()->orderBy('name')->limit(4)->pluck('name')->all()
+            ? Supplier::query()->orderBy('name')->limit(8)->pluck('name')->all()
             : [];
 
         $questionsEn = [];
@@ -1462,16 +1520,26 @@ SYSTEM;
             $catalogHintUr = '';
             if ($fieldKey === 'category' && ! empty($existingCategories)) {
                 $list = implode(', ', array_map(fn ($c) => "`{$c}`", $existingCategories));
-                $catalogHintEn = " — Existing in catalog: {$list} (or type a new one)";
+                $catalogHintEn = " — Existing in catalog: {$list}";
                 $catalogHintUr = " — موجودہ کیٹیگریز: {$list}";
-            } elseif ($fieldKey === 'brand' && ! empty($existingBrands)) {
-                $list = implode(', ', array_map(fn ($b) => "`{$b}`", $existingBrands));
-                $catalogHintEn = " — Existing in catalog: {$list} (or type a new one)";
-                $catalogHintUr = " — موجودہ برانڈز: {$list}";
-            } elseif ($fieldKey === 'supplier' && ! empty($existingSuppliers)) {
-                $list = implode(', ', array_map(fn ($s) => "`{$s}`", $existingSuppliers));
-                $catalogHintEn = " — Existing in catalog: {$list} (or type a new one)";
-                $catalogHintUr = " — موجودہ سپلائرز: {$list}";
+            } elseif ($fieldKey === 'brand') {
+                if (! empty($existingBrands)) {
+                    $list = implode(', ', array_map(fn ($b) => "`{$b}`", $existingBrands));
+                    $catalogHintEn = " — Choose an existing Brand from your catalog: {$list}";
+                    $catalogHintUr = " — موجودہ برانڈز میں سے منتخب کریں: {$list}";
+                } else {
+                    $catalogHintEn = ' — ⚠️ No brands exist in your catalog yet. Please add a brand in **Brands** (`/brands`) first.';
+                    $catalogHintUr = ' — ⚠️ ابھی کوئی برانڈ موجود نہیں ہے۔ پہلے **Brands** پیج پر برانڈ شامل کریں۔';
+                }
+            } elseif ($fieldKey === 'supplier') {
+                if (! empty($existingSuppliers)) {
+                    $list = implode(', ', array_map(fn ($s) => "`{$s}`", $existingSuppliers));
+                    $catalogHintEn = " — Choose an existing Supplier from your catalog: {$list}";
+                    $catalogHintUr = " — موجودہ سپلائرز میں سے منتخب کریں: {$list}";
+                } else {
+                    $catalogHintEn = ' — ⚠️ No suppliers exist in your catalog yet. Please add a supplier in **Suppliers** (`/suppliers`) first.';
+                    $catalogHintUr = ' — ⚠️ ابھی کوئی سپلائر موجود نہیں ہے۔ پہلے **Suppliers** پیج پر سپلائر شامل کریں۔';
+                }
             }
 
             $questionsEn[] = "{$num}. **{$meta['en']}** — {$meta['hint_en']}{$catalogHintEn}";
@@ -1490,12 +1558,28 @@ SYSTEM;
         $productHeadingEn = ! empty($firstDraft['name']) ? "**{$firstDraft['name']}**" : 'this new product';
         $productHeadingUr = ! empty($firstDraft['name']) ? "**{$firstDraft['name']}**" : 'نئی پروڈکٹ';
 
-        $linesEn = [
-            "To make sure your catalog stays accurate, **Cube never assumes missing required fields**. Please provide the remaining required details for {$productHeadingEn}:",
-        ];
-        $linesUr = [
-            "آپ کے کیٹلاگ کی درستگی کے لیے **کیوب خود سے کوئی بھی مطلوبہ فیلڈ فرض (Assume) نہیں کرتا**۔ براہِ کرم {$productHeadingUr} مکمّل کرنے کے لیے درج ذیل معلومات بتائیں:",
-        ];
+        $linesEn = [];
+        $linesUr = [];
+
+        if ($invalidBrand !== '' || $invalidSupplier !== '') {
+            if ($invalidBrand !== '') {
+                $brandListText = ! empty($existingBrands)
+                    ? implode(', ', array_map(fn ($b) => "`{$b}`", $existingBrands))
+                    : '*(no brands in catalog yet — please create one in `/brands` first)*';
+                $linesEn[] = "⚠️ **Brand Not Found (`{$invalidBrand}`):** Cube **never creates a new Brand** when adding a product. Please choose an **existing Brand** from your catalog: {$brandListText}";
+                $linesUr[] = "⚠️ **برانڈ موجود نہیں ہے (`{$invalidBrand}`):** کیوب پروڈکٹ شامل کرتے وقت **نیا برانڈ خود نہیں بناتا**۔ براہِ کرم پہلے سے موجود برانڈ منتخب کریں: {$brandListText}";
+            }
+            if ($invalidSupplier !== '') {
+                $supplierListText = ! empty($existingSuppliers)
+                    ? implode(', ', array_map(fn ($s) => "`{$s}`", $existingSuppliers))
+                    : '*(no suppliers in catalog yet — please create one in `/suppliers` first)*';
+                $linesEn[] = "⚠️ **Supplier Not Found (`{$invalidSupplier}`):** Cube **never creates a new Supplier** when adding a product. Please choose an **existing Supplier** from your catalog: {$supplierListText}";
+                $linesUr[] = "⚠️ **سپلائر موجود نہیں ہے (`{$invalidSupplier}`):** کیوب پروڈکٹ شامل کرتے وقت **نیا سپلائر خود نہیں بناتا**۔ براہِ کرم پہلے سے موجود سپلائر منتخب کریں: {$supplierListText}";
+            }
+        } else {
+            $linesEn[] = "To make sure your catalog stays accurate, **Cube never assumes missing required fields** and **only uses existing Brands & Suppliers**. Please provide the remaining required details for {$productHeadingEn}:";
+            $linesUr[] = "آپ کے کیٹلاگ کی درستگی کے لیے **کیوب خود سے کوئی بھی مطلوبہ فیلڈ فرض (Assume) نہیں کرتا** اور **صرف پہلے سے موجود برانڈ اور سپلائر استعمال کرتا ہے**۔ براہِ کرم {$productHeadingUr} مکمّل کرنے کے لیے درج ذیل معلومات بتائیں:";
+        }
 
         if (! empty($collectedEn)) {
             $linesEn[] = "✅ **Details Already Recorded:**\n".implode("\n", $collectedEn);
@@ -1510,18 +1594,34 @@ SYSTEM;
         $linesUr[] = "*(اختیاری: آپ ساتھ میں `formulation`، `pack purchase price`، `pack sale price` یا `rack` بھی لکھ سکتے ہیں۔)*\n\n"
             ."**جواب لکھنے کی مثال:**\n`".implode(', ', $exampleParts)."`\n*(یا منسوخ کرنے کے لیے `cancel` لکھیں۔)*";
 
+        $links = [
+            ['path' => '/products/create', 'en' => 'Open Add Product Form', 'ur' => 'پروڈکٹ فارم کھولیں'],
+        ];
+        if (in_array('brand', $missingFields, true)) {
+            $links[] = ['path' => '/brands', 'en' => 'Manage Brands', 'ur' => 'برانڈز دیکھیں'];
+        }
+        if (in_array('supplier', $missingFields, true)) {
+            $links[] = ['path' => '/suppliers', 'en' => 'Manage Suppliers', 'ur' => 'سپلائرز دیکھیں'];
+        }
+
         return $this->formatTaskResponse(
-            titleEn: 'Required Product Details Needed (No Assumptions)',
-            titleUr: 'پروڈکٹ شامل کرنے کے لیے مطلوبہ معلومات درکار ہیں',
+            titleEn: ($invalidBrand !== '' || $invalidSupplier !== '')
+                ? 'Existing Brand & Supplier Required (No New Brand/Supplier Created)'
+                : 'Required Product Details Needed (No Assumptions)',
+            titleUr: ($invalidBrand !== '' || $invalidSupplier !== '')
+                ? 'صرف پہلے سے موجود برانڈ اور سپلائر منتخب کریں'
+                : 'پروڈکٹ شامل کرنے کے لیے مطلوبہ معلومات درکار ہیں',
             answerEn: implode("\n\n", $linesEn),
             answerUr: implode("\n\n", $linesUr),
-            links: [['path' => '/products/create', 'en' => 'Open Add Product Form', 'ur' => 'پروڈکٹ فارم کھولیں']],
+            links: $links,
             taskMeta: [
                 'action' => 'create_products',
                 'status' => 'needs_required_fields',
                 'created_count' => 0,
                 'missing_fields' => $missingFields,
                 'collected_fields' => $collectedSummary,
+                'invalid_brand' => $invalidBrand !== '' ? $invalidBrand : null,
+                'invalid_supplier' => $invalidSupplier !== '' ? $invalidSupplier : null,
             ],
             productVersion: $productVersion,
             providerStatus: 'cube_task_needs_input'
@@ -1531,6 +1631,7 @@ SYSTEM;
     /**
      * Executes non-destructive updates on 1 or multiple existing products.
      * Never assumes which product or which field to edit; asks the user if either is missing.
+     * Never creates a new Brand or Supplier — only assigns existing ones.
      *
      * @param  array<string, mixed>  $taskData
      * @return array<string, mixed>
@@ -1584,6 +1685,8 @@ SYSTEM;
 
         $updatedRecords = [];
         $notFoundTargets = [];
+        $catalogWarningsEn = [];
+        $catalogWarningsUr = [];
 
         foreach (array_slice($updates, 0, 25) as $item) {
             $target = trim((string) ($item['target_name_or_code'] ?? ($item['name'] ?? '')));
@@ -1672,15 +1775,25 @@ SYSTEM;
             }
 
             if (! empty($item['brand'])) {
-                $br = $this->resolveOrCreateBrand((string) $item['brand']);
-                $product->brand_id = $br->id;
-                $changes[] = "Brand → **{$br->name}**";
+                $br = $this->findExistingBrand((string) $item['brand']);
+                if ($br) {
+                    $product->brand_id = $br->id;
+                    $changes[] = "Brand → **{$br->name}**";
+                } else {
+                    $catalogWarningsEn[] = "⚠️ Brand **`{$item['brand']}`** does not exist in your catalog (Cube never creates new brands).";
+                    $catalogWarningsUr[] = "⚠️ برانڈ **`{$item['brand']}`** کیٹلاگ میں موجود نہیں ہے (کیوب نیا برانڈ نہیں بناتا)۔";
+                }
             }
 
             if (! empty($item['supplier'])) {
-                $sup = $this->resolveOrCreateSupplier((string) $item['supplier']);
-                $product->supplier_id = $sup->id;
-                $changes[] = "Supplier → **{$sup->name}**";
+                $sup = $this->findExistingSupplier((string) $item['supplier']);
+                if ($sup) {
+                    $product->supplier_id = $sup->id;
+                    $changes[] = "Supplier → **{$sup->name}**";
+                } else {
+                    $catalogWarningsEn[] = "⚠️ Supplier **`{$item['supplier']}`** does not exist in your catalog (Cube never creates new suppliers).";
+                    $catalogWarningsUr[] = "⚠️ سپلائر **`{$item['supplier']}`** کیٹلاگ میں موجود نہیں ہے (کیوب نیا سپلائر نہیں بناتا)۔";
+                }
             }
 
             if (isset($item['rack']) && trim((string) $item['rack']) !== '') {
@@ -1732,6 +1845,11 @@ SYSTEM;
                 $linesEn[] = "{$num}. **{$rec['name']}** (`{$rec['product_code']}`): {$changeStr}";
                 $linesUr[] = "{$num}. **{$rec['name']}** (`{$rec['product_code']}`): {$changeStr}";
             }
+        }
+
+        if (! empty($catalogWarningsEn)) {
+            $linesEn[] = implode("\n", array_unique($catalogWarningsEn));
+            $linesUr[] = implode("\n", array_unique($catalogWarningsUr));
         }
 
         if (! empty($notFoundTargets)) {
@@ -2359,39 +2477,54 @@ SYSTEM;
         return Category::create(['name' => $clean]);
     }
 
-    protected function resolveOrCreateBrand(string $name): Brand
-    {
-        $clean = trim($name) ?: 'General';
-        $existing = Brand::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($clean, 'UTF-8')])->first();
-        if ($existing) {
-            return $existing;
-        }
-
-        return Brand::create([
-            'name' => $clean,
-            'expiry_return_policy' => 'before_expiry',
-            'expiry_return_months' => 3,
-        ]);
-    }
-
-    protected function resolveOrCreateSupplier(string $name): Supplier
+    /**
+     * Looks up an existing Brand in the catalog by case-insensitive exact name or numeric ID.
+     * Cube NEVER creates a new Brand when adding or updating a product.
+     */
+    protected function findExistingBrand(string $name): ?Brand
     {
         $clean = trim($name);
-        if ($clean !== '' && strtolower($clean) !== 'general supplier') {
-            $existing = Supplier::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($clean, 'UTF-8')])->first();
-            if ($existing) {
-                return $existing;
-            }
-
-            return Supplier::create(['name' => $clean]);
+        if ($clean === '' || ! Schema::hasTable('brands')) {
+            return null;
         }
 
-        $first = Supplier::query()->orderBy('id')->first();
-        if ($first) {
-            return $first;
+        $exact = Brand::query()
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($clean, 'UTF-8')])
+            ->first();
+        if ($exact) {
+            return $exact;
         }
 
-        return Supplier::create(['name' => 'General Supplier']);
+        if (ctype_digit($clean)) {
+            return Brand::query()->find((int) $clean);
+        }
+
+        return null;
+    }
+
+    /**
+     * Looks up an existing Supplier in the catalog by case-insensitive exact name or numeric ID.
+     * Cube NEVER creates a new Supplier when adding or updating a product.
+     */
+    protected function findExistingSupplier(string $name): ?Supplier
+    {
+        $clean = trim($name);
+        if ($clean === '' || ! Schema::hasTable('suppliers')) {
+            return null;
+        }
+
+        $exact = Supplier::query()
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($clean, 'UTF-8')])
+            ->first();
+        if ($exact) {
+            return $exact;
+        }
+
+        if (ctype_digit($clean)) {
+            return Supplier::query()->find((int) $clean);
+        }
+
+        return null;
     }
 
     protected function findProductByNameOrCode(string $target): ?Product
