@@ -839,8 +839,9 @@ JS;
     }
 
     /**
-     * 25. Cube AI Non-Destructive Task Automation:
-     * - Creates a product with inferred/explicit formulation, brand, category, and calculated unit prices
+     * 25. Cube AI Non-Destructive Task Automation & Zero-Assumption Required Field Checks:
+     * - Never assumes missing required fields (`name`, `pack_size`, `category`, `brand`, `supplier`) even if AI tries to guess them
+     * - Asks the user for the missing required fields and completes creation across follow-up turns
      * - Edits an existing product's price, rack, and formulation
      * - Auto-fills missing formulations across multiple products in background batches
      * - Hardcodes a strict refusal on any delete request (chat or structured endpoint)
@@ -853,7 +854,8 @@ JS;
 
         Sanctum::actingAs($this->user);
 
-        // 1. Add a product via natural language chat (using local fallback when AI is mocked to return structured task)
+        // Even if Groq AI tries to assume/guess pack_size=200, brand=GSK, category=Tablets, formulation=Paracetamol
+        // when the user only typed "Add product Panadol 500mg Tablet", Cube MUST strip unstated assumptions and ask!
         Http::fake([
             'api.groq.com/*' => Http::sequence()
                 ->push([
@@ -867,11 +869,9 @@ JS;
                                             'name' => 'Panadol 500mg Tablet',
                                             'formulation' => 'Paracetamol',
                                             'pack_size' => 200,
-                                            'pack_purchase_price' => 500,
-                                            'pack_sale_price' => 600,
                                             'brand' => 'GSK',
                                             'category' => 'Tablets',
-                                            'rack' => 'R-10',
+                                            'supplier' => 'General Supplier',
                                         ],
                                     ],
                                 ]),
@@ -910,8 +910,43 @@ JS;
                 ], 200),
         ]);
 
+        // 1A. User asks to add a product with ONLY the name -> Cube must NOT assume pack_size, category, brand, or supplier!
+        $step1Resp = $this->postJson('/api/cube/ask', [
+            'question' => 'Add product Panadol 500mg Tablet',
+            'language' => 'en',
+            'current_route' => '/products',
+        ]);
+
+        $step1Resp->assertOk()
+            ->assertJsonPath('provider_status', 'cube_task_needs_input')
+            ->assertJsonPath('task_meta.action', 'create_products')
+            ->assertJsonPath('task_meta.status', 'needs_required_fields')
+            ->assertJsonPath('task_meta.created_count', 0)
+            ->assertJsonPath('task_meta.missing_fields', ['pack_size', 'category', 'brand', 'supplier'])
+            ->assertJsonPath('task_meta.collected_fields.name', 'Panadol 500mg Tablet');
+
+        // Product must NOT be created yet in DB
+        $this->assertNull(\App\Models\Product::where('name', 'Panadol 500mg Tablet')->first());
+
+        // 1B. User replies with only pack_size and category -> Cube merges them and asks ONLY for remaining brand & supplier
+        $step2Resp = $this->postJson('/api/cube/ask', [
+            'question' => 'pack size 200, category Tablets',
+            'language' => 'en',
+            'current_route' => '/products',
+        ]);
+
+        $step2Resp->assertOk()
+            ->assertJsonPath('provider_status', 'cube_task_needs_input')
+            ->assertJsonPath('task_meta.missing_fields', ['brand', 'supplier'])
+            ->assertJsonPath('task_meta.collected_fields.name', 'Panadol 500mg Tablet')
+            ->assertJsonPath('task_meta.collected_fields.pack_size', 200)
+            ->assertJsonPath('task_meta.collected_fields.category', 'Tablets');
+
+        $this->assertNull(\App\Models\Product::where('name', 'Panadol 500mg Tablet')->first());
+
+        // 1C. User replies with the remaining required fields (brand & supplier) + optional prices/formulation/rack -> Product is now created!
         $createResp = $this->postJson('/api/cube/ask', [
-            'question' => 'Add product Panadol 500mg Tablet, formulation Paracetamol, pack size 200, pack purchase price 500, pack sale price 600, brand GSK, category Tablets, rack R-10',
+            'question' => 'brand GSK, supplier Ali Gohar, formulation Paracetamol, pack purchase price 500, pack sale price 600, rack R-10',
             'language' => 'en',
             'current_route' => '/products',
         ]);

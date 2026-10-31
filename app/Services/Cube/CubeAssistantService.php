@@ -50,7 +50,7 @@ class CubeAssistantService
         $productVersion = $this->retriever->getProductVersion();
 
         // 0. Non-Destructive AI Task Execution (Add Product, Edit Product, Bulk Auto-Fill Formulations; Delete Hardcoded Blocked)
-        $taskResult = $this->taskExecutor->detectAndExecuteFromChat($user, $question, $language, $productVersion);
+        $taskResult = $this->taskExecutor->detectAndExecuteFromChat($user, $question, $language, $productVersion, $history);
         if ($taskResult !== null) {
             return $taskResult;
         }

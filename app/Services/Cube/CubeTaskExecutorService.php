@@ -11,11 +11,50 @@ use App\Models\Setting;
 use App\Models\StorageLocation;
 use App\Models\Supplier;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 class CubeTaskExecutorService
 {
+    /**
+     * Mandatory fields required from the user before Cube will ever create a new product.
+     * Cube will NEVER assume or default any of these values from itself.
+     *
+     * @var array<string, array{en: string, ur: string, hint_en: string, hint_ur: string}>
+     */
+    protected const REQUIRED_CREATE_PRODUCT_FIELDS = [
+        'name' => [
+            'en' => 'Product Name',
+            'ur' => 'پروڈکٹ کا نام (Product Name)',
+            'hint_en' => 'Full product name & strength, e.g., `Panadol 500mg Tablet`',
+            'hint_ur' => 'پروڈکٹ کا مکمل نام، مثلاً `Panadol 500mg Tablet`',
+        ],
+        'pack_size' => [
+            'en' => 'Pack Size',
+            'ur' => 'پیک سائز (Pack Size)',
+            'hint_en' => 'How many units are in 1 pack (integer ≥ 1, e.g., `100`, `30`, `10`, `1`)',
+            'hint_ur' => 'ایک پیک میں کتنے یونٹس ہیں (مثلاً `100`، `30`، `10`)',
+        ],
+        'category' => [
+            'en' => 'Category',
+            'ur' => 'کیٹیگری (Category)',
+            'hint_en' => 'Product category, e.g., `Tablets`, `Capsules`, `Syrups`',
+            'hint_ur' => 'پروڈکٹ کی کیٹیگری، مثلاً `Tablets`, `Capsules`, `Syrups`',
+        ],
+        'brand' => [
+            'en' => 'Brand / Manufacturer',
+            'ur' => 'برانڈ / کمپنی (Brand)',
+            'hint_en' => 'Brand or manufacturer name, e.g., `GSK`, `Abbott`, `Getz`',
+            'hint_ur' => 'برانڈ یا کمپنی کا نام، مثلاً `GSK`, `Abbott`',
+        ],
+        'supplier' => [
+            'en' => 'Supplier / Distributor',
+            'ur' => 'سپلائر / ڈسٹری بیوٹر (Supplier)',
+            'hint_en' => 'Primary supplier/distributor name, e.g., `Ali Gohar`, `Premier`',
+            'hint_ur' => 'بنیادی سپلائر کا نام، مثلاً `Ali Gohar`, `Premier`',
+        ],
+    ];
     /**
      * Built-in pharmaceutical generic/salt dictionary for fast, accurate background
      * formulation enrichment even before or alongside external AI calls.
@@ -202,13 +241,14 @@ class CubeTaskExecutorService
     /**
      * Inspects a natural-language chat message to determine if the user is asking Cube
      * to perform an operational task (Add Product, Edit Product, Bulk Add/Auto-Fill Formulations,
-     * or a forbidden Delete command).
+     * a follow-up answer to a pending task with missing required fields, or a forbidden Delete command).
      *
      * Returns `null` if the message is a normal informational Q&A question.
      *
+     * @param  array<int, array{role: string, content: string}>  $history
      * @return ?array<string, mixed>
      */
-    public function detectAndExecuteFromChat(?User $user, string $question, string $language = 'en', string $productVersion = '2026.10'): ?array
+    public function detectAndExecuteFromChat(?User $user, string $question, string $language = 'en', string $productVersion = '2026.10', array $history = []): ?array
     {
         $trimmed = trim($question);
         if ($trimmed === '') {
@@ -235,7 +275,37 @@ class CubeTaskExecutorService
             return $this->buildDeleteBlockedResponse($productVersion);
         }
 
-        // 3. Check if the message is a Bulk Formulation command, Add Product command, or Edit Product command
+        // 3. Check if the user has an active pending task waiting for required fields
+        $pendingTask = $user ? $this->getPendingTask($user) : null;
+        if (is_array($pendingTask) && ! empty($pendingTask['action'])) {
+            if ($this->isCancelCommand($lower)) {
+                $this->clearPendingTask($user);
+
+                return $this->buildTaskCancelledResponse($productVersion);
+            }
+
+            $explicitIntent = $this->classifyActionIntent($lower);
+
+            if ($explicitIntent === 'bulk_autofill_missing_formulations') {
+                $this->clearPendingTask($user);
+
+                return $this->executeBulkAutofillMissingFormulations($user, [
+                    'batch_size' => 20,
+                    'after_id' => 0,
+                    'filter_query' => $this->extractOptionalFilterFromPrompt($trimmed),
+                ], $productVersion);
+            }
+
+            // If the user is replying with the missing fields (or continuing the same task type), merge & continue
+            if ($explicitIntent === null || $explicitIntent === $pendingTask['action']) {
+                return $this->continuePendingTask($user, $pendingTask, $trimmed, $productVersion);
+            }
+
+            // User explicitly started a different task action; clear old pending task and proceed
+            $this->clearPendingTask($user);
+        }
+
+        // 4. Check if the message is a Bulk Formulation command, Add Product command, or Edit Product command
         $intentType = $this->classifyActionIntent($lower);
         if ($intentType === null) {
             return null;
@@ -270,10 +340,18 @@ class CubeTaskExecutorService
         }
 
         if ($action === 'bulk_assign_formulations') {
-            return $this->executeBulkAssignFormulations($user, $parsedTask, $productVersion);
+            return $this->executeBulkAssignFormulations($user, $parsedTask, $productVersion, $trimmed);
         }
 
         if ($action === 'create_products') {
+            // Strip any unstated assumptions that AI might have guessed from world knowledge
+            if (is_array($parsedTask['products'] ?? null)) {
+                $parsedTask['products'] = array_map(
+                    fn ($item) => is_array($item) ? $this->verifyExtractedFieldsAgainstUserText($item, $trimmed) : $item,
+                    $parsedTask['products']
+                );
+            }
+
             return $this->executeCreateProducts($user, $parsedTask, $productVersion);
         }
 
@@ -333,6 +411,17 @@ class CubeTaskExecutorService
     }
 
     /**
+     * Detects if the user is cancelling an active pending task prompt.
+     */
+    protected function isCancelCommand(string $lower): bool
+    {
+        return (bool) preg_match(
+            '/^(?:please\s+|cube\s+)?(?:cancel|cancel\s+task|stop|abort|never\s*mind|forget\s+it|skip|rahne\s+do|rehne\s+do|choro|منسوخ|کینسل|رہنے\s+دو)$/iu',
+            trim($lower, " \t\n\r\0\x0B.!?,")
+        );
+    }
+
+    /**
      * Classifies whether a user chat message is an action command for Cube.
      */
     protected function classifyActionIntent(string $lower): ?string
@@ -342,7 +431,6 @@ class CubeTaskExecutorService
             preg_match('/\b(auto[\s\-]?fill|fill|populate|generate|add|assign|update|set)\b.*\b(formulation|formulations|generic|salt|salts)\b.*\b(missing|empty|all\s+products|multiple\s+products|products|medicines|items|in\s+background|background)\b/iu', $lower) ||
             preg_match('/\b(formulation|formulations|salt|salts)\b.*\b(add\s+kar|fill\s+kar|laga\s+do|laga\s+dein|ڈال\s+دیں|شامل\s+کر)\b/iu', $lower)
         ) {
-            // Check if the user is assigning a specific formulation to specific named products vs auto-filling missing ones
             if (
                 preg_match('/\b(missing|empty|without\s+formulation|all\s+products|my\s+products|in\s+background|background|auto[\s\-]?fill)\b/iu', $lower) ||
                 preg_match('/^(?:please\s+|cube\s+)?(?:add|fill|populate|update|assign)\s+formulations?\s+(?:to|for|in)\s+(?:all\s+|my\s+)?products\b/iu', $lower)
@@ -371,7 +459,7 @@ class CubeTaskExecutorService
 
         // 4. Edit / Update Product(s) command
         if (
-            preg_match('/^(?:please\s+|cube\s+|plz\s+|can\s+you\s+)?(?:edit|update|change|modify|set)\s+(?:the\s+)?(?:product|medicine|item|price|pack\s+price|sale\s+price|purchase\s+price|pack\s+size|rack|max\s+discount|category|brand|formulation)\b/iu', $lower) ||
+            preg_match('/^(?:please\s+|cube\s+|plz\s+|can\s+you\s+)?(?:edit|update|change|modify|set)\s+(?:the\s+)?(?:product|medicine|item|price|pack\s+price|sale\s+price|purchase\s+price|pack\s+size|rack|max\s+discount|category|brand|supplier|formulation)\b/iu', $lower) ||
             preg_match('/\b(?:product|medicine)\s+(?:update|edit|change)\s+(?:kar\s+do|karein|کر\s+دیں)\b/iu', $lower)
         ) {
             return 'update_products';
@@ -383,6 +471,7 @@ class CubeTaskExecutorService
     /**
      * Uses Groq/Gemini AI (with deterministic local regex fallback) to extract structured
      * product creation, product update, or formulation assignment parameters.
+     * NEVER assumes or invents any field value not explicitly stated by the user.
      *
      * @return array<string, mixed>
      */
@@ -399,7 +488,14 @@ class CubeTaskExecutorService
         $systemPrompt = <<<'SYSTEM'
 You are Cube's structured ERP Task Parser for Karobar-App.
 Convert the user's natural-language request into a strict JSON object for NON-DESTRUCTIVE product and formulation tasks.
-HARDCODED SAFETY RULE: Deleting anything is strictly forbidden. If the user asks to delete or remove anything, set "action": "delete_blocked".
+HARDCODED SAFETY RULE 1: Deleting anything is strictly forbidden. If the user asks to delete or remove anything, set "action": "delete_blocked".
+HARDCODED SAFETY RULE 2 (ZERO ASSUMPTIONS): NEVER assume, guess, infer, or default any field value that the user did NOT explicitly state in their message!
+- If the user did not explicitly state "pack_size", set "pack_size": null.
+- If the user did not explicitly state "category", set "category": null.
+- If the user did not explicitly state "brand", set "brand": null.
+- If the user did not explicitly state "supplier", set "supplier": null.
+- If the user did not explicitly state "formulation", set "formulation": null.
+- If the user did not explicitly state prices or rack, set them to null.
 
 Supported actions:
 1. "create_products": Adding 1 or more new products.
@@ -408,33 +504,33 @@ Supported actions:
      "action": "create_products",
      "products": [
        {
-         "name": "Product Name (required)",
-         "formulation": "Generic / salt name (infer accurate pharmaceutical salt if it is a known medicine)",
-         "pack_size": 10,
-         "pack_purchase_price": 100,
-         "pack_sale_price": 120,
+         "name": null,
+         "formulation": null,
+         "pack_size": null,
+         "pack_purchase_price": null,
+         "pack_sale_price": null,
          "unit_purchase_price": null,
          "unit_sale_price": null,
          "whole_sale_pack_price": null,
          "whole_sale_unit_price": null,
-         "category": "Category name (e.g. Tablets, Syrups, Capsules, Injections, General)",
-         "brand": "Brand / Manufacturer name",
-         "supplier": "Supplier name",
-         "rack": "Rack code if mentioned",
-         "narcotic": "no",
+         "category": null,
+         "brand": null,
+         "supplier": null,
+         "rack": null,
+         "narcotic": null,
          "max_discount": null,
          "description": null
        }
      ]
    }
 
-2. "update_products": Editing 1 or more existing products. Only include fields the user wants to change (leave others null).
+2. "update_products": Editing 1 or more existing products. Only include fields the user explicitly wants to change (leave others null).
    Schema:
    {
      "action": "update_products",
      "updates": [
        {
-         "target_name_or_code": "Existing product name or PRD-XXXX code",
+         "target_name_or_code": null,
          "new_name": null,
          "formulation": null,
          "pack_size": null,
@@ -462,11 +558,11 @@ Supported actions:
      "action": "bulk_assign_formulations",
      "assignments": [
        {
-         "product_name": "Product name or prefix",
-         "formulation": "Generic salt / formulation name"
+         "product_name": null,
+         "formulation": null
        }
      ],
-     "standalone_formulations": ["List of standalone formulation names to register if no product specified"]
+     "standalone_formulations": []
    }
 
 4. "bulk_autofill_missing_formulations": Auto-filling missing formulations across multiple products in the database.
@@ -491,7 +587,7 @@ SYSTEM;
     }
 
     /**
-     * Local regex parser fallback so Cube tasks work even if external AI is temporarily rate-limited.
+     * Local deterministic parser fallback (never assumes any field not stated in `$rawText`).
      *
      * @return array<string, mixed>
      */
@@ -501,7 +597,6 @@ SYSTEM;
             $assignments = [];
             $standalone = [];
 
-            // Pattern: "set formulation X for Y, Z" or "for Y set formulation X"
             if (preg_match('/formulations?\s+(?:of\s+)?([A-Za-z0-9\s\-\+]+?)\s+(?:to|as|=)\s+([A-Za-z0-9\s\-\+\/,]+)/iu', $rawText, $m)) {
                 $prodCandidate = trim($m[1]);
                 $formCandidate = trim($m[2]);
@@ -528,7 +623,19 @@ SYSTEM;
                 }
             }
 
-            if (empty($assignments) && preg_match('/add\s+formulations?\s*:?\s*(.+)$/iu', $rawText, $m)) {
+            // Detect partial formulation assignment where product was given but formulation was omitted: "set formulation for Panadol"
+            if (empty($assignments) && preg_match('/(?:set|assign|add|update|change)\s+(?:the\s+)?formulations?\s+(?:for|of|on)\s+([A-Za-z0-9\s\-\+]+)$/iu', trim($rawText, " \t\n\r\0\x0B.?"), $m)) {
+                $prodCandidate = trim($m[1]);
+                $prodCandidate = preg_replace('/^(?:product|products|medicine|medicines)\s+/i', '', $prodCandidate) ?? $prodCandidate;
+                if ($prodCandidate !== '') {
+                    $assignments[] = [
+                        'product_name' => $prodCandidate,
+                        'formulation' => null,
+                    ];
+                }
+            }
+
+            if (empty($assignments) && preg_match('/add\s+formulations?\s*:\s*(.+)$/iu', $rawText, $m)) {
                 $parts = preg_split('/(?:,|\band\b|\n)/i', $m[1]) ?: [];
                 foreach ($parts as $part) {
                     $clean = trim($part, " \t\n\r\0\x0B.");
@@ -546,112 +653,30 @@ SYSTEM;
         }
 
         if ($defaultIntent === 'create_products') {
-            $body = preg_replace('/^(?:please\s+|cube\s+|plz\s+|can\s+you\s+)?(?:add|create|register|insert|make)\s+(?:a\s+)?(?:new\s+)?(?:product|products|medicine|medicines|item|items)\s*(?:named|called|:)?\s*/iu', '', $rawText) ?? $rawText;
+            $body = preg_replace('/^(?:please\s+|cube\s+|plz\s+|can\s+you\s+)?(?:add|create|register|insert|make)\s+(?:a\s+)?(?:new\s+)?(?:product|products|medicine|medicines|item|items)\b\s*(?:named|called|:)?\s*/iu', '', $rawText) ?? $rawText;
+            $parsedItem = $this->extractProductFieldsFromText($body, true);
 
-            $packSize = 1;
-            if (preg_match('/pack\s*size\s*(?:is|=|:)?\s*(\d+)/iu', $body, $m)) {
-                $packSize = max(1, (int) $m[1]);
-                $body = str_replace($m[0], ' ', $body);
+            $hasAnyValue = false;
+            foreach ($parsedItem as $v) {
+                if ($v !== null && $v !== '') {
+                    $hasAnyValue = true;
+                    break;
+                }
             }
-
-            $packPurchasePrice = null;
-            if (preg_match('/(?:pack\s*)?(?:purchase|cost|buy)\s*price\s*(?:is|=|:)?\s*(\d+(?:\.\d+)?)/iu', $body, $m)) {
-                $packPurchasePrice = (float) $m[1];
-                $body = str_replace($m[0], ' ', $body);
-            }
-
-            $packSalePrice = null;
-            if (preg_match('/(?:pack\s*)?(?:sale|sell|retail)?\s*price\s*(?:is|=|:)?\s*(\d+(?:\.\d+)?)/iu', $body, $m)) {
-                $packSalePrice = (float) $m[1];
-                $body = str_replace($m[0], ' ', $body);
-            }
-
-            $formulation = null;
-            if (preg_match('/(?:formulation|salt|generic)\s*(?:is|=|:)?\s*([A-Za-z0-9\s\+]+?)(?=,|\bpack\b|\bprice\b|\bbrand\b|\bcategory\b|\brack\b|$)/iu', $body, $m)) {
-                $formulation = trim($m[1]);
-                $body = str_replace($m[0], ' ', $body);
-            }
-
-            $brand = null;
-            if (preg_match('/brand\s*(?:is|=|:)?\s*([A-Za-z0-9\s\-]+?)(?=,|\bpack\b|\bprice\b|\bcategory\b|\bformulation\b|\brack\b|$)/iu', $body, $m)) {
-                $brand = trim($m[1]);
-                $body = str_replace($m[0], ' ', $body);
-            }
-
-            $category = null;
-            if (preg_match('/category\s*(?:is|=|:)?\s*([A-Za-z0-9\s\-]+?)(?=,|\bpack\b|\bprice\b|\bbrand\b|\bformulation\b|\brack\b|$)/iu', $body, $m)) {
-                $category = trim($m[1]);
-                $body = str_replace($m[0], ' ', $body);
-            }
-
-            $rack = null;
-            if (preg_match('/rack\s*(?:is|=|:)?\s*([A-Za-z0-9\-]+)/iu', $body, $m)) {
-                $rack = trim($m[1]);
-                $body = str_replace($m[0], ' ', $body);
-            }
-
-            $namePart = trim( explode(',', $body)[0] ?? $body );
-            $namePart = trim(preg_replace('/\s+/', ' ', $namePart) ?? $namePart, " \t\n\r\0\x0B.,:-");
 
             return [
                 'action' => 'create_products',
-                'products' => $namePart !== '' ? [
-                    [
-                        'name' => $namePart,
-                        'formulation' => $formulation,
-                        'pack_size' => $packSize,
-                        'pack_purchase_price' => $packPurchasePrice,
-                        'pack_sale_price' => $packSalePrice,
-                        'brand' => $brand,
-                        'category' => $category,
-                        'rack' => $rack,
-                    ],
-                ] : [],
+                'products' => $hasAnyValue ? [$parsedItem] : [],
             ];
         }
 
         if ($defaultIntent === 'update_products') {
             $body = preg_replace('/^(?:please\s+|cube\s+|plz\s+|can\s+you\s+)?(?:edit|update|change|modify|set)\s+(?:the\s+)?(?:product|medicine|item)?\s*/iu', '', $rawText) ?? $rawText;
-
-            $update = [
-                'target_name_or_code' => '',
-            ];
-
-            if (preg_match('/\b(PRD-\d+)\b/i', $body, $m)) {
-                $update['target_name_or_code'] = strtoupper($m[1]);
-                $body = str_replace($m[0], ' ', $body);
-            }
-
-            if (preg_match('/pack\s*size\s*(?:to|is|=|:)?\s*(\d+)/iu', $body, $m)) {
-                $update['pack_size'] = max(1, (int) $m[1]);
-                $body = str_replace($m[0], ' ', $body);
-            }
-            if (preg_match('/(?:pack\s*)?(?:purchase|cost)\s*price\s*(?:to|is|=|:)?\s*(\d+(?:\.\d+)?)/iu', $body, $m)) {
-                $update['pack_purchase_price'] = (float) $m[1];
-                $body = str_replace($m[0], ' ', $body);
-            }
-            if (preg_match('/(?:pack\s*)?(?:sale|sell|retail)?\s*price\s*(?:to|is|=|:)?\s*(\d+(?:\.\d+)?)/iu', $body, $m)) {
-                $update['pack_sale_price'] = (float) $m[1];
-                $body = str_replace($m[0], ' ', $body);
-            }
-            if (preg_match('/(?:formulation|salt|generic)\s*(?:to|is|=|:)?\s*([A-Za-z0-9\s\+]+?)(?=,|\band\b|\bpack\b|\bprice\b|\brack\b|$)/iu', $body, $m)) {
-                $update['formulation'] = trim($m[1]);
-                $body = str_replace($m[0], ' ', $body);
-            }
-            if (preg_match('/rack\s*(?:to|is|=|:)?\s*([A-Za-z0-9\-]+)/iu', $body, $m)) {
-                $update['rack'] = trim($m[1]);
-                $body = str_replace($m[0], ' ', $body);
-            }
-
-            if ($update['target_name_or_code'] === '') {
-                $cleanTarget = preg_replace('/\b(for|of|on|to|and|set|change|update|edit)\b/iu', ' ', $body) ?? $body;
-                $cleanTarget = trim(preg_replace('/\s+/', ' ', $cleanTarget) ?? '', " \t\n\r\0\x0B.,:-");
-                $update['target_name_or_code'] = $cleanTarget;
-            }
+            $update = $this->extractUpdateFieldsFromText($body);
 
             return [
                 'action' => 'update_products',
-                'updates' => $update['target_name_or_code'] !== '' ? [$update] : [],
+                'updates' => [$update],
             ];
         }
 
@@ -659,7 +684,470 @@ SYSTEM;
     }
 
     /**
+     * Extracts explicitly stated product fields from natural-language text without assuming any defaults.
+     *
+     * @return array<string, mixed>
+     */
+    protected function extractProductFieldsFromText(string $text, bool $treatLeadingUnlabeledAsName = true): array
+    {
+        $item = [
+            'name' => null,
+            'formulation' => null,
+            'pack_size' => null,
+            'pack_purchase_price' => null,
+            'pack_sale_price' => null,
+            'unit_purchase_price' => null,
+            'unit_sale_price' => null,
+            'whole_sale_pack_price' => null,
+            'whole_sale_unit_price' => null,
+            'category' => null,
+            'brand' => null,
+            'supplier' => null,
+            'rack' => null,
+            'narcotic' => null,
+            'max_discount' => null,
+            'description' => null,
+        ];
+
+        $working = trim($text);
+        if ($working === '') {
+            return $item;
+        }
+
+        if (preg_match('/(?:product\s+name|name)\s*(?:is|to|=|:)\s*([A-Za-z0-9\s\-\+\(\)\.\/]+?)(?=,|;|\n|\bpack\s*size\b|\bpacking\b|\bpack\s*purchase\b|\bpurchase\s*price\b|\bcost\s*price\b|\bpack\s*sale\b|\bsale\s*price\b|\bretail\s*price\b|\bunit\s*purchase\b|\bunit\s*sale\b|\bformulation\b|\bsalt\b|\bgeneric\b|\bbrand\b|\bmanufacturer\b|\bcategory\b|\bsupplier\b|\bdistributor\b|\bvendor\b|\brack\b|\bnarcotic\b|\bmax\s*discount\b|$)/iu', $working, $m)) {
+            $item['name'] = trim($m[1], " \t\n\r\0\x0B.,:-");
+            $working = str_replace($m[0], ' , ', $working);
+        }
+
+        if (preg_match('/(?:pack\s*size|packing)\s*(?:is|to|=|:)?\s*(\d+)/iu', $working, $m)) {
+            $item['pack_size'] = max(1, (int) $m[1]);
+            $working = str_replace($m[0], ' , ', $working);
+        }
+
+        if (preg_match('/unit\s*(?:purchase|cost|buy)\s*(?:price|rate|cost)?\s*(?:is|to|=|:)?\s*(\d+(?:\.\d+)?)/iu', $working, $m)) {
+            $item['unit_purchase_price'] = (float) $m[1];
+            $working = str_replace($m[0], ' , ', $working);
+        }
+
+        if (preg_match('/(?:pack\s*)?(?:purchase|cost|buy)\s*(?:price|rate)?\s*(?:is|to|=|:)?\s*(\d+(?:\.\d+)?)/iu', $working, $m)) {
+            $item['pack_purchase_price'] = (float) $m[1];
+            $working = str_replace($m[0], ' , ', $working);
+        }
+
+        if (preg_match('/(?:whole\s*sale|wholesale)\s*pack\s*(?:price|rate)?\s*(?:is|to|=|:)?\s*(\d+(?:\.\d+)?)/iu', $working, $m)) {
+            $item['whole_sale_pack_price'] = (float) $m[1];
+            $working = str_replace($m[0], ' , ', $working);
+        }
+
+        if (preg_match('/(?:whole\s*sale|wholesale)\s*unit\s*(?:price|rate)?\s*(?:is|to|=|:)?\s*(\d+(?:\.\d+)?)/iu', $working, $m)) {
+            $item['whole_sale_unit_price'] = (float) $m[1];
+            $working = str_replace($m[0], ' , ', $working);
+        }
+
+        if (preg_match('/unit\s*(?:sale|sell|retail|mrp)\s*(?:price|rate)?\s*(?:is|to|=|:)?\s*(\d+(?:\.\d+)?)/iu', $working, $m)) {
+            $item['unit_sale_price'] = (float) $m[1];
+            $working = str_replace($m[0], ' , ', $working);
+        }
+
+        if (preg_match('/(?:pack\s*)?(?:sale|sell|retail|mrp)\s*(?:price|rate)?\s*(?:is|to|=|:)?\s*(\d+(?:\.\d+)?)/iu', $working, $m)) {
+            $item['pack_sale_price'] = (float) $m[1];
+            $working = str_replace($m[0], ' , ', $working);
+        }
+
+        if (preg_match('/(?:formulation|generic\s*salt|salt|generic)\s*(?:is|to|=|:)?\s*([A-Za-z0-9\s\+\-\/,\(\)]+?)(?=,|;|\n|\bpack\b|\bpacking\b|\bpurchase\b|\bsale\b|\bcost\b|\bprice\b|\bbrand\b|\bmanufacturer\b|\bcategory\b|\bsupplier\b|\bdistributor\b|\bvendor\b|\brack\b|\bnarcotic\b|\bmax\s*discount\b|$)/iu', $working, $m)) {
+            $item['formulation'] = trim($m[1], " \t\n\r\0\x0B.,:-");
+            $working = str_replace($m[0], ' , ', $working);
+        }
+
+        if (preg_match('/(?:brand|manufacturer|company)\s*(?:is|to|=|:)?\s*([A-Za-z0-9\s\-\.&]+?)(?=,|;|\n|\bpack\b|\bpacking\b|\bpurchase\b|\bsale\b|\bcost\b|\bprice\b|\bcategory\b|\bformulation\b|\bsalt\b|\bsupplier\b|\bdistributor\b|\bvendor\b|\brack\b|\bnarcotic\b|\bmax\s*discount\b|$)/iu', $working, $m)) {
+            $item['brand'] = trim($m[1], " \t\n\r\0\x0B.,:-");
+            $working = str_replace($m[0], ' , ', $working);
+        }
+
+        if (preg_match('/(?:category|cat)\s*(?:is|to|=|:)?\s*([A-Za-z0-9\s\-\&]+?)(?=,|;|\n|\bpack\b|\bpacking\b|\bpurchase\b|\bsale\b|\bcost\b|\bprice\b|\bbrand\b|\bmanufacturer\b|\bformulation\b|\bsalt\b|\bsupplier\b|\bdistributor\b|\bvendor\b|\brack\b|\bnarcotic\b|\bmax\s*discount\b|$)/iu', $working, $m)) {
+            $item['category'] = trim($m[1], " \t\n\r\0\x0B.,:-");
+            $working = str_replace($m[0], ' , ', $working);
+        }
+
+        if (preg_match('/(?:supplier|distributor|vendor)\s*(?:is|to|=|:)?\s*([A-Za-z0-9\s\-\.&]+?)(?=,|;|\n|\bpack\b|\bpacking\b|\bpurchase\b|\bsale\b|\bcost\b|\bprice\b|\bbrand\b|\bmanufacturer\b|\bcategory\b|\bformulation\b|\bsalt\b|\brack\b|\bnarcotic\b|\bmax\s*discount\b|$)/iu', $working, $m)) {
+            $item['supplier'] = trim($m[1], " \t\n\r\0\x0B.,:-");
+            $working = str_replace($m[0], ' , ', $working);
+        }
+
+        if (preg_match('/(?:rack|shelf)\s*(?:is|to|=|:)?\s*([A-Za-z0-9\-\/]+)/iu', $working, $m)) {
+            $item['rack'] = trim($m[1], " \t\n\r\0\x0B.,:-");
+            $working = str_replace($m[0], ' , ', $working);
+        }
+
+        if (preg_match('/max\s*discount\s*(?:is|to|=|:)?\s*(\d+)/iu', $working, $m)) {
+            $item['max_discount'] = (int) $m[1];
+            $working = str_replace($m[0], ' , ', $working);
+        }
+
+        if (preg_match('/narcotic\s*(?:is|to|=|:)?\s*(yes|no)/iu', $working, $m)) {
+            $item['narcotic'] = strtolower($m[1]);
+            $working = str_replace($m[0], ' , ', $working);
+        }
+
+        if ($treatLeadingUnlabeledAsName && ($item['name'] === null || $item['name'] === '')) {
+            $firstSegment = trim(explode(',', $working)[0] ?? '');
+            $firstSegment = preg_replace('/\b(?:and|with|having)\s*$/iu', '', $firstSegment) ?? $firstSegment;
+            $firstSegment = trim(preg_replace('/\s+/', ' ', $firstSegment) ?? $firstSegment, " \t\n\r\0\x0B.,:-");
+            if ($firstSegment !== '') {
+                $item['name'] = $firstSegment;
+            }
+        }
+
+        return $item;
+    }
+
+    /**
+     * Extracts explicitly stated update fields from text without assuming any values.
+     *
+     * @return array<string, mixed>
+     */
+    protected function extractUpdateFieldsFromText(string $body): array
+    {
+        $extracted = $this->extractProductFieldsFromText($body, false);
+
+        $target = '';
+        if (preg_match('/\b(PRD-\d+)\b/i', $body, $m)) {
+            $target = strtoupper($m[1]);
+        } else {
+            // Strip recognized field clauses to isolate the product target name
+            $stripped = preg_replace(
+                '/\b(?:pack\s*size|packing|unit\s*purchase\s*price|pack\s*purchase\s*price|purchase\s*price|cost\s*price|unit\s*sale\s*price|pack\s*sale\s*price|sale\s*price|retail\s*price|whole\s*sale\s*pack\s*price|whole\s*sale\s*unit\s*price|formulation|generic\s*salt|salt|generic|brand|manufacturer|category|supplier|distributor|vendor|rack|shelf|max\s*discount|narcotic)\b.*$/iu',
+                '',
+                $body
+            ) ?? $body;
+            $stripped = preg_replace('/\b(for|of|on|to|and|set|change|update|edit|product|medicine|item)\b/iu', ' ', $stripped) ?? $stripped;
+            $target = trim(preg_replace('/\s+/', ' ', $stripped) ?? '', " \t\n\r\0\x0B.,:-");
+        }
+
+        $update = [
+            'target_name_or_code' => $target !== '' ? $target : null,
+        ];
+
+        foreach ($extracted as $k => $v) {
+            if ($k === 'name') {
+                continue;
+            }
+            if ($v !== null && $v !== '') {
+                $update[$k] = $v;
+            }
+        }
+
+        if (preg_match('/(?:rename\s+to|new\s+name\s*(?:is|to|=|:)?)\s*([A-Za-z0-9\s\-\+\(\)\.]+?)(?=,|;|\n|$)/iu', $body, $m)) {
+            $update['new_name'] = trim($m[1], " \t\n\r\0\x0B.,:-");
+        }
+
+        return $update;
+    }
+
+    /**
+     * Strictly verifies AI-extracted product fields against the actual text typed by the user.
+     * Prevents any LLM from assuming or guessing `pack_size`, `category`, `brand`, `supplier`,
+     * or `formulation` from world knowledge when the user did not state them.
+     *
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>
+     */
+    protected function verifyExtractedFieldsAgainstUserText(array $item, string $userText): array
+    {
+        $placeholders = ['null', 'n/a', 'na', 'none', 'unknown', 'default', 'not specified', 'unspecified', 'tbd', '?', '-'];
+        $lowerText = mb_strtolower($userText, 'UTF-8');
+
+        foreach (['name', 'formulation', 'category', 'brand', 'supplier', 'rack', 'description'] as $strKey) {
+            if (! isset($item[$strKey])) {
+                $item[$strKey] = null;
+                continue;
+            }
+            $val = trim((string) $item[$strKey]);
+            if ($val === '' || in_array(mb_strtolower($val, 'UTF-8'), $placeholders, true)) {
+                $item[$strKey] = null;
+            } else {
+                $item[$strKey] = $val;
+            }
+        }
+
+        // Verify `brand`: must appear in the user's text
+        if ($item['brand'] !== null) {
+            $brandLower = mb_strtolower($item['brand'], 'UTF-8');
+            if (! str_contains($lowerText, $brandLower)) {
+                $item['brand'] = null;
+            }
+        }
+
+        // Verify `supplier`: must appear in the user's text
+        if ($item['supplier'] !== null) {
+            $supLower = mb_strtolower($item['supplier'], 'UTF-8');
+            if (! str_contains($lowerText, $supLower)) {
+                $item['supplier'] = null;
+            }
+        }
+
+        // Verify `formulation`: when creating a product, formulation must be stated by the user, not guessed
+        if ($item['formulation'] !== null) {
+            $formLower = mb_strtolower($item['formulation'], 'UTF-8');
+            $productNameLower = mb_strtolower((string) ($item['name'] ?? ''), 'UTF-8');
+            $hasFormulationKeyword = (bool) preg_match('/\b(formulation|salt|generic)\b/iu', $lowerText);
+            if (! str_contains($lowerText, $formLower) || (! $hasFormulationKeyword && str_contains($productNameLower, $formLower))) {
+                $item['formulation'] = null;
+            }
+        }
+
+        // Verify `category`: must be explicitly mentioned by the user (not inferred from "Tablet" inside the product name)
+        if ($item['category'] !== null) {
+            $catLower = mb_strtolower($item['category'], 'UTF-8');
+            $hasCategoryKeyword = (bool) preg_match('/\b(category|cat|کیٹیگری)\b/iu', $lowerText);
+            if (! str_contains($lowerText, $catLower)) {
+                $item['category'] = null;
+            } elseif (! $hasCategoryKeyword && $item['name'] !== null) {
+                $textWithoutName = str_replace(mb_strtolower($item['name'], 'UTF-8'), ' ', $lowerText);
+                if (! str_contains($textWithoutName, $catLower)) {
+                    $item['category'] = null;
+                }
+            }
+        }
+
+        // Verify `pack_size`: must be an explicit integer in user text outside dosage strength (e.g. 500mg, 120ml)
+        if (isset($item['pack_size']) && $item['pack_size'] !== null && $item['pack_size'] !== '') {
+            $packVal = (int) $item['pack_size'];
+            $textWithoutStrengths = preg_replace('/\b\d+(?:\.\d+)?\s*(?:mg|ml|mcg|g|kg|iu|%)\b/iu', ' ', $lowerText) ?? $lowerText;
+            if ($packVal < 1 || ! preg_match('/\b'.preg_quote((string) $packVal, '/').'\b/', $textWithoutStrengths)) {
+                $item['pack_size'] = null;
+            } else {
+                $item['pack_size'] = $packVal;
+            }
+        } else {
+            $item['pack_size'] = null;
+        }
+
+        return $item;
+    }
+
+    /**
+     * Returns the list of required field keys (`name`, `pack_size`, `category`, `brand`, `supplier`)
+     * that are still missing for a product draft.
+     *
+     * @param  array<string, mixed>  $rawItem
+     * @return array<int, string>
+     */
+    protected function getMissingCreateProductFields(array $rawItem): array
+    {
+        $missing = [];
+
+        if (trim((string) ($rawItem['name'] ?? '')) === '') {
+            $missing[] = 'name';
+        }
+
+        $packSize = $rawItem['pack_size'] ?? null;
+        if ($packSize === null || $packSize === '' || ! is_numeric($packSize) || (int) $packSize < 1) {
+            $missing[] = 'pack_size';
+        }
+
+        if (trim((string) ($rawItem['category'] ?? '')) === '') {
+            $missing[] = 'category';
+        }
+
+        if (trim((string) ($rawItem['brand'] ?? '')) === '') {
+            $missing[] = 'brand';
+        }
+
+        if (trim((string) ($rawItem['supplier'] ?? '')) === '') {
+            $missing[] = 'supplier';
+        }
+
+        return $missing;
+    }
+
+    /**
+     * Continues an active pending task when the user replies with missing required fields.
+     *
+     * @param  array<string, mixed>  $pendingTask
+     * @return array<string, mixed>
+     */
+    protected function continuePendingTask(User $user, array $pendingTask, string $replyText, string $productVersion): array
+    {
+        $action = (string) ($pendingTask['action'] ?? '');
+
+        if ($action === 'create_products') {
+            $drafts = is_array($pendingTask['products'] ?? null) && ! empty($pendingTask['products'])
+                ? $pendingTask['products']
+                : [[]];
+
+            // Target the first incomplete product draft in the pending queue
+            $targetIdx = 0;
+            foreach ($drafts as $idx => $d) {
+                if (! empty($this->getMissingCreateProductFields(is_array($d) ? $d : []))) {
+                    $targetIdx = $idx;
+                    break;
+                }
+            }
+
+            $currentDraft = is_array($drafts[$targetIdx] ?? null) ? $drafts[$targetIdx] : [];
+            $missingBefore = $this->getMissingCreateProductFields($currentDraft);
+
+            $mergedDraft = $this->mergeReplyIntoProductDraft($currentDraft, $missingBefore, $replyText);
+            $drafts[$targetIdx] = $mergedDraft;
+
+            return $this->executeCreateProducts($user, ['products' => $drafts], $productVersion);
+        }
+
+        if ($action === 'update_products') {
+            $updates = is_array($pendingTask['updates'] ?? null) && ! empty($pendingTask['updates'])
+                ? $pendingTask['updates']
+                : [[]];
+            $currentUpdate = is_array($updates[0] ?? null) ? $updates[0] : [];
+
+            $newExtracted = $this->extractUpdateFieldsFromText($replyText);
+            foreach ($newExtracted as $k => $v) {
+                if ($v !== null && $v !== '') {
+                    if ($k === 'target_name_or_code' && ! empty($currentUpdate['target_name_or_code'])) {
+                        continue;
+                    }
+                    $currentUpdate[$k] = $v;
+                }
+            }
+
+            // If target was missing and user just typed the product name
+            if (empty($currentUpdate['target_name_or_code'])) {
+                $cleanReply = trim($replyText, " \t\n\r\0\x0B.,:-");
+                if ($cleanReply !== '') {
+                    $currentUpdate['target_name_or_code'] = $cleanReply;
+                }
+            }
+
+            $updates[0] = $currentUpdate;
+
+            return $this->executeUpdateProducts($user, ['updates' => $updates], $productVersion);
+        }
+
+        if ($action === 'bulk_assign_formulations') {
+            $assignments = is_array($pendingTask['assignments'] ?? null) && ! empty($pendingTask['assignments'])
+                ? $pendingTask['assignments']
+                : [['product_name' => null, 'formulation' => null]];
+            $currentAssign = is_array($assignments[0] ?? null) ? $assignments[0] : ['product_name' => null, 'formulation' => null];
+
+            $parsedFollowUp = $this->parseTaskLocally($replyText, 'bulk_assign_formulations');
+            if (! empty($parsedFollowUp['assignments'][0])) {
+                $fa = $parsedFollowUp['assignments'][0];
+                if (! empty($fa['product_name'])) {
+                    $currentAssign['product_name'] = $fa['product_name'];
+                }
+                if (! empty($fa['formulation'])) {
+                    $currentAssign['formulation'] = $fa['formulation'];
+                }
+            } else {
+                $cleanVal = trim($replyText, " \t\n\r\0\x0B.,:-");
+                if (empty($currentAssign['product_name']) && ! empty($currentAssign['formulation'])) {
+                    $currentAssign['product_name'] = $cleanVal;
+                } elseif (! empty($currentAssign['product_name']) && empty($currentAssign['formulation'])) {
+                    $currentAssign['formulation'] = $cleanVal;
+                }
+            }
+
+            $assignments[0] = $currentAssign;
+
+            return $this->executeBulkAssignFormulations($user, [
+                'assignments' => $assignments,
+                'standalone_formulations' => [],
+            ], $productVersion, $replyText);
+        }
+
+        $this->clearPendingTask($user);
+
+        return $this->buildTaskCancelledResponse($productVersion);
+    }
+
+    /**
+     * Merges a user's follow-up reply (whether labeled, natural sentence, comma-separated, or single bare value)
+     * into an existing product draft without assuming any unstated fields.
+     *
+     * @param  array<string, mixed>  $draft
+     * @param  array<int, string>  $missingBefore
+     * @return array<string, mixed>
+     */
+    protected function mergeReplyIntoProductDraft(array $draft, array $missingBefore, string $replyText): array
+    {
+        $cleanReply = preg_replace('/^(?:please\s+|cube\s+|plz\s+|can\s+you\s+)?(?:add|create|register|insert|make)\s+(?:a\s+)?(?:new\s+)?(?:product|products|medicine|medicines|item|items)\b\s*(?:named|called|:)?\s*/iu', '', $replyText) ?? $replyText;
+
+        // 1. Extract explicitly labeled fields first
+        $labeled = $this->extractProductFieldsFromText($cleanReply, false);
+        foreach ($labeled as $key => $val) {
+            if ($val !== null && $val !== '') {
+                $draft[$key] = $val;
+            }
+        }
+
+        // 2. Determine which required fields are still missing after labeled extraction
+        $stillMissing = $this->getMissingCreateProductFields($draft);
+        if (empty($stillMissing)) {
+            return $draft;
+        }
+
+        // 3. Remove labeled clauses from `$cleanReply` to see if the user provided unlabeled values (e.g. "200, Tablets, GSK, Ali Gohar" or "200")
+        $remainingText = $cleanReply;
+        $labeledPatterns = [
+            '/(?:product\s+name|name)\s*(?:is|to|=|:)\s*[A-Za-z0-9\s\-\+\(\)\.\/]+?(?=,|;|\n|\bpack\b|\bcategory\b|\bbrand\b|\bsupplier\b|$)/iu',
+            '/(?:pack\s*size|packing)\s*(?:is|to|=|:)?\s*\d+/iu',
+            '/unit\s*(?:purchase|cost|buy)\s*(?:price|rate|cost)?\s*(?:is|to|=|:)?\s*\d+(?:\.\d+)?/iu',
+            '/(?:pack\s*)?(?:purchase|cost|buy)\s*(?:price|rate)?\s*(?:is|to|=|:)?\s*\d+(?:\.\d+)?/iu',
+            '/(?:whole\s*sale|wholesale)\s*(?:pack|unit)\s*(?:price|rate)?\s*(?:is|to|=|:)?\s*\d+(?:\.\d+)?/iu',
+            '/unit\s*(?:sale|sell|retail|mrp)\s*(?:price|rate)?\s*(?:is|to|=|:)?\s*\d+(?:\.\d+)?/iu',
+            '/(?:pack\s*)?(?:sale|sell|retail|mrp)\s*(?:price|rate)?\s*(?:is|to|=|:)?\s*\d+(?:\.\d+)?/iu',
+            '/(?:formulation|generic\s*salt|salt|generic)\s*(?:is|to|=|:)?\s*[A-Za-z0-9\s\+\-\/,\(\)]+?(?=,|;|\n|\bpack\b|\bbrand\b|\bcategory\b|\bsupplier\b|\brack\b|$)/iu',
+            '/(?:brand|manufacturer|company)\s*(?:is|to|=|:)?\s*[A-Za-z0-9\s\-\.&]+?(?=,|;|\n|\bpack\b|\bcategory\b|\bformulation\b|\bsupplier\b|\brack\b|$)/iu',
+            '/(?:category|cat)\s*(?:is|to|=|:)?\s*[A-Za-z0-9\s\-\&]+?(?=,|;|\n|\bpack\b|\bbrand\b|\bformulation\b|\bsupplier\b|\brack\b|$)/iu',
+            '/(?:supplier|distributor|vendor)\s*(?:is|to|=|:)?\s*[A-Za-z0-9\s\-\.&]+?(?=,|;|\n|\bpack\b|\bbrand\b|\bcategory\b|\bformulation\b|\brack\b|$)/iu',
+            '/(?:rack|shelf)\s*(?:is|to|=|:)?\s*[A-Za-z0-9\-\/]+/iu',
+            '/max\s*discount\s*(?:is|to|=|:)?\s*\d+/iu',
+            '/narcotic\s*(?:is|to|=|:)?\s*(?:yes|no)/iu',
+        ];
+        foreach ($labeledPatterns as $pat) {
+            $remainingText = preg_replace($pat, ' , ', $remainingText) ?? $remainingText;
+        }
+
+        $unlabeledTokens = array_values(array_filter(array_map(
+            fn ($t) => trim(preg_replace('/^(?:and|is|=|:)\s+/iu', '', trim($t)) ?? '', " \t\n\r\0\x0B.,:-"),
+            preg_split('/[,;\n]+/', $remainingText) ?: []
+        ), fn ($t) => $t !== ''));
+
+        foreach ($unlabeledTokens as $token) {
+            $stillMissing = $this->getMissingCreateProductFields($draft);
+            if (empty($stillMissing)) {
+                break;
+            }
+
+            // If token is a pure positive integer (e.g. "200") and `pack_size` is among the missing fields
+            if (preg_match('/^(\d+)(?:\s*(?:units?|tabs?|tablets?|caps?|packs?|pcs?))?$/iu', $token, $numMatch) && in_array('pack_size', $stillMissing, true)) {
+                $draft['pack_size'] = max(1, (int) $numMatch[1]);
+                continue;
+            }
+
+            // Assign to the next non-numeric missing field (`name`, `category`, `brand`, `supplier`)
+            foreach ($stillMissing as $missingField) {
+                if ($missingField === 'pack_size') {
+                    continue;
+                }
+                if (trim((string) ($draft[$missingField] ?? '')) === '') {
+                    // Don't overwrite `name` if token is identical to already set `name`
+                    if ($missingField !== 'name' && isset($draft['name']) && mb_strtolower($token, 'UTF-8') === mb_strtolower((string) $draft['name'], 'UTF-8')) {
+                        break;
+                    }
+                    $draft[$missingField] = $token;
+                    break;
+                }
+            }
+        }
+
+        return $draft;
+    }
+
+    /**
      * Executes creation of 1 or multiple products (non-destructive).
+     * NEVER assumes missing required fields (`name`, `pack_size`, `category`, `brand`, `supplier`).
+     * If any required field is missing, stores the draft and asks the user for the missing fields.
      *
      * @param  array<string, mixed>  $taskData
      * @return array<string, mixed>
@@ -670,26 +1158,59 @@ SYSTEM;
             return $this->buildPermissionDeniedResponse('product.create', $productVersion);
         }
 
-        $items = is_array($taskData['products'] ?? null) ? $taskData['products'] : [];
-        if (empty($items)) {
-            return $this->formatTaskResponse(
-                titleEn: 'More Product Details Needed',
-                titleUr: 'پروڈکٹ شامل کرنے کے لیے نام درکار ہے',
-                answerEn: "Please specify the **Product Name** (and optional Pack Size, Purchase/Sale Price, Brand, Category, and Formulation).\n\n**Example:**\n`Add product Panadol 500mg Tablet, formulation Paracetamol, pack size 200, pack purchase price 510, pack sale price 600, brand GSK, category Tablets`",
-                answerUr: "براہِ کرم پروڈکٹ کا **نام** (اور پیک سائز، قیمت خرید/فروخت، برانڈ اور فارمولیشن) لکھیں۔\n\n**مثال:**\n`Add product Panadol 500mg Tablet, formulation Paracetamol, pack size 200, pack sale price 600`",
-                links: [['path' => '/products/create', 'en' => 'Open Add Product Form', 'ur' => 'پروڈکٹ فارم کھولیں']],
-                taskMeta: ['action' => 'create_products', 'created_count' => 0],
-                productVersion: $productVersion
-            );
+        $rawItems = is_array($taskData['products'] ?? null) ? array_values(array_filter($taskData['products'], 'is_array')) : [];
+
+        // If user asked to "Add a product" without providing any fields yet, start an empty draft and ask for all required fields
+        if (empty($rawItems)) {
+            $emptyDraft = [
+                [
+                    'name' => null,
+                    'pack_size' => null,
+                    'category' => null,
+                    'brand' => null,
+                    'supplier' => null,
+                ],
+            ];
+            $this->savePendingTask($user, [
+                'action' => 'create_products',
+                'products' => $emptyDraft,
+            ]);
+
+            return $this->buildMissingCreateProductFieldsResponse($emptyDraft, $productVersion);
         }
+
+        // Check if any product in the request is missing any required field (`name`, `pack_size`, `category`, `brand`, `supplier`)
+        $hasMissingRequiredFields = false;
+        foreach ($rawItems as $candidate) {
+            $candidateName = trim((string) ($candidate['name'] ?? ''));
+            if ($candidateName !== '') {
+                $existingProd = Product::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($candidateName, 'UTF-8')])->first();
+                if ($existingProd) {
+                    continue;
+                }
+            }
+            if (! empty($this->getMissingCreateProductFields($candidate))) {
+                $hasMissingRequiredFields = true;
+                break;
+            }
+        }
+
+        if ($hasMissingRequiredFields) {
+            $this->savePendingTask($user, [
+                'action' => 'create_products',
+                'products' => $rawItems,
+            ]);
+
+            return $this->buildMissingCreateProductFieldsResponse($rawItems, $productVersion);
+        }
+
+        // All required fields are present! Clear any pending task draft and create the product(s).
+        $this->clearPendingTask($user);
 
         $created = [];
         $alreadyExisted = [];
 
-        foreach (array_slice($items, 0, 25) as $rawItem) {
-            if (! is_array($rawItem)) {
-                continue;
-            }
+        foreach (array_slice($rawItems, 0, 25) as $rawItem) {
             $name = trim((string) ($rawItem['name'] ?? ''));
             if ($name === '') {
                 continue;
@@ -698,11 +1219,10 @@ SYSTEM;
             // Check if product already exists by case-insensitive name
             $existing = Product::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name, 'UTF-8')])->first();
             if ($existing) {
-                // Non-destructive enrichment: if existing product is missing formulation and we have one, fill it!
-                $inferredForm = trim((string) ($rawItem['formulation'] ?? '')) ?: $this->inferFormulationFromProductName($name);
-                if (empty($existing->formulation) && $inferredForm !== null && $inferredForm !== '') {
-                    $resolvedF = Formulation::resolveOrCreate($inferredForm);
-                    $existing->formulation = $resolvedF?->name ?? $inferredForm;
+                $explicitForm = trim((string) ($rawItem['formulation'] ?? ''));
+                if (empty($existing->formulation) && $explicitForm !== '') {
+                    $resolvedF = Formulation::resolveOrCreate($explicitForm);
+                    $existing->formulation = $resolvedF?->name ?? $explicitForm;
                     $existing->save();
                 }
                 $alreadyExisted[] = [
@@ -715,7 +1235,7 @@ SYSTEM;
             }
 
             $codeAndBarcode = $this->generateUniqueCodeAndBarcode();
-            $packSize = max(1, (int) ($rawItem['pack_size'] ?? 1));
+            $packSize = (int) $rawItem['pack_size'];
 
             $packPurchase = isset($rawItem['pack_purchase_price']) && is_numeric($rawItem['pack_purchase_price'])
                 ? round((float) $rawItem['pack_purchase_price'], 2)
@@ -743,19 +1263,17 @@ SYSTEM;
                 $packSale = round($unitSale * $packSize, 2);
             }
 
+            // Never assume formulation when adding a product unless explicitly provided by the user
             $rawFormulation = trim((string) ($rawItem['formulation'] ?? ''));
-            if ($rawFormulation === '') {
-                $rawFormulation = (string) ($this->inferFormulationFromProductName($name) ?? '');
-            }
             $resolvedFormulation = $rawFormulation !== '' ? Formulation::resolveOrCreate($rawFormulation) : null;
 
-            $categoryName = trim((string) ($rawItem['category'] ?? '')) ?: $this->inferCategoryFromProductName($name);
+            $categoryName = trim((string) $rawItem['category']);
             $category = $this->resolveOrCreateCategory($categoryName);
 
-            $brandName = trim((string) ($rawItem['brand'] ?? '')) ?: 'General';
+            $brandName = trim((string) $rawItem['brand']);
             $brand = $this->resolveOrCreateBrand($brandName);
 
-            $supplierName = trim((string) ($rawItem['supplier'] ?? '')) ?: 'General Supplier';
+            $supplierName = trim((string) $rawItem['supplier']);
             $supplier = $this->resolveOrCreateSupplier($supplierName);
 
             $storageLocationId = null;
@@ -820,6 +1338,7 @@ SYSTEM;
                 'pack_sale_price' => $product->pack_sale_price,
                 'category' => $category->name,
                 'brand' => $brand->name,
+                'supplier' => $supplier->name,
                 'rack' => $product->rack,
             ];
         }
@@ -834,8 +1353,8 @@ SYSTEM;
             foreach ($created as $idx => $c) {
                 $num = $idx + 1;
                 $formStr = $c['formulation'] ? " • Formulation: **{$c['formulation']}**" : '';
-                $linesEn[] = "{$num}. **{$c['name']}** (`{$c['product_code']}`){$formStr} • Pack Size: `{$c['pack_size']}` • Pack Sale: `{$c['pack_sale_price']}` • Category: `{$c['category']}` • Brand: `{$c['brand']}`";
-                $linesUr[] = "{$num}. **{$c['name']}** (`{$c['product_code']}`){$formStr} • پیک سائز: `{$c['pack_size']}` • قیمت فروخت: `{$c['pack_sale_price']}`";
+                $linesEn[] = "{$num}. **{$c['name']}** (`{$c['product_code']}`){$formStr} • Pack Size: `{$c['pack_size']}` • Category: `{$c['category']}` • Brand: `{$c['brand']}` • Supplier: `{$c['supplier']}` • Pack Sale: `{$c['pack_sale_price']}`";
+                $linesUr[] = "{$num}. **{$c['name']}** (`{$c['product_code']}`){$formStr} • پیک سائز: `{$c['pack_size']}` • کیٹیگری: `{$c['category']}` • برانڈ: `{$c['brand']}` • سپلائر: `{$c['supplier']}`";
             }
         }
 
@@ -878,7 +1397,140 @@ SYSTEM;
     }
 
     /**
+     * Builds an interactive follow-up response asking the user for the exact required fields
+     * needed to complete adding the product(s), without assuming any values.
+     *
+     * @param  array<int, array<string, mixed>>  $draftItems
+     * @return array<string, mixed>
+     */
+    protected function buildMissingCreateProductFieldsResponse(array $draftItems, string $productVersion): array
+    {
+        $firstDraft = is_array($draftItems[0] ?? null) ? $draftItems[0] : [];
+        $missingFields = $this->getMissingCreateProductFields($firstDraft);
+
+        $collectedEn = [];
+        $collectedUr = [];
+        $fieldLabels = [
+            'name' => ['en' => 'Product Name', 'ur' => 'پروڈکٹ کا نام'],
+            'pack_size' => ['en' => 'Pack Size', 'ur' => 'پیک سائز'],
+            'category' => ['en' => 'Category', 'ur' => 'کیٹیگری'],
+            'brand' => ['en' => 'Brand', 'ur' => 'برانڈ'],
+            'supplier' => ['en' => 'Supplier', 'ur' => 'سپلائر'],
+            'formulation' => ['en' => 'Formulation', 'ur' => 'فارمولیشن'],
+            'pack_purchase_price' => ['en' => 'Pack Purchase Price', 'ur' => 'پیک قیمت خرید'],
+            'pack_sale_price' => ['en' => 'Pack Sale Price', 'ur' => 'پیک قیمت فروخت'],
+            'unit_purchase_price' => ['en' => 'Unit Purchase Price', 'ur' => 'یونٹ قیمت خرید'],
+            'unit_sale_price' => ['en' => 'Unit Sale Price', 'ur' => 'یونٹ قیمت فروخت'],
+            'rack' => ['en' => 'Rack', 'ur' => 'ریک'],
+        ];
+
+        $collectedSummary = [];
+        foreach ($fieldLabels as $key => $labels) {
+            $val = $firstDraft[$key] ?? null;
+            if ($val !== null && trim((string) $val) !== '') {
+                $collectedSummary[$key] = $val;
+                $collectedEn[] = "- **{$labels['en']}:** `{$val}`";
+                $collectedUr[] = "- **{$labels['ur']}:** `{$val}`";
+            }
+        }
+
+        // Fetch up to 3 existing catalog examples so the user knows what already exists in their store
+        $existingCategories = Schema::hasTable('categories')
+            ? Category::query()->orderBy('name')->limit(4)->pluck('name')->all()
+            : [];
+        $existingBrands = Schema::hasTable('brands')
+            ? Brand::query()->orderBy('name')->limit(4)->pluck('name')->all()
+            : [];
+        $existingSuppliers = Schema::hasTable('suppliers')
+            ? Supplier::query()->orderBy('name')->limit(4)->pluck('name')->all()
+            : [];
+
+        $questionsEn = [];
+        $questionsUr = [];
+        $exampleParts = [];
+
+        foreach ($missingFields as $idx => $fieldKey) {
+            $num = $idx + 1;
+            $meta = self::REQUIRED_CREATE_PRODUCT_FIELDS[$fieldKey] ?? [
+                'en' => ucfirst($fieldKey),
+                'ur' => $fieldKey,
+                'hint_en' => '',
+                'hint_ur' => '',
+            ];
+
+            $catalogHintEn = '';
+            $catalogHintUr = '';
+            if ($fieldKey === 'category' && ! empty($existingCategories)) {
+                $list = implode(', ', array_map(fn ($c) => "`{$c}`", $existingCategories));
+                $catalogHintEn = " — Existing in catalog: {$list} (or type a new one)";
+                $catalogHintUr = " — موجودہ کیٹیگریز: {$list}";
+            } elseif ($fieldKey === 'brand' && ! empty($existingBrands)) {
+                $list = implode(', ', array_map(fn ($b) => "`{$b}`", $existingBrands));
+                $catalogHintEn = " — Existing in catalog: {$list} (or type a new one)";
+                $catalogHintUr = " — موجودہ برانڈز: {$list}";
+            } elseif ($fieldKey === 'supplier' && ! empty($existingSuppliers)) {
+                $list = implode(', ', array_map(fn ($s) => "`{$s}`", $existingSuppliers));
+                $catalogHintEn = " — Existing in catalog: {$list} (or type a new one)";
+                $catalogHintUr = " — موجودہ سپلائرز: {$list}";
+            }
+
+            $questionsEn[] = "{$num}. **{$meta['en']}** — {$meta['hint_en']}{$catalogHintEn}";
+            $questionsUr[] = "{$num}. **{$meta['ur']}** — {$meta['hint_ur']}{$catalogHintUr}";
+
+            $exampleParts[] = match ($fieldKey) {
+                'name' => 'name Panadol 500mg Tablet',
+                'pack_size' => 'pack size 200',
+                'category' => 'category '.($existingCategories[0] ?? 'Tablets'),
+                'brand' => 'brand '.($existingBrands[0] ?? 'GSK'),
+                'supplier' => 'supplier '.($existingSuppliers[0] ?? 'Ali Gohar'),
+                default => "{$fieldKey} value",
+            };
+        }
+
+        $productHeadingEn = ! empty($firstDraft['name']) ? "**{$firstDraft['name']}**" : 'this new product';
+        $productHeadingUr = ! empty($firstDraft['name']) ? "**{$firstDraft['name']}**" : 'نئی پروڈکٹ';
+
+        $linesEn = [
+            "To make sure your catalog stays accurate, **Cube never assumes missing required fields**. Please provide the remaining required details for {$productHeadingEn}:",
+        ];
+        $linesUr = [
+            "آپ کے کیٹلاگ کی درستگی کے لیے **کیوب خود سے کوئی بھی مطلوبہ فیلڈ فرض (Assume) نہیں کرتا**۔ براہِ کرم {$productHeadingUr} مکمّل کرنے کے لیے درج ذیل معلومات بتائیں:",
+        ];
+
+        if (! empty($collectedEn)) {
+            $linesEn[] = "✅ **Details Already Recorded:**\n".implode("\n", $collectedEn);
+            $linesUr[] = "✅ **موصول شدہ معلومات:**\n".implode("\n", $collectedUr);
+        }
+
+        $linesEn[] = "❓ **Required Details Needed to Complete the Task:**\n".implode("\n", $questionsEn);
+        $linesUr[] = "❓ **مطلوبہ معلومات (براہِ کرم جواب میں لکھیں):**\n".implode("\n", $questionsUr);
+
+        $linesEn[] = "*(Optional: You can also include `formulation`, `pack purchase price`, `pack sale price`, or `rack`.)*\n\n"
+            ."**Reply example:**\n`".implode(', ', $exampleParts)."`\n*(Or type `cancel` to abort this task.)*";
+        $linesUr[] = "*(اختیاری: آپ ساتھ میں `formulation`، `pack purchase price`، `pack sale price` یا `rack` بھی لکھ سکتے ہیں۔)*\n\n"
+            ."**جواب لکھنے کی مثال:**\n`".implode(', ', $exampleParts)."`\n*(یا منسوخ کرنے کے لیے `cancel` لکھیں۔)*";
+
+        return $this->formatTaskResponse(
+            titleEn: 'Required Product Details Needed (No Assumptions)',
+            titleUr: 'پروڈکٹ شامل کرنے کے لیے مطلوبہ معلومات درکار ہیں',
+            answerEn: implode("\n\n", $linesEn),
+            answerUr: implode("\n\n", $linesUr),
+            links: [['path' => '/products/create', 'en' => 'Open Add Product Form', 'ur' => 'پروڈکٹ فارم کھولیں']],
+            taskMeta: [
+                'action' => 'create_products',
+                'status' => 'needs_required_fields',
+                'created_count' => 0,
+                'missing_fields' => $missingFields,
+                'collected_fields' => $collectedSummary,
+            ],
+            productVersion: $productVersion,
+            providerStatus: 'cube_task_needs_input'
+        );
+    }
+
+    /**
      * Executes non-destructive updates on 1 or multiple existing products.
+     * Never assumes which product or which field to edit; asks the user if either is missing.
      *
      * @param  array<string, mixed>  $taskData
      * @return array<string, mixed>
@@ -889,26 +1541,51 @@ SYSTEM;
             return $this->buildPermissionDeniedResponse('product.update', $productVersion);
         }
 
-        $updates = is_array($taskData['updates'] ?? null) ? $taskData['updates'] : [];
+        $updates = is_array($taskData['updates'] ?? null) ? array_values(array_filter($taskData['updates'], 'is_array')) : [];
         if (empty($updates)) {
-            return $this->formatTaskResponse(
-                titleEn: 'Specify Which Product & Field to Edit',
-                titleUr: 'ایڈٹ کرنے کے لیے پروڈکٹ کا نام اور تبدیلی بتائیں',
-                answerEn: "Please tell me which product you want to edit and what to change.\n\n**Example:**\n`Update product Panadol pack sale price to 650, formulation Paracetamol, and rack to R-12`",
-                answerUr: "براہِ کرم پروڈکٹ کا نام اور جو تبدیلی کرنی ہے وہ لکھیں۔\n\n**مثال:**\n`Update product Panadol pack sale price to 650 and rack to R-12`",
-                links: [['path' => '/products', 'en' => 'Open Products Catalog', 'ur' => 'پروڈکٹس لسٹ کھولیں']],
-                taskMeta: ['action' => 'update_products', 'updated_count' => 0],
-                productVersion: $productVersion
-            );
+            $emptyUpdate = [['target_name_or_code' => null]];
+            $this->savePendingTask($user, [
+                'action' => 'update_products',
+                'updates' => $emptyUpdate,
+            ]);
+
+            return $this->buildMissingUpdateProductFieldsResponse($emptyUpdate[0], $productVersion);
         }
+
+        $editableKeys = [
+            'new_name', 'formulation', 'pack_size',
+            'pack_purchase_price', 'pack_sale_price', 'unit_purchase_price', 'unit_sale_price',
+            'whole_sale_pack_price', 'whole_sale_unit_price',
+            'category', 'brand', 'supplier', 'rack', 'narcotic',
+            'max_discount', 'expiry_warning_days', 'description',
+        ];
+
+        foreach ($updates as $uItem) {
+            $target = trim((string) ($uItem['target_name_or_code'] ?? ($uItem['name'] ?? '')));
+            $hasFieldToChange = false;
+            foreach ($editableKeys as $ek) {
+                if (isset($uItem[$ek]) && $uItem[$ek] !== null && trim((string) $uItem[$ek]) !== '') {
+                    $hasFieldToChange = true;
+                    break;
+                }
+            }
+
+            if ($target === '' || ! $hasFieldToChange) {
+                $this->savePendingTask($user, [
+                    'action' => 'update_products',
+                    'updates' => $updates,
+                ]);
+
+                return $this->buildMissingUpdateProductFieldsResponse($uItem, $productVersion);
+            }
+        }
+
+        $this->clearPendingTask($user);
 
         $updatedRecords = [];
         $notFoundTargets = [];
 
         foreach (array_slice($updates, 0, 25) as $item) {
-            if (! is_array($item)) {
-                continue;
-            }
             $target = trim((string) ($item['target_name_or_code'] ?? ($item['name'] ?? '')));
             if ($target === '') {
                 continue;
@@ -1096,27 +1773,128 @@ SYSTEM;
     }
 
     /**
+     * Builds a follow-up question when the user asks to edit a product without specifying
+     * which product or which field/value to change.
+     *
+     * @param  array<string, mixed>  $updateDraft
+     * @return array<string, mixed>
+     */
+    protected function buildMissingUpdateProductFieldsResponse(array $updateDraft, string $productVersion): array
+    {
+        $target = trim((string) ($updateDraft['target_name_or_code'] ?? ($updateDraft['name'] ?? '')));
+        $missingFields = [];
+        if ($target === '') {
+            $missingFields[] = 'target_name_or_code';
+        }
+        $missingFields[] = 'fields_to_update';
+
+        if ($target !== '') {
+            $answerEn = "To update **{$target}** without making any assumptions, please tell me **which field(s) and new value(s)** you want to change:\n\n"
+                ."- **Pack Sale Price / Pack Purchase Price** (e.g., `pack sale price 650, pack purchase price 540`)\n"
+                ."- **Pack Size** (e.g., `pack size 200`)\n"
+                ."- **Formulation / Salt** (e.g., `formulation Paracetamol`)\n"
+                ."- **Category / Brand / Supplier** (e.g., `category Tablets, brand GSK, supplier Ali Gohar`)\n"
+                ."- **Rack** (e.g., `rack R-12`)\n\n"
+                ."*(Reply with the changes, or type `cancel` to abort.)*";
+            $answerUr = "**{$target}** کو اپڈیٹ کرنے کے لیے براہِ کرم بتائیں کہ آپ **کون سی فیلڈ اور نئی ویلیو** تبدیل کرنا چاہتے ہیں:\n\n"
+                ."- **Pack Sale Price / Pack Purchase Price** (مثلاً `pack sale price 650`)\n"
+                ."- **Pack Size** (مثلاً `pack size 200`)\n"
+                ."- **Formulation / Brand / Category / Supplier / Rack**\n\n"
+                ."*(جواب میں تبدیلی لکھیں یا منسوخ کرنے کے لیے `cancel` لکھیں۔)*";
+        } else {
+            $answerEn = "Please specify:\n1. **Which Product** (Product Name or `PRD-XXXX` code) you want to edit\n2. **Which Field(s) & New Value(s)** you want to change\n\n**Example:**\n`Update product Panadol 500mg Tablet pack sale price to 650 and rack to R-12`";
+            $answerUr = "براہِ کرم بتائیں:\n1. **کون سی پروڈکٹ** ایڈٹ کرنی ہے (پروڈکٹ کا نام یا کوڈ)\n2. **کون سی فیلڈ اور نئی ویلیو** تبدیل کرنی ہے\n\n**مثال:**\n`Update product Panadol 500mg Tablet pack sale price to 650 and rack to R-12`";
+        }
+
+        return $this->formatTaskResponse(
+            titleEn: 'Details Needed to Update Product',
+            titleUr: 'پروڈکٹ اپڈیٹ کرنے کے لیے معلومات درکار ہیں',
+            answerEn: $answerEn,
+            answerUr: $answerUr,
+            links: [['path' => '/products', 'en' => 'Open Products Catalog', 'ur' => 'پروڈکٹس لسٹ کھولیں']],
+            taskMeta: [
+                'action' => 'update_products',
+                'status' => 'needs_required_fields',
+                'updated_count' => 0,
+                'missing_fields' => $missingFields,
+                'collected_fields' => $target !== '' ? ['target_name_or_code' => $target] : [],
+            ],
+            productVersion: $productVersion,
+            providerStatus: 'cube_task_needs_input'
+        );
+    }
+
+    /**
      * Executes explicit bulk formulation assignments to named products or registers standalone formulations.
+     * Never assumes missing formulation names or product names; asks the user if required details are missing.
      *
      * @param  array<string, mixed>  $taskData
      * @return array<string, mixed>
      */
-    protected function executeBulkAssignFormulations(User $user, array $taskData, string $productVersion): array
+    protected function executeBulkAssignFormulations(User $user, array $taskData, string $productVersion, string $rawText = ''): array
     {
         if (! $this->canUpdateProducts($user) && ! $this->canCreateProducts($user)) {
             return $this->buildPermissionDeniedResponse('product.update', $productVersion);
         }
 
-        $assignments = is_array($taskData['assignments'] ?? null) ? $taskData['assignments'] : [];
-        $standalone = is_array($taskData['standalone_formulations'] ?? null) ? $taskData['standalone_formulations'] : [];
+        $assignments = is_array($taskData['assignments'] ?? null) ? array_values(array_filter($taskData['assignments'], 'is_array')) : [];
+        $standalone = is_array($taskData['standalone_formulations'] ?? null) ? array_values(array_filter($taskData['standalone_formulations'], fn ($f) => is_string($f) && trim($f) !== '')) : [];
 
-        // If neither was extracted, fall back to background auto-fill of missing formulations!
-        if (empty($assignments) && empty($standalone)) {
-            return $this->executeBulkAutofillMissingFormulations($user, [
-                'batch_size' => 20,
-                'after_id' => 0,
-            ], $productVersion);
+        // Check if any assignment is missing product_name or formulation, or if both arrays are empty
+        $missingAssignmentDetails = empty($assignments) && empty($standalone);
+        foreach ($assignments as $aItem) {
+            if (trim((string) ($aItem['product_name'] ?? '')) === '' || trim((string) ($aItem['formulation'] ?? '')) === '') {
+                $missingAssignmentDetails = true;
+                break;
+            }
         }
+
+        if ($missingAssignmentDetails) {
+            $firstAssign = $assignments[0] ?? ['product_name' => null, 'formulation' => null];
+            $this->savePendingTask($user, [
+                'action' => 'bulk_assign_formulations',
+                'assignments' => [$firstAssign],
+            ]);
+
+            $prodName = trim((string) ($firstAssign['product_name'] ?? ''));
+            $formName = trim((string) ($firstAssign['formulation'] ?? ''));
+            $missingList = [];
+            if ($prodName === '') {
+                $missingList[] = 'product_name';
+            }
+            if ($formName === '') {
+                $missingList[] = 'formulation';
+            }
+
+            $answerEn = $prodName !== '' && $formName === ''
+                ? "I won't assume the formulation. What **Formulation (Generic Salt)** would you like to assign to **{$prodName}**?\n\n**Reply example:** `Paracetamol`"
+                : ($formName !== '' && $prodName === ''
+                    ? "Which **Product Name** would you like to assign the formulation **{$formName}** to?"
+                    : "To assign a formulation without assuming any values, please provide:\n1. **Product Name**\n2. **Formulation (Generic Salt)**\n\n**Example:** `Set formulation Paracetamol for Panadol 500mg Tablet`");
+
+            $answerUr = $prodName !== '' && $formName === ''
+                ? "کیوب خود سے فارمولیشن فرض نہیں کرے گا۔ براہِ کرم بتائیں کہ **{$prodName}** کے لیے کون سی **فارمولیشن (Generic Salt)** لگانی ہے؟\n\n**مثال:** `Paracetamol`"
+                : "براہِ کرم **پروڈکٹ کا نام** اور **فارمولیشن (Generic Salt)** بتائیں۔\n\n**مثال:** `Set formulation Paracetamol for Panadol`";
+
+            return $this->formatTaskResponse(
+                titleEn: 'Formulation Details Needed (No Assumptions)',
+                titleUr: 'فارمولیشن شامل کرنے کے لیے معلومات درکار ہیں',
+                answerEn: $answerEn,
+                answerUr: $answerUr,
+                links: [['path' => '/products', 'en' => 'Open Products Catalog', 'ur' => 'پروڈکٹس لسٹ کھولیں']],
+                taskMeta: [
+                    'action' => 'bulk_assign_formulations',
+                    'status' => 'needs_required_fields',
+                    'updated_count' => 0,
+                    'missing_fields' => $missingList,
+                    'collected_fields' => array_filter(['product_name' => $prodName ?: null, 'formulation' => $formName ?: null]),
+                ],
+                productVersion: $productVersion,
+                providerStatus: 'cube_task_needs_input'
+            );
+        }
+
+        $this->clearPendingTask($user);
 
         $updatedProducts = [];
         $registeredFormulations = [];
@@ -1129,9 +1907,6 @@ SYSTEM;
         }
 
         foreach ($assignments as $item) {
-            if (! is_array($item)) {
-                continue;
-            }
             $prodQuery = trim((string) ($item['product_name'] ?? ''));
             $formName = trim((string) ($item['formulation'] ?? ''));
             if ($prodQuery === '' || $formName === '') {
@@ -1193,6 +1968,58 @@ SYSTEM;
                 'refresh_products' => ! empty($updatedProducts),
             ],
             productVersion: $productVersion
+        );
+    }
+
+    /**
+     * Stores an incomplete pending task draft for the user in Cache for 30 minutes.
+     *
+     * @param  array<string, mixed>  $pendingTask
+     */
+    protected function savePendingTask(User $user, array $pendingTask): void
+    {
+        Cache::put($this->pendingTaskCacheKey($user), $pendingTask, now()->addMinutes(30));
+    }
+
+    /**
+     * Retrieves any active pending task draft for the user.
+     *
+     * @return ?array<string, mixed>
+     */
+    protected function getPendingTask(User $user): ?array
+    {
+        $val = Cache::get($this->pendingTaskCacheKey($user));
+
+        return is_array($val) ? $val : null;
+    }
+
+    /**
+     * Clears any active pending task draft for the user.
+     */
+    public function clearPendingTask(User $user): void
+    {
+        Cache::forget($this->pendingTaskCacheKey($user));
+    }
+
+    protected function pendingTaskCacheKey(User $user): string
+    {
+        return 'cube_pending_task_user_'.$user->id;
+    }
+
+    protected function buildTaskCancelledResponse(string $productVersion): array
+    {
+        return $this->formatTaskResponse(
+            titleEn: 'Pending Task Cancelled',
+            titleUr: 'زیرِ التواء ٹاسک منسوخ کر دیا گیا',
+            answerEn: '✅ The pending task has been cancelled and no changes were saved. Let me know whenever you want to start a new task or ask a question!',
+            answerUr: '✅ زیرِ التواء ٹاسک منسوخ کر دیا گیا ہے اور کوئی تبدیلی محفوظ نہیں کی گئی۔',
+            links: [],
+            taskMeta: [
+                'action' => 'task_cancelled',
+                'cancelled' => true,
+            ],
+            productVersion: $productVersion,
+            providerStatus: 'cube_task_cancelled'
         );
     }
 

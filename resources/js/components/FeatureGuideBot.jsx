@@ -1350,9 +1350,11 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
     });
 
     const localReply = routed.answer || answerUserQuestion(raw, displayedGuide);
+    const lastBotMsg = [...thread].reverse().find((m) => m && m.role === "bot");
+    const isAnsweringPendingTask = lastBotMsg?.providerStatus === "cube_task_needs_input";
 
     // Deterministic walkthrough intelligence: never allow AI to invent selectors or workflow IDs
-    if (routed.startDemoNow && routed.workflowId && DEMO_MANIFESTS[routed.workflowId]) {
+    if (!isAnsweringPendingTask && routed.startDemoNow && routed.workflowId && DEMO_MANIFESTS[routed.workflowId]) {
       setActiveDemo({
         workflowId: routed.workflowId,
         stepIndex: 0,
@@ -1392,15 +1394,17 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
     if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
 
     // Keep greetings, live-data privacy boundary, explicit screen overview, interactive demos,
-    // and preset topic queries in Layer 1; send user-typed chat questions to Hybrid AI (Groq -> Gemini -> Local Fallback)
+    // and preset topic queries in Layer 1; send user-typed chat questions and pending-task answers to Hybrid AI
     const isStrictlyLocalIntent =
-      routed.startDemoNow ||
-      routed.matchedIntentId === "greeting_and_help" ||
-      routed.matchedIntentId === "live_data_privacy_boundary" ||
-      routed.matchedIntentId === "current_screen_overview";
+      !isAnsweringPendingTask &&
+      (routed.startDemoNow ||
+        routed.matchedIntentId === "greeting_and_help" ||
+        routed.matchedIntentId === "live_data_privacy_boundary" ||
+        routed.matchedIntentId === "current_screen_overview");
 
     const shouldUseHybridAi =
       forceAi ||
+      isAnsweringPendingTask ||
       (!isStrictlyLocalIntent && (routed.shouldCallAi || isUserTypedQuestion));
 
     if (!shouldUseHybridAi) {
@@ -2209,12 +2213,14 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
 
     // 7. FREE-TEXT Q&A REPLY
     const hasWalkthrough = Boolean(msg.workflowId && DEMO_MANIFESTS[msg.workflowId]);
+    const isTaskWaitingForInput = msg.providerStatus === "cube_task_needs_input";
     const canEscalateToAi =
       Boolean(msg.questionText) &&
       msg.evidenceType !== EVIDENCE_TYPES.AI_GROUNDED_DOCS &&
       msg.evidenceType !== "ai_grounded_docs" &&
       msg.evidenceType !== EVIDENCE_TYPES.LIVE_DOM_INSPECTION &&
-      msg.matchedIntentId !== "live_data_privacy_boundary";
+      msg.matchedIntentId !== "live_data_privacy_boundary" &&
+      !String(msg.providerStatus || "").startsWith("cube_task_");
 
     return (
       <div
@@ -2241,8 +2247,20 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
           isUrdu={isUr}
         />
 
-        {(hasWalkthrough || canEscalateToAi || (msg.links && msg.links.length > 0)) && (
+        {(isTaskWaitingForInput || hasWalkthrough || canEscalateToAi || (msg.links && msg.links.length > 0)) && (
           <div className="flex flex-wrap gap-1.5 pt-1">
+            {isTaskWaitingForInput && (
+              <button
+                type="button"
+                onClick={() => handleAskSubmit(null, "cancel", true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 border border-rose-500/25 transition-all cursor-pointer"
+              >
+                <XMarkIcon className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  {isUr ? "ٹاسک منسوخ کریں (Cancel)" : "Cancel Pending Task"}
+                </span>
+              </button>
+            )}
             {canEscalateToAi && (
               <button
                 type="button"
@@ -3038,12 +3056,9 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
 
                     <button
                       type="button"
-                      onClick={() => {
-                        setQuestionInput(
-                          "Add product Panadol 500mg Tablet, formulation Paracetamol, pack size 200, pack purchase price 510, pack sale price 600, brand GSK, category Tablets"
-                        );
-                        window.setTimeout(() => askInputRef.current?.focus(), 30);
-                      }}
+                      onClick={() =>
+                        handleAskSubmit(null, "Add a new product", true)
+                      }
                       className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer active:scale-95 ${
                         isDark
                           ? "bg-slate-900 hover:bg-slate-800 border-slate-700 text-emerald-300"
@@ -3056,12 +3071,9 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
 
                     <button
                       type="button"
-                      onClick={() => {
-                        setQuestionInput(
-                          "Update product Panadol 500mg Tablet pack sale price to 650, formulation to Paracetamol, and rack to R-1"
-                        );
-                        window.setTimeout(() => askInputRef.current?.focus(), 30);
-                      }}
+                      onClick={() =>
+                        handleAskSubmit(null, "Edit a product", true)
+                      }
                       className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer active:scale-95 ${
                         isDark
                           ? "bg-slate-900 hover:bg-slate-800 border-slate-700 text-amber-300"
