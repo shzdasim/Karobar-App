@@ -1,13 +1,15 @@
 import React from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
+import { getLastVisitedPath, saveLastVisitedPath } from "../utils/lastVisitedPage.js";
 
 /**
  * AuthGuard - Redirects users based on authentication status
  * 
- * If authenticated and trying to access login page -> redirect to dashboard
+ * If authenticated and trying to access login page -> redirect to last visited page or dashboard
  * If not authenticated and trying to access protected route -> redirect to login
  */
 export default function AuthGuard({ children, requireAuth = true }) {
+  const location = useLocation();
   const token = localStorage.getItem("token");
   const expiresAt = localStorage.getItem("token_expires_at");
   const isAuthenticated = !!token && (!expiresAt || Date.parse(expiresAt) > Date.now());
@@ -15,14 +17,16 @@ export default function AuthGuard({ children, requireAuth = true }) {
   if (requireAuth) {
     // Protected route - require authentication
     if (!isAuthenticated) {
-      return <Navigate to="/" replace />;
+      saveLastVisitedPath(location);
+      const fullPath = `${location.pathname}${location.search || ""}${location.hash || ""}`;
+      return <Navigate to="/" state={{ from: fullPath }} replace />;
     }
     return children;
   }
 
-  // Public route - redirect to dashboard if already authenticated
+  // Public route - redirect to last visited page or dashboard if already authenticated
   if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={getLastVisitedPath(location.state?.from)} replace />;
   }
 
   return children;

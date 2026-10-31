@@ -1195,6 +1195,7 @@ export function GuideBotTopbarButton({
   return (
     <button
       type="button"
+      data-guide-bot-trigger="true"
       onClick={onClick}
       aria-haspopup="dialog"
       aria-expanded={isOpen}

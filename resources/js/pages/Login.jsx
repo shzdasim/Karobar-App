@@ -3,11 +3,14 @@ import { useNavigate, useLocation } from "react-router-dom";
 import axios from "axios";
 import { ArrowRightIcon, ArrowPathIcon, EnvelopeIcon, LockClosedIcon, EyeIcon, EyeSlashIcon, ExclamationCircleIcon } from "@heroicons/react/24/outline";
 import { useAuth } from "../context/AuthContext.jsx";
+import { useLicense } from "../context/LicenseContext.jsx";
+import { getLastVisitedPath } from "../utils/lastVisitedPage.js";
 
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const { login } = useAuth();
+  const { refresh: refreshLicense } = useLicense();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
@@ -83,31 +86,11 @@ export default function Login() {
       login(data.user, data.token, { license_revoked: data.license_revoked });
 
       if (!data.license_revoked) {
-        // Validate license before redirecting to dashboard
-        await validateLicenseAndRedirect();
-      }
-
-      async function validateLicenseAndRedirect() {
-        try {
-          const licenseResponse = await axios.get("/api/license/status", {
-            headers: { Authorization: `Bearer ${data.token}` }
-          });
-          
-          if (licenseResponse.data.valid) {
-            navigate("/dashboard");
-          } else {
-            // License is invalid, redirect to activation
-            navigate("/activate");
-          }
-        } catch (licenseError) {
-          if (licenseError.response?.status === 401) {
-            throw licenseError;
-          }
-          // If we can't check license status, redirect to dashboard anyway
-          // The server-side middleware will handle invalid licenses
-          console.warn("Could not validate license status:", licenseError);
-          navigate("/dashboard");
-        }
+        // Check license status asynchronously in the background and send user directly
+        // to their last visited page (or /dashboard if none)
+        refreshLicense();
+        const targetPath = getLastVisitedPath(location.state?.from);
+        navigate(targetPath, { replace: true });
       }
     } catch (err) {
       const msg =

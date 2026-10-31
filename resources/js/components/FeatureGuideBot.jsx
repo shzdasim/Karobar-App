@@ -586,6 +586,8 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
   const chatEndRef = useRef(null);
   const typingTimerRef = useRef(null);
   const closingPromiseRef = useRef(null);
+  const pointerDownInsideRef = useRef(false);
+  const modeSwitchRef = useRef(false);
   const titleId = useId();
 
   // Keep DOM mounted while smooth exit animation plays
@@ -951,7 +953,10 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
       const dialog = dialogRef.current;
       if (!dialog) {
         setIsRendered(false);
-        if (notifyParent) onClose?.();
+        if (notifyParent) {
+          setSharedIsOpen(false);
+          onClose?.();
+        }
         return;
       }
 
@@ -987,13 +992,16 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
         }
         closingPromiseRef.current = null;
         setIsRendered(false);
-        if (notifyParent) onClose?.();
+        if (notifyParent) {
+          setSharedIsOpen(false);
+          onClose?.();
+        }
       })();
 
       closingPromiseRef.current = closeTask;
       return closeTask;
     },
-    [onClose]
+    [onClose, setSharedIsOpen]
   );
 
   // Sync `isOpen` prop changes with smooth open & smooth close
@@ -1011,24 +1019,122 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
     }
   }, [isOpen, isRendered, runSmoothClose, triggerBotTalking]);
 
-  // Open <dialog> as a NON-BLOCKING docked sidekick (`dialog.show()`) so the user can freely
-  // fill out forms, click buttons, and follow walkthroughs on the main page while Cube is open!
+  // Open <dialog> with `showModal()` and `closedby="any"` so clicking outside (backdrop)
+  // light-dismisses the drawer, with a fallback for browsers without `closedBy` support.
+  // Temporarily switches to non-modal `show()` only while `inspectMode` ("Point & Explain") is active.
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog || !isRendered || !isOpen) return;
 
     dialog.removeAttribute("data-closing");
-    if (!dialog.open) {
-      if (typeof dialog.show === "function") {
-        try {
+    try {
+      modeSwitchRef.current = true;
+      if (inspectMode) {
+        if (dialog.open && typeof dialog.close === "function") {
+          dialog.close();
+        }
+        if (typeof dialog.show === "function") {
           dialog.show();
-        } catch {
+        } else {
           dialog.setAttribute("open", "");
         }
       } else {
+        if (dialog.open && typeof dialog.close === "function") {
+          dialog.close();
+        }
+        if (typeof dialog.showModal === "function") {
+          dialog.showModal();
+        } else if (typeof dialog.show === "function") {
+          dialog.show();
+        } else {
+          dialog.setAttribute("open", "");
+        }
+      }
+    } catch {
+      if (!dialog.open) {
         dialog.setAttribute("open", "");
       }
+    } finally {
+      modeSwitchRef.current = false;
     }
+
+    const handleCancel = (event) => {
+      if (inspectMode) {
+        event.preventDefault();
+        setInspectMode(false);
+        return;
+      }
+      event.preventDefault();
+      runSmoothClose(true);
+    };
+
+    const handleNativeClose = () => {
+      if (modeSwitchRef.current || closingPromiseRef.current) return;
+      setIsRendered(false);
+      setSharedIsOpen(false);
+      onClose?.();
+    };
+
+    const handleDialogClick = (event) => {
+      if (inspectMode) return;
+      if (pointerDownInsideRef.current) {
+        pointerDownInsideRef.current = false;
+        return;
+      }
+      // 1. When clicking the backdrop, the event target is the dialog element itself.
+      // Ignore clicks where the target is a child element inside the dialog.
+      if (event.target !== dialog) return;
+
+      // 2. Check if the click coordinates fall within the dialog's content box.
+      // This distinguishes between a click on the backdrop vs a click on the dialog's background/padding.
+      const rect = dialog.getBoundingClientRect();
+      const isDialogContent =
+        rect.top <= event.clientY &&
+        event.clientY <= rect.top + rect.height &&
+        rect.left <= event.clientX &&
+        event.clientX <= rect.left + rect.width;
+
+      if (isDialogContent) return;
+
+      // 3. Since the click was outside the content area (on the backdrop), close the dialog.
+      runSmoothClose(true);
+    };
+
+    const handleDocumentPointerDown = (event) => {
+      if (inspectMode) return;
+      const target = event.target;
+      if (!target) return;
+
+      if (target !== dialog && dialog.contains(target)) {
+        pointerDownInsideRef.current = true;
+        return;
+      }
+
+      const rect = dialog.getBoundingClientRect();
+      const isInsideRect =
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.top <= event.clientY &&
+        event.clientY <= rect.top + rect.height &&
+        rect.left <= event.clientX &&
+        event.clientX <= rect.left + rect.width;
+
+      if (isInsideRect) {
+        pointerDownInsideRef.current = true;
+        return;
+      }
+
+      pointerDownInsideRef.current = false;
+
+      if (
+        target.closest?.("[data-guide-bot-trigger]") ||
+        target.closest?.("[data-roaming-cube]")
+      ) {
+        return;
+      }
+
+      runSmoothClose(true);
+    };
 
     const handleKeyDown = (event) => {
       if (event.key === "Escape") {
@@ -1042,11 +1148,21 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
       }
     };
 
+    dialog.addEventListener("cancel", handleCancel);
+    dialog.addEventListener("close", handleNativeClose);
+    if (!("closedBy" in HTMLDialogElement.prototype)) {
+      dialog.addEventListener("click", handleDialogClick);
+    }
+    document.addEventListener("pointerdown", handleDocumentPointerDown, true);
     window.addEventListener("keydown", handleKeyDown);
     return () => {
+      dialog.removeEventListener("cancel", handleCancel);
+      dialog.removeEventListener("close", handleNativeClose);
+      dialog.removeEventListener("click", handleDialogClick);
+      document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isRendered, isOpen, inspectMode, runSmoothClose]);
+  }, [isRendered, isOpen, inspectMode, runSmoothClose, onClose, setSharedIsOpen]);
 
   /**
    * Handles progressive-disclosure chip clicks in Cube Drawer.
@@ -2313,6 +2429,7 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
   return (
     <dialog
       ref={dialogRef}
+      {...({ closedby: inspectMode ? "closerequest" : "any" })}
       aria-labelledby={titleId}
       className={`guide-bot-drawer guide-bot-mode-cube border shadow-2xl ${
         isExpandedWidth ? "guide-bot-drawer-wide" : ""

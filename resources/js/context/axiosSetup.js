@@ -1,4 +1,5 @@
 import axios from "axios";
+import { saveLastVisitedPath } from "../utils/lastVisitedPage.js";
 
 const inflightGetMap = new Map();
 const responseCacheMap = new Map();
@@ -202,6 +203,7 @@ export function initAxiosAuth() {
 
       // Handle token expiry from our custom middleware
       if (status === 401 && err?.response?.data?.expired) {
+        saveLastVisitedPath(window.location);
         clearApiCache();
         localStorage.removeItem("token");
         localStorage.removeItem("user");
@@ -213,6 +215,7 @@ export function initAxiosAuth() {
 
       // Optional: handle 401 globally for auth failures
       if (status === 401 && !url.includes("/login")) {
+        saveLastVisitedPath(window.location);
         clearApiCache();
         localStorage.removeItem("token");
         localStorage.removeItem("user");

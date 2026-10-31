@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useLicense } from "../context/LicenseContext.jsx";
 import { usePermissions } from "../api/usePermissions.js";
 import PageSkeleton from "./PageSkeleton.jsx";
+import { saveLastVisitedPath } from "../utils/lastVisitedPage.js";
 
 const ROUTE_PERMISSION_MAP = {
   "/products": ["product.view"],
@@ -98,9 +99,15 @@ export default function ProtectedRoute({
   const { loading: licenseLoading, valid: licenseValid } = useLicense();
   const { loading: permsLoading, has } = usePermissions();
 
+  useEffect(() => {
+    saveLastVisitedPath(location);
+  }, [location.pathname, location.search, location.hash]);
+
   // Check authentication first
   if (!token) {
-    return <Navigate to="/" replace />;
+    saveLastVisitedPath(location);
+    const fullPath = `${location.pathname}${location.search || ""}${location.hash || ""}`;
+    return <Navigate to="/" state={{ from: fullPath }} replace />;
   }
 
   // Enforce route-level or prop-level permissions once loaded (unless shellOnly)

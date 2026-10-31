@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
 import { useLicense } from "@/context/LicenseContext.jsx";
+import { getLastVisitedPath } from "@/utils/lastVisitedPage.js";
 
 export default function ActivateLicense() {
   const nav = useNavigate();
@@ -17,6 +18,10 @@ export default function ActivateLicense() {
     try {
       const { data } = await axios.get("/api/license/status");
       setStatus(data);
+      if (data?.valid) {
+        await refresh();
+        nav(getLastVisitedPath(), { replace: true });
+      }
     } catch (e) {
       setStatus({ valid: false, reason: "Unable to fetch status" });
     }
@@ -32,10 +37,11 @@ export default function ActivateLicense() {
     try {
       const { data } = await axios.post("/api/license/activate", { license_key: key.trim() });
       if (data?.ok) {
+        const destination = getLastVisitedPath();
         setMsg("License activated successfully.");
         await refresh();                     // ✅ refresh context so guards allow
-        nav("/", { replace: true });         // ✅ go home
-        setTimeout(() => window.location.assign("/"), 50); // hard fallback
+        nav(destination, { replace: true }); // ✅ go to last visited page or dashboard
+        setTimeout(() => window.location.assign(destination), 50); // hard fallback
       } else {
         setErr(data?.reason || "Activation failed");
       }

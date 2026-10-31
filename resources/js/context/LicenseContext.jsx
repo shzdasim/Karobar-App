@@ -1,9 +1,14 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
 import axios from "axios";
+import { useAuth } from "./AuthContext.jsx";
 
 const LicenseCtx = createContext(null);
 
 export function LicenseProvider({ children }) {
+  const auth = useAuth();
+  const currentToken =
+    auth?.token || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
+
   const [status, setStatus] = useState({
     loading: true,
     valid: false,
@@ -11,14 +16,30 @@ export function LicenseProvider({ children }) {
     payload: null,
     machineId: null,
     reason: null,
+    checkedToken: null,
   });
 
   // Track if we've seen a valid license at least once
   const [hasEverBeenValid, setHasEverBeenValid] = useState(false);
 
   const refresh = useCallback(async (retryOnFail = true) => {
+    const activeToken =
+      typeof window !== "undefined" ? localStorage.getItem("token") : null;
+
+    // Do not call auth-protected /api/license/status when logged out
+    if (!activeToken) {
+      setStatus((s) => ({
+        ...s,
+        loading: true,
+        checkedToken: null,
+      }));
+      return;
+    }
+
     try {
-      const { data } = await axios.get("/api/license/status");
+      const { data } = await axios.get("/api/license/status", {
+        headers: { Authorization: `Bearer ${activeToken}` },
+      });
       // server returns expires_at as seconds (from payload['exp'])
       const expSec = data?.expires_at ?? data?.payload?.exp ?? null;
       const expMs =
@@ -34,22 +55,48 @@ export function LicenseProvider({ children }) {
         payload: data?.payload ?? null,
         machineId: data?.machine_id ?? null,
         reason: data?.reason ?? null,
+        checkedToken: activeToken,
       });
 
       if (isValid) {
         setHasEverBeenValid(true);
       }
     } catch (error) {
+      // A 401 means unauthenticated/expired session, NOT an invalid license
+      if (error?.response?.status === 401 || !localStorage.getItem("token")) {
+        setStatus((s) => ({
+          ...s,
+          loading: true,
+          checkedToken: null,
+        }));
+        return;
+      }
+
       // On network errors, retry once after a delay unless we've already seen a valid license
       if (retryOnFail && !hasEverBeenValid) {
         setTimeout(() => refresh(false), 2000);
         return;
       }
-      setStatus((s) => ({ ...s, loading: false, valid: false }));
+      setStatus((s) => ({
+        ...s,
+        loading: false,
+        valid: hasEverBeenValid ? s.valid : false,
+        checkedToken: activeToken,
+      }));
     }
   }, [hasEverBeenValid]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    if (currentToken) {
+      refresh();
+    } else {
+      setStatus((s) => ({
+        ...s,
+        loading: true,
+        checkedToken: null,
+      }));
+    }
+  }, [currentToken, refresh]);
 
   // Only tick when a finite expiresAt exists; use 60s interval when >24h remains to avoid 1-second global re-renders
   const [now, setNow] = useState(() => Date.now());
@@ -77,9 +124,14 @@ export function LicenseProvider({ children }) {
     }
   }, [status.valid, status.expiresAt, remainingMs]);
 
+  const effectiveLoading =
+    !currentToken ||
+    status.loading ||
+    (!status.valid && status.checkedToken !== currentToken);
+
   const contextValue = useMemo(
-    () => ({ ...status, remainingMs, refresh }),
-    [status, remainingMs, refresh]
+    () => ({ ...status, loading: effectiveLoading, remainingMs, refresh }),
+    [status, effectiveLoading, remainingMs, refresh]
   );
 
   return (
