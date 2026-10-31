@@ -112,11 +112,17 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
 
   const getDefaultCustomerId = (list = customersRef.current || customers) => {
     if (!Array.isArray(list) || list.length === 0) return "";
-    const walkIn = list.find((c) => (c.name || "").toUpperCase().includes("WALK-IN"));
+    const walkIn = list.find((c) => /walk[\s\-_]*in/i.test(String(c?.name || "")));
     if (walkIn?.id) return walkIn.id;
     const sorted = [...list].sort((a, b) => (a?.id ?? 0) - (b?.id ?? 0));
     return sorted[0]?.id || "";
   };
+
+  const WALK_IN_CREDIT_ERROR =
+    "Walk-In Customer bills cannot be saved with unpaid credit (Udhar)—select or create a named Customer if the bill is not paid in full.";
+
+  const isWalkInCustomer = (cust) =>
+    Boolean(cust && /walk[\s\-_]*in/i.test(String(cust.name || "").trim()));
 
   const [form, setForm] = useState({
     invoice_type: "debit",
@@ -714,6 +720,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
 
   const handleCustomerSelect = (customer) => {
     if (!customer?.id) return;
+    if (form.invoice_type === "credit" && isWalkInCustomer(customer)) {
+      invoiceErrors.showMessage(WALK_IN_CREDIT_ERROR);
+      return;
+    }
     setCustomers((prev) => {
       const exists = prev.some((c) => String(c.id) === String(customer.id));
       return exists ? prev : [customer, ...prev];
@@ -1318,13 +1328,29 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       }
     }
 
-    // total_receive validation
+    // total_receive & Walk-In Customer unpaid credit (Udhar) validation
     {
       const totalNum = Math.round(Number(form.total || 0));
       const recvNum = Math.round(Number(form.total_receive || 0));
       if (recvNum < 0) return invoiceErrors.showMessage("Total Receive cannot be negative");
       if (form.invoice_type !== "credit" && recvNum > totalNum) {
         return invoiceErrors.showMessage("Total Receive cannot exceed Total");
+      }
+
+      const resolvedCustomer = (customersRef.current || customers || []).find(
+        (c) => String(c.id) === String(effectiveCustomerId)
+      );
+      const cashTenderedUnderpaid =
+        form.cash_given !== "" &&
+        form.cash_given !== undefined &&
+        Number(form.cash_given) < totalNum;
+
+      if (
+        isWalkInCustomer(resolvedCustomer) &&
+        (form.invoice_type === "credit" || recvNum < totalNum || cashTenderedUnderpaid)
+      ) {
+        setCustomerSearchOpen(true);
+        return invoiceErrors.showMessage(WALK_IN_CREDIT_ERROR);
       }
     }
 

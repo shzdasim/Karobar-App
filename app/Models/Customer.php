@@ -23,8 +23,43 @@ class Customer extends Model
         'credit_days'  => 'integer',
     ];
 
+    public static function isWalkInName(?string $name): bool
+    {
+        if ($name === null) {
+            return false;
+        }
+        return (bool) preg_match('/walk[\s\-_]*in/i', trim($name));
+    }
+
+    public function isWalkIn(): bool
+    {
+        return self::isWalkInName($this->name);
+    }
+
+    /**
+     * Return all Customer IDs that match Walk-In Customer naming.
+     *
+     * @return array<int>
+     */
+    public static function walkInIds(): array
+    {
+        return static::query()
+            ->where(function ($q) {
+                $q->whereRaw("UPPER(name) LIKE '%WALK-IN%'")
+                  ->orWhereRaw("UPPER(name) LIKE '%WALK IN%'")
+                  ->orWhereRaw("UPPER(name) LIKE '%WALK_IN%'")
+                  ->orWhereRaw("UPPER(name) LIKE '%WALKIN%'");
+            })
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
     public function getNetBalance(): float
     {
+        if ($this->isWalkIn()) {
+            return 0.0;
+        }
         return CustomerLedger::getCustomerNetBalance($this->id);
     }
 

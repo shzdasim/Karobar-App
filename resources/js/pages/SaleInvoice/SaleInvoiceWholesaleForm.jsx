@@ -161,11 +161,17 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
 
   const getDefaultCustomerId = (list = customersRef.current || customers) => {
     if (!Array.isArray(list) || list.length === 0) return "";
-    const walkIn = list.find((c) => (c.name || "").toUpperCase().includes("WALK-IN"));
+    const walkIn = list.find((c) => /walk[\s\-_]*in/i.test(String(c?.name || "")));
     if (walkIn?.id) return walkIn.id;
     const sorted = [...list].sort((a, b) => (a?.id ?? 0) - (b?.id ?? 0));
     return sorted[0]?.id || "";
   };
+
+  const WALK_IN_CREDIT_ERROR =
+    "Walk-In Customer bills cannot be saved with unpaid credit (Udhar)—select or create a named Customer if the bill is not paid in full.";
+
+  const isWalkInCustomer = (cust) =>
+    Boolean(cust && /walk[\s\-_]*in/i.test(String(cust.name || "").trim()));
 
   const [form, setForm] = useState({
     invoice_type: "debit",
@@ -745,9 +751,18 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
     setForm((prev) => {
       const next = { ...prev, invoice_type: type };
       if (type === "credit") {
+        const currentCust = (customersRef.current || customers || []).find(
+          (c) => String(c.id) === String(prev.customer_id)
+        );
+        if (isWalkInCustomer(currentCust)) {
+          next.customer_id = "";
+        }
         next.total_receive = "";
         setReceiveTouched(true);
       } else {
+        if (!next.customer_id && customers.length > 0) {
+          next.customer_id = getDefaultCustomerId(customers);
+        }
         if (!receiveTouched) {
           next.total_receive = next.total ?? "";
         }
@@ -757,13 +772,17 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
   };
 
   const handleCustomerChange = (customerId, customerObj = null) => {
+    const cust = customerObj || (customers || []).find((c) => String(c.id) === String(customerId));
+    if (form.invoice_type === "credit" && isWalkInCustomer(cust)) {
+      invoiceErrors.showMessage(WALK_IN_CREDIT_ERROR);
+      return;
+    }
     if (customerObj?.id) {
       setCustomers((prev) => {
         const exists = prev.some((c) => String(c.id) === String(customerObj.id));
         return exists ? prev : [customerObj, ...prev];
       });
     }
-    const cust = customerObj || (customers || []).find((c) => String(c.id) === String(customerId));
     const creditDays = Number(cust?.credit_days ?? 0);
     let autoDueDate = undefined;
     if (creditDays > 0 && form.date) {
@@ -1500,13 +1519,29 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
       }
     }
 
-    // total_receive validation
+    // total_receive & Walk-In Customer unpaid credit (Udhar) validation
     {
       const totalNum = Math.round(Number(form.total || 0));
       const recvNum = Math.round(Number(form.total_receive || 0));
       if (recvNum < 0) return invoiceErrors.showMessage("Total Receive cannot be negative");
       if (form.invoice_type !== "credit" && recvNum > totalNum) {
         return invoiceErrors.showMessage("Total Receive cannot exceed Total");
+      }
+
+      const resolvedCustomer = (customersRef.current || customers || []).find(
+        (c) => String(c.id) === String(effectiveCustomerId)
+      );
+      const cashTenderedUnderpaid =
+        form.cash_given !== "" &&
+        form.cash_given !== undefined &&
+        Number(form.cash_given) < totalNum;
+
+      if (
+        isWalkInCustomer(resolvedCustomer) &&
+        (form.invoice_type === "credit" || recvNum < totalNum || cashTenderedUnderpaid)
+      ) {
+        setCustomerSearchOpen(true);
+        return invoiceErrors.showMessage(WALK_IN_CREDIT_ERROR);
       }
     }
 

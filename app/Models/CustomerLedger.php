@@ -46,6 +46,11 @@ class CustomerLedger extends Model
      */
     public static function getCustomerNetBalance(int $customerId): float
     {
+        $walkInIds = Customer::walkInIds();
+        if (in_array($customerId, $walkInIds, true)) {
+            return 0.0;
+        }
+
         $invAgg = DB::table('customer_ledgers')
             ->where('customer_id', $customerId)
             ->whereIn('entry_type', ['invoice', 'manual'])
@@ -75,8 +80,11 @@ class CustomerLedger extends Model
      */
     public static function getTotalReceivablesBalance(): float
     {
+        $walkInIds = Customer::walkInIds();
+
         $invRows = DB::table('customer_ledgers')
             ->whereNotNull('customer_id')
+            ->when(!empty($walkInIds), fn ($q) => $q->whereNotIn('customer_id', $walkInIds))
             ->whereIn('entry_type', ['invoice', 'manual'])
             ->selectRaw('
                 customer_id,
@@ -89,6 +97,7 @@ class CustomerLedger extends Model
 
         $payRows = DB::table('customer_ledgers')
             ->whereNotNull('customer_id')
+            ->when(!empty($walkInIds), fn ($q) => $q->whereNotIn('customer_id', $walkInIds))
             ->where('entry_type', 'payment')
             ->selectRaw('customer_id, SUM(COALESCE(credited_amount, 0)) as total_credited')
             ->groupBy('customer_id')

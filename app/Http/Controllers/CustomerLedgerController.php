@@ -119,6 +119,20 @@ class CustomerLedgerController extends Controller
         $from = $request->from;
         $to   = $request->to;
 
+        $customer = Customer::find($customerId);
+        if ($customer && $customer->isWalkIn()) {
+            return response()->json([
+                'data' => [],
+                'summary' => [
+                    'opening_balance'     => 0.0,
+                    'total_invoiced'      => 0.0,
+                    'received_on_invoice' => 0.0,
+                    'payments_credited'   => 0.0,
+                    'net_balance'         => 0.0,
+                ],
+            ]);
+        }
+
         // ---- Editable rows (payment + manual) ----
         $manualAndPayments = CustomerLedger::query()
             ->where('customer_id', $customerId)
@@ -313,6 +327,17 @@ class CustomerLedgerController extends Controller
             'sale_invoice_id' => ['nullable','integer','exists:sale_invoices,id'],
             'description'     => ['nullable','string','max:500'],
         ]);
+
+        $customer = Customer::find((int)$data['customer_id']);
+        if ($customer && $customer->isWalkIn()) {
+            $walkInMsg = 'Walk-In Customer bills cannot be saved with unpaid credit (Udhar)—select or create a named Customer if the bill is not paid in full.';
+            return response()->json([
+                'message' => $walkInMsg,
+                'errors'  => [
+                    'customer_id' => [$walkInMsg],
+                ],
+            ], 422);
+        }
 
         $type = $data['entry_type'] ?? (!empty($data['credited_amount']) ? 'payment' : 'manual');
 
@@ -558,6 +583,11 @@ class CustomerLedgerController extends Controller
             'customer_id' => ['required','integer','exists:customers,id'],
         ]);
         $customerId = (int)$request->customer_id;
+        $customer = Customer::find($customerId);
+        if ($customer && $customer->isWalkIn()) {
+            CustomerLedger::where('customer_id', $customerId)->delete();
+            return response()->json(['status' => 'ok']);
+        }
 
         DB::transaction(function () use ($customerId) {
             // Only rebuild credit invoices

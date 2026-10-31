@@ -154,16 +154,34 @@ class SaleInvoiceController extends Controller
     private function validateCreditLimits(array $data, Request $request, ?SaleInvoice $existingInvoice = null): void
     {
         $invoiceType = $data['invoice_type'] ?? ($existingInvoice->invoice_type ?? 'debit');
+        $customerId = (int)($data['customer_id'] ?? ($existingInvoice->customer_id ?? 0));
+        $customer = $customerId ? Customer::find($customerId) : null;
+
+        $total = round((float) ($data['total'] ?? 0), 2);
+        $received = round((float) ($data['total_receive'] ?? 0), 2);
+        $creditApplied = round((float) ($data['apply_credit_amount'] ?? 0), 2);
+        $unpaidAmount = round(max($total - $received - $creditApplied, 0), 2);
+        $cashGivenUnderpaid = $request->filled('cash_given')
+            && is_numeric($request->input('cash_given'))
+            && round((float) $request->input('cash_given') + $creditApplied, 2) < ($total - 0.009);
+
+        if ($customer && $customer->isWalkIn()) {
+            if ($invoiceType === 'credit' || $unpaidAmount > 0.009 || $cashGivenUnderpaid) {
+                $walkInMsg = 'Walk-In Customer bills cannot be saved with unpaid credit (Udhar)—select or create a named Customer if the bill is not paid in full.';
+                throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
+                    'message' => $walkInMsg,
+                    'errors' => [
+                        'customer_id'   => [$walkInMsg],
+                        'total_receive' => [$walkInMsg],
+                    ],
+                ], 422));
+            }
+        }
+
         if ($invoiceType !== 'credit') {
             return;
         }
 
-        $customerId = (int)($data['customer_id'] ?? ($existingInvoice->customer_id ?? 0));
-        if (!$customerId) {
-            return;
-        }
-
-        $customer = Customer::find($customerId);
         if (!$customer) {
             return;
         }
@@ -417,6 +435,17 @@ class SaleInvoiceController extends Controller
             $splitSum = round(collect($data['split_payments'])->sum(fn($leg) => (float)($leg['amount'] ?? 0)), 2);
             if (!isset($data['total_receive'])) {
                 $data['total_receive'] = $splitSum;
+            }
+        }
+
+        // For debit (cash) sales where total_receive was not explicitly provided in the request, default to full bill total
+        $effectiveInvoiceType = $data['invoice_type'] ?? 'debit';
+        $hasExplicitReceive = $request->has('total_receive') && $request->input('total_receive') !== null && $request->input('total_receive') !== '';
+        if ($effectiveInvoiceType === 'debit' && !$hasExplicitReceive) {
+            if ($request->filled('cash_given') && is_numeric($request->input('cash_given'))) {
+                $data['total_receive'] = min((float) $data['total'], (float) $request->input('cash_given'));
+            } else {
+                $data['total_receive'] = $data['total'];
             }
         }
 
@@ -761,6 +790,16 @@ class SaleInvoiceController extends Controller
         $data['total']               = $calculated['total'];
         $data['items']               = $calculated['items'];
 
+        $effectiveUpdateInvoiceType = $data['invoice_type'] ?? ($invoice->invoice_type ?? 'debit');
+        $hasExplicitUpdateReceive = $request->has('total_receive') && $request->input('total_receive') !== null && $request->input('total_receive') !== '';
+        if ($effectiveUpdateInvoiceType === 'debit' && !$hasExplicitUpdateReceive) {
+            if ($request->filled('cash_given') && is_numeric($request->input('cash_given'))) {
+                $data['total_receive'] = min((float) $data['total'], (float) $request->input('cash_given'));
+            } else {
+                $data['total_receive'] = $data['total'];
+            }
+        }
+
         $this->validateCreditLimits($data, $request, $invoice);
         $dueDate = $this->resolveDueDate($data);
 
@@ -851,12 +890,10 @@ class SaleInvoiceController extends Controller
             }
 
             // Handle customer ledger entries
-            // If invoice was previously credit but is now debit, delete the ledger entry
-            if ($oldInvoiceType === 'credit' && $newInvoiceType !== 'credit') {
-                // Remove existing ledger entry for this invoice
+            // If invoice is now debit, ensure no ledger entry remains for this invoice
+            if ($newInvoiceType !== 'credit') {
                 CustomerLedger::where('sale_invoice_id', $invoice->id)->delete();
-                CustomerLedger::where('customer_id', $invoice->customer_id)
-                    ->where('payment_ref', 'Inv #' . $invoice->posted_number)
+                CustomerLedger::where('payment_ref', 'Inv #' . $invoice->posted_number)
                     ->where('entry_type', 'payment')
                     ->delete();
             }

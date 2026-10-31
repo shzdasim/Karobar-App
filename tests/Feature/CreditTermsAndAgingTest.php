@@ -487,4 +487,152 @@ class CreditTermsAndAgingTest extends TestCase
         $this->assertEquals('SAL-001', $party['overdue_entries'][0]['reference']);
         $this->assertEquals('2026-08-31', $party['overdue_entries'][0]['due_date']);
     }
+
+    public function test_walk_in_customer_cannot_save_bill_with_unpaid_credit_udhar(): void
+    {
+        $walkIn = Customer::create([
+            'name' => 'WALK-IN-CUSTOMER',
+            'phone' => '03000000000',
+        ]);
+
+        // 1. Attempting a credit invoice on Walk-In Customer is blocked with 422
+        $creditRes = $this->actingAs($this->user)->postJson('/api/sale-invoices', [
+            'customer_id'   => $walkIn->id,
+            'invoice_type'  => 'credit',
+            'sale_type'     => 'retail',
+            'date'          => '2026-10-31',
+            'gross_amount'  => 300,
+            'total'         => 300,
+            'total_receive' => 0,
+            'items'         => [
+                [
+                    'product_id' => $this->product->id,
+                    'quantity'   => 10,
+                    'price'      => 30,
+                    'sub_total'  => 300,
+                ],
+            ],
+        ]);
+
+        $creditRes->assertStatus(422)
+            ->assertJsonPath(
+                'message',
+                'Walk-In Customer bills cannot be saved with unpaid credit (Udhar)—select or create a named Customer if the bill is not paid in full.'
+            );
+
+        // 2. Attempting a debit invoice on Walk-In Customer with partial payment (total_receive < total) is blocked with 422
+        $partialDebitRes = $this->actingAs($this->user)->postJson('/api/sale-invoices', [
+            'customer_id'   => $walkIn->id,
+            'invoice_type'  => 'debit',
+            'sale_type'     => 'retail',
+            'date'          => '2026-10-31',
+            'gross_amount'  => 300,
+            'total'         => 300,
+            'total_receive' => 100,
+            'items'         => [
+                [
+                    'product_id' => $this->product->id,
+                    'quantity'   => 10,
+                    'price'      => 30,
+                    'sub_total'  => 300,
+                ],
+            ],
+        ]);
+
+        $partialDebitRes->assertStatus(422)
+            ->assertJsonPath(
+                'message',
+                'Walk-In Customer bills cannot be saved with unpaid credit (Udhar)—select or create a named Customer if the bill is not paid in full.'
+            );
+
+        // 3. Paying in full succeeds
+        $paidRes = $this->actingAs($this->user)->postJson('/api/sale-invoices', [
+            'customer_id'   => $walkIn->id,
+            'invoice_type'  => 'debit',
+            'sale_type'     => 'retail',
+            'date'          => '2026-10-31',
+            'gross_amount'  => 300,
+            'total'         => 300,
+            'total_receive' => 300,
+            'items'         => [
+                [
+                    'product_id' => $this->product->id,
+                    'quantity'   => 10,
+                    'price'      => 30,
+                    'sub_total'  => 300,
+                ],
+            ],
+        ]);
+
+        $paidRes->assertStatus(201);
+    }
+
+    public function test_flush_walkin_credit_command_flushes_walk_in_udhar_and_preserves_named_customer_credit(): void
+    {
+        $walkIn = Customer::create([
+            'name' => 'WALK-IN-CUSTOMER',
+            'phone' => '03000000000',
+        ]);
+
+        // Legacy unpaid credit invoice on Walk-In Customer
+        $walkInInv = SaleInvoice::create([
+            'user_id'       => $this->user->id,
+            'customer_id'   => $walkIn->id,
+            'date'          => '2026-10-01',
+            'posted_number' => 'SI-WALKIN-001',
+            'invoice_type'  => 'credit',
+            'sale_type'     => 'retail',
+            'gross_amount'  => 1500,
+            'total'         => 1500,
+            'total_receive' => 200,
+        ]);
+        CustomerLedger::create([
+            'customer_id'       => $walkIn->id,
+            'sale_invoice_id'   => $walkInInv->id,
+            'entry_date'        => '2026-10-01',
+            'entry_type'        => 'invoice',
+            'posted_number'     => 'SI-WALKIN-001',
+            'invoice_total'     => 1500,
+            'total_received'    => 200,
+            'balance_remaining' => 1300,
+        ]);
+
+        // Named customer credit invoice should NOT be touched
+        $namedInv = SaleInvoice::create([
+            'user_id'       => $this->user->id,
+            'customer_id'   => $this->customer->id,
+            'date'          => '2026-10-01',
+            'posted_number' => 'SI-NAMED-001',
+            'invoice_type'  => 'credit',
+            'sale_type'     => 'retail',
+            'gross_amount'  => 4000,
+            'total'         => 4000,
+            'total_receive' => 1000,
+        ]);
+        CustomerLedger::create([
+            'customer_id'       => $this->customer->id,
+            'sale_invoice_id'   => $namedInv->id,
+            'entry_date'        => '2026-10-01',
+            'entry_type'        => 'invoice',
+            'posted_number'     => 'SI-NAMED-001',
+            'invoice_total'     => 4000,
+            'total_received'    => 1000,
+            'balance_remaining' => 3000,
+        ]);
+
+        $this->artisan('karobar:flush-walkin-credit')
+            ->assertExitCode(0);
+
+        $walkInInv->refresh();
+        $this->assertEquals('debit', $walkInInv->invoice_type);
+        $this->assertEquals(1500.0, (float) $walkInInv->total_receive);
+        $this->assertEquals(0, CustomerLedger::where('customer_id', $walkIn->id)->count());
+        $this->assertEquals(0.0, CustomerLedger::getCustomerNetBalance($walkIn->id));
+
+        // Named customer credit remains intact
+        $namedInv->refresh();
+        $this->assertEquals('credit', $namedInv->invoice_type);
+        $this->assertEquals(1000.0, (float) $namedInv->total_receive);
+        $this->assertEquals(3000.0, CustomerLedger::getCustomerNetBalance($this->customer->id));
+    }
 }

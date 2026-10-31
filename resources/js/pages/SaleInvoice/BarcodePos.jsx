@@ -681,9 +681,11 @@ export default function BarcodePos() {
       return;
     }
 
-    const isWalkIn = (selectedCustomer?.name || "").toUpperCase().includes("WALK-IN");
+    const isWalkIn = /walk[\s\-_]*in/i.test(String(selectedCustomer?.name || ""));
     const creditToApply = totals.creditApplied;
     const netAfterCredit = totals.netPayableAfterCredit;
+    const walkInCreditError =
+      "Walk-In Customer bills cannot be saved with unpaid credit (Udhar)—select or create a named Customer if the bill is not paid in full.";
 
     let splitPaymentsPayload = undefined;
     let totalReceive = totals.grandTotal;
@@ -695,7 +697,7 @@ export default function BarcodePos() {
       const totalSplitPaid = cashLeg + cardLeg;
 
       if (totalSplitPaid + creditToApply < totals.grandTotal && isWalkIn) {
-        toast.error("Walk-in customer cannot leave an unpaid credit balance. Please select a registered customer or tender full amount.");
+        toast.error(walkInCreditError);
         return;
       }
 
@@ -721,7 +723,18 @@ export default function BarcodePos() {
         invoiceType = "credit";
       }
     } else {
-      totalReceive = netAfterCredit;
+      const hasExplicitCashGiven =
+        paymentMethod === "cash" && cashGiven !== "" && cashGiven !== null && cashGiven !== undefined;
+      if (hasExplicitCashGiven && Number(cashGiven) < netAfterCredit) {
+        if (isWalkIn) {
+          toast.error(walkInCreditError);
+          return;
+        }
+        totalReceive = Math.max(0, Number(cashGiven));
+        invoiceType = "credit";
+      } else {
+        totalReceive = netAfterCredit;
+      }
     }
 
     try {
