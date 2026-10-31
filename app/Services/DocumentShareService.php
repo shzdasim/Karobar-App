@@ -37,6 +37,39 @@ class DocumentShareService
         'stocktake_session',
     ];
 
+    public const SUPPORTED_PDF_DESIGNS = [
+        'standard',
+        'minimal',
+        'detailed',
+        'compact',
+        'bold',
+        'barcode',
+    ];
+
+    /**
+     * Resolve the active PDF design template ('standard', 'minimal', 'detailed', 'compact', 'bold', 'barcode').
+     */
+    public function resolvePdfDesign(?string $requested = null, ?Setting $setting = null): string
+    {
+        $candidate = strtolower(trim((string) $requested));
+        if (in_array($candidate, self::SUPPORTED_PDF_DESIGNS, true)) {
+            return $candidate;
+        }
+
+        if ($setting === null) {
+            try {
+                if (Schema::hasTable('settings')) {
+                    $setting = Setting::first();
+                }
+            } catch (\Throwable) {
+                $setting = null;
+            }
+        }
+
+        $saved = strtolower(trim((string) ($setting?->a4_template ?? 'standard')));
+        return in_array($saved, self::SUPPORTED_PDF_DESIGNS, true) ? $saved : 'standard';
+    }
+
     /**
      * Normalize a local or international phone number into E.164 digits (without '+' or '00')
      * suitable for https://wa.me/{phone}.
@@ -46,11 +79,16 @@ class DocumentShareService
      *   "00923331112233" -> "923331112233"
      *   "3001234567"     -> "923001234567"
      */
-    public function normalizePhone(?string $phone, string $defaultCountryCode = '92'): string
+    public function normalizePhone(?string $phone, ?string $defaultCountryCode = null): string
     {
         if (!$phone) {
             return '';
         }
+
+        if ($defaultCountryCode === null || trim($defaultCountryCode) === '') {
+            $defaultCountryCode = (string) config('services.whatsapp.default_country_code', '92');
+        }
+        $defaultCountryCode = preg_replace('/\D+/', '', $defaultCountryCode) ?: '92';
 
         $digits = preg_replace('/\D+/', '', $phone) ?? '';
         if ($digits === '') {
@@ -91,6 +129,7 @@ class DocumentShareService
             'supplier_id' => $params['supplier_id'] ?? null,
             'from'        => $params['from'] ?? null,
             'to'          => $params['to'] ?? null,
+            'template'    => $params['template'] ?? null,
         ], fn ($v) => $v !== null && $v !== '');
 
         return URL::temporarySignedRoute(
@@ -101,12 +140,61 @@ class DocumentShareService
     }
 
     /**
-     * Check whether server-side WhatsApp Cloud API credentials are configured.
+     * Resolve the active WhatsApp API provider identifier.
+     */
+    public function resolveWhatsAppProvider(): string
+    {
+        $provider = strtolower(trim((string) config('services.whatsapp.provider', 'meta_cloud')));
+        $allowed = [
+            'local_agent',
+            'waha',
+            'evolution_api',
+            'whapi_cloud',
+            'wasender',
+            'ultramsg',
+            'green_api',
+            'meta_cloud',
+            'custom_http',
+        ];
+        if (!in_array($provider, $allowed, true)) {
+            return 'meta_cloud';
+        }
+
+        return $provider;
+    }
+
+    /**
+     * Check whether server-side WhatsApp API / Agent credentials are configured and enabled.
      */
     public function isWhatsAppApiConfigured(): bool
     {
-        return !empty(config('services.whatsapp.access_token'))
-            && !empty(config('services.whatsapp.phone_number_id'));
+        try {
+            if (Schema::hasTable('settings')) {
+                $setting = Setting::first();
+                $setting?->applyWhatsAppConfig();
+            }
+        } catch (\Throwable) {
+            // Ignore when database/table is unavailable
+        }
+
+        if (config('services.whatsapp.enabled') === false) {
+            return false;
+        }
+
+        $provider = $this->resolveWhatsAppProvider();
+        $token = trim((string) config('services.whatsapp.access_token', ''));
+        $phoneOrInstanceId = trim((string) config('services.whatsapp.phone_number_id', ''));
+        $apiUrl = trim((string) config('services.whatsapp.api_url', ''));
+
+        return match ($provider) {
+            'local_agent'                         => (bool) config('services.whatsapp.enabled', false) || $apiUrl !== '' || $token !== '',
+            'waha'                                => $apiUrl !== '' || $token !== '',
+            'evolution_api'                       => $apiUrl !== '' && $token !== '',
+            'whapi_cloud', 'wasender'             => $token !== '',
+            'custom_http'                         => $apiUrl !== '',
+            'ultramsg', 'green_api', 'meta_cloud' => $token !== '' && $phoneOrInstanceId !== '',
+            default                               => $token !== '' && $phoneOrInstanceId !== '',
+        };
     }
 
     /**
@@ -114,14 +202,27 @@ class DocumentShareService
      */
     public function buildMetadata(string $type, array $params): array
     {
+        $apiConfigured = $this->isWhatsAppApiConfigured();
         $context = $this->resolveDocumentContext($type, $params);
+        $selectedDesign = $this->resolvePdfDesign($params['template'] ?? null, $context['view_data']['setting'] ?? null);
+        $params['template'] = $selectedDesign;
         $signedPdfUrl = $this->buildSignedPdfUrl($type, $params);
         $normalizedPhone = $this->normalizePhone($context['recipient_phone']);
 
-        $whatsappCaption = trim($context['whatsapp_text']);
+        $whatsappTextEn = trim((string) ($context['whatsapp_text_en'] ?? $context['whatsapp_text'] ?? ''));
+        $whatsappTextUr = trim((string) ($context['whatsapp_text_ur'] ?? $this->translateDocumentMessageToUrdu($whatsappTextEn)));
+        $emailSubjectEn = trim((string) ($context['email_subject_en'] ?? $context['email_subject'] ?? ''));
+        $emailSubjectUr = trim((string) ($context['email_subject_ur'] ?? $this->translateDocumentMessageToUrdu($emailSubjectEn)));
+        $emailBodyEn    = trim((string) ($context['email_body_en'] ?? $context['email_body'] ?? ''));
+        $emailBodyUr    = trim((string) ($context['email_body_ur'] ?? $this->translateDocumentMessageToUrdu($emailBodyEn)));
+
+        $whatsappCaption = $whatsappTextEn;
         $whatsappUrl = $normalizedPhone !== ''
             ? 'https://wa.me/' . $normalizedPhone . '?text=' . rawurlencode($whatsappCaption)
             : 'https://wa.me/?text=' . rawurlencode($whatsappCaption);
+        $whatsappUrlUr = $normalizedPhone !== ''
+            ? 'https://wa.me/' . $normalizedPhone . '?text=' . rawurlencode($whatsappTextUr)
+            : 'https://wa.me/?text=' . rawurlencode($whatsappTextUr);
 
         $apiQuery = http_build_query(array_filter([
             'type'        => $type,
@@ -130,38 +231,128 @@ class DocumentShareService
             'supplier_id' => $params['supplier_id'] ?? null,
             'from'        => $params['from'] ?? null,
             'to'          => $params['to'] ?? null,
+            'template'    => $selectedDesign,
         ], fn ($v) => $v !== null && $v !== ''));
 
         return [
-            'type'                    => $type,
-            'document_title'          => $context['title'],
-            'filename'                => $context['filename'],
-            'party_type'              => $context['party_type'],
-            'party_id'                => $context['party_id'],
-            'recipient_name'          => $context['recipient_name'],
-            'recipient_phone'         => $context['recipient_phone'] ?? '',
-            'normalized_phone'        => $normalizedPhone,
-            'recipient_email'         => $context['recipient_email'] ?? '',
-            'whatsapp_text'           => $whatsappCaption,
-            'whatsapp_url'            => $whatsappUrl,
-            'whatsapp_api_configured' => $this->isWhatsAppApiConfigured(),
-            'email_subject'           => $context['email_subject'],
-            'email_body'              => $context['email_body'],
-            'signed_pdf_url'          => $signedPdfUrl,
-            'pdf_preview_url'         => url('/api/share/pdf?' . $apiQuery),
-            'pdf_download_url'        => url('/api/share/pdf?' . $apiQuery . '&download=1'),
+            'type'                          => $type,
+            'document_title'                => $context['title'],
+            'filename'                      => $context['filename'],
+            'pdf_template'                  => $selectedDesign,
+            'available_pdf_templates'       => [
+                ['id' => 'standard', 'name' => 'Standard Corporate', 'desc' => 'Classic navy header with structured borders'],
+                ['id' => 'minimal',  'name' => 'Minimal Clean',      'desc' => 'Light borders and airy ink-saving layout'],
+                ['id' => 'detailed', 'name' => 'Executive Detailed', 'desc' => 'Royal blue theme with product codes & full breakdown'],
+                ['id' => 'compact',  'name' => 'Compact High-Density', 'desc' => 'Condensed spacing to fit maximum items per page'],
+                ['id' => 'bold',     'name' => 'Bold Modern',        'desc' => 'High-contrast emerald header banner'],
+                ['id' => 'barcode',  'name' => 'Barcode & SKU',      'desc' => 'Includes SKU/barcode column and reference strip'],
+            ],
+            'party_type'                    => $context['party_type'],
+            'party_id'                      => $context['party_id'],
+            'recipient_name'                => $context['recipient_name'],
+            'recipient_phone'               => $context['recipient_phone'] ?? '',
+            'normalized_phone'              => $normalizedPhone,
+            'recipient_email'               => $context['recipient_email'] ?? '',
+            'whatsapp_text'                 => $whatsappCaption,
+            'whatsapp_text_en'              => $whatsappTextEn,
+            'whatsapp_text_ur'              => $whatsappTextUr,
+            'whatsapp_url'                  => $whatsappUrl,
+            'whatsapp_url_ur'               => $whatsappUrlUr,
+            'whatsapp_api_configured'       => $apiConfigured,
+            'whatsapp_provider'             => $this->resolveWhatsAppProvider(),
+            'whatsapp_default_country_code' => (string) config('services.whatsapp.default_country_code', '92'),
+            'email_subject'                 => $emailSubjectEn,
+            'email_subject_en'              => $emailSubjectEn,
+            'email_subject_ur'              => $emailSubjectUr,
+            'email_body'                    => $emailBodyEn,
+            'email_body_en'                 => $emailBodyEn,
+            'email_body_ur'                 => $emailBodyUr,
+            'signed_pdf_url'                => $signedPdfUrl,
+            'pdf_preview_url'               => url('/api/share/pdf?' . $apiQuery),
+            'pdf_download_url'              => url('/api/share/pdf?' . $apiQuery . '&download=1'),
         ];
+    }
+
+    /**
+     * Convert standard English document labels to Urdu for non-invoice document types.
+     */
+    protected function translateDocumentMessageToUrdu(string $text): string
+    {
+        $replacements = [
+            'Customer Account Statement' => '*کسٹمر کھاتہ اسٹیٹمنٹ (Account Statement)*',
+            'Supplier Account Statement' => '*سپلائر کھاتہ اسٹیٹمنٹ (Supplier Statement)*',
+            'Official Payment Receipt:'  => 'کیش وصولی رسید:',
+            'Payment Voucher:'           => 'پیمنٹ واؤچر:',
+            'Purchase Order:'            => 'پرچیز آرڈر:',
+            'Purchase Invoice (GRN):'    => 'پرچیز انوائس (GRN):',
+            'Sale Return / Credit Note:' => 'سیل ریٹرن / کریڈٹ نوٹ:',
+            'Purchase Return / Debit Note:' => 'پرچیز ریٹرن / ڈیبٹ نوٹ:',
+            'Delivery Challan / Gate Pass:' => 'ڈیلیوری چالان / گیٹ پاس:',
+            'Price Quotation:'           => 'پرائس کوٹیشن:',
+            'Customer:'                  => 'محترم کسٹمر:',
+            'Supplier:'                  => 'محترم سپلائر:',
+            'Consignee:'                 => 'وصول کنندہ:',
+            'Prepared For:'              => 'کسٹمر کا نام:',
+            'Statement Period:'          => 'مدت:',
+            'Order Date:'                => 'آرڈر کی تاریخ:',
+            'Expected Delivery:'         => 'متوقع ڈیلیوری:',
+            'Date:'                      => 'تاریخ:',
+            'Total Invoiced:'            => 'کل بل رقم:',
+            'Total Received:'            => 'کل وصول شدہ رقم:',
+            'Total Paid:'                => 'کل ادا شدہ رقم:',
+            'Net Balance Due:'           => 'موجودہ واجب الادا بقایا:',
+            'Net Payable Balance:'       => 'موجودہ قابلِ ادا بقایا:',
+            'Amount Received:'           => 'وصول شدہ رقم:',
+            'Amount Paid:'               => 'ادا شدہ رقم:',
+            'Payment Method:'            => 'طریقہ کار:',
+            'Reference:'                 => 'حوالہ نمبر:',
+            'Total Line Items:'          => 'آئٹمز کی تعداد:',
+            'Order Total:'               => 'کل آرڈر رقم:',
+            'Invoice Total:'             => 'کل بل:',
+            'Balance Payable:'           => 'بقایا واجب الادا:',
+            'Return Credit Total:'       => 'واپسی بل کی کل رقم:',
+            'Return Debit Total:'        => 'واپسی بل کی کل رقم:',
+            'Estimated Total:'           => 'متوقع کل رقم:',
+            'Please find your detailed account statement attached.' => 'آپ کے کھاتے کی مکمل تفصیل پی ڈی ایف (PDF) فائل کی صورت میں منسلک ہے۔\nآپ کے تعاون کا شکریہ۔',
+            'Please find the supplier ledger statement attached.'   => 'سپلائر کھاتے کی مکمل تفصیل پی ڈی ایف (PDF) فائل کی صورت میں منسلک ہے۔\nآپ کے تعاون کا شکریہ۔',
+            'Please find the official voucher attached.'            => 'پیمنٹ واؤچر پی ڈی ایف (PDF) فائل کی صورت میں منسلک ہے۔\nآپ کے تعاون کا شکریہ۔',
+            'Please find our official Purchase Order attached and confirm receipt.' => 'ہمارا آفیشل پرچیز آرڈر پی ڈی ایف (PDF) فائل کی صورت میں منسلک ہے۔ براہِ کرم تصدیق فرمائیں۔',
+            'Please find the Purchase Invoice (GRN) PDF attached.'  => 'پرچیز انوائس پی ڈی ایف (PDF) فائل کی صورت میں منسلک ہے۔',
+            'Please find the Credit Note PDF attached.'             => 'سیل ریٹرن کریڈٹ نوٹ پی ڈی ایف (PDF) فائل کی صورت میں منسلک ہے۔',
+            'Please find the Debit Note PDF attached.'              => 'پرچیز ریٹرن ڈیبٹ نوٹ پی ڈی ایف (PDF) فائل کی صورت میں منسلک ہے۔',
+            'Please find our official price quotation attached.'    => 'ہماری آفیشل پرائس کوٹیشن پی ڈی ایف (PDF) فائل کی صورت میں منسلک ہے۔',
+            'Please verify quantities and batch numbers upon receipt.' => 'براہِ کرم مال وصول کرتے وقت تعداد اور بیچ نمبر چیک کر لیں۔',
+        ];
+
+        return strtr($text, $replacements);
     }
 
     /**
      * Build the actual PDF document and send/prepare it for WhatsApp (with no URL link in caption).
      */
-    public function sendOrBuildWhatsAppPdf(string $type, array $params, ?string $phone, string $caption): array
-    {
+    public function sendOrBuildWhatsAppPdf(
+        string $type,
+        array $params,
+        ?string $phone,
+        string $caption,
+        bool $savePhone = false
+    ): array {
+        $apiConfigured = $this->isWhatsAppApiConfigured();
         $result = $this->generatePdf($type, $params);
+        $context = $result['context'];
         $pdfBytes = $result['pdf']->output();
         $filename = $result['filename'];
-        $normalizedPhone = $this->normalizePhone($phone ?: ($result['context']['recipient_phone'] ?? ''));
+        $rawPhone = trim((string) ($phone ?: ($context['recipient_phone'] ?? '')));
+        $normalizedPhone = $this->normalizePhone($rawPhone);
+
+        // Optionally persist the phone number back to the Customer or Supplier profile
+        if ($savePhone && $rawPhone !== '' && !empty($context['party_type']) && !empty($context['party_id'])) {
+            if ($context['party_type'] === 'customer') {
+                Customer::where('id', $context['party_id'])->update(['phone' => $rawPhone]);
+            } elseif ($context['party_type'] === 'supplier') {
+                Supplier::where('id', $context['party_id'])->update(['phone' => $rawPhone]);
+            }
+        }
 
         // Clean up any expired temporary shared PDFs (and any legacy public shared-pdfs)
         $this->cleanupExpiredSharedPdfs();
@@ -172,52 +363,83 @@ class DocumentShareService
         Storage::disk('local')->put($storedPath, $pdfBytes);
         $signedPdfUrl = $this->buildSignedPdfUrl($type, $params);
 
-        // If WhatsApp Cloud API credentials are configured and a phone number is provided, upload & send the actual PDF document
-        if ($this->isWhatsAppApiConfigured() && $normalizedPhone !== '') {
-            $token = config('services.whatsapp.access_token');
-            $phoneNumberId = config('services.whatsapp.phone_number_id');
-            $version = config('services.whatsapp.api_version', 'v20.0');
+        // If WhatsApp API / Agent credentials are configured and a phone number is provided, dispatch the PDF document directly
+        if ($apiConfigured && $normalizedPhone !== '') {
+            $provider = $this->resolveWhatsAppProvider();
+            $autoFallback = (bool) config('services.whatsapp.auto_fallback', true);
 
-            $mediaResponse = Http::withToken($token)
-                ->attach('file', $pdfBytes, $filename, ['Content-Type' => 'application/pdf'])
-                ->post("https://graph.facebook.com/{$version}/{$phoneNumberId}/media", [
-                    'messaging_product' => 'whatsapp',
-                    'type'              => 'application/pdf',
-                ]);
+            try {
+                $dispatchResult = $this->dispatchPdfViaWhatsAppApi(
+                    provider: $provider,
+                    normalizedPhone: $normalizedPhone,
+                    pdfBytes: $pdfBytes,
+                    filename: $filename,
+                    caption: $caption,
+                    signedPdfUrl: $signedPdfUrl
+                );
 
-            if (!$mediaResponse->successful() || empty($mediaResponse->json('id'))) {
-                throw new RuntimeException('Failed to upload PDF document to WhatsApp Cloud API: ' . $mediaResponse->body());
+                return [
+                    'status'           => 'sent_via_api',
+                    'mode'             => 'cloud_api',
+                    'provider'         => $provider,
+                    'message'          => "PDF document ({$filename}) sent directly to WhatsApp (+{$normalizedPhone})",
+                    'filename'         => $filename,
+                    'stored_path'      => $storedPath,
+                    'signed_pdf_url'   => $signedPdfUrl,
+                    'normalized_phone' => $normalizedPhone,
+                    'whatsapp_msg_id'  => $dispatchResult['message_id'] ?? null,
+                ];
+            } catch (\Throwable $e) {
+                // For the Built-in Free Local WhatsApp Agent, if it isn't running or isn't linked via QR yet,
+                // auto-start it and return qr_required so ShareDocumentModal can show the live QR code inline!
+                if ($provider === 'local_agent') {
+                    try {
+                        $agentSvc = app(LocalWhatsAppAgentService::class);
+                        $agentStatus = $agentSvc->start();
+                    } catch (\Throwable) {
+                        $agentStatus = [];
+                    }
+
+                    return [
+                        'status'           => 'qr_required',
+                        'mode'             => 'qr_required',
+                        'provider'         => 'local_agent',
+                        'qr_data_url'      => $agentStatus['qr_data_url'] ?? null,
+                        'agent_status'     => $agentStatus['status'] ?? 'qr_ready',
+                        'message'          => 'Scan the WhatsApp QR code below once to send the PDF attachment directly on WhatsApp.',
+                        'filename'         => $filename,
+                        'stored_path'      => $storedPath,
+                        'signed_pdf_url'   => $signedPdfUrl,
+                        'mime_type'        => 'application/pdf',
+                        'size_bytes'       => strlen($pdfBytes),
+                        'pdf_base64'       => base64_encode($pdfBytes),
+                        'normalized_phone' => $normalizedPhone,
+                        'caption'          => $caption,
+                    ];
+                }
+
+                if (!$autoFallback) {
+                    throw $e;
+                }
+
+                $cleanError = $this->sanitizeWhatsAppErrorMessage($e->getMessage());
+
+                return [
+                    'status'           => 'api_fallback',
+                    'mode'             => 'client_file',
+                    'provider'         => $provider,
+                    'api_error'        => $cleanError,
+                    'message'          => "WhatsApp API could not deliver directly ({$cleanError}); PDF downloaded locally & opening WhatsApp chat",
+                    'filename'         => $filename,
+                    'stored_path'      => $storedPath,
+                    'signed_pdf_url'   => $signedPdfUrl,
+                    'mime_type'        => 'application/pdf',
+                    'size_bytes'       => strlen($pdfBytes),
+                    'pdf_base64'       => base64_encode($pdfBytes),
+                    'normalized_phone' => $normalizedPhone,
+                    'caption'          => $caption,
+                ];
             }
-
-            $mediaId = $mediaResponse->json('id');
-
-            $msgResponse = Http::withToken($token)
-                ->post("https://graph.facebook.com/{$version}/{$phoneNumberId}/messages", [
-                    'messaging_product' => 'whatsapp',
-                    'recipient_type'    => 'individual',
-                    'to'                => $normalizedPhone,
-                    'type'              => 'document',
-                    'document'          => [
-                        'id'       => $mediaId,
-                        'filename' => $filename,
-                        'caption'  => $caption,
-                    ],
-                ]);
-
-            if (!$msgResponse->successful()) {
-                throw new RuntimeException('Failed to send PDF document via WhatsApp Cloud API: ' . $msgResponse->body());
-            }
-
-            return [
-                'status'           => 'sent_via_api',
-                'mode'             => 'cloud_api',
-                'message'          => "PDF document ({$filename}) sent directly to WhatsApp (+{$normalizedPhone})",
-                'filename'         => $filename,
-                'stored_path'      => $storedPath,
-                'signed_pdf_url'   => $signedPdfUrl,
-                'normalized_phone' => $normalizedPhone,
-                'whatsapp_msg_id'  => $msgResponse->json('messages.0.id'),
-            ];
         }
 
         return [
@@ -233,6 +455,422 @@ class DocumentShareService
             'normalized_phone' => $normalizedPhone,
             'caption'          => $caption,
         ];
+    }
+
+    /**
+     * Dispatch a PDF document and caption through the configured WhatsApp API / Agent provider.
+     *
+     * @return array{message_id: ?string, provider: string}
+     */
+    public function dispatchPdfViaWhatsAppApi(
+        string $provider,
+        string $normalizedPhone,
+        string $pdfBytes,
+        string $filename,
+        string $caption,
+        ?string $signedPdfUrl = null
+    ): array {
+        $token = trim((string) config('services.whatsapp.access_token', ''));
+        $phoneOrInstanceId = trim((string) config('services.whatsapp.phone_number_id', ''));
+        $version = trim((string) config('services.whatsapp.api_version', 'v20.0')) ?: 'v20.0';
+        $customUrl = trim((string) config('services.whatsapp.api_url', ''));
+
+        // 1. Built-in Karobar Free WhatsApp Agent (Node.js + @whiskeysockets/baileys)
+        if ($provider === 'local_agent') {
+            $baseUrl = rtrim($customUrl !== '' ? $customUrl : 'http://127.0.0.1:3001', '/');
+            $endpoint = str_ends_with($baseUrl, '/send-document') ? $baseUrl : "{$baseUrl}/send-document";
+
+            $response = $this->executeWhatsAppHttp(function ($http) use ($token, $endpoint, $normalizedPhone, $filename, $pdfBytes, $caption) {
+                if ($token !== '') {
+                    $http = $http->withHeaders(['X-Api-Key' => $token]);
+                }
+
+                return $http->post($endpoint, [
+                    'phone'           => $normalizedPhone,
+                    'filename'        => $filename,
+                    'document_base64' => base64_encode($pdfBytes),
+                    'caption'         => $caption,
+                ]);
+            });
+
+            if (!$response->successful() || $response->json('ok') === false) {
+                $err = $response->json('message') ?? $response->body();
+                throw new RuntimeException('Built-in Free WhatsApp Agent error: ' . $err);
+            }
+
+            return [
+                'provider'   => 'local_agent',
+                'message_id' => (string) ($response->json('message_id') ?? 'local_agent_sent'),
+            ];
+        }
+
+        // 2. WAHA (WhatsApp HTTP API — 100% Free Open-Source Docker)
+        if ($provider === 'waha') {
+            $baseUrl = rtrim($customUrl !== '' ? $customUrl : 'http://localhost:3000', '/');
+            $endpoint = str_ends_with($baseUrl, '/api/sendFile') ? $baseUrl : "{$baseUrl}/api/sendFile";
+            $sessionName = $phoneOrInstanceId !== '' ? $phoneOrInstanceId : 'default';
+
+            $response = $this->executeWhatsAppHttp(function ($http) use ($token, $endpoint, $sessionName, $normalizedPhone, $filename, $pdfBytes, $caption) {
+                if ($token !== '') {
+                    $http = $http->withHeaders(['X-Api-Key' => $token]);
+                }
+
+                return $http->post($endpoint, [
+                    'session' => $sessionName,
+                    'chatId'  => $normalizedPhone . '@c.us',
+                    'file'    => [
+                        'mimetype' => 'application/pdf',
+                        'filename' => $filename,
+                        'data'     => base64_encode($pdfBytes),
+                    ],
+                    'caption' => $caption,
+                ]);
+            });
+
+            if (!$response->successful()) {
+                $err = $response->json('message') ?? $response->json('error') ?? $response->body();
+                throw new RuntimeException('WAHA Open-Source WhatsApp API error: ' . $err);
+            }
+
+            return [
+                'provider'   => 'waha',
+                'message_id' => (string) ($response->json('id') ?? $response->json('key.id') ?? 'waha_sent'),
+            ];
+        }
+
+        // 3. Evolution API (100% Free Open-Source WhatsApp Gateway)
+        if ($provider === 'evolution_api') {
+            $baseUrl = rtrim($customUrl !== '' ? $customUrl : 'http://localhost:8080', '/');
+            $instance = $phoneOrInstanceId !== '' ? $phoneOrInstanceId : 'default';
+            $endpoint = str_contains($baseUrl, '/message/sendMedia')
+                ? $baseUrl
+                : "{$baseUrl}/message/sendMedia/{$instance}";
+
+            $response = $this->executeWhatsAppHttp(function ($http) use ($token, $endpoint, $normalizedPhone, $filename, $pdfBytes, $caption) {
+                if ($token !== '') {
+                    $http = $http->withHeaders(['apikey' => $token]);
+                }
+
+                return $http->post($endpoint, [
+                    'number'    => $normalizedPhone,
+                    'mediatype' => 'document',
+                    'mimetype'  => 'application/pdf',
+                    'media'     => base64_encode($pdfBytes),
+                    'fileName'  => $filename,
+                    'caption'   => $caption,
+                ]);
+            });
+
+            if (!$response->successful()) {
+                $err = $response->json('response.message') ?? $response->json('message') ?? $response->body();
+                if (is_array($err)) {
+                    $err = json_encode($err);
+                }
+                throw new RuntimeException('Evolution API error: ' . $err);
+            }
+
+            return [
+                'provider'   => 'evolution_api',
+                'message_id' => (string) ($response->json('key.id') ?? $response->json('id') ?? 'evolution_sent'),
+            ];
+        }
+
+        if ($provider === 'whapi_cloud') {
+            $endpoint = rtrim($customUrl !== '' ? $customUrl : 'https://gate.whapi.cloud', '/') . '/messages/document';
+            $dataUri = 'data:application/pdf;name=' . rawurlencode($filename) . ';base64,' . base64_encode($pdfBytes);
+
+            $response = $this->executeWhatsAppHttp(fn ($http) => $http
+                ->withToken($token)
+                ->post($endpoint, [
+                    'to'       => $normalizedPhone,
+                    'media'    => $dataUri,
+                    'filename' => $filename,
+                    'caption'  => $caption,
+                ])
+            );
+
+            if (!$response->successful() || $response->json('error')) {
+                $err = $response->json('error.message') ?? $response->json('message') ?? $response->body();
+                throw new RuntimeException('Whapi.Cloud Agent API error: ' . $err);
+            }
+
+            return [
+                'provider'   => 'whapi_cloud',
+                'message_id' => (string) ($response->json('message.id') ?? $response->json('id') ?? 'whapi_sent'),
+            ];
+        }
+
+        if ($provider === 'wasender') {
+            $endpoint = rtrim($customUrl !== '' ? $customUrl : 'https://www.wasenderapi.com', '/') . '/api/send-message';
+            $payload = [
+                'phone'    => '+' . $normalizedPhone,
+                'text'     => $caption,
+                'filename' => $filename,
+                'document' => 'data:application/pdf;base64,' . base64_encode($pdfBytes),
+            ];
+            if ($signedPdfUrl) {
+                $payload['documentUrl'] = $signedPdfUrl;
+            }
+
+            $response = $this->executeWhatsAppHttp(fn ($http) => $http
+                ->withToken($token)
+                ->post($endpoint, $payload)
+            );
+
+            if (!$response->successful() || $response->json('success') === false) {
+                $err = $response->json('message') ?? $response->json('error') ?? $response->body();
+                throw new RuntimeException('WasenderAPI Agent error: ' . $err);
+            }
+
+            return [
+                'provider'   => 'wasender',
+                'message_id' => (string) ($response->json('data.msgId') ?? $response->json('id') ?? 'wasender_sent'),
+            ];
+        }
+
+        if ($provider === 'ultramsg') {
+            $cleanInstance = preg_replace('/^instance/i', '', $phoneOrInstanceId) ?: $phoneOrInstanceId;
+            $instancePath = 'instance' . $cleanInstance;
+            $endpoint = rtrim($customUrl !== '' ? $customUrl : 'https://api.ultramsg.com', '/') . "/{$instancePath}/messages/document";
+
+            $response = $this->executeWhatsAppHttp(fn ($http) => $http
+                ->asForm()
+                ->post($endpoint, [
+                    'token'    => $token,
+                    'to'       => '+' . $normalizedPhone,
+                    'filename' => $filename,
+                    'document' => base64_encode($pdfBytes),
+                    'caption'  => $caption,
+                ])
+            );
+
+            if (!$response->successful() || !empty($response->json('error'))) {
+                $err = is_string($response->json('error'))
+                    ? $response->json('error')
+                    : json_encode($response->json('error') ?: $response->body());
+                throw new RuntimeException('UltraMsg WhatsApp Gateway error: ' . $err);
+            }
+
+            return [
+                'provider'   => 'ultramsg',
+                'message_id' => (string) ($response->json('id') ?? 'ultramsg_sent'),
+            ];
+        }
+
+        if ($provider === 'green_api') {
+            $cleanInstance = preg_replace('/^waInstance/i', '', $phoneOrInstanceId) ?: $phoneOrInstanceId;
+            $baseUrl = rtrim($customUrl !== '' ? $customUrl : 'https://api.green-api.com', '/');
+            $endpoint = "{$baseUrl}/waInstance{$cleanInstance}/sendFileByUpload/{$token}";
+
+            $response = $this->executeWhatsAppHttp(fn ($http) => $http
+                ->attach('file', $pdfBytes, $filename, ['Content-Type' => 'application/pdf'])
+                ->post($endpoint, [
+                    'chatId'   => $normalizedPhone . '@c.us',
+                    'fileName' => $filename,
+                    'caption'  => $caption,
+                ])
+            );
+
+            if (!$response->successful() || empty($response->json('idMessage'))) {
+                throw new RuntimeException('Green-API WhatsApp Gateway error: ' . $response->body());
+            }
+
+            return [
+                'provider'   => 'green_api',
+                'message_id' => (string) $response->json('idMessage'),
+            ];
+        }
+
+        if ($provider === 'custom_http') {
+            if ($customUrl === '') {
+                throw new RuntimeException('Custom WhatsApp API endpoint URL is not configured.');
+            }
+
+            $response = $this->executeWhatsAppHttp(function ($http) use ($token, $customUrl, $normalizedPhone, $caption, $filename, $pdfBytes, $signedPdfUrl) {
+                if ($token !== '') {
+                    $http = $http->withToken($token);
+                }
+                return $http->post($customUrl, [
+                    'to'             => $normalizedPhone,
+                    'phone'          => '+' . $normalizedPhone,
+                    'caption'        => $caption,
+                    'message'        => $caption,
+                    'filename'       => $filename,
+                    'mime_type'      => 'application/pdf',
+                    'pdf_base64'     => base64_encode($pdfBytes),
+                    'media'          => 'data:application/pdf;base64,' . base64_encode($pdfBytes),
+                    'signed_pdf_url' => $signedPdfUrl,
+                ]);
+            });
+
+            if (!$response->successful()) {
+                throw new RuntimeException('Custom WhatsApp API error (HTTP ' . $response->status() . '): ' . $response->body());
+            }
+
+            return [
+                'provider'   => 'custom_http',
+                'message_id' => (string) ($response->json('id') ?? $response->json('message_id') ?? $response->json('messages.0.id') ?? 'custom_sent'),
+            ];
+        }
+
+        // Default: Official Meta WhatsApp Cloud API ('meta_cloud')
+        $mediaResponse = $this->executeWhatsAppHttp(fn ($http) => $http
+            ->withToken($token)
+            ->attach('file', $pdfBytes, $filename, ['Content-Type' => 'application/pdf'])
+            ->post("https://graph.facebook.com/{$version}/{$phoneOrInstanceId}/media", [
+                'messaging_product' => 'whatsapp',
+                'type'              => 'application/pdf',
+            ])
+        );
+
+        if (!$mediaResponse->successful() || empty($mediaResponse->json('id'))) {
+            throw new RuntimeException('Failed to upload PDF document to WhatsApp Cloud API: ' . $mediaResponse->body());
+        }
+
+        $mediaId = $mediaResponse->json('id');
+
+        $msgResponse = $this->executeWhatsAppHttp(fn ($http) => $http
+            ->withToken($token)
+            ->post("https://graph.facebook.com/{$version}/{$phoneOrInstanceId}/messages", [
+                'messaging_product' => 'whatsapp',
+                'recipient_type'    => 'individual',
+                'to'                => $normalizedPhone,
+                'type'              => 'document',
+                'document'          => [
+                    'id'       => $mediaId,
+                    'filename' => $filename,
+                    'caption'  => $caption,
+                ],
+            ])
+        );
+
+        // If Meta rejects free-form message due to 24-hour customer service window and a template is configured, fallback to template
+        $templateName = trim((string) config('services.whatsapp.template_name', ''));
+        if (!$msgResponse->successful() && $templateName !== '') {
+            $templateLang = trim((string) config('services.whatsapp.template_language', 'en_US')) ?: 'en_US';
+            $msgResponse = $this->executeWhatsAppHttp(fn ($http) => $http
+                ->withToken($token)
+                ->post("https://graph.facebook.com/{$version}/{$phoneOrInstanceId}/messages", [
+                    'messaging_product' => 'whatsapp',
+                    'recipient_type'    => 'individual',
+                    'to'                => $normalizedPhone,
+                    'type'              => 'template',
+                    'template'          => [
+                        'name'       => $templateName,
+                        'language'   => ['code' => $templateLang],
+                        'components' => [
+                            [
+                                'type'       => 'header',
+                                'parameters' => [
+                                    [
+                                        'type'     => 'document',
+                                        'document' => [
+                                            'id'       => $mediaId,
+                                            'filename' => $filename,
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ])
+            );
+        }
+
+        if (!$msgResponse->successful()) {
+            throw new RuntimeException('Failed to send PDF document via WhatsApp Cloud API: ' . $msgResponse->body());
+        }
+
+        return [
+            'provider'   => 'meta_cloud',
+            'message_id' => $msgResponse->json('messages.0.id'),
+        ];
+    }
+
+    /**
+     * Send a live test PDF document via the currently configured WhatsApp API provider.
+     */
+    public function sendTestWhatsAppMessage(string $rawPhone, string $storeName = 'Karobar App'): array
+    {
+        $normalizedPhone = $this->normalizePhone($rawPhone);
+        if ($normalizedPhone === '') {
+            throw new InvalidArgumentException('Please enter a valid recipient WhatsApp phone number.');
+        }
+
+        $provider = $this->resolveWhatsAppProvider();
+        $caption = "*{$storeName}*\n"
+            . "WhatsApp Document Delivery Verification\n\n"
+            . "Your WhatsApp integration ({$provider}) is active and ready to dispatch PDF invoices, purchase orders, quotations, and statements.";
+
+        $samplePdf = Pdf::loadHTML(
+            '<html><body style="font-family: DejaVu Sans, sans-serif; padding: 32px;">'
+            . '<h2 style="color: #0f172a; margin-bottom: 8px;">' . e($storeName) . ' — Document Delivery Verification</h2>'
+            . '<p style="color: #334155; font-size: 13px;">This verification document confirms that Karobar App ERP can generate and deliver A4 PDF documents directly to WhatsApp (+' . e($normalizedPhone) . ').</p>'
+            . '<hr style="border: none; border-top: 1px solid #cbd5e1; margin: 16px 0;" />'
+            . '<p style="font-size: 11px; color: #64748b;">Provider: ' . e($provider) . ' | Timestamp: ' . now()->format('d M Y H:i:s') . '</p>'
+            . '</body></html>'
+        )->setPaper('a4', 'portrait')->output();
+
+        $result = $this->dispatchPdfViaWhatsAppApi(
+            provider: $provider,
+            normalizedPhone: $normalizedPhone,
+            pdfBytes: $samplePdf,
+            filename: 'WhatsApp_Test_Invoice.pdf',
+            caption: $caption,
+            signedPdfUrl: url('/')
+        );
+
+        return [
+            'status'           => 'sent',
+            'provider'         => $provider,
+            'normalized_phone' => $normalizedPhone,
+            'whatsapp_msg_id'  => $result['message_id'] ?? null,
+            'message'          => "Test WhatsApp PDF sent successfully to +{$normalizedPhone} via {$provider}!",
+        ];
+    }
+
+    /**
+     * Execute an outbound HTTP call for WhatsApp API with CA-bundle resolution and local SSL fallback.
+     */
+    protected function executeWhatsAppHttp(callable $callback): \Illuminate\Http\Client\Response
+    {
+        $options = ['force_ip_resolve' => 'v4'];
+        $caBundle = Setting::resolveValidCaBundlePath();
+        if ($caBundle !== null) {
+            $options['verify'] = $caBundle;
+        }
+
+        try {
+            $pending = Http::withOptions($options)->connectTimeout(10)->timeout(30);
+            return $callback($pending);
+        } catch (\Throwable $e) {
+            $lower = strtolower($e->getMessage());
+            $isSslError = str_contains($lower, 'curl error 60')
+                || str_contains($lower, 'curl error 77')
+                || str_contains($lower, 'ssl certificate')
+                || str_contains($lower, 'unable to get local issuer certificate');
+
+            if ($isSslError) {
+                $pending = Http::withoutVerifying()
+                    ->withOptions(['force_ip_resolve' => 'v4', 'verify' => false])
+                    ->connectTimeout(10)
+                    ->timeout(30);
+                return $callback($pending);
+            }
+
+            throw $e;
+        }
+    }
+
+    protected function sanitizeWhatsAppErrorMessage(string $message): string
+    {
+        $token = trim((string) config('services.whatsapp.access_token', ''));
+        $clean = trim($message);
+        if ($token !== '' && strlen($token) >= 4) {
+            $clean = str_replace($token, '[REDACTED]', $clean);
+        }
+
+        return mb_substr($clean, 0, 260);
     }
 
     /**
@@ -275,14 +913,25 @@ class DocumentShareService
     public function generatePdf(string $type, array $params): array
     {
         $context = $this->resolveDocumentContext($type, $params);
+        $selectedDesign = $this->resolvePdfDesign($params['template'] ?? null, $context['view_data']['setting'] ?? null);
+        $context['view_data']['pdfDesign'] = $selectedDesign;
+        $context['pdf_template'] = $selectedDesign;
 
-        $pdf = Pdf::loadView($context['view'], $context['view_data'])
-            ->setPaper('a4', 'portrait');
+        // Ensure storage/fonts exists for DomPDF .ufm metrics caching
+        \App\Support\UrduPdfTextShaper::resolveUrduFontUrls();
+
+        $rawHtml = view($context['view'], $context['view_data'])->render();
+        $shapedHtml = \App\Support\UrduPdfTextShaper::shapeHtml($rawHtml);
+
+        $pdf = Pdf::loadHTML($shapedHtml)
+            ->setPaper('a4', 'portrait')
+            ->setOption('isFontSubsettingEnabled', true);
 
         return [
-            'pdf'      => $pdf,
-            'filename' => $context['filename'],
-            'context'  => $context,
+            'pdf'          => $pdf,
+            'filename'     => $context['filename'],
+            'pdf_template' => $selectedDesign,
+            'context'      => $context,
         ];
     }
 
@@ -340,48 +989,144 @@ class DocumentShareService
         $received = (float) ($invoice->total_receive ?? 0);
         $remaining = max(0, $total - $received);
         $custName = $customer->name ?? 'Valued Customer';
+        $storePhone = trim((string) ($setting?->phone_number ?? ''));
+        $storeAddress = trim((string) ($setting?->address ?? ''));
+        $itemsCount = $invoice->items->count();
+        $totalUnits = (int) round((float) $invoice->items->sum(function ($it) {
+            $q = (float) ($it->quantity ?? 0);
+            if ($q <= 0) {
+                $ps = max(1, (int) ($it->pack_size ?? $it->product?->pack_size ?? 1));
+                $q = ((float) ($it->pack_quantity ?? 0) * $ps) + (float) ($it->unit_quantity ?? 0);
+            }
+            return $q;
+        }));
 
-        $waLines = [
+        $rawNote = trim((string) ($setting?->note ?? ''));
+        $hasUrduNote = \App\Support\UrduPdfTextShaper::containsUrdu($rawNote);
+
+        // 1. Proper English Invoice Note (never mixes raw Urdu lines into the English format)
+        $englishNote = (!$hasUrduNote && $rawNote !== '')
+            ? $rawNote
+            : "Refrigerated, loose, used, or cut-strip medicines are non-returnable.\nReturn or exchange is accepted within 7 days along with the original bill.\nThank you for your cooperation.";
+
+        // 2. Proper Urdu Invoice Note
+        $urduNote = ($hasUrduNote && $rawNote !== '')
+            ? $rawNote
+            : "فریج میڈیسن، کھلی میڈیسن، استعمال شدہ میڈیسن اور کٹی ہوئی میڈیسن ناقابلِ واپسی ہے۔\nواپسی یا تبدیلی 7 دن کے اندر اصل بل کے ہمراہ ہوگی۔\nآپ کے تعاون کا شکریہ۔";
+
+        // Format A: Proper English Invoice Text
+        $waEnLines = array_values(array_filter([
             "*{$storeName}*",
-            "🧾 *Sale Invoice: {$docNo}*",
-            "📅 Date: {$dateStr}",
-            "👤 Customer: {$custName}",
+            $storeAddress !== '' ? $storeAddress : null,
+            $storePhone !== '' ? "Tel: {$storePhone}" : null,
             "────────────────────",
-            "💰 *Invoice Total:* Rs. " . number_format($total, 2),
-            "✅ *Received:* Rs. " . number_format($received, 2),
-            "📌 *Balance (This Invoice):* Rs. " . number_format($remaining, 2),
-        ];
-        if ($customerTotalDue !== null) {
-            $waLines[] = "📊 *Total Account Balance Due:* Rs. " . number_format($customerTotalDue, 2);
-        }
-        $waLines[] = "\nThank you for your business!";
+            "*SALE INVOICE*",
+            "Invoice No: *{$docNo}*",
+            "Date: {$dateStr}",
+            "Customer: {$custName}",
+            $itemsCount > 0 ? "Items: {$itemsCount} (" . number_format($totalUnits) . " units)" : null,
+            "",
+            "*Billing Summary*",
+            "Invoice Total: *Rs. " . number_format($total, 2) . "*",
+            "Amount Received: Rs. " . number_format($received, 2),
+            "Balance Due (This Invoice): Rs. " . number_format($remaining, 2),
+            $customerTotalDue !== null ? "Total Account Balance Due: *Rs. " . number_format($customerTotalDue, 2) . "*" : null,
+            "",
+            "*Terms & Return Policy:*",
+            $englishNote,
+            "",
+            "Please find the official invoice PDF attached for your records.",
+        ], fn ($line) => $line !== null));
 
-        $emailSubject = "Sale Invoice {$docNo} from {$storeName}";
-        $emailBody = "Dear {$custName},\n\n"
-            . "Please find attached your Sale Invoice ({$docNo}) dated {$dateStr} from {$storeName}.\n\n"
+        // Format B: Proper Urdu Invoice Text (اردو فارمیٹ)
+        $waUrLines = array_values(array_filter([
+            "*{$storeName}*",
+            $storeAddress !== '' ? $storeAddress : null,
+            $storePhone !== '' ? "فون نمبر: {$storePhone}" : null,
+            "────────────────────",
+            "*سیل انوائس / بل کی تفصیل*",
+            "بل نمبر: *{$docNo}*",
+            "تاریخ: {$dateStr}",
+            "محترم کسٹمر: {$custName}",
+            $itemsCount > 0 ? "آئٹمز کی تعداد: {$itemsCount} (" . number_format($totalUnits) . " یونٹس)" : null,
+            "",
+            "*بل کا خلاصہ:*",
+            "کل بل: *Rs. " . number_format($total, 2) . "*",
+            "وصول شدہ رقم: Rs. " . number_format($received, 2),
+            "بقایا رقم (موجودہ بل): Rs. " . number_format($remaining, 2),
+            $customerTotalDue !== null ? "کل کھاتہ بقایا: *Rs. " . number_format($customerTotalDue, 2) . "*" : null,
+            "",
+            "*ضروری ہدایات و شرائط:*",
+            $urduNote,
+            "",
+            "مکمل بل پی ڈی ایف (PDF) فائل کی صورت میں منسلک ہے۔",
+        ], fn ($line) => $line !== null));
+
+        $emailSubjectEn = "Sale Invoice {$docNo} — {$storeName}";
+        $emailBodyEn = "Dear {$custName},\n\n"
+            . "Please find attached the official Sale Invoice ({$docNo}) dated {$dateStr} issued by {$storeName}.\n\n"
+            . "BILLING SUMMARY\n"
+            . "----------------------------------------\n"
+            . "Invoice No: {$docNo}\n"
+            . "Invoice Date: {$dateStr}\n"
             . "Invoice Total: Rs. " . number_format($total, 2) . "\n"
-            . "Received Amount: Rs. " . number_format($received, 2) . "\n"
-            . "Remaining Invoice Balance: Rs. " . number_format($remaining, 2) . "\n"
+            . "Amount Received: Rs. " . number_format($received, 2) . "\n"
+            . "Balance Due (This Invoice): Rs. " . number_format($remaining, 2) . "\n"
             . ($customerTotalDue !== null ? "Total Account Balance Due: Rs. " . number_format($customerTotalDue, 2) . "\n" : '')
-            . "\nThank you for your business!\n\nBest regards,\n{$storeName}";
+            . "----------------------------------------\n\n"
+            . "TERMS & RETURN POLICY:\n"
+            . "{$englishNote}\n\n"
+            . "Sincerely,\n"
+            . "{$storeName}"
+            . ($storePhone !== '' ? "\nTel: {$storePhone}" : '')
+            . ($storeAddress !== '' ? "\n{$storeAddress}" : '');
+
+        $emailSubjectUr = "سیل انوائس {$docNo} — {$storeName}";
+        $emailBodyUr = "محترم {$custName}،\n"
+            . "السلام علیکم!\n\n"
+            . "{$storeName} کی جانب سے آپ کا سیل انوائس / بل نمبر ({$docNo}) مورخہ {$dateStr} پی ڈی ایف (PDF) فائل کی صورت میں اس ای میل کے ساتھ منسلک ہے۔\n\n"
+            . "بل کا خلاصہ:\n"
+            . "----------------------------------------\n"
+            . "بل نمبر: {$docNo}\n"
+            . "تاریخ: {$dateStr}\n"
+            . "کل بل: Rs. " . number_format($total, 2) . "\n"
+            . "وصول شدہ رقم: Rs. " . number_format($received, 2) . "\n"
+            . "بقایا رقم (موجودہ بل): Rs. " . number_format($remaining, 2) . "\n"
+            . ($customerTotalDue !== null ? "کل کھاتہ بقایا: Rs. " . number_format($customerTotalDue, 2) . "\n" : '')
+            . "----------------------------------------\n\n"
+            . "ضروری ہدایات و شرائط:\n"
+            . "{$urduNote}\n\n"
+            . "والسلام،\n"
+            . "{$storeName}"
+            . ($storePhone !== '' ? "\nفون نمبر: {$storePhone}" : '')
+            . ($storeAddress !== '' ? "\n{$storeAddress}" : '');
+
+        $whatsappTextEn = implode("\n", $waEnLines);
+        $whatsappTextUr = implode("\n", $waUrLines);
 
         return [
-            'title'           => "Sale Invoice {$docNo}",
-            'filename'        => 'Sale_Invoice_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $docNo) . '.pdf',
-            'view'            => 'pdf.sale_invoice',
-            'view_data'       => [
+            'title'            => "Sale Invoice {$docNo}",
+            'filename'         => 'Sale_Invoice_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $docNo) . '.pdf',
+            'view'             => 'pdf.sale_invoice',
+            'view_data'        => [
                 'invoice'          => $invoice,
                 'setting'          => $setting,
                 'customerTotalDue' => $customerTotalDue,
             ],
-            'party_type'      => $customer ? 'customer' : null,
-            'party_id'        => $customer?->id,
-            'recipient_name'  => $custName,
-            'recipient_phone' => $customer?->phone ?? '',
-            'recipient_email' => $customer?->email ?? '',
-            'whatsapp_text'   => implode("\n", $waLines),
-            'email_subject'   => $emailSubject,
-            'email_body'      => $emailBody,
+            'party_type'       => $customer ? 'customer' : null,
+            'party_id'         => $customer?->id,
+            'recipient_name'   => $custName,
+            'recipient_phone'  => $customer?->phone ?? '',
+            'recipient_email'  => $customer?->email ?? '',
+            'whatsapp_text'    => $whatsappTextEn,
+            'whatsapp_text_en' => $whatsappTextEn,
+            'whatsapp_text_ur' => $whatsappTextUr,
+            'email_subject'    => $emailSubjectEn,
+            'email_subject_en' => $emailSubjectEn,
+            'email_subject_ur' => $emailSubjectUr,
+            'email_body'       => $emailBodyEn,
+            'email_body_en'    => $emailBodyEn,
+            'email_body_ur'    => $emailBodyUr,
         ];
     }
 
@@ -522,23 +1267,25 @@ class DocumentShareService
 
         $waLines = [
             "*{$storeName}*",
-            "📒 *Customer Account Statement*",
-            "👤 Customer: {$customer->name}",
-            "📅 Period: {$periodLabel}",
-            "────────────────────",
-            "🧾 Total Invoiced: Rs. " . number_format($sumInv, 2),
-            "✅ Total Received: Rs. " . number_format($sumRecv + $sumPay, 2),
-            "📌 *Net Balance Due: Rs. " . number_format($netBal, 2) . "*",
-            "\nPlease review your attached statement.",
+            "Customer Account Statement",
+            "Customer: {$customer->name}",
+            "Statement Period: {$periodLabel}",
+            "",
+            "Total Invoiced: Rs. " . number_format($sumInv, 2),
+            "Total Received: Rs. " . number_format($sumRecv + $sumPay, 2),
+            "Net Balance Due: *Rs. " . number_format($netBal, 2) . "*",
+            "",
+            "Please find your detailed account statement attached.",
         ];
 
-        $emailSubject = "Account Statement ({$customer->name}) - {$storeName}";
+        $emailSubject = "Account Statement ({$customer->name}) — {$storeName}";
         $emailBody = "Dear {$customer->name},\n\n"
-            . "Please find attached your Customer Ledger Statement from {$storeName} for the period {$periodLabel}.\n\n"
+            . "Please find attached your Customer Account Statement from {$storeName} for the period {$periodLabel}.\n\n"
+            . "Statement Summary:\n"
             . "Total Invoiced: Rs. " . number_format($sumInv, 2) . "\n"
             . "Total Payments Received: Rs. " . number_format($sumRecv + $sumPay, 2) . "\n"
             . "Current Net Balance Due: Rs. " . number_format($netBal, 2) . "\n\n"
-            . "Best regards,\n{$storeName}";
+            . "Sincerely,\n{$storeName}";
 
         return [
             'title'           => "Customer Statement - {$customer->name}",
@@ -627,22 +1374,25 @@ class DocumentShareService
 
         $waLines = [
             "*{$storeName}*",
-            "📒 *Supplier Account Statement*",
-            "🏢 Supplier: {$supplier->name}",
-            "📅 Period: {$periodLabel}",
-            "────────────────────",
-            "🧾 Total Invoiced: Rs. " . number_format($sumInv, 2),
-            "✅ Total Paid: Rs. " . number_format($sumPaid + $sumDeb, 2),
-            "📌 *Net Payable Balance: Rs. " . number_format($netBal, 2) . "*",
+            "Supplier Account Statement",
+            "Supplier: {$supplier->name}",
+            "Statement Period: {$periodLabel}",
+            "",
+            "Total Invoiced: Rs. " . number_format($sumInv, 2),
+            "Total Paid: Rs. " . number_format($sumPaid + $sumDeb, 2),
+            "Net Payable Balance: *Rs. " . number_format($netBal, 2) . "*",
+            "",
+            "Please find the supplier ledger statement attached.",
         ];
 
-        $emailSubject = "Supplier Ledger Statement ({$supplier->name}) - {$storeName}";
+        $emailSubject = "Supplier Account Statement ({$supplier->name}) — {$storeName}";
         $emailBody = "Dear {$supplier->name},\n\n"
-            . "Please find attached our Supplier Account Statement from {$storeName} for the period {$periodLabel}.\n\n"
+            . "Please find attached the Supplier Account Statement from {$storeName} for the period {$periodLabel}.\n\n"
+            . "Statement Summary:\n"
             . "Total Invoiced: Rs. " . number_format($sumInv, 2) . "\n"
             . "Total Paid: Rs. " . number_format($sumPaid + $sumDeb, 2) . "\n"
             . "Net Payable Balance: Rs. " . number_format($netBal, 2) . "\n\n"
-            . "Best regards,\n{$storeName}";
+            . "Sincerely,\n{$storeName}";
 
         return [
             'title'           => "Supplier Statement - {$supplier->name}",
@@ -688,23 +1438,25 @@ class DocumentShareService
 
         $waLines = [
             "*{$storeName}*",
-            "💳 *{$docLabel}: {$voucherNo}*",
-            "📅 Date: {$dateStr}",
-            "👤 " . ($isCustomer ? 'Customer' : 'Supplier') . ": {$partyName}",
-            "────────────────────",
-            "💰 *Amount " . ($isCustomer ? 'Received' : 'Paid') . ":* Rs. " . number_format($totalAmount, 2),
-            "🏦 Method: " . strtoupper(str_replace('_', ' ', $payment->payment_method ?? 'CASH')),
+            "{$docLabel}: *{$voucherNo}*",
+            "Date: {$dateStr}",
+            ($isCustomer ? 'Customer' : 'Supplier') . ": {$partyName}",
+            "",
+            "Amount " . ($isCustomer ? 'Received' : 'Paid') . ": *Rs. " . number_format($totalAmount, 2) . "*",
+            "Payment Method: " . strtoupper(str_replace('_', ' ', $payment->payment_method ?? 'CASH')),
         ];
         if ($payment->reference) {
-            $waLines[] = "🔖 Ref #: {$payment->reference}";
+            $waLines[] = "Reference: {$payment->reference}";
         }
+        $waLines[] = "";
+        $waLines[] = "Please find the official voucher attached.";
 
-        $emailSubject = "{$docLabel} {$voucherNo} from {$storeName}";
+        $emailSubject = "{$docLabel} {$voucherNo} — {$storeName}";
         $emailBody = "Dear {$partyName},\n\n"
-            . "Please find attached the {$docLabel} ({$voucherNo}) dated {$dateStr} from {$storeName}.\n\n"
-            . "Total Amount " . ($isCustomer ? 'Received' : 'Paid') . ": Rs. " . number_format($totalAmount, 2) . "\n"
+            . "Please find attached {$docLabel} ({$voucherNo}) dated {$dateStr} issued by {$storeName}.\n\n"
+            . "Amount " . ($isCustomer ? 'Received' : 'Paid') . ": Rs. " . number_format($totalAmount, 2) . "\n"
             . "Payment Method: " . strtoupper(str_replace('_', ' ', $payment->payment_method ?? 'CASH')) . "\n\n"
-            . "Best regards,\n{$storeName}";
+            . "Sincerely,\n{$storeName}";
 
         return [
             'title'           => "{$docLabel} {$voucherNo}",
@@ -742,24 +1494,26 @@ class DocumentShareService
 
         $waLines = [
             "*{$storeName}*",
-            "📦 *Purchase Order: {$poNo}*",
-            "📅 Order Date: {$dateStr}",
-            "🏢 Supplier: {$supplierName}",
-            "🚚 Expected Delivery: {$deliveryStr}",
-            "────────────────────",
-            "📋 Total Line Items: {$itemsCount}",
-            "💰 *Estimated Order Total:* Rs. " . number_format($totalAmount, 2),
-            "\nPlease confirm receipt of this Purchase Order.",
+            "Purchase Order: *{$poNo}*",
+            "Order Date: {$dateStr}",
+            "Supplier: {$supplierName}",
+            "Expected Delivery: {$deliveryStr}",
+            "",
+            "Total Line Items: {$itemsCount}",
+            "Order Total: *Rs. " . number_format($totalAmount, 2) . "*",
+            "",
+            "Please find our official Purchase Order attached and confirm receipt.",
         ];
 
-        $emailSubject = "Purchase Order {$poNo} from {$storeName}";
+        $emailSubject = "Purchase Order {$poNo} — {$storeName}";
         $emailBody = "Dear {$supplierName},\n\n"
             . "Please find attached our official Purchase Order ({$poNo}) dated {$dateStr} from {$storeName}.\n\n"
+            . "Order Summary:\n"
             . "Total Line Items: {$itemsCount}\n"
             . "Estimated Order Value: Rs. " . number_format($totalAmount, 2) . "\n"
             . "Expected Delivery Date: {$deliveryStr}\n\n"
             . "Kindly confirm receipt and expected dispatch schedule.\n\n"
-            . "Best regards,\n{$storeName}";
+            . "Sincerely,\n{$storeName}";
 
         return [
             'title'           => "Purchase Order {$poNo}",
@@ -822,22 +1576,24 @@ class DocumentShareService
 
         $waLines = [
             "*{$storeName}*",
-            "📦 *Purchase Invoice (GRN): {$docNo}*",
-            "📅 Date: {$dateStr}",
-            "🏢 Supplier: {$supplierName}",
-            "────────────────────",
-            "💰 *Invoice Total:* Rs. " . number_format($total, 2),
-            "✅ *Paid:* Rs. " . number_format($paid, 2),
-            "📌 *Balance Payable:* Rs. " . number_format($remaining, 2),
+            "Purchase Invoice (GRN): *{$docNo}*",
+            "Date: {$dateStr}",
+            "Supplier: {$supplierName}",
+            "",
+            "Invoice Total: Rs. " . number_format($total, 2),
+            "Amount Paid: Rs. " . number_format($paid, 2),
+            "Balance Payable: *Rs. " . number_format($remaining, 2) . "*",
+            "",
+            "Please find the Purchase Invoice (GRN) PDF attached.",
         ];
 
-        $emailSubject = "Purchase Invoice (GRN) {$docNo} - {$storeName}";
+        $emailSubject = "Purchase Invoice (GRN) {$docNo} — {$storeName}";
         $emailBody = "Dear {$supplierName},\n\n"
             . "Please find attached Purchase Invoice / GRN ({$docNo}) dated {$dateStr} recorded by {$storeName}.\n\n"
             . "Invoice Total: Rs. " . number_format($total, 2) . "\n"
             . "Amount Paid: Rs. " . number_format($paid, 2) . "\n"
             . "Remaining Payable: Rs. " . number_format($remaining, 2) . "\n\n"
-            . "Best regards,\n{$storeName}";
+            . "Sincerely,\n{$storeName}";
 
         return [
             'title'           => "Purchase Invoice {$docNo}",
@@ -869,18 +1625,20 @@ class DocumentShareService
 
         $waLines = [
             "*{$storeName}*",
-            "↩️ *Sale Return / Credit Note: {$docNo}*",
-            "📅 Date: {$dateStr}",
-            "👤 Customer: {$custName}",
-            "────────────────────",
-            "💰 *Return Credit Total:* Rs. " . number_format($total, 2),
+            "Sale Return / Credit Note: *{$docNo}*",
+            "Date: {$dateStr}",
+            "Customer: {$custName}",
+            "",
+            "Return Credit Total: *Rs. " . number_format($total, 2) . "*",
+            "",
+            "Please find the Credit Note PDF attached.",
         ];
 
-        $emailSubject = "Sale Return Credit Note {$docNo} from {$storeName}";
+        $emailSubject = "Sale Return Credit Note {$docNo} — {$storeName}";
         $emailBody = "Dear {$custName},\n\n"
-            . "Please find attached your Sale Return / Credit Note ({$docNo}) dated {$dateStr} from {$storeName}.\n\n"
+            . "Please find attached Sale Return / Credit Note ({$docNo}) dated {$dateStr} issued by {$storeName}.\n\n"
             . "Total Return Amount: Rs. " . number_format($total, 2) . "\n\n"
-            . "Best regards,\n{$storeName}";
+            . "Sincerely,\n{$storeName}";
 
         return [
             'title'           => "Sale Return {$docNo}",
@@ -912,18 +1670,20 @@ class DocumentShareService
 
         $waLines = [
             "*{$storeName}*",
-            "↩️ *Purchase Return / Debit Note: {$docNo}*",
-            "📅 Date: {$dateStr}",
-            "🏢 Supplier: {$supplierName}",
-            "────────────────────",
-            "💰 *Return Debit Total:* Rs. " . number_format($total, 2),
+            "Purchase Return / Debit Note: *{$docNo}*",
+            "Date: {$dateStr}",
+            "Supplier: {$supplierName}",
+            "",
+            "Return Debit Total: *Rs. " . number_format($total, 2) . "*",
+            "",
+            "Please find the Debit Note PDF attached.",
         ];
 
-        $emailSubject = "Purchase Return Debit Note {$docNo} from {$storeName}";
+        $emailSubject = "Purchase Return Debit Note {$docNo} — {$storeName}";
         $emailBody = "Dear {$supplierName},\n\n"
-            . "Please find attached our Purchase Return / Debit Note ({$docNo}) dated {$dateStr} from {$storeName}.\n\n"
+            . "Please find attached Purchase Return / Debit Note ({$docNo}) dated {$dateStr} from {$storeName}.\n\n"
             . "Total Return Amount: Rs. " . number_format($total, 2) . "\n\n"
-            . "Best regards,\n{$storeName}";
+            . "Sincerely,\n{$storeName}";
 
         return [
             'title'           => "Purchase Return {$docNo}",
@@ -953,10 +1713,10 @@ class DocumentShareService
 
         $waLines = [
             "*{$storeName}*",
-            "🔥 *Official Stock Disposal Certificate: {$docNo}*",
-            "📅 Date: {$dateStr}",
-            "📌 Status: " . strtoupper($disposal->status ?? 'QUARANTINED'),
-            "💰 Total Cost Write-Off: Rs. " . number_format($totalCost, 2),
+            "Stock Disposal Certificate: *{$docNo}*",
+            "Date: {$dateStr}",
+            "Status: " . strtoupper($disposal->status ?? 'QUARANTINED'),
+            "Total Write-Off Value: Rs. " . number_format($totalCost, 2),
         ];
 
         return [
@@ -1000,8 +1760,8 @@ class DocumentShareService
             'recipient_name'  => $session->user?->name ?? 'Cashier',
             'recipient_phone' => '',
             'recipient_email' => $session->user?->email ?? '',
-            'whatsapp_text'   => "*{$storeName}*\n📠 *Cash Drawer Shift Z-Report ({$docNo})*\nOpened: {$openedStr}",
-            'email_subject'   => "Cash Drawer Z-Report ({$docNo}) - {$storeName}",
+            'whatsapp_text'   => "*{$storeName}*\nCash Drawer Shift Z-Report ({$docNo})\nOpened: {$openedStr}",
+            'email_subject'   => "Cash Drawer Z-Report ({$docNo}) — {$storeName}",
             'email_body'      => "Please find attached the Cash Drawer Shift Z-Report ({$docNo}) from {$storeName}.",
         ];
     }
@@ -1024,8 +1784,8 @@ class DocumentShareService
             'recipient_name'  => $session->user?->name ?? 'Inventory Auditor',
             'recipient_phone' => '',
             'recipient_email' => $session->user?->email ?? '',
-            'whatsapp_text'   => "*{$storeName}*\n📋 *Stocktake Report ({$docNo})*",
-            'email_subject'   => "Stocktake Session Report ({$docNo}) - {$storeName}",
+            'whatsapp_text'   => "*{$storeName}*\nStocktake Variance Report ({$docNo})",
+            'email_subject'   => "Stocktake Session Report ({$docNo}) — {$storeName}",
             'email_body'      => "Please find attached the Stocktake Count & Variance Report ({$docNo}) from {$storeName}.",
         ];
     }
@@ -1041,18 +1801,19 @@ class DocumentShareService
 
         $waLines = [
             "*{$storeName}*",
-            "🚚 *Delivery Challan / Gate Pass: {$docNo}*",
-            "📅 Date: {$dateStr}",
-            "👤 Consignee: {$custName}",
-            "📦 Total Dispatched Items: {$invoice->items->count()} lines ({$totalUnits} units)",
-            "\nPlease verify quantities and batch numbers upon delivery.",
+            "Delivery Challan / Gate Pass: *{$docNo}*",
+            "Date: {$dateStr}",
+            "Consignee: {$custName}",
+            "Dispatched Items: {$invoice->items->count()} lines ({$totalUnits} units)",
+            "",
+            "Please verify quantities and batch numbers upon receipt.",
         ];
 
-        $emailSubject = "Delivery Challan {$docNo} from {$storeName}";
+        $emailSubject = "Delivery Challan {$docNo} — {$storeName}";
         $emailBody = "Dear {$custName},\n\n"
-            . "Please find attached the Delivery Challan / Packing Slip ({$docNo}) for Sale Invoice #" . ($invoice->posted_number ?: $invoice->id) . " dated {$dateStr}.\n\n"
-            . "Total Lines: {$invoice->items->count()} ({$totalUnits} units)\n\n"
-            . "Best regards,\n{$storeName}";
+            . "Please find attached Delivery Challan / Packing Slip ({$docNo}) for Sale Invoice #" . ($invoice->posted_number ?: $invoice->id) . " dated {$dateStr}.\n\n"
+            . "Total Dispatched Lines: {$invoice->items->count()} ({$totalUnits} units)\n\n"
+            . "Sincerely,\n{$storeName}";
 
         return [
             'title'           => "Delivery Challan {$docNo}",
@@ -1099,19 +1860,20 @@ class DocumentShareService
 
         $waLines = [
             "*{$storeName}*",
-            "📄 *Price Quotation / Estimate: {$quotationNo}*",
-            "📅 Date: {$dateStr}",
-            "👤 Prepared For: {$custName}",
-            "────────────────────",
-            "💰 *Estimated Total:* Rs. " . number_format($total, 2),
-            "\nThank you for your inquiry!",
+            "Price Quotation: *{$quotationNo}*",
+            "Date: {$dateStr}",
+            "Prepared For: {$custName}",
+            "",
+            "Estimated Total: *Rs. " . number_format($total, 2) . "*",
+            "",
+            "Please find our official price quotation attached.",
         ];
 
-        $emailSubject = "Price Quotation {$quotationNo} from {$storeName}";
+        $emailSubject = "Price Quotation {$quotationNo} — {$storeName}";
         $emailBody = "Dear {$custName},\n\n"
-            . "Please find attached your Price Quotation / Estimate ({$quotationNo}) dated {$dateStr} from {$storeName}.\n\n"
+            . "Please find attached Price Quotation ({$quotationNo}) dated {$dateStr} prepared by {$storeName}.\n\n"
             . "Estimated Total: Rs. " . number_format($total, 2) . "\n\n"
-            . "Best regards,\n{$storeName}";
+            . "Sincerely,\n{$storeName}";
 
         return [
             'title'           => "Price Quotation {$quotationNo}",

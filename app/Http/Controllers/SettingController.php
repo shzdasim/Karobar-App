@@ -7,6 +7,7 @@ use App\Models\Setting;
 use App\Services\Cube\CubeQuotaGuard;
 use App\Services\Cube\GeminiProvider;
 use App\Services\Cube\GroqProvider;
+use App\Services\DocumentShareService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
@@ -104,9 +105,20 @@ class SettingController extends Controller
             'smtp_username'           => ['nullable', 'string', 'max:255'],
             'smtp_password'           => ['nullable', 'string', 'max:1000'],
             'smtp_encryption'         => ['nullable', Rule::in(['tls', 'ssl', 'none', ''])],
-            'smtp_from_address'       => ['nullable', 'email', 'max:255'],
-            'smtp_from_name'          => ['nullable', 'string', 'max:255'],
-            'cube_ai_enabled'         => ['nullable', 'boolean'],
+            'smtp_from_address'             => ['nullable', 'email', 'max:255'],
+            'smtp_from_name'                => ['nullable', 'string', 'max:255'],
+            'whatsapp_enabled'              => ['nullable', 'boolean'],
+            'whatsapp_provider'             => ['nullable', Rule::in(['local_agent', 'waha', 'evolution_api', 'whapi_cloud', 'wasender', 'ultramsg', 'green_api', 'meta_cloud', 'custom_http', ''])],
+            'whatsapp_access_token'         => ['nullable', 'string', 'max:2000'],
+            'whatsapp_phone_number_id'      => ['nullable', 'string', 'max:120'],
+            'whatsapp_business_account_id'  => ['nullable', 'string', 'max:120'],
+            'whatsapp_api_version'          => ['nullable', 'string', 'max:20'],
+            'whatsapp_api_url'              => ['nullable', 'string', 'max:500'],
+            'whatsapp_default_country_code' => ['nullable', 'string', 'max:10'],
+            'whatsapp_template_name'        => ['nullable', 'string', 'max:120'],
+            'whatsapp_template_language'    => ['nullable', 'string', 'max:20'],
+            'whatsapp_auto_fallback'        => ['nullable', 'boolean'],
+            'cube_ai_enabled'               => ['nullable', 'boolean'],
             'cube_groq_enabled'       => ['nullable', 'boolean'],
             'cube_groq_api_key'       => ['nullable', 'string', 'max:1000'],
             'cube_groq_model'         => ['nullable', 'string', 'max:120'],
@@ -139,6 +151,20 @@ class SettingController extends Controller
             'smtp_from_name',
         ];
 
+        $whatsappFields = [
+            'whatsapp_enabled',
+            'whatsapp_provider',
+            'whatsapp_access_token',
+            'whatsapp_phone_number_id',
+            'whatsapp_business_account_id',
+            'whatsapp_api_version',
+            'whatsapp_api_url',
+            'whatsapp_default_country_code',
+            'whatsapp_template_name',
+            'whatsapp_template_language',
+            'whatsapp_auto_fallback',
+        ];
+
         $cubeFields = [
             'cube_ai_enabled',
             'cube_groq_enabled',
@@ -151,8 +177,8 @@ class SettingController extends Controller
             'cube_gemini_daily_limit',
         ];
 
-        // Fill non-SMTP / non-Cube fields first
-        $setting->fill(collect($validated)->except(array_merge(['logo'], $smtpFields, $cubeFields))->toArray());
+        // Fill non-SMTP / non-WhatsApp / non-Cube fields first
+        $setting->fill(collect($validated)->except(array_merge(['logo'], $smtpFields, $whatsappFields, $cubeFields))->toArray());
 
         // Fill SMTP fields safely if columns exist on the settings table
         if (Schema::hasColumn('settings', 'smtp_host')) {
@@ -180,6 +206,44 @@ class SettingController extends Controller
             }
             if ($request->has('smtp_from_name')) {
                 $setting->smtp_from_name = $request->input('smtp_from_name');
+            }
+        }
+
+        // Fill WhatsApp API / Agent fields safely if columns exist on the settings table
+        if (Schema::hasColumn('settings', 'whatsapp_enabled')) {
+            if ($request->has('whatsapp_enabled')) {
+                $setting->whatsapp_enabled = $request->boolean('whatsapp_enabled');
+            }
+            if ($request->has('whatsapp_provider')) {
+                $setting->whatsapp_provider = $request->input('whatsapp_provider') ?: 'local_agent';
+            }
+            if ($request->has('whatsapp_access_token')) {
+                $setting->whatsapp_access_token = trim((string) $request->input('whatsapp_access_token'));
+            }
+            if ($request->has('whatsapp_phone_number_id')) {
+                $setting->whatsapp_phone_number_id = trim((string) $request->input('whatsapp_phone_number_id'));
+            }
+            if ($request->has('whatsapp_business_account_id')) {
+                $setting->whatsapp_business_account_id = trim((string) $request->input('whatsapp_business_account_id'));
+            }
+            if ($request->has('whatsapp_api_version')) {
+                $setting->whatsapp_api_version = trim((string) $request->input('whatsapp_api_version')) ?: 'v21.0';
+            }
+            if ($request->has('whatsapp_api_url')) {
+                $setting->whatsapp_api_url = trim((string) $request->input('whatsapp_api_url'));
+            }
+            if ($request->has('whatsapp_default_country_code')) {
+                $cc = preg_replace('/\D+/', '', (string) $request->input('whatsapp_default_country_code')) ?: '92';
+                $setting->whatsapp_default_country_code = $cc;
+            }
+            if ($request->has('whatsapp_template_name')) {
+                $setting->whatsapp_template_name = trim((string) $request->input('whatsapp_template_name'));
+            }
+            if ($request->has('whatsapp_template_language')) {
+                $setting->whatsapp_template_language = trim((string) $request->input('whatsapp_template_language')) ?: 'en_US';
+            }
+            if ($request->has('whatsapp_auto_fallback')) {
+                $setting->whatsapp_auto_fallback = $request->boolean('whatsapp_auto_fallback');
             }
         }
 
@@ -245,9 +309,200 @@ class SettingController extends Controller
         }
         
         $setting->save();
+        $setting->applyWhatsAppConfig();
         $setting->applyCubeAiConfig();
 
         return response()->json($this->appendCubeMetadata($setting->fresh()));
+    }
+
+    // POST /api/settings/test-whatsapp
+    public function testWhatsApp(Request $request)
+    {
+        $this->authorize('update', Setting::class);
+
+        $validated = $request->validate([
+            'whatsapp_provider'             => ['required', Rule::in(['local_agent', 'waha', 'evolution_api', 'whapi_cloud', 'wasender', 'ultramsg', 'green_api', 'meta_cloud', 'custom_http'])],
+            'whatsapp_access_token'         => ['nullable', 'string', 'max:2000'],
+            'whatsapp_phone_number_id'      => ['nullable', 'string', 'max:120'],
+            'whatsapp_business_account_id'  => ['nullable', 'string', 'max:120'],
+            'whatsapp_api_version'          => ['nullable', 'string', 'max:20'],
+            'whatsapp_api_url'              => ['nullable', 'string', 'max:500'],
+            'whatsapp_default_country_code' => ['nullable', 'string', 'max:10'],
+            'whatsapp_template_name'        => ['nullable', 'string', 'max:120'],
+            'whatsapp_template_language'    => ['nullable', 'string', 'max:20'],
+            'test_phone'                    => ['required', 'string', 'max:50'],
+        ]);
+
+        $provider = $validated['whatsapp_provider'];
+        $token = trim((string) ($validated['whatsapp_access_token'] ?? ''));
+        $phoneOrInstanceId = trim((string) ($validated['whatsapp_phone_number_id'] ?? ''));
+        $apiUrl = trim((string) ($validated['whatsapp_api_url'] ?? ''));
+
+        if (in_array($provider, ['whapi_cloud', 'wasender'], true) && $token === '') {
+            return response()->json([
+                'status'  => 'failed',
+                'message' => 'Please enter your WhatsApp Agent API Key / Bearer Token.',
+            ], 422);
+        }
+
+        if (in_array($provider, ['meta_cloud', 'ultramsg', 'green_api'], true) && ($token === '' || $phoneOrInstanceId === '')) {
+            return response()->json([
+                'status'  => 'failed',
+                'message' => 'Please enter both the API Token and Phone Number ID / Instance ID for ' . $provider . '.',
+            ], 422);
+        }
+
+        if ($provider === 'evolution_api' && ($apiUrl === '' || $token === '')) {
+            return response()->json([
+                'status'  => 'failed',
+                'message' => 'Please enter both the Evolution API Server URL and API Key.',
+            ], 422);
+        }
+
+        if ($provider === 'custom_http' && $apiUrl === '') {
+            return response()->json([
+                'status'  => 'failed',
+                'message' => 'Please enter your Custom WhatsApp API endpoint URL.',
+            ], 422);
+        }
+
+        $setting = Setting::first();
+        $storeName = $setting?->store_name ?: 'Karobar App';
+
+        if ($provider === 'local_agent') {
+            $agentService = app(\App\Services\LocalWhatsAppAgentService::class);
+            if ($apiUrl === '') {
+                $apiUrl = $agentService->resolveAgentUrl($setting);
+            }
+            if ($token === '') {
+                $token = $agentService->ensureApiKey($setting);
+            }
+        }
+
+        Setting::applyRuntimeWhatsApp([
+            'enabled'              => true,
+            'provider'             => $provider,
+            'access_token'         => $token,
+            'phone_number_id'      => $phoneOrInstanceId,
+            'business_account_id'  => $validated['whatsapp_business_account_id'] ?? null,
+            'api_version'          => $validated['whatsapp_api_version'] ?? 'v21.0',
+            'api_url'              => $apiUrl,
+            'default_country_code' => $validated['whatsapp_default_country_code'] ?? '92',
+            'template_name'        => $validated['whatsapp_template_name'] ?? null,
+            'template_language'    => $validated['whatsapp_template_language'] ?? 'en_US',
+            'auto_fallback'        => false,
+        ]);
+
+        try {
+            $result = app(DocumentShareService::class)->sendTestWhatsAppMessage($validated['test_phone'], $storeName);
+
+            return response()->json($result);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status'  => 'failed',
+                'message' => 'WhatsApp API connection failed: ' . $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    protected function authorizeWhatsAppAgentAccess(Request $request): void
+    {
+        $user = $request->user();
+        if (!$user) {
+            abort(401);
+        }
+
+        $allowedPermissions = [
+            'settings.view',
+            'settings.update',
+            'sale-invoice.view',
+            'purchase-invoice.view',
+            'customer-ledger.view',
+            'supplier-ledger.view',
+            'payment.view',
+            'purchase-order.view',
+        ];
+
+        foreach ($allowedPermissions as $perm) {
+            if ($user->can($perm)) {
+                return;
+            }
+        }
+
+        abort(403, 'Unauthorized to access WhatsApp Agent.');
+    }
+
+    // GET /api/settings/whatsapp-agent/status
+    public function whatsappAgentStatus(Request $request, \App\Services\LocalWhatsAppAgentService $agent)
+    {
+        $this->authorizeWhatsAppAgentAccess($request);
+
+        return response()->json($agent->status(Setting::first()));
+    }
+
+    // POST /api/settings/whatsapp-agent/start
+    public function whatsappAgentStart(Request $request, \App\Services\LocalWhatsAppAgentService $agent)
+    {
+        $this->authorizeWhatsAppAgentAccess($request);
+
+        try {
+            return response()->json($agent->start(Setting::first()));
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok'      => false,
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    // POST /api/settings/whatsapp-agent/pair-code
+    public function whatsappAgentPairCode(Request $request, \App\Services\LocalWhatsAppAgentService $agent)
+    {
+        $this->authorizeWhatsAppAgentAccess($request);
+
+        $validated = $request->validate([
+            'phone' => ['required', 'string', 'max:50'],
+        ]);
+
+        try {
+            return response()->json($agent->requestPairingCode($validated['phone'], Setting::first()));
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok'      => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    // POST /api/settings/whatsapp-agent/logout
+    public function whatsappAgentLogout(Request $request, \App\Services\LocalWhatsAppAgentService $agent)
+    {
+        $this->authorizeWhatsAppAgentAccess($request);
+
+        try {
+            return response()->json($agent->logout(Setting::first()));
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok'      => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    // POST /api/settings/whatsapp-agent/stop
+    public function whatsappAgentStop(Request $request, \App\Services\LocalWhatsAppAgentService $agent)
+    {
+        $this->authorizeWhatsAppAgentAccess($request);
+
+        try {
+            return response()->json($agent->stop(Setting::first()));
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok'      => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
     }
 
     // POST /api/settings/test-smtp

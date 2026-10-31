@@ -4428,8 +4428,12 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   outline: 2.5px dashed #f59e0b !important;
   outline-offset: 3px !important;
   box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.22) !important;
-  cursor: help !important;
   border-radius: 0.4rem;
+}
+
+html.guide-bot-inspect-active,
+html.guide-bot-inspect-active * {
+  cursor: none !important;
 }
 
 /* ============================================================================
@@ -4806,12 +4810,159 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
   animation: cube-wake-hop 0.45s cubic-bezier(0.22, 1, 0.36, 1) 1;
 }
 
+/* Trick 9: Solving Rubik's Cube (Rapid Arm Twists & Cube Rotation) */
+@keyframes cube-rubiks-arm-left {
+  0%, 100% {
+    transform: rotate(-52deg) translateY(0);
+  }
+  50% {
+    transform: rotate(-68deg) translateY(-2px);
+  }
+}
+
+@keyframes cube-rubiks-arm-right {
+  0%, 100% {
+    transform: rotate(68deg) translateY(-2px);
+  }
+  50% {
+    transform: rotate(52deg) translateY(0);
+  }
+}
+
+@keyframes cube-rubiks-twist {
+  0%, 100% {
+    transform: rotate(-8deg) scale(1);
+  }
+  25% {
+    transform: rotate(12deg) scale(1.06);
+  }
+  50% {
+    transform: rotate(-12deg) scale(0.97);
+  }
+  75% {
+    transform: rotate(90deg) scale(1.08);
+  }
+}
+
+.guide-bot-fullbody.cube-trick-rubiks .cube-arm-left {
+  animation: cube-rubiks-arm-left 0.28s ease-in-out infinite;
+}
+
+.guide-bot-fullbody.cube-trick-rubiks .cube-arm-right {
+  animation: cube-rubiks-arm-right 0.28s ease-in-out infinite;
+}
+
+.guide-bot-fullbody.cube-trick-rubiks .cube-prop-rubiks {
+  animation: cube-rubiks-twist 1.15s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+  animation-timing-function: linear(0, 0.214 14.7%, 0.386 23.7%, 0.598 31.9%, 0.999 44.7%, 0.807 52.6%, 0.762 56%, 0.747 59.4%, 0.758 62.4%, 0.793 65.6%, 0.999 77.4%, 0.961 81.2%, 0.949 84.8%, 0.956 88%, 0.993 95.5%, 1);
+}
+
+/* Trick 10: Wearing Studio Headphones & Vibing to Music */
+@keyframes cube-headphones-vibe {
+  0%, 100% {
+    transform: translateY(0) rotate(-3.5deg) scale(1, 1);
+  }
+  25% {
+    transform: translateY(2.2px) rotate(0deg) scale(1.03, 0.97);
+  }
+  50% {
+    transform: translateY(-2.5px) rotate(3.5deg) scale(0.98, 1.02);
+  }
+  75% {
+    transform: translateY(2.2px) rotate(0deg) scale(1.03, 0.97);
+  }
+}
+
+@keyframes cube-headphones-arm-tap {
+  0%, 100% {
+    transform: rotate(-18deg);
+  }
+  50% {
+    transform: rotate(12deg);
+  }
+}
+
+.guide-bot-fullbody.cube-trick-headphones .cube-whole-body-rig {
+  animation: cube-headphones-vibe 0.68s ease-in-out infinite;
+}
+
+.guide-bot-fullbody.cube-trick-headphones .cube-arm-left {
+  animation: cube-headphones-arm-tap 0.68s ease-in-out infinite;
+}
+
+.guide-bot-fullbody.cube-trick-headphones .cube-arm-right {
+  animation: cube-headphones-arm-tap 0.68s ease-in-out 0.34s infinite;
+}
+
+/* Trick 11: Detective / Stalker Magnifying Glass Peek ('spy') */
+@keyframes cube-spy-peek {
+  0%, 100% {
+    transform: translateY(0) rotate(2deg);
+  }
+  50% {
+    transform: translateY(-2.5px) rotate(5.5deg);
+  }
+}
+
+.guide-bot-fullbody.cube-trick-spy .cube-whole-body-rig {
+  animation: cube-spy-peek 1.1s ease-in-out infinite;
+}
+
+.guide-bot-fullbody.cube-trick-spy .cube-arm-right {
+  transform: rotate(-118deg);
+}
+
+/* Physics-based spring Pop-in for Cursor Stalker Mascot & Popover */
+.cursor-stalker-pop {
+  --spring-easing: linear(0, 0.016 0.5%, 0.06 1%, 0.226 2%, 1.116 5.4%, 1.375 6.6%, 1.527 7.7%, 1.565 8.2%, 1.585 8.8%, 1.581 9.3%, 1.559 9.8%, 1.458 10.9%, 0.937 14.3%, 0.784 15.5%, 0.693 16.6%, 0.67 17.1%, 0.657 17.7%, 0.671 18.7%, 0.729 19.8%, 1.042 23.3%, 1.13 24.5%, 1.182 25.6%, 1.201 26.7%, 1.192 27.7%, 1.156 28.8%, 0.977 32.2%, 0.925 33.4%, 0.894 34.5%, 0.882 35.6%, 0.887 36.6%, 0.907 37.7%, 1.045 42.4%, 1.069 44.5%, 1.059 46.3%, 0.979 50.9%, 0.96 53.4%, 0.966 55.3%, 1.013 59.9%, 1.024 62.3%, 0.986 71.2%, 1.008 79.9%, 0.995 88.9%, 1);
+  transition: scale 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition-timing-function: var(--spring-easing);
+}
+
+/* ============================================================================
+   MAIN CURSOR TRICK ANIMATIONS (Spin around tip, Rubik's, Headphones)
+   ========================================================================== */
+@keyframes cursor-tip-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  45%, 100% {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes cursor-headphones-nod {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(-8deg);
+  }
+}
+
+.cursor-buddy-avatar.cursor-buddy-trick-spin .cursor-whole-rig {
+  animation: cursor-tip-spin 1.3s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.cursor-buddy-avatar.cursor-buddy-trick-headphones .cursor-whole-rig {
+  animation: cursor-headphones-nod 0.6s ease-in-out infinite;
+}
+
+.cursor-buddy-avatar.cursor-buddy-trick-rubiks .cursor-prop-rubiks {
+  transform-origin: 21.5px 33.5px;
+  animation: cube-rubiks-twist 1.1s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+  animation-timing-function: linear(0, 0.214 14.7%, 0.386 23.7%, 0.598 31.9%, 0.999 44.7%, 0.807 52.6%, 0.762 56%, 0.747 59.4%, 0.758 62.4%, 0.793 65.6%, 0.999 77.4%, 0.961 81.2%, 0.949 84.8%, 0.956 88%, 0.993 95.5%, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .guide-bot-drawer,
   :is(.guide-bot-drawer[open]):where(:not([data-closing])),
-  .guide-bot-drawer[open][data-closing] {
+  .guide-bot-drawer[open][data-closing],
+  .cursor-stalker-pop,
+  .guide-bot-fullbody.cube-trick-rubiks .cube-prop-rubiks {
     transform: none;
-    transition-duration: 0.1s;
+    animation: none;
+    transition: none;
   }
   @starting-style {
     :is(.guide-bot-drawer[open]):where(:not([data-closing])) {

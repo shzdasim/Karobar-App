@@ -35,6 +35,17 @@ class Setting extends Model
         'smtp_encryption',
         'smtp_from_address',
         'smtp_from_name',
+        'whatsapp_enabled',
+        'whatsapp_provider',
+        'whatsapp_access_token',
+        'whatsapp_phone_number_id',
+        'whatsapp_business_account_id',
+        'whatsapp_api_version',
+        'whatsapp_api_url',
+        'whatsapp_default_country_code',
+        'whatsapp_template_name',
+        'whatsapp_template_language',
+        'whatsapp_auto_fallback',
         'cube_ai_enabled',
         'cube_groq_enabled',
         'cube_groq_api_key',
@@ -49,6 +60,8 @@ class Setting extends Model
     protected $casts = [
         'smtp_enabled'            => 'boolean',
         'smtp_port'               => 'integer',
+        'whatsapp_enabled'        => 'boolean',
+        'whatsapp_auto_fallback'  => 'boolean',
         'cube_ai_enabled'         => 'boolean',
         'cube_groq_enabled'       => 'boolean',
         'cube_groq_daily_limit'   => 'integer',
@@ -255,5 +268,95 @@ class Setting extends Model
         if (array_key_exists('daily_limit', $options)) {
             config(["cube.providers.{$provider}.daily_limit" => max(0, min(1000, (int) $options['daily_limit']))]);
         }
+    }
+
+    /**
+     * Apply stored WhatsApp API / Agent settings from the database into runtime `config('services.whatsapp.*')`.
+     * Database settings take precedence when configured in the Settings UI, while falling back
+     * to `.env` / `config/services.php` defaults when DB fields are left empty.
+     */
+    public function applyWhatsAppConfig(): bool
+    {
+        $countryCode = preg_replace('/\D+/', '', (string) ($this->whatsapp_default_country_code ?? '')) ?: '';
+        if ($countryCode !== '') {
+            config(['services.whatsapp.default_country_code' => $countryCode]);
+        }
+
+        if ($this->whatsapp_auto_fallback !== null) {
+            config(['services.whatsapp.auto_fallback' => (bool) $this->whatsapp_auto_fallback]);
+        }
+
+        $hasDbTokenOrUrl = trim((string) ($this->whatsapp_access_token ?? '')) !== ''
+            || trim((string) ($this->whatsapp_api_url ?? '')) !== ''
+            || trim((string) ($this->whatsapp_phone_number_id ?? '')) !== '';
+
+        if ($this->whatsapp_enabled) {
+            self::applyRuntimeWhatsApp([
+                'enabled'              => true,
+                'provider'             => $this->whatsapp_provider ?: 'local_agent',
+                'access_token'         => $this->whatsapp_access_token,
+                'phone_number_id'      => $this->whatsapp_phone_number_id,
+                'business_account_id'  => $this->whatsapp_business_account_id,
+                'api_version'          => $this->whatsapp_api_version ?: 'v21.0',
+                'api_url'              => $this->whatsapp_api_url,
+                'default_country_code' => $countryCode !== '' ? $countryCode : '92',
+                'template_name'        => $this->whatsapp_template_name,
+                'template_language'    => $this->whatsapp_template_language ?: 'en_US',
+                'auto_fallback'        => $this->whatsapp_auto_fallback ?? true,
+            ]);
+
+            return true;
+        }
+
+        if ($this->whatsapp_enabled === false && $hasDbTokenOrUrl) {
+            config(['services.whatsapp.enabled' => false]);
+
+            return false;
+        }
+
+        return ! empty(config('services.whatsapp.access_token'))
+            || ! empty(config('services.whatsapp.api_url'));
+    }
+
+    /**
+     * Configure Laravel's `services.whatsapp` configuration at runtime from an array of WhatsApp credentials.
+     */
+    public static function applyRuntimeWhatsApp(array $wa): void
+    {
+        $provider = strtolower(trim((string) ($wa['provider'] ?? 'local_agent')));
+        $allowedProviders = [
+            'local_agent',
+            'waha',
+            'evolution_api',
+            'whapi_cloud',
+            'wasender',
+            'ultramsg',
+            'green_api',
+            'meta_cloud',
+            'custom_http',
+        ];
+        if (! in_array($provider, $allowedProviders, true)) {
+            $provider = 'local_agent';
+        }
+
+        $countryCode = preg_replace('/\D+/', '', (string) ($wa['default_country_code'] ?? '92')) ?: '92';
+        $version = trim((string) ($wa['api_version'] ?? 'v21.0')) ?: 'v21.0';
+        if (! str_starts_with($version, 'v') && preg_match('/^\d+(\.\d+)?$/', $version)) {
+            $version = 'v' . $version;
+        }
+
+        config([
+            'services.whatsapp.enabled'              => array_key_exists('enabled', $wa) ? (bool) $wa['enabled'] : true,
+            'services.whatsapp.provider'             => $provider,
+            'services.whatsapp.access_token'         => trim((string) ($wa['access_token'] ?? '')),
+            'services.whatsapp.phone_number_id'      => trim((string) ($wa['phone_number_id'] ?? '')),
+            'services.whatsapp.business_account_id'  => trim((string) ($wa['business_account_id'] ?? '')),
+            'services.whatsapp.api_version'          => $version,
+            'services.whatsapp.api_url'              => trim((string) ($wa['api_url'] ?? '')),
+            'services.whatsapp.default_country_code' => $countryCode,
+            'services.whatsapp.template_name'        => trim((string) ($wa['template_name'] ?? '')),
+            'services.whatsapp.template_language'    => trim((string) ($wa['template_language'] ?? 'en_US')) ?: 'en_US',
+            'services.whatsapp.auto_fallback'        => array_key_exists('auto_fallback', $wa) ? (bool) $wa['auto_fallback'] : true,
+        ]);
     }
 }

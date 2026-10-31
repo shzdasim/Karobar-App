@@ -18,6 +18,7 @@
     .totals-table { width: 260px; margin-left: auto; margin-top: 12px; }
     .totals-table td { padding: 4px 6px; border: 1px solid #cbd5e1; font-size: 10px; }
   </style>
+  @include('pdf.partials.design_theme', ['pdfDesign' => $pdfDesign ?? ($setting->a4_template ?? 'standard')])
 </head>
 <body>
   @php

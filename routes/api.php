@@ -343,10 +343,16 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
 
 
     // Settings
-    Route::get('/settings',                       [SettingController::class, 'show']);
-    Route::post('/settings',                      [SettingController::class, 'update']);
-    Route::post('/settings/test-smtp',            [SettingController::class, 'testSmtp']);
-    Route::post('/settings/test-cube-ai',         [SettingController::class, 'testCubeAi']);
+    Route::get('/settings',                              [SettingController::class, 'show']);
+    Route::post('/settings',                             [SettingController::class, 'update']);
+    Route::post('/settings/test-smtp',                   [SettingController::class, 'testSmtp']);
+    Route::post('/settings/test-whatsapp',               [SettingController::class, 'testWhatsApp']);
+    Route::get('/settings/whatsapp-agent/status',        [SettingController::class, 'whatsappAgentStatus']);
+    Route::post('/settings/whatsapp-agent/start',        [SettingController::class, 'whatsappAgentStart']);
+    Route::post('/settings/whatsapp-agent/pair-code',    [SettingController::class, 'whatsappAgentPairCode']);
+    Route::post('/settings/whatsapp-agent/logout',       [SettingController::class, 'whatsappAgentLogout']);
+    Route::post('/settings/whatsapp-agent/stop',         [SettingController::class, 'whatsappAgentStop']);
+    Route::post('/settings/test-cube-ai',                [SettingController::class, 'testCubeAi']);
 
     // Theme Settings (CRUD operations require license)
     Route::get('/theme-settings',                 [ThemeSettingController::class, 'index']);

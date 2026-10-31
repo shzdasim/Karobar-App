@@ -17,6 +17,7 @@
     .tx-table td { padding: 5px 6px; border: 1px solid #cbd5e1; font-size: 9.5px; }
     .text-right { text-align: right !important; }
   </style>
+  @include('pdf.partials.design_theme', ['pdfDesign' => $pdfDesign ?? ($setting->a4_template ?? 'standard')])
 </head>
 <body>
   @php

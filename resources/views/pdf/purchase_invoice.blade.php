@@ -18,6 +18,7 @@
     .totals-table { width: 280px; margin-left: auto; margin-top: 12px; }
     .totals-table td { padding: 4px 6px; border: 1px solid #cbd5e1; font-size: 10px; }
   </style>
+  @include('pdf.partials.design_theme', ['pdfDesign' => $pdfDesign ?? ($setting->a4_template ?? 'standard')])
 </head>
 <body>
   @php
@@ -77,14 +78,26 @@
     </thead>
     <tbody>
       @forelse($invoice->items as $i => $it)
+        @php
+          $ps = max(1, (int)($it->pack_size ?? $it->product?->pack_size ?? 1));
+          $totUnits = (float)($it->quantity ?? 0);
+          if ($totUnits <= 0) {
+              $totUnits = ((float)($it->pack_quantity ?? 0) * $ps) + (float)($it->unit_quantity ?? 0);
+          }
+          $packQty = (float)($it->pack_quantity ?? 0);
+          if ($packQty <= 0 && $totUnits > 0) {
+              $packQty = $totUnits / $ps;
+          }
+          $bonusUnits = (int)($it->unit_bonus ?? $it->bonus ?? 0) + ((int)($it->pack_bonus ?? 0) * $ps);
+        @endphp
         <tr>
           <td>{{ $i + 1 }}</td>
           <td>{{ $it->product->name ?? ('#' . $it->product_id) }}</td>
           <td>{{ $it->batch ?: '—' }}</td>
           <td>{{ $it->expiry ?: '—' }}</td>
-          <td class="text-right">{{ number_format((float)($it->pack_quantity ?? 0), 2) }}</td>
-          <td class="text-right">{{ number_format((int)($it->quantity ?? 0)) }}</td>
-          <td class="text-right">{{ number_format((int)($it->unit_bonus ?? 0)) }}</td>
+          <td class="text-right">{{ rtrim(rtrim(number_format($packQty, 2), '0'), '.') ?: '0' }}</td>
+          <td class="text-right">{{ number_format((int) round($totUnits)) }}</td>
+          <td class="text-right">{{ number_format($bonusUnits) }}</td>
           <td class="text-right">{{ number_format((float)($it->unit_purchase_price ?? 0), 2) }}</td>
           <td class="text-right">{{ number_format((float)($it->item_discount_percentage ?? 0), 2) }}%</td>
           <td class="text-right"><strong>{{ number_format((float)($it->sub_total ?? 0), 2) }}</strong></td>

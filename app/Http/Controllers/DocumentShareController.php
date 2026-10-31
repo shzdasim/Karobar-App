@@ -92,6 +92,7 @@ class DocumentShareController extends Controller
             'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
             'from'        => ['nullable', 'date'],
             'to'          => ['nullable', 'date'],
+            'template'    => ['nullable', 'string', Rule::in(DocumentShareService::SUPPORTED_PDF_DESIGNS)],
         ]);
 
         $this->authorizeDocumentAccess($validated['type'], $validated);
@@ -113,6 +114,7 @@ class DocumentShareController extends Controller
             'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
             'from'        => ['nullable', 'date'],
             'to'          => ['nullable', 'date'],
+            'template'    => ['nullable', 'string', Rule::in(DocumentShareService::SUPPORTED_PDF_DESIGNS)],
             'download'    => ['nullable', 'boolean'],
         ]);
 
@@ -139,6 +141,7 @@ class DocumentShareController extends Controller
             'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
             'from'        => ['nullable', 'date'],
             'to'          => ['nullable', 'date'],
+            'template'    => ['nullable', 'string', Rule::in(DocumentShareService::SUPPORTED_PDF_DESIGNS)],
             'email'       => ['required', 'email', 'max:150'],
             'subject'     => ['required', 'string', 'max:255'],
             'message'     => ['required', 'string', 'max:5000'],
@@ -216,6 +219,7 @@ class DocumentShareController extends Controller
             'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
             'from'        => ['nullable', 'date'],
             'to'          => ['nullable', 'date'],
+            'template'    => ['nullable', 'string', Rule::in(DocumentShareService::SUPPORTED_PDF_DESIGNS)],
             'phone'       => ['nullable', 'string', 'max:50'],
             'message'     => ['required', 'string', 'max:5000'],
             'save_phone'  => ['nullable', 'boolean'],
@@ -223,14 +227,22 @@ class DocumentShareController extends Controller
 
         $this->authorizeDocumentAccess($validated['type'], $validated);
 
-        $response = $this->shareService->sendOrBuildWhatsAppPdf(
-            type: $validated['type'],
-            params: $validated,
-            phone: $validated['phone'] ?? null,
-            caption: $validated['message']
-        );
+        try {
+            $response = $this->shareService->sendOrBuildWhatsAppPdf(
+                type: $validated['type'],
+                params: $validated,
+                phone: $validated['phone'] ?? null,
+                caption: $validated['message'],
+                savePhone: $request->boolean('save_phone')
+            );
 
-        return response()->json($response);
+            return response()->json($response);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status'  => 'failed',
+                'message' => $e->getMessage(),
+            ], 422);
+        }
     }
 
     /**
@@ -246,6 +258,7 @@ class DocumentShareController extends Controller
             'supplier_id' => $request->query('supplier_id'),
             'from'        => $request->query('from'),
             'to'          => $request->query('to'),
+            'template'    => $request->query('template'),
         ];
 
         $result = $this->shareService->generatePdf($type, $params);

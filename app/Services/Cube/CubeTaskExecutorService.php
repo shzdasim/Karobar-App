@@ -61,175 +61,546 @@ class CubeTaskExecutorService
      *
      * @var array<string, string>
      */
+    /**
+     * 100%-Verified pharmaceutical generic/salt dictionary (DRAP Pakistan & International Originator Brands).
+     * Matched strictly against the normalized exact Brand + Variant Core (`extractBrandCore`) so base brands
+     * are NEVER confused with combination variants (e.g. `betnovate` vs `betnovate n`, `lipiget` vs `lipiget ez`).
+     *
+     * @var array<string, string>
+     */
     protected const PHARMACY_SALT_DICTIONARY = [
+        // Analgesics, Antipyretics, NSAIDs & Muscle Relaxants
         'panadol cf' => 'Paracetamol + Chlorpheniramine + Pseudoephedrine',
         'panadol extra' => 'Paracetamol + Caffeine',
+        'panadol night' => 'Paracetamol + Diphenhydramine',
         'panadol extend' => 'Paracetamol',
         'panadol' => 'Paracetamol',
         'calpol' => 'Paracetamol',
+        'calpol 6 plus' => 'Paracetamol',
         'febrol' => 'Paracetamol',
         'disprol' => 'Paracetamol',
         'provas' => 'Paracetamol',
         'tylenol' => 'Paracetamol',
+        'parasup' => 'Paracetamol',
         'paracetamol' => 'Paracetamol',
         'acetaminophen' => 'Paracetamol',
         'nuberol forte' => 'Paracetamol + Orphenadrine Citrate',
         'nuberol' => 'Paracetamol + Orphenadrine Citrate',
-        'augmentin' => 'Amoxicillin + Clavulanic Acid',
-        'calamox' => 'Amoxicillin + Clavulanic Acid',
-        'amoxil' => 'Amoxicillin',
-        'amoxicillin' => 'Amoxicillin',
-        'ospamox' => 'Amoxicillin',
+        'tonoflex p' => 'Tramadol + Paracetamol',
+        'tonoflex' => 'Tramadol',
+        'tramal' => 'Tramadol',
         'brufen' => 'Ibuprofen',
         'advil' => 'Ibuprofen',
         'ibuprofen' => 'Ibuprofen',
+        'arinac forte' => 'Ibuprofen + Pseudoephedrine',
         'arinac' => 'Ibuprofen + Pseudoephedrine',
+        'ponstan forte' => 'Mefenamic Acid',
         'ponstan' => 'Mefenamic Acid',
-        'mefenamic' => 'Mefenamic Acid',
+        'mefenamic acid' => 'Mefenamic Acid',
         'disprin' => 'Aspirin',
         'loprin' => 'Aspirin',
         'ascard' => 'Aspirin',
         'aspirin' => 'Aspirin',
+        'voltral' => 'Diclofenac Sodium',
+        'dicloran' => 'Diclofenac Sodium',
+        'diclowan' => 'Diclofenac Sodium',
+        'diclofenac sodium' => 'Diclofenac Sodium',
+        'diclofenac' => 'Diclofenac Sodium',
+        'caflam' => 'Diclofenac Potassium',
+        'diclofenac potassium' => 'Diclofenac Potassium',
+        'synflex' => 'Naproxen Sodium',
+        'naproxen' => 'Naproxen Sodium',
+        'brexin' => 'Piroxicam',
+        'feldene' => 'Piroxicam',
+        'piroxicam' => 'Piroxicam',
+        'mobic' => 'Meloxicam',
+        'meloxicam' => 'Meloxicam',
+        'celebrex' => 'Celecoxib',
+        'celecoxib' => 'Celecoxib',
+        'arcoxia' => 'Etoricoxib',
+        'etoricoxib' => 'Etoricoxib',
+        'ansaid' => 'Flurbiprofen',
+        'froben' => 'Flurbiprofen',
+        'flurbiprofen' => 'Flurbiprofen',
+        'movax' => 'Tizanidine',
+        'sirdalud' => 'Tizanidine',
+        'tizanidine' => 'Tizanidine',
+
+        // Penicillins & Beta-Lactam Antibiotics
+        'augmentin' => 'Amoxicillin + Clavulanic Acid',
+        'calamox' => 'Amoxicillin + Clavulanic Acid',
+        'amoxi clav' => 'Amoxicillin + Clavulanic Acid',
+        'co amoxiclav' => 'Amoxicillin + Clavulanic Acid',
+        'amoxil' => 'Amoxicillin',
+        'amoxicillin' => 'Amoxicillin',
+        'ospamox' => 'Amoxicillin',
+        'amocillin' => 'Amoxicillin',
+        'amoxicap' => 'Amoxicillin',
+        'amoxipen' => 'Amoxicillin',
+        'amplipen' => 'Ampicillin',
+        'omnipen' => 'Ampicillin',
+        'ampicillin' => 'Ampicillin',
+        'ampicap' => 'Ampicillin',
+        'ampicil' => 'Ampicillin',
+        'ampimaz' => 'Ampicillin',
+        'ampiwil' => 'Ampicillin',
+        'ampiclox' => 'Ampicillin + Cloxacillin',
+        'apoclox' => 'Cloxacillin',
+        'cloxacillin' => 'Cloxacillin',
+        'penidure' => 'Benzathine Penicillin G',
+        'tanzo' => 'Piperacillin + Tazobactam',
+        'tazocin' => 'Piperacillin + Tazobactam',
+
+        // Cephalosporins
+        'cefspan' => 'Cefixime',
+        'caricef' => 'Cefixime',
+        'cefiget' => 'Cefixime',
+        'cefim' => 'Cefixime',
+        'suprax' => 'Cefixime',
+        'glixim' => 'Cefixime',
+        'cefix' => 'Cefixime',
+        'cefixime' => 'Cefixime',
+        'velosef' => 'Cephradine',
+        'cephradine' => 'Cephradine',
+        'keflex' => 'Cephalexin',
+        'maclexin' => 'Cephalexin',
+        'cephalexin' => 'Cephalexin',
+        'rocephin' => 'Ceftriaxone',
+        'ceftron' => 'Ceftriaxone',
+        'traxon' => 'Ceftriaxone',
+        'incep' => 'Ceftriaxone',
+        'oxidil' => 'Ceftriaxone',
+        'ceftriaxone' => 'Ceftriaxone',
+        'ceftrixone' => 'Ceftriaxone',
+        'claforan' => 'Cefotaxime',
+        'cefotaxime' => 'Cefotaxime',
+        'zinacef' => 'Cefuroxime',
+        'zinnat' => 'Cefuroxime',
+        'cefuroxime' => 'Cefuroxime',
+        'ceclor' => 'Cefaclor',
+        'cetaclor' => 'Cefaclor',
+        'cefaclor' => 'Cefaclor',
+        'duricef' => 'Cefadroxil',
+        'cefadroxil' => 'Cefadroxil',
+        'fortum' => 'Ceftazidime',
+        'ceftazidime' => 'Ceftazidime',
+        'maxipime' => 'Cefepime',
+        'cefepime' => 'Cefepime',
+        'sulzone' => 'Cefoperazone + Sulbactam',
+
+        // Macrolides, Fluoroquinolones, Aminoglycosides & Other Antibiotics
+        'azomax' => 'Azithromycin',
+        'zithromax' => 'Azithromycin',
+        'zetro' => 'Azithromycin',
+        'azirolide' => 'Azithromycin',
+        'aziromycin' => 'Azithromycin',
+        'azogil' => 'Azithromycin',
+        'zimax' => 'Azithromycin',
+        'azithromycin' => 'Azithromycin',
+        'klaricid' => 'Clarithromycin',
+        'clatz' => 'Clarithromycin',
+        'clarithromycin' => 'Clarithromycin',
+        'erythrocin' => 'Erythromycin',
+        'erythromycin' => 'Erythromycin',
+        'rulid' => 'Roxithromycin',
+        'roxithromycin' => 'Roxithromycin',
+        'novidat' => 'Ciprofloxacin',
+        'ciproxin' => 'Ciprofloxacin',
+        'dicip' => 'Ciprofloxacin',
+        'ciprofloxacin' => 'Ciprofloxacin',
+        'leflox' => 'Levofloxacin',
+        'cravit' => 'Levofloxacin',
+        'levoson' => 'Levofloxacin',
+        'lexiwan' => 'Levofloxacin',
+        'levofloxacin' => 'Levofloxacin',
+        'avelox' => 'Moxifloxacin',
+        'moxiget' => 'Moxifloxacin',
+        'moxifloxacin' => 'Moxifloxacin',
+        'tarivid' => 'Ofloxacin',
+        'getiflox' => 'Ofloxacin',
+        'ofloxacin' => 'Ofloxacin',
+        'amikin' => 'Amikacin',
+        'amikoside' => 'Amikacin',
+        'amkay' => 'Amikacin',
+        'amkeen' => 'Amikacin',
+        'amikacin' => 'Amikacin',
+        'garamycin' => 'Gentamicin',
+        'genticyn' => 'Gentamicin',
+        'gentamicin' => 'Gentamicin',
+        'vibramycin' => 'Doxycycline',
+        'doxycycline' => 'Doxycycline',
         'flagyl' => 'Metronidazole',
-        'entamizole' => 'Diloxanide Furoate + Metronidazole',
         'metronidazole' => 'Metronidazole',
+        'entamizole' => 'Diloxanide Furoate + Metronidazole',
+        'dalacin c' => 'Clindamycin',
+        'dalacin' => 'Clindamycin',
+        'clindamycin' => 'Clindamycin',
+        'lincocin' => 'Lincomycin',
+        'lincomycin' => 'Lincomycin',
+        'zyvox' => 'Linezolid',
+        'linezolid' => 'Linezolid',
+        'meronem' => 'Meropenem',
+        'meropenem' => 'Meropenem',
+        'septrin' => 'Trimethoprim + Sulfamethoxazole',
+        'bactrim' => 'Trimethoprim + Sulfamethoxazole',
+        'fosfomycin' => 'Fosfomycin',
+        'monurol' => 'Fosfomycin',
+        'rifagut' => 'Rifaximin',
+        'rifaximin' => 'Rifaximin',
+        'chlormic' => 'Chloramphenicol',
+        'chloramphenicol' => 'Chloramphenicol',
+
+        // Anti-TB, Antifungals, Antivirals & Antiparasitics
+        'myambutol inh' => 'Ethambutol + Isoniazid',
+        'myambutol inh forte' => 'Ethambutol + Isoniazid',
+        'myambutol' => 'Ethambutol',
+        'myrin p' => 'Rifampicin + Isoniazid + Pyrazinamide + Ethambutol',
+        'myrin p forte' => 'Rifampicin + Isoniazid + Pyrazinamide + Ethambutol',
+        'myrin' => 'Rifampicin + Isoniazid + Ethambutol',
+        'diflucan' => 'Fluconazole',
+        'flu z' => 'Fluconazole',
+        'fluconazole' => 'Fluconazole',
+        'sporanox' => 'Itraconazole',
+        'itranex' => 'Itraconazole',
+        'itraconazole' => 'Itraconazole',
+        'nizoral' => 'Ketoconazole',
+        'ketoconazole' => 'Ketoconazole',
+        'nilstat' => 'Nystatin',
+        'nystatin' => 'Nystatin',
+        'canesten' => 'Clotrimazole',
+        'clotrimazole' => 'Clotrimazole',
+        'daktarin' => 'Miconazole',
+        'miconazole' => 'Miconazole',
+        'lamisil' => 'Terbinafine',
+        'terbinafine' => 'Terbinafine',
+        'zovirax' => 'Acyclovir',
+        'acyclovir' => 'Acyclovir',
+        'medivirin' => 'Ribavirin',
+        'ribavirin' => 'Ribavirin',
+        'zentel' => 'Albendazole',
+        'albendazole' => 'Albendazole',
+        'vermox' => 'Mebendazole',
+        'mebendazole' => 'Mebendazole',
+        'combantrin' => 'Pyrantel Pamoate',
+        'hcq' => 'Hydroxychloroquine',
+        'plaquenil' => 'Hydroxychloroquine',
+        'hydroxychloroquine' => 'Hydroxychloroquine',
+        'resochin' => 'Chloroquine',
+        'chloroquine' => 'Chloroquine',
+        'quinine' => 'Quinine',
+
+        // Gastroenterology (PPIs, Antacids, Antiemetics, Laxatives, Antispasmodics)
         'risek' => 'Omeprazole',
-        'omega' => 'Omeprazole',
         'losec' => 'Omeprazole',
+        'omsta' => 'Omeprazole',
         'omeprazole' => 'Omeprazole',
         'nexum' => 'Esomeprazole',
+        'nexium' => 'Esomeprazole',
         'esso' => 'Esomeprazole',
+        'eger' => 'Esomeprazole',
         'esomeprazole' => 'Esomeprazole',
         'pantocid' => 'Pantoprazole',
+        'protonix' => 'Pantoprazole',
+        'zopent' => 'Pantoprazole',
         'pantoprazole' => 'Pantoprazole',
+        'pariet' => 'Rabeprazole',
+        'barq' => 'Rabeprazole',
+        'rabz' => 'Rabeprazole',
+        'rabeprazole' => 'Rabeprazole',
         'lansoprazole' => 'Lansoprazole',
+        'dexilant' => 'Dexlansoprazole',
+        'dexlansoprazole' => 'Dexlansoprazole',
+        'pepcid' => 'Famotidine',
+        'famowan' => 'Famotidine',
         'famotidine' => 'Famotidine',
         'gaviscon' => 'Sodium Alginate + Potassium Bicarbonate',
         'mucaine' => 'Oxethazaine + Aluminum Hydroxide + Magnesium Hydroxide',
         'gravinate' => 'Dimenhydrinate',
+        'dimenhydrinate' => 'Dimenhydrinate',
         'motilium' => 'Domperidone',
         'peridone' => 'Domperidone',
         'domperidone' => 'Domperidone',
         'maxolon' => 'Metoclopramide',
         'metoclopramide' => 'Metoclopramide',
         'onavert' => 'Ondansetron',
+        'zofran' => 'Ondansetron',
         'ondansetron' => 'Ondansetron',
+        'ganaton' => 'Itopride',
+        'itopride' => 'Itopride',
+        'levosulpiride' => 'Levosulpiride',
+        'levosulperide' => 'Levosulpiride',
+        'revoren levosulperide' => 'Levosulpiride',
+        'buscopan plus' => 'Hyoscine Butylbromide + Paracetamol',
+        'buscopan' => 'Hyoscine Butylbromide',
+        'hyoscine butylbromide' => 'Hyoscine Butylbromide',
+        'no spa forte' => 'Drotaverine',
+        'no spa' => 'Drotaverine',
+        'nospa' => 'Drotaverine',
+        'drotaverine' => 'Drotaverine',
+        'colofac' => 'Mebeverine',
+        'mebeverine' => 'Mebeverine',
+        'duphalac' => 'Lactulose',
+        'lilac' => 'Lactulose',
+        'prulax' => 'Lactulose',
+        'lactulose' => 'Lactulose',
+        'skilax' => 'Sodium Picosulfate',
+        'imodium' => 'Loperamide',
+        'loperamide' => 'Loperamide',
+        'ors' => 'Oral Rehydration Salts',
+        'pedialyte' => 'Oral Rehydration Salts',
+        'geofman salt' => 'Oral Rehydration Salts',
+
+        // Allergy, Respiratory & Cough
         'rigix' => 'Cetirizine',
         'zyrtec' => 'Cetirizine',
         'cetirizine' => 'Cetirizine',
+        'xyzal' => 'Levocetirizine',
+        'levocetirizine' => 'Levocetirizine',
         'softin' => 'Loratadine',
         'claritin' => 'Loratadine',
         'loratadine' => 'Loratadine',
+        'aerius' => 'Desloratadine',
+        'desloratadine' => 'Desloratadine',
         'telfast' => 'Fexofenadine',
         'fexet' => 'Fexofenadine',
         'fexofenadine' => 'Fexofenadine',
+        'kestine' => 'Ebastine',
+        'ebastine' => 'Ebastine',
         'avil' => 'Pheniramine Maleate',
         'piriton' => 'Chlorpheniramine Maleate',
         'ventolin' => 'Salbutamol',
         'salbutamol' => 'Salbutamol',
+        'atrovent' => 'Ipratropium Bromide',
         'myteka' => 'Montelukast',
         'singulair' => 'Montelukast',
         'montelukast' => 'Montelukast',
-        'azomax' => 'Azithromycin',
-        'zithromax' => 'Azithromycin',
-        'azithromycin' => 'Azithromycin',
-        'novidat' => 'Ciprofloxacin',
-        'ciproxin' => 'Ciprofloxacin',
-        'ciprofloxacin' => 'Ciprofloxacin',
-        'leflox' => 'Levofloxacin',
-        'cravit' => 'Levofloxacin',
-        'levofloxacin' => 'Levofloxacin',
-        'avelox' => 'Moxifloxacin',
-        'moxifloxacin' => 'Moxifloxacin',
-        'cefspan' => 'Cefixime',
-        'cefixime' => 'Cefixime',
-        'caricef' => 'Cefixime',
-        'velosef' => 'Cephradine',
-        'cephradine' => 'Cephradine',
-        'keflex' => 'Cephalexin',
-        'cephalexin' => 'Cephalexin',
-        'rocephin' => 'Ceftriaxone',
-        'ceftriaxone' => 'Ceftriaxone',
-        'klaricid' => 'Clarithromycin',
-        'clarithromycin' => 'Clarithromycin',
-        'vibramycin' => 'Doxycycline',
-        'doxycycline' => 'Doxycycline',
+        'hydryllin' => 'Aminophylline + Diphenhydramine + Ammonium Chloride',
+        'acefyl' => 'Acefylline Piperazine + Diphenhydramine',
+        'pulmonol' => 'Chlorpheniramine + Dextromethorphan + Pseudoephedrine',
+        'ammonium chloride' => 'Ammonium Chloride',
+        'amoniumchloride' => 'Ammonium Chloride',
+        'xynosin' => 'Xylometazoline',
+        'otrivin' => 'Xylometazoline',
+        'xylometazoline' => 'Xylometazoline',
+
+        // Diabetes & Endocrinology
         'glucophage' => 'Metformin',
         'metformin' => 'Metformin',
+        'amaryl m' => 'Glimepiride + Metformin',
         'amaryl' => 'Glimepiride',
+        'getryl m' => 'Glimepiride + Metformin',
         'getryl' => 'Glimepiride',
+        'getformin' => 'Glimepiride + Metformin',
+        'neoglip' => 'Glimepiride + Metformin',
         'glimepiride' => 'Glimepiride',
         'diamicron' => 'Gliclazide',
         'gliclazide' => 'Gliclazide',
+        'daonil' => 'Glibenclamide',
+        'glibenclamide' => 'Glibenclamide',
+        'janumet' => 'Sitagliptin + Metformin',
         'januvia' => 'Sitagliptin',
+        'sita gen' => 'Sitagliptin',
         'sitagliptin' => 'Sitagliptin',
+        'galvus met' => 'Vildagliptin + Metformin',
+        'galvus' => 'Vildagliptin',
+        'vildagliptin' => 'Vildagliptin',
+        'trajenta' => 'Linagliptin',
+        'linagliptin' => 'Linagliptin',
+        'jardiance' => 'Empagliflozin',
+        'empagliflozin' => 'Empagliflozin',
+        'empaphage l' => 'Empagliflozin + Linagliptin',
+        'forxiga' => 'Dapagliflozin',
+        'dapagliflozin' => 'Dapagliflozin',
+        'thyroxine' => 'Levothyroxine Sodium',
+        'levothyroxine' => 'Levothyroxine Sodium',
+        'neomercazole' => 'Carbimazole',
+        'mercazole' => 'Carbimazole',
+        'carbimazole' => 'Carbimazole',
+
+        // Cardiovascular, Antihypertensives, Statins & Antiplatelets
         'norvasc' => 'Amlodipine',
         'sofvasc' => 'Amlodipine',
+        'amdipine' => 'Amlodipine',
+        'amlocard' => 'Amlodipine',
+        'amlod' => 'Amlodipine',
+        'amlopin' => 'Amlodipine',
+        'amlowan' => 'Amlodipine',
+        'amodip' => 'Amlodipine',
         'amlodipine' => 'Amlodipine',
+        'amodip v' => 'Amlodipine + Valsartan',
+        'amstan' => 'Amlodipine + Valsartan',
+        'exforge hct' => 'Amlodipine + Valsartan + Hydrochlorothiazide',
+        'exforge' => 'Amlodipine + Valsartan',
+        'velker plus' => 'Amlodipine + Valsartan',
+        'diovan' => 'Valsartan',
+        'valsartan' => 'Valsartan',
+        'co diovan' => 'Valsartan + Hydrochlorothiazide',
+        'cozaar' => 'Losartan Potassium',
+        'eziday' => 'Losartan Potassium',
+        'losartan' => 'Losartan Potassium',
+        'eziday plus' => 'Losartan Potassium + Hydrochlorothiazide',
+        'co eziday' => 'Losartan Potassium + Hydrochlorothiazide',
+        'hyzaar' => 'Losartan Potassium + Hydrochlorothiazide',
+        'micardis' => 'Telmisartan',
+        'telmisartan' => 'Telmisartan',
+        'canditensin' => 'Candesartan',
+        'atacand' => 'Candesartan',
+        'candesartan' => 'Candesartan',
+        'capoten' => 'Captopril',
+        'captopril' => 'Captopril',
+        'zestril' => 'Lisinopril',
+        'lisinopril' => 'Lisinopril',
+        'ramipril' => 'Ramipril',
+        'tritace' => 'Ramipril',
+        'concor plus' => 'Bisoprolol + Hydrochlorothiazide',
         'concor' => 'Bisoprolol',
         'bisoprolol' => 'Bisoprolol',
         'tenormin' => 'Atenolol',
         'atenolol' => 'Atenolol',
         'inderal' => 'Propranolol',
         'propranolol' => 'Propranolol',
-        'cozaar' => 'Losartan Potassium',
-        'eziday' => 'Losartan Potassium',
-        'losartan' => 'Losartan Potassium',
-        'exforge' => 'Amlodipine + Valsartan',
-        'valsartan' => 'Valsartan',
-        'capoten' => 'Captopril',
-        'ramipril' => 'Ramipril',
+        'carvilol' => 'Carvedilol',
+        'carvedilol' => 'Carvedilol',
+        'herbesser' => 'Diltiazem',
+        'metazem' => 'Diltiazem',
+        'diltiazem' => 'Diltiazem',
+        'calan' => 'Verapamil',
+        'isoptin' => 'Verapamil',
+        'verapamil' => 'Verapamil',
+        'lipiget ez' => 'Atorvastatin + Ezetimibe',
         'lipiget' => 'Atorvastatin',
         'lipitor' => 'Atorvastatin',
+        'atorva' => 'Atorvastatin',
         'atorvastatin' => 'Atorvastatin',
         'rovista' => 'Rosuvastatin',
         'crestor' => 'Rosuvastatin',
+        'cholestor' => 'Rosuvastatin',
+        'x plended' => 'Rosuvastatin',
         'rosuvastatin' => 'Rosuvastatin',
-        'voltral' => 'Diclofenac Sodium',
-        'dicloran' => 'Diclofenac Sodium',
-        'diclofenac' => 'Diclofenac Sodium',
-        'caflam' => 'Diclofenac Potassium',
-        'synflex' => 'Naproxen Sodium',
-        'naproxen' => 'Naproxen Sodium',
-        'brexin' => 'Piroxicam',
-        'piroxicam' => 'Piroxicam',
-        'celebrex' => 'Celecoxib',
-        'celecoxib' => 'Celecoxib',
+        'plavix' => 'Clopidogrel',
+        'lowplat' => 'Clopidogrel',
+        'norplat' => 'Clopidogrel',
+        'clopidogrel' => 'Clopidogrel',
+        'xarelto' => 'Rivaroxaban',
+        'rivaroxaban' => 'Rivaroxaban',
+        'lasix' => 'Furosemide',
+        'furosemide' => 'Furosemide',
+        'spiromide' => 'Furosemide + Spironolactone',
+        'aldactone' => 'Spironolactone',
+        'spironolactone' => 'Spironolactone',
+        'transamin' => 'Tranexamic Acid',
+        'cyklokapron' => 'Tranexamic Acid',
+        'amtraxa' => 'Tranexamic Acid',
+        'tranexamic acid' => 'Tranexamic Acid',
+
+        // CNS, Neurology & Psychiatry
+        'tegral' => 'Carbamazepine',
+        'tegretol' => 'Carbamazepine',
+        'karbaton' => 'Carbamazepine',
+        'carbamazepine' => 'Carbamazepine',
+        'epival' => 'Divalproex Sodium',
+        'depakote' => 'Divalproex Sodium',
+        'keppra' => 'Levetiracetam',
+        'lerace' => 'Levetiracetam',
+        'levetiracetam' => 'Levetiracetam',
+        'lamictal' => 'Lamotrigine',
+        'lamitor' => 'Lamotrigine',
+        'lamotrigine' => 'Lamotrigine',
+        'topamax' => 'Topiramate',
+        'topiramate' => 'Topiramate',
+        'lyrica' => 'Pregabalin',
+        'gabica' => 'Pregabalin',
+        'pregabalin' => 'Pregabalin',
+        'neurontin' => 'Gabapentin',
+        'gabix' => 'Gabapentin',
+        'gabapentin' => 'Gabapentin',
+        'amitryp' => 'Amitriptyline',
+        'tryptanol' => 'Amitriptyline',
+        'amitriptyline' => 'Amitriptyline',
+        'zoloft' => 'Sertraline',
+        'gloft' => 'Sertraline',
+        'sertraline' => 'Sertraline',
+        'cipralex' => 'Escitalopram',
+        'morcet' => 'Escitalopram',
+        'esglit' => 'Escitalopram',
+        'escitalopram' => 'Escitalopram',
+        'prozac' => 'Fluoxetine',
+        'fluoxetine' => 'Fluoxetine',
+        'paxil' => 'Paroxetine',
+        'seroxat' => 'Paroxetine',
+        'paroxetine' => 'Paroxetine',
+        'xanax' => 'Alprazolam',
+        'alprazolam' => 'Alprazolam',
+        'lexotanil' => 'Bromazepam',
+        'bromazepam' => 'Bromazepam',
+        'rivotril' => 'Clonazepam',
+        'clonazepam' => 'Clonazepam',
+        'valium' => 'Diazepam',
+        'diazepam' => 'Diazepam',
+        'ativan' => 'Lorazepam',
+        'lorazepam' => 'Lorazepam',
+        'dormicum' => 'Midazolam',
+        'midazolam' => 'Midazolam',
+        'serc' => 'Betahistine',
+        'betahistine' => 'Betahistine',
+        'stemetil' => 'Prochlorperazine',
+        'prochlorperazine' => 'Prochlorperazine',
+        'sibelium' => 'Flunarizine',
+        'flunarizine' => 'Flunarizine',
+
+        // Vitamins, Minerals & Hematinics
         'surbex z' => 'Vitamin B-Complex + Vitamin C + Zinc',
         'surbex' => 'Vitamin B-Complex',
         'neurobion' => 'Vitamin B1 + Vitamin B6 + Vitamin B12',
         'methycobal' => 'Mecobalamin (Vitamin B12)',
+        'mecobalamin' => 'Mecobalamin (Vitamin B12)',
+        'cac 1000 plus' => 'Calcium + Vitamin C + Vitamin D3 + Vitamin B6',
         'cac 1000' => 'Calcium + Vitamin C + Vitamin D3',
-        'cac-1000' => 'Calcium + Vitamin C + Vitamin D3',
         'sunny d' => 'Cholecalciferol (Vitamin D3)',
         'indrop d' => 'Cholecalciferol (Vitamin D3)',
+        'glaxos d' => 'Glucose + Calcium + Vitamin D',
+        'bon one' => 'Alfacalcidol',
+        'maxi alfa' => 'Alfacalcidol',
+        'alfacal' => 'Alfacalcidol',
+        'alfacalcidol' => 'Alfacalcidol',
         'fefol' => 'Ferrous Sulfate + Folic Acid',
         'folic acid' => 'Folic Acid',
+        'folic acid zafa' => 'Folic Acid',
+
+        // Dermatology, Corticosteroids, Ophthalmic & Topical
+        'polyfax plus' => 'Polymyxin B + Bacitracin Zinc + Lignocaine',
         'polyfax' => 'Polymyxin B + Bacitracin Zinc',
+        'betnovate n' => 'Betamethasone Valerate + Neomycin Sulfate',
+        'betnovate c' => 'Betamethasone Valerate + Clioquinol',
         'betnovate' => 'Betamethasone Valerate',
+        'betamet' => 'Betamethasone Valerate',
+        'fucidin h' => 'Fusidic Acid + Hydrocortisone',
         'fucidin' => 'Fusidic Acid',
+        'fusidic acid' => 'Fusidic Acid',
+        'bactroban' => 'Mupirocin',
+        'mupirocin' => 'Mupirocin',
         'kenacomb' => 'Triamcinolone + Neomycin + Nystatin + Gramicidin',
-        'hydryllin' => 'Aminophylline + Diphenhydramine + Ammonium Chloride',
-        'acefyl' => 'Acefylline Piperazine + Diphenhydramine',
-        'pulmonol' => 'Chlorpheniramine + Dextromethorphan + Pseudoephedrine',
-        'buscopan' => 'Hyoscine Butylbromide',
-        'no-spa' => 'Drotaverine',
-        'nospa' => 'Drotaverine',
-        'duphalac' => 'Lactulose',
-        'lilac' => 'Lactulose',
-        'lactulose' => 'Lactulose',
-        'imodium' => 'Loperamide',
-        'loperamide' => 'Loperamide',
-        'ors' => 'Oral Rehydration Salts',
-        'pedialyte' => 'Oral Rehydration Salts',
-        'lasix' => 'Furosemide',
-        'furosemide' => 'Furosemide',
-        'aldactone' => 'Spironolactone',
-        'thyroxine' => 'Levothyroxine Sodium',
+        'lotricort' => 'Clotrimazole + Hydrocortisone',
+        'locasalic' => 'Flumetasone Pivalate + Salicylic Acid',
+        'selsun' => 'Selenium Sulfide',
+        'oradin' => 'Chlorhexidine Gluconate',
+        'potassium permanganate' => 'Potassium Permanganate',
+        'potasium permanganate' => 'Potassium Permanganate',
         'deltacoortril' => 'Prednisolone',
+        'deltacortril' => 'Prednisolone',
         'prednisolone' => 'Prednisolone',
+        'solumedrol' => 'Methylprednisolone',
+        'methylprednisolone' => 'Methylprednisolone',
         'decadron' => 'Dexamethasone',
         'dexamethasone' => 'Dexamethasone',
+        'dexcip' => 'Dexamethasone + Ciprofloxacin',
+        'ketro' => 'Ketorolac Tromethamine',
+        'atropine' => 'Atropine',
+        'nordette' => 'Levonorgestrel + Ethinylestradiol',
+        'duphaston' => 'Dydrogesterone',
+        'dydrogesterone' => 'Dydrogesterone',
+        'primolut n' => 'Norethisterone',
+        'norethisterone' => 'Norethisterone',
     ];
 
     public function __construct(
@@ -2206,17 +2577,17 @@ SYSTEM;
         $resolvedMap = [];
         $unresolvedForAi = [];
 
-        // Pass 1: Fast local pharmaceutical dictionary + embedded generic name detection
+        // Pass 1: Strict 100%-verified pharmaceutical dictionary + exact Brand-Core & explicit generic salt matching
         foreach ($batchProducts as $prod) {
             $localSalt = $this->inferFormulationFromProductName((string) $prod->name);
             if ($localSalt !== null && $localSalt !== '') {
                 $resolvedMap[$prod->id] = $localSalt;
-            } else {
+            } elseif (! $this->isNonMedicineConsumerItem((string) $prod->name)) {
                 $unresolvedForAi[$prod->id] = (string) $prod->name;
             }
         }
 
-        // Pass 2: Use connected Groq / Gemini AI for any remaining products in the batch
+        // Pass 2: Use connected Groq / Gemini AI ONLY when 100% corroborated (never guessing opaque trade names)
         if (! empty($unresolvedForAi)) {
             $aiSalts = $this->inferBatchFormulationsWithAi($unresolvedForAi);
             foreach ($aiSalts as $pid => $saltName) {
@@ -2331,7 +2702,9 @@ SYSTEM;
 
     /**
      * Infers the active pharmaceutical ingredient (generic salt) for a batch of product names
-     * using Groq Primary -> Gemini Backup AI.
+     * using Groq Primary -> Gemini Backup AI, strictly enforcing 100% certainty and ZERO guessing.
+     * Any AI-suggested salt is verified by `verifyAiFormulationIs100PercentCertain` and rejected if it
+     * is an uncorroborated guess on an opaque local trade name.
      *
      * @param  array<int, string>  $idToProductName
      * @return array<int, string>
@@ -2351,18 +2724,23 @@ SYSTEM;
         }
 
         $systemPrompt = <<<'SYSTEM'
-You are a pharmaceutical & ERP catalog assistant for Karobar-App.
-Given a JSON map of product IDs to product names (including Pakistani and international brand medicines), return the accurate Generic / Active Pharmaceutical Salt Formulation for each item (e.g. "Panadol 500mg" -> "Paracetamol", "Augmentin 625mg" -> "Amoxicillin + Clavulanic Acid", "Risek 40mg" -> "Omeprazole").
-If an item is a general non-medical grocery/consumer item or you are not confident of its generic salt, set its value to null.
+You are a strict, zero-guessing pharmaceutical catalog verifier for Karobar-App.
+CRITICAL RULE (NEVER GUESS — 100% CERTAINTY ONLY):
+- You MUST NEVER guess, infer from brand prefixes/syllables, or approximate any formulation.
+- If a product name is a local/regional/unfamiliar trade name, cosmetic, supplement, surgical item, or if you have even 1% doubt about its exact active pharmaceutical ingredient(s) (including combination variants like Plus, Forte, N, C, M, EZ, HCT, INH), you MUST set its value to null!
+- Only provide a formulation when you are 100% certain (for example, when the generic chemical/INN salt name is explicitly present in the product name).
 Respond ONLY with a valid JSON object matching this exact schema:
 {
   "formulations": {
-    "PRODUCT_ID": "Generic Salt Name or null"
+    "PRODUCT_ID": {
+      "formulation": "Exact INN Generic Salt Name or null",
+      "certainty": 100
+    }
   }
 }
 SYSTEM;
 
-        $userPrompt = "Identify the generic formulation/salt for these products:\n"
+        $userPrompt = "Return formulations ONLY for products where you are 100% certain (set all others to null):\n"
             .json_encode($idToProductName, JSON_UNESCAPED_UNICODE);
 
         $decoded = $this->callAiJson($systemPrompt, $userPrompt);
@@ -2373,12 +2751,135 @@ SYSTEM;
         $map = is_array($decoded['formulations'] ?? null) ? $decoded['formulations'] : $decoded;
         $result = [];
         foreach ($map as $k => $v) {
-            if (is_numeric($k) && is_string($v) && trim($v) !== '') {
-                $result[(int) $k] = trim($v);
+            if (! is_numeric($k)) {
+                continue;
+            }
+            $pid = (int) $k;
+            $productName = (string) ($idToProductName[$pid] ?? '');
+            if ($productName === '') {
+                continue;
+            }
+
+            $verifiedSalt = $this->verifyAiFormulationIs100PercentCertain($productName, $v);
+            if ($verifiedSalt !== null && $verifiedSalt !== '') {
+                $result[$pid] = $verifiedSalt;
             }
         }
 
         return $result;
+    }
+
+    /**
+     * Strictly verifies an AI-suggested formulation against the product name and our verified
+     * pharmacopoeia so that Cube NEVER saves a guessed or hallucinated formulation.
+     */
+    protected function verifyAiFormulationIs100PercentCertain(string $productName, mixed $aiEntry): ?string
+    {
+        $rawSalt = '';
+        $certainty = 100;
+
+        if (is_array($aiEntry)) {
+            $rawSalt = trim((string) ($aiEntry['formulation'] ?? ($aiEntry['salt'] ?? '')));
+            $certainty = isset($aiEntry['certainty']) && is_numeric($aiEntry['certainty'])
+                ? (int) $aiEntry['certainty']
+                : 0;
+        } elseif (is_string($aiEntry)) {
+            $rawSalt = trim($aiEntry);
+        }
+
+        if (
+            $rawSalt === '' ||
+            $certainty < 100 ||
+            in_array(mb_strtolower($rawSalt, 'UTF-8'), ['null', 'unknown', 'n/a', 'none', 'various', 'multivitamin', 'multivitamins', 'herbal', 'supplement', 'food supplement'], true)
+        ) {
+            return null;
+        }
+
+        // 1. If our deterministic 100%-verified dictionary resolves this product, only accept that exact match
+        $deterministic = $this->inferFormulationFromProductName($productName);
+        if ($deterministic !== null) {
+            return $deterministic;
+        }
+
+        // 2. Multi-ingredient strength check (e.g. 10+20mg or 5/500mg MUST have '+' in formulation)
+        if ($this->hasMultiIngredientStrength($productName) && ! str_contains($rawSalt, '+')) {
+            return null;
+        }
+
+        // 3. Zero-Guessing Corroboration Check:
+        // Since the product was NOT in our verified brand dictionary, the AI is ONLY allowed to succeed
+        // if every active ingredient in `$rawSalt` is a verified INN salt AND is explicitly present
+        // in the product name itself (allowing only minor spelling typos >= 84% similarity, e.g. CEFTRIXONE -> Ceftriaxone).
+        $knownCanonicalSalts = array_unique(array_values(self::PHARMACY_SALT_DICTIONARY));
+        $knownSaltLookup = [];
+        foreach ($knownCanonicalSalts as $canonicalCombo) {
+            foreach (explode('+', $canonicalCombo) as $part) {
+                $cleanPart = trim(preg_replace('/\([^)]*\)/', '', $part) ?? $part);
+                if ($cleanPart !== '') {
+                    $knownSaltLookup[mb_strtolower($cleanPart, 'UTF-8')] = trim($part);
+                }
+            }
+        }
+
+        $productTokens = preg_split('/[^a-z0-9]+/iu', mb_strtolower($productName, 'UTF-8')) ?: [];
+        $productTokens = array_values(array_filter($productTokens, fn ($t) => strlen($t) >= 4));
+        $lowerProduct = mb_strtolower($productName, 'UTF-8');
+
+        $ingredients = array_values(array_filter(array_map('trim', explode('+', $rawSalt)), fn ($s) => $s !== ''));
+        if (empty($ingredients)) {
+            return null;
+        }
+
+        $canonicalParts = [];
+        foreach ($ingredients as $ing) {
+            $cleanIng = trim(preg_replace('/\([^)]*\)/', '', $ing) ?? $ing);
+            $lowerIng = mb_strtolower($cleanIng, 'UTF-8');
+
+            // Must be a recognized pharmaceutical salt
+            $matchedCanonical = $knownSaltLookup[$lowerIng] ?? null;
+            if ($matchedCanonical === null) {
+                foreach ($knownSaltLookup as $kLower => $kCanon) {
+                    if (str_starts_with($kLower, $lowerIng.' ') || str_starts_with($lowerIng, $kLower.' ')) {
+                        $matchedCanonical = $kCanon;
+                        break;
+                    }
+                }
+            }
+            if ($matchedCanonical === null) {
+                return null;
+            }
+
+            // Verify that the generic salt name (or its primary word >= 5 chars) is explicitly written in the product name
+            $ingWords = array_values(array_filter(
+                preg_split('/\s+/', $lowerIng) ?: [],
+                fn ($w) => strlen($w) >= 5 && ! in_array($w, ['sodium', 'potassium', 'calcium', 'sulfate', 'sulphate', 'hydrochloride', 'maleate', 'citrate', 'valerate', 'propionate', 'acetate', 'fumarate', 'tartrate', 'mesylate', 'besylate', 'hydrate', 'trihydrate', 'monohydrate'], true)
+            ));
+            if (empty($ingWords)) {
+                $ingWords = [ $lowerIng ];
+            }
+
+            $primaryWord = $ingWords[0];
+            $corroboratedInName = str_contains($lowerProduct, $primaryWord);
+            if (! $corroboratedInName && strlen($primaryWord) >= 6) {
+                foreach ($productTokens as $pt) {
+                    if (abs(strlen($pt) - strlen($primaryWord)) <= 2) {
+                        similar_text($primaryWord, $pt, $pct);
+                        if ($pct >= 84.0) {
+                            $corroboratedInName = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (! $corroboratedInName) {
+                return null;
+            }
+
+            $canonicalParts[] = $matchedCanonical;
+        }
+
+        return implode(' + ', array_unique($canonicalParts));
     }
 
     /**
@@ -2419,51 +2920,170 @@ SYSTEM;
     }
 
     /**
-     * Infers the pharmaceutical salt / generic formulation from a medicine's name using
-     * our built-in dictionary of common Pakistani & international brands and generic salts.
+     * Infers the pharmaceutical salt / generic formulation from a medicine's name ONLY when
+     * 100% certain — using exact Brand-Core matching (`extractBrandCore`) against our verified
+     * `PHARMACY_SALT_DICTIONARY` plus multi-ingredient strength verification.
+     * Never guesses from partial substrings or mismatched variants.
      */
     public function inferFormulationFromProductName(string $productName): ?string
     {
-        $lower = mb_strtolower(trim($productName), 'UTF-8');
-        if ($lower === '') {
+        $trimmed = trim($productName);
+        if ($trimmed === '' || $this->isNonMedicineConsumerItem($trimmed)) {
             return null;
         }
 
-        foreach (self::PHARMACY_SALT_DICTIONARY as $brandKey => $salt) {
-            if (preg_match('/\b'.preg_quote($brandKey, '/').'\b/iu', $lower)) {
-                return $salt;
+        $brandCore = $this->extractBrandCore($trimmed);
+        if ($brandCore === '') {
+            return null;
+        }
+
+        $candidateSalt = self::PHARMACY_SALT_DICTIONARY[$brandCore] ?? null;
+
+        // Also check if the product explicitly states (ORS) in parentheses
+        if ($candidateSalt === null && preg_match('/\(\s*ors\s*\)/iu', $trimmed)) {
+            $candidateSalt = 'Oral Rehydration Salts';
+        }
+
+        // If brandCore starts with an explicit generic salt + manufacturer suffix (e.g. "folic acid zafa")
+        if ($candidateSalt === null) {
+            foreach (self::PHARMACY_SALT_DICTIONARY as $dictKey => $dictSalt) {
+                // Only match if the dictionary key is itself the canonical generic salt (case-insensitive)
+                if (mb_strtolower($dictKey, 'UTF-8') === mb_strtolower($dictSalt, 'UTF-8')) {
+                    if ($brandCore === $dictKey) {
+                        $candidateSalt = $dictSalt;
+                        break;
+                    }
+                }
             }
         }
 
-        return null;
+        if ($candidateSalt === null) {
+            return null;
+        }
+
+        // Multi-ingredient strength guard: if product has e.g. "10+20MG" or "5/500MG", salt MUST be a '+' combination
+        if ($this->hasMultiIngredientStrength($trimmed) && ! str_contains($candidateSalt, '+')) {
+            return null;
+        }
+
+        return $candidateSalt;
     }
 
-    protected function inferCategoryFromProductName(string $productName): string
+    /**
+     * Extracts the normalized Brand + Variant Core from a product name by stripping dosage forms,
+     * strengths, pack counts, and manufacturer codes while preserving combination/variant qualifiers
+     * (`n`, `c`, `m`, `ez`, `g`, `h`, `v`, `l`, `t`, `p`, `z`, `plus`, `forte`, `hct`, `cf`, `extra`, `night`, `inh`).
+     */
+    public function extractBrandCore(string $productName): string
     {
-        $lower = mb_strtolower($productName, 'UTF-8');
-        if (preg_match('/\b(tab|tabs|tablet|tablets)\b/iu', $lower)) {
-            return 'Tablets';
-        }
-        if (preg_match('/\b(cap|caps|capsule|capsules)\b/iu', $lower)) {
-            return 'Capsules';
-        }
-        if (preg_match('/\b(syp|syrup|susp|suspension|liquid|linctus)\b/iu', $lower)) {
-            return 'Syrups & Suspensions';
-        }
-        if (preg_match('/\b(inj|injection|vial|amp|ampoule|infusion|iv)\b/iu', $lower)) {
-            return 'Injections';
-        }
-        if (preg_match('/\b(cream|ointment|gel|lotion)\b/iu', $lower)) {
-            return 'Creams & Ointments';
-        }
-        if (preg_match('/\b(drop|drops|eye|ear|nasal)\b/iu', $lower)) {
-            return 'Drops';
-        }
-        if (preg_match('/\b(sachet|powder|ors)\b/iu', $lower)) {
-            return 'Sachets & Powders';
+        $s = mb_strtolower(trim($productName), 'UTF-8');
+        if ($s === '') {
+            return '';
         }
 
-        return 'General';
+        // Normalize backslashes to forward slashes (e.g., 200MG\5ML -> 200mg/5ml)
+        $s = str_replace('\\', '/', $s);
+
+        // Remove parenthetical pack/manufacturer codes like (KPLP) 13453, (HGHN) 7134, (100S), (30'S), (14S)
+        $s = preg_replace('/\(\s*[a-z]{3,5}\s*\)\s*\d*/iu', ' ', $s) ?? $s;
+        $s = preg_replace('/\(\s*\d+\s*\'?s?\s*\)/iu', ' ', $s) ?? $s;
+        $s = preg_replace('/\([^)]*\)/u', ' ', $s) ?? $s;
+
+        // Split glued dosage/strength tokens like "tab1gm" -> "tab 1gm", "1giv" -> "1g iv", "500im" -> "500mg im"
+        $s = preg_replace('/\b(tab|cap|syp|inj|susp)(\d)/iu', '$1 $2', $s) ?? $s;
+        $s = preg_replace('/(\d+(?:\.\d+)?)\s*(g|gm|mg|mcg|ml)(iv|im|sc|syp|tab|cap|inj)\b/iu', '$1$2 $3', $s) ?? $s;
+        $s = preg_replace('/\b(\d+)\s*(iv|im)\b/iu', '$1mg $2', $s) ?? $s;
+
+        // Remove multi-strengths and single strengths with units (e.g. 10+20mg, 1mg/500mg, 200mg/5ml, 100mg/2ml, 1mg/ml, 300mg, 0.5mcg, 1.5miu, 2%, 15grm)
+        $s = preg_replace('/\b\d+(?:\.\d+)?\s*(?:[\+\/]\s*\d+(?:\.\d+)?)?\s*(?:mg|mcg|ug|g|gm|grm|kg|ml|l|iu|miu|units?|%)(?:\s*\/\s*\d*(?:\.\d+)?\s*(?:ml|mg|g|gm|l))?\b/iu', ' ', $s) ?? $s;
+        // Remove bare slash or plus ratios like "25/5", "10/160", "5/80", "5 / 40", "156.25"
+        $s = preg_replace('/\b\d+(?:\.\d+)?\s*[\+\/]\s*\d+(?:\.\d+)?\b/iu', ' ', $s) ?? $s;
+        $s = preg_replace('/\b\d+\.\d+\b/u', ' ', $s) ?? $s;
+
+        // Remove pack counts like 100s, 30's, 14s, 1's
+        $s = preg_replace('/\b\d+\s*\'?s\b/iu', ' ', $s) ?? $s;
+
+        // Remove dosage form, route, release-profile, and flavor words (NEVER remove variant letters like n, c, m, ez, g, h, v, l, p, z, plus, forte, hct, cf, extra, night, inh)
+        $dosageAndFormWords = [
+            'tablets', 'tablet', 'tabs', 'tab',
+            'capsules', 'capsule', 'capsul', 'caps', 'cap',
+            'syrups', 'syrupe', 'syrup', 'syp',
+            'suspensions', 'suspension', 'susp',
+            'injections', 'injection', 'inj',
+            'vials', 'vial', 'ampoules', 'ampoule', 'amps', 'amp', 'infusions', 'infusion',
+            'iv', 'im', 'sc',
+            'drops', 'drop', 'sprays', 'spray', 'rinse', 'gargle', 'mouthwash',
+            'eye', 'ear', 'nasal', 'mouth', 'oral', 'ophth', 'ophthalmic', 'topical', 'vaginal',
+            'ointments', 'ointment', 'oint', 'creams', 'cream', 'lotions', 'lotion', 'emulgel', 'gels', 'gel',
+            'solutions', 'solution', 'sol',
+            'sachets', 'sachet', 'satches', 'satche', 'powders', 'powder', 'granules',
+            'inhalers', 'inhaler', 'evohaler', 'rotacaps', 'rotacap', 'respules', 'respule', 'nebules', 'nebule', 'diskus', 'turbuhaler',
+            'suppositories', 'suppository', 'supp', 'pessaries', 'pessary',
+            'lozenges', 'lozenge', 'linctus', 'elixir', 'emulsion',
+            'insta', 'dry', 'film', 'coated', 'enteric', 'dispersible', 'soluble', 'chewable', 'effervescent',
+            'paediatric', 'pediatric', 'paed', 'pead', 'junior', 'infant', 'adult',
+            'veternary', 'veterinary',
+            'ds', 'bd', 'sr', 'mr', 'xr', 'xl', 'cr', 'er', 'la', 'od', 'dr', 'ec',
+            'orange', 'lemon', 'strawberry', 'cherry', 'banana', 'mango', 'vanilla', 'chocolate', 'mint', 'honey', 'flavour', 'flavor',
+        ];
+        $pattern = '/\b(?:'.implode('|', $dosageAndFormWords).')\b/iu';
+        $s = preg_replace($pattern, ' ', $s) ?? $s;
+
+        // Normalize punctuation to spaces
+        $s = preg_replace('/[^a-z0-9\s]+/iu', ' ', $s) ?? $s;
+        $s = trim(preg_replace('/\s+/u', ' ', $s) ?? $s);
+
+        // Preserve special numeric brands ("cac 1000", "cac 1000 plus", "calpol 6 plus") before stripping trailing bare strength numbers
+        if (preg_match('/^(cac\s+1000(?:\s+plus)?|calpol\s+6\s+plus)\b/iu', $s, $m)) {
+            return mb_strtolower(trim((string) preg_replace('/\s+/', ' ', $m[1])), 'UTF-8');
+        }
+
+        // Strip remaining standalone numbers (e.g. trailing item codes or bare mg numbers like "200", "500", "28")
+        $s = preg_replace('/\b\d+[a-z]?\b/iu', ' ', $s) ?? $s;
+        $s = trim(preg_replace('/\s+/u', ' ', $s) ?? $s);
+
+        return $s;
+    }
+
+    /**
+     * Detects if a product name specifies a multi-ingredient combination strength
+     * (such as `10+20MG`, `1MG/500MG`, `5/160MG`, `25/5 MG`, `5 / 80MG`), excluding
+     * liquid concentration ratios like `100MG/2ML` or `200MG/5ML`.
+     */
+    protected function hasMultiIngredientStrength(string $productName): bool
+    {
+        $s = str_replace('\\', '/', mb_strtolower($productName, 'UTF-8'));
+
+        // Explicit '+' between two numbers (e.g. 10+20mg, 5+160mg)
+        if (preg_match('/\b\d+(?:\.\d+)?\s*(?:mg|mcg|g|gm)?\s*\+\s*\d+(?:\.\d+)?\s*(?:mg|mcg|g|gm)?\b/iu', $s)) {
+            return true;
+        }
+
+        // Slash between two numbers NOT followed by ml/l/cc/vial/amp (e.g. 1mg/500mg, 25/5 mg, 5/160mg, 5 / 80mg)
+        if (preg_match('/\b\d+(?:\.\d+)?\s*(?:mg|mcg|g|gm)?\s*\/\s*\d+(?:\.\d+)?\s*(mg|mcg|g|gm)\b/iu', $s)) {
+            return true;
+        }
+
+        if (preg_match('/\b\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?(?!\s*(?:ml|l|cc|%))\b/iu', $s)) {
+            // Ensure it's not a date or fraction followed by ml
+            if (! preg_match('/\b\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?\s*(?:ml|l|cc)\b/iu', $s)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Returns true if the product name is clearly a non-medicine consumer, cosmetic, toiletry,
+     * surgical device, or nutritional food item that should never be assigned a drug salt.
+     */
+    protected function isNonMedicineConsumerItem(string $productName): bool
+    {
+        return (bool) preg_match(
+            '/\b(hair\s+colour|hair\s+color|hair\s+oil|tooth\s*brush|tooth\s*paste|shaving|razor|razer|face\s+wash|body\s+wash|beauty\s+soap|shampoo|conditioner|diaper|pampers|sanitary|cotton|bandage|syringe|cannula|drip\s+set|gloves|thermometer|glucometer|strips|feeder|pacifier|nipple|milk|formula\s+powder|rice\s+pouch|cereal|food\s+supplement|perfume|deodorant|tissue|wipes)\b/iu',
+            $productName
+        );
     }
 
     protected function resolveOrCreateCategory(string $name): Category

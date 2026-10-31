@@ -21,7 +21,12 @@ import { useTheme } from "@/context/ThemeContext.jsx";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { usePermissions } from "@/api/usePermissions.js";
 import ThemeToggle from "./ThemeToggle.jsx";
-import { GuideBotTopbarButton, useGuideBotOpenState } from "./GuideBotTrigger.jsx";
+import {
+  GuideBotTopbarButton,
+  InspectElementTopbarButton,
+  useGuideBotOpenState,
+  useInspectElementState,
+} from "./GuideBotTrigger.jsx";
 import axios from "axios";
 
 const ProductSearchModal = lazy(() => import("@/components/ProductSearchModal.jsx"));
@@ -96,6 +101,9 @@ export default function Topbar({
 
   // Screen-Aware Bilingual Feature Guide Bot state (opens anywhere with Alt+G and stays open across pages)
   const [guideBotOpen, setGuideBotOpen] = useGuideBotOpenState();
+
+  // Click-to-Explain UI Inspector state (toggles anywhere with Alt+E)
+  const [, setInspectMode] = useInspectElementState();
 
   const canViewAccounts = has("account.view");
 
@@ -631,6 +639,13 @@ export default function Topbar({
         return;
       }
 
+      // Alt+E toggles Click-to-Explain UI Inspector anywhere
+      if (e.code === "KeyE" || e.key.toLowerCase() === "e") {
+        e.preventDefault();
+        setInspectMode((v) => !v);
+        return;
+      }
+
       if (isTyping) return;
 
       if (e.code === "Digit1" || e.code === "Numpad1") {
@@ -761,6 +776,9 @@ export default function Topbar({
               isOpen={guideBotOpen}
               pageTitle={pageTitle}
             />
+
+            {/* Click-to-Explain Element Inspector (Alt+E) */}
+            <InspectElementTopbarButton />
           </div>
 
           {/* Right: 1) Financial Registers | 2) System Utilities | 3) License & User */}

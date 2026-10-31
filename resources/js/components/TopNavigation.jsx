@@ -35,7 +35,11 @@ import {
 import { usePermissions } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
-import { GuideBotTopbarButton, useGuideBotOpenState } from "./GuideBotTrigger.jsx";
+import {
+  GuideBotTopbarButton,
+  InspectElementTopbarButton,
+  useGuideBotOpenState,
+} from "./GuideBotTrigger.jsx";
 
 const FeatureGuideBot = lazy(() => import("./FeatureGuideBot.jsx"));
 
@@ -389,13 +393,14 @@ export default function TopNavigation() {
             })}
           </nav>
 
-          {/* Right: Screen-Aware Bilingual Guide Bot */}
-          <div className="flex items-center px-3 border-l border-gray-200/60 dark:border-slate-700/60 shrink-0">
+          {/* Right: Screen-Aware Bilingual Guide Bot + Click-to-Explain */}
+          <div className="flex items-center gap-1.5 px-3 border-l border-gray-200/60 dark:border-slate-700/60 shrink-0">
             <GuideBotTopbarButton
               onClick={() => setGuideBotOpen((v) => !v)}
               isOpen={guideBotOpen}
               compact
             />
+            <InspectElementTopbarButton compact />
           </div>
         </div>
       </div>

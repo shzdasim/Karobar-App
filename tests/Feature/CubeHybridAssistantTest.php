@@ -1028,9 +1028,20 @@ JS;
         \App\Models\Product::create([
             'product_code' => 'PRD-9003',
             'barcode' => 'PRD9000000003',
-            'name' => 'Risek 20mg Capsule',
+            'name' => 'Betnovate N Lotion 60ml',
             'formulation' => null,
-            'pack_size' => 14,
+            'pack_size' => 1,
+            'narcotic' => 'no',
+            'category_id' => $panadol->category_id,
+            'brand_id' => $panadol->brand_id,
+            'supplier_id' => $panadol->supplier_id,
+        ]);
+        $unverifiedProd = \App\Models\Product::create([
+            'product_code' => 'PRD-9004',
+            'barcode' => 'PRD9000000004',
+            'name' => 'Brozinil UnknownBrand 250mg Tablet',
+            'formulation' => null,
+            'pack_size' => 10,
             'narcotic' => 'no',
             'category_id' => $panadol->category_id,
             'brand_id' => $panadol->brand_id,
@@ -1048,11 +1059,11 @@ JS;
             ->assertJsonPath('task_meta.action', 'bulk_autofill_missing_formulations')
             ->assertJsonPath('task_meta.updated_count', 2)
             ->assertJsonPath('background_task.has_more', true)
-            ->assertJsonPath('background_task.remaining_count', 1);
+            ->assertJsonPath('background_task.remaining_count', 2);
 
         $lastId = (int) $batch1Resp->json('background_task.last_processed_id');
 
-        // Run batch 2 to finish the remaining product
+        // Run batch 2 to process the remaining 2 products (1 verified variant + 1 unverified brand that must NOT be guessed)
         $batch2Resp = $this->postJson('/api/cube/execute-task', [
             'task_type' => 'bulk_autofill_missing_formulations',
             'batch_size' => 2,
@@ -1066,7 +1077,9 @@ JS;
 
         $this->assertSame('Amoxicillin + Clavulanic Acid', \App\Models\Product::where('product_code', 'PRD-9001')->value('formulation'));
         $this->assertSame('Ibuprofen', \App\Models\Product::where('product_code', 'PRD-9002')->value('formulation'));
-        $this->assertSame('Omeprazole', \App\Models\Product::where('product_code', 'PRD-9003')->value('formulation'));
+        $this->assertSame('Betamethasone Valerate + Neomycin Sulfate', \App\Models\Product::where('product_code', 'PRD-9003')->value('formulation'));
+        // Unverified trade name must remain null (never guessed!)
+        $this->assertNull(\App\Models\Product::where('product_code', 'PRD-9004')->value('formulation'));
 
         // 4. Hardcoded non-destructive check: Delete requests are strictly blocked in both chat and structured endpoint
         $deleteChatResp = $this->postJson('/api/cube/ask', [

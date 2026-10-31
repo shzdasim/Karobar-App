@@ -15,10 +15,12 @@ import {
   ClipboardDocumentListIcon,
   ClockIcon,
   ArrowUturnLeftIcon,
+  ShareIcon,
 } from "@heroicons/react/24/solid";
 import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
 import DocumentHistoryModal from "@/components/DocumentHistoryModal.jsx";
 import VoidInvoiceModal from "@/components/VoidInvoiceModal.jsx";
+import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext";
@@ -76,6 +78,9 @@ export default function PurchaseInvoicesIndex() {
   const [voidModalOpen, setVoidModalOpen] = useState(false);
   const [voidingInvoice, setVoidingInvoice] = useState(null);
   const [isReversing, setIsReversing] = useState(false);
+
+  // Share modal state
+  const [sharingInvoiceId, setSharingInvoiceId] = useState(null);
 
   const navigate = useNavigate();
 
@@ -581,6 +586,19 @@ export default function PurchaseInvoicesIndex() {
                           </Link>
                         </Guard>
 
+                        {/* Share Action */}
+                        <Guard when={can.view}>
+                          <button
+                            type="button"
+                            onClick={() => setSharingInvoiceId(inv.id)}
+                            className="products-row-action text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+                            aria-label={`Share invoice ${inv.posted_number || inv.invoice_number}`}
+                            title="Share PDF via WhatsApp / Email"
+                          >
+                            <ShareIcon aria-hidden="true" className="w-4 h-4" />
+                          </button>
+                        </Guard>
+
                         {/* Edit Action */}
                         <Guard when={can.update}>
                           {inv.status !== 'reversed' ? (
@@ -872,6 +890,14 @@ export default function PurchaseInvoicesIndex() {
         onConfirm={handleConfirmVoid}
         invoice={voidingInvoice}
         isReversing={isReversing}
+      />
+
+      {/* Share Document Modal */}
+      <ShareDocumentModal
+        isOpen={Boolean(sharingInvoiceId)}
+        onClose={() => setSharingInvoiceId(null)}
+        documentType="purchase_invoice"
+        documentId={sharingInvoiceId}
       />
     </div>
   );

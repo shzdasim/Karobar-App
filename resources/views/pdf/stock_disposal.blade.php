@@ -19,6 +19,7 @@
     .sig-cell { width: 33%; text-align: center; padding: 0 12px; vertical-align: bottom; }
     .sig-line { border-top: 1px solid #334155; padding-top: 6px; font-size: 10px; font-weight: bold; }
   </style>
+  @include('pdf.partials.design_theme', ['pdfDesign' => $pdfDesign ?? ($setting->a4_template ?? 'standard')])
 </head>
 <body>
   @php

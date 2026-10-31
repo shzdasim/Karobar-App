@@ -32,25 +32,31 @@ export function setBottomMascotEnabled(enabled) {
 
 export function useBottomMascotEnabledState() {
   const [enabled, setEnabledState] = useState(() => getBottomMascotEnabled());
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
 
   const setEnabled = useCallback((nextVal) => {
-    setEnabledState((prev) => {
-      const resolved = typeof nextVal === "function" ? nextVal(prev) : Boolean(nextVal);
-      return setBottomMascotEnabled(resolved);
-    });
+    const resolved =
+      typeof nextVal === "function"
+        ? Boolean(nextVal(enabledRef.current))
+        : Boolean(nextVal);
+    enabledRef.current = resolved;
+    setEnabledState(resolved);
+    setBottomMascotEnabled(resolved);
   }, []);
 
   useEffect(() => {
     const onSync = (e) => {
-      if (typeof e?.detail === "boolean") {
-        setEnabledState(e.detail);
-      } else {
-        setEnabledState(getBottomMascotEnabled());
-      }
+      const next =
+        typeof e?.detail === "boolean" ? e.detail : getBottomMascotEnabled();
+      enabledRef.current = next;
+      setEnabledState(next);
     };
     const onStorage = (e) => {
       if (e.key === BOTTOM_MASCOT_ENABLED_KEY) {
-        setEnabledState(getBottomMascotEnabled());
+        const next = getBottomMascotEnabled();
+        enabledRef.current = next;
+        setEnabledState(next);
       }
     };
     window.addEventListener("guide-bot-bottom-mascot-changed", onSync);
@@ -76,25 +82,30 @@ export function useGuideBotOpenState() {
       return false;
     }
   });
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
 
   const setIsOpen = useCallback((nextVal) => {
-    setIsOpenState((prev) => {
-      const resolved = typeof nextVal === "function" ? nextVal(prev) : Boolean(nextVal);
-      try {
-        sessionStorage.setItem(OPEN_STATE_KEY, resolved ? "1" : "0");
-      } catch {
-        /* ignore */
-      }
-      window.dispatchEvent(
-        new CustomEvent("guide-bot-open-state-changed", { detail: resolved })
-      );
-      return resolved;
-    });
+    const resolved =
+      typeof nextVal === "function"
+        ? Boolean(nextVal(isOpenRef.current))
+        : Boolean(nextVal);
+    isOpenRef.current = resolved;
+    setIsOpenState(resolved);
+    try {
+      sessionStorage.setItem(OPEN_STATE_KEY, resolved ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+    window.dispatchEvent(
+      new CustomEvent("guide-bot-open-state-changed", { detail: resolved })
+    );
   }, []);
 
   useEffect(() => {
     const onSync = (e) => {
       if (typeof e?.detail === "boolean") {
+        isOpenRef.current = e.detail;
         setIsOpenState(e.detail);
       }
     };
@@ -230,10 +241,14 @@ export function GuideBotAvatar({
             x: walkDirection === "left" ? -2.8 : 2.8,
             y: 0.2,
           });
-        } else if (trick === "scan") {
-          setGaze({ x: idx % 2 === 0 ? -2.5 : 2.5, y: -1.8 });
+        } else if (trick === "scan" || trick === "spy") {
+          setGaze({ x: idx % 2 === 0 ? -2.5 : 2.5, y: -1.2 });
         } else if (trick === "juggle") {
           setGaze({ x: idx % 2 === 0 ? -2.2 : 2.2, y: -1.6 });
+        } else if (trick === "rubiks") {
+          setGaze({ x: idx % 2 === 0 ? -1.4 : 1.4, y: 1.9 });
+        } else if (trick === "headphones") {
+          setGaze({ x: idx % 2 === 0 ? -1.8 : 1.8, y: -0.4 });
         } else {
           setGaze({ x: frame.x, y: frame.y });
         }
@@ -250,10 +265,14 @@ export function GuideBotAvatar({
         x: walkDirection === "left" ? -2.8 : 2.8,
         y: 0.2,
       });
-    } else if (trick === "scan") {
-      setGaze({ x: 0, y: -1.8 });
+    } else if (trick === "scan" || trick === "spy") {
+      setGaze({ x: 1.2, y: -0.8 });
     } else if (trick === "juggle") {
       setGaze({ x: 0, y: -1.5 });
+    } else if (trick === "rubiks") {
+      setGaze({ x: 0, y: 1.9 });
+    } else if (trick === "headphones") {
+      setGaze({ x: 0, y: -0.3 });
     }
   }, [walking, walkDirection, trick]);
 
@@ -286,17 +305,22 @@ export function GuideBotAvatar({
     };
   }, []);
 
-  // 4. Animated Talking / Dancing / Charging Equalizer Phase
+  // 4. Animated Talking / Dancing / Charging / Headphones / Rubik's Equalizer Phase
   useEffect(() => {
     const shouldAnimateBars =
-      speaking || trick === "dance" || trick === "charge" || trick === "juggle";
+      speaking ||
+      trick === "dance" ||
+      trick === "charge" ||
+      trick === "juggle" ||
+      trick === "headphones" ||
+      trick === "rubiks";
     if (!shouldAnimateBars || typeof window === "undefined") {
       setTalkPhase(0);
       return;
     }
     const talkTimer = window.setInterval(() => {
       setTalkPhase((prev) => (prev + 1) % 3);
-    }, 170);
+    }, trick === "rubiks" ? 210 : 170);
     return () => window.clearInterval(talkTimer);
   }, [speaking, trick]);
 
@@ -306,11 +330,14 @@ export function GuideBotAvatar({
   const showArcs =
     !isSleeping &&
     !isWake &&
+    trick !== "spy" &&
     (isHovered ||
       happyArcs ||
       trick === "backflip" ||
       trick === "dance" ||
-      trick === "charge");
+      trick === "charge" ||
+      trick === "headphones" ||
+      (trick === "rubiks" && talkPhase === 2));
   const isWaving =
     waving || isHovered || speaking || trick === "shades";
 
@@ -552,6 +579,36 @@ export function GuideBotAvatar({
                   <rect x="2" y="2.5" width="5" height="4" rx="1" fill="#10b981" />
                 </g>
               )}
+
+              {/* Trick 11: Cute Detective Magnifying Glass in Right Hand ('spy') */}
+              {trick === "spy" && (
+                <g className="cube-prop-spy" transform="translate(43, 33)">
+                  <line
+                    x1="10"
+                    y1="14"
+                    x2="14"
+                    y2="20"
+                    stroke="#f59e0b"
+                    strokeWidth="2.8"
+                    strokeLinecap="round"
+                  />
+                  <circle
+                    cx="7"
+                    cy="8"
+                    r="6.8"
+                    fill="rgba(56, 189, 248, 0.28)"
+                    stroke="#38bdf8"
+                    strokeWidth="2.2"
+                  />
+                  <path
+                    d="M 4.5 5.2 A 3.5 3.5 0 0 1 9.5 5.2"
+                    stroke="#ffffff"
+                    strokeWidth="1.3"
+                    strokeLinecap="round"
+                    fill="none"
+                  />
+                </g>
+              )}
             </g>
 
             {/* Neck Joint */}
@@ -565,7 +622,15 @@ export function GuideBotAvatar({
               height="21.5"
               rx={activeStyle === "pixel" ? "3.5" : "6.5"}
               fill="#09090b"
-              stroke={trick === "charge" ? "#10b981" : "#27272a"}
+              stroke={
+                trick === "charge"
+                  ? "#10b981"
+                  : trick === "headphones"
+                  ? "#38bdf8"
+                  : trick === "rubiks"
+                  ? "#f59e0b"
+                  : "#27272a"
+              }
               strokeWidth="1.3"
             />
 
@@ -586,52 +651,183 @@ export function GuideBotAvatar({
               <rect
                 x="27.2"
                 y={
-                  (speaking || trick === "dance" || trick === "charge") && talkPhase === 1
-                    ? "47.8"
+                  (speaking ||
+                    trick === "dance" ||
+                    trick === "charge" ||
+                    trick === "headphones") &&
+                  talkPhase === 1
+                    ? "47.4"
                     : "50.2"
                 }
                 width="3"
                 height={
-                  (speaking || trick === "dance" || trick === "charge") && talkPhase === 1
-                    ? "8.6"
+                  (speaking ||
+                    trick === "dance" ||
+                    trick === "charge" ||
+                    trick === "headphones") &&
+                  talkPhase === 1
+                    ? "9.2"
                     : "4.2"
                 }
                 rx="1.5"
-                fill={trick === "charge" ? "#10b981" : "#38bdf8"}
+                fill={
+                  trick === "charge"
+                    ? "#10b981"
+                    : trick === "headphones"
+                    ? "#a855f7"
+                    : "#38bdf8"
+                }
               />
               <rect
                 x="32.5"
                 y={
-                  (speaking || trick === "dance" || trick === "charge") && talkPhase === 2
-                    ? "47.2"
+                  (speaking ||
+                    trick === "dance" ||
+                    trick === "charge" ||
+                    trick === "headphones") &&
+                  talkPhase === 2
+                    ? "46.8"
                     : "48.5"
                 }
                 width="3"
                 height={
-                  (speaking || trick === "dance" || trick === "charge") && talkPhase === 2
-                    ? "10"
+                  (speaking ||
+                    trick === "dance" ||
+                    trick === "charge" ||
+                    trick === "headphones") &&
+                  talkPhase === 2
+                    ? "10.6"
                     : "7.5"
                 }
                 rx="1.5"
-                fill="#ffffff"
+                fill={trick === "headphones" ? "#38bdf8" : "#ffffff"}
               />
               <rect
                 x="37.8"
                 y={
-                  (speaking || trick === "dance" || trick === "charge") && talkPhase === 1
-                    ? "48.4"
+                  (speaking ||
+                    trick === "dance" ||
+                    trick === "charge" ||
+                    trick === "headphones") &&
+                  talkPhase === 1
+                    ? "48.0"
                     : "50.2"
                 }
                 width="3"
                 height={
-                  (speaking || trick === "dance" || trick === "charge") && talkPhase === 1
-                    ? "7.6"
+                  (speaking ||
+                    trick === "dance" ||
+                    trick === "charge" ||
+                    trick === "headphones") &&
+                  talkPhase === 1
+                    ? "8.2"
                     : "4.2"
                 }
                 rx="1.5"
-                fill={trick === "charge" ? "#10b981" : "#38bdf8"}
+                fill={
+                  trick === "charge" || trick === "headphones"
+                    ? "#10b981"
+                    : "#38bdf8"
+                }
               />
             </g>
+
+            {/* =========================================================== */}
+            {/* Trick 9: SOLVING RUBIK'S CUBE IN HANDS ('rubiks')            */}
+            {/* =========================================================== */}
+            {trick === "rubiks" && (
+              <g
+                className="cube-prop-rubiks"
+                style={{ transformOrigin: "34px 52px" }}
+              >
+                {/* 3x3 Rubik's Cube Base Frame */}
+                <rect
+                  x="24.5"
+                  y="42.5"
+                  width="19"
+                  height="19"
+                  rx="2.5"
+                  fill="#09090b"
+                  stroke="#ffffff"
+                  strokeWidth="1.1"
+                />
+                {/* Row 1 Tiles */}
+                <rect
+                  x="25.8"
+                  y="43.8"
+                  width="5"
+                  height="5"
+                  rx="0.9"
+                  fill={talkPhase === 2 ? "#ef4444" : talkPhase === 1 ? "#3b82f6" : "#facc15"}
+                />
+                <rect
+                  x="31.5"
+                  y="43.8"
+                  width="5"
+                  height="5"
+                  rx="0.9"
+                  fill="#ef4444"
+                />
+                <rect
+                  x="37.2"
+                  y="43.8"
+                  width="5"
+                  height="5"
+                  rx="0.9"
+                  fill={talkPhase === 2 ? "#ef4444" : talkPhase === 1 ? "#10b981" : "#ef4444"}
+                />
+                {/* Row 2 Tiles */}
+                <rect
+                  x="25.8"
+                  y="49.5"
+                  width="5"
+                  height="5"
+                  rx="0.9"
+                  fill={talkPhase === 2 ? "#3b82f6" : talkPhase === 1 ? "#facc15" : "#10b981"}
+                />
+                <rect
+                  x="31.5"
+                  y="49.5"
+                  width="5"
+                  height="5"
+                  rx="0.9"
+                  fill="#3b82f6"
+                />
+                <rect
+                  x="37.2"
+                  y="49.5"
+                  width="5"
+                  height="5"
+                  rx="0.9"
+                  fill={talkPhase === 2 ? "#3b82f6" : talkPhase === 1 ? "#f97316" : "#3b82f6"}
+                />
+                {/* Row 3 Tiles */}
+                <rect
+                  x="25.8"
+                  y="55.2"
+                  width="5"
+                  height="5"
+                  rx="0.9"
+                  fill={talkPhase === 2 ? "#facc15" : talkPhase === 1 ? "#ef4444" : "#f97316"}
+                />
+                <rect
+                  x="31.5"
+                  y="55.2"
+                  width="5"
+                  height="5"
+                  rx="0.9"
+                  fill="#facc15"
+                />
+                <rect
+                  x="37.2"
+                  y="55.2"
+                  width="5"
+                  height="5"
+                  rx="0.9"
+                  fill={talkPhase === 2 ? "#facc15" : talkPhase === 1 ? "#ffffff" : "#10b981"}
+                />
+              </g>
+            )}
 
             {/* =========================================================== */}
             {/* CUBE HEAD SILHOUETTE (shifted to center x=12..56, y=8..40)   */}
@@ -700,6 +896,65 @@ export function GuideBotAvatar({
                 </g>
               )}
 
+              {/* Trick 10: Studio Over-Ear Headphones on Head ('headphones') */}
+              {trick === "headphones" && (
+                <g className="cube-prop-headphones">
+                  {/* Curved Studio Headband Arch */}
+                  <path
+                    d="M 0.5 14 C 0.5 -5.5, 43.5 -5.5, 43.5 14"
+                    stroke="#38bdf8"
+                    strokeWidth="3.2"
+                    strokeLinecap="round"
+                    fill="none"
+                  />
+                  <path
+                    d="M 8 1 C 16 -3.2, 28 -3.2, 36 1"
+                    stroke="#a855f7"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    fill="none"
+                  />
+                  {/* Left Cushioned Earcup */}
+                  <rect
+                    x="-4.2"
+                    y="9.5"
+                    width="6.8"
+                    height="14.5"
+                    rx="3.4"
+                    fill="#09090b"
+                    stroke="#38bdf8"
+                    strokeWidth="1.6"
+                  />
+                  <rect
+                    x="-2.2"
+                    y="12.5"
+                    width="2.4"
+                    height="8.5"
+                    rx="1.2"
+                    fill={talkPhase === 1 ? "#10b981" : "#38bdf8"}
+                  />
+                  {/* Right Cushioned Earcup */}
+                  <rect
+                    x="41.4"
+                    y="9.5"
+                    width="6.8"
+                    height="14.5"
+                    rx="3.4"
+                    fill="#09090b"
+                    stroke="#38bdf8"
+                    strokeWidth="1.6"
+                  />
+                  <rect
+                    x="43.8"
+                    y="12.5"
+                    width="2.4"
+                    height="8.5"
+                    rx="1.2"
+                    fill={talkPhase === 1 ? "#10b981" : "#38bdf8"}
+                  />
+                </g>
+              )}
+
               {/* Moving Solid White Eyes & Smile */}
               <g
                 style={{
@@ -755,6 +1010,21 @@ export function GuideBotAvatar({
                     <g>
                       <rect x="11.5" y="12.2" width="7" height="5.8" rx="2.4" fill="#ffffff" />
                       <rect x="25.5" y="12.2" width="7" height="5.8" rx="2.4" fill="#ffffff" />
+                    </g>
+                  ) : trick === "spy" ? (
+                    /* Cute Detective Zoomed-In Eye + Curious Eye ('spy') */
+                    <g>
+                      <rect x="11.5" y="11" width="6.2" height="8.5" rx="3" fill="#ffffff" />
+                      <circle
+                        cx="29"
+                        cy="14.8"
+                        r="5.2"
+                        fill="#ffffff"
+                        stroke="#38bdf8"
+                        strokeWidth="1.2"
+                      />
+                      <circle cx="29" cy="14.8" r="2.1" fill="#09090b" />
+                      <circle cx="30" cy="13.8" r="0.9" fill="#ffffff" />
                     </g>
                   ) : (
                     /* Crisp Solid White Rounded Eyes */
@@ -885,11 +1155,11 @@ export function GuideBotAvatar({
           </g>
         )}
 
-        {/* Trick 2: Floating Musical Notes (♪ ♫) during Dance Groove */}
-        {trick === "dance" && (
+        {/* Trick 2 & 10: Floating Musical Notes (♪ ♫) during Dance Groove or Headphones Vibe */}
+        {(trick === "dance" || trick === "headphones") && (
           <g className="cube-prop-music">
             <text
-              x="6"
+              x="4"
               y="18"
               fill="#38bdf8"
               fontSize="13"
@@ -899,7 +1169,7 @@ export function GuideBotAvatar({
               ♪
             </text>
             <text
-              x="52"
+              x="53"
               y="14"
               fill="#10b981"
               fontSize="14"
@@ -910,14 +1180,30 @@ export function GuideBotAvatar({
             </text>
             <text
               x="28"
-              y="4"
-              fill="#f59e0b"
-              fontSize="11"
+              y="3"
+              fill={trick === "headphones" ? "#a855f7" : "#f59e0b"}
+              fontSize="11.5"
               fontWeight="900"
               className="cube-float-item-3"
             >
-              ♪
+              {trick === "headphones" ? "♬" : "♪"}
             </text>
+          </g>
+        )}
+
+        {/* Trick 9: Rubik's Cube Solve Sparkles */}
+        {trick === "rubiks" && talkPhase === 2 && (
+          <g className="cube-prop-sparkles">
+            <path
+              d="M 12 44 L 13.5 47.5 L 17 49 L 13.5 50.5 L 12 54 L 10.5 50.5 L 7 49 L 10.5 47.5 Z"
+              fill="#facc15"
+              className="cube-sparkle-1"
+            />
+            <path
+              d="M 56 42 L 57.2 45 L 60.2 46.2 L 57.2 47.4 L 56 50.4 L 54.8 47.4 L 51.8 46.2 L 54.8 45 Z"
+              fill="#10b981"
+              className="cube-sparkle-2"
+            />
           </g>
         )}
 
@@ -1218,6 +1504,158 @@ export function GuideBotTopbarButton({
       <kbd className="hidden 2xl:inline-block px-1.5 py-0.5 text-[0.625rem] font-mono font-semibold rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
         Alt+G
       </kbd>
+    </button>
+  );
+}
+
+/**
+ * Shared state hook for the Topbar Click-to-Explain Element Inspector (`Alt+E`).
+ * Allows any Topbar button or keyboard shortcut to toggle interactive element inspection
+ * across the active screen.
+ */
+let globalInspectMode = false;
+
+export function useInspectElementState() {
+  const [inspectMode, setInspectModeState] = useState(() => globalInspectMode);
+  const inspectRef = useRef(inspectMode);
+  inspectRef.current = inspectMode;
+
+  const setInspectMode = useCallback((nextVal) => {
+    const resolved =
+      typeof nextVal === "function"
+        ? Boolean(nextVal(inspectRef.current))
+        : Boolean(nextVal);
+    globalInspectMode = resolved;
+    inspectRef.current = resolved;
+    setInspectModeState(resolved);
+
+    // If turning ON Click-to-Explain mode, ensure the modal Guide Bot drawer is closed
+    // so the user can freely hover and click any element on the page.
+    if (resolved) {
+      try {
+        sessionStorage.setItem(OPEN_STATE_KEY, "0");
+      } catch {
+        /* ignore */
+      }
+      window.dispatchEvent(
+        new CustomEvent("guide-bot-open-state-changed", { detail: false })
+      );
+    }
+
+    window.dispatchEvent(
+      new CustomEvent("guide-bot-inspect-mode-changed", { detail: resolved })
+    );
+  }, []);
+
+  useEffect(() => {
+    const onSync = (e) => {
+      if (typeof e?.detail === "boolean") {
+        globalInspectMode = e.detail;
+        inspectRef.current = e.detail;
+        setInspectModeState(e.detail);
+      }
+    };
+    window.addEventListener("guide-bot-inspect-mode-changed", onSync);
+    return () =>
+      window.removeEventListener("guide-bot-inspect-mode-changed", onSync);
+  }, []);
+
+  return [inspectMode, setInspectMode];
+}
+
+/**
+ * Simple Baseline Pointer Cursor Icon (`CursorBuddyAvatar`):
+ * Clean, minimal standard pointer arrow without cartoon faces, props, or wobble animations.
+ * Tip hotspot is at `(3, 2)` inside `viewBox="0 0 24 24"`.
+ */
+export function CursorBuddyAvatar({
+  className = "w-5 h-5",
+  fullBody = false,
+  speaking = false,
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`cursor-buddy-avatar overflow-visible select-none ${className}`}
+      aria-hidden="true"
+    >
+      {/* Subtle cyan focus ring at pointer tip only when actively hovering a control */}
+      {fullBody && speaking && (
+        <circle
+          cx="4"
+          cy="3"
+          r="5.5"
+          stroke="#06b6d4"
+          strokeWidth="1.5"
+          fill="rgba(6, 182, 212, 0.15)"
+        />
+      )}
+
+      {/* Clean Baseline Pointer Arrow (Tip at x=4, y=3) */}
+      <path
+        d="M 4 3 L 19 14.5 L 12 16 L 15.5 22.5 L 12.2 24 L 8.8 17.5 L 4 21 Z"
+        fill="#0f172a"
+        stroke="#ffffff"
+        strokeWidth="1.75"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Topbar Click-to-Explain ("Cursor") Button.
+ * Summons "Cursor" — our cute animated Pointer-Arrow mascot friend who stalks the user's
+ * mouse cursor with playful tricks and explains any clicked element right beside it!
+ */
+export function InspectElementTopbarButton({ compact = false }) {
+  const [inspectMode, setInspectMode] = useInspectElementState();
+
+  return (
+    <button
+      type="button"
+      data-inspect-trigger="true"
+      onClick={() => setInspectMode((v) => !v)}
+      aria-pressed={inspectMode}
+      aria-keyshortcuts="Alt+E"
+      title={
+        inspectMode
+          ? "Cursor is following your mouse! Click any item on the page to explain it (Esc to stop)"
+          : "Summon Cursor — your cute pointer friend that follows your mouse & explains any item (Alt+E)"
+      }
+      className={`group relative inline-flex items-center gap-2 h-10 px-2.5 rounded-xl border transition-all duration-150 cursor-pointer shrink-0 whitespace-nowrap shadow-2xs active:scale-[0.98] ${
+        inspectMode
+          ? "bg-amber-500 hover:bg-amber-600 text-slate-950 border-amber-400 shadow-amber-500/25 shadow-md ring-2 ring-amber-400/50"
+          : "border-slate-200 dark:border-slate-700/80 bg-white hover:bg-cyan-50/70 dark:bg-slate-900 dark:hover:bg-slate-800/90 text-slate-800 dark:text-slate-100 hover:border-cyan-300 dark:hover:border-cyan-700"
+      }`}
+    >
+      {/* Cute Living Cursor Arrow Mascot Icon */}
+      <span
+        className={`relative inline-flex items-center justify-center shrink-0 transition-transform duration-200 ${
+          inspectMode ? "scale-110 -translate-y-0.5" : "group-hover:scale-110"
+        }`}
+      >
+        <CursorBuddyAvatar
+          className="w-6 h-6"
+          fullBody={false}
+          speaking={inspectMode}
+        />
+      </span>
+
+      {!compact && (
+        <span className="hidden sm:inline text-xs font-extrabold tracking-tight">
+          {inspectMode ? "Cursor Active..." : "Explain"}
+        </span>
+      )}
+
+      {!inspectMode && (
+        <kbd className="hidden 2xl:inline-block px-1.5 py-0.5 text-[0.625rem] font-mono font-semibold rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
+          Alt+E
+        </kbd>
+      )}
     </button>
   );
 }

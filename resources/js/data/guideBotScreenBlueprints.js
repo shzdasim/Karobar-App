@@ -832,180 +832,1114 @@ export const MODAL_CONTEXT_GUIDES = {
 
 /**
  * Universal ERP Term & Control Dictionary used by the "Point & Explain (?)" Element Inspector.
+ * Every entry explains the specific clicked UI control, button, field, column, or page section in detail.
  */
 export const UNIVERSAL_CONTROL_DICTIONARY = [
+  // =========================================================================
+  // 1. INVOICE & TABLE ROW CONTROLS / COLUMNS
+  // =========================================================================
+  {
+    keywords: ["del", "remove row", "delete row", "remove item"],
+    exactTokens: ["del", "×", "✕"],
+    title: { en: "Delete / Remove Item Row (DEL)", ur: "سطر ختم کرنے کا بٹن (DEL)" },
+    en: "**What this control does:** Immediately removes this specific medicine/item row from the current invoice table.\n**How it works:**\n• Recalculates **Gross Total**, **Tax**, **Discount**, and **Net Payable** automatically as soon as the row is removed.\n• Does **not** affect saved stock or ledgers until the invoice is saved.",
+    ur: "**یہ بٹن کیا کرتا ہے:** بل کی اس مخصوص سطر (Row) کو فوری طور پر فہرست سے خارج کر دیتا ہے۔\n**طریقہ کار:**\n• سطر ختم ہوتے ہی کل رقم، ڈسکاؤنٹ اور ٹیکس خودکار طور پر دوبارہ کیلکولیٹ ہو جاتے ہیں۔",
+  },
+  {
+    keywords: ["add row", "new row", "add item", "+ item", "insert row"],
+    exactTokens: ["+"],
+    shortcut: {
+      keys: "↓ (Down Arrow on last row) / Enter",
+      en: "Press `↓` (Down Arrow) on the last row or `Enter` at the end of a row to auto-add a new item row",
+      ur: "آخری سطر پر `↓` (نیچے والا تیر) یا سطر کے آخر میں `Enter` دبائیں",
+    },
+    title: { en: "Add New Item Row Button (+)", ur: "نئی سطر شامل کرنے کا بٹن (+)" },
+    en: "**What this button does:** Appends a fresh blank line item row at the bottom of the invoice table so you can add another product to the same bill.\n**How it works:** Clicking `+` or pressing `↓` (Down Arrow) from the last row immediately creates and focuses the new row.",
+    ur: "**یہ بٹن کیا کرتا ہے:** بل میں ایک اور دوا یا پراڈکٹ شامل کرنے کے لیے ٹیبل کے آخر میں نئی خالی سطر کھولتا ہے۔",
+  },
+  {
+    keywords: ["drag to reorder", "move brand", "move item", "invoice-drag-handle"],
+    shortcut: {
+      keys: "↑ / ↓ Arrow Keys (when focused) or Drag",
+      en: "Focus the `⠿` grip and press `↑` / `↓` Arrow Keys (or drag with mouse) to move the row or brand group",
+      ur: "`⠿` بٹن پر کلک کر کے کی بورڈ کے `↑` / `↓` تیر کے بٹن دبائیں یا ماؤس سے کھینچیں",
+    },
+    title: { en: "Row / Brand Reorder Handle (⠿)", ur: "سطر یا برانڈ کی ترتیب بدلنے کا ہینڈل (⠿)" },
+    en: "**What this handle does:** Lets you manually reorder individual product rows or entire brand groups inside the invoice table.\n**Why it matters:** When you reorder items on a Purchase Invoice, Karobar can remember that supplier's item sequence for future bills.",
+    ur: "**یہ ہینڈل کیا کرتا ہے:** بل کے اندر کسی بھی دوا کی سطر یا پورے برانڈ گروپ کو اوپر نیچے ترتیب دینے کے کام آتا ہے۔",
+  },
+  {
+    keywords: ["pack.q", "pack_quantity", "pack qty", "pack quantity"],
+    exactTokens: ["pack.q"],
+    shortcut: {
+      keys: "Enter (Next Field) · ↑ / ↓ (Prev / Next Row)",
+      en: "`Enter` moves to Purchase Price (`Pack.P`) · `↑` / `↓` jumps to the same column in the row above/below",
+      ur: "`Enter` اگلے خانے (`Pack.P`) میں جانے کے لیے · `↑` / `↓` اوپر یا نیچے والی سطر میں جانے کے لیے",
+    },
+    title: { en: "Pack Quantity Input (Pack.Q)", ur: "ڈبوں کی تعداد کا خانہ (Pack.Q)" },
+    en: "**What this input does:** Enters the number of **full boxes/packs** purchased or billed on this line.\n**Automatic Calculation:**\n• Automatically multiplies by `PSize` to fill **Unit Quantity (`Unit.Q = Pack.Q × PSize`)**.\n• Multiplies by `Pack.P` (Pack Purchase Price) to update the row's **Sub Total** immediately.",
+    ur: "**یہ خانہ کیا کرتا ہے:** خریدے گئے پورے ڈبوں (Packs) کی تعداد درج کرتا ہے۔\n**خودکار حساب:** یہ خودکار طور پر `PSize` سے ضرب دے کر کھلے یونٹس (`Unit.Q`) اور سطر کی کل رقم (`Sub Total`) نکالتا ہے۔",
+  },
+  {
+    keywords: ["unit.q", "unit_quantity", "unit qty", "loose qty"],
+    exactTokens: ["unit.q"],
+    shortcut: {
+      keys: "Tab / Shift + Tab",
+      en: "`Tab` moves to the next input · `Shift + Tab` moves back",
+      ur: "`Tab` اگلے خانے میں جانے کے لیے",
+    },
+    title: { en: "Total Unit Quantity (Unit.Q — Loose Units)", ur: "کل کھلے یونٹس کی تعداد (Unit.Q)" },
+    en: "**What this input shows/captures:** The total number of individual/loose units (`Pack.Q × PSize`, or loose units entered directly).\n**How it works:** Editing `Pack.Q` auto-calculates `Unit.Q`, or you can type loose units directly here when purchasing/selling partial packs.",
+    ur: "**یہ خانہ کیا کرتا ہے:** کل کھلی گولیوں یا یونٹس کی تعداد دکھاتا یا درج کرتا ہے (`Pack.Q × PSize`)۔",
+  },
+  {
+    keywords: ["pack.p", "pack_purchase_price", "pack purchase"],
+    exactTokens: ["pack.p"],
+    shortcut: {
+      keys: "Enter (Next Field) · ↑ / ↓ (Prev / Next Row)",
+      en: "`Enter` moves to Discount (`Disc%`) · `↑` / `↓` jumps to the row above/below",
+      ur: "`Enter` اگلے خانے (`Disc%`) میں جانے کے لیے · `↑` / `↓` اوپر یا نیچے والی سطر کے لیے",
+    },
+    title: { en: "Pack Purchase Price (Pack.P — Cost per Box)", ur: "ڈبے کی قیمتِ خرید (Pack.P)" },
+    en: "**What this input does:** Enters the supplier's purchase price (Trade Price) for **1 full pack/box**.\n**Automatic Calculation:**\n• Divides by `PSize` to automatically compute **Unit Purchase Price (`Unit.P = Pack.P ÷ PSize`)**.\n• Compares against `Pack.S` (Sale Price) to compute your live **Retail Margin % (`Margin%`)** and **Average Cost (`Avg`)**.",
+    ur: "**یہ خانہ کیا کرتا ہے:** ایک پورے ڈبے کی قیمتِ خرید درج کرتا ہے۔ اس سے فی یونٹ قیمتِ خرید (`Unit.P`)، منافع فیصد (`Margin%`) اور `Sub Total` خودکار نکلتے ہیں۔",
+  },
+  {
+    keywords: ["unit.p", "unit_purchase_price", "unit purchase"],
+    exactTokens: ["unit.p"],
+    title: { en: "Unit Purchase Price (Unit.P — Cost per Loose Unit)", ur: "فی یونٹ قیمتِ خرید (Unit.P)" },
+    en: "**What this field shows/captures:** The purchase cost of **1 single loose tablet/unit** (`Pack.P ÷ PSize`).\n**How it works:** Automatically calculated when you enter `Pack.P`, or you can type a unit cost directly and Karobar will back-calculate `Pack.P`.",
+    ur: "**یہ خانہ کیا کرتا ہے:** ایک کھلی گولی یا یونٹ کی قیمتِ خرید (`Pack.P ÷ PSize`) جو خودکار طریقے سے نکلتی ہے۔",
+  },
+  {
+    keywords: ["pbonus", "pack_bonus", "pack bonus"],
+    exactTokens: ["pbonus"],
+    shortcut: {
+      keys: "Enter (Next Field) · ↑ / ↓ (Prev / Next Row)",
+      en: "`Enter` moves to Retail Sale Price (`Pack.S`) · `↑` / `↓` moves between rows",
+      ur: "`Enter` اگلے خانے (`Pack.S`) میں جانے کے لیے · `↑` / `↓` سطر بدلنے کے لیے",
+    },
+    title: { en: "Pack Bonus (PBonus — Free Boxes from Supplier)", ur: "بونس ڈبے (PBonus — مفت ڈبے)" },
+    en: "**What this input does:** Enters the number of **free bonus packs/boxes** given by the supplier on this item line.\n**Accounting & Stock Effect:**\n• Automatically converts to free units (`UBonus = PBonus × PSize`) and adds them to batch stock.\n• Does **not** increase the bill's `Sub Total`, which reduces your effective landed cost (`Avg`) and boosts your profit margin.",
+    ur: "**یہ خانہ کیا کرتا ہے:** سپلائر کی طرف سے ملنے والے مفت ڈبوں (Bonus Packs) کی تعداد درج کرتا ہے جو بل کی رقم بڑھائے بغیر اسٹاک میں جمع ہو جاتے ہیں۔",
+  },
+  {
+    keywords: ["ubonus", "unit_bonus", "unit bonus"],
+    exactTokens: ["ubonus"],
+    title: { en: "Unit Bonus (UBonus — Free Loose Units)", ur: "بونس یونٹس (UBonus — مفت کھلے یونٹس)" },
+    en: "**What this input does:** Records the total free bonus units (`PBonus × PSize` or loose bonus units) received at zero extra bill cost.",
+    ur: "**یہ خانہ کیا کرتا ہے:** سپلائر کی طرف سے ملنے والے کل مفت کھلے یونٹس (Bonus Units) درج یا ظاہر کرتا ہے۔",
+  },
+  {
+    keywords: ["pack.s", "pack_sale_price", "pack sale"],
+    exactTokens: ["pack.s"],
+    shortcut: {
+      keys: "Enter (Next Row / Field) · ↑ / ↓ (Prev / Next Row)",
+      en: "`Enter` moves to the next product row (or Wholesale Price if enabled) · `↑` / `↓` moves between rows",
+      ur: "`Enter` اگلی سطر کے پراڈکٹ خانے میں جانے کے لیے · `↑` / `↓` سطر بدلنے کے لیے",
+    },
+    title: { en: "Pack Retail Sale Price / MRP (Pack.S)", ur: "ڈبے کی قیمتِ فروخت (Pack.S / MRP)" },
+    en: "**What this input does:** Sets the retail selling price (MRP) for **1 full pack/box**.\n**Automatic Calculation:**\n• Divides by `PSize` to automatically fill **Unit Sale Price (`Unit.S = Pack.S ÷ PSize`)** charged at POS.\n• Immediately calculates your live **Profit Margin % (`Margin%`)** against the purchase cost.",
+    ur: "**یہ خانہ کیا کرتا ہے:** ایک پورے ڈبے کی ریٹیل قیمتِ فروخت (MRP) مقرر کرتا ہے جس سے فی گولی قیمت (`Unit.S`) اور منافع (`Margin%`) خودکار نکل آتے ہیں۔",
+  },
+  {
+    keywords: ["unit.s", "unit_sale_price", "unit sale"],
+    exactTokens: ["unit.s"],
+    title: { en: "Unit Retail Sale Price (Unit.S — Price per Loose Unit)", ur: "فی یونٹ قیمتِ فروخت (Unit.S)" },
+    en: "**What this field shows/captures:** The retail selling price charged to customers for **1 single loose unit/tablet** (`Pack.S ÷ PSize`).",
+    ur: "**یہ خانہ کیا دکھاتا ہے:** گاہک کو فروخت کی جانے والی ایک کھلی گولی یا یونٹ کی قیمت (`Pack.S ÷ PSize`)۔",
+  },
+  {
+    keywords: ["w.s.pack", "whole_sale_pack_price", "wholesale pack"],
+    exactTokens: ["w.s.pack"],
+    shortcut: {
+      keys: "Enter (Next Field) · ↑ / ↓ (Prev / Next Row)",
+      en: "`Enter` moves to Wholesale Unit Price (`W.S.Unit`) · `↑` / `↓` moves between rows",
+      ur: "`Enter` اگلے خانے میں جانے کے لیے · `↑` / `↓` سطر بدلنے کے لیے",
+    },
+    title: { en: "Wholesale Pack Price (W.S.Pack)", ur: "ہول سیل ڈبہ قیمت (W.S.Pack)" },
+    en: "**What this input does:** Sets the wholesale selling price for 1 full pack when billing wholesale customers, and auto-calculates `W.S.Unit` and `W.S.Mrg%`.",
+    ur: "**یہ خانہ کیا کرتا ہے:** ہول سیل گاہکوں کے لیے ایک ڈبے کی قیمتِ فروخت مقرر کرتا ہے۔",
+  },
+  {
+    keywords: ["w.s.unit", "whole_sale_unit_price", "wholesale unit"],
+    exactTokens: ["w.s.unit"],
+    title: { en: "Wholesale Unit Price (W.S.Unit)", ur: "ہول سیل فی یونٹ قیمت (W.S.Unit)" },
+    en: "**What this input does:** Shows or sets the per-unit wholesale selling price (`W.S.Pack ÷ PSize`).",
+    ur: "**یہ خانہ کیا کرتا ہے:** ہول سیل میں فی یونٹ قیمتِ فروخت دکھاتا یا مقرر کرتا ہے۔",
+  },
+  {
+    keywords: ["margin%", "margin %", "retail margin", "w.s.mrg%"],
+    exactTokens: ["margin%", "w.s.mrg%"],
+    title: { en: "Profit Margin Percentage (Margin% — Auto-Calculated)", ur: "منافع کا تناسب (Margin% — خودکار حساب)" },
+    en: "**What this read-only column shows:** The live profit margin percentage earned on this product row based on your net purchase cost vs. selling price.\n**Why it matters:** Karobar validates that `Margin% > 0` before saving a Purchase Invoice so you never accidentally set a selling price below cost.",
+    ur: "**یہ خانہ کیا دکھاتا ہے:** قیمتِ خرید اور قیمتِ فروخت کے فرق سے نکلنے والا منافع (فیصد میں)۔ سسٹم نقصان سے بچانے کے لیے منفی مارجن پر الرٹ دیتا ہے۔",
+  },
+  {
+    keywords: ["avg", "avg_price", "average unit cost", "average price"],
+    exactTokens: ["avg"],
+    title: { en: "Effective Average Unit Cost (Avg — Auto-Calculated)", ur: "فی یونٹ اوسط لاگت (Avg — خودکار حساب)" },
+    en: "**What this read-only column shows:** Your true net landed cost per unit after factoring in line discounts and free bonus units:\n**Formula:** `Row Sub Total ÷ (Billed Units + Bonus Units) = Avg Cost per Unit`.",
+    ur: "**یہ خانہ کیا کرتا ہے:** ڈسکاؤنٹ اور مفت بونس یونٹس شامل کرنے کے بعد ایک یونٹ کی اصل اوسط لاگت (`Sub Total ÷ Total Units`)۔",
+  },
+  {
+    keywords: ["bill amt", "invoice_amount"],
+    shortcut: {
+      keys: "Enter or Tab (Jump to First Product Row)",
+      en: "Press `Enter` or `Tab` after typing the paper Bill Amount to jump straight to the first **Product** row",
+      ur: "کاغذی بل کی رقم لکھ کر `Enter` یا `Tab` دبانے سے فوکس سیدھا پہلے پراڈکٹ خانے پر چلا جاتا ہے",
+    },
+    title: { en: "Supplier Paper Bill Amount (Bill Amt — Verification Field)", ur: "سپلائر کے کاغذی بل کی رقم (Bill Amt)" },
+    en: "**What this field does:** Enter the grand total printed on the supplier's physical paper invoice.\n**Built-in Audit Check:**\n• Karobar compares your typed `Bill Amt` against the calculated `Total Amount` in real time.\n• If the difference (`Diff`) is greater than Rs. 5, Karobar blocks saving and alerts you so data-entry mistakes are caught before posting!",
+    ur: "**یہ خانہ کیا کرتا ہے:** سپلائر کے کاغذی بل پر لکھی کل رقم یہاں درج کریں۔ سسٹم اس کا موازنہ آپ کے درج کردہ آئٹمز کے ٹوٹل سے کرتا ہے تاکہ بلنگ کی کوئی غلطی نہ رہے۔",
+  },
+  {
+    keywords: ["diff", "difference"],
+    exactTokens: ["diff"],
+    title: { en: "Bill Verification Difference (Diff — Auto Check)", ur: "بل کی رقم کا فرق (Diff — خودکار پڑتال)" },
+    en: "**What this read-only box shows:** The live difference between the supplier's paper `Bill Amt` and your calculated `Total Amount` (`Diff = Bill Amt − Total Amount`).\n• **`0.00`:** Your entered rows match the supplier's bill 100%.\n• **Red Non-Zero Value:** Indicates a quantity, rate, discount, or tax mismatch that needs checking (must be within ±Rs. 5 to save).",
+    ur: "**یہ خانہ کیا دکھاتا ہے:** سپلائر کے کاغذی بل (`Bill Amt`) اور سسٹم کے کیلکولیٹڈ ٹوٹل (`Total Amount`) کا فرق۔ `0.00` کا مطلب ہے کہ بل بالکل درست میچ ہو گیا ہے۔",
+  },
+  {
+    keywords: ["posted #", "posted_number", "auto on save"],
+    title: { en: "System Posted Invoice Number (Posted # — Auto)", ur: "سسٹم انوائس نمبر (Posted # — خودکار)" },
+    en: "**What this read-only field shows:** The unique, sequential system voucher number (e.g., `PI-00124` or `SI-00450`).\n**Why it says `Auto`:** Assigned automatically by the server at the exact moment you press **Save (`Alt+S`)** so two open billing tabs never collide on the same number.",
+    ur: "**یہ خانہ کیا دکھاتا ہے:** سسٹم کی طرف سے دیا جانے والا منفرد بل نمبر جو بل محفوظ کرتے وقت (`Alt+S`) خودکار طور پر جاری ہوتا ہے۔",
+  },
+  {
+    keywords: ["relink paid to total", "🔗"],
+    exactTokens: ["🔗"],
+    title: { en: "Relink Paid Amount to Total Amount (🔗)", ur: "ادا شدہ رقم کو کل رقم کے برابر کرنے کا بٹن (🔗)" },
+    en: "**What this button does:** Resets `Total Paid` back to match the full `Total Amount` and re-enables automatic syncing if you previously edited `Total Paid` manually.",
+    ur: "**یہ بٹن کیا کرتا ہے:** ایک کلک سے `Total Paid` (ادا شدہ رقم) کو دوبارہ بل کی کل رقم (`Total Amount`) کے برابر کر دیتا ہے۔",
+  },
+  {
+    keywords: ["arrange products", "apply sort", "arrangement"],
+    title: { en: "Product & Brand Row Arrangement Control", ur: "پراڈکٹس اور برانڈز کی ترتیب (Arrange Products)" },
+    en: "**What this control does:** Automatically sorts the items in your invoice table (e.g., by **Saved Supplier Order**, **Brand A→Z**, **Product Name A→Z**, or **Custom Manual Drag Order**).",
+    ur: "**یہ کنٹرول کیا کرتا ہے:** بل میں موجود ادویات کو سپلائر کی محفوظ کردہ ترتیب، برانڈ یا نام کے لحاظ سے خودکار ترتیب دیتا ہے۔",
+  },
+  {
+    keywords: ["debit"],
+    exactTokens: ["debit"],
+    shortcut: {
+      keys: "Alt + D (Select Debit) · Alt + T (Toggle Debit ↔ Credit)",
+      en: "Press `Alt + D` to switch directly to **Debit (Cash)** mode, or `Alt + T` to toggle between Debit and Credit",
+      ur: "`Alt + D` دبا کر فوری نقد (Debit) موڈ منتخب کریں، یا `Alt + T` سے موڈ تبدیل کریں",
+    },
+    title: { en: "Debit (Immediate Cash / Bank Settlement) Mode", ur: "ڈیبٹ / نقد ادائیگی موڈ (Debit)" },
+    en: "**What this mode button does:** Sets the invoice to **Debit (Cash / Immediate Payment)** mode.\n**Accounting Impact:**\n• Auto-links `Total Paid / Received` to the full `Total Amount`.\n• Deducts or deposits the payment immediately in your selected **Cash Drawer / Bank Account** upon saving.",
+    ur: "**یہ بٹن کیا کرتا ہے:** بل کو نقد ادائیگی (Debit) موڈ پر سیٹ کرتا ہے جس سے بل کی کل رقم خودکار طور پر وصول/ادا شدہ خانے میں آ جاتی ہے اور کیش ڈراور/بینک سے منسلک ہوتی ہے۔",
+  },
+  {
+    keywords: ["psize", "pack size", "units per pack", "pack_size"],
+    title: { en: "Pack Size (PSize — Units per Box)", ur: "پیک سائز (PSize — ڈبے میں یونٹس کی تعداد)" },
+    en: "**What this column/field shows:** The number of loose tablets, capsules, strips, or vials inside **1 full pack/box** of this product.\n**How it works in calculations:**\n• Example: `PSize = 30` means 1 box contains 30 tablets.\n• Helps Karobar convert between full-box purchases and loose-unit retail sales accurately.",
+    ur: "**یہ خانہ کیا دکھاتا ہے:** ایک پورے ڈبے (Pack) میں موجود کھلی گولیوں، کیپسول یا اسٹرپس کی تعداد۔\n**استعمال:** مثلاً `30` کا مطلب ہے کہ ایک ڈبے میں 30 گولیاں ہیں، جس سے کھلی فروخت اور اسٹاک کا حساب درست رہتا ہے۔",
+  },
+  {
+    keywords: ["avail", "available stock", "in stock", "current stock", "on hand", "stock qty"],
+    title: { en: "Available Stock Indicator (Avail)", ur: "موجودہ دستیاب اسٹاک (Avail)" },
+    en: "**What this column/badge shows:** The live, real-time physical quantity currently available in your inventory for the selected product and batch.\n**Why it matters:**\n• Prevents billing more units than you actually have on the shelf.\n• Updates automatically whenever a Purchase, Sale, Return, or Stock Audit is posted.",
+    ur: "**یہ خانہ کیا دکھاتا ہے:** منتخب کردہ دوا اور بیچ کے اس وقت اسٹور میں موجود اصل یونٹس کی تعداد۔\n**اہمیت:** یہ بلنگ کے دوران دستیاب اسٹاک سے زیادہ مال فروخت ہونے سے روکتا ہے۔",
+  },
+  {
+    keywords: ["bonus", "free unit", "bonus qty", "scheme"],
+    title: { en: "Bonus Quantity (Free Trade Scheme Units)", ur: "بونس یونٹس (کمپنی کی طرف سے مفت اسٹاک)" },
+    en: "**What this input does:** Records free promotional units received from a supplier (or given to a customer) alongside billed quantity.\n**Accounting & Stock Effect:**\n• Increases physical batch stock by `Qty + Bonus`.\n• Charges **Rs. 0** for the bonus units on the invoice (`Sub Total` is calculated only on billed `Qty × Price`), which automatically lowers your effective average unit cost.",
+    ur: "**یہ خانہ کیا کرتا ہے:** سپلائر کی اسکیم کے تحت ملنے والے مفت (Bonus) یونٹس درج کرنے کے لیے استعمال ہوتا ہے۔\n**اسٹاک اور بل پر اثر:**\n• یہ یونٹس مفت اسٹاک میں جمع ہو جاتے ہیں لیکن بل کی رقم (`Sub Total`) میں ان کی کوئی قیمت شامل نہیں ہوتی، جس سے فی یونٹ اوسط لاگت کم ہو جاتی ہے۔",
+  },
+  {
+    keywords: ["wht%", "wht %", "wht", "withholding", "section 236"],
+    title: { en: "Withholding Tax (WHT % / Amount)", ur: "ودہولڈنگ ٹیکس (WHT %)" },
+    en: "**What this field does:** Applies advance Withholding Tax (`WHT %`) on the line item or invoice under FBR rules.\n**Calculation:**\n• Adds the calculated WHT amount into the line's `Sub Total` and final `Net Payable`.\n• Tracks withholding tax separately for supplier/tax compliance reports.",
+    ur: "**یہ خانہ کیا کرتا ہے:** اس آئٹم یا بل پر لاگو ہونے والا ودہولڈنگ ٹیکس (WHT فیصد) شمار کرتا ہے اور اسے کل واجب الادا رقم (`Sub Total`) میں شامل کرتا ہے۔",
+  },
+  {
+    keywords: ["tax%", "tax %", "gst%", "gst %", "sales tax", "tax amount"],
+    title: { en: "Sales Tax / GST Field (Tax %)", ur: "سیلز ٹیکس / جی ایس ٹی (Tax %)" },
+    en: "**What this field does:** Applies Sales Tax / GST percentage to this product line.\n**Calculation:**\n• `Tax Amount = (Taxable Line Amount × Tax %) ÷ 100`\n• Automatically adds the tax into the row's `Sub Total` and the bill's total tax summary.",
+    ur: "**یہ خانہ کیا کرتا ہے:** اس پراڈکٹ پر لاگو ہونے والا سیلز ٹیکس (فیصد) شمار کر کے سطر کے `Sub Total` اور بل کے کل ٹیکس میں جمع کرتا ہے۔",
+  },
+  {
+    keywords: ["disc%", "disc %", "discount %", "line discount", "disc amount", "trade discount"],
+    title: { en: "Line Discount Control (Disc % / Rs.)", ur: "ڈسکاؤنٹ / رعایت کا خانہ (Disc %)" },
+    en: "**What this field does:** Deducts a percentage or flat rupee discount from this specific item row.\n**Calculation:**\n• `Discount = (Qty × Price) × (Disc % ÷ 100)`\n• Immediately reduces the row's `Sub Total` and updates the total discount shown at the bottom of the bill.",
+    ur: "**یہ خانہ کیا کرتا ہے:** اس مخصوص دوا یا آئٹم کی قیمت پر فیصد کے حساب سے رعایت (Discount) کم کرتا ہے اور فوری طور پر `Sub Total` کو اپڈیٹ کرتا ہے۔",
+  },
+  {
+    keywords: ["sub total", "subtotal", "line total", "net line", "row total", "amount"],
+    title: { en: "Row Sub-Total (Auto-Calculated Line Total)", ur: "سطر کی کل رقم (Sub Total — خودکار حساب)" },
+    en: "**What this read-only box shows:** The final calculated amount for this single item row after applying quantity, price, discount, and taxes.\n**Live Formula:**\n`(Qty × Unit Price) − Line Discount + Sales Tax + WHT = Row Sub Total`\n*(Note: Bonus units are added to stock for free and do not increase this Sub Total.)*",
+    ur: "**یہ خانہ کیا دکھاتا ہے:** اس ایک سطر کی حتمی رقم جو خودکار طریقے سے کیلکولیٹ ہوتی ہے۔\n**فارمولا:**\n`(تعداد × قیمت) − ڈسکاؤنٹ + ٹیکس + WHT = Sub Total`",
+  },
+  {
+    keywords: ["fefo", "batch", "batch no", "batch #", "lot no"],
+    title: { en: "Batch Number & FEFO Selector", ur: "بیچ نمبر اور FEFO سیلیکٹر (Batch)" },
+    en: "**What this control does:** Identifies the exact manufacturing lot/batch number for this medicine.\n**How it works:**\n• **On Purchase:** Type the new batch number printed on the medicine box so stock is tracked separately by lot.\n• **On Sale / POS:** Click to pick from existing in-stock batches. Karobar automatically prioritizes **FEFO (First-Expired, First-Out)** so the batch expiring soonest sells first.",
+    ur: "**یہ خانہ کیا کرتا ہے:** دوا کا مخصوص بیچ نمبر (Batch No) منتخب یا درج کرتا ہے۔\n• **خریداری پر:** ڈبے پر لکھا نیا بیچ نمبر درج کریں۔\n• **فروخت پر:** سسٹم خودکار طور پر **FEFO** اصول کے تحت وہ بیچ پہلے منتخب کرتا ہے جس کی ایکسپائری قریب ہو۔",
+  },
+  {
+    keywords: ["expiry", "exp date", "expiration", "valid thru"],
+    title: { en: "Batch Expiry Date Control", ur: "دوا کی تاریخِ تنسیخ (Expiry Date)" },
+    en: "**What this control shows/captures:** The expiration date of the selected medicine batch.\n**Why it is critical:**\n• Powers automatic **Near-Expiry Alerts**, **FEFO sorting** during sales, and **Supplier Expiry Intimation** deadlines.\n• Blocks accidental sale of already-expired batches at the POS counter.",
+    ur: "**یہ خانہ کیا دکھاتا ہے:** اس بیچ کے ایکسپائر ہونے کی تاریخ۔\n**اہمیت:** اس تاریخ کی بنیاد پر سسٹم قریب ایکسپائری الرٹس، سپلائر انٹیمیشن اور ایکسپائر شدہ دوا کی فروخت روکنے کا کام کرتا ہے۔",
+  },
+  {
+    keywords: ["purchase price", "cost price", "trade price", "unit cost", "tp", "rate"],
+    title: { en: "Purchase / Cost Price (Unit Rate)", ur: "قیمتِ خرید / لاگت (Purchase Price)" },
+    en: "**What this field does:** Sets the per-unit purchase cost (Trade Price / Invoice Rate) charged by the supplier before discounts and taxes.\n**How it works:**\n• Multiplies with billed `Qty` to compute the row's base cost.\n• Updates the batch's landed cost for accurate **Gross Profit** and **Inventory Valuation** reporting.",
+    ur: "**یہ خانہ کیا کرتا ہے:** سپلائر کی طرف سے ایک یونٹ یا ڈبے کی قیمتِ خرید درج کرتا ہے۔ اس سے بل کی رقم اور منافع (Profit Margin) کا درست حساب نکلتا ہے۔",
+  },
+  {
+    keywords: ["sale price", "retail price", "mrp", "selling price"],
+    title: { en: "Retail Sale Price / MRP", ur: "قیمتِ فروخت / ریٹیل قیمت (Sale Price)" },
+    en: "**What this field does:** Defines or applies the per-unit selling price charged to customers at POS / Sale Invoice.\n**How it works:**\n• On **Purchase / Product Form**, setting this updates the default retail price for the batch.\n• On **Sale Invoice**, it multiplies by `Qty` to calculate customer bill amount and compares against cost price to protect your profit margin.",
+    ur: "**یہ خانہ کیا کرتا ہے:** گاہک کو فروخت کرنے کی فی یونٹ ریٹیل قیمت (MRP / Sale Price) مقرر یا لاگو کرتا ہے۔",
+  },
+  {
+    keywords: ["qty", "quantity", "billed qty", "return qty", "units"],
+    title: { en: "Quantity Input Field (Qty)", ur: "تعداد کا خانہ (Qty / Quantity)" },
+    en: "**What this input does:** Enters the number of paid/billed units being purchased, sold, returned, or transferred on this line.\n**Immediate Effect:**\n• Multiplies by `Price` to update `Sub Total` in real time.\n• Directly adds to (Purchase/Sale Return) or deducts from (Sale/Purchase Return) physical batch inventory upon saving.",
+    ur: "**یہ خانہ کیا کرتا ہے:** خریدے، بیچے یا واپس کیے جانے والے یونٹس کی تعداد درج کرتا ہے۔ تعداد بدلنے سے `Sub Total` اور اسٹاک فوری اپڈیٹ ہوتے ہیں۔",
+  },
+
+  // =========================================================================
+  // 2. INVOICE HEADER, PAYMENT MODE & SUMMARY FOOTER CONTROLS
+  // =========================================================================
+  {
+    keywords: ["cash", "credit", "payment mode", "sale type", "purchase type", "payment type"],
+    exactTokens: ["cash", "credit"],
+    title: { en: "Payment Mode Selector (Cash vs. Credit / Udhar)", ur: "طریقہ ادائیگی (نقد Cash بمقابلہ ادھار Credit)" },
+    en: "**What this toggle/selector controls:** Determines how this invoice affects your Cash Drawer vs. Party Ledger:\n• **Cash Mode:** Marks the bill as paid immediately and posts the cash movement straight into your active **Cash Drawer / Payment Account**.\n• **Credit (Udhar) Mode:** Posts the unpaid balance to the selected **Customer's Receivable Ledger** or **Supplier's Payable Ledger**.",
+    ur: "**یہ بٹن کیا کنٹرول کرتا ہے:**\n• **نقد (Cash):** بل کی رقم فوری طور پر کیش ڈراور یا منتخب اکاؤنٹ میں درج ہوتی ہے۔\n• **ادھار (Credit):** بقایا رقم خودکار طور پر گاہک یا سپلائر کے کھاتے (Ledger) میں چلی جاتی ہے۔",
+  },
+  {
+    keywords: ["gross total", "gross amount", "items total", "total before"],
+    title: { en: "Gross Total (Sum of All Item Rows)", ur: "خام کل رقم (Gross Total)" },
+    en: "**What this summary box shows:** The combined total of all item rows in the table before bill-level extra charges or overall bill discounts are applied.",
+    ur: "**یہ خانہ کیا دکھاتا ہے:** تمام آئٹم سطروں کا مجموعہ (بل کے مجموعی ڈسکاؤنٹ یا اضافی اخراجات سے پہلے کی رقم)۔",
+  },
+  {
+    keywords: ["extra charge", "freight", "loading", "delivery charge", "other charges", "shipping"],
+    title: { en: "Extra Charges / Freight & Delivery Input", ur: "اضافی اخراجات / کرایہ وبلٹی (Extra Charges)" },
+    en: "**What this field does:** Adds bill-level charges (such as freight, delivery, cold-chain packing, or handling fees) on top of the invoice total.\n**Calculation:** `Grand Total = Items Sub-Total − Bill Discount + Extra Charges`.",
+    ur: "**یہ خانہ کیا کرتا ہے:** بل میں کرایہ، ڈلیوری یا پیکنگ جیسے اضافی اخراجات جمع کرتا ہے جس سے کل واجب الادا رقم بڑھ جاتی ہے۔",
+  },
+  {
+    keywords: ["net payable", "grand total", "final total", "net total", "bill total", "total payable", "net amount"],
+    title: { en: "Net Payable / Grand Total Display", ur: "حتمی واجب الادا رقم (Grand Total / Net Payable)" },
+    en: "**What this summary card shows:** The final, net invoice amount after all item quantities, line discounts, GST/WHT taxes, bill-level discounts, and extra charges have been calculated.\n**Formula:** `Sum of Row Sub-Totals − Overall Bill Discount + Extra Charges = Net Payable`.",
+    ur: "**یہ کارڈ کیا دکھاتا ہے:** تمام آئٹمز، ڈسکاؤنٹ، ٹیکس اور اضافی چارجز کے بعد بل کی حتمی واجب الادا رقم۔",
+  },
+  {
+    keywords: ["paid amount", "received amount", "cash received", "tendered", "amount paid", "paid rs"],
+    title: { en: "Paid / Received Cash Input", ur: "وصول شدہ یا ادا شدہ نقد رقم (Paid / Received)" },
+    en: "**What this input does:** Records the exact cash/bank amount actually paid to the supplier or received from the customer right now on this invoice.\n**How it works:**\n• If `Paid = Net Payable`: The bill is **Fully Settled**.\n• If `Paid < Net Payable` (Partial Payment): The paid portion goes to your Cash/Bank account, and the remaining balance automatically posts to the party's **Credit (Udhar) Ledger**.\n• On POS, if `Received > Net Payable`, the system calculates the **Change Due** to return to the customer.",
+    ur: "**یہ خانہ کیا کرتا ہے:** بل کے وقت موقع پر وصول کی گئی یا ادا کی گئی نقد رقم درج کرتا ہے۔\n• اگر کم رقم لکھی جائے تو بقایا رقم خودکار طور پر کھاتے (ادھار) میں درج ہو جاتی ہے۔",
+  },
+  {
+    keywords: ["change due", "change back", "remaining balance", "balance due", "due amount"],
+    title: { en: "Remaining Balance / Change Due Indicator", ur: "بقایا رقم / واپسی بقایا (Remaining / Change Due)" },
+    en: "**What this read-only indicator shows:**\n• **If Customer Paid Extra:** Shows the exact **Change to Return** (`Cash Received − Net Bill`).\n• **If Partial or Credit Bill:** Shows the **Remaining Unpaid Balance** (`Net Bill − Paid Amount`) that will be posted to the party's ledger.",
+    ur: "**یہ خانہ کیا دکھاتا ہے:**\n• گاہک سے زیادہ نقدی ملنے پر واپس کرنے والے پیسے (Change Due)۔\n• ادھار یا جزوی ادائیگی کی صورت میں کھاتے میں جانے والی بقایا رقم۔",
+  },
+  {
+    keywords: ["payment account", "deposit to", "paid from", "cash account", "bank account", "wallet"],
+    title: { en: "Payment Account Selector (Cash Drawer / Bank / Wallet)", ur: "ادائیگی کا اکاؤنٹ (کیش ڈراور / بینک / والٹ)" },
+    en: "**What this dropdown does:** Selects which financial account receives or pays the money for this transaction (e.g., **Counter Cash Drawer**, **Meezan Bank**, **JazzCash / EasyPaisa**).\n**Why it matters:** Ensures your physical cash drawer reconciliation and bank ledger balances stay 100% accurate.",
+    ur: "**یہ ڈراپ ڈاؤن کیا کرتا ہے:** یہ منتخب کرتا ہے کہ رقم کس اکاؤنٹ (کیش ڈراور، بینک اکاؤنٹ یا جیز کیش/ایزی پیسہ) میں جمع ہو گی یا نکلے گی۔",
+  },
+  {
+    keywords: ["save & print", "save and print", "f9", "post & print"],
+    title: { en: "Save & Print Receipt Button (F9)", ur: "محفوظ اور پرنٹ کریں (Save & Print — F9)" },
+    en: "**What this button does:** Validates and posts the transaction (updating stock, cash drawer, and ledgers) and **immediately opens the thermal/A4 print dialog** for the customer or supplier receipt.\n**Keyboard Shortcut:** Press `F9` from anywhere on the billing screen.",
+    ur: "**یہ بٹن کیا کرتا ہے:** بل کو محفوظ کر کے اسٹاک اور کھاتے اپڈیٹ کرتا ہے اور ساتھ ہی رسید پرنٹ کرنے کے لیے پرنٹر ڈائیلاگ کھول دیتا ہے۔ شارٹ کٹ: `F9`۔",
+  },
+  {
+    keywords: ["save invoice", "save purchase", "save sale", "save product", "save changes", "submit", "f10", "save bill", "complete sale"],
+    exactTokens: ["save", "submit", "update", "create"],
+    title: { en: "Save / Post Record Button (F10)", ur: "ریکارڈ محفوظ کرنے کا بٹن (Save — F10)" },
+    en: "**What this button does:** Validates all required fields on this form and permanently saves the record to the database.\n**What happens when clicked:**\n• On **Invoices / Returns:** Atomically updates batch quantities, Cash Drawer / Bank balance, and Party Ledger.\n• On **Master Forms (Product / Supplier / Customer):** Saves the profile so it is immediately available across all billing screens.",
+    ur: "**یہ بٹن کیا کرتا ہے:** فارم کے تمام ضروری خانے چیک کرنے کے بعد ریکارڈ کو مستقل طور پر سسٹم میں محفوظ کرتا ہے اور متعلقہ اسٹاک یا کھاتوں کو اپڈیٹ کرتا ہے۔",
+  },
+  {
+    keywords: ["hold", "f8", "park bill", "recall"],
+    title: { en: "Hold / Recall Bill Button (F8)", ur: "بل ہولڈ کرنے کا بٹن (Hold Bill — F8)" },
+    en: "**What this button does:** Temporarily parks the current unfinished customer cart in memory so you can bill the next customer in line without losing your typed items.\n**How to resume:** Click the Held Bills badge/list to restore the parked cart with one click.",
+    ur: "**یہ بٹن کیا کرتا ہے:** موجودہ گاہک کا ادھورا بل عارضی طور پر محفوظ کر کے اگلے گاہک کی بلنگ کرنے کی سہولت دیتا ہے جسے بعد میں دوبارہ کھولا جا سکتا ہے۔",
+  },
+  {
+    keywords: ["clear", "reset", "cancel", "discard"],
+    exactTokens: ["clear", "reset", "cancel"],
+    title: { en: "Clear / Reset / Cancel Button", ur: "فارم صاف یا منسوخ کرنے کا بٹن (Clear / Cancel)" },
+    en: "**What this button does:** Discards unsaved inputs in the current form or closes the active modal without changing any database records, stock, or ledgers.",
+    ur: "**یہ بٹن کیا کرتا ہے:** بغیر محفوظ کیے موجودہ فارم کے خانوں کو صاف کرتا ہے یا کھلی ہوئی ونڈو کو بند کر دیتا ہے۔",
+  },
+  {
+    keywords: ["invoice #", "invoice no", "bill #", "bill no", "reference #", "ref no", "voucher #", "po #"],
+    title: { en: "Invoice / Reference Number Field", ur: "انوائس نمبر / بل ریفرنس نمبر" },
+    en: "**What this field shows/captures:**\n• **System Invoice #:** The unique sequential tracking number generated by Karobar ERP for audit and return lookup.\n• **Supplier Invoice / Ref #:** On Purchase Invoices, enter the distributor's printed paper bill number here so you can match physical bills during supplier audits.",
+    ur: "**یہ خانہ کیا دکھاتا ہے:** بل کا منفرد انوائس نمبر یا سپلائر کے کاغذی بل کا ریفرنس نمبر جس سے مستقبل میں بل تلاش یا آڈٹ کیا جاتا ہے۔",
+  },
+  {
+    keywords: ["remarks", "notes", "narration", "description", "comment", "memo"],
+    title: { en: "Remarks / Narration / Notes Field", ur: "تفصیل / نوٹس کا خانہ (Remarks / Notes)" },
+    en: "**What this field does:** Stores optional reference notes, delivery instructions, doctor/patient references, or voucher explanations alongside this transaction.\n**Where it appears:** Printed on invoices/vouchers and shown in the **Account & Party Ledger** narration column.",
+    ur: "**یہ خانہ کیا کرتا ہے:** اس بل یا واؤچر کے ساتھ اضافی یادداشت، حوالہ یا تفصیل محفوظ کرتا ہے جو کھاتے (Ledger) اور پرنٹ میں نظر آتی ہے۔",
+  },
+
+  // =========================================================================
+  // 3. PRODUCT, FORMULATION, BARCODE, SUPPLIER & INVENTORY CONTROLS
+  // =========================================================================
+  {
+    keywords: ["formulation", "generic", "salt", "active ingredient", "composition"],
+    title: { en: "Medicine Formulation / Generic Salt Field", ur: "دوا کا فارمولیشن / جینرک سالٹ (Formulation)" },
+    en: "**What this field does:** Stores the active pharmaceutical ingredient / generic chemical salt and strength (e.g., `Paracetamol 500mg` or `Amoxicillin + Clavulanic Acid`).\n**Why it is super useful:**\n• Lets cashiers search for **substitute brands** with the exact same salt when a requested brand is out of stock.",
+    ur: "**یہ خانہ کیا کرتا ہے:** دوا کا اصل کیمیائی فارمولا یا سالٹ (مثلاً `Paracetamol 500mg`) محفوظ کرتا ہے، جس کی مدد سے کسی برانڈ کے ختم ہونے پر متبادل دوا باآسانی تلاش کی جا سکتی ہے۔",
+  },
+  {
+    keywords: ["barcode", "sku", "item code", "scan barcode", "ean", "upc"],
+    title: { en: "Barcode / SKU Scanner Field", ur: "بارکوڈ / اسکینر کوڈ کا خانہ (Barcode / SKU)" },
+    en: "**What this field does:** Links the physical barcode printed on the medicine box (or an auto-generated internal code) to this product.\n**How it works:** Scanning this code with a USB/wireless barcode gun at the POS counter immediately adds the product to the bill.",
+    ur: "**یہ خانہ کیا کرتا ہے:** دوا کے ڈبے پر موجود بارکوڈ کو محفوظ کرتا ہے یا اسکین کر کے فوری طور پر بل میں شامل کرتا ہے۔",
+  },
+  {
+    keywords: ["reorder", "min stock", "minimum stock", "low stock", "alert level"],
+    title: { en: "Reorder Level (Low-Stock Alert Threshold)", ur: "کم از کم اسٹاک الرٹ کی حد (Reorder Level)" },
+    en: "**What this field does:** Sets the minimum safety stock quantity for this product.\n**How it works:** As soon as total available units drop at or below this number, Karobar flags the item in **Low Stock Alerts** and the **Reorder / Shortage Report** so you can order it on time.",
+    ur: "**یہ خانہ کیا کرتا ہے:** دوا کے کم از کم اسٹاک کی حد مقرر کرتا ہے۔ اسٹاک اس تعداد سے کم ہوتے ہی سسٹم لو اسٹاک الرٹ جاری کر دیتا ہے۔",
+  },
+  {
+    keywords: ["rack", "shelf", "bin", "cabinet", "location"],
+    title: { en: "Rack / Shelf Location Field", ur: "ریک یا شیلف لوکیشن (Rack / Shelf)" },
+    en: "**What this field does:** Records the physical store rack, cabinet, or shelf code (e.g., `Rack A-3`, `Fridge-1`) where this medicine is kept, helping staff locate items in seconds.",
+    ur: "**یہ خانہ کیا کرتا ہے:** دکان میں دوا رکھنے کی جگہ (مثلاً `Rack A-3` یا `Fridge`) درج کرتا ہے تاکہ عملہ دوا فوری تلاش کر سکے۔",
+  },
+  {
+    keywords: ["brand", "manufacturer", "company", "pharma"],
+    title: { en: "Brand / Pharmaceutical Company Selector", ur: "برانڈ / فارما کمپنی کا انتخاب (Brand)" },
+    en: "**What this control does:** Links or filters products by their pharmaceutical manufacturer/brand (e.g., GSK, Getz, Abbott, Sami) for brand-wise stock and sales analysis.",
+    ur: "**یہ کنٹرول کیا کرتا ہے:** دوا کو اس کی سازندہ کمپنی یا برانڈ سے منسلک کرتا ہے یا برانڈ کے لحاظ سے فہرست کو فلٹر کرتا ہے۔",
+  },
+  {
+    keywords: ["category", "dosage form", "product type"],
+    title: { en: "Product Category / Dosage Form Selector", ur: "کیٹیگری / دوا کی قسم (Category)" },
+    en: "**What this control does:** Classifies the item into its group (e.g., Tablets, Capsules, Syrups, Injections, Surgical, Cosmetics) for organized reporting and tax/discount rules.",
+    ur: "**یہ کنٹرول کیا کرتا ہے:** پراڈکٹ کی کیٹیگری (مثلاً گولیاں، سیرپ، انجیکشن یا سرجیکل) منتخب یا فلٹر کرتا ہے۔",
+  },
   {
     keywords: ["intimat", "انٹیمیشن"],
-    title: { en: "Supplier Expiry Intimation Status", ur: "سپلائر ایکسپائری انٹیمیشن اسٹیٹس" },
-    en: "**What it does:** Tracks whether you have officially notified the supplier/distributor about near-expiry batches within their policy window (e.g., 3 months before expiry).\n**Why it matters:** Distributors often refuse expired returns if prior intimation was not recorded on time.",
-    ur: "**مقصد:** یہ دکھاتا ہے کہ آیا آپ نے قریب ایکسپائری ادویات کی اطلاع مقررہ وقت (مثلاً 3 ماہ قبل) پر سپلائر کو دے دی ہے یا نہیں۔ بروقت اطلاع دینے سے واپسی کلیم رد نہیں ہوتا۔",
+    title: { en: "Supplier Expiry Intimation Status & Action", ur: "سپلائر ایکسپائری انٹیمیشن اسٹیٹس" },
+    en: "**What this control does:** Tracks and marks whether you have officially notified the supplier/distributor about near-expiry batches within their policy window (e.g., 3 months before expiry).\n**Why it matters:** Distributors often refuse expired stock returns if prior intimation was not recorded on time.",
+    ur: "**یہ کنٹرول کیا کرتا ہے:** یہ دکھاتا اور محفوظ کرتا ہے کہ آیا آپ نے قریب ایکسپائری ادویات کی اطلاع مقررہ وقت پر سپلائر کو دے دی ہے یا نہیں تاکہ واپسی کلیم رد نہ ہو۔",
   },
   {
     keywords: ["before expiry", "after expiry", "return policy", "expiry policy"],
-    title: { en: "Supplier Expiry Return Policy", ur: "سپلائر ایکسپائری واپسی پالیسی" },
-    en: "**What it does:** Specifies how many months before or after expiration this supplier accepts stock returns.\n**Example:** `3 Months Before Expiry` means batches expiring in December must be intimated/returned by September.",
-    ur: "**مقصد:** یہ بتاتا ہے کہ سپلائر ایکسپائری سے کتنے ماہ پہلے یا بعد میں مال واپس لیتا ہے۔ سسٹم اسی اصول کے تحت الرٹ جاری کرتا ہے۔",
+    title: { en: "Supplier Expiry Return Policy Rule", ur: "سپلائر ایکسپائری واپسی پالیسی" },
+    en: "**What this control does:** Specifies how many months before or after expiration this supplier accepts stock returns.\n**Example:** `3 Months Before Expiry` means batches expiring in December are flagged for intimation/return by September.",
+    ur: "**یہ کنٹرول کیا کرتا ہے:** یہ بتاتا ہے کہ سپلائر ایکسپائری سے کتنے ماہ پہلے یا بعد میں مال واپس لیتا ہے۔ سسٹم اسی اصول کے تحت الرٹ جاری کرتا ہے۔",
   },
   {
+    keywords: ["blind count", "physical count", "counted qty", "audit qty"],
+    title: { en: "Physical / Blind Stock Count Input", ur: "فزیکل اسٹاک گنتی کا خانہ (Physical Count)" },
+    en: "**What this input does:** Enter the actual number of units you physically counted on the shelf during a stock audit.\n**How it works:** After submission, Karobar compares your physical count against system stock to compute **Surplus / Shortage Variance** and post an audit adjustment.",
+    ur: "**یہ خانہ کیا کرتا ہے:** شیلف پر موجود اصل گنے گئے یونٹس کی تعداد درج کرتا ہے جس کا سسٹم اسٹاک سے موازنہ کر کے کمی یا بیشی نکالتا ہے۔",
+  },
+  {
+    keywords: ["quarantine", "disposal", "write off", "write-off", "damaged"],
+    title: { en: "Quarantine / Stock Write-Off Control", ur: "قرنطینہ / ضائع شدہ اسٹاک (Quarantine / Disposal)" },
+    en: "**What this control does:** Moves expired or damaged batches out of sellable POS inventory into quarantine or records a permanent financial write-off loss.",
+    ur: "**یہ کنٹرول کیا کرتا ہے:** ایکسپائر یا خراب شدہ اسٹاک کو قابلِ فروخت انوینٹری سے الگ (Quarantine) کرتا ہے یا نقصان کے طور پر خارج کرتا ہے۔",
+  },
+
+  // =========================================================================
+  // 4. CASH REGISTER, SHIFT RECONCILIATION & ACCOUNTING CONTROLS
+  // =========================================================================
+  {
     keywords: ["opening float", "opening balance", "initial float", "starting cash"],
-    title: { en: "Opening Balance / Shift Float", ur: "اوپننگ بیلنس / ابتدائی کیش فلوٹ" },
-    en: "**What it does:** On **Cash Drawer**, this is the starting physical cash placed in the counter drawer at shift start. On **Customers / Suppliers / Accounts**, this is the historical balance before using Karobar ERP.",
-    ur: "**مقصد:** کیش ڈراور میں یہ شفٹ کے آغاز پر گلے میں رکھی گئی ابتدائی نقدی ہے، جبکہ گاہک یا سپلائر میں یہ سافٹ ویئر شروع کرنے سے پہلے کا پرانا بقایا ہے۔",
+    title: { en: "Opening Balance / Starting Shift Float", ur: "اوپننگ بیلنس / ابتدائی کیش فلوٹ" },
+    en: "**What this field shows/captures:**\n• **On Cash Register:** The starting physical cash placed in the counter drawer when opening a shift.\n• **On Customer / Supplier / Account Profiles:** The historical balance carried forward before starting Karobar ERP.",
+    ur: "**یہ خانہ کیا دکھاتا ہے:** کیش ڈراور میں شفٹ کے آغاز پر گلے میں رکھی گئی ابتدائی نقدی، یا گاہک/سپلائر کا پرانا ابتدائی بقایا۔",
   },
   {
     keywords: ["expected balance", "expected drawer", "expected cash", "system expected"],
-    title: { en: "Expected Drawer Cash Balance", ur: "متوقع کیش ڈراور بیلنس" },
-    en: "**Formula:** `Opening Float + Total Cash Inflows − Total Cash Outflows = Expected Drawer Cash`.\n**What it means:** The exact amount of physical notes and coins that should currently be inside your counter drawer.",
-    ur: "**فارمولا:** `اوپننگ فلوٹ + کل کیش ان − کل کیش آؤٹ = متوقع کیش بیلنس`۔\nاس وقت آپ کے گلے میں اتنی نقد رقم موجود ہونی چاہیے۔",
+    title: { en: "Expected Drawer Cash Balance Card", ur: "متوقع کیش ڈراور بیلنس (Expected Cash)" },
+    en: "**What this metric card shows:** The exact amount of physical cash that *should* currently be inside your counter drawer according to all transactions recorded in this shift.\n**Live Formula:** `Opening Float + Total Cash Inflows (Sales/Receipts) − Total Cash Outflows (Purchases/Expenses/Returns) = Expected Cash`.",
+    ur: "**یہ کارڈ کیا دکھاتا ہے:** سسٹم کے مطابق اس وقت آپ کے کیش گلے میں موجود ہونی والی متوقع نقد رقم۔\n**فارمولا:** `اوپننگ فلوٹ + کل کیش آمد − کل کیش اخراج = متوقع کیش بیلنس`۔",
   },
   {
     keywords: ["actual physical", "actual count", "closing balance", "variance", "discrepancy", "surplus", "shortage"],
-    title: { en: "Actual Cash Count & Shift Variance (Over / Short)", ur: "اصل کیش گنتی اور فرق (کمی / بیشی)" },
-    en: "**Formula:** `Variance = Actual Counted Cash − Expected Drawer Cash`.\n• `0.00` = **Balanced**\n• `+ Positive` = **Cash Surplus** (extra cash in drawer)\n• `− Negative` = **Cash Shortage** (missing cash in drawer)",
-    ur: "**فارمولا:** `فرق = اصل گنی گئی رقم − متوقع کیش`۔\n• `0` = حساب برابر ہے\n• `+` = گلے میں اضافی رقم (Surplus)\n• `−` = گلے میں رقم کی کمی (Shortage)",
+    title: { en: "Actual Cash Count & Shift Variance (Over / Short)", ur: "اصل کیش گنتی اور فرق (Variance)" },
+    en: "**What this control does:** Compares the physical cash counted at shift close against the system's Expected Drawer Cash.\n**Formula:** `Variance = Actual Counted Cash − Expected Drawer Cash`\n• `0.00` = **Balanced**\n• `+ Positive` = **Cash Surplus** (extra cash in drawer)\n• `− Negative` = **Cash Shortage** (missing cash in drawer)",
+    ur: "**یہ کنٹرول کیا کرتا ہے:** گلے کی اصل گنی گئی رقم کا سسٹم کے متوقع کیش سے موازنہ کر کے فرق نکالتا ہے:\n• `0` = حساب بالکل برابر ہے\n• `+` = گلے میں اضافی رقم (Surplus)\n• `−` = گلے میں رقم کی کمی (Shortage)",
   },
   {
     keywords: ["z-report", "z report", "shift report"],
-    title: { en: "Official Shift Z-Report (PDF / Print)", ur: "شفٹ کی آفیشل Z-Report" },
-    en: "**What it does:** Generates a complete, auditable PDF summary of the shift including Opening Float, Category Inflows/Outflows, Expected vs. Actual Cash, Variance, and chronological transaction log.",
-    ur: "**مقصد:** پوری شفٹ کی مکمل آڈٹ رپورٹ (PDF) جس میں ابتدائی کیش، آمد و اخراج کی تفصیل، متوقع بمقابلہ اصل کیش اور تمام لین دین شامل ہوتے ہیں۔",
+    title: { en: "Official Shift Z-Report Button (PDF / Print)", ur: "شفٹ کی آفیشل Z-Report کا بٹن" },
+    en: "**What this button does:** Generates a complete, auditable PDF summary of the shift including Opening Float, Category Inflows/Outflows, Expected vs. Actual Cash, Variance, and chronological transaction log.",
+    ur: "**یہ بٹن کیا کرتا ہے:** پوری شفٹ کی مکمل آڈٹ رپورٹ (PDF) تیار کرتا ہے جس میں ابتدائی کیش، آمد و اخراج اور تمام لین دین شامل ہوتے ہیں۔",
   },
   {
-    keywords: ["denomination", "note", "coin"],
+    keywords: ["denomination", "5000", "1000", "notes", "coins"],
     title: { en: "PKR Note & Coin Denomination Counter", ur: "پاکستانی نوٹوں اور سکوں کا کیلکولیٹر" },
-    en: "**What it does:** Lets you enter the count of Rs. 5000, 1000, 500, 100, 50, 20, 10 notes and coins and automatically calculates the total physical cash.",
-    ur: "**مقصد:** نوٹوں کی تعداد لکھنے سے کل نقد رقم خودکار طریقے سے بغیر کسی غلطی کے گن لیتا ہے۔",
+    en: "**What this tool does:** Lets you type how many physical notes of Rs. 5000, 1000, 500, 100, 50, 20, 10 and coins are in your drawer and automatically sums the exact physical cash total.",
+    ur: "**یہ ٹول کیا کرتا ہے:** نوٹوں (5000، 1000، 500 وغیرہ) کی تعداد لکھنے سے کل نقد رقم خودکار طریقے سے بغیر کسی غلطی کے گن لیتا ہے۔",
   },
   {
-    keywords: ["pack size", "units per pack"],
-    title: { en: "Pack Size (Units per Box)", ur: "پیک سائز (ڈبے میں یونٹس کی تعداد)" },
-    en: "**What it does:** Defines how many loose tablets/strips/units are inside 1 full box.\n**Example:** A box of 30 tablets has `Pack Size = 30`. Selling 5 loose tablets deducts 5 units from the pack.",
-    ur: "**مقصد:** ایک ڈبے میں موجود کھلی گولیوں یا یونٹس کی تعداد۔ مثلاً 30 گولیوں والے ڈبے کا پیک سائز `30` ہو گا۔",
+    keywords: ["udhar", "receivable", "credit limit", "payable", "party balance", "ledger balance", "current balance"],
+    title: { en: "Party Ledger Balance & Credit Status", ur: "کھاتہ بیلنس اور کریڈٹ اسٹیٹس" },
+    en: "**What this field/card shows:** The live outstanding balance owed by this customer (`Receivable / Udhar`) or owed to this supplier (`Payable`).\n**How it updates:** Increases automatically on credit invoices and decreases immediately when a cash/bank receipt or payment voucher is recorded.",
+    ur: "**یہ کارڈ کیا دکھاتا ہے:** گاہک سے وصول طلب ادھار (Receivable) یا سپلائر کو واجب الادا رقم (Payable) کا موجودہ بیلنس۔",
+  },
+
+  // =========================================================================
+  // 5. SEARCH, FILTER, EXPORT, PRINT, TABLE ACTIONS & TOPBAR SHORTCUTS
+  // =========================================================================
+  {
+    keywords: ["search", "filter", "find", "type to search", "quick search"],
+    title: { en: "Live Search & Filter Input", ur: "تلاش اور فلٹر کا خانہ (Search / Filter)" },
+    en: "**What this search box does:** Instantly filters the visible records on this screen by matching product name, generic salt, barcode, invoice number, or party name as you type.",
+    ur: "**یہ خانہ کیا کرتا ہے:** ٹائپ کرتے ہی نام، فارمولے، بارکوڈ، انوائس نمبر یا پارٹی کے نام کے مطابق فہرست کو فوری فلٹر کرتا ہے۔",
   },
   {
-    keywords: ["bonus", "free unit"],
-    title: { en: "Bonus Quantity (Free Trade Units)", ur: "بونس یونٹس (کمپنی کی طرف سے مفت اسٹاک)" },
-    en: "**What it does:** Adds free promotional units from the supplier into your batch stock at **zero extra bill cost**, lowering your effective average purchase cost per unit.",
-    ur: "**مقصد:** سپلائر کی طرف سے ملنے والے مفت یونٹس جو بل کی رقم بڑھائے بغیر آپ کے اسٹاک میں جمع ہو جاتے ہیں۔",
+    keywords: ["from date", "to date", "start date", "end date", "date range", "period", "invoice date", "date"],
+    title: { en: "Transaction / Filter Date Picker", ur: "تاریخ منتخب کرنے کا خانہ (Date Picker)" },
+    en: "**What this date control does:**\n• **On Invoices & Vouchers:** Sets the official accounting date on which this transaction is recorded in ledgers and reports.\n• **On Reports & Lists:** Filters the displayed transactions and totals to the selected date range.",
+    ur: "**یہ تاریخ کا خانہ کیا کرتا ہے:** بل یا واؤچر کی سرکاری تاریخ درج کرتا ہے، یا رپورٹس کو منتخب کردہ تاریخوں کے درمیان فلٹر کرتا ہے۔",
   },
   {
-    keywords: ["wht", "withholding", "tax"],
-    title: { en: "Tax / Withholding Tax (WHT)", ur: "ٹیکس / ودہولڈنگ ٹیکس (WHT)" },
-    en: "**What it does:** Applies percentage or fixed tax on the invoice line or bill total and updates both net payable and tax reporting.",
-    ur: "**مقصد:** بل پر لاگو ہونے والا ٹیکس جو کل رقم اور ٹیکس رپورٹس کو اپڈیٹ کرتا ہے۔",
+    keywords: ["export", "excel", "csv", "download pdf", "download"],
+    title: { en: "Export / Download Data Button (Excel / CSV / PDF)", ur: "ڈیٹا ایکسپورٹ اور ڈاؤن لوڈ بٹن (Export)" },
+    en: "**What this button does:** Exports the currently filtered table rows and summary totals into a downloadable file (Excel, CSV, or PDF) for external sharing, CA/tax filing, or backup.",
+    ur: "**یہ بٹن کیا کرتا ہے:** اسکرین پر موجود جدول اور ریکارڈز کو ایکسل (Excel)، CSV یا PDF فائل کی صورت میں ڈاؤن لوڈ کرتا ہے۔",
   },
   {
-    keywords: ["fefo", "batch", "expiry"],
-    title: { en: "Batch & FEFO (First-Expired, First-Out)", ur: "بیچ اور FEFO (پہلے ایکسپائر ہونے والا پہلے فروخت)" },
-    en: "**What it does:** Tracks stock by lot number and expiration date. During POS/Sale billing, Karobar automatically selects the batch expiring soonest so older stock sells first.",
-    ur: "**مقصد:** سسٹم خودکار طور پر وہ بیچ پہلے منتخب کرتا ہے جس کی ایکسپائری قریب ہو تاکہ اسٹاک ضائع نہ ہو۔",
+    keywords: ["print", "thermal", "a4 print"],
+    exactTokens: ["print"],
+    title: { en: "Print Receipt / Report Button", ur: "پرنٹ نکالنے کا بٹن (Print)" },
+    en: "**What this button does:** Formats the selected invoice, barcode label, or report for printing on your connected thermal receipt printer or A4 laser printer.",
+    ur: "**یہ بٹن کیا کرتا ہے:** منتخب بل، بارکوڈ اسٹیکر یا رپورٹ کو تھرمل یا A4 پرنٹر پر پرنٹ کرنے کے لیے تیار کرتا ہے۔",
   },
   {
-    keywords: ["hold", "f8", "park"],
-    title: { en: "Hold Bill (F8) — Park Active Cart", ur: "بل ہولڈ کرنا (F8)" },
-    en: "**What it does:** Parks the current customer's invoice in memory so you can serve the next customer in line and resume the held bill anytime.",
-    ur: "**مقصد:** موجودہ گاہک کا بل عارضی طور پر روک کر اگلے گاہک کی بلنگ کرنے کی سہولت۔",
+    keywords: ["edit", "modify", "update row"],
+    exactTokens: ["edit"],
+    title: { en: "Edit Record Button", ur: "ریکارڈ میں تبدیلی کا بٹن (Edit)" },
+    en: "**What this action button does:** Opens this specific record's details in edit mode so you can update its fields and save changes.",
+    ur: "**یہ بٹن کیا کرتا ہے:** اس مخصوص ریکارڈ کی تفصیلات کو ترمیم (Edit) کے لیے کھولتا ہے تاکہ آپ اس میں تبدیلی کر سکیں۔",
   },
   {
-    keywords: ["udhar", "receivable", "credit limit", "payable", "balance"],
-    title: { en: "Party Ledger Balance & Credit Control", ur: "کھاتہ بیلنس اور کریڈٹ کنٹرول" },
-    en: "**What it does:** Tracks unpaid credit (`Udhar`) owed by customers or payable to suppliers. Unpaid invoice balances post here automatically, and payments recorded in the ledger reduce it.",
-    ur: "**مقصد:** گاہکوں سے وصول طلب ادھار یا سپلائرز کو واجب الادا رقم کا مکمل حساب رکھتا ہے۔",
+    keywords: ["view", "details", "preview", "eye"],
+    exactTokens: ["view", "details"],
+    title: { en: "View Details / Preview Button", ur: "تفصیل دیکھنے کا بٹن (View Details)" },
+    en: "**What this action button does:** Opens a complete read-only breakdown of this invoice, batch, or transaction without modifying any data.",
+    ur: "**یہ بٹن کیا کرتا ہے:** اس بل یا ریکارڈ کی مکمل تفصیل دیکھنے کے لیے ونڈو کھولتا ہے۔",
+  },
+  {
+    keywords: ["alt+c", "cash register", "cash drawer"],
+    shortcut: {
+      keys: "Alt + C",
+      en: "Press `Alt + C` from anywhere in the app to open the Cash Register",
+      ur: "کیش رجسٹر کھولنے کے لیے کہیں بھی `Alt + C` دبائیں",
+    },
+    title: { en: "Cash Register / Shift Drawer Shortcut (Alt+C)", ur: "کیش رجسٹر / گلے کا بٹن (Alt+C)" },
+    en: "**What this topbar button does:** Opens the **Cash Register & Shift Reconciliation** screen (or press `Alt+C` anytime) to view live counter cash, record cash in/out, or close the shift with a Z-Report.",
+    ur: "**یہ بٹن کیا کرتا ہے:** کیش رجسٹر (گلے کا حساب) کھولتا ہے جہاں آپ موجودہ کیش بیلنس دیکھ سکتے ہیں اور شفٹ کلوز کر سکتے ہیں۔ شارٹ کٹ: `Alt+C`۔",
+  },
+  {
+    keywords: ["alt+a", "accounts hub", "chart of accounts"],
+    shortcut: {
+      keys: "Alt + A",
+      en: "Press `Alt + A` from anywhere in the app to open the Accounts & Finance Hub",
+      ur: "اکاؤنٹس ماڈیول کھولنے کے لیے کہیں بھی `Alt + A` دبائیں",
+    },
+    title: { en: "Accounts & Ledgers Shortcut (Alt+A)", ur: "اکاؤنٹس اور کھاتہ ہب بٹن (Alt+A)" },
+    en: "**What this topbar button does:** Jumps directly to the **Accounts & Finance** module (`Alt+A`) to inspect cash/bank accounts, expenses, and financial statements.",
+    ur: "**یہ بٹن کیا کرتا ہے:** براہِ راست اکاؤنٹس اور فنانس ماڈیول (`Alt+A`) کھولتا ہے جہاں بینک، کیش اور اخراجات کا مکمل حساب موجود ہے۔",
   },
 ];
 
 /**
- * Inspects a clicked DOM element on the page and returns a rich bilingual explanation card.
+ * Resolves the exact `<th>` column header for a `<td>` or `<th>` cell, even in
+ * multi-row `<thead>` tables with `rowSpan` / `colSpan` (such as Purchase Invoice).
+ */
+export function resolveTableColumnHeader(element) {
+  const cell = element?.closest?.("td, th");
+  if (!cell) return "";
+  if (cell.tagName?.toLowerCase() === "th") {
+    return (cell.innerText || "").replace(/\s+/g, " ").trim();
+  }
+  const table = cell.closest?.("table");
+  if (!table) return "";
+
+  const allThs = Array.from(table.querySelectorAll("thead th"));
+  if (!allThs.length) return "";
+
+  // 1. Try horizontal bounding-box alignment against the bottom-most matching `<th>` in `<thead>`
+  const cellRect = cell.getBoundingClientRect?.();
+  if (cellRect && cellRect.width > 0) {
+    const centerX = cellRect.left + cellRect.width / 2;
+    const matchingThs = allThs
+      .map((th) => ({ th, rect: th.getBoundingClientRect?.() }))
+      .filter(
+        ({ rect }) =>
+          rect &&
+          rect.width > 0 &&
+          centerX >= rect.left - 2 &&
+          centerX <= rect.right + 2
+      );
+    if (matchingThs.length > 0) {
+      // Pick the bottom-most `<th>` (the specific sub-column header rather than the group header)
+      matchingThs.sort((a, b) => b.rect.top - a.rect.top);
+      const bestText = (matchingThs[0].th.innerText || "").replace(/\s+/g, " ").trim();
+      if (bestText) return bestText;
+    }
+  }
+
+  // 2. Fallback to the last header row's `cellIndex` or `allThs[cell.cellIndex]`
+  const lastHeaderRowThs = table.querySelectorAll("thead tr:last-child th");
+  if (lastHeaderRowThs && lastHeaderRowThs[cell.cellIndex]) {
+    return (lastHeaderRowThs[cell.cellIndex].innerText || "").replace(/\s+/g, " ").trim();
+  }
+  if (allThs[cell.cellIndex]) {
+    return (allThs[cell.cellIndex].innerText || "").replace(/\s+/g, " ").trim();
+  }
+  return "";
+}
+
+/**
+ * Extracts deep structural & live state information from a clicked DOM element
+ * so `explainDomElement` explains the exact component, field, column, or section.
+ */
+function inspectElementAnatomy(element) {
+  const tag = (element.tagName || "").toLowerCase();
+  const typeAttr = (element.getAttribute?.("type") || "").toLowerCase();
+  const roleAttr = (element.getAttribute?.("role") || "").toLowerCase();
+  const ariaLabel = (element.getAttribute?.("aria-label") || "").trim();
+  const titleAttr = (element.getAttribute?.("title") || "").trim();
+  const placeholder = (element.getAttribute?.("placeholder") || "").trim();
+  const nameAttr = (element.getAttribute?.("name") || "").trim();
+  const isReadOnly =
+    Boolean(element.readOnly) ||
+    element.hasAttribute?.("readonly") ||
+    Boolean(element.disabled) ||
+    element.getAttribute?.("aria-readonly") === "true" ||
+    element.classList?.contains("purchase-readonly-field") ||
+    element.classList?.contains("sale-readonly-field");
+
+  // 1. Resolve Table Column Header (`<th>`) if the element is inside a `<td>` or `<th>`
+  const tableHeaderText = resolveTableColumnHeader(element);
+  let tableRowNumber = null;
+  const cell = element.closest?.("td, th");
+  if (cell && cell.tagName?.toLowerCase() === "td") {
+    const tr = cell.closest?.("tr");
+    if (tr && tr.parentElement?.tagName?.toLowerCase() === "tbody") {
+      const dataRows = Array.from(tr.parentElement.children).filter(
+        (r) => !r.classList?.contains("purchase-invoice-brand-heading")
+      );
+      const idx = dataRows.indexOf(tr);
+      if (idx >= 0) tableRowNumber = idx + 1;
+    }
+  }
+
+  // 2. Resolve Specific Field Label (only from direct `<label>` or a compact field wrapper, NEVER a giant page wrapper)
+  let fieldLabel = "";
+  const closestLabel = element.closest?.("label");
+  if (closestLabel) {
+    fieldLabel = (closestLabel.innerText || "").replace(/\s+/g, " ").trim();
+  } else if (element.id) {
+    try {
+      const forLabel = document.querySelector(`label[for="${CSS.escape(element.id)}"]`);
+      if (forLabel) {
+        fieldLabel = (forLabel.innerText || "").replace(/\s+/g, " ").trim();
+      }
+    } catch {
+      // ignore invalid selector
+    }
+  }
+  if (!fieldLabel) {
+    let parent = element.parentElement;
+    for (let depth = 0; depth < 3 && parent && parent !== document.body; depth++) {
+      const rect = parent.getBoundingClientRect?.();
+      const inputCount = parent.querySelectorAll?.("input, select, textarea").length || 0;
+      if (rect && rect.height <= 125 && inputCount <= 2) {
+        const lbl = parent.querySelector?.("label");
+        if (lbl && lbl.innerText) {
+          fieldLabel = lbl.innerText.replace(/\s+/g, " ").trim();
+          break;
+        }
+      }
+      parent = parent.parentElement;
+    }
+  }
+
+  // 3. Determine Component Category & Badge
+  let componentType = {
+    en: "UI Component",
+    ur: "اسکرین کنٹرول",
+    kind: "section",
+  };
+  if (tag === "button" || roleAttr === "button" || roleAttr === "radio" || ["button", "submit", "reset"].includes(typeAttr)) {
+    componentType = { en: "Action Button", ur: "ایکشن بٹن (Button)", kind: "button" };
+  } else if (tag === "a" || roleAttr === "tab") {
+    componentType = {
+      en: roleAttr === "tab" ? "Tab Switcher" : "Navigation Link",
+      ur: roleAttr === "tab" ? "ٹیب بٹن (Tab)" : "نیویگیشن لنک",
+      kind: "link",
+    };
+  } else if (tag === "select" || roleAttr === "combobox" || element.classList?.contains("react-select__control")) {
+    componentType = { en: "Dropdown Selector", ur: "ڈراپ ڈاؤن انتخاب (Dropdown)", kind: "select" };
+  } else if (typeAttr === "checkbox" || typeAttr === "radio" || roleAttr === "switch") {
+    componentType = { en: "Toggle / Checkbox", ur: "ٹوگل / چیک باکس", kind: "toggle" };
+  } else if (tag === "input" || tag === "textarea") {
+    if (isReadOnly) {
+      componentType = {
+        en: "Auto-Calculated / Read-Only Field",
+        ur: "خودکار کیلکولیٹڈ خانہ (Read-Only)",
+        kind: "readonly-input",
+      };
+    } else if (typeAttr === "date" || typeAttr === "month") {
+      componentType = { en: "Date Picker Input", ur: "تاریخ کا خانہ (Date Input)", kind: "date-input" };
+    } else if (typeAttr === "number") {
+      componentType = { en: "Numeric Input Field", ur: "عددی اندراج کا خانہ (Number Input)", kind: "number-input" };
+    } else {
+      componentType = { en: "Editable Input Field", ur: "اندراج کا خانہ (Input Field)", kind: "text-input" };
+    }
+  } else if (tag === "th") {
+    componentType = { en: "Table Column Header", ur: "ٹیبل کالم ہیڈر (Column)", kind: "th" };
+  } else if (tag === "td") {
+    componentType = { en: "Table Cell / Column Value", ur: "ٹیبل سیل ویلیو (Table Cell)", kind: "td" };
+  } else if (isReadOnly) {
+    componentType = {
+      en: "Auto-Calculated / Read-Only Field",
+      ur: "خودکار کیلکولیٹڈ خانہ (Read-Only)",
+      kind: "readonly-input",
+    };
+  } else {
+    const lines = (element.innerText || "")
+      .split(/\n+/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lines.length >= 2 && lines.length <= 5 && lines.some((l) => /\d/.test(l))) {
+      componentType = { en: "Summary / KPI Metric Card", ur: "سمری / معلوماتی کارڈ", kind: "card" };
+    }
+  }
+
+  // 4. Extract Live Current Value / State on Screen
+  let liveValue = "";
+  if (tag === "select") {
+    liveValue = element.selectedOptions?.[0]?.text?.trim() || element.value || "";
+  } else if (tag === "input" || tag === "textarea") {
+    if (typeAttr === "checkbox" || typeAttr === "radio") {
+      liveValue = element.checked ? "Checked / Active" : "Unchecked / Off";
+    } else {
+      liveValue = String(element.value ?? "").trim();
+    }
+  } else if (tag === "td" || isReadOnly) {
+    liveValue = (element.innerText || "").replace(/\s+/g, " ").trim().slice(0, 60);
+  }
+
+  const ownText = (element.innerText || "").replace(/\s+/g, " ").trim().slice(0, 120);
+  const primaryLabel =
+    fieldLabel ||
+    tableHeaderText ||
+    ariaLabel ||
+    titleAttr ||
+    placeholder ||
+    ownText ||
+    nameAttr.replace(/[_-]+/g, " ") ||
+    componentType.en;
+
+  return {
+    tag,
+    typeAttr,
+    isReadOnly,
+    componentType,
+    tableHeaderText,
+    tableRowNumber,
+    fieldLabel,
+    ariaLabel,
+    titleAttr,
+    placeholder,
+    nameAttr,
+    ownText,
+    liveValue,
+    primaryLabel: primaryLabel.replace(/\s+/g, " ").trim().slice(0, 75),
+  };
+}
+
+/**
+ * Resolves the exact keyboard shortcut (if any) for the clicked DOM control.
+ */
+export function resolveControlShortcut(element, anatomy, matchedEntry = null) {
+  if (!element || !anatomy) return null;
+
+  // 1. Dictionary entry with explicit shortcut metadata
+  if (matchedEntry?.shortcut?.keys) {
+    return matchedEntry.shortcut;
+  }
+
+  // 2. Explicit DOM shortcut attributes (`aria-keyshortcuts`, `data-shortcut`, `<kbd>`)
+  const ariaKey = (
+    element.getAttribute?.("aria-keyshortcuts") ||
+    element.getAttribute?.("data-shortcut") ||
+    ""
+  ).trim();
+  if (ariaKey) {
+    return {
+      keys: ariaKey,
+      en: `Press \`${ariaKey}\` on your keyboard to trigger this control directly`,
+      ur: `کی بورڈ سے براہِ راست چلانے کے لیے \`${ariaKey}\` دبائیں`,
+    };
+  }
+
+  const kbdEl = element.querySelector?.("kbd");
+  if (kbdEl && kbdEl.innerText?.trim()) {
+    const kbdText = kbdEl.innerText.trim();
+    return {
+      keys: kbdText,
+      en: `Press \`${kbdText}\` on your keyboard to trigger this action`,
+      ur: `کی بورڈ شارٹ کٹ: \`${kbdText}\``,
+    };
+  }
+
+  // 3. Parse shortcut pattern from button text or title (e.g., "(Alt+S)", "(F8)", "[F2]")
+  const combinedLabel = `${anatomy.ownText} ${anatomy.titleAttr} ${anatomy.ariaLabel}`;
+  const shortcutRegex = /\b(Alt\s*\+\s*[A-Z0-9]|Ctrl\s*\+\s*[A-Z0-9]|Shift\s*\+\s*Tab|F(?:[1-9]|1[0-2])|Esc)\b/i;
+  const match = combinedLabel.match(shortcutRegex);
+  if (match) {
+    const keyStr = match[1].replace(/\s+/g, " ");
+    return {
+      keys: keyStr,
+      en: `Press \`${keyStr}\` on your keyboard to activate this control`,
+      ur: `کی بورڈ شارٹ کٹ: \`${keyStr}\``,
+    };
+  }
+
+  // 4. Contextual Invoice / Table / Form Keyboard Navigation Shortcuts
+  const lowerClues = `${anatomy.fieldLabel} ${anatomy.tableHeaderText} ${anatomy.ownText} ${anatomy.nameAttr} ${anatomy.ariaLabel}`.toLowerCase();
+
+  // Save / Update / Create / Post buttons on invoices & forms
+  if (
+    anatomy.componentType.kind === "button" &&
+    /\b(save|update invoice|create|complete sale|submit|post)\b/i.test(lowerClues)
+  ) {
+    return {
+      keys: "Alt + S",
+      en: "Press `Alt + S` from anywhere on the form to save/post immediately",
+      ur: "فارم پر کہیں بھی رہتے ہوئے فوری محفوظ کرنے کے لیے `Alt + S` دبائیں",
+    };
+  }
+
+  // Debit / Credit segmented buttons on Purchase & Sale Invoices
+  if (anatomy.componentType.kind === "button" && /\bdebit\b/i.test(lowerClues)) {
+    return {
+      keys: "Alt + D (Debit) · Alt + T (Toggle)",
+      en: "Press `Alt + D` to select Debit mode, or `Alt + T` to toggle between Debit and Credit",
+      ur: "ڈیبٹ موڈ کے لیے `Alt + D` یا موڈ بدلنے کے لیے `Alt + T` دبائیں",
+    };
+  }
+  if (anatomy.componentType.kind === "button" && /\bcredit\b/i.test(lowerClues)) {
+    return {
+      keys: "Alt + C (Credit) · Alt + T (Toggle)",
+      en: "Press `Alt + C` to select Credit mode, or `Alt + T` to toggle between Debit and Credit",
+      ur: "کریڈٹ (ادھار) موڈ کے لیے `Alt + C` یا موڈ بدلنے کے لیے `Alt + T` دبائیں",
+    };
+  }
+
+  // Editable inputs inside a table row (Purchase Invoice, Sale Invoice, Returns, Stock Count)
+  if (
+    !anatomy.isReadOnly &&
+    anatomy.tableHeaderText &&
+    ["number-input", "text-input", "date-input", "select"].includes(anatomy.componentType.kind)
+  ) {
+    return {
+      keys: "Enter (Next Field) · ↑ / ↓ (Prev / Next Row) · Shift + Tab (Back)",
+      en: "`Enter` advances to the next column in this row · `↑` / `↓` jumps to the same column in the previous/next row (`↓` on the last row auto-adds a new row)",
+      ur: "`Enter` اگلے کالم میں جانے کے لیے · `↑` / `↓` اوپر یا نیچے والی سطر میں جانے کے لیے",
+    };
+  }
+
+  // Editable form inputs outside a table
+  if (
+    !anatomy.isReadOnly &&
+    ["number-input", "text-input", "date-input"].includes(anatomy.componentType.kind)
+  ) {
+    return {
+      keys: "Enter / Tab (Next Field) · Shift + Tab (Previous Field)",
+      en: "Press `Enter` or `Tab` to move to the next field (`Shift + Tab` to go back)",
+      ur: "اگلے خانے میں جانے کے لیے `Enter` یا `Tab` دبائیں",
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Helper to build a live status footer for the inspected component so the user sees
+ * its keyboard shortcut, table column, and current live value on screen.
+ */
+function buildLiveStatusBlock(anatomy, shortcut = null) {
+  const partsEn = [];
+  const partsUr = [];
+
+  if (shortcut?.keys) {
+    partsEn.push(
+      `• **Keyboard Shortcut:** \`${shortcut.keys}\`${
+        shortcut.en ? ` — ${shortcut.en}` : ""
+      }`
+    );
+    partsUr.push(
+      `• **کی بورڈ شارٹ کٹ:** \`${shortcut.keys}\`${
+        shortcut.ur ? ` — ${shortcut.ur}` : ""
+      }`
+    );
+  }
+
+  if (anatomy.tableHeaderText) {
+    partsEn.push(
+      `• **Table Column:** \`${anatomy.tableHeaderText}\`${
+        anatomy.tableRowNumber ? ` (Row #${anatomy.tableRowNumber})` : ""
+      }`
+    );
+    partsUr.push(
+      `• **ٹیبل کالم:** \`${anatomy.tableHeaderText}\`${
+        anatomy.tableRowNumber ? ` (سطر نمبر ${anatomy.tableRowNumber})` : ""
+      }`
+    );
+  }
+
+  if (anatomy.liveValue !== "") {
+    partsEn.push(
+      `• **Current Value on Screen:** \`${anatomy.liveValue}\`${
+        anatomy.isReadOnly ? " *(Auto-calculated / Read-only)*" : ""
+      }`
+    );
+    partsUr.push(
+      `• **اسکرین پر موجودہ ویلیو:** \`${anatomy.liveValue}\`${
+        anatomy.isReadOnly ? " *(خودکار کیلکولیٹڈ)*" : ""
+      }`
+    );
+  } else if (anatomy.placeholder && (anatomy.tag === "input" || anatomy.tag === "textarea")) {
+    partsEn.push(`• **Input Hint:** *"${anatomy.placeholder}"*`);
+    partsUr.push(`• **اندراج کا اشارہ:** *"${anatomy.placeholder}"*`);
+  }
+
+  return {
+    en: partsEn.length ? `\n\n${partsEn.join("\n")}` : "",
+    ur: partsUr.length ? `\n\n${partsUr.join("\n")}` : "",
+  };
+}
+
+/**
+ * Inspects a clicked DOM element on the page and returns a detailed, component-specific
+ * bilingual explanation card (never dumping generic whole-screen summaries).
  */
 export function explainDomElement(element, currentGuide) {
   if (!element) return null;
 
-  // Gather human-readable text clues from the element and its surrounding label/header
-  const tag = (element.tagName || "").toLowerCase();
-  const ariaLabel = element.getAttribute?.("aria-label") || "";
-  const titleAttr = element.getAttribute?.("title") || "";
-  const placeholder = element.getAttribute?.("placeholder") || "";
-  const nameAttr = element.getAttribute?.("name") || "";
+  const anatomy = inspectElementAnatomy(element);
+  const badge = {
+    en: anatomy.tableHeaderText
+      ? `${anatomy.componentType.en} • Col: ${anatomy.tableHeaderText}`
+      : anatomy.componentType.en,
+    ur: anatomy.tableHeaderText
+      ? `${anatomy.componentType.ur} • کالم: ${anatomy.tableHeaderText}`
+      : anatomy.componentType.ur,
+  };
 
-  let labelText = "";
-  const closestLabel = element.closest?.("label");
-  if (closestLabel) {
-    labelText = closestLabel.innerText || "";
-  } else if (element.id) {
-    const forLabel = document.querySelector(`label[for="${CSS.escape(element.id)}"]`);
-    if (forLabel) labelText = forLabel.innerText || "";
-  }
-  if (!labelText) {
-    const parentGroup = element.closest?.("div, th, td, button, a");
-    const prevLabel = parentGroup?.querySelector?.("label, h3, h4, th");
-    if (prevLabel) labelText = prevLabel.innerText || "";
-  }
+  // Build focused search text strictly from this component's own clues (not whole-page parent divs)
+  const focusedClues = [
+    anatomy.fieldLabel,
+    anatomy.tableHeaderText,
+    anatomy.ariaLabel,
+    anatomy.titleAttr,
+    anatomy.placeholder,
+    anatomy.ownText,
+    anatomy.nameAttr.replace(/[_-]+/g, " "),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 
-  const ownText = (element.innerText || element.value || "").trim().slice(0, 120);
-  const combined = `${labelText} ${titleAttr} ${ariaLabel} ${placeholder} ${ownText} ${nameAttr}`
-    .replace(/\s+/g, " ")
+  const cleanTokens = focusedClues.split(/[^a-z0-9+%#.]+/).filter(Boolean);
+  const primaryLower = (
+    anatomy.fieldLabel ||
+    anatomy.tableHeaderText ||
+    anatomy.placeholder ||
+    anatomy.ariaLabel ||
+    anatomy.ownText
+  )
+    .toLowerCase()
     .trim();
-  const lower = combined.toLowerCase();
 
+  // 1. Check universal ERP control dictionary first (most specific to sub-columns, buttons & shortcuts)
+  for (const entry of UNIVERSAL_CONTROL_DICTIONARY) {
+    const exactHit =
+      entry.exactTokens &&
+      entry.exactTokens.some(
+        (tok) =>
+          primaryLower === tok ||
+          anatomy.tableHeaderText.toLowerCase() === tok ||
+          cleanTokens.includes(tok)
+      );
+    const keywordHit = entry.keywords.some((kw) => focusedClues.includes(kw));
+    if (exactHit || keywordHit) {
+      const shortcut = resolveControlShortcut(element, anatomy, entry);
+      const liveStatus = buildLiveStatusBlock(anatomy, shortcut);
+      return {
+        title: {
+          en: entry.title.en,
+          ur: entry.title.ur,
+        },
+        badge,
+        shortcut,
+        en: `${entry.en}${liveStatus.en}`,
+        ur: `${entry.ur}${liveStatus.ur}`,
+      };
+    }
+  }
+
+  // 2. Check screen-specific fields glossary when the component's own label/column matches the field name
   const guideKey = currentGuide?.key || currentGuide?.path || "";
   const blueprint = SCREEN_BLUEPRINTS[guideKey] || getBlueprintForGuide(currentGuide);
   const allScreenFields = [...(currentGuide?.fields || []), ...(blueprint?.fields || [])];
 
-  // 1. Check screen-specific fields glossary first
-  for (const field of allScreenFields) {
-    const termEn = (field.term?.en || "").toLowerCase();
-    const words = termEn.split(/[^a-z0-9]+/).filter((w) => w.length >= 4);
-    if (
-      (termEn && lower.includes(termEn)) ||
-      words.some((w) => lower.includes(w))
-    ) {
-      return {
-        title: {
-          en: `UI Inspector: ${field.term.en}`,
-          ur: `اسکرین انسپکٹر: ${field.term.ur || field.term.en}`,
-        },
-        en: `**${field.term.en}** (${field.type || "Control"})\n\n${field.en}${
-          blueprint?.example?.en ? `\n\n**Practical Example:**\n${blueprint.example.en}` : ""
-        }`,
-        ur: `**${field.term.ur || field.term.en}**\n\n${field.ur || field.en}${
-          blueprint?.example?.ur ? `\n\n**عملی مثال:**\n${blueprint.example.ur}` : ""
-        }`,
-      };
+  if (primaryLower.length >= 2) {
+    for (const field of allScreenFields) {
+      const termEn = (field.term?.en || "").toLowerCase().trim();
+      if (!termEn) continue;
+      const significantPhrases = termEn
+        .split(/[\/(),—–-]+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length >= 3);
+
+      const isDirectMatch =
+        primaryLower.includes(termEn) ||
+        significantPhrases.some((phrase) => primaryLower === phrase || primaryLower.includes(phrase));
+
+      if (isDirectMatch) {
+        const shortcut = resolveControlShortcut(element, anatomy, null);
+        const liveStatus = buildLiveStatusBlock(anatomy, shortcut);
+        return {
+          title: {
+            en: field.term.en,
+            ur: field.term.ur || field.term.en,
+          },
+          badge,
+          shortcut,
+          en: `**What this ${anatomy.componentType.en.toLowerCase()} does:**\n${field.en}${liveStatus.en}`,
+          ur: `**اس کنٹرول کا کام:**\n${field.ur || field.en}${liveStatus.ur}`,
+        };
+      }
     }
   }
 
-  // 2. Check universal ERP control dictionary
-  for (const entry of UNIVERSAL_CONTROL_DICTIONARY) {
-    if (entry.keywords.some((kw) => lower.includes(kw))) {
-      return {
-        title: {
-          en: `UI Inspector: ${entry.title.en}`,
-          ur: `اسکرین انسپکٹر: ${entry.title.ur}`,
-        },
-        en: entry.en,
-        ur: entry.ur,
-      };
-    }
+  // 3. Detailed Component-Specific Analysis for any custom Button, Input, Dropdown, Table Column, or Card
+  const displayLabel = anatomy.primaryLabel || "Selected Control";
+  const shortcut = resolveControlShortcut(element, anatomy, null);
+  const liveStatus = buildLiveStatusBlock(anatomy, shortcut);
+
+  if (anatomy.componentType.kind === "button" || anatomy.componentType.kind === "link") {
+    return {
+      title: {
+        en: `${displayLabel}`,
+        ur: `${displayLabel}`,
+      },
+      badge,
+      shortcut,
+      en: `**What this button does:** Triggers the **${displayLabel}** action.\n**How to use it:**\n• Click this control when you want to execute **${displayLabel}**.${liveStatus.en}`,
+      ur: `**یہ بٹن کیا کرتا ہے:** یہ بٹن دبانے سے **${displayLabel}** کا عمل شروع ہوتا ہے۔${liveStatus.ur}`,
+    };
   }
 
-  // 3. Smart contextual fallback based on element type and screen
-  const displayLabel = (labelText || titleAttr || placeholder || ownText || tag.toUpperCase())
-    .replace(/\n+/g, " ")
-    .slice(0, 60);
+  if (anatomy.componentType.kind === "readonly-input") {
+    return {
+      title: {
+        en: `${displayLabel}`,
+        ur: `${displayLabel}`,
+      },
+      badge,
+      shortcut,
+      en: `**What this read-only box shows:** Displays the live calculated value for **${displayLabel}**.\n**Why you cannot type here:**\n• Karobar ERP calculates this value automatically from your item quantities, rates, discounts, or ledger balances so manual typing errors cannot occur.${liveStatus.en}`,
+      ur: `**یہ خانہ کیا دکھاتا ہے:** یہ **${displayLabel}** کی خودکار طریقے سے گنی گئی رقم یا معلومات دکھاتا ہے۔\n• حساب کی غلطی سے بچنے کے لیے سسٹم اسے خود کیلکولیٹ کرتا ہے، اس لیے اس میں ہاتھ سے لکھنے کی ضرورت نہیں ہوتی۔${liveStatus.ur}`,
+    };
+  }
+
+  if (
+    anatomy.componentType.kind === "number-input" ||
+    anatomy.componentType.kind === "text-input" ||
+    anatomy.componentType.kind === "date-input" ||
+    anatomy.componentType.kind === "select" ||
+    anatomy.componentType.kind === "toggle"
+  ) {
+    return {
+      title: {
+        en: `${displayLabel}`,
+        ur: `${displayLabel}`,
+      },
+      badge,
+      shortcut,
+      en: `**What this field captures:** Used to enter or select **${displayLabel}**.\n**How it works:**\n• ${
+        anatomy.componentType.kind === "select"
+          ? `Click to open the dropdown list and choose the appropriate **${displayLabel}** option.`
+          : anatomy.componentType.kind === "number-input"
+            ? `Type a numeric value for **${displayLabel}** — related row totals and bill summaries recalculate immediately as you type.`
+            : `Enter the required value for **${displayLabel}** before saving or filtering.`
+      }${liveStatus.en}`,
+      ur: `**اس خانے کا مقصد:** یہاں **${displayLabel}** کی معلومات درج یا منتخب کی جاتی ہیں۔\n• اس خانے میں تبدیلی کرنے سے متعلقہ حساب یا فہرست فوری طور پر اپڈیٹ ہو جاتی ہے۔${liveStatus.ur}`,
+    };
+  }
+
+  if (anatomy.componentType.kind === "th" || anatomy.componentType.kind === "td") {
+    const colName = anatomy.tableHeaderText || displayLabel;
+    return {
+      title: {
+        en: `Column: ${colName}`,
+        ur: `کالم: ${colName}`,
+      },
+      badge,
+      shortcut,
+      en: `**What this table column shows:** Displays the **${colName}** for each row in this table.${
+        anatomy.liveValue
+          ? `\n• **Selected Cell Value:** Currently showing \`${anatomy.liveValue}\`${
+              anatomy.tableRowNumber ? ` on Row #${anatomy.tableRowNumber}` : ""
+            }.`
+          : ""
+      }\n• If the cells in this column contain input boxes or action buttons, you can click directly inside any row's cell to edit or trigger it.${liveStatus.en}`,
+      ur: `**یہ کالم کیا دکھاتا ہے:** ٹیبل کی ہر سطر کے لیے **${colName}** کی تفصیل یا قیمت دکھاتا ہے۔${liveStatus.ur}`,
+    };
+  }
+
+  // KPI Card / Summary Box / Section Block
+  const cardLines = (element.innerText || "")
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(0, 4);
+
+  const cardBreakdownEn =
+    cardLines.length >= 2
+      ? `\n• **Displayed Metric:** \`${cardLines[0]}\` → **${cardLines.slice(1).join(" • ")}**`
+      : "";
+  const cardBreakdownUr =
+    cardLines.length >= 2
+      ? `\n• **موجودہ معلومات:** \`${cardLines[0]}\` ← **${cardLines.slice(1).join(" • ")}**`
+      : "";
 
   return {
     title: {
-      en: `UI Inspector: "${displayLabel}"`,
-      ur: `اسکرین انسپکٹر: "${displayLabel}"`,
+      en: `${cardLines[0] || displayLabel}`,
+      ur: `${cardLines[0] || displayLabel}`,
     },
-    en: `**Selected Control:** \`${displayLabel}\` on **${currentGuide?.title?.en || "Current Screen"}**\n\n• **Role on this screen:** ${
-      tag === "input" || tag === "select" || tag === "textarea"
-        ? `This input field captures **${displayLabel}** data for ${currentGuide?.title?.en || "this module"}.`
-        : tag === "th" || tag === "td"
-          ? `This table column displays **${displayLabel}** for each record in ${currentGuide?.title?.en || "this list"}.`
-          : `This action control triggers **${displayLabel}** within ${currentGuide?.title?.en || "this workflow"}.`
-    }\n• **Screen Purpose:** ${currentGuide?.summary?.en || ""}\n• **Accounting & Stock Impact:** ${currentGuide?.impacts?.en || ""}`,
-    ur: `**منتخب کنٹرول:** \`${displayLabel}\` (**${currentGuide?.title?.ur || "موجودہ اسکرین"}**)\n\n• **کردار:** یہ کنٹرول اس اسکرین پر **${displayLabel}** کے اندراج یا عمل کے لیے استعمال ہوتا ہے۔\n• **اسکرین کا مقصد:** ${currentGuide?.summary?.ur || ""}\n• **اسٹاک اور کھاتوں پر اثر:** ${currentGuide?.impacts?.ur || ""}`,
+    badge,
+    shortcut,
+    en: `**What this section shows:** Displays live status and summary figures for **${
+      cardLines[0] || displayLabel
+    }**.${cardBreakdownEn}\n**How it updates:** Refreshes automatically whenever you filter records or post a new transaction.`,
+    ur: `**یہ حصہ کیا دکھاتا ہے:** یہ کارڈ **${
+      cardLines[0] || displayLabel
+    }** کے موجودہ اعداد و شمار اور خلاصہ دکھاتا ہے۔${cardBreakdownUr}`,
   };
 }
 

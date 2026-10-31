@@ -71,6 +71,7 @@
             text-align: center;
         }
     </style>
+    @include('pdf.partials.design_theme', ['pdfDesign' => $pdfDesign ?? ($setting->a4_template ?? 'standard')])
 </head>
 <body>
     @php

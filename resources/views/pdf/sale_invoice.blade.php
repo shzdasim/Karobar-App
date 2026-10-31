@@ -74,9 +74,13 @@
             text-align: center;
         }
     </style>
+    @include('pdf.partials.design_theme', ['pdfDesign' => $pdfDesign ?? ($setting->a4_template ?? 'standard')])
 </head>
 <body>
     @php
+        $activeDesign = in_array($pdfDesign ?? null, ['standard', 'minimal', 'detailed', 'compact', 'bold', 'barcode'], true)
+            ? $pdfDesign
+            : ($setting->a4_template ?? 'standard');
         $storeName = $setting->store_name ?? 'Business Store';
         $phone = $setting->phone_number ?? '';
         $address = $setting->address ?? '';
@@ -116,6 +120,9 @@
                 <div class="store-meta">
                     Date: {{ $invoice->date ? \Carbon\Carbon::parse($invoice->date)->format('d M Y') : optional($invoice->created_at)->format('d M Y') }}
                 </div>
+                @if($activeDesign === 'barcode')
+                    <div class="barcode-strip">REF: {{ strtoupper($invoice->posted_number ?? ('INV-' . $invoice->id)) }}</div>
+                @endif
             </td>
         </tr>
     </table>
@@ -151,10 +158,15 @@
     <table class="items-table">
         <thead>
             <tr>
-                <th style="width: 30px;" class="text-center">#</th>
+                <th style="width: 28px;" class="text-center">#</th>
+                @if(in_array($activeDesign, ['barcode', 'detailed'], true))
+                    <th style="width: 75px;">Code / SKU</th>
+                @endif
                 <th>Product Description</th>
-                <th style="width: 65px;" class="text-center">Batch</th>
-                <th style="width: 65px;" class="text-center">Expiry</th>
+                @if($activeDesign !== 'minimal')
+                    <th style="width: 65px;" class="text-center">Batch</th>
+                    <th style="width: 65px;" class="text-center">Expiry</th>
+                @endif
                 <th style="width: 55px;" class="text-right">Qty</th>
                 <th style="width: 75px;" class="text-right">Unit Price</th>
                 <th style="width: 65px;" class="text-right">Disc</th>
@@ -163,19 +175,37 @@
         </thead>
         <tbody>
             @forelse($invoice->items as $idx => $item)
+                @php
+                    $ps = max(1, (int) ($item->pack_size ?? $item->product?->pack_size ?? 1));
+                    $qty = (float) ($item->quantity ?? 0);
+                    if ($qty <= 0) {
+                        $qty = ((float) ($item->pack_quantity ?? 0) * $ps) + (float) ($item->unit_quantity ?? 0);
+                    }
+                    $qtyFormatted = fmod($qty, 1.0) == 0.0
+                        ? number_format($qty, 0)
+                        : rtrim(rtrim(number_format($qty, 2), '0'), '.');
+                    $unitPrice = (float) ($item->price ?? $item->unit_price ?? 0);
+                    $discPct = (float) ($item->item_discount_percentage ?? 0);
+                    $discAmt = (float) ($item->item_discount_amount ?? (($qty * $unitPrice * $discPct) / 100));
+                @endphp
                 <tr>
                     <td class="text-center">{{ $idx + 1 }}</td>
+                    @if(in_array($activeDesign, ['barcode', 'detailed'], true))
+                        <td>{{ $item->product->barcode ?? $item->product->product_code ?? '-' }}</td>
+                    @endif
                     <td><strong>{{ $item->product->name ?? 'Item' }}</strong></td>
-                    <td class="text-center">{{ $item->batch_number ?? '-' }}</td>
-                    <td class="text-center">{{ $item->expiry ? \Carbon\Carbon::parse($item->expiry)->format('M Y') : '-' }}</td>
-                    <td class="text-right">{{ number_format((float)($item->unit_quantity ?? $item->quantity ?? 0)) }}</td>
-                    <td class="text-right">{{ number_format((float)($item->unit_price ?? $item->price ?? 0), 2) }}</td>
-                    <td class="text-right">{{ number_format((float)($item->item_discount_amount ?? 0), 2) }}</td>
+                    @if($activeDesign !== 'minimal')
+                        <td class="text-center">{{ $item->batch_number ?: '-' }}</td>
+                        <td class="text-center">{{ $item->expiry ? \Carbon\Carbon::parse($item->expiry)->format('M Y') : '-' }}</td>
+                    @endif
+                    <td class="text-right">{{ $qtyFormatted }}</td>
+                    <td class="text-right">{{ number_format($unitPrice, 2) }}</td>
+                    <td class="text-right">{{ $discPct > 0 ? rtrim(rtrim(number_format($discPct, 2), '0'), '.') . '%' : number_format($discAmt, 2) }}</td>
                     <td class="text-right"><strong>{{ number_format((float)($item->sub_total ?? 0), 2) }}</strong></td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="8" class="text-center">No line items recorded.</td>
+                    <td colspan="{{ in_array($activeDesign, ['barcode', 'detailed'], true) ? 9 : ($activeDesign === 'minimal' ? 6 : 8) }}" class="text-center">No line items recorded.</td>
                 </tr>
             @endforelse
         </tbody>
@@ -225,8 +255,12 @@
     @endif
 
     <div class="footer-note">
-        {{ $note }}<br>
-        Generated on {{ now()->format('d M Y, h:i A') }}
+        @foreach(preg_split('/\r\n|\r|\n/u', (string) $note) as $noteLine)
+            @if(trim($noteLine) !== '')
+                <div style="margin-bottom: 2px;">{{ trim($noteLine) }}</div>
+            @endif
+        @endforeach
+        <div style="margin-top: 4px;">Generated on {{ now()->format('d M Y, h:i A') }}</div>
     </div>
 </body>
 </html>

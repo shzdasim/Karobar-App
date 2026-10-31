@@ -34,7 +34,11 @@ import CustomerSearch from "@/components/CustomerSearch";
 import ProductSearchInput from "@/components/ProductSearchInput";
 import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 import SubstituteProductsModal from "@/components/SubstituteProductsModal.jsx";
-import { GuideBotTopbarButton, useGuideBotOpenState } from "@/components/GuideBotTrigger.jsx";
+import {
+  GuideBotTopbarButton,
+  InspectElementTopbarButton,
+  useGuideBotOpenState,
+} from "@/components/GuideBotTrigger.jsx";
 
 const FeatureGuideBot = lazy(() => import("@/components/FeatureGuideBot.jsx"));
 
@@ -953,6 +957,7 @@ export default function BarcodePos() {
             isOpen={guideBotOpen}
             pageTitle="POS Terminal"
           />
+          <InspectElementTopbarButton />
 
           {/* Parked Carts Button */}
           <button
