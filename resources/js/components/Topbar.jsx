@@ -766,64 +766,96 @@ export default function Topbar({
           {/* Right: 1) Financial Registers | 2) System Utilities | 3) License & User */}
           <div className="workspace-topbar-actions">
             {/* Group 1: Financial Registers (Cash Drawer + Accounts) */}
-            {!permsLoading && canViewDrawer && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (canOpenDrawerPopup) {
-                    setDrawerModalOpen(true);
-                  }
-                }}
-                aria-label="Cash Drawer register"
-                title={
-                  drawerStatus.isOpen
-                    ? `Cash Drawer Open: ${formatCurrency(drawerStatus.expected)} (Alt+D)`
-                    : canOpenDrawerPopup
-                    ? "Cash Drawer is Closed — Click to Open Shift (Alt+D)"
-                    : "Cash Drawer is Closed"
-                }
-                className={`inline-flex items-center gap-1.5 h-9 px-2.5 text-xs font-semibold rounded-xl transition-all duration-150 relative z-20 shrink-0 whitespace-nowrap border ${
-                  canOpenDrawerPopup ? "cursor-pointer" : "cursor-default"
-                } ${
-                  drawerStatus.isOpen
-                    ? `bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400${
-                        canOpenDrawerPopup ? " hover:bg-emerald-500/20" : ""
-                      }`
-                    : `bg-slate-500/10 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300${
-                        canOpenDrawerPopup ? " hover:bg-slate-500/20" : ""
-                      }`
-                }`}
-              >
-                <BanknotesIcon className="w-4 h-4 shrink-0" />
-                <span
-                  className={`w-2 h-2 rounded-full shrink-0 ${
-                    drawerStatus.isOpen ? "bg-emerald-500 animate-pulse" : "bg-amber-400"
-                  }`}
-                />
-                <span className="hidden lg:inline font-bold">
-                  {drawerStatus.isOpen ? formatCurrency(drawerStatus.expected) : "Drawer"}
-                </span>
-              </button>
-            )}
+            {permsLoading ? (
+              <>
+                <div
+                  aria-hidden="true"
+                  className="inline-flex items-center gap-1.5 h-9 px-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-100/70 dark:bg-slate-800/60 shrink-0"
+                >
+                  <span className="kd-skeleton-bone w-4 h-4 rounded shrink-0" />
+                  <span className="kd-skeleton-bone-accent w-2 h-2 rounded-full shrink-0" />
+                  <span className="hidden lg:inline-block kd-skeleton-bone h-3 w-16 rounded-full" />
+                </div>
+                <div
+                  aria-hidden="true"
+                  className="inline-flex items-center gap-1.5 h-9 px-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-100/70 dark:bg-slate-800/60 shrink-0"
+                >
+                  <span className="kd-skeleton-bone w-4 h-4 rounded shrink-0" />
+                  <span className="kd-skeleton-bone-accent w-2 h-2 rounded-full shrink-0" />
+                  <span className="hidden lg:inline-block kd-skeleton-bone h-3 w-20 rounded-full" />
+                </div>
+                <div className="mx-0.5 h-5 w-px bg-slate-300/60 dark:bg-slate-700/60 shrink-0" />
+              </>
+            ) : (
+              <>
+                {canViewDrawer && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (canOpenDrawerPopup) {
+                        setDrawerModalOpen(true);
+                      }
+                    }}
+                    aria-label="Cash Drawer register"
+                    title={
+                      drawerStatus.isOpen
+                        ? `Cash Drawer Open: ${formatCurrency(drawerStatus.expected)} (Alt+D)`
+                        : canOpenDrawerPopup
+                        ? "Cash Drawer is Closed — Click to Open Shift (Alt+D)"
+                        : "Cash Drawer is Closed"
+                    }
+                    className={`inline-flex items-center gap-1.5 h-9 px-2.5 text-xs font-semibold rounded-xl transition-all duration-150 relative z-20 shrink-0 whitespace-nowrap border ${
+                      canOpenDrawerPopup ? "cursor-pointer" : "cursor-default"
+                    } ${
+                      drawerStatus.isOpen
+                        ? `bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400${
+                            canOpenDrawerPopup ? " hover:bg-emerald-500/20" : ""
+                          }`
+                        : `bg-slate-500/10 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300${
+                            canOpenDrawerPopup ? " hover:bg-slate-500/20" : ""
+                          }`
+                    }`}
+                  >
+                    <BanknotesIcon className="w-4 h-4 shrink-0" />
+                    <span
+                      className={`w-2 h-2 rounded-full shrink-0 ${
+                        drawerStatus.isOpen ? "bg-emerald-500 animate-pulse" : "bg-amber-400"
+                      }`}
+                    />
+                    {drawerStatus.loading ? (
+                      <span className="hidden lg:inline-block kd-skeleton-bone h-3 w-16 rounded-full" />
+                    ) : (
+                      <span className="hidden lg:inline font-bold">
+                        {drawerStatus.isOpen ? formatCurrency(drawerStatus.expected) : "Drawer"}
+                      </span>
+                    )}
+                  </button>
+                )}
 
-            {!permsLoading && has("account.view") && (
-              <button
-                type="button"
-                onClick={() => setAccountsModalOpen(true)}
-                aria-label="Financial Accounts register"
-                title={`Financial Accounts Register: ${formatCurrency(accountsStatus.total_balance)} across all accounts (Alt+A)`}
-                className="inline-flex items-center gap-1.5 h-9 px-2.5 text-xs font-semibold rounded-xl transition-all duration-150 relative z-20 shrink-0 whitespace-nowrap border bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 cursor-pointer"
-              >
-                <BuildingLibraryIcon className="w-4 h-4 shrink-0" />
-                <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                <span className="hidden lg:inline font-bold">
-                  {formatCurrency(accountsStatus.total_balance)}
-                </span>
-              </button>
-            )}
+                {has("account.view") && (
+                  <button
+                    type="button"
+                    onClick={() => setAccountsModalOpen(true)}
+                    aria-label="Financial Accounts register"
+                    title={`Financial Accounts Register: ${formatCurrency(accountsStatus.total_balance)} across all accounts (Alt+A)`}
+                    className="inline-flex items-center gap-1.5 h-9 px-2.5 text-xs font-semibold rounded-xl transition-all duration-150 relative z-20 shrink-0 whitespace-nowrap border bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 cursor-pointer"
+                  >
+                    <BuildingLibraryIcon className="w-4 h-4 shrink-0" />
+                    <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                    {accountsStatus.loading ? (
+                      <span className="hidden lg:inline-block kd-skeleton-bone h-3 w-20 rounded-full" />
+                    ) : (
+                      <span className="hidden lg:inline font-bold">
+                        {formatCurrency(accountsStatus.total_balance)}
+                      </span>
+                    )}
+                  </button>
+                )}
 
-            {((!permsLoading && canViewDrawer) || (!permsLoading && has("account.view"))) && (
-              <div className="mx-0.5 h-5 w-px bg-slate-300/60 dark:bg-slate-700/60 shrink-0" />
+                {(canViewDrawer || has("account.view")) && (
+                  <div className="mx-0.5 h-5 w-px bg-slate-300/60 dark:bg-slate-700/60 shrink-0" />
+                )}
+              </>
             )}
 
             {/* Group 2: System Utilities (Notification Bell, Shortcuts, Theme) */}

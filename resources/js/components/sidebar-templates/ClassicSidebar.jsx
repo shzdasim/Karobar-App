@@ -52,6 +52,7 @@ import { usePermissions } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 import { preloadRoute } from "@/routes/index.jsx";
+import { SidebarNavSkeleton } from "@/components/PageSkeleton.jsx";
 
 const FAVORITES_STORAGE_KEY = "karobar_sidebar_favorites";
 const EXPANDED_SECTIONS_STORAGE_KEY = "karobar_sidebar_expanded_sections_v2";
@@ -814,7 +815,7 @@ export default function ClassicSidebar({
               {!effectiveCollapsed && (
                 <div className="flex flex-col min-w-0">
                   <span className="workspace-brand-name leading-tight">{brandName}</span>
-                  <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 flex items-center gap-1">
+                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
                     <span
                       className={`inline-block w-1.5 h-1.5 rounded-full ${
                         isPinned ? "bg-blue-500" : "bg-emerald-500"
@@ -867,7 +868,7 @@ export default function ClassicSidebar({
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Filter menu... (/)"
                   aria-label="Filter navigation menu"
-                  className="w-full h-8 pl-8 pr-7 text-xs rounded-xl bg-slate-500/8 dark:bg-slate-800/70 border border-slate-200/70 dark:border-slate-700/70 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all"
+                  className="w-full h-8.5 pl-8 pr-7 text-sm font-semibold rounded-xl bg-slate-500/8 dark:bg-slate-800/70 border border-slate-200/70 dark:border-slate-700/70 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all"
                 />
                 {searchQuery && (
                   <button
@@ -944,7 +945,7 @@ export default function ClassicSidebar({
                     <HomeIcon className="w-4.5 h-4.5" aria-hidden="true" />
                   </span>
                   {!effectiveCollapsed && (
-                    <span className="workspace-nav-title truncate font-semibold">
+                    <span className="workspace-nav-title truncate font-bold">
                       Dashboard
                     </span>
                   )}
@@ -953,8 +954,10 @@ export default function ClassicSidebar({
             </div>
           )}
 
-          {visibleSections.length === 0 ? (
-            <div className="py-8 px-4 text-center text-xs text-slate-400 dark:text-slate-500">
+          {permsLoading ? (
+            <SidebarNavSkeleton collapsed={effectiveCollapsed} includeDashboard={false} />
+          ) : visibleSections.length === 0 ? (
+            <div className="py-8 px-4 text-center text-sm font-semibold text-slate-400 dark:text-slate-500">
               No menu items match &ldquo;{searchQuery}&rdquo;
             </div>
           ) : (
@@ -1022,7 +1025,7 @@ export default function ClassicSidebar({
                             {expiryAlertCount}
                           </span>
                         )}
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-500/10 text-slate-500 dark:text-slate-400">
+                        <span className="text-xs font-bold px-1.5 py-0.5 rounded-md bg-slate-500/10 text-slate-600 dark:text-slate-300">
                           {section.items.length}
                         </span>
                         <ChevronDownIcon
@@ -1065,7 +1068,7 @@ export default function ClassicSidebar({
                       return (
                         <React.Fragment key={uniqueKey}>
                           {showSubGroupHeader && (
-                            <div className="px-3 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                            <div className="workspace-nav-subgroup px-3 pt-2.5 pb-1 text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                               {item.subGroup}
                             </div>
                           )}
@@ -1124,7 +1127,7 @@ export default function ClassicSidebar({
 
                               {!effectiveCollapsed && (
                                 <span className="flex items-center justify-between flex-1 min-w-0">
-                                  <span className="workspace-nav-title truncate">
+                                  <span className="workspace-nav-title truncate font-bold">
                                     {item.name}
                                   </span>
                                   {item.path === "/batch-expiry" &&
