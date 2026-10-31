@@ -246,6 +246,17 @@ useEffect(() => {
   return () => ctrl.abort();
 }, [page, pageSize, permsLoading, can.view]);
 
+// Auto-refresh products list when Cube AI creates/edits products or finishes a background formulation batch
+useEffect(() => {
+  if (permsLoading || !can.view) return;
+  const handleCubeProductRefresh = () => {
+    const ctrl = new AbortController();
+    fetchProducts(ctrl.signal);
+  };
+  window.addEventListener("karobar:products-updated", handleCubeProductRefresh);
+  return () => window.removeEventListener("karobar:products-updated", handleCubeProductRefresh);
+}, [permsLoading, can.view, fetchProducts]);
+
 // Debounce only when filters change after initial mount (reset to page 1)
 useEffect(() => {
   if (permsLoading || !can.view) return;

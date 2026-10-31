@@ -837,4 +837,202 @@ JS;
             ->assertJsonPath('provider_status', 'groq_primary')
             ->assertJsonPath('title_en', 'Connected via DB Settings');
     }
+
+    /**
+     * 25. Cube AI Non-Destructive Task Automation:
+     * - Creates a product with inferred/explicit formulation, brand, category, and calculated unit prices
+     * - Edits an existing product's price, rack, and formulation
+     * - Auto-fills missing formulations across multiple products in background batches
+     * - Hardcodes a strict refusal on any delete request (chat or structured endpoint)
+     */
+    public function test_cube_task_automation_adds_and_edits_products_fills_formulations_in_background_and_hardblocks_delete(): void
+    {
+        Permission::firstOrCreate(['name' => 'product.create', 'guard_name' => 'sanctum']);
+        Permission::firstOrCreate(['name' => 'product.update', 'guard_name' => 'sanctum']);
+        $this->user->givePermissionTo(['product.create', 'product.update']);
+
+        Sanctum::actingAs($this->user);
+
+        // 1. Add a product via natural language chat (using local fallback when AI is mocked to return structured task)
+        Http::fake([
+            'api.groq.com/*' => Http::sequence()
+                ->push([
+                    'choices' => [
+                        [
+                            'message' => [
+                                'content' => json_encode([
+                                    'action' => 'create_products',
+                                    'products' => [
+                                        [
+                                            'name' => 'Panadol 500mg Tablet',
+                                            'formulation' => 'Paracetamol',
+                                            'pack_size' => 200,
+                                            'pack_purchase_price' => 500,
+                                            'pack_sale_price' => 600,
+                                            'brand' => 'GSK',
+                                            'category' => 'Tablets',
+                                            'rack' => 'R-10',
+                                        ],
+                                    ],
+                                ]),
+                            ],
+                        ],
+                    ],
+                ], 200)
+                ->push([
+                    'choices' => [
+                        [
+                            'message' => [
+                                'content' => json_encode([
+                                    'action' => 'update_products',
+                                    'updates' => [
+                                        [
+                                            'target_name_or_code' => 'Panadol 500mg Tablet',
+                                            'pack_sale_price' => 640,
+                                            'rack' => 'R-22',
+                                        ],
+                                    ],
+                                ]),
+                            ],
+                        ],
+                    ],
+                ], 200)
+                ->push([
+                    'choices' => [
+                        [
+                            'message' => [
+                                'content' => json_encode([
+                                    'formulations' => [],
+                                ]),
+                            ],
+                        ],
+                    ],
+                ], 200),
+        ]);
+
+        $createResp = $this->postJson('/api/cube/ask', [
+            'question' => 'Add product Panadol 500mg Tablet, formulation Paracetamol, pack size 200, pack purchase price 500, pack sale price 600, brand GSK, category Tablets, rack R-10',
+            'language' => 'en',
+            'current_route' => '/products',
+        ]);
+
+        $createResp->assertOk()
+            ->assertJsonPath('provider_status', 'cube_task_executed')
+            ->assertJsonPath('task_meta.action', 'create_products')
+            ->assertJsonPath('task_meta.created_count', 1);
+
+        $panadol = \App\Models\Product::where('name', 'Panadol 500mg Tablet')->first();
+        $this->assertNotNull($panadol);
+        $this->assertSame('Paracetamol', $panadol->formulation);
+        $this->assertSame(200, (int) $panadol->pack_size);
+        $this->assertEquals(600.0, (float) $panadol->pack_sale_price);
+        $this->assertEquals(3.0, (float) $panadol->unit_sale_price);
+        $this->assertSame('R-10', $panadol->rack);
+
+        // 2. Edit the existing product via Cube
+        $editResp = $this->postJson('/api/cube/ask', [
+            'question' => 'Update product Panadol 500mg Tablet pack sale price to 640 and rack to R-22',
+            'language' => 'en',
+            'current_route' => '/products',
+        ]);
+
+        $editResp->assertOk()
+            ->assertJsonPath('provider_status', 'cube_task_executed')
+            ->assertJsonPath('task_meta.action', 'update_products')
+            ->assertJsonPath('task_meta.updated_count', 1);
+
+        $panadol->refresh();
+        $this->assertEquals(640.0, (float) $panadol->pack_sale_price);
+        $this->assertEquals(3.2, (float) $panadol->unit_sale_price);
+        $this->assertSame('R-22', $panadol->rack);
+
+        // 3. Seed multiple products without formulations and run background bulk formulation enrichment
+        \App\Models\Product::create([
+            'product_code' => 'PRD-9001',
+            'barcode' => 'PRD9000000001',
+            'name' => 'Augmentin 625mg Tablet',
+            'formulation' => null,
+            'pack_size' => 6,
+            'narcotic' => 'no',
+            'category_id' => $panadol->category_id,
+            'brand_id' => $panadol->brand_id,
+            'supplier_id' => $panadol->supplier_id,
+        ]);
+        \App\Models\Product::create([
+            'product_code' => 'PRD-9002',
+            'barcode' => 'PRD9000000002',
+            'name' => 'Brufen 400mg Tablet',
+            'formulation' => '',
+            'pack_size' => 30,
+            'narcotic' => 'no',
+            'category_id' => $panadol->category_id,
+            'brand_id' => $panadol->brand_id,
+            'supplier_id' => $panadol->supplier_id,
+        ]);
+        \App\Models\Product::create([
+            'product_code' => 'PRD-9003',
+            'barcode' => 'PRD9000000003',
+            'name' => 'Risek 20mg Capsule',
+            'formulation' => null,
+            'pack_size' => 14,
+            'narcotic' => 'no',
+            'category_id' => $panadol->category_id,
+            'brand_id' => $panadol->brand_id,
+            'supplier_id' => $panadol->supplier_id,
+        ]);
+
+        // Run batch 1 with batch_size=2 via /api/cube/execute-task to verify multi-batch background support
+        $batch1Resp = $this->postJson('/api/cube/execute-task', [
+            'task_type' => 'bulk_autofill_missing_formulations',
+            'batch_size' => 2,
+            'after_id' => 0,
+        ]);
+
+        $batch1Resp->assertOk()
+            ->assertJsonPath('task_meta.action', 'bulk_autofill_missing_formulations')
+            ->assertJsonPath('task_meta.updated_count', 2)
+            ->assertJsonPath('background_task.has_more', true)
+            ->assertJsonPath('background_task.remaining_count', 1);
+
+        $lastId = (int) $batch1Resp->json('background_task.last_processed_id');
+
+        // Run batch 2 to finish the remaining product
+        $batch2Resp = $this->postJson('/api/cube/execute-task', [
+            'task_type' => 'bulk_autofill_missing_formulations',
+            'batch_size' => 2,
+            'after_id' => $lastId,
+        ]);
+
+        $batch2Resp->assertOk()
+            ->assertJsonPath('task_meta.updated_count', 1)
+            ->assertJsonPath('background_task.has_more', false)
+            ->assertJsonPath('background_task.remaining_count', 0);
+
+        $this->assertSame('Amoxicillin + Clavulanic Acid', \App\Models\Product::where('product_code', 'PRD-9001')->value('formulation'));
+        $this->assertSame('Ibuprofen', \App\Models\Product::where('product_code', 'PRD-9002')->value('formulation'));
+        $this->assertSame('Omeprazole', \App\Models\Product::where('product_code', 'PRD-9003')->value('formulation'));
+
+        // 4. Hardcoded non-destructive check: Delete requests are strictly blocked in both chat and structured endpoint
+        $deleteChatResp = $this->postJson('/api/cube/ask', [
+            'question' => 'Delete product Panadol 500mg Tablet',
+            'language' => 'en',
+            'current_route' => '/products',
+        ]);
+
+        $deleteChatResp->assertOk()
+            ->assertJsonPath('provider_status', 'cube_task_delete_blocked')
+            ->assertJsonPath('task_meta.action', 'delete_blocked')
+            ->assertJsonPath('task_meta.blocked', true);
+
+        $deleteTaskResp = $this->postJson('/api/cube/execute-task', [
+            'task_type' => 'delete_products',
+        ]);
+
+        $deleteTaskResp->assertOk()
+            ->assertJsonPath('provider_status', 'cube_task_delete_blocked')
+            ->assertJsonPath('task_meta.blocked', true);
+
+        // Verify Panadol still exists in the database
+        $this->assertNotNull(\App\Models\Product::where('name', 'Panadol 500mg Tablet')->first());
+    }
 }

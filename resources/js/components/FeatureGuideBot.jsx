@@ -658,6 +658,10 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
   const [highlightStatus, setHighlightStatus] = useState(null);
   const highlightTimerRef = useRef(null);
 
+  // Background AI Task State (e.g. multi-product formulation enrichment in background)
+  const [bgTask, setBgTask] = useState(null);
+  const bgTaskCancelRef = useRef(false);
+
   const triggerBotTalking = useCallback((durationMs = 1800) => {
     setVisualTalking(true);
     const t = window.setTimeout(() => setVisualTalking(false), durationMs);
@@ -1233,6 +1237,97 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
   };
 
   /**
+   * Continues running multi-batch background tasks (like auto-filling missing formulations
+   * across products) without blocking the UI or timing out on shared hosting.
+   */
+  const continueBackgroundTaskLoop = useCallback(
+    async (initialBgMeta, cardId, initialUpdatedCount = 0) => {
+      if (!initialBgMeta || !initialBgMeta.has_more) return;
+
+      bgTaskCancelRef.current = false;
+      let afterId = Number(initialBgMeta.last_processed_id || 0);
+      let totalUpdated = Number(initialUpdatedCount || 0);
+      let remaining = Number(initialBgMeta.remaining_count || 0);
+      const filterQuery = initialBgMeta.filter_query || "";
+
+      setBgTask({
+        running: true,
+        updatedCount: totalUpdated,
+        remainingCount: remaining,
+      });
+
+      while (!bgTaskCancelRef.current) {
+        await new Promise((r) => window.setTimeout(r, 450));
+        if (bgTaskCancelRef.current) break;
+
+        try {
+          const res = await axios.post("/api/cube/execute-task", {
+            task_type: "bulk_autofill_missing_formulations",
+            batch_size: 20,
+            after_id: afterId,
+            filter_query: filterQuery,
+          });
+
+          const data = res?.data || {};
+          const meta = data.task_meta || {};
+          const nextBg = data.background_task || meta.background_task || {};
+          const batchUpdated = Number(meta.updated_count || 0);
+
+          totalUpdated += batchUpdated;
+          afterId = Number(nextBg.last_processed_id || afterId);
+          remaining = Number(nextBg.remaining_count || 0);
+
+          if (meta.refresh_products && typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("karobar:products-updated", { detail: meta })
+            );
+          }
+
+          setBgTask({
+            running: Boolean(nextBg.has_more),
+            updatedCount: totalUpdated,
+            remainingCount: remaining,
+          });
+
+          setThread((prev) =>
+            prev.map((item) =>
+              item.id === cardId
+                ? {
+                    ...item,
+                    title: {
+                      en: nextBg.has_more
+                        ? `Background Task: Auto-Filling Formulations (${totalUpdated} Updated, ${remaining} Remaining)`
+                        : `Completed: Auto-Filled Formulations for ${totalUpdated} Product(s)`,
+                      ur: nextBg.has_more
+                        ? `بیک گراؤنڈ ٹاسک جاری: ${totalUpdated} پروڈکٹس اپڈیٹ، ${remaining} باقی`
+                        : `مکمل: مجموعی طور پر ${totalUpdated} پروڈکٹس میں فارمولیشن شامل کر دی گئی`,
+                    },
+                    en: data.answer_en || data.en || item.en,
+                    ur: data.answer_ur || data.ur || item.ur,
+                  }
+                : item
+            )
+          );
+
+          if (!nextBg.has_more) {
+            break;
+          }
+        } catch {
+          break;
+        }
+      }
+
+      setBgTask((prev) => (prev ? { ...prev, running: false } : null));
+    },
+    []
+  );
+
+  const stopBackgroundTask = useCallback(() => {
+    bgTaskCancelRef.current = true;
+    setBgTask((prev) => (prev ? { ...prev, running: false } : null));
+  }, []);
+
+  /**
    * Handles user questions in Cube's Companion Drawer using the 4-layer Hybrid Intelligence Architecture:
    *   Layer 1: Local trained intelligence engine (`routeUserQuery`)
    *   Layer 2: Groq Primary AI (via `POST /api/cube/ask`)
@@ -1369,8 +1464,9 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
             )
           : localReply.links || [];
 
+      const nextCardId = `b-${Date.now()}`;
       const nextBotItem = {
-        id: `b-${Date.now()}`,
+        id: nextCardId,
         role: "bot",
         kind: "qa",
         questionText: raw,
@@ -1388,10 +1484,25 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
         workflowId: resolvedWorkflowId,
       };
 
+      if (data.task_meta?.refresh_products && typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("karobar:products-updated", { detail: data.task_meta })
+        );
+      }
+
       setIsTyping(false);
       setThread((prev) => [...prev, nextBotItem]);
       scrollToBottom();
       window.setTimeout(() => setVisualTalking(false), 1800);
+
+      const bgMeta = data.background_task || data.task_meta?.background_task;
+      if (bgMeta?.has_more) {
+        continueBackgroundTaskLoop(
+          bgMeta,
+          nextCardId,
+          Number(data.task_meta?.updated_count || 0)
+        );
+      }
     } catch {
       // Layer 4 Frontend Fallback: Cube never becomes unavailable if backend or network fails
       setIsTyping(false);
@@ -2790,6 +2901,31 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
               </div>
             )}
 
+            {/* Active Background AI Task Banner */}
+            {bgTask?.running && (
+              <div
+                dir={isUr ? "rtl" : "ltr"}
+                lang={isUr ? "ur" : "en"}
+                className="p-2.5 rounded-xl border bg-indigo-500/15 border-indigo-500/40 text-indigo-950 dark:text-indigo-200 flex items-center justify-between gap-2 text-xs font-bold"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <SparklesIcon className="w-4 h-4 shrink-0 text-indigo-500 animate-spin" />
+                  <span className="truncate">
+                    {isUr
+                      ? `بیک گراؤنڈ ٹاسک جاری: ${bgTask.updatedCount} پروڈکٹس اپڈیٹ (${bgTask.remainingCount} باقی)...`
+                      : `Background AI Task: ${bgTask.updatedCount} formulations filled (${bgTask.remainingCount} remaining)...`}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={stopBackgroundTask}
+                  className="px-2 py-0.5 rounded-md text-[10.5px] font-extrabold bg-rose-600 hover:bg-rose-500 text-white cursor-pointer shrink-0"
+                >
+                  {isUr ? "روکیں" : "Stop"}
+                </button>
+              </div>
+            )}
+
             {/* Open Modal Context Banner (CashDrawerModal / AccountsModal) */}
             {activeModalContext && (
               <div
@@ -2865,6 +3001,79 @@ export default function FeatureGuideBot({ isOpen, onClose }) {
                 lang={isUr ? "ur" : "en"}
                 className="pt-1 space-y-2.5"
               >
+                {/* AI Task Automation Quick Bar (Non-Destructive: Add Product, Edit Product, Auto-Fill Formulations) */}
+                <div className="space-y-1.5 pt-0.5">
+                  <p className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 px-0.5 flex items-center gap-1">
+                    <SparklesIcon className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {isUr
+                        ? "کیوب اے آئی آٹومیشن ٹاسکس (محفوظ موڈ — نو ڈیلیٹ):"
+                        : "Cube AI Task Automation (Safe Mode — No Delete):"}
+                    </span>
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      disabled={Boolean(bgTask?.running)}
+                      onClick={() =>
+                        handleAskSubmit(
+                          null,
+                          "Auto-fill missing formulations for all my products in background",
+                          true
+                        )
+                      }
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-extrabold border transition-all cursor-pointer active:scale-95 disabled:opacity-50 ${
+                        isDark
+                          ? "bg-indigo-950/60 hover:bg-indigo-900/70 border-indigo-500/40 text-indigo-200"
+                          : "bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-800"
+                      }`}
+                    >
+                      <span aria-hidden="true">🧪</span>
+                      <span>
+                        {isUr
+                          ? "پروڈکٹس میں فارمولیشن خودکار لگائیں (Background)"
+                          : "Auto-Fill Missing Formulations (Background)"}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuestionInput(
+                          "Add product Panadol 500mg Tablet, formulation Paracetamol, pack size 200, pack purchase price 510, pack sale price 600, brand GSK, category Tablets"
+                        );
+                        window.setTimeout(() => askInputRef.current?.focus(), 30);
+                      }}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer active:scale-95 ${
+                        isDark
+                          ? "bg-slate-900 hover:bg-slate-800 border-slate-700 text-emerald-300"
+                          : "bg-white hover:bg-emerald-50 border-slate-200 text-emerald-700"
+                      }`}
+                    >
+                      <span aria-hidden="true">➕</span>
+                      <span>{isUr ? "نئی پروڈکٹ بنائیں" : "Add Product via AI"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuestionInput(
+                          "Update product Panadol 500mg Tablet pack sale price to 650, formulation to Paracetamol, and rack to R-1"
+                        );
+                        window.setTimeout(() => askInputRef.current?.focus(), 30);
+                      }}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer active:scale-95 ${
+                        isDark
+                          ? "bg-slate-900 hover:bg-slate-800 border-slate-700 text-amber-300"
+                          : "bg-white hover:bg-amber-50 border-slate-200 text-amber-700"
+                      }`}
+                    >
+                      <span aria-hidden="true">✏️</span>
+                      <span>{isUr ? "پروڈکٹ ایڈٹ کریں" : "Edit Product via AI"}</span>
+                    </button>
+                  </div>
+                </div>
+
                 {cubeAvailableChips.length > 0 && (
                   <div className="space-y-1.5">
                     <p className="text-[11px] font-bold text-slate-400 dark:text-slate-400 px-0.5">

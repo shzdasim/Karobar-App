@@ -151,25 +151,35 @@ const BatchSearchInput = forwardRef(
       }
       if (isPurchase) {
         const trimmed = query.trim();
+        const currentVal = (value || "").trim();
         if (
           trimmed &&
           trimmed !== "[Unbatched Stock]" &&
           trimmed !== "[Unassigned Stock]"
         ) {
+          if (trimmed === currentVal) {
+            return;
+          }
           const matching = regularBatches.find(
             (b) => (b.batch_number || "").trim().toLowerCase() === trimmed.toLowerCase()
           );
           if (matching) {
-            if (onChange) onChange(matching.batch_number, matching);
+            if (onChange) onChange(matching.batch_number, { ...matching, fromBlur: true });
           } else {
-            if (onChange) onChange(trimmed, { batch_number: trimmed, is_new: true });
+            if (onChange) onChange(trimmed, { batch_number: trimmed, is_new: true, fromBlur: true });
           }
         } else if (
           trimmed === "[Unbatched Stock]" ||
           trimmed === "[Unassigned Stock]" ||
           trimmed === ""
         ) {
-          if (onChange) onChange("", { is_unbatched: true });
+          const alreadyUnbatched =
+            !currentVal ||
+            currentVal === "[Unbatched Stock]" ||
+            currentVal === "[Unassigned Stock]";
+          if (!alreadyUnbatched && onChange) {
+            onChange("", { is_unbatched: true, fromBlur: true });
+          }
         }
       }
     };

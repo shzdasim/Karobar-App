@@ -3,6 +3,7 @@
 namespace App\Services\Cube;
 
 use App\Models\Setting;
+use App\Models\User;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 
@@ -14,10 +15,12 @@ class CubeAssistantService
         protected CubeQuotaGuard $quotaGuard,
         protected GroqProvider $groqProvider,
         protected GeminiProvider $geminiProvider,
+        protected CubeTaskExecutorService $taskExecutor,
     ) {}
 
     /**
      * Processes a user question through the Hybrid Cube Intelligence pipeline:
+     *   0. Non-Destructive AI Task Execution (Add Product, Edit Product, Bulk Auto-Fill Formulations; Delete Hardcoded Blocked)
      *   1. Live ERP Data Privacy Boundary check
      *   2. Local Knowledge Base Retrieval (top 3–4 verified sections)
      *   3. Layer 2: Groq Primary AI (free tier)
@@ -34,7 +37,7 @@ class CubeAssistantService
      * }  $payload
      * @return array<string, mixed>
      */
-    public function ask(array $payload): array
+    public function ask(array $payload, ?User $user = null): array
     {
         $question = trim((string) ($payload['question'] ?? ''));
         $language = in_array(($payload['language'] ?? 'en'), ['en', 'ur', 'both'], true)
@@ -45,6 +48,12 @@ class CubeAssistantService
         $matchedIntentId = isset($payload['matched_intent_id']) ? trim((string) $payload['matched_intent_id']) : null;
         $screenGuideId = isset($payload['screen_guide_id']) ? trim((string) $payload['screen_guide_id']) : null;
         $productVersion = $this->retriever->getProductVersion();
+
+        // 0. Non-Destructive AI Task Execution (Add Product, Edit Product, Bulk Auto-Fill Formulations; Delete Hardcoded Blocked)
+        $taskResult = $this->taskExecutor->detectAndExecuteFromChat($user, $question, $language, $productVersion);
+        if ($taskResult !== null) {
+            return $taskResult;
+        }
 
         // 1. Enforce Live ERP Data Privacy Boundary (never query live DB tables or send live data requests to AI)
         $liveBoundary = $this->retriever->detectLiveRecordQuery($question);

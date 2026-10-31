@@ -91,6 +91,14 @@ function showAxiosError(err) {
 export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, initialData }) {
   const [drawerPrompt, setDrawerPrompt] = useState(null);
   const originalInvoiceMetaRef = useRef(null);
+  const nextRowKeyRef = useRef(1);
+  const getRowKey = (item) => {
+    if (!item || typeof item !== "object") return "pi-row-fallback";
+    if (!item._rowKey) {
+      item._rowKey = `pi-row-${nextRowKeyRef.current++}`;
+    }
+    return item._rowKey;
+  };
   const [form, setForm] = useState({
     invoice_type: "debit", // "debit" = pay now, "credit" = pay later
     supplier_id: "",
@@ -110,6 +118,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
     account_id: null,
     items: [
       {
+        _rowKey: "pi-row-0",
         product_id: "",
         batch: "",
         expiry: "",
@@ -656,6 +665,7 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
         items: [
           ...prev.items,
           {
+            _rowKey: `pi-row-${nextRowKeyRef.current++}`,
             product_id: "",
             batch: "",
             expiry: "",
@@ -684,8 +694,16 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
   };
 
   const removeItem = (index) => {
+    const scroller = itemsScrollRef.current;
+    const savedScrollTop = scroller ? scroller.scrollTop : null;
+    const rowEl = productSearchRefs.current[index]?.closest?.("tr");
+    if (rowEl && document.activeElement && rowEl.contains(document.activeElement)) {
+      document.activeElement.blur?.();
+    }
+
     setDisplayOrder(order => order.filter(i => i !== index).map(i => i > index ? i - 1 : i));
     const blankRow = {
+      _rowKey: `pi-row-${nextRowKeyRef.current++}`,
       purchase_order_item_id: null,
       product_id: "",
       batch: "",
@@ -718,6 +736,19 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
     setForm(nextForm);
     if (currentRowIndex >= newItems.length) {
       setCurrentRowIndex(newItems.length - 1);
+    }
+
+    if (savedScrollTop !== null) {
+      requestAnimationFrame(() => {
+        if (itemsScrollRef.current) {
+          itemsScrollRef.current.scrollTop = savedScrollTop;
+        }
+        requestAnimationFrame(() => {
+          if (itemsScrollRef.current) {
+            itemsScrollRef.current.scrollTop = savedScrollTop;
+          }
+        });
+      });
     }
   };
 
@@ -1074,18 +1105,72 @@ const contRect = container.getBoundingClientRect();
   };
 
   const handleBatchSelect = (rowIndex, val, batchObj = null) => {
-    const newItems = [...form.items];
-    const currentItem = newItems[rowIndex];
-    if (!currentItem) return;
+    const isFromBlur = Boolean(batchObj?.fromBlur);
 
     if (batchObj?.is_unbatched || val === "" || val === "__unbatched__") {
+      setForm((prev) => {
+        const currentItem = prev.items[rowIndex];
+        if (!currentItem) return prev;
+        const newItems = [...prev.items];
+        newItems[rowIndex] = {
+          ...currentItem,
+          batch: "",
+          expiry: "",
+          is_unbatched: true,
+        };
+        return { ...prev, items: newItems };
+      });
+      if (!isFromBlur) {
+        setTimeout(() => {
+          if (packQuantityRefs.current[rowIndex]) {
+            packQuantityRefs.current[rowIndex].focus();
+            setCurrentField("pack_quantity");
+            setCurrentRowIndex(rowIndex);
+          }
+        }, 40);
+      }
+      return;
+    }
+
+    if (batchObj?.is_new) {
+      setForm((prev) => {
+        const currentItem = prev.items[rowIndex];
+        if (!currentItem) return prev;
+        const newItems = [...prev.items];
+        newItems[rowIndex] = {
+          ...currentItem,
+          batch: val,
+          is_unbatched: false,
+        };
+        return { ...prev, items: newItems };
+      });
+      if (!isFromBlur) {
+        setTimeout(() => {
+          if (expiryRefs.current[rowIndex]) {
+            expiryRefs.current[rowIndex].focus();
+            setCurrentField("expiry");
+            setCurrentRowIndex(rowIndex);
+          }
+        }, 40);
+      }
+      return;
+    }
+
+    // Existing batch selected
+    setForm((prev) => {
+      const currentItem = prev.items[rowIndex];
+      if (!currentItem) return prev;
+      const batchExpiry = batchObj?.expiry_date || batchObj?.expiry || currentItem.expiry || "";
+      const newItems = [...prev.items];
       newItems[rowIndex] = {
         ...currentItem,
-        batch: "",
-        expiry: "",
-        is_unbatched: true,
+        batch: val,
+        expiry: batchExpiry,
+        is_unbatched: false,
       };
-      setForm({ ...form, items: newItems });
+      return { ...prev, items: newItems };
+    });
+    if (!isFromBlur) {
       setTimeout(() => {
         if (packQuantityRefs.current[rowIndex]) {
           packQuantityRefs.current[rowIndex].focus();
@@ -1093,42 +1178,7 @@ const contRect = container.getBoundingClientRect();
           setCurrentRowIndex(rowIndex);
         }
       }, 40);
-      return;
     }
-
-    if (batchObj?.is_new) {
-      newItems[rowIndex] = {
-        ...currentItem,
-        batch: val,
-        is_unbatched: false,
-      };
-      setForm({ ...form, items: newItems });
-      setTimeout(() => {
-        if (expiryRefs.current[rowIndex]) {
-          expiryRefs.current[rowIndex].focus();
-          setCurrentField("expiry");
-          setCurrentRowIndex(rowIndex);
-        }
-      }, 40);
-      return;
-    }
-
-    // Existing batch selected
-    const batchExpiry = batchObj?.expiry_date || batchObj?.expiry || currentItem.expiry || "";
-    newItems[rowIndex] = {
-      ...currentItem,
-      batch: val,
-      expiry: batchExpiry,
-      is_unbatched: false,
-    };
-    setForm({ ...form, items: newItems });
-    setTimeout(() => {
-      if (packQuantityRefs.current[rowIndex]) {
-        packQuantityRefs.current[rowIndex].focus();
-        setCurrentField("pack_quantity");
-        setCurrentRowIndex(rowIndex);
-      }
-    }, 40);
   };
 
   const handleSubmit = async (e) => {
@@ -1268,10 +1318,10 @@ const contRect = container.getBoundingClientRect();
       submittedRowIndices = effectiveRows.map(row => row.index);
       const payloadToSend = {
         ...payload,
-        items: effectiveRows.map((row) => ({
-          ...row.item,
-          batch: row.item.batch ? String(row.item.batch).trim() : null,
-          expiry: row.item.expiry ? String(row.item.expiry).trim() : null,
+        items: effectiveRows.map(({ item: { _rowKey, ...restItem } }) => ({
+          ...restItem,
+          batch: restItem.batch ? String(restItem.batch).trim() : null,
+          expiry: restItem.expiry ? String(restItem.expiry).trim() : null,
         })),
       };
       if (!invoiceId) {
@@ -1505,34 +1555,45 @@ const contRect = container.getBoundingClientRect();
     >
       <InvoiceErrorSummary errors={invoiceErrors} />
       {dnd.ghost}
-{(initialData?.purchase_order || form.purchase_order) && <div className="g-toolbar p-3">This invoice was generated from Purchase Order <a className="underline" href={`/purchase-orders/${(initialData?.purchase_order || form.purchase_order).id}`}>{(initialData?.purchase_order || form.purchase_order).number}</a>. Review quantities, prices, batches and expiry before saving.{!invoiceId && <p className="text-xs mt-1 font-medium">{(initialData?.purchase_order || form.purchase_order).previous_receipts ? `Additional delivery · ${(initialData?.purchase_order || form.purchase_order).previous_receipts} previous receipt(s)` : "First delivery"} · {(initialData?.purchase_order || form.purchase_order).remaining_units} paid units remaining before this delivery. Save the delivered quantities; any undelivered items will be added to User Demands.</p>}</div>}
+      {(initialData?.purchase_order || form.purchase_order) && (
+        <div className="g-toolbar px-3 py-1 text-[11px] flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span>
+            Generated from PO{" "}
+            <a className="underline font-semibold" href={`/purchase-orders/${(initialData?.purchase_order || form.purchase_order).id}`}>
+              {(initialData?.purchase_order || form.purchase_order).number}
+            </a>
+            . Review quantities, prices, batches and expiry before saving.
+          </span>
+          {!invoiceId && (
+            <span className="font-medium opacity-85">
+              · {(initialData?.purchase_order || form.purchase_order).previous_receipts ? `Additional delivery (${(initialData?.purchase_order || form.purchase_order).previous_receipts} prev)` : "First delivery"} · {(initialData?.purchase_order || form.purchase_order).remaining_units} paid units remaining (undelivered added to User Demands).
+            </span>
+          )}
+        </div>
+      )}
 {/* ================= HEADER SECTION ================= */}
-      <div className="purchase-entry-header sticky top-0 z-10 shadow-lg" autoComplete="off">
-{/* ---- Branded Title Banner ---- */}
-        <div
-          className="purchase-entry-banner px-4 py-3 flex items-center justify-between"
-        >
-          <div className="flex items-center gap-3">
-            <div
-              className="purchase-entry-icon w-10 h-10 rounded-xl flex items-center justify-center shadow-inner"
-            >
+      <div className="purchase-entry-header sticky top-0 z-10 shadow-sm" autoComplete="off">
+{/* ---- Compact Branded Title Banner ---- */}
+        <div className="purchase-entry-banner px-3 py-1 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="purchase-entry-icon w-7 h-7 rounded-lg flex items-center justify-center shadow-inner shrink-0">
               {/* Document / invoice icon */}
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
                 <line x1="8" y1="13" x2="16" y2="13" />
                 <line x1="8" y1="17" x2="13" y2="17" />
               </svg>
             </div>
-            <div>
-              <h2 className="purchase-entry-title text-xl font-semibold leading-none">Purchase Invoice</h2>
-              <p className="products-subtitle">
-                Enter to navigate · Alt+S to save · Alt+T toggle
-              </p>
+            <div className="flex items-baseline gap-2 min-w-0 truncate">
+              <h2 className="purchase-entry-title text-sm font-semibold leading-none">Purchase Invoice</h2>
+              <span className="products-subtitle text-[10px] hidden sm:inline truncate">
+                Enter to navigate · Alt+S save · Alt+T toggle
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 shrink-0">
             {isDraftingEnabled && (
               <InvoiceDraftIndicator
                 saveStatus={draftHook.saveStatus}
@@ -1546,7 +1607,7 @@ const contRect = container.getBoundingClientRect();
             )}
             {/* Invoice Type Segmented Control */}
             <div
-              className="purchase-entry-type flex items-center gap-1 rounded-lg p-1 shadow-inner"
+              className="purchase-entry-type flex items-center gap-0.5 rounded-md p-0.5 shadow-inner"
               role="radiogroup"
               aria-label="Invoice type"
             >
@@ -1560,13 +1621,13 @@ const contRect = container.getBoundingClientRect();
                     aria-checked={active}
                     aria-pressed={active}
                     onClick={() => handleInvoiceTypeChange(type)}
-                    className={`purchase-entry-type-button inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-md transition-all duration-150 cursor-pointer ${
+                    className={`purchase-entry-type-button inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-semibold rounded transition-all duration-150 cursor-pointer ${
                       active
-                        ? "is-active theme-btn-primary shadow-sm"
+                        ? "is-active theme-btn-primary shadow-xs"
                         : "opacity-75 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/5"
                     }`}
                   >
-                    {active && <CheckIcon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />}
+                    {active && <CheckIcon className="w-3 h-3 shrink-0" aria-hidden="true" />}
                     <span>{type === "debit" ? "Debit" : "Credit"}</span>
                   </button>
                 );
@@ -1577,56 +1638,56 @@ const contRect = container.getBoundingClientRect();
             <button
               type="button"
               onClick={() => setShowProductModal(true)}
-              className="purchase-entry-add-product theme-btn-secondary px-4 py-2 text-xs font-semibold rounded-lg"
+              className="purchase-entry-add-product theme-btn-secondary px-2.5 py-1 text-[11px] font-semibold rounded-md"
             >
-              <PlusCircleIcon aria-hidden="true" className="w-4 h-4" />
+              <PlusCircleIcon aria-hidden="true" className="w-3.5 h-3.5" />
               <span>Add Product</span>
             </button>
           </div>
         </div>
 
-        {/* ---- Fields Card ---- */}
-        <div className="purchase-entry-details px-3 py-2.5 border-b">
-          <div className="grid grid-cols-12 gap-2 items-end">
-            {/* Posted Number - first */}
-            <div className="col-span-2">
-              <label className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-                <span>Posted Number</span>
-                <span className="text-[8.5px] font-medium lowercase opacity-75">auto</span>
+        {/* ---- Compact Single-Row Fields Card ---- */}
+        <div className="purchase-entry-details px-3 py-1 border-b">
+          <div className="grid grid-cols-12 gap-1.5 items-end">
+            {/* Posted Number - col 1 */}
+            <div className="col-span-1">
+              <label className="flex items-center justify-between text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">
+                <span className="truncate">Posted #</span>
+                <span className="text-[8px] font-medium lowercase opacity-75">auto</span>
               </label>
               <input
                 type="text"
                 name="posted_number"
                 readOnly
                 tabIndex={-1}
-                placeholder="Auto on Save"
+                placeholder="Auto"
                 value={form.posted_number || ""}
-                className="purchase-readonly-field rounded-md w-full px-2 h-8 text-xs font-mono"
+                className="purchase-readonly-field rounded-md w-full px-1.5 h-7 text-[11px] font-mono"
                 {...antiFill}
               />
             </div>
 
-            {/* Date - second */}
+            {/* Date - col 2 */}
             <div className="col-span-2">
-              <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Date</label>
+              <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Date</label>
               <input
                 type="date"
                 name="posted_date"
                 value={form.posted_date}
                 onChange={handleChange}
-                className="border border-gray-300 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                className="border border-gray-300 dark:border-slate-600 rounded-md w-full px-1.5 h-7 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                 {...antiFill}
               />
             </div>
 
-            {/* Supplier - opens search modal */}
-            <div className="col-span-4">
-              <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Supplier *</label>
+            {/* Supplier - col 3 */}
+            <div className="col-span-3">
+              <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Supplier *</label>
               <button
                 type="button"
                 ref={supplierRef}
                 onClick={() => setSupplierSearchOpen(true)}
-                className={`w-full h-8 px-2.5 rounded-md border text-left text-xs flex items-center justify-between gap-2 transition-all duration-200
+                className={`w-full h-7 px-2 rounded-md border text-left text-[11px] flex items-center justify-between gap-1.5 transition-all duration-200
                   ${selectedSupplier
                     ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200'
                     : 'border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-500 dark:text-gray-400 hover:border-blue-400'
@@ -1634,8 +1695,8 @@ const contRect = container.getBoundingClientRect();
                 style={{ color: selectedSupplier ? undefined : (isDark ? "#94a3b8" : "#9ca3af") }}
                 {...antiFill}
               >
-                <span className="flex items-center gap-1.5 min-w-0 truncate">
-                  <BuildingStorefrontIcon className="w-4 h-4 shrink-0 text-blue-500" />
+                <span className="flex items-center gap-1 min-w-0 truncate">
+                  <BuildingStorefrontIcon className="w-3.5 h-3.5 shrink-0 text-blue-500" />
                   {selectedSupplier ? (
                     <span className="truncate font-medium" style={{ color: isDark ? "#bfdbfe" : "#1d4ed8" }}>
                       {selectedSupplier.name}
@@ -1644,13 +1705,13 @@ const contRect = container.getBoundingClientRect();
                     <span className="truncate">Click to search supplier...</span>
                   )}
                 </span>
-                <span className="text-[10px] text-gray-400 dark:text-slate-400 shrink-0 font-normal">Search</span>
+                <span className="text-[9px] text-gray-400 dark:text-slate-400 shrink-0 font-normal">Search</span>
               </button>
             </div>
 
-            {/* Invoice Number */}
+            {/* Invoice Number - col 1 */}
             <div className="col-span-1">
-              <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Invoice #</label>
+              <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Invoice #</label>
               <input
                 ref={invoiceNumberRef}
                 type="text"
@@ -1660,14 +1721,14 @@ const contRect = container.getBoundingClientRect();
                 onChange={handleChange}
                 onKeyDown={(e) => handleKeyDown(e, "invoice_number")}
                 onFocus={(e) => e.target.select()}
-                className="border border-gray-300 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                className="border border-gray-300 dark:border-slate-600 rounded-md w-full px-1.5 h-7 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                 {...antiFill}
               />
             </div>
 
-            {/* Invoice Amount */}
+            {/* Invoice Amount - col 1 */}
             <div className="col-span-1">
-              <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Bill Amt</label>
+              <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Bill Amt</label>
               <input
                 ref={invoiceAmountRef}
                 type="text"
@@ -1678,16 +1739,16 @@ const contRect = container.getBoundingClientRect();
                 onChange={handleChange}
                 onKeyDown={(e) => handleKeyDown(e, "invoice_amount")}
                 onFocus={(e) => e.target.select()}
-                className="border border-gray-300 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs text-right font-mono bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                className="border border-gray-300 dark:border-slate-600 rounded-md w-full px-1.5 h-7 text-[11px] text-right font-mono bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                 {...antiFill}
               />
             </div>
 
-            {/* Difference */}
-            <div className="col-span-2">
-              <label className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-                <span>Difference</span>
-                <span className="text-[8.5px] font-medium lowercase opacity-75">auto</span>
+            {/* Difference - col 1 */}
+            <div className="col-span-1">
+              <label className="flex items-center justify-between text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">
+                <span className="truncate">Diff</span>
+                <span className="text-[8px] font-medium lowercase opacity-75">auto</span>
               </label>
               <input
                 type="text"
@@ -1699,7 +1760,7 @@ const contRect = container.getBoundingClientRect();
                     ? (Number(form.invoice_amount) - Number(form.total_amount)).toFixed(2)
                     : ""
                 }
-                className={`purchase-readonly-field rounded-md w-full px-2 h-8 text-xs font-bold font-mono text-center ${
+                className={`purchase-readonly-field rounded-md w-full px-1.5 h-7 text-[11px] font-bold font-mono text-center ${
                   Number(form.invoice_amount) - Number(form.total_amount) !== 0
                     ? "!text-red-600 dark:!text-red-400"
                     : ""
@@ -1707,11 +1768,25 @@ const contRect = container.getBoundingClientRect();
                 {...antiFill}
               />
             </div>
+
+            {/* Remarks - col 3 (same row!) */}
+            <div className="col-span-3">
+              <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Remarks</label>
+              <input
+                type="text"
+                name="remarks"
+                placeholder="Remarks / delivery notes..."
+                value={form.remarks}
+                onChange={handleChange}
+                className="border border-gray-300 dark:border-slate-600 rounded-md w-full px-2 h-7 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                {...antiFill}
+              />
+            </div>
           </div>
 
           {(form.invoice_type === "credit" || supplierCreditSummary?.is_limit_exceeded || Number(supplierCreditSummary?.total_overdue || 0) > 0) && (
-            <div className="mt-2 py-1.5 px-3 rounded-md bg-blue-50/90 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 flex flex-wrap items-center justify-between gap-2 text-xs">
-              <div className="flex items-center gap-3 flex-wrap">
+            <div className="mt-1 py-0.5 px-2.5 rounded bg-blue-50/90 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+              <div className="flex items-center gap-2.5 flex-wrap">
                 <span className="font-semibold text-blue-900 dark:text-blue-200">
                   Credit Terms: <strong>{(supplierCreditSummary?.credit_days ?? selectedSupplier?.credit_days) ? `${supplierCreditSummary?.credit_days ?? selectedSupplier?.credit_days} days` : 'Immediate'}</strong>
                 </span>
@@ -1729,7 +1804,7 @@ const contRect = container.getBoundingClientRect();
                       </span>
                     )}
                     {Number(supplierCreditSummary.total_overdue || 0) > 0 && (
-                      <span className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 font-semibold">
+                      <span className="px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 font-semibold">
                         Overdue: Rs. {Number(supplierCreditSummary.total_overdue).toLocaleString()} ({supplierCreditSummary.overdue_invoices_count} bill{supplierCreditSummary.overdue_invoices_count === 1 ? "" : "s"})
                       </span>
                     )}
@@ -1738,7 +1813,7 @@ const contRect = container.getBoundingClientRect();
                         Number(supplierCreditSummary.current_balance || 0) +
                           Math.max(0, Number(form.total_amount || 0) - Number(form.total_paid || 0)) >
                           Number(supplierCreditSummary.credit_limit))) && (
-                      <span className="px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 font-bold">
+                      <span className="px-1.5 py-0.2 rounded bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 font-bold">
                         Credit Limit Exceeded
                       </span>
                     )}
@@ -1746,43 +1821,46 @@ const contRect = container.getBoundingClientRect();
                 )}
               </div>
               {form.invoice_type === "credit" && (
-                <div className="flex items-center gap-2">
-                  <label className="text-[10px] font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Due Date:</label>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[9px] font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Due Date:</label>
                   <input
                     type="date"
                     name="due_date"
                     value={form.due_date || ""}
                     onChange={handleChange}
-                    className="h-6 px-1.5 text-xs rounded border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 font-mono"
+                    className="h-5 px-1 text-[11px] rounded border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 font-mono"
                   />
                 </div>
               )}
             </div>
           )}
-
-          {/* Remarks row */}
-          <div className="mt-2">
-            <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Remarks</label>
-            <input
-              type="text"
-              name="remarks"
-              placeholder="Supplier invoice remarks / delivery notes..."
-              value={form.remarks}
-              onChange={handleChange}
-              className="border border-gray-300 dark:border-slate-600 rounded-md w-full px-2 h-8 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-              {...antiFill}
-            />
-          </div>
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-gray-200 dark:border-slate-600">
-        <span className="text-xs font-semibold">
-          Drag ⠿ to reorder products or whole brands (or focus ⠿ and use ↑↓) · new items stay at the end
-          {remembersSupplierOrder && <span className="block font-normal opacity-75">This order is remembered for {selectedSupplier?.name || 'this supplier'} and reused on its next Purchase Orders and Invoices.</span>}
-        </span>
-        <label className="flex items-center gap-2 text-xs">Arrange products
-          <div className="w-56 text-left">
+      {/* ---- Combined Compact Line Items & Arrangement Bar ---- */}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-1 border-b border-gray-200 dark:border-slate-600 text-[11px]">
+        <div className="flex items-center gap-3 flex-wrap min-w-0">
+          <span className="font-bold tracking-wide uppercase text-gray-700 dark:text-slate-300">
+            Line Items
+          </span>
+          <span className="text-gray-500 dark:text-slate-400 truncate">
+            Drag ⠿ to reorder products/brands (or focus ⠿ + ↑↓) · new items stay at end
+            {remembersSupplierOrder && ` · Order remembered for ${selectedSupplier?.name || 'supplier'}`}
+          </span>
+          <div className="hidden lg:flex items-center gap-2.5 text-[10px]">
+            <span className="inline-flex items-center gap-1 font-medium text-gray-600 dark:text-slate-300">
+              <span className="w-2 h-2 rounded-xs border border-blue-500 bg-white dark:bg-slate-700 inline-block" />
+              <span>Editable</span>
+            </span>
+            <span className="inline-flex items-center gap-1 font-medium text-gray-400 dark:text-slate-400">
+              <span className="w-2 h-2 rounded-xs border border-dashed border-gray-400 dark:border-slate-500 bg-gray-100 dark:bg-slate-800/80 inline-block" />
+              <span>Auto</span>
+            </span>
+          </div>
+        </div>
+        <label className="flex items-center gap-1.5 text-[11px] shrink-0">
+          <span className="font-medium text-gray-600 dark:text-slate-300">Arrange products</span>
+          <div className="w-52 text-left">
             <Select
               aria-label="Purchase invoice arrangement on save"
               options={[
@@ -1811,27 +1889,11 @@ const contRect = container.getBoundingClientRect();
               menuPlacement="auto"
             />
           </div>
-          <button type="button" className="g-btn-ghost theme-btn-tertiary px-2.5 py-1 text-xs font-semibold" onClick={() => applyArrangement(arrangement)}>Apply Sort</button>
+          <button type="button" className="g-btn-ghost theme-btn-tertiary px-2 py-0.5 text-[11px] font-semibold" onClick={() => applyArrangement(arrangement)}>Apply Sort</button>
         </label>
       </div>
       {/* ================= ITEMS SECTION ================= */}
-      <div ref={itemsScrollRef} className="purchase-entry-items flex-1 min-h-0 overflow-auto pt-1.5 px-2 pb-16" autoComplete="off">
-        <div className="flex items-center justify-between mb-1.5 px-1">
-          <div className="text-[11px] font-bold tracking-wide uppercase text-gray-700 dark:text-slate-300">
-            Line Items (↑↓ arrows to navigate rows)
-          </div>
-          <div className="flex items-center gap-3 text-[10px]">
-            <span className="inline-flex items-center gap-1.5 font-medium text-gray-600 dark:text-slate-300">
-              <span className="w-2.5 h-2.5 rounded-xs border border-blue-500 bg-white dark:bg-slate-700 inline-block" />
-              <span>Editable Field</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5 font-medium text-gray-400 dark:text-slate-400">
-              <span className="w-2.5 h-2.5 rounded-xs border border-dashed border-gray-400 dark:border-slate-500 bg-gray-100 dark:bg-slate-800/80 inline-block" />
-              <span>Auto / Read-only</span>
-            </span>
-          </div>
-        </div>
-
+      <div ref={itemsScrollRef} className="purchase-entry-items flex-1 min-h-0 overflow-auto pt-1 px-2 pb-4" autoComplete="off">
         <table className="w-full border-collapse text-[11px]">
           <thead className="sticky top-0 bg-gray-100 dark:bg-slate-700 z-5">
             <tr>
@@ -1870,13 +1932,15 @@ const contRect = container.getBoundingClientRect();
           </thead>
 
           <tbody>
-            {arrangedRows.map(({ item, index: i, brand_name, product_name }) => (
-              <Fragment key={i}>
+            {arrangedRows.map(({ item, index: i, brand_name, product_name }) => {
+              const rowKey = getRowKey(item);
+              return (
+              <Fragment key={rowKey}>
                 {dnd.groupStart.has(i) && (() => {
                   const groupPos = dnd.groupStart.get(i);
                   const brandLabel = brand_name || 'No Brand';
                   return (
-                    <tr className={`purchase-invoice-brand-heading ${dnd.headingDropClass(groupPos)} ${dnd.isDragging(i) ? 'dnd-dragging' : ''}`} data-dnd-group={groupPos}>
+                    <tr key={`brand-heading-${rowKey}`} className={`purchase-invoice-brand-heading ${dnd.headingDropClass(groupPos)} ${dnd.isDragging(i) ? 'dnd-dragging' : ''}`} data-dnd-group={groupPos}>
                       <th colSpan={21} scope="rowgroup">
                         <span className="inline-flex items-center gap-2">
                           {dnd.groups.length > 1 && (
@@ -1891,7 +1955,7 @@ const contRect = container.getBoundingClientRect();
                     </tr>
                   );
                 })()}
-              <tr key={i} id={invoiceErrors.rowId(i)} data-dnd-row={item.product_id ? i : undefined} aria-invalid={invoiceErrors.rowMessages(i).length > 0 || undefined} className={`text-center ${invoiceErrors.rowMessages(i).length ? "invoice-row-invalid" : ""} ${item.product_id ? dnd.rowDropClass(i) : ""} ${item.product_id && dnd.isDragging(i) ? "dnd-dragging" : ""}`}>
+              <tr key={rowKey} id={invoiceErrors.rowId(i)} data-dnd-row={item.product_id ? i : undefined} aria-invalid={invoiceErrors.rowMessages(i).length > 0 || undefined} className={`text-center ${invoiceErrors.rowMessages(i).length ? "invoice-row-invalid" : ""} ${item.product_id ? dnd.rowDropClass(i) : ""} ${item.product_id && dnd.isDragging(i) ? "dnd-dragging" : ""}`}>
                 {/* Drag handle / Remove */}
                 <td className="border">
                   <div className="flex items-center justify-center gap-0.5">
@@ -1902,6 +1966,7 @@ const contRect = container.getBoundingClientRect();
                     )}
                     <button
                       type="button"
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={() => removeItem(i)}
                       className="products-row-action products-row-delete"
                       aria-label={`Remove item ${i + 1}`}
@@ -2319,219 +2384,217 @@ const contRect = container.getBoundingClientRect();
                 </td>
               </tr>
               </Fragment>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
 
-      {/* ================= FOOTER SECTION ================= */}
+      {/* ================= COMPACT 2-ROW FOOTER SECTION (TITLES NEXT TO FIELDS) ================= */}
       <div className="purchase-entry-footer sticky bottom-0 z-10 border-t shadow-[0_-4px_16px_-6px_rgba(0,0,0,0.18)]" autoComplete="off">
-        <div className="px-4 py-3">
-          <div className="flex gap-5">
-            {/* ---- Left: Invoice Summary Breakdown ---- */}
-            <div className="flex-1 min-w-0">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2">
-                Invoice Summary
+        <div className="px-3 py-1.5 space-y-1">
+          {/* ---- Row 1: Adjustments (Disc / Tax) + Computed Totals ---- */}
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 whitespace-nowrap">Disc %</label>
+                <input
+                  ref={discountPercentageRef}
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0"
+                  name="discount_percentage"
+                  value={form.discount_percentage ?? ""}
+                  onChange={handleChange}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      taxPercentageRef.current?.focus();
+                    }
+                  }}
+                  className="border border-gray-300 dark:border-slate-600 rounded-md w-14 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
+                  {...antiFill}
+                />
               </div>
-              <div className="flex gap-6 flex-wrap">
-                {/* Editable adjustment fields */}
-                <div className="flex gap-2 items-end">
-                  <div>
-                    <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Discount %</label>
-                    <input
-                      ref={discountPercentageRef}
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0"
-                      name="discount_percentage"
-                      value={form.discount_percentage ?? ""}
-                      onChange={handleChange}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          taxPercentageRef.current?.focus();
-                        }
-                      }}
-                      className="border border-gray-300 dark:border-slate-600 rounded-md w-16 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
-                      {...antiFill}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Discount</label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      name="discount_amount"
-                      value={form.discount_amount ?? ""}
-                      onChange={handleChange}
-                      className="border border-gray-300 dark:border-slate-600 rounded-md w-24 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
-                      {...antiFill}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Tax %</label>
-                    <input
-                      ref={taxPercentageRef}
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0"
-                      name="tax_percentage"
-                      value={form.tax_percentage ?? ""}
-                      onChange={handleChange}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          saveButtonRef.current?.focus();
-                        }
-                      }}
-                      className="border border-gray-300 dark:border-slate-600 rounded-md w-16 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
-                      {...antiFill}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Tax</label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      name="tax_amount"
-                      value={form.tax_amount ?? ""}
-                      onChange={handleChange}
-                      className="border border-gray-300 dark:border-slate-600 rounded-md w-24 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
-                      {...antiFill}
-                    />
-                  </div>
-                </div>
-
-                {/* Computed totals */}
-                <div className="flex-1 min-w-[240px]">
-                  <div className="rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden">
-                    <div className="flex items-center justify-between px-3 py-1 border-b border-gray-100 dark:border-slate-700 text-[11px]">
-                      <span className="text-gray-500 dark:text-gray-400">Items Total</span>
-                      <span className="font-medium font-mono text-gray-900 dark:text-gray-100">
-                        {to2(form.rows_total || 0).toFixed(2)}
-                      </span>
-                    </div>
-                    {Number(form.discount_amount || 0) > 0 && (
-                      <div className="flex items-center justify-between px-3 py-1 border-b border-gray-100 dark:border-slate-700 text-[11px]">
-                        <span className="text-gray-500 dark:text-gray-400">Discount {form.discount_percentage ? `(${to2(form.discount_percentage)}%)` : ""}</span>
-                        <span className="font-medium font-mono text-red-500 dark:text-red-400">
-                          − {to2(form.discount_amount || 0).toFixed(2)}
-                        </span>
-                      </div>
-                    )}
-                    {Number(form.tax_amount || 0) > 0 && (
-                      <div className="flex items-center justify-between px-3 py-1 border-b border-gray-100 dark:border-slate-700 text-[11px]">
-                        <span className="text-gray-500 dark:text-gray-400">Tax {form.tax_percentage ? `(${to2(form.tax_percentage)}%)` : ""}</span>
-                        <span className="font-medium font-mono text-gray-900 dark:text-gray-100">
-                          + {to2(form.tax_amount || 0).toFixed(2)}
-                        </span>
-                      </div>
-                    )}
-                    <div
-                      className="flex items-center justify-between px-3 py-1.5 text-xs font-bold font-mono"
-                      style={{ background: `${themeColors.primary}14`, color: themeColors.primary }}
-                    >
-                      <span>Total Amount</span>
-                      <span className="text-sm">{to2(form.total_amount || 0).toFixed(2)}</span>
-                    </div>
-                  </div>
-                </div>
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 whitespace-nowrap">Discount</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  name="discount_amount"
+                  value={form.discount_amount ?? ""}
+                  onChange={handleChange}
+                  className="border border-gray-300 dark:border-slate-600 rounded-md w-20 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
+                  {...antiFill}
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 whitespace-nowrap">Tax %</label>
+                <input
+                  ref={taxPercentageRef}
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0"
+                  name="tax_percentage"
+                  value={form.tax_percentage ?? ""}
+                  onChange={handleChange}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      saveButtonRef.current?.focus();
+                    }
+                  }}
+                  className="border border-gray-300 dark:border-slate-600 rounded-md w-14 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
+                  {...antiFill}
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 whitespace-nowrap">Tax</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  name="tax_amount"
+                  value={form.tax_amount ?? ""}
+                  onChange={handleChange}
+                  className="border border-gray-300 dark:border-slate-600 rounded-md w-20 px-1.5 h-7 text-xs text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
+                  {...antiFill}
+                />
               </div>
             </div>
 
-            {/* ---- Right: Payment + Action ---- */}
-            <div className="w-[260px] shrink-0 flex flex-col justify-between">
-              <div className="space-y-1.5">
-                <PaymentAccountSelector
-                  paymentMethod={form.payment_method || "cash"}
-                  accountId={form.account_id || null}
-                  onChange={({ payment_method, account_id }) => {
-                    setForm((prev) => ({
-                      ...prev,
-                      payment_method,
-                      account_id,
-                    }));
-                  }}
-                  layout="compact"
-                  showBalance={true}
-                />
-
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Total Paid</label>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      name="total_paid"
-                      value={form.total_paid ?? ""}
-                      onChange={(e) => {
-                        const v = sanitizeNumberInput(e.target.value, true);
-                        setPaidTouched(true);
-                        setForm((prev) => ({ ...prev, total_paid: v }));
-                      }}
-                      onBlur={() => {
-                        setForm((prev) => {
-                          const normalized = prev.total_paid === "" ? "" : to2(prev.total_paid).toFixed(2);
-                          const amt = prev.total_amount === "" || prev.total_amount == null ? "" : to2(prev.total_amount).toFixed(2);
-                          if (prev.invoice_type !== "credit" && normalized !== "" && normalized === amt) {
-                            setPaidTouched(false);
-                          }
-                          return { ...prev, total_paid: normalized };
-                        });
-                      }}
-                      className="border border-gray-300 dark:border-slate-600 rounded-md w-full px-1.5 h-7 text-xs text-right font-mono bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
-                      {...antiFill}
-                    />
-                    <button
-                      type="button"
-                      title="Relink paid to total"
-                      onClick={() => {
-                        setPaidTouched(false);
-                        setForm((prev) => ({ ...prev, total_paid: prev.total_amount ?? "" }));
-                      }}
-                      className="px-1.5 py-1 text-[10px] rounded-md transition-all duration-200 shrink-0"
-                      style={{
-                        background: isDark ? 'rgba(71, 85, 105, 0.6)' : 'rgba(255, 255, 255, 0.8)',
-                        backdropFilter: 'blur(4px)',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                        color: isDark ? '#94a3b8' : '#64748b'
-                      }}
-                    >
-                      🔗
-                    </button>
+            <div className="flex items-center gap-3 flex-wrap ml-auto">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 whitespace-nowrap">Items Total</span>
+                <div className="purchase-readonly-field h-7 flex items-center px-2 rounded-md text-xs font-medium font-mono text-gray-900 dark:text-gray-100">
+                  {to2(form.rows_total || 0).toFixed(2)}
+                </div>
+              </div>
+              {Number(form.discount_amount || 0) > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                    Disc {form.discount_percentage ? `(${to2(form.discount_percentage)}%)` : ""}
+                  </span>
+                  <div className="purchase-readonly-field h-7 flex items-center px-2 rounded-md text-xs font-medium font-mono !text-red-500 dark:!text-red-400">
+                    −{to2(form.discount_amount || 0).toFixed(2)}
                   </div>
                 </div>
-                <div className="w-24">
-                  <label className="flex items-center justify-between text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">
-                    <span>Remaining</span>
-                    <span className="text-[8px] font-normal lowercase opacity-75">auto</span>
-                  </label>
-                  <div className={`purchase-readonly-field h-7 flex items-center justify-end px-2 rounded-md text-xs font-bold font-mono ${
-                    (form.total_amount || 0) - (form.total_paid || 0) > 0
-                      ? "!text-amber-600 dark:!text-amber-400"
-                      : "!text-emerald-600 dark:!text-emerald-400"
-                  }`}>
-                    {to2((form.total_amount || 0) - (form.total_paid || 0)).toFixed(2)}
+              )}
+              {Number(form.tax_amount || 0) > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                    Tax {form.tax_percentage ? `(${to2(form.tax_percentage)}%)` : ""}
+                  </span>
+                  <div className="purchase-readonly-field h-7 flex items-center px-2 rounded-md text-xs font-medium font-mono text-gray-900 dark:text-gray-100">
+                    +{to2(form.tax_amount || 0).toFixed(2)}
                   </div>
+                </div>
+              )}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: themeColors.primary }}>
+                  Total Amount
+                </span>
+                <div
+                  className="h-7 flex items-center px-2.5 rounded-md text-xs font-bold font-mono border"
+                  style={{
+                    background: `${themeColors.primary}14`,
+                    color: themeColors.primary,
+                    borderColor: `${themeColors.primary}40`,
+                  }}
+                >
+                  {to2(form.total_amount || 0).toFixed(2)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ---- Row 2: Payment Method & Account + Total Paid + Remaining + Save ---- */}
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 pt-0.5 border-t border-gray-100 dark:border-slate-700/60">
+            <div className="flex items-center gap-3 flex-wrap">
+              <PaymentAccountSelector
+                paymentMethod={form.payment_method || "cash"}
+                accountId={form.account_id || null}
+                onChange={({ payment_method, account_id }) => {
+                  setForm((prev) => ({
+                    ...prev,
+                    payment_method,
+                    account_id,
+                  }));
+                }}
+                layout="inline"
+                showBalance={true}
+              />
+
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 whitespace-nowrap">Total Paid</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    name="total_paid"
+                    value={form.total_paid ?? ""}
+                    onChange={(e) => {
+                      const v = sanitizeNumberInput(e.target.value, true);
+                      setPaidTouched(true);
+                      setForm((prev) => ({ ...prev, total_paid: v }));
+                    }}
+                    onBlur={() => {
+                      setForm((prev) => {
+                        const normalized = prev.total_paid === "" ? "" : to2(prev.total_paid).toFixed(2);
+                        const amt = prev.total_amount === "" || prev.total_amount == null ? "" : to2(prev.total_amount).toFixed(2);
+                        if (prev.invoice_type !== "credit" && normalized !== "" && normalized === amt) {
+                          setPaidTouched(false);
+                        }
+                        return { ...prev, total_paid: normalized };
+                      });
+                    }}
+                    className="border border-gray-300 dark:border-slate-600 rounded-md w-24 px-1.5 h-7 text-xs text-right font-mono bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-1 focus:ring-blue-400/40"
+                    {...antiFill}
+                  />
+                  <button
+                    type="button"
+                    title="Relink paid to total"
+                    onClick={() => {
+                      setPaidTouched(false);
+                      setForm((prev) => ({ ...prev, total_paid: prev.total_amount ?? "" }));
+                    }}
+                    className="h-7 px-1.5 text-[10px] rounded-md transition-all duration-200 shrink-0 flex items-center justify-center"
+                    style={{
+                      background: isDark ? 'rgba(71, 85, 105, 0.6)' : 'rgba(255, 255, 255, 0.8)',
+                      backdropFilter: 'blur(4px)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      color: isDark ? '#94a3b8' : '#64748b'
+                    }}
+                  >
+                    🔗
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 whitespace-nowrap">Remaining</label>
+                <div className={`purchase-readonly-field h-7 min-w-[84px] flex items-center justify-end px-2 rounded-md text-xs font-bold font-mono ${
+                  (form.total_amount || 0) - (form.total_paid || 0) > 0
+                    ? "!text-amber-600 dark:!text-amber-400"
+                    : "!text-emerald-600 dark:!text-emerald-400"
+                }`}>
+                  {to2((form.total_amount || 0) - (form.total_paid || 0)).toFixed(2)}
                 </div>
               </div>
             </div>
 
             <button
               ref={saveButtonRef}
-                disabled={saving}
-                type="button"
-                onClick={handleSubmit}
-                className={`w-full mt-2 py-2 rounded-lg text-sm font-bold tracking-wide transition-all duration-200 ${btnPrimary.className}`}
-                style={btnPrimary.style}
-              >
-                {saving ? "Saving Purchase Invoice…" : invoiceId ? "Update Invoice" : "Save Invoice"}
-              </button>
-            </div>
+              disabled={saving}
+              type="button"
+              onClick={handleSubmit}
+              className={`h-7 px-5 rounded-md text-xs font-bold tracking-wide transition-all duration-200 shrink-0 ml-auto ${btnPrimary.className}`}
+              style={btnPrimary.style}
+            >
+              {saving ? "Saving…" : invoiceId ? "Update Invoice" : "Save Purchase Invoice"}
+            </button>
           </div>
         </div>
       </div>

@@ -104,13 +104,15 @@ export default function PaymentAccountSelector({
     }
   }, [paymentMethod, matchingAccounts, accountId, onChange]);
 
+  const isSmall = layout === "compact" || layout === "inline";
+
   const selectStyles = useMemo(
     () => ({
       control: (base, state) => ({
         ...base,
-        minHeight: layout === "compact" ? "28px" : "36px",
-        height: layout === "compact" ? "28px" : "36px",
-        borderRadius: 8,
+        minHeight: isSmall ? "28px" : "36px",
+        height: isSmall ? "28px" : "36px",
+        borderRadius: 6,
         backgroundColor: isDark ? "rgba(30, 41, 59, 0.9)" : "#ffffff",
         borderColor: state.isFocused
           ? (theme?.primary_color || "#3b82f6")
@@ -118,13 +120,13 @@ export default function PaymentAccountSelector({
         boxShadow: state.isFocused
           ? `0 0 0 2px ${theme?.primary_color || "#3b82f6"}33`
           : "none",
-        fontSize: layout === "compact" ? "11px" : "13px",
+        fontSize: isSmall ? "11px" : "13px",
         color: isDark ? "#f8fafc" : "#1e293b",
         padding: 0,
       }),
       valueContainer: (base) => ({
         ...base,
-        padding: layout === "compact" ? "0 6px" : "2px 8px",
+        padding: isSmall ? "0 6px" : "2px 8px",
       }),
       input: (base) => ({
         ...base,
@@ -135,15 +137,15 @@ export default function PaymentAccountSelector({
       singleValue: (base) => ({
         ...base,
         color: isDark ? "#f8fafc" : "#1e293b",
-        fontSize: layout === "compact" ? "11px" : "13px",
+        fontSize: isSmall ? "11px" : "13px",
       }),
       indicatorsContainer: (base) => ({
         ...base,
-        height: layout === "compact" ? "28px" : "36px",
+        height: isSmall ? "28px" : "36px",
       }),
       dropdownIndicator: (base) => ({
         ...base,
-        padding: layout === "compact" ? "2px" : "6px",
+        padding: isSmall ? "2px" : "6px",
       }),
       menuPortal: (base) => ({ ...base, zIndex: 9999 }),
       menu: (base) => ({
@@ -167,7 +169,7 @@ export default function PaymentAccountSelector({
         padding: "6px 10px",
       }),
     }),
-    [isDark, theme, layout]
+    [isDark, theme, isSmall]
   );
 
   const handleMethodChange = (opt) => {
@@ -228,8 +230,85 @@ export default function PaymentAccountSelector({
   };
 
   return (
-    <div className="space-y-1.5">
-      {layout === "compact" ? (
+    <div className={layout === "inline" ? "flex items-center gap-2.5 flex-wrap" : "space-y-1.5"}>
+      {layout === "inline" ? (
+        // INLINE SINGLE-ROW LAYOUT WITH TITLE NEXT TO FIELD (FOR COMPACT PURCHASE INVOICE FOOTER)
+        <>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <label className={`text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+              Method
+            </label>
+            <div className="w-28">
+              <Select
+                options={PAYMENT_METHOD_OPTIONS}
+                value={
+                  PAYMENT_METHOD_OPTIONS.find((o) => o.value === paymentMethod) ||
+                  PAYMENT_METHOD_OPTIONS[0]
+                }
+                onChange={handleMethodChange}
+                styles={selectStyles}
+                isSearchable={false}
+                isDisabled={disabled}
+                menuPlacement="top"
+              />
+            </div>
+          </div>
+
+          {matchingAccounts.length > 1 && (
+            <div className="flex items-center gap-1.5 shrink-0">
+              <label className={`text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+                Account
+              </label>
+              <div className="w-32">
+                <Select
+                  options={accountOptions}
+                  value={accountOptions.find((o) => o.value === selectedAccount?.id) || null}
+                  onChange={handleAccountChange}
+                  formatOptionLabel={formatAccountOptionLabel}
+                  styles={selectStyles}
+                  isSearchable={false}
+                  isDisabled={disabled}
+                  menuPlacement="top"
+                />
+              </div>
+            </div>
+          )}
+
+          {showBalance && selectedAccount && (
+            <div className="flex items-center gap-1.5 shrink-0">
+              <label className={`text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+                Balance
+              </label>
+              <div
+                className={`h-7 flex items-center gap-1.5 px-2 rounded-md text-[11px] border transition-colors ${
+                  isDark ? "bg-slate-800/60 border-slate-700/60" : "bg-blue-50/60 border-blue-100"
+                }`}
+              >
+                <AccountIcon
+                  icon={selectedAccount.icon}
+                  code={selectedAccount.code || selectedAccount.name}
+                  type={selectedAccount.type}
+                  className="w-3.5 h-3.5 rounded shrink-0"
+                />
+                <span className="truncate max-w-[90px] font-medium text-slate-700 dark:text-slate-300">
+                  {selectedAccount.name}
+                </span>
+                <span className="font-extrabold font-mono text-emerald-600 dark:text-emerald-400 shrink-0">
+                  {formatCurrency(selectedAccount.current_balance)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setAccountsModalOpen(true)}
+                  title="View all accounts register"
+                  className="text-slate-400 hover:text-blue-500 transition-colors shrink-0"
+                >
+                  <ArrowTopRightOnSquareIcon className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      ) : layout === "compact" ? (
         // COMPACT LAYOUT (FOR POS / RETAIL SIDEBAR)
         <div className="space-y-1">
           <div className="flex items-center justify-between gap-1">

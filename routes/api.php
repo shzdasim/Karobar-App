@@ -516,7 +516,8 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::post('/stock-disposals/{id}/restore',    [\App\Http\Controllers\StockDisposalController::class, 'restore']);
 
     // -------------------------------------------------------------------------
-    // Cube Hybrid AI Assistant (Free-Quota Only)
+    // Cube Hybrid AI Assistant (Free-Quota Only) & Non-Destructive Task Runner
     // -------------------------------------------------------------------------
     Route::post('/cube/ask', [CubeAssistantController::class, 'ask'])->middleware('throttle:30,1');
+    Route::post('/cube/execute-task', [CubeAssistantController::class, 'executeTask'])->middleware('throttle:60,1');
 });

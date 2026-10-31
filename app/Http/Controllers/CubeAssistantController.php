@@ -3,13 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Services\Cube\CubeAssistantService;
+use App\Services\Cube\CubeKnowledgeRetriever;
+use App\Services\Cube\CubeTaskExecutorService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class CubeAssistantController extends Controller
 {
     public function __construct(
-        protected CubeAssistantService $assistantService
+        protected CubeAssistantService $assistantService,
+        protected CubeTaskExecutorService $taskExecutor,
+        protected CubeKnowledgeRetriever $retriever,
     ) {}
 
     public function ask(Request $request): JsonResponse
@@ -40,7 +44,34 @@ class CubeAssistantController extends Controller
             'dom_target' => ['prohibited'],
         ]);
 
-        $response = $this->assistantService->ask($validated);
+        $response = $this->assistantService->ask($validated, $request->user());
+
+        return response()->json($response);
+    }
+
+    /**
+     * POST /api/cube/execute-task
+     * Executes a non-destructive Cube task (such as background batch formulation enrichment,
+     * adding products, or editing products). Deleting records is hardcoded to be refused.
+     */
+    public function executeTask(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'task_type' => ['required', 'string', 'max:80'],
+            'batch_size' => ['nullable', 'integer', 'min:1', 'max:30'],
+            'after_id' => ['nullable', 'integer', 'min:0'],
+            'filter_query' => ['nullable', 'string', 'max:160'],
+            'products' => ['nullable', 'array', 'max:25'],
+            'updates' => ['nullable', 'array', 'max:25'],
+            'assignments' => ['nullable', 'array', 'max:50'],
+            'standalone_formulations' => ['nullable', 'array', 'max:50'],
+        ]);
+
+        $response = $this->taskExecutor->executeStructuredTask(
+            $request->user(),
+            $validated,
+            $this->retriever->getProductVersion()
+        );
 
         return response()->json($response);
     }
