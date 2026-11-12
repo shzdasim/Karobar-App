@@ -834,7 +834,6 @@ function buildWindowMenu() {
     submenu: [
       {
         label: "New Window",
-        accelerator: "CmdOrCtrl+N",
         click: () => createAppWindow("/"),
       },
       {

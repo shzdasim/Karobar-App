@@ -895,7 +895,7 @@ export default function Topbar({
               <button
                 type="button"
                 onClick={onOpenCurrentInNewWindow || onOpenCurrentInSubWindow}
-                title={`Open "${pageTitle || "Current View"}" in a New Window (Ctrl+N)`}
+                title={`Open "${pageTitle || "Current View"}" in a New Window`}
                 className="inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/70 hover:bg-slate-200/70 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-700 dark:text-slate-200 transition-all duration-150 cursor-pointer shrink-0 whitespace-nowrap"
               >
                 <span aria-hidden="true">⧉</span>

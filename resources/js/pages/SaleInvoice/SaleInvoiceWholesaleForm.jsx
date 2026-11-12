@@ -637,6 +637,9 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
   };
 
   const fetchProducts = async (q = "") => {
+    if (q === "" && Array.isArray(products) && products.length > 0) {
+      return products;
+    }
     try {
       const { data } = await axios.get("/api/products/search", { params: { q, limit: 60 } });
       const list = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
@@ -826,7 +829,6 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
 
     window.addEventListener("karobar:inventory-changed", handleInventoryChange);
     window.addEventListener("karobar:products-updated", handleInventoryChange);
-    window.addEventListener("focus", handleInventoryChange);
 
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
@@ -844,7 +846,6 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
     return () => {
       window.removeEventListener("karobar:inventory-changed", handleInventoryChange);
       window.removeEventListener("karobar:products-updated", handleInventoryChange);
-      window.removeEventListener("focus", handleInventoryChange);
       document.removeEventListener("visibilitychange", handleVisibility);
       clearInterval(interval);
     };

@@ -454,8 +454,13 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
   };
 
   const fetchProducts = async (q = "") => {
+    if (q === "" && Array.isArray(products) && products.length > 0) {
+      return products;
+    }
     const { data } = await axios.get("/api/products/search", { params: { q, limit: 30 } });
-    upsertProducts(Array.isArray(data) ? data : (data?.data || []));
+    const list = Array.isArray(data) ? data : (data?.data || []);
+    upsertProducts(list);
+    return list;
   };
 
   // Fetch all batches for a product (including unbatched units) for batch selector

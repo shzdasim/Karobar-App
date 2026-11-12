@@ -16,24 +16,43 @@ import {
 } from "@heroicons/react/24/solid";
 import { GlassToolbar } from "@/components/glass";
 
-let sharedPrefsCache = null;
-let sharedPrefsPromise = null;
+const PREF_KEY_POS = "productSearchModalPos";
+const PREF_KEY_SIZE = "productSearchModalSize";
 
-function loadSharedModalPreferences() {
-  if (sharedPrefsCache) return Promise.resolve(sharedPrefsCache);
-  if (sharedPrefsPromise) return sharedPrefsPromise;
-  sharedPrefsPromise = axios
-    .get("/api/preferences")
-    .then(({ data }) => {
-      sharedPrefsCache = data?.preferences || {};
-      sharedPrefsPromise = null;
-      return sharedPrefsCache;
-    })
-    .catch(() => {
-      sharedPrefsPromise = null;
-      return {};
-    });
-  return sharedPrefsPromise;
+const globalProductQueryCache = new Map();
+
+export function invalidateProductSearchCache() {
+  globalProductQueryCache.clear();
+}
+
+function getInitialModalGeometry() {
+  const isCompact = typeof window !== "undefined" && window.innerWidth < 1024;
+  const defaultW = isCompact ? Math.min(960, window.innerWidth - 16) : 960;
+  const defaultH = isCompact ? Math.min(600, window.innerHeight - 24) : 600;
+  const defaultPos = {
+    x: Math.max(8, (window.innerWidth - defaultW) / 2),
+    y: Math.max(8, (window.innerHeight - defaultH) / 2),
+  };
+  const defaultSize = { width: defaultW, height: defaultH };
+
+  try {
+    const rawPos = localStorage.getItem(PREF_KEY_POS);
+    const rawSize = localStorage.getItem(PREF_KEY_SIZE);
+    const pos = rawPos ? JSON.parse(rawPos) : defaultPos;
+    const size = rawSize ? JSON.parse(rawSize) : defaultSize;
+    return {
+      pos: {
+        x: Math.max(8, Number(pos?.x) || defaultPos.x),
+        y: Math.max(8, Number(pos?.y) || defaultPos.y),
+      },
+      size: {
+        width: Math.max(640, Number(size?.width) || defaultSize.width),
+        height: Math.max(420, Number(size?.height) || defaultSize.height),
+      },
+    };
+  } catch {
+    return { pos: defaultPos, size: defaultSize };
+  }
 }
 
 const ProductSearchInput = forwardRef(
@@ -45,7 +64,7 @@ const ProductSearchInput = forwardRef(
     const [highlightIndex, setHighlightIndex] = useState(0);
     const [isInvalidInput, setIsInvalidInput] = useState(false);
 
-const triggerRef = useRef(null);
+    const triggerRef = useRef(null);
     const searchRef = useRef(null);
     const listRef = useRef(null);
     const rowRefs = useRef([]);
@@ -54,80 +73,31 @@ const triggerRef = useRef(null);
     const resizeRef = useRef(null);
     const [isResizing, setIsResizing] = useState(false);
 
-const MIN_WIDTH = typeof window !== "undefined" && window.innerWidth < 1024
+    const MIN_WIDTH = typeof window !== "undefined" && window.innerWidth < 1024
       ? Math.min(640, window.innerWidth - 16)
       : 640;
     const MIN_HEIGHT = typeof window !== "undefined" && window.innerWidth < 1024
       ? Math.min(420, window.innerHeight - 24)
       : 420;
-    const PREF_KEY_POS = "productSearchModalPos";
-    const PREF_KEY_SIZE = "productSearchModalSize";
 
-    const [windowPos, setWindowPos] = useState(() => {
-      const isCompact = typeof window !== "undefined" && window.innerWidth < 1024;
-      const width = isCompact ? Math.min(960, window.innerWidth - 16) : 960;
-      const height = isCompact ? Math.min(600, window.innerHeight - 24) : 600;
-      return {
-        x: Math.max(8, (window.innerWidth - width) / 2),
-        y: Math.max(8, (window.innerHeight - height) / 2),
-      };
-    });
-    const [windowSize, setWindowSize] = useState(() => {
-      const isCompact = typeof window !== "undefined" && window.innerWidth < 1024;
-      return {
-        width: isCompact ? Math.min(960, window.innerWidth - 16) : 960,
-        height: isCompact ? Math.min(600, window.innerHeight - 24) : 600,
-      };
-    });
+    const [windowPos, setWindowPos] = useState(() => getInitialModalGeometry().pos);
+    const [windowSize, setWindowSize] = useState(() => getInitialModalGeometry().size);
 
-    // Load saved modal size & position from DB preferences lazily when modal opens
-    useEffect(() => {
-      if (!isOpen) return undefined;
-      let cancelled = false;
-      loadSharedModalPreferences().then((prefs) => {
-        if (cancelled || !prefs) return;
-        const isCompact = typeof window !== "undefined" && window.innerWidth < 1024;
-        const savedSize = prefs[PREF_KEY_SIZE];
-        const savedPos = prefs[PREF_KEY_POS];
-        if (savedSize && Number(savedSize.width) && Number(savedSize.height)) {
-          const rawW = Math.max(MIN_WIDTH, Number(savedSize.width));
-          const rawH = Math.max(MIN_HEIGHT, Number(savedSize.height));
-          setWindowSize({
-            width: isCompact ? Math.min(960, rawW, window.innerWidth - 16) : rawW,
-            height: isCompact ? Math.min(600, rawH, window.innerHeight - 24) : rawH,
-          });
-        }
-        if (savedPos && savedPos.x != null && savedPos.y != null) {
-          setWindowPos({
-            x: isCompact ? Math.max(8, Number(savedPos.x)) : Number(savedPos.x),
-            y: isCompact ? Math.max(8, Number(savedPos.y)) : Number(savedPos.y),
-          });
-        }
-      });
-      return () => {
-        cancelled = true;
-      };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen]);
-
-    // Persist size & position to DB on drag/resize end
-    const savePreferences = async (overrides = {}) => {
+    // Persist size & position to localStorage immediately, and debounce sync to DB
+    const savePreferences = (overrides = {}) => {
       const nextPos = overrides.pos || windowPos;
       const nextSize = overrides.size || windowSize;
-      if (sharedPrefsCache) {
-        sharedPrefsCache[PREF_KEY_POS] = nextPos;
-        sharedPrefsCache[PREF_KEY_SIZE] = nextSize;
-      }
       try {
-        await axios.put("/api/preferences", {
-          preferences: {
-            [PREF_KEY_POS]: nextPos,
-            [PREF_KEY_SIZE]: nextSize,
-          },
-        });
-      } catch (_) {
-        /* ignore - non-critical */
-      }
+        localStorage.setItem(PREF_KEY_POS, JSON.stringify(nextPos));
+        localStorage.setItem(PREF_KEY_SIZE, JSON.stringify(nextSize));
+      } catch {}
+      // Sync to backend DB non-blockingly
+      axios.put("/api/preferences", {
+        preferences: {
+          [PREF_KEY_POS]: nextPos,
+          [PREF_KEY_SIZE]: nextSize,
+        },
+      }).catch(() => {});
     };
 
     const didRefreshRef = useRef(false);
@@ -139,18 +109,29 @@ const MIN_WIDTH = typeof window !== "undefined" && window.innerWidth < 1024
         return onRefreshProducts;
       }
       return async (q = "") => {
+        const cleanQ = (q || "").trim().toLowerCase();
+        const cacheKey = `${cleanQ}:60`;
+        const now = Date.now();
+        const cached = globalProductQueryCache.get(cacheKey);
+        if (cached && now - cached.timestamp < 30000) {
+          setInternalProducts(cached.data);
+          return cached.data;
+        }
+
         try {
           const { data } = await axios.get("/api/products/search", {
-            params: { q: q || "", limit: 60 },
+            params: { q: cleanQ, limit: 60 },
           });
           const list = Array.isArray(data?.data)
             ? data.data
             : Array.isArray(data)
             ? data
             : [];
+          globalProductQueryCache.set(cacheKey, { data: list, timestamp: now });
           setInternalProducts(list);
+          return list;
         } catch {
-          // ignore
+          return [];
         }
       };
     }, [onRefreshProducts]);
@@ -227,8 +208,8 @@ const MIN_WIDTH = typeof window !== "undefined" && window.innerWidth < 1024
           : (display || "");
       setSearch(initialSearch);
 
-      // Force fresh product fetch immediately upon opening modal
-      if (effectiveRefreshProducts) {
+      // Only refresh if items are empty or we have a specific non-empty search query
+      if (effectiveRefreshProducts && (items.length === 0 || initialSearch)) {
         Promise.resolve(effectiveRefreshProducts(initialSearch)).catch(() => {});
       }
     };
@@ -246,21 +227,14 @@ const MIN_WIDTH = typeof window !== "undefined" && window.innerWidth < 1024
       setTimeout(() => {
         searchRef.current?.focus();
         searchRef.current?.select?.();
-      }, 50);
+      }, 30);
     }, [isOpen]);
 
-    // Fetch fresh product quantities when modal opens
-    useEffect(() => {
-      if (isOpen && effectiveRefreshProducts) {
-        Promise.resolve(effectiveRefreshProducts(search)).catch(() => {});
-      }
-    }, [isOpen]);
-
-    // Live inventory sync: re-fetch products when inventory changes across tabs
+    // Live inventory sync: re-fetch products when inventory changes across tabs (only if modal is open)
     useEffect(() => {
       if (!effectiveRefreshProducts) return undefined;
       const handler = () => {
-        if (isOpen || value) {
+        if (isOpen) {
           Promise.resolve(effectiveRefreshProducts(search)).catch(() => {});
         }
       };
@@ -272,23 +246,25 @@ const MIN_WIDTH = typeof window !== "undefined" && window.innerWidth < 1024
         window.removeEventListener("karobar:inventory-changed", handler);
         window.removeEventListener("karobar:products-updated", handler);
       };
-    }, [effectiveRefreshProducts, search, isOpen, value]);
+    }, [effectiveRefreshProducts, search, isOpen]);
 
     useEffect(() => {
       if (!effectiveRefreshProducts || !isOpen) return;
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => effectiveRefreshProducts(search), 200);
+      debounceRef.current = setTimeout(() => effectiveRefreshProducts(search), 120);
       return () => clearTimeout(debounceRef.current);
     }, [search, effectiveRefreshProducts, isOpen]);
 
-    // Local filter (matches product name only, in typing order / starts-with) — skip when modal is closed
+    // Local filter (matches product name only, in typing order / starts-with) — limit to top 50 for instantaneous rendering
     const filtered = useMemo(() => {
       if (!isOpen) return [];
       const q = (search || "").toLowerCase().trim();
-      if (!q) return items;
-      return items.filter((p) =>
-        (p?.name ?? "").toString().toLowerCase().startsWith(q)
-      );
+      if (!q) return items.slice(0, 50);
+      return items
+        .filter((p) =>
+          (p?.name ?? "").toString().toLowerCase().startsWith(q)
+        )
+        .slice(0, 50);
     }, [isOpen, items, search]);
 
     // Infinite scroll

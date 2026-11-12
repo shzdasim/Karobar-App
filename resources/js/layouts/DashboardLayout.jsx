@@ -264,22 +264,6 @@ export default function DashboardLayout({ children }) {
     };
   }, [resolvePageTitle]);
 
-  // Global keyboard shortcuts (Ctrl+N to open current page in new native window)
-  useEffect(() => {
-    const handleGlobalShortcuts = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n" && !e.shiftKey && !e.altKey) {
-        // Only trigger if not focused in an input/textarea
-        const tag = (e.target?.tagName || "").toLowerCase();
-        if (tag !== "input" && tag !== "textarea") {
-          e.preventDefault();
-          openInNewWindow(location.pathname + location.search, pageTitle);
-        }
-      }
-    };
-    window.addEventListener("keydown", handleGlobalShortcuts);
-    return () => window.removeEventListener("keydown", handleGlobalShortcuts);
-  }, [location.pathname, location.search, pageTitle]);
-
   // Prevent body scroll when mobile sidebar is open
   useEffect(() => {
     if (mobileSidebarOpen) {
