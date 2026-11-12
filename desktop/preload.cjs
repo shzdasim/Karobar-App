@@ -21,6 +21,10 @@ contextBridge.exposeInMainWorld("karobarDesktop", {
   checkForUpdates: (force = false) => ipcRenderer.invoke("karobar:check-for-updates", { force }),
   downloadAndInstallUpdate: (payload = {}) => ipcRenderer.invoke("karobar:download-and-install-update", payload),
   openExternalUrl: (url) => ipcRenderer.invoke("karobar:open-external-url", url),
+  openWindow: (path, title, options = {}) =>
+    ipcRenderer.invoke("karobar:open-window", { path, title, ...options }),
+  getOpenWindows: () => ipcRenderer.invoke("karobar:get-open-windows"),
+  focusWindow: (winId) => ipcRenderer.invoke("karobar:focus-window", { winId }),
   onNavigate: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on("karobar:navigate", handler);

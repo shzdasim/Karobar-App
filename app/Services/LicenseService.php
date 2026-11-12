@@ -184,19 +184,25 @@ class LicenseService
      */
     protected function computeFastOsEnvelope(): string
     {
-        $statBase = @stat(base_path());
-        $dev = $statBase['dev'] ?? 0;
-        $ino = $statBase['ino'] ?? 0;
-
-        return implode('|', [
+        $base = str_replace('\\', '/', strtolower(realpath(base_path()) ?: base_path()));
+        $signals = [
             PHP_OS_FAMILY,
             php_uname('s'),
             php_uname('r'),
             php_uname('m'),
             gethostname() ?: 'local',
-            $dev,
-            $ino,
-        ]);
+            $base,
+        ];
+
+        // On non-Windows platforms, stat dev/ino provides an extra layer of filesystem-level validation.
+        // On Windows, dev/ino are 0 or unstable across worker processes and filesystem drivers.
+        if (PHP_OS_FAMILY !== 'Windows') {
+            $statBase = @stat(base_path());
+            $signals[] = $statBase['dev'] ?? 0;
+            $signals[] = $statBase['ino'] ?? 0;
+        }
+
+        return implode('|', $signals);
     }
 
     /**

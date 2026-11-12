@@ -1011,6 +1011,16 @@ export default function ClassicSidebar({
                     if (e.ctrlKey || e.metaKey) {
                       e.preventDefault();
                       window.dispatchEvent(
+                        new CustomEvent("karobar:open-window", {
+                          detail: { path: "/dashboard", title: "Dashboard" },
+                        })
+                      );
+                      window.dispatchEvent(
+                        new CustomEvent("karobar:open-window", {
+                          detail: { path: "/dashboard", title: "Dashboard" },
+                        })
+                      );
+                      window.dispatchEvent(
                         new CustomEvent("karobar:open-subwindow", {
                           detail: { path: "/dashboard", title: "Dashboard" },
                         })
@@ -1037,6 +1047,11 @@ export default function ClassicSidebar({
                       if (!isPinned && onRequestCloseDock) {
                         onRequestCloseDock();
                       }
+                      window.dispatchEvent(
+                        new CustomEvent("karobar:open-window", {
+                          detail: { path: "/dashboard", title: "Dashboard" },
+                        })
+                      );
                       window.dispatchEvent(
                         new CustomEvent("karobar:open-subwindow", {
                           detail: { path: "/dashboard", title: "Dashboard" },
@@ -1213,6 +1228,11 @@ export default function ClassicSidebar({
                                 if (e.ctrlKey || e.metaKey) {
                                   e.preventDefault();
                                   window.dispatchEvent(
+                                    new CustomEvent("karobar:open-window", {
+                                      detail: { path: item.path, title: item.name },
+                                    })
+                                  );
+                                  window.dispatchEvent(
                                     new CustomEvent("karobar:open-subwindow", {
                                       detail: { path: item.path, title: item.name },
                                     })
@@ -1239,6 +1259,11 @@ export default function ClassicSidebar({
                                   if (!isPinned && onRequestCloseDock) {
                                     onRequestCloseDock();
                                   }
+                                  window.dispatchEvent(
+                                    new CustomEvent("karobar:open-window", {
+                                      detail: { path: item.path, title: item.name },
+                                    })
+                                  );
                                   window.dispatchEvent(
                                     new CustomEvent("karobar:open-subwindow", {
                                       detail: { path: item.path, title: item.name },
@@ -1343,13 +1368,18 @@ export default function ClassicSidebar({
                                       onRequestCloseDock();
                                     }
                                     window.dispatchEvent(
+                                      new CustomEvent("karobar:open-window", {
+                                        detail: { path: item.path, title: item.name },
+                                      })
+                                    );
+                                    window.dispatchEvent(
                                       new CustomEvent("karobar:open-subwindow", {
                                         detail: { path: item.path, title: item.name },
                                       })
                                     );
                                   }}
-                                  title={`Open "${item.name}" in a New Browser Tab`}
-                                  aria-label={`Open ${item.name} in New Tab`}
+                                  title={`Open "${item.name}" in a New Window`}
+                                  aria-label={`Open ${item.name} in New Window`}
                                   className="workspace-nav-action-btn px-1.5 py-0.5 rounded-lg text-[11px] font-bold text-slate-500 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-500/15 transition-all cursor-pointer"
                                 >
                                   ⧉
@@ -1367,6 +1397,14 @@ export default function ClassicSidebar({
                                         onRequestCloseDock();
                                       }
                                       if (e.ctrlKey || e.metaKey) {
+                                        window.dispatchEvent(
+                                          new CustomEvent("karobar:open-window", {
+                                            detail: {
+                                              path: item.quickCreatePath,
+                                              title: item.quickCreateLabel || `Add ${item.name}`,
+                                            },
+                                          })
+                                        );
                                         window.dispatchEvent(
                                           new CustomEvent("karobar:open-subwindow", {
                                             detail: {

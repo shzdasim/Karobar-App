@@ -697,22 +697,17 @@ export default function PageSearchModal({ isOpen, onClose }) {
     }
   }, [activeIdx, isOpen, filteredPages.length]);
 
-  const handleSelectPage = (page, openInNewTab = false) => {
+  const handleSelectPage = (page, openInNewWin = false) => {
     if (!page) return;
     onClose?.();
-    if (openInNewTab) {
+    if (openInNewWin) {
       window.dispatchEvent(
-        new CustomEvent("karobar:open-subwindow", {
+        new CustomEvent("karobar:open-window", {
           detail: { path: page.path, title: page.name },
         })
       );
-    } else if (
-      typeof window !== "undefined" &&
-      window.__karobarActiveTabId &&
-      window.__karobarActiveTabId !== "main"
-    ) {
       window.dispatchEvent(
-        new CustomEvent("karobar:navigate-active-tab", {
+        new CustomEvent("karobar:open-subwindow", {
           detail: { path: page.path, title: page.name },
         })
       );
@@ -889,7 +884,7 @@ export default function PageSearchModal({ isOpen, onClose }) {
                         e.stopPropagation();
                         handleSelectPage(page, true);
                       }}
-                      title={`Open ${page.name} in a new browser tab`}
+                      title={`Open ${page.name} in a new window`}
                       className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
                         isActive
                           ? "bg-white/20 hover:bg-white/30 text-white"
@@ -897,7 +892,7 @@ export default function PageSearchModal({ isOpen, onClose }) {
                       }`}
                     >
                       <PlusIcon className="w-3 h-3" />
-                      <span>New Tab</span>
+                      <span>New Window</span>
                     </span>
                     <ArrowRightIcon
                       className={`w-4 h-4 transition-transform ${
@@ -936,7 +931,7 @@ export default function PageSearchModal({ isOpen, onClose }) {
               <kbd className="px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-[10px]">
                 Ctrl+↵
               </kbd>
-              <span>Open in New Tab</span>
+              <span>Open in New Window</span>
             </span>
           </div>
           <span>{filteredPages.length} available pages</span>

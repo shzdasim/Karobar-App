@@ -39,7 +39,10 @@ class AppServiceProvider extends ServiceProvider
             try {
                 if ($connection && $connection->getDriverName() === 'sqlite') {
                     $connection->unprepared(
-                        "PRAGMA busy_timeout = 5000;\n"
+                        "PRAGMA busy_timeout = 30000;\n"
+                        . "PRAGMA journal_mode = WAL;\n"
+                        . "PRAGMA synchronous = NORMAL;\n"
+                        . "PRAGMA wal_autocheckpoint = 1000;\n"
                         . "PRAGMA temp_store = MEMORY;\n"
                         . "PRAGMA cache_size = -65536;\n"
                         . "PRAGMA mmap_size = 268435456;"

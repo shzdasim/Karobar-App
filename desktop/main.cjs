@@ -576,25 +576,39 @@ function resolveIconPath() {
   return undefined;
 }
 
-let openMenuClicksInSubWindow = false;
+const activeAppWindows = new Set();
 
-function sendNavigate(routePath, title) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (openMenuClicksInSubWindow) {
-    mainWindow.webContents.send("karobar:open-subwindow", { path: routePath, title });
-  } else {
-    mainWindow.webContents.send("karobar:navigate", { path: routePath, title });
+function getActiveWindow() {
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && !focused.isDestroyed() && activeAppWindows.has(focused)) {
+    return focused;
   }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return mainWindow;
+  }
+  for (const win of activeAppWindows) {
+    if (win && !win.isDestroyed()) return win;
+  }
+  return null;
 }
 
-function sendOpenSubWindow(routePath, title) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send("karobar:open-subwindow", { path: routePath, title });
+function sendNavigate(routePath, title) {
+  const targetWin = getActiveWindow();
+  if (!targetWin || targetWin.isDestroyed()) {
+    createAppWindow(routePath, { title });
+    return;
+  }
+  targetWin.webContents.send("karobar:navigate", { path: routePath, title });
+}
+
+function sendOpenNewWindow(routePath, title) {
+  createAppWindow(routePath, { title });
 }
 
 function sendWindowCommand(command, payload = {}) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send("karobar:window-command", { command, ...payload });
+  const targetWin = getActiveWindow();
+  if (!targetWin || targetWin.isDestroyed()) return;
+  targetWin.webContents.send("karobar:window-command", { command, ...payload });
 }
 
 function buildSectionMenu(sectionLabel, items) {
@@ -608,10 +622,10 @@ function buildSectionMenu(sectionLabel, items) {
       })),
       { type: "separator" },
       {
-        label: "Open in New Tab ▸",
+        label: `Open ${sectionLabel} in New Window ▸`,
         submenu: items.map((item) => ({
           label: `⧉ ${item.label}`,
-          click: () => sendOpenSubWindow(item.path, item.label),
+          click: () => sendOpenNewWindow(item.path, item.label),
         })),
       },
     ],
@@ -668,8 +682,9 @@ function createApplicationMenu() {
         {
           label: "Check for Software Updates…",
           click: () => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send("karobar:trigger-update-check", { manual: true });
+            const target = getActiveWindow();
+            if (target && !target.isDestroyed()) {
+              target.webContents.send("karobar:trigger-update-check", { manual: true });
             }
           },
         },
@@ -785,84 +800,88 @@ function createApplicationMenu() {
       { label: "Setup Genie Wizard", path: "/setup" },
       { label: "License Activation", path: "/license-activation" },
     ]),
-    {
-      label: "Workspace Tabs",
-      submenu: [
-        {
-          label: "Always Open Top Menu Clicks in New Tab",
-          type: "checkbox",
-          checked: openMenuClicksInSubWindow,
-          click: (menuItem) => {
-            openMenuClicksInSubWindow = Boolean(menuItem.checked);
-            sendWindowCommand("set-menu-subwindow-mode", { enabled: openMenuClicksInSubWindow });
-          },
-        },
-        { type: "separator" },
-        {
-          label: "Switch to Next Tab (Forward)",
-          accelerator: "Ctrl+Tab",
-          click: () => sendWindowCommand("next-tab"),
-        },
-        {
-          label: "Switch to Previous Tab (Reverse)",
-          accelerator: "Ctrl+Shift+Tab",
-          click: () => sendWindowCommand("prev-tab"),
-        },
-        { type: "separator" },
-        {
-          label: "Search Open Tabs & Open Page in New Tab...",
-          accelerator: "CmdOrCtrl+Shift+O",
-          click: () => sendWindowCommand("open-tab-search", { mode: "new-tab" }),
-        },
-        {
-          label: "Search Open Tabs & All Pages...",
-          accelerator: "CmdOrCtrl+Shift+A",
-          click: () => sendWindowCommand("open-tab-search", { mode: "all" }),
-        },
-        {
-          label: "+ New Dashboard Tab",
-          accelerator: "CmdOrCtrl+Shift+N",
-          click: () => sendWindowCommand("new-tab"),
-        },
-        {
-          label: "Duplicate Active Tab",
-          accelerator: "CmdOrCtrl+Shift+D",
-          click: () => sendWindowCommand("duplicate-tab"),
-        },
-        {
-          label: "Reopen Last Closed Tab",
-          accelerator: "CmdOrCtrl+Shift+T",
-          click: () => sendWindowCommand("reopen-closed-tab"),
-        },
-        { type: "separator" },
-        {
-          label: "Close Active Tab",
-          accelerator: "Ctrl+F4",
-          click: () => sendWindowCommand("close-active-tab"),
-        },
-        {
-          label: "Close All Other Tabs",
-          accelerator: "CmdOrCtrl+Shift+X",
-          click: () => sendWindowCommand("close-others"),
-        },
-        {
-          label: "Reset to Main Tab",
-          click: () => sendWindowCommand("close-all"),
-        },
-        { type: "separator" },
-        { role: "togglefullscreen" },
-        { role: "zoomIn" },
-        { role: "zoomOut" },
-        { role: "resetZoom" },
-      ],
-    },
+    buildWindowMenu(),
   ];
 
-  const appMenu = Menu.buildFromTemplate(menuTemplate);
-  Menu.setApplicationMenu(appMenu);
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.setMenu(appMenu);
-    mainWindow.setMenuBarVisibility(true);
+  return Menu.buildFromTemplate(menuTemplate);
+}
+
+function buildWindowMenu() {
+  const focusedWin = getActiveWindow();
+  const windowItems = [];
+
+  let idx = 1;
+  for (const win of activeAppWindows) {
+    if (win && !win.isDestroyed()) {
+      const isCurrent = win === focusedWin;
+      const title = win.getTitle() || `Karobar Window ${idx}`;
+      windowItems.push({
+        label: `${idx}. ${title}`,
+        type: "checkbox",
+        checked: isCurrent,
+        click: () => {
+          if (win.isMinimized()) win.restore();
+          win.show();
+          win.focus();
+        },
+      });
+      idx++;
+    }
+  }
+
+  return {
+    label: "Window",
+    submenu: [
+      {
+        label: "New Window",
+        accelerator: "CmdOrCtrl+N",
+        click: () => createAppWindow("/"),
+      },
+      {
+        label: "Close Window",
+        accelerator: "CmdOrCtrl+W",
+        click: (menuItem, browserWindow) => {
+          const target = browserWindow || getActiveWindow();
+          if (target && !target.isDestroyed()) {
+            target.close();
+          }
+        },
+      },
+      { type: "separator" },
+      { role: "minimize" },
+      { role: "zoom" },
+      { role: "togglefullscreen" },
+      { type: "separator" },
+      {
+        label: "Bring All Windows to Front",
+        click: () => {
+          for (const win of activeAppWindows) {
+            if (win && !win.isDestroyed()) {
+              win.show();
+            }
+          }
+        },
+      },
+      ...(windowItems.length > 0 ? [{ type: "separator" }, ...windowItems] : []),
+      { type: "separator" },
+      { role: "zoomIn" },
+      { role: "zoomOut" },
+      { role: "resetZoom" },
+    ],
+  };
+}
+
+function updateApplicationMenus() {
+  try {
+    const appMenu = createApplicationMenu();
+    Menu.setApplicationMenu(appMenu);
+    for (const win of activeAppWindows) {
+      if (win && !win.isDestroyed()) {
+        win.setMenu(appMenu);
+      }
+    }
+  } catch {
+    // ignore
   }
 }
 
@@ -938,6 +957,25 @@ function configurePopupAndPrintHandler(contents) {
       };
     }
 
+    // Intercept internal application URLs and spawn a native app window
+    const isInternalAppUrl =
+      rawUrl.startsWith(`http://127.0.0.1:${activePort}`) ||
+      rawUrl.startsWith(`http://localhost:${activePort}`) ||
+      (rawUrl.startsWith("/") && !rawUrl.startsWith("//"));
+
+    if (isInternalAppUrl) {
+      setImmediate(() => {
+        let route = rawUrl;
+        if (route.startsWith(`http://127.0.0.1:${activePort}`)) {
+          route = route.slice(`http://127.0.0.1:${activePort}`.length);
+        } else if (route.startsWith(`http://localhost:${activePort}`)) {
+          route = route.slice(`http://localhost:${activePort}`.length);
+        }
+        createAppWindow(route || "/");
+      });
+      return { action: "deny" };
+    }
+
     if (/^(https?:|mailto:|whatsapp:|tel:)/i.test(rawUrl)) {
       shell.openExternal(rawUrl);
     }
@@ -945,15 +983,15 @@ function configurePopupAndPrintHandler(contents) {
   });
 }
 
-function createMainWindow() {
+function createAppWindow(routePath = "/", options = {}) {
   const iconPath = resolveIconPath();
-  mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
+  const win = new BrowserWindow({
+    width: options.width || 1440,
+    height: options.height || 900,
     minWidth: 1024,
     minHeight: 680,
     show: false,
-    title: "Karobar-App",
+    title: options.title || "Karobar-App",
     icon: iconPath,
     autoHideMenuBar: false,
     webPreferences: {
@@ -963,36 +1001,82 @@ function createMainWindow() {
     },
   });
 
-  createApplicationMenu();
+  activeAppWindows.add(win);
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = win;
+  }
 
-  // Allow print popups (about:blank, blob:, local print routes) and open external web links in default browser
-  configurePopupAndPrintHandler(mainWindow.webContents);
+  configurePopupAndPrintHandler(win.webContents);
 
-  mainWindow.loadURL(`http://127.0.0.1:${activePort}/`);
+  const fullUrl =
+    routePath.startsWith("http://") || routePath.startsWith("https://")
+      ? routePath
+      : `http://127.0.0.1:${activePort}${routePath.startsWith("/") ? "" : "/"}${routePath}`;
 
-  mainWindow.once("ready-to-show", () => {
+  win.loadURL(fullUrl);
+
+  win.once("ready-to-show", () => {
     if (splashWindow && !splashWindow.isDestroyed()) {
       splashWindow.close();
       splashWindow = null;
     }
-    mainWindow.maximize();
-    mainWindow.show();
-    mainWindow.focus();
+    if (activeAppWindows.size === 1) {
+      win.maximize();
+    }
+    win.show();
+    win.focus();
+    updateApplicationMenus();
 
-    // Pre-warm the offscreen print worker window and printer list cache so the first print is instantaneous
     setTimeout(() => {
       try {
         ensurePrintWorkerWindow();
-        getCachedPrinters(mainWindow.webContents).catch(() => {});
+        getCachedPrinters(win.webContents).catch(() => {});
       } catch {
         // ignore
       }
     }, 600);
   });
 
-  mainWindow.on("close", () => {
-    isQuitting = true;
+  win.on("focus", () => {
+    updateApplicationMenus();
   });
+
+  win.on("page-title-updated", () => {
+    updateApplicationMenus();
+  });
+
+  win.on("close", () => {
+    if (activeAppWindows.size <= 1) {
+      isQuitting = true;
+      if (printWorkerWindow && !printWorkerWindow.isDestroyed()) {
+        try {
+          printWorkerWindow.destroy();
+        } catch {
+          // ignore
+        }
+        printWorkerWindow = null;
+      }
+    }
+  });
+
+  win.on("closed", () => {
+    activeAppWindows.delete(win);
+    if (mainWindow === win) {
+      mainWindow = activeAppWindows.values().next().value || null;
+    }
+    if (activeAppWindows.size === 0) {
+      app.quit();
+    } else {
+      updateApplicationMenus();
+    }
+  });
+
+  updateApplicationMenus();
+  return win;
+}
+
+function createMainWindow() {
+  return createAppWindow("/");
 }
 
 function createSystemTray() {
@@ -1005,19 +1089,30 @@ function createSystemTray() {
       {
         label: "Open Karobar-App",
         click: () => {
-          if (mainWindow) {
-            mainWindow.show();
-            mainWindow.focus();
+          const target = getActiveWindow();
+          if (target && !target.isDestroyed()) {
+            if (target.isMinimized()) target.restore();
+            target.show();
+            target.focus();
+          } else {
+            createAppWindow("/");
           }
+        },
+      },
+      {
+        label: "New Window",
+        click: () => {
+          createAppWindow("/");
         },
       },
       {
         label: "Check for Updates…",
         click: () => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.show();
-            mainWindow.focus();
-            mainWindow.webContents.send("karobar:trigger-update-check", { manual: true });
+          const target = getActiveWindow();
+          if (target && !target.isDestroyed()) {
+            target.show();
+            target.focus();
+            target.webContents.send("karobar:trigger-update-check", { manual: true });
           }
         },
       },
@@ -1061,10 +1156,13 @@ if (!gotSingleLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
+    const target = getActiveWindow();
+    if (target && !target.isDestroyed()) {
+      if (target.isMinimized()) target.restore();
+      target.show();
+      target.focus();
+    } else {
+      createAppWindow("/");
     }
   });
 
@@ -1093,6 +1191,41 @@ ipcMain.handle("karobar:app-info", () => ({
   port: activePort,
   platform: process.platform,
 }));
+
+ipcMain.handle("karobar:open-window", async (_event, payload = {}) => {
+  const routePath = payload.path || "/";
+  const title = payload.title || "Karobar-App";
+  const win = createAppWindow(routePath, { title, width: payload.width, height: payload.height });
+  return { ok: true, windowId: win.id };
+});
+
+ipcMain.handle("karobar:get-open-windows", async () => {
+  const list = [];
+  const focused = getActiveWindow();
+  for (const win of activeAppWindows) {
+    if (win && !win.isDestroyed()) {
+      list.push({
+        id: win.id,
+        title: win.getTitle(),
+        url: win.webContents.getURL(),
+        isFocused: win === focused,
+      });
+    }
+  }
+  return list;
+});
+
+ipcMain.handle("karobar:focus-window", async (_event, { winId }) => {
+  for (const win of activeAppWindows) {
+    if (win && !win.isDestroyed() && win.id === winId) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+      return true;
+    }
+  }
+  return false;
+});
 
 // ============================================================================
 // KAROBAR WINDOWS DIRECT HARDWARE PRINT ENGINE (SumatraPDF + Chromium Dual-Engine)
@@ -1384,12 +1517,14 @@ async function getCachedPrinters(contents, forceRefresh = false) {
 }
 
 ipcMain.handle("karobar:get-printers", async () => {
-  return getCachedPrinters(mainWindow?.webContents, true);
+  const contents = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
+  return getCachedPrinters(contents, true);
 });
 
 ipcMain.handle("karobar:get-preferred-printer", async () => {
   const saved = readPreferredPrinterConfig();
-  const strategy = await resolvePrinterStrategy(mainWindow?.webContents, saved, false);
+  const contents = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
+  const strategy = await resolvePrinterStrategy(contents, saved, false);
   return {
     preferredPrinter: saved,
     resolvedPrinter: strategy?.deviceName || "",
@@ -1399,7 +1534,8 @@ ipcMain.handle("karobar:get-preferred-printer", async () => {
 
 ipcMain.handle("karobar:set-preferred-printer", async (_event, payload = {}) => {
   const saved = writePreferredPrinterConfig(payload?.deviceName);
-  const strategy = await resolvePrinterStrategy(mainWindow?.webContents, saved, false);
+  const contents = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
+  const strategy = await resolvePrinterStrategy(contents, saved, false);
   return {
     ok: true,
     preferredPrinter: saved,
@@ -1971,9 +2107,10 @@ ipcMain.handle("karobar:print-html", async (_event, payload = {}) => {
   }
 });
 
-ipcMain.handle("karobar:select-directory", async () => {
-  if (!mainWindow) return null;
-  const result = await dialog.showOpenDialog(mainWindow, {
+ipcMain.handle("karobar:select-directory", async (event) => {
+  const win = BrowserWindow.fromWebContents(event?.sender) || getActiveWindow();
+  if (!win || win.isDestroyed()) return null;
+  const result = await dialog.showOpenDialog(win, {
     title: "Select Backup Folder",
     properties: ["openDirectory", "createDirectory"],
   });
@@ -1983,9 +2120,10 @@ ipcMain.handle("karobar:select-directory", async () => {
   return result.filePaths[0];
 });
 
-ipcMain.handle("karobar:select-sqlite-file", async () => {
-  if (!mainWindow) return null;
-  const result = await dialog.showOpenDialog(mainWindow, {
+ipcMain.handle("karobar:select-sqlite-file", async (event) => {
+  const win = BrowserWindow.fromWebContents(event?.sender) || getActiveWindow();
+  if (!win || win.isDestroyed()) return null;
+  const result = await dialog.showOpenDialog(win, {
     title: "Select SQLite Database to Import",
     properties: ["openFile"],
     filters: [
@@ -2290,8 +2428,10 @@ function downloadFileWithProgress(url, destPath, onProgress, redirectCount = 0) 
 }
 
 function sendUpdateProgress(payload) {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send("karobar:update-progress", payload);
+  for (const win of activeAppWindows) {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send("karobar:update-progress", payload);
+    }
   }
 }
 
