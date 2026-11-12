@@ -426,17 +426,49 @@ class PurchaseInvoiceController extends Controller
                 $oldInvoiceType = $purchaseInvoice->invoice_type ?? 'debit';
                 $oldPayMethod = $purchaseInvoice->payment_method ?? 'cash';
                 $oldRawPaid = (float) ($purchaseInvoice->total_paid ?? 0);
-                if ($oldInvoiceType === 'debit' && $oldRawPaid <= 0) {
+                if ($oldInvoiceType === 'debit' && $oldRawPaid <= 0 && $allocatedOnInvoice <= 0) {
                     $oldRawPaid = (float) $purchaseInvoice->total_amount;
                 }
                 $oldDirectPaid = max(0.0, round($oldRawPaid - $allocatedOnInvoice, 2));
-                $oldCashPaid = ($oldPayMethod === 'cash') ? $oldDirectPaid : 0.0;
+
+                $hasDrawerTxnTable = \App\Support\SchemaCache::hasTable('cash_drawer_transactions');
+                $existingDrawerTxn = null;
+                if ($hasDrawerTxnTable) {
+                    $activeSession = app(\App\Services\CashDrawerService::class)->getCurrentSession(Auth::user(), false);
+                    $existingDrawerTxn = $activeSession
+                        ? \App\Models\CashDrawerTransaction::where('session_id', $activeSession->id)
+                            ->where('reference_type', 'purchase_invoice')
+                            ->where('reference_id', $purchaseInvoice->id)
+                            ->where('type', 'cash_purchase')
+                            ->first()
+                        : \App\Models\CashDrawerTransaction::where('reference_type', 'purchase_invoice')
+                            ->where('reference_id', $purchaseInvoice->id)
+                            ->where('type', 'cash_purchase')
+                            ->latest('id')
+                            ->first();
+                }
+
+                if ($existingDrawerTxn) {
+                    $oldCashPaid = (float) $existingDrawerTxn->amount;
+                } else {
+                    $oldCashPaid = ($oldPayMethod === 'cash') ? $oldDirectPaid : 0.0;
+                }
                 $newInvoiceType = $data['invoice_type'] ?? $oldInvoiceType;
 
-                if (!array_key_exists('total_paid', $data) || $data['total_paid'] === null || $data['total_paid'] === '') {
-                    $data['total_paid'] = $newInvoiceType === 'credit' ? $allocatedOnInvoice : ($data['total_amount'] ?? 0);
-                } elseif ($newInvoiceType === 'credit' && $allocatedOnInvoice > 0 && (float) $data['total_paid'] < $allocatedOnInvoice) {
-                    $data['total_paid'] = round((float) $data['total_paid'] + $allocatedOnInvoice, 2);
+                $rawSubmittedPaid = round((float) ($data['total_paid'] ?? 0), 2);
+                if ($allocatedOnInvoice > 0) {
+                    if ($rawSubmittedPaid <= round((float) $data['total_amount'] - $allocatedOnInvoice + 0.009, 2)) {
+                        $newDirectPaid = $rawSubmittedPaid;
+                        $data['total_paid'] = round($rawSubmittedPaid + $allocatedOnInvoice, 2);
+                    } else {
+                        $data['total_paid'] = $rawSubmittedPaid;
+                        $newDirectPaid = max(0.0, round($rawSubmittedPaid - $allocatedOnInvoice, 2));
+                    }
+                } else {
+                    if (!array_key_exists('total_paid', $data) || $data['total_paid'] === null || $data['total_paid'] === '') {
+                        $data['total_paid'] = $newInvoiceType === 'credit' ? 0 : ($data['total_amount'] ?? 0);
+                    }
+                    $newDirectPaid = (float) $data['total_paid'];
                 }
 
                 $purchaseInvoice->load('items');
@@ -669,12 +701,14 @@ class PurchaseInvoiceController extends Controller
                 $newResolvedAcc = $accountService->resolveAccount($newAccountId, $newPayMethod);
 
                 $newRawPaid = (float) ($data['total_paid'] ?? 0);
-                if ($newInvoiceType === 'debit' && $newRawPaid <= 0) {
+                if ($newInvoiceType === 'debit' && $newRawPaid <= 0 && $allocatedOnInvoice <= 0) {
                     $newRawPaid = (float) $data['total_amount'];
+                    $newDirectPaid = (float) $data['total_amount'];
                 }
-                $newDirectPaid = max(0.0, round($newRawPaid - $allocatedOnInvoice, 2));
-                $oldCashPaid = $accountService->isDefaultCashDrawerAccount($oldResolvedAcc, $oldPayMethod) ? $oldDirectPaid : 0.0;
-                $newCashPaid = $accountService->isDefaultCashDrawerAccount($newResolvedAcc, $newPayMethod) ? $newDirectPaid : 0.0;
+
+                $newCashPaid = $accountService->isDefaultCashDrawerAccount($newResolvedAcc, $newPayMethod)
+                    ? $newDirectPaid
+                    : 0.0;
                 $updateDrawerFlag = null;
                 if ($request->has('update_drawer') && $request->input('update_drawer') !== null) {
                     $updateDrawerFlag = $request->boolean('update_drawer');

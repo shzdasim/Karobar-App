@@ -641,18 +641,27 @@ class CashDrawerService
     }
 
     /**
-     * Resolve the actual direct cash portion collected on a sale invoice (accounting for split payments).
+     * Resolve the actual direct cash portion collected on a sale invoice (accounting for split payments and allocations).
      */
-    protected function resolveDirectCashForSaleInvoice(\App\Models\SaleInvoice $invoice): float
+    public function resolveDirectCashForSaleInvoice(\App\Models\SaleInvoice $invoice): float
     {
         $invTotal = (float) ($invoice->total ?? $invoice->grand_total ?? $invoice->gross_amount ?? 0);
         $rawReceived = (float) ($invoice->total_receive ?? 0);
-        if (($invoice->invoice_type ?? 'debit') === 'debit' && $rawReceived <= 0) {
+        $allocated = 0.0;
+        if (Schema::hasTable('payment_allocations') && Schema::hasTable('payments')) {
+            $allocated = (float) \App\Models\PaymentAllocation::where('invoice_type', 'sale_invoice')
+                ->where('invoice_id', $invoice->id)
+                ->whereHas('payment', fn($q) => $q->where('status', 'posted'))
+                ->sum('amount');
+        }
+
+        if (($invoice->invoice_type ?? 'debit') === 'debit' && $rawReceived <= 0 && $allocated <= 0) {
             $rawReceived = $invTotal;
         }
         $rawReceived = round($rawReceived, 2);
 
-        if ($rawReceived <= 0) {
+        $directReceived = max(0.0, round($rawReceived - $allocated, 2));
+        if ($directReceived <= 0) {
             return 0.0;
         }
 
@@ -664,21 +673,27 @@ class CashDrawerService
                 ->get();
 
             if ($acctTxns->isNotEmpty()) {
-                $cashNet = 0.0;
-                foreach ($acctTxns as $t) {
-                    if (($t->account?->type ?? '') === 'cash' && (bool) ($t->account?->is_default ?? false)) {
-                        $delta = in_array($t->type, ['deposit', 'transfer_in', 'opening_balance'], true)
-                            ? (float) $t->amount
-                            : -(float) $t->amount;
-                        $cashNet = round($cashNet + $delta, 2);
+                $hasNonDefaultCashTxn = $acctTxns->contains(
+                    fn($t) => !(($t->account?->type ?? '') === 'cash' && (bool) ($t->account?->is_default ?? false))
+                );
+
+                if ($hasNonDefaultCashTxn) {
+                    $cashNet = 0.0;
+                    foreach ($acctTxns as $t) {
+                        if (($t->account?->type ?? '') === 'cash' && (bool) ($t->account?->is_default ?? false)) {
+                            $delta = in_array($t->type, ['deposit', 'transfer_in', 'opening_balance'], true)
+                                ? (float) $t->amount
+                                : -(float) $t->amount;
+                            $cashNet = round($cashNet + $delta, 2);
+                        }
                     }
+                    return max(0.0, min($cashNet, $directReceived));
                 }
-                return max(0.0, min($cashNet, $rawReceived));
             }
         }
 
         $payMethod = $invoice->payment_method ?? 'cash';
-        return $payMethod === 'cash' ? $rawReceived : 0.0;
+        return $payMethod === 'cash' ? $directReceived : 0.0;
     }
 
     /**
@@ -1334,7 +1349,8 @@ class CashDrawerService
     public function handlePaymentReversal(
         \App\Models\Payment $payment,
         string $reason,
-        ?User $user = null
+        ?User $user = null,
+        ?bool $updateDrawerIfClosedShift = null
     ): ?CashDrawerTransaction {
         if (!Schema::hasTable('cash_drawer_sessions') || !Schema::hasTable('cash_drawer_transactions')) {
             return null;
@@ -1345,7 +1361,7 @@ class CashDrawerService
             return null;
         }
 
-        return DB::transaction(function () use ($payment, $amount, $reason, $user) {
+        return DB::transaction(function () use ($payment, $amount, $reason, $user, $updateDrawerIfClosedShift) {
             // 1. Check if the payment was recorded in an open drawer session
             $existingTxn = CashDrawerTransaction::where('reference_type', 'payment')
                 ->where('reference_id', $payment->id)
@@ -1361,7 +1377,13 @@ class CashDrawerService
                 return null;
             }
 
-            // 2. Otherwise, if the current user (or store) has an active open session,
+            // 2. Otherwise, if the payment occurred in a past/closed shift,
+            // check whether caller explicitly opted out of modifying the active drawer
+            if ($updateDrawerIfClosedShift === false) {
+                return null;
+            }
+
+            // 3. Otherwise, if the current user (or store) has an active open session,
             // record a compensating cash_out (for customer payment reversal) or cash_in (for supplier payment reversal)
             $session = $this->getCurrentSession($user, false);
             if (!$session) {

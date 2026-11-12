@@ -693,7 +693,8 @@ class SaleInvoiceController extends Controller
             } else {
                 $payMethod = $invoice->payment_method ?? 'cash';
                 $cashReceived = (float)($invoice->total_receive ?? 0);
-                if (($invoice->invoice_type ?? 'debit') === 'debit' && $cashReceived <= 0) {
+                $applyCreditAtStore = round((float) ($data['apply_credit_amount'] ?? 0), 2);
+                if (($invoice->invoice_type ?? 'debit') === 'debit' && $cashReceived <= 0 && $applyCreditAtStore <= 0) {
                     $cashReceived = (float)$invoice->total;
                 }
                 if ($cashReceived > 0) {
@@ -905,19 +906,52 @@ class SaleInvoiceController extends Controller
             $oldAccountId = $invoice->account_id;
             $oldPayMethod = $invoice->payment_method ?? 'cash';
             $oldRawReceived = (float) ($invoice->total_receive ?? 0);
-            if ($oldInvoiceType === 'debit' && $oldRawReceived <= 0) {
+            if ($oldInvoiceType === 'debit' && $oldRawReceived <= 0 && $allocatedOnInvoice <= 0) {
                 $oldRawReceived = (float) $invoice->total;
             }
             $oldDirectReceived = max(0.0, round($oldRawReceived - $allocatedOnInvoice, 2));
-            $oldCash = ($oldPayMethod === 'cash') ? $oldDirectReceived : 0.0;
+
+            // Check if an existing cash drawer transaction or account transaction tracked this invoice
+            $hasDrawerTxnTable = \App\Support\SchemaCache::hasTable('cash_drawer_transactions');
+            $existingDrawerTxn = null;
+            if ($hasDrawerTxnTable) {
+                $activeSession = app(\App\Services\CashDrawerService::class)->getCurrentSession($request->user(), false);
+                $existingDrawerTxn = $activeSession
+                    ? \App\Models\CashDrawerTransaction::where('session_id', $activeSession->id)
+                        ->where('reference_type', 'sale_invoice')
+                        ->where('reference_id', $invoice->id)
+                        ->where('type', 'cash_sale')
+                        ->first()
+                    : \App\Models\CashDrawerTransaction::where('reference_type', 'sale_invoice')
+                        ->where('reference_id', $invoice->id)
+                        ->where('type', 'cash_sale')
+                        ->latest('id')
+                        ->first();
+            }
+
+            if ($existingDrawerTxn) {
+                $oldCash = (float) $existingDrawerTxn->amount;
+            } else {
+                $resolvedOldCash = app(\App\Services\CashDrawerService::class)->resolveDirectCashForSaleInvoice($invoice);
+                $oldCash = ($resolvedOldCash > 0) ? $resolvedOldCash : (($oldPayMethod === 'cash') ? $oldDirectReceived : 0.0);
+            }
 
             // Store old invoice type and sale type before update
             $oldSaleType = $invoice->sale_type ?? 'retail';
             $newSaleType = $data['sale_type'] ?? $oldSaleType;
 
-            $submittedTotalReceive = round((float) ($data['total_receive'] ?? 0), 2);
-            if ($newInvoiceType === 'credit' && $allocatedOnInvoice > 0 && $submittedTotalReceive < $allocatedOnInvoice) {
-                $submittedTotalReceive = round($submittedTotalReceive + $allocatedOnInvoice, 2);
+            $rawSubmittedReceive = round((float) ($data['total_receive'] ?? 0), 2);
+            if ($allocatedOnInvoice > 0) {
+                if ($rawSubmittedReceive <= round((float) $data['total'] - $allocatedOnInvoice + 0.009, 2)) {
+                    $newDirectReceived = $rawSubmittedReceive;
+                    $submittedTotalReceive = round($rawSubmittedReceive + $allocatedOnInvoice, 2);
+                } else {
+                    $submittedTotalReceive = $rawSubmittedReceive;
+                    $newDirectReceived = max(0.0, round($rawSubmittedReceive - $allocatedOnInvoice, 2));
+                }
+            } else {
+                $submittedTotalReceive = $rawSubmittedReceive;
+                $newDirectReceived = $rawSubmittedReceive;
             }
 
             $updateData = [
@@ -1047,12 +1081,29 @@ class SaleInvoiceController extends Controller
             $newResolvedAcc = $accountService->resolveAccount($newAccountId, $newPayMethod);
 
             $newRawReceived = (float) ($invoice->total_receive ?? 0);
-            if ($newInvoiceType === 'debit' && $newRawReceived <= 0) {
+            if ($newInvoiceType === 'debit' && $newRawReceived <= 0 && $allocatedOnInvoice <= 0) {
                 $newRawReceived = (float) $invoice->total;
+                $newDirectReceived = (float) $invoice->total;
             }
-            $newDirectReceived = max(0.0, round($newRawReceived - $allocatedOnInvoice, 2));
-            $oldCash = $accountService->isDefaultCashDrawerAccount($oldResolvedAcc, $oldPayMethod) ? $oldDirectReceived : 0.0;
-            $newCash = $accountService->isDefaultCashDrawerAccount($newResolvedAcc, $newPayMethod) ? $newDirectReceived : 0.0;
+
+            if (!empty($data['split_payments'])) {
+                $newCash = 0.0;
+                foreach ($data['split_payments'] as $leg) {
+                    $legAmount = round((float) ($leg['amount'] ?? 0), 2);
+                    $legMethod = $leg['payment_method'] ?? 'cash';
+                    $legAccount = $accountService->resolveAccount($leg['account_id'] ?? null, $legMethod);
+                    if ($accountService->isDefaultCashDrawerAccount($legAccount, $legMethod)) {
+                        $newCash = round($newCash + $legAmount, 2);
+                    }
+                }
+            } elseif ($existingDrawerTxn && !array_key_exists('split_payments', $data) && $oldCash > 0 && $oldCash < ($oldDirectReceived - 0.009) && (float)$data['total'] >= $oldCash) {
+                // Previously had split payments and update didn't supply new split legs: preserve split cash
+                $newCash = $oldCash;
+            } else {
+                $newCash = $accountService->isDefaultCashDrawerAccount($newResolvedAcc, $newPayMethod)
+                    ? $newDirectReceived
+                    : 0.0;
+            }
             $updateDrawerFlag = null;
             if (array_key_exists('update_drawer', $data) && $data['update_drawer'] !== null) {
                 $updateDrawerFlag = (bool)$data['update_drawer'];
