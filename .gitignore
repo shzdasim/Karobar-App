@@ -41,6 +41,9 @@ Thumbs.db
 /docs
 /docs/*
 /doc
+/doc/*
+/.planning
+/.planning/*
 /guidelines
 /PROJECT_ARCHITECTURE.md
 /AUDIT_REPORT.md
