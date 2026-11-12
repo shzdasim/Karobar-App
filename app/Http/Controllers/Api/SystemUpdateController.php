@@ -52,24 +52,31 @@ class SystemUpdateController extends Controller
         }
 
         $isNewer = $this->isRemoteReleaseNewer($local, $remote);
+        $minPatchVer = (string) ($remote['min_patch_version'] ?? '2.0.0');
+        $canPatch = !empty($remote['patch_url']) && version_compare($local['version'], $minPatchVer, '>=');
 
         return response()->json([
-            'ok'               => true,
-            'update_available' => $isNewer,
-            'app_name'         => 'Karobar-App',
-            'current_version'  => $local['version'],
-            'current_build'    => (int) $local['build_number'],
-            'current_commit'   => $local['commit_sha'],
-            'latest_version'   => $remote['version'],
-            'latest_build'     => (int) $remote['build_number'],
-            'latest_commit'    => $remote['commit_sha'],
-            'release_name'     => $remote['release_name'],
-            'released_at'      => $remote['released_at'],
-            'notes'            => $remote['notes'],
-            'download_url'     => $remote['download_url'],
-            'bundle_url'       => $remote['bundle_url'],
-            'release_url'      => $remote['release_url'],
-            'zero_data_loss'   => true,
+            'ok'                => true,
+            'update_available'  => $isNewer,
+            'is_patch'          => $canPatch,
+            'app_name'          => 'Karobar-App',
+            'current_version'   => $local['version'],
+            'current_build'     => (int) $local['build_number'],
+            'current_commit'    => $local['commit_sha'],
+            'latest_version'    => $remote['version'],
+            'latest_build'      => (int) $remote['build_number'],
+            'latest_commit'     => $remote['commit_sha'],
+            'release_name'      => $remote['release_name'],
+            'released_at'       => $remote['released_at'],
+            'notes'             => $remote['notes'],
+            'download_url'      => $remote['download_url'],
+            'bundle_url'        => $remote['bundle_url'],
+            'patch_url'         => $remote['patch_url'] ?? null,
+            'patch_size'        => $remote['patch_size'] ?? null,
+            'patch_sha256'      => $remote['patch_sha256'] ?? null,
+            'min_patch_version' => $minPatchVer,
+            'release_url'       => $remote['release_url'],
+            'zero_data_loss'    => true,
         ]);
     }
 
@@ -154,15 +161,19 @@ class SystemUpdateController extends Controller
                 $data = $resp->json();
                 if (is_array($data) && !empty($data['version'])) {
                     return [
-                        'version'      => ltrim((string) $data['version'], 'vV'),
-                        'build_number' => (int) ($data['build_number'] ?? 0),
-                        'commit_sha'   => (string) ($data['commit_sha'] ?? ''),
-                        'release_name' => (string) ($data['release_name'] ?? ('Karobar-App v' . ltrim((string) $data['version'], 'vV'))),
-                        'released_at'  => (string) ($data['released_at'] ?? ''),
-                        'notes'        => (string) ($data['notes'] ?? 'Performance improvements, bug fixes, and new features.'),
-                        'download_url' => (string) ($data['download_url'] ?? "https://github.com/{$repo}/releases/latest/download/Karobar-App-Setup.exe"),
-                        'bundle_url'   => (string) ($data['bundle_url'] ?? "https://github.com/{$repo}/releases/latest/download/Karobar-App-Setup-Bundle.zip"),
-                        'release_url'  => (string) ($data['release_url'] ?? "https://github.com/{$repo}/releases/latest"),
+                        'version'           => ltrim((string) $data['version'], 'vV'),
+                        'build_number'      => (int) ($data['build_number'] ?? 0),
+                        'commit_sha'        => (string) ($data['commit_sha'] ?? ''),
+                        'release_name'      => (string) ($data['release_name'] ?? ('Karobar-App v' . ltrim((string) $data['version'], 'vV'))),
+                        'released_at'       => (string) ($data['released_at'] ?? ''),
+                        'notes'             => (string) ($data['notes'] ?? 'Performance improvements, bug fixes, and new features.'),
+                        'download_url'      => (string) ($data['download_url'] ?? "https://github.com/{$repo}/releases/latest/download/Karobar-App-Setup.exe"),
+                        'bundle_url'        => (string) ($data['bundle_url'] ?? "https://github.com/{$repo}/releases/latest/download/Karobar-App-Setup-Bundle.zip"),
+                        'patch_url'         => (string) ($data['patch_url'] ?? "https://github.com/{$repo}/releases/latest/download/Karobar-App-Patch.zip"),
+                        'patch_size'        => isset($data['patch_size']) ? (int) $data['patch_size'] : null,
+                        'patch_sha256'      => (string) ($data['patch_sha256'] ?? ''),
+                        'min_patch_version' => (string) ($data['min_patch_version'] ?? '2.0.0'),
+                        'release_url'       => (string) ($data['release_url'] ?? "https://github.com/{$repo}/releases/latest"),
                     ];
                 }
             }
@@ -197,6 +208,8 @@ class SystemUpdateController extends Controller
 
             $downloadUrl = "https://github.com/{$repo}/releases/latest/download/Karobar-App-Setup.exe";
             $bundleUrl = "https://github.com/{$repo}/releases/latest/download/Karobar-App-Setup-Bundle.zip";
+            $patchUrl = "https://github.com/{$repo}/releases/latest/download/Karobar-App-Patch.zip";
+            $patchSize = null;
 
             foreach (($release['assets'] ?? []) as $asset) {
                 $assetName = (string) ($asset['name'] ?? '');
@@ -207,18 +220,26 @@ class SystemUpdateController extends Controller
                 if ($browserUrl !== '' && in_array($assetName, ['Karobar-App-Setup-Bundle.zip', 'Karobar-App-ERP-Setup-Bundle.zip'], true)) {
                     $bundleUrl = $browserUrl;
                 }
+                if ($browserUrl !== '' && in_array($assetName, ['Karobar-App-Patch.zip', 'Karobar-App-ERP-Patch.zip'], true)) {
+                    $patchUrl = $browserUrl;
+                    $patchSize = isset($asset['size']) ? (int) $asset['size'] : null;
+                }
             }
 
             return [
-                'version'      => $cleanVersion,
-                'build_number' => $buildNumber,
-                'commit_sha'   => substr((string) ($release['target_commitish'] ?? ''), 0, 7),
-                'release_name' => (string) ($release['name'] ?? "Karobar-App v{$cleanVersion}"),
-                'released_at'  => (string) ($release['published_at'] ?? ''),
-                'notes'        => trim((string) ($release['body'] ?? 'New Karobar-App release available.')),
-                'download_url' => $downloadUrl,
-                'bundle_url'   => $bundleUrl,
-                'release_url'  => (string) ($release['html_url'] ?? "https://github.com/{$repo}/releases/latest"),
+                'version'           => $cleanVersion,
+                'build_number'      => $buildNumber,
+                'commit_sha'        => substr((string) ($release['target_commitish'] ?? ''), 0, 7),
+                'release_name'      => (string) ($release['name'] ?? "Karobar-App v{$cleanVersion}"),
+                'released_at'       => (string) ($release['published_at'] ?? ''),
+                'notes'             => trim((string) ($release['body'] ?? 'New Karobar-App release available.')),
+                'download_url'      => $downloadUrl,
+                'bundle_url'        => $bundleUrl,
+                'patch_url'         => $patchUrl,
+                'patch_size'        => $patchSize,
+                'patch_sha256'      => '',
+                'min_patch_version' => '2.0.0',
+                'release_url'       => (string) ($release['html_url'] ?? "https://github.com/{$repo}/releases/latest"),
             ];
         } catch (\Throwable) {
             return null;
@@ -301,17 +322,22 @@ class SystemUpdateController extends Controller
         @ignore_user_abort(true);
 
         $mode = (string) ($request->input('mode') ?: 'download_and_install');
-        $downloadUrl = (string) ($request->input('download_url')
-            ?: 'https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe');
+        $isPatch = ($request->boolean('is_patch') || $request->filled('patch_url')) && !$request->boolean('force_full');
+        $downloadUrl = (string) ($isPatch
+            ? ($request->input('patch_url') ?: 'https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Patch.zip')
+            : ($request->input('download_url') ?: 'https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe'));
+        $patchSha256 = (string) $request->input('patch_sha256');
         $versionLabel = preg_replace('/[^a-zA-Z0-9._-]/', '', (string) ($request->input('version') ?: 'latest'));
 
         $tempDir = sys_get_temp_dir();
-        $installerPath = $tempDir . DIRECTORY_SEPARATOR . "Karobar-App-Update-{$versionLabel}.exe";
-        $alreadyDownloaded = is_file($installerPath) && filesize($installerPath) >= 5 * 1024 * 1024;
+        $fileExt = $isPatch ? 'zip' : 'exe';
+        $installerPath = $tempDir . DIRECTORY_SEPARATOR . "Karobar-App-Update-{$versionLabel}.{$fileExt}";
+        $minValidSize = $isPatch ? (100 * 1024) : (5 * 1024 * 1024);
+        $alreadyDownloaded = is_file($installerPath) && filesize($installerPath) >= $minValidSize;
 
         if (!$alreadyDownloaded && $mode !== 'install') {
             if (is_file($installerPath) && !@unlink($installerPath)) {
-                $installerPath = $tempDir . DIRECTORY_SEPARATOR . "Karobar-App-Update-{$versionLabel}-" . time() . ".exe";
+                $installerPath = $tempDir . DIRECTORY_SEPARATOR . "Karobar-App-Update-{$versionLabel}-" . time() . ".{$fileExt}";
             }
         }
 
@@ -320,14 +346,15 @@ class SystemUpdateController extends Controller
                 $this->writeUpdateProgress([
                     'status'       => 'starting',
                     'percent'      => 3,
+                    'is_patch'     => $isPatch,
                     'downloadedMB' => '0.0',
                     'totalMB'      => null,
-                    'message'      => 'Starting background update download…',
+                    'message'      => $isPatch ? 'Starting fast patch download…' : 'Starting background update download…',
                 ]);
 
                 $fp = @fopen($installerPath, 'wb');
                 if (!$fp) {
-                    throw new \RuntimeException('Unable to create temporary update installer file.');
+                    throw new \RuntimeException('Unable to create temporary update file.');
                 }
 
                 $lastWriteMs = 0.0;
@@ -343,7 +370,7 @@ class SystemUpdateController extends Controller
                     CURLOPT_USERAGENT        => 'Karobar-App-InApp-Updater/2.0',
                     CURLOPT_HTTPHEADER       => ['Accept: application/octet-stream,*/*'],
                     CURLOPT_NOPROGRESS       => false,
-                    CURLOPT_PROGRESSFUNCTION => function ($resource, $downloadSize, $downloaded) use (&$lastWriteMs) {
+                    CURLOPT_PROGRESSFUNCTION => function ($resource, $downloadSize, $downloaded) use (&$lastWriteMs, $isPatch) {
                         $nowMs = microtime(true) * 1000;
                         if (($nowMs - $lastWriteMs) < 250 && $downloaded < $downloadSize) {
                             return 0;
@@ -355,14 +382,16 @@ class SystemUpdateController extends Controller
                             ? min(98, max(4, (int) round(($downloaded / $downloadSize) * 100)))
                             : 50;
 
+                        $prefix = $isPatch ? 'Downloading fast patch' : 'Downloading update';
                         $this->writeUpdateProgress([
                             'status'       => 'downloading',
                             'percent'      => $pct,
+                            'is_patch'     => $isPatch,
                             'downloadedMB' => $dlMb,
                             'totalMB'      => $totMb,
                             'message'      => $totMb
-                                ? "Downloading update ({$dlMb} MB / {$totMb} MB)…"
-                                : "Downloading update ({$dlMb} MB)…",
+                                ? "{$prefix} ({$dlMb} MB / {$totMb} MB)…"
+                                : "{$prefix} ({$dlMb} MB)…",
                         ]);
                         return 0;
                     },
@@ -374,7 +403,7 @@ class SystemUpdateController extends Controller
                 curl_close($ch);
                 fclose($fp);
 
-                if (!$ok || $httpCode !== 200 || !is_file($installerPath) || filesize($installerPath) < 5 * 1024 * 1024) {
+                if (!$ok || $httpCode !== 200 || !is_file($installerPath) || filesize($installerPath) < $minValidSize) {
                     // Fallback to Windows curl.exe -L -k
                     $cmd = sprintf(
                         'curl.exe -L -k --fail --silent --show-error -o %s %s 2>&1',
@@ -382,7 +411,7 @@ class SystemUpdateController extends Controller
                         escapeshellarg($downloadUrl)
                     );
                     @exec($cmd, $out, $code);
-                    if ($code !== 0 || !is_file($installerPath) || filesize($installerPath) < 5 * 1024 * 1024) {
+                    if ($code !== 0 || !is_file($installerPath) || filesize($installerPath) < $minValidSize) {
                         throw new \RuntimeException($curlErr ?: "Download failed (HTTP {$httpCode}).");
                     }
                 }
@@ -392,16 +421,58 @@ class SystemUpdateController extends Controller
                 $this->writeUpdateProgress([
                     'status'         => 'downloaded',
                     'percent'        => 100,
+                    'is_patch'       => $isPatch,
                     'installer_path' => $installerPath,
-                    'message'        => 'Update downloaded and ready to install.',
+                    'message'        => $isPatch ? 'Fast patch downloaded and ready to apply.' : 'Update downloaded and ready to install.',
                 ]);
 
                 return response()->json([
                     'ok'             => true,
                     'downloaded'     => true,
+                    'is_patch'       => $isPatch,
                     'installing'     => false,
                     'installer_path' => $installerPath,
                 ]);
+            }
+
+            if ($isPatch) {
+                $this->writeUpdateProgress([
+                    'status'   => 'installing',
+                    'percent'  => 99,
+                    'is_patch' => true,
+                    'message'  => 'Applying fast patch and updating database schema…',
+                ]);
+
+                $patchParams = [
+                    'patch_zip' => $installerPath,
+                    '--json'    => true,
+                ];
+                if ($patchSha256 !== '') {
+                    $patchParams['--verify-sha'] = $patchSha256;
+                }
+
+                $exitCode = Artisan::call('karobar:apply-patch', $patchParams);
+                if ($exitCode === 0) {
+                    $this->writeUpdateProgress([
+                        'status'         => 'installed',
+                        'percent'        => 100,
+                        'is_patch'       => true,
+                        'installer_path' => $installerPath,
+                        'message'        => 'Differential patch applied successfully with zero data loss.',
+                    ]);
+
+                    return response()->json([
+                        'ok'             => true,
+                        'installing'     => true,
+                        'is_patch'       => true,
+                        'patch_applied'  => true,
+                        'installer_path' => $installerPath,
+                        'message'        => 'Differential patch applied successfully with zero data loss.',
+                    ]);
+                }
+
+                // If patch execution returned non-zero, fail and allow fallback
+                throw new \RuntimeException('Failed to apply differential patch: ' . Artisan::output());
             }
 
             $this->writeUpdateProgress([

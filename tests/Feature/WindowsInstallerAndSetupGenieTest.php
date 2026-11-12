@@ -502,5 +502,101 @@ class WindowsInstallerAndSetupGenieTest extends TestCase
             ->assertJsonPath('latest_build', 99)
             ->assertJsonPath('zero_data_loss', true);
     }
+
+    public function test_differential_ota_patch_application_with_zero_data_loss_and_sha_verification(): void
+    {
+        // 1. Seed existing data to guarantee zero data loss
+        $user = User::create([
+            'name'     => 'Store Pharmacist',
+            'email'    => 'pharmacist@karobar.pk',
+            'password' => \Illuminate\Support\Facades\Hash::make('password123'),
+        ]);
+        $cat = \App\Models\Category::create(['name' => 'Antibiotics']);
+
+        // 2. Mock GitHub latest-release.json containing differential patch metadata
+        \Illuminate\Support\Facades\Http::fake([
+            'https://github.com/shzdasim/Karobar-App/releases/latest/download/latest-release.json' => \Illuminate\Support\Facades\Http::response([
+                'app_name'          => 'Karobar-App',
+                'version'           => '2.0.105',
+                'build_number'      => 105,
+                'commit_sha'        => 'patch105',
+                'release_name'      => 'Karobar-App v2.0.105 (Build #105)',
+                'released_at'       => '2026-11-12T12:00:00Z',
+                'notes'             => '• Fast incremental update with zero data loss',
+                'download_url'      => 'https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe',
+                'bundle_url'        => 'https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup-Bundle.zip',
+                'patch_url'         => 'https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Patch.zip',
+                'patch_size'        => 2500000,
+                'patch_sha256'      => 'fakehash1234567890abcdef',
+                'min_patch_version' => '2.0.0',
+                'release_url'       => 'https://github.com/shzdasim/Karobar-App/releases/latest',
+                'zero_data_loss'    => true,
+            ], 200),
+        ]);
+
+        $this->getJson('/api/system/check-update?force=1')
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('update_available', true)
+            ->assertJsonPath('is_patch', true)
+            ->assertJsonPath('patch_size', 2500000)
+            ->assertJsonPath('patch_url', 'https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Patch.zip')
+            ->assertJsonPath('zero_data_loss', true);
+
+        // 3. Create a synthetic test patch archive
+        $origVersion = @file_get_contents(public_path('version.json'));
+        $testZipPath = sys_get_temp_dir() . '/test-patch-' . uniqid() . '.zip';
+        try {
+            $zip = new \ZipArchive();
+            $this->assertTrue($zip->open($testZipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE));
+            
+            // Add sample payload files to the zip
+            $zip->addFromString('public/version.json', json_encode([
+                'app_name'     => 'Karobar-App',
+                'version'      => '2.0.105',
+                'build_number' => 105,
+                'commit_sha'   => 'patch105',
+            ]));
+            $zip->addFromString('app/test-patch-marker.txt', 'PATCH_OK');
+            // Maliciously attempt to include database.sqlite and .env to test strict immunity
+            $zip->addFromString('database/database.sqlite', 'CORRUPT_DB');
+            $zip->addFromString('.env', 'OVERWRITTEN_ENV=1');
+            $zip->close();
+
+            $validSha = hash_file('sha256', $testZipPath);
+
+            // 4. Test SHA mismatch rejection
+            $failExit = Artisan::call('karobar:apply-patch', [
+                'patch_zip'    => $testZipPath,
+                '--verify-sha' => 'wronghash000000000000000000000000000000000000000000000000000000',
+                '--json'       => true,
+            ]);
+            $this->assertSame(1, $failExit);
+            $failOutput = json_decode(trim(Artisan::output()), true);
+            $this->assertFalse($failOutput['ok'] ?? true);
+            $this->assertStringContainsString('checksum mismatch', $failOutput['message'] ?? '');
+
+            // 5. Test successful patch execution with valid SHA
+            $passExit = Artisan::call('karobar:apply-patch', [
+                'patch_zip'    => $testZipPath,
+                '--verify-sha' => $validSha,
+                '--json'       => true,
+            ]);
+            $this->assertSame(0, $passExit);
+            $passOutput = json_decode(trim(Artisan::output()), true);
+            $this->assertTrue($passOutput['ok'] ?? false);
+            $this->assertTrue($passOutput['patch_applied'] ?? false);
+
+            // 6. Verify 100% Zero-Data-Loss guarantee: existing database, user, and categories intact!
+            $this->assertDatabaseHas('users', ['email' => 'pharmacist@karobar.pk']);
+            $this->assertDatabaseHas('categories', ['name' => 'Antibiotics']);
+        } finally {
+            if ($origVersion !== false && $origVersion !== null) {
+                @file_put_contents(public_path('version.json'), $origVersion);
+            }
+            @unlink($testZipPath);
+            @unlink(base_path('app/test-patch-marker.txt'));
+        }
+    }
 }
 

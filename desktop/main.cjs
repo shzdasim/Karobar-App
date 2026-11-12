@@ -2271,9 +2271,15 @@ ipcMain.handle("karobar:check-for-updates", async () => {
           ? remoteBuild > local.build_number
           : compareSemverNewer(remoteVer, local.version);
 
+      const minPatchVer = String(remote.min_patch_version || "2.0.0").replace(/^[vV]/, "");
+      const canPatch = Boolean(
+        remote.patch_url && !compareSemverNewer(minPatchVer, local.version)
+      );
+
       return {
         ok: true,
         update_available: isNewer,
+        is_patch: canPatch,
         app_name: "Karobar-App",
         current_version: local.version,
         current_build: local.build_number,
@@ -2288,6 +2294,10 @@ ipcMain.handle("karobar:check-for-updates", async () => {
         bundle_url:
           remote.bundle_url ||
           `https://github.com/${repo}/releases/latest/download/Karobar-App-Setup-Bundle.zip`,
+        patch_url: remote.patch_url || null,
+        patch_size: remote.patch_size ? Number(remote.patch_size) : null,
+        patch_sha256: remote.patch_sha256 || null,
+        min_patch_version: minPatchVer,
         release_url: remote.release_url || `https://github.com/${repo}/releases/latest`,
         zero_data_loss: true,
       };
@@ -2297,7 +2307,7 @@ ipcMain.handle("karobar:check-for-updates", async () => {
   }
 
   try {
-    // 2. Fallback to GitHub REST API
+    // 2. Fallback to GitHub Releases REST API
     const apiData = await fetchJsonUrl(`https://api.github.com/repos/${repo}/releases/latest`);
     if (apiData && apiData.tag_name) {
       const remoteVer = String(apiData.tag_name).replace(/^[vV]/, "");
@@ -2308,9 +2318,30 @@ ipcMain.handle("karobar:check-for-updates", async () => {
           ? remoteBuild > local.build_number
           : compareSemverNewer(remoteVer, local.version);
 
+      let downloadUrl = `https://github.com/${repo}/releases/latest/download/Karobar-App-Setup.exe`;
+      let bundleUrl = `https://github.com/${repo}/releases/latest/download/Karobar-App-Setup-Bundle.zip`;
+      let patchUrl = `https://github.com/${repo}/releases/latest/download/Karobar-App-Patch.zip`;
+      let patchSize = null;
+
+      for (const asset of apiData.assets || []) {
+        const name = asset.name || "";
+        const url = asset.browser_download_url || "";
+        if (url && (name === "Karobar-App-Setup.exe" || name === "Karobar-App-ERP-Setup.exe")) {
+          downloadUrl = url;
+        }
+        if (url && (name === "Karobar-App-Setup-Bundle.zip" || name === "Karobar-App-ERP-Setup-Bundle.zip")) {
+          bundleUrl = url;
+        }
+        if (url && (name === "Karobar-App-Patch.zip" || name === "Karobar-App-ERP-Patch.zip")) {
+          patchUrl = url;
+          patchSize = asset.size ? Number(asset.size) : null;
+        }
+      }
+
       return {
         ok: true,
         update_available: isNewer,
+        is_patch: Boolean(patchUrl),
         app_name: "Karobar-App",
         current_version: local.version,
         current_build: local.build_number,
@@ -2319,8 +2350,12 @@ ipcMain.handle("karobar:check-for-updates", async () => {
         release_name: apiData.name || `Karobar-App v${remoteVer}`,
         released_at: apiData.published_at || "",
         notes: apiData.body || "New Karobar-App release available.",
-        download_url: `https://github.com/${repo}/releases/latest/download/Karobar-App-Setup.exe`,
-        bundle_url: `https://github.com/${repo}/releases/latest/download/Karobar-App-Setup-Bundle.zip`,
+        download_url: downloadUrl,
+        bundle_url: bundleUrl,
+        patch_url: patchUrl,
+        patch_size: patchSize,
+        patch_sha256: null,
+        min_patch_version: "2.0.0",
         release_url: apiData.html_url || `https://github.com/${repo}/releases/latest`,
         zero_data_loss: true,
       };
@@ -2436,27 +2471,45 @@ function sendUpdateProgress(payload) {
 
 ipcMain.handle("karobar:download-and-install-update", async (_event, payload = {}) => {
   const mode = payload.mode || (payload.downloadOnly ? "download" : "download_and_install");
-  const downloadUrl =
-    payload.downloadUrl ||
-    "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
+  const isPatch =
+    Boolean(payload.isPatch || payload.is_patch || payload.patchUrl || payload.patch_url) &&
+    !payload.forceFull;
   const versionLabel = String(payload.version || "latest").replace(/[^a-zA-Z0-9._-]/g, "");
-  let tempInstallerPath = path.join(
-    os.tmpdir(),
-    `Karobar-App-Update-${versionLabel}.exe`
-  );
+  const patchSha256 = String(
+    payload.patchSha256 || payload.patch_sha256 || ""
+  )
+    .toLowerCase()
+    .trim();
 
-  const existingStat = fs.existsSync(tempInstallerPath) ? fs.statSync(tempInstallerPath) : null;
-  const alreadyDownloaded = Boolean(existingStat && existingStat.size >= 5 * 1024 * 1024);
+  const downloadUrl = isPatch
+    ? payload.patchUrl ||
+      payload.patch_url ||
+      "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Patch.zip"
+    : payload.downloadUrl ||
+      payload.download_url ||
+      "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
+
+  const fullInstallerUrl =
+    payload.downloadUrl ||
+    payload.download_url ||
+    "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
+
+  const fileExt = isPatch ? "zip" : "exe";
+  let tempFilePath = path.join(os.tmpdir(), `Karobar-App-Update-${versionLabel}.${fileExt}`);
+  const minValidSize = isPatch ? 100 * 1024 : 5 * 1024 * 1024;
+
+  const existingStat = fs.existsSync(tempFilePath) ? fs.statSync(tempFilePath) : null;
+  const alreadyDownloaded = Boolean(existingStat && existingStat.size >= minValidSize);
 
   if (!alreadyDownloaded && mode !== "install") {
-    // If a partial/stale file exists at tempInstallerPath and cannot be overwritten, use a unique filename
-    if (fs.existsSync(tempInstallerPath)) {
+    // If a partial/stale file exists at tempFilePath and cannot be overwritten, use a unique filename
+    if (fs.existsSync(tempFilePath)) {
       try {
-        fs.unlinkSync(tempInstallerPath);
+        fs.unlinkSync(tempFilePath);
       } catch {
-        tempInstallerPath = path.join(
+        tempFilePath = path.join(
           os.tmpdir(),
-          `Karobar-App-Update-${versionLabel}-${Date.now()}.exe`
+          `Karobar-App-Update-${versionLabel}-${Date.now()}.${fileExt}`
         );
       }
     }
@@ -2467,15 +2520,21 @@ ipcMain.handle("karobar:download-and-install-update", async (_event, payload = {
       sendUpdateProgress({
         status: "starting",
         percent: 2,
-        message: "Starting background update download…",
+        is_patch: isPatch,
+        message: isPatch ? "Starting fast patch download…" : "Starting background update download…",
       });
 
       try {
-        await downloadFileWithProgress(downloadUrl, tempInstallerPath, (progress) => {
+        await downloadFileWithProgress(downloadUrl, tempFilePath, (progress) => {
           sendUpdateProgress({
             ...progress,
+            is_patch: isPatch,
             message: progress.totalMB
-              ? `Downloading update (${progress.downloadedMB} MB / ${progress.totalMB} MB)…`
+              ? isPatch
+                ? `Downloading fast patch (${progress.downloadedMB} MB / ${progress.totalMB} MB)…`
+                : `Downloading update (${progress.downloadedMB} MB / ${progress.totalMB} MB)…`
+              : isPatch
+              ? `Downloading fast patch (${progress.downloadedMB} MB)…`
               : `Downloading update (${progress.downloadedMB} MB)…`,
           });
         });
@@ -2484,19 +2543,22 @@ ipcMain.handle("karobar:download-and-install-update", async (_event, payload = {
         sendUpdateProgress({
           status: "downloading",
           percent: 25,
-          message: "Downloading update package via system downloader…",
+          is_patch: isPatch,
+          message: isPatch
+            ? "Downloading fast patch via system downloader…"
+            : "Downloading update package via system downloader…",
         });
         execFileSync(
           "curl.exe",
-          ["-L", "-k", "--fail", "--silent", "--show-error", "-o", tempInstallerPath, downloadUrl],
+          ["-L", "-k", "--fail", "--silent", "--show-error", "-o", tempFilePath, downloadUrl],
           { windowsHide: true, timeout: 10 * 60 * 1000 }
         );
       }
     }
 
-    // Verify the downloaded installer file exists and is a complete binary (> 5 MB)
-    const stat = fs.existsSync(tempInstallerPath) ? fs.statSync(tempInstallerPath) : null;
-    if (!stat || stat.size < 5 * 1024 * 1024) {
+    // Verify the downloaded file exists and is complete
+    const stat = fs.existsSync(tempFilePath) ? fs.statSync(tempFilePath) : null;
+    if (!stat || stat.size < minValidSize) {
       throw new Error("Downloaded update file is incomplete. Please try again.");
     }
 
@@ -2505,87 +2567,73 @@ ipcMain.handle("karobar:download-and-install-update", async (_event, payload = {
       sendUpdateProgress({
         status: "downloaded",
         percent: 100,
-        installerPath: tempInstallerPath,
-        message: "Update downloaded and ready to install.",
+        is_patch: isPatch,
+        installerPath: tempFilePath,
+        message: isPatch
+          ? "Fast patch downloaded and ready to apply."
+          : "Update downloaded and ready to install.",
       });
       return {
         ok: true,
         downloaded: true,
+        is_patch: isPatch,
         installing: false,
-        installerPath: tempInstallerPath,
+        installerPath: tempFilePath,
       };
     }
 
-    sendUpdateProgress({
-      status: "backing-up",
-      percent: 99,
-      message: "Creating safety database snapshot before applying update…",
-    });
-
-    try {
-      execFileSync(resolvePhpBinary(), ["artisan", "backup:run-scheduled", "--force"], {
-        cwd: APP_ROOT,
-        windowsHide: true,
+    // If differential patch mode: apply patch directly via artisan karobar:apply-patch
+    if (isPatch) {
+      sendUpdateProgress({
+        status: "installing",
+        percent: 98,
+        is_patch: true,
+        message: "Applying fast patch and updating database schema…",
       });
-    } catch {
-      // Best-effort backup; karobar:install --upgrade-only also creates pre-upgrade-YYYYmmdd.sqlite
-    }
-
-    sendUpdateProgress({
-      status: "installing",
-      percent: 100,
-      message: "Launching Karobar-App updater & restarting…",
-    });
-
-    if (process.platform === "win32") {
-      const installDir = path.dirname(process.execPath);
-      const otaFlagPath = path.join(os.tmpdir(), "karobar-ota-upgrade.flag");
 
       try {
-        fs.writeFileSync(otaFlagPath, installDir, "utf8");
-      } catch {
-        // ignore flag write error; filename Karobar-App-Update-*.exe also triggers auto-upgrade mode
+        const patchArgs = ["artisan", "karobar:apply-patch", tempFilePath, "--json"];
+        if (patchSha256) {
+          patchArgs.push(`--verify-sha=${patchSha256}`);
+        }
+        execFileSync(resolvePhpBinary(), patchArgs, {
+          cwd: APP_ROOT,
+          windowsHide: true,
+          encoding: "utf8",
+          timeout: 120000,
+        });
+
+        sendUpdateProgress({
+          status: "restarting",
+          percent: 100,
+          is_patch: true,
+          message: "Differential patch applied successfully! Restarting Karobar-App…",
+        });
+
+        setTimeout(() => {
+          isQuitting = true;
+          stopBackendServices();
+          app.relaunch();
+          app.exit(0);
+        }, 1000);
+
+        return { ok: true, installing: true, is_patch: true, patch_applied: true };
+      } catch (patchErr) {
+        console.error("Fast patch failed; falling back to full installer package:", patchErr);
+        sendUpdateProgress({
+          status: "downloading",
+          percent: 15,
+          is_patch: false,
+          message: "Fast patch verification failed; falling back to full installer package…",
+        });
+
+        // Trigger full installer fallback
+        return await downloadAndInstallFullInstaller(fullInstallerUrl, versionLabel);
       }
-
-      // Stop PHP server & scheduler first so no files inside the installation directory are locked
-      isQuitting = true;
-      stopBackendServices();
-
-      // Launch the installer directly via Electron's native Win32 ShellExecuteExW (shell.openPath),
-      // which immediately displays the Windows UAC elevation prompt while the app window is still active
-      // and resolves ONLY AFTER the elevated installer process has started.
-      const openError = await shell.openPath(tempInstallerPath);
-
-      if (openError) {
-        // Fallback: synchronous PowerShell Start-Process -Verb RunAs so it completes before app.quit()
-        const escapedExe = tempInstallerPath.replace(/'/g, "''");
-        const escapedDir = installDir.replace(/'/g, "''");
-        execFileSync(
-          "powershell.exe",
-          [
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            `Start-Process -FilePath '${escapedExe}' -ArgumentList '/SILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS','/FORCECLOSEAPPLICATIONS','/UPGRADE=1','/DIR=${escapedDir}' -Verb RunAs`,
-          ],
-          { windowsHide: true, timeout: 60000 }
-        );
-      }
-
-      setTimeout(() => {
-        app.quit();
-      }, 500);
-
-      return { ok: true, installing: true };
-    } else {
-      await shell.showItemInFolder(tempInstallerPath);
-      return {
-        ok: true,
-        installing: false,
-        message: `Downloaded installer to ${tempInstallerPath}`,
-      };
     }
+
+    // Full installer path (monolithic Karobar-App-Setup.exe)
+    return await downloadAndInstallFullInstaller(tempFilePath, versionLabel, true);
   } catch (err) {
     return {
       ok: false,
@@ -2593,6 +2641,105 @@ ipcMain.handle("karobar:download-and-install-update", async (_event, payload = {
     };
   }
 });
+
+async function downloadAndInstallFullInstaller(installerPathOrUrl, versionLabel, isAlreadyDownloaded = false) {
+  let installerPath = installerPathOrUrl;
+  if (!isAlreadyDownloaded) {
+    installerPath = path.join(os.tmpdir(), `Karobar-App-Update-${versionLabel}.exe`);
+    sendUpdateProgress({
+      status: "starting",
+      percent: 5,
+      is_patch: false,
+      message: "Downloading full installer package…",
+    });
+
+    try {
+      await downloadFileWithProgress(installerPathOrUrl, installerPath, (progress) => {
+        sendUpdateProgress({
+          ...progress,
+          is_patch: false,
+          message: progress.totalMB
+            ? `Downloading full installer (${progress.downloadedMB} MB / ${progress.totalMB} MB)…`
+            : `Downloading full installer (${progress.downloadedMB} MB)…`,
+        });
+      });
+    } catch {
+      execFileSync(
+        "curl.exe",
+        ["-L", "-k", "--fail", "--silent", "--show-error", "-o", installerPath, installerPathOrUrl],
+        { windowsHide: true, timeout: 10 * 60 * 1000 }
+      );
+    }
+  }
+
+  sendUpdateProgress({
+    status: "backing-up",
+    percent: 99,
+    is_patch: false,
+    message: "Creating safety database snapshot before applying update…",
+  });
+
+  try {
+    execFileSync(resolvePhpBinary(), ["artisan", "backup:run-scheduled", "--force"], {
+      cwd: APP_ROOT,
+      windowsHide: true,
+    });
+  } catch {
+    // Best-effort backup; karobar:install --upgrade-only also creates pre-upgrade-YYYYmmdd.sqlite
+  }
+
+  sendUpdateProgress({
+    status: "installing",
+    percent: 100,
+    is_patch: false,
+    message: "Launching Karobar-App installer & restarting…",
+  });
+
+  if (process.platform === "win32") {
+    const installDir = path.dirname(process.execPath);
+    const otaFlagPath = path.join(os.tmpdir(), "karobar-ota-upgrade.flag");
+
+    try {
+      fs.writeFileSync(otaFlagPath, installDir, "utf8");
+    } catch {
+      // ignore flag write error
+    }
+
+    isQuitting = true;
+    stopBackendServices();
+
+    const openError = await shell.openPath(installerPath);
+
+    if (openError) {
+      const escapedExe = installerPath.replace(/'/g, "''");
+      const escapedDir = installDir.replace(/'/g, "''");
+      execFileSync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          `Start-Process -FilePath '${escapedExe}' -ArgumentList '/SILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS','/FORCECLOSEAPPLICATIONS','/UPGRADE=1','/DIR=${escapedDir}' -Verb RunAs`,
+        ],
+        { windowsHide: true, timeout: 60000 }
+      );
+    }
+
+    setTimeout(() => {
+      app.quit();
+    }, 500);
+
+    return { ok: true, installing: true };
+  } else {
+    await shell.showItemInFolder(installerPath);
+    return {
+      ok: true,
+      installing: false,
+      message: `Downloaded installer to ${installerPath}`,
+    };
+  }
+}
 
 app.on("before-quit", () => {
   isQuitting = true;

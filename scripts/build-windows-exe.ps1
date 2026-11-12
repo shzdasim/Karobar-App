@@ -351,6 +351,54 @@ start "" "%~dp0Karobar-App-Setup.exe"
 "@
 Set-Content -Path $HelperBatPath -Value $HelperBatContent -Encoding ASCII
 
+# Generate lightweight differential OTA update patch (Karobar-App-Patch.zip) containing only updated app code & assets
+Write-Host "==> Packaging Lightweight Differential OTA Update Patch (Karobar-App-Patch.zip)..." -ForegroundColor Cyan
+$PatchStaging = Join-Path $DistDir "patch-stage"
+if (Test-Path $PatchStaging) { Remove-Item -Recurse -Force $PatchStaging }
+New-Item -ItemType Directory -Force -Path $PatchStaging | Out-Null
+
+$PatchDirs = @("app", "bootstrap", "config", "database", "public", "resources", "routes", "scripts")
+foreach ($pDir in $PatchDirs) {
+    $src = Join-Path $AppStage $pDir
+    if (Test-Path $src) {
+        $dest = Join-Path $PatchStaging $pDir
+        Copy-Item -Path $src -Destination $dest -Recurse -Force
+    }
+}
+
+# Clean unwanted / user / data artifacts from patch staging (strictly zero data loss)
+Remove-Item -Path (Join-Path $PatchStaging "database\*.sqlite*") -Force -ErrorAction SilentlyContinue
+Remove-Item -Path (Join-Path $PatchStaging "public\hot") -Force -ErrorAction SilentlyContinue
+Remove-Item -Path (Join-Path $PatchStaging "public\storage") -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path (Join-Path $PatchStaging ".env*") -Force -ErrorAction SilentlyContinue
+
+# Stage desktop scripts (excluding node_modules and binaries)
+$DesktopPatchStage = Join-Path $PatchStaging "desktop"
+New-Item -ItemType Directory -Force -Path $DesktopPatchStage | Out-Null
+foreach ($dFile in @("router.php", "main.cjs", "preload.cjs", "splash.html", "package.json", "icon.ico", "icon.png")) {
+    $dSrc = Join-Path $AppStage "desktop\$dFile"
+    if (Test-Path $dSrc) {
+        Copy-Item -Path $dSrc -Destination (Join-Path $DesktopPatchStage $dFile) -Force
+    }
+}
+
+$PatchFiles = @("artisan", "composer.json", "composer.lock", "package.json", ".env.example")
+foreach ($pFile in $PatchFiles) {
+    $src = Join-Path $AppStage $pFile
+    if (Test-Path $src) {
+        Copy-Item -Path $src -Destination (Join-Path $PatchStaging $pFile) -Force
+    }
+}
+
+$PatchZipPath = Join-Path $InstallerOutDir "Karobar-App-Patch.zip"
+if (Test-Path $PatchZipPath) { Remove-Item -Force $PatchZipPath }
+Compress-Archive -Path "$PatchStaging\*" -DestinationPath $PatchZipPath -CompressionLevel Optimal -Force
+
+$PatchSize = (Get-Item $PatchZipPath).Length
+$PatchSha256 = (Get-FileHash -Path $PatchZipPath -Algorithm SHA256).Hash.ToLower()
+$PatchSizeMb = [math]::Round($PatchSize / 1MB, 2)
+Write-Host "    Differential Patch created: $PatchSizeMb MB ($PatchSize bytes) | SHA-256: $PatchSha256" -ForegroundColor Green
+
 # Generate latest-release.json manifest for in-app Over-The-Air (OTA) update checks
 $RecentCommits = ""
 try {
@@ -363,23 +411,28 @@ if (-not $RecentCommits) {
 }
 
 $LatestReleaseManifest = [ordered]@{
-    app_name      = "Karobar-App"
-    version       = $AppVersion
-    build_number  = $BuildNumber
-    commit_sha    = $CommitSha
-    release_name  = "Karobar-App v$AppVersion (Build #$BuildNumber)"
-    released_at   = $ReleasedAt
-    notes         = $RecentCommits
-    download_url  = "https://github.com/$RepoSlug/releases/latest/download/Karobar-App-Setup.exe"
-    bundle_url    = "https://github.com/$RepoSlug/releases/latest/download/Karobar-App-Setup-Bundle.zip"
-    release_url   = "https://github.com/$RepoSlug/releases/latest"
-    zero_data_loss = $true
+    app_name          = "Karobar-App"
+    version           = $AppVersion
+    build_number      = $BuildNumber
+    commit_sha        = $CommitSha
+    release_name      = "Karobar-App v$AppVersion (Build #$BuildNumber)"
+    released_at       = $ReleasedAt
+    notes             = $RecentCommits
+    download_url      = "https://github.com/$RepoSlug/releases/latest/download/Karobar-App-Setup.exe"
+    bundle_url        = "https://github.com/$RepoSlug/releases/latest/download/Karobar-App-Setup-Bundle.zip"
+    patch_url         = "https://github.com/$RepoSlug/releases/latest/download/Karobar-App-Patch.zip"
+    patch_size        = [int64]$PatchSize
+    patch_sha256      = $PatchSha256
+    min_patch_version = "2.0.0"
+    release_url       = "https://github.com/$RepoSlug/releases/latest"
+    zero_data_loss    = $true
 }
 Set-Content -Path (Join-Path $InstallerOutDir "latest-release.json") -Value ($LatestReleaseManifest | ConvertTo-Json -Depth 4) -Encoding UTF8
 
 Write-Host "================================================================================" -ForegroundColor Green
 Write-Host "SUCCESS! Signed Windows .exe Installer & OTA Update Manifest generated at:" -ForegroundColor Green
 Write-Host "  dist\installer\Karobar-App-Setup.exe (v$AppVersion, Build #$BuildNumber)" -ForegroundColor Yellow
+Write-Host "  dist\installer\Karobar-App-Patch.zip ($PatchSizeMb MB)" -ForegroundColor Yellow
 Write-Host "  dist\installer\latest-release.json" -ForegroundColor Yellow
-Write-Host "  Publisher: Malik Asim Shahzad (https://github.com/shzdasim/Karobar-App)" -ForegroundColor Yellow
+Write-Host "  Publisher: Malik Asim Shahzad (https://github.com/shzdasim)" -ForegroundColor Yellow
 Write-Host "================================================================================" -ForegroundColor Green

@@ -271,17 +271,20 @@ export default function AppUpdateNotification() {
     if (!updateInfo || isDownloading || isApplying) return;
 
     const desktop = typeof window !== "undefined" ? window.karobarDesktop : null;
-    const downloadUrl =
-      updateInfo.download_url ||
-      "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
+    const isPatch = Boolean(updateInfo.is_patch && updateInfo.patch_url);
+    const downloadUrl = isPatch
+      ? updateInfo.patch_url
+      : updateInfo.download_url ||
+        "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
 
     setIsDownloading(true);
     setProgress({
       status: "starting",
       percent: 3,
+      is_patch: isPatch,
       downloadedMB: null,
       totalMB: null,
-      message: "Downloading update in background…",
+      message: isPatch ? "Downloading fast patch in background…" : "Downloading update in background…",
     });
 
     // 1. Try Electron IPC background downloader first
@@ -289,6 +292,9 @@ export default function AppUpdateNotification() {
       try {
         const res = await desktop.downloadAndInstallUpdate({
           downloadUrl,
+          patchUrl: updateInfo.patch_url,
+          patchSha256: updateInfo.patch_sha256,
+          isPatch,
           version: updateInfo.latest_version,
           mode: "download",
         });
@@ -324,7 +330,10 @@ export default function AppUpdateNotification() {
       }, 450);
 
       const { data } = await axios.post("/api/system/install-update", {
-        download_url: downloadUrl,
+        download_url: updateInfo.download_url,
+        patch_url: updateInfo.patch_url,
+        patch_sha256: updateInfo.patch_sha256,
+        is_patch: isPatch,
         version: updateInfo.latest_version,
         mode: "download",
       });
@@ -352,16 +361,21 @@ export default function AppUpdateNotification() {
     if (!updateInfo || isApplying) return;
 
     const desktop = typeof window !== "undefined" ? window.karobarDesktop : null;
-    const downloadUrl =
-      updateInfo.download_url ||
-      "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
+    const isPatch = Boolean(updateInfo.is_patch && updateInfo.patch_url);
+    const downloadUrl = isPatch
+      ? updateInfo.patch_url
+      : updateInfo.download_url ||
+        "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
 
     setIsApplying(true);
     setProgress((prev) => ({
       ...prev,
       status: "backing_up",
       percent: 100,
-      message: "Creating safety backup & launching installer…",
+      is_patch: isPatch,
+      message: isPatch
+        ? "Applying fast patch and running migrations…"
+        : "Creating safety backup & launching installer…",
     }));
 
     // 1. Try Electron IPC installer (uses already-downloaded file in temp directory)
@@ -369,6 +383,9 @@ export default function AppUpdateNotification() {
       try {
         const res = await desktop.downloadAndInstallUpdate({
           downloadUrl,
+          patchUrl: updateInfo.patch_url,
+          patchSha256: updateInfo.patch_sha256,
+          isPatch,
           version: updateInfo.latest_version,
           mode: "install",
         });
@@ -383,7 +400,10 @@ export default function AppUpdateNotification() {
     // 2. Fallback to Laravel in-app installer
     try {
       const { data } = await axios.post("/api/system/install-update", {
-        download_url: downloadUrl,
+        download_url: updateInfo.download_url,
+        patch_url: updateInfo.patch_url,
+        patch_sha256: updateInfo.patch_sha256,
+        is_patch: isPatch,
         version: updateInfo.latest_version,
         mode: "install",
       });
@@ -464,9 +484,20 @@ export default function AppUpdateNotification() {
                 </div>
               </div>
 
-              <span className="text-sm font-semibold text-gray-400 dark:text-slate-500">
-                →
-              </span>
+              <div className="flex flex-col items-center">
+                <span className="text-xs font-semibold text-gray-400 dark:text-slate-500">
+                  →
+                </span>
+                {updateInfo.is_patch ? (
+                  <span className="mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                    Fast Patch {updateInfo.patch_size ? `(~${Math.max(0.1, Number((updateInfo.patch_size / (1024 * 1024)).toFixed(1)))} MB)` : ""}
+                  </span>
+                ) : (
+                  <span className="mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
+                    Full (~275 MB)
+                  </span>
+                )}
+              </div>
 
               <div className="text-right">
                 <div className="text-xs text-gray-500 dark:text-slate-400">
@@ -580,7 +611,7 @@ export default function AppUpdateNotification() {
                   className="g-btn-base theme-btn-primary inline-flex items-center justify-center gap-2 px-4 cursor-pointer"
                 >
                   <CloudArrowDownIcon className="h-4 w-4" />
-                  <span>Download Update</span>
+                  <span>{updateInfo.is_patch ? "Download Fast Update" : "Download Update"}</span>
                 </button>
               </div>
             )}
