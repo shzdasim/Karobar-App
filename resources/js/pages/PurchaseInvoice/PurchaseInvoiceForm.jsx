@@ -476,11 +476,9 @@ export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, in
 
   const ensureBatchesForItems = async (items = []) => {
     const productIds = Array.from(new Set(items.map((it) => it.product_id).filter(Boolean)));
-    for (const pid of productIds) {
-      try {
-        await fetchProductBatches(pid);
-      } catch {}
-    }
+    await Promise.all(
+      productIds.map((pid) => fetchProductBatches(pid).catch(() => []))
+    );
   };
 
   const fetchInvoice = async () => {

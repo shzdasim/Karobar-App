@@ -2,8 +2,12 @@
 
 namespace App\Providers;
 
+use App\Models\PersonalAccessToken;
+use Illuminate\Database\Events\ConnectionEstablished;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Sanctum\Sanctum;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -29,13 +33,31 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Sanctum::usePersonalAccessTokenModel(PersonalAccessToken::class);
+
+        $applySqlitePragmas = static function ($connection): void {
+            try {
+                if ($connection && $connection->getDriverName() === 'sqlite') {
+                    $connection->unprepared(
+                        "PRAGMA busy_timeout = 5000;\n"
+                        . "PRAGMA temp_store = MEMORY;\n"
+                        . "PRAGMA cache_size = -65536;\n"
+                        . "PRAGMA mmap_size = 268435456;"
+                    );
+                }
+            } catch (\Throwable) {
+                // Ignore if connection is not ready
+            }
+        };
+
+        Event::listen(ConnectionEstablished::class, static function (ConnectionEstablished $event) use ($applySqlitePragmas): void {
+            $applySqlitePragmas($event->connection);
+        });
+
         try {
-            if (DB::getDriverName() === 'sqlite') {
-                DB::unprepared(
-                    "PRAGMA temp_store = MEMORY;\n"
-                    . "PRAGMA cache_size = -65536;\n"
-                    . "PRAGMA mmap_size = 268435456;"
-                );
+            $connections = DB::getConnections();
+            foreach ($connections as $conn) {
+                $applySqlitePragmas($conn);
             }
         } catch (\Throwable) {
             // Ignore when DB connection is not yet initialized

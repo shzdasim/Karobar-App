@@ -141,8 +141,7 @@ const MIN_WIDTH = typeof window !== "undefined" && window.innerWidth < 1024
       return async (q = "") => {
         try {
           const { data } = await axios.get("/api/products/search", {
-            params: { q: q || "", limit: 200, _t: Date.now() },
-            cache: false,
+            params: { q: q || "", limit: 60 },
           });
           const list = Array.isArray(data?.data)
             ? data.data
@@ -257,23 +256,23 @@ const MIN_WIDTH = typeof window !== "undefined" && window.innerWidth < 1024
       }
     }, [isOpen]);
 
-    // Live inventory sync: re-fetch products when inventory changes across tabs or window regains focus
+    // Live inventory sync: re-fetch products when inventory changes across tabs
     useEffect(() => {
       if (!effectiveRefreshProducts) return undefined;
       const handler = () => {
-        Promise.resolve(effectiveRefreshProducts(search)).catch(() => {});
+        if (isOpen || value) {
+          Promise.resolve(effectiveRefreshProducts(search)).catch(() => {});
+        }
       };
       window.addEventListener("product:created", handler);
       window.addEventListener("karobar:inventory-changed", handler);
       window.addEventListener("karobar:products-updated", handler);
-      window.addEventListener("focus", handler);
       return () => {
         window.removeEventListener("product:created", handler);
         window.removeEventListener("karobar:inventory-changed", handler);
         window.removeEventListener("karobar:products-updated", handler);
-        window.removeEventListener("focus", handler);
       };
-    }, [effectiveRefreshProducts, search]);
+    }, [effectiveRefreshProducts, search, isOpen, value]);
 
     useEffect(() => {
       if (!effectiveRefreshProducts || !isOpen) return;

@@ -292,92 +292,116 @@ class SystemUpdateController extends Controller
     }
 
     /**
-     * Download Karobar-App-Setup.exe inside the application and launch the elevated silent updater.
+     * Download Karobar-App-Setup.exe inside the application and optionally launch the elevated silent updater.
+     * Supports mode = "download" (background download while user works) or "install" / "download_and_install".
      */
     public function installUpdate(Request $request): JsonResponse
     {
         @set_time_limit(0);
         @ignore_user_abort(true);
 
+        $mode = (string) ($request->input('mode') ?: 'download_and_install');
         $downloadUrl = (string) ($request->input('download_url')
             ?: 'https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe');
         $versionLabel = preg_replace('/[^a-zA-Z0-9._-]/', '', (string) ($request->input('version') ?: 'latest'));
 
         $tempDir = sys_get_temp_dir();
         $installerPath = $tempDir . DIRECTORY_SEPARATOR . "Karobar-App-Update-{$versionLabel}.exe";
-        if (is_file($installerPath) && !@unlink($installerPath)) {
-            $installerPath = $tempDir . DIRECTORY_SEPARATOR . "Karobar-App-Update-{$versionLabel}-" . time() . ".exe";
+        $alreadyDownloaded = is_file($installerPath) && filesize($installerPath) >= 5 * 1024 * 1024;
+
+        if (!$alreadyDownloaded && $mode !== 'install') {
+            if (is_file($installerPath) && !@unlink($installerPath)) {
+                $installerPath = $tempDir . DIRECTORY_SEPARATOR . "Karobar-App-Update-{$versionLabel}-" . time() . ".exe";
+            }
         }
 
-        $this->writeUpdateProgress([
-            'status'       => 'starting',
-            'percent'      => 3,
-            'downloadedMB' => '0.0',
-            'totalMB'      => null,
-            'message'      => 'Connecting to GitHub Releases in-app downloader…',
-        ]);
-
         try {
-            $fp = @fopen($installerPath, 'wb');
-            if (!$fp) {
-                throw new \RuntimeException('Unable to create temporary update installer file.');
+            if (!$alreadyDownloaded) {
+                $this->writeUpdateProgress([
+                    'status'       => 'starting',
+                    'percent'      => 3,
+                    'downloadedMB' => '0.0',
+                    'totalMB'      => null,
+                    'message'      => 'Starting background update download…',
+                ]);
+
+                $fp = @fopen($installerPath, 'wb');
+                if (!$fp) {
+                    throw new \RuntimeException('Unable to create temporary update installer file.');
+                }
+
+                $lastWriteMs = 0.0;
+                $ch = curl_init($downloadUrl);
+                curl_setopt_array($ch, [
+                    CURLOPT_FILE             => $fp,
+                    CURLOPT_FOLLOWLOCATION   => true,
+                    CURLOPT_MAXREDIRS        => 10,
+                    CURLOPT_TIMEOUT          => 900,
+                    CURLOPT_CONNECTTIMEOUT   => 20,
+                    CURLOPT_SSL_VERIFYPEER   => false,
+                    CURLOPT_SSL_VERIFYHOST   => 0,
+                    CURLOPT_USERAGENT        => 'Karobar-App-InApp-Updater/2.0',
+                    CURLOPT_HTTPHEADER       => ['Accept: application/octet-stream,*/*'],
+                    CURLOPT_NOPROGRESS       => false,
+                    CURLOPT_PROGRESSFUNCTION => function ($resource, $downloadSize, $downloaded) use (&$lastWriteMs) {
+                        $nowMs = microtime(true) * 1000;
+                        if (($nowMs - $lastWriteMs) < 250 && $downloaded < $downloadSize) {
+                            return 0;
+                        }
+                        $lastWriteMs = $nowMs;
+                        $dlMb = number_format($downloaded / (1024 * 1024), 1, '.', '');
+                        $totMb = $downloadSize > 0 ? number_format($downloadSize / (1024 * 1024), 1, '.', '') : null;
+                        $pct = $downloadSize > 0
+                            ? min(98, max(4, (int) round(($downloaded / $downloadSize) * 100)))
+                            : 50;
+
+                        $this->writeUpdateProgress([
+                            'status'       => 'downloading',
+                            'percent'      => $pct,
+                            'downloadedMB' => $dlMb,
+                            'totalMB'      => $totMb,
+                            'message'      => $totMb
+                                ? "Downloading update ({$dlMb} MB / {$totMb} MB)…"
+                                : "Downloading update ({$dlMb} MB)…",
+                        ]);
+                        return 0;
+                    },
+                ]);
+
+                $ok = curl_exec($ch);
+                $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $curlErr = curl_error($ch);
+                curl_close($ch);
+                fclose($fp);
+
+                if (!$ok || $httpCode !== 200 || !is_file($installerPath) || filesize($installerPath) < 5 * 1024 * 1024) {
+                    // Fallback to Windows curl.exe -L -k
+                    $cmd = sprintf(
+                        'curl.exe -L -k --fail --silent --show-error -o %s %s 2>&1',
+                        escapeshellarg($installerPath),
+                        escapeshellarg($downloadUrl)
+                    );
+                    @exec($cmd, $out, $code);
+                    if ($code !== 0 || !is_file($installerPath) || filesize($installerPath) < 5 * 1024 * 1024) {
+                        throw new \RuntimeException($curlErr ?: "Download failed (HTTP {$httpCode}).");
+                    }
+                }
             }
 
-            $lastWriteMs = 0.0;
-            $ch = curl_init($downloadUrl);
-            curl_setopt_array($ch, [
-                CURLOPT_FILE             => $fp,
-                CURLOPT_FOLLOWLOCATION   => true,
-                CURLOPT_MAXREDIRS        => 10,
-                CURLOPT_TIMEOUT          => 900,
-                CURLOPT_CONNECTTIMEOUT   => 20,
-                CURLOPT_SSL_VERIFYPEER   => false,
-                CURLOPT_SSL_VERIFYHOST   => 0,
-                CURLOPT_USERAGENT        => 'Karobar-App-InApp-Updater/2.0',
-                CURLOPT_HTTPHEADER       => ['Accept: application/octet-stream,*/*'],
-                CURLOPT_NOPROGRESS       => false,
-                CURLOPT_PROGRESSFUNCTION => function ($resource, $downloadSize, $downloaded) use (&$lastWriteMs) {
-                    $nowMs = microtime(true) * 1000;
-                    if (($nowMs - $lastWriteMs) < 250 && $downloaded < $downloadSize) {
-                        return 0;
-                    }
-                    $lastWriteMs = $nowMs;
-                    $dlMb = number_format($downloaded / (1024 * 1024), 1, '.', '');
-                    $totMb = $downloadSize > 0 ? number_format($downloadSize / (1024 * 1024), 1, '.', '') : null;
-                    $pct = $downloadSize > 0
-                        ? min(98, max(4, (int) round(($downloaded / $downloadSize) * 100)))
-                        : 50;
+            if ($mode === 'download') {
+                $this->writeUpdateProgress([
+                    'status'         => 'downloaded',
+                    'percent'        => 100,
+                    'installer_path' => $installerPath,
+                    'message'        => 'Update downloaded and ready to install.',
+                ]);
 
-                    $this->writeUpdateProgress([
-                        'status'       => 'downloading',
-                        'percent'      => $pct,
-                        'downloadedMB' => $dlMb,
-                        'totalMB'      => $totMb,
-                        'message'      => $totMb
-                            ? "Downloading update in app ({$dlMb} MB / {$totMb} MB)…"
-                            : "Downloading update in app ({$dlMb} MB)…",
-                    ]);
-                    return 0;
-                },
-            ]);
-
-            $ok = curl_exec($ch);
-            $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $curlErr = curl_error($ch);
-            curl_close($ch);
-            fclose($fp);
-
-            if (!$ok || $httpCode !== 200 || !is_file($installerPath) || filesize($installerPath) < 5 * 1024 * 1024) {
-                // Fallback to Windows curl.exe -L -k
-                $cmd = sprintf(
-                    'curl.exe -L -k --fail --silent --show-error -o %s %s 2>&1',
-                    escapeshellarg($installerPath),
-                    escapeshellarg($downloadUrl)
-                );
-                @exec($cmd, $out, $code);
-                if ($code !== 0 || !is_file($installerPath) || filesize($installerPath) < 5 * 1024 * 1024) {
-                    throw new \RuntimeException($curlErr ?: "Download failed (HTTP {$httpCode}).");
-                }
+                return response()->json([
+                    'ok'             => true,
+                    'downloaded'     => true,
+                    'installing'     => false,
+                    'installer_path' => $installerPath,
+                ]);
             }
 
             $this->writeUpdateProgress([

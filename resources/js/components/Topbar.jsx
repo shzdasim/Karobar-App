@@ -29,8 +29,8 @@ import {
 import axios from "axios";
 import { printCurrentView } from "@/utils/printHelper.js";
 
+import PageSearchModal from "@/components/PageSearchModal.jsx";
 const ProductSearchModal = lazy(() => import("@/components/ProductSearchModal.jsx"));
-const PageSearchModal = lazy(() => import("@/components/PageSearchModal.jsx"));
 const KeyboardShortcutsModal = lazy(() => import("@/components/KeyboardShortcutsModal.jsx"));
 const FeatureGuideBot = lazy(() => import("@/components/FeatureGuideBot.jsx"));
 const NotificationCenter = lazy(() => import("./NotificationCenter.jsx"));

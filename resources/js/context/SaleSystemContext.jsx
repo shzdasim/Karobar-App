@@ -39,15 +39,64 @@ const FALLBACK_CONTEXT = {
   refreshSaleSystem: noopRefresh,
 };
 
+const SALE_SYSTEM_STORAGE_KEY = "karobar_sale_system_cache_v1";
+
+function readCachedSaleSystem(token) {
+  if (!token || typeof window === "undefined") return null;
+  try {
+    const rootState = (window.top || window).__karobarAppState?.saleSystem;
+    if (rootState && rootState.token === token) {
+      return rootState;
+    }
+  } catch {
+    /* ignore cross-frame errors */
+  }
+  try {
+    const raw = sessionStorage.getItem(SALE_SYSTEM_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.token === token) return parsed;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function writeCachedSaleSystem(token, payload) {
+  if (!token || typeof window === "undefined") return;
+  const entry = { token, ...payload };
+  try {
+    const rootWin = window.top || window;
+    rootWin.__karobarAppState = rootWin.__karobarAppState || {};
+    rootWin.__karobarAppState.saleSystem = entry;
+  } catch {
+    /* ignore */
+  }
+  try {
+    sessionStorage.setItem(SALE_SYSTEM_STORAGE_KEY, JSON.stringify(entry));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function SaleSystemProvider({ children }) {
   const auth = useAuth();
   const currentToken =
     auth?.token || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
 
-  const [saleSystem, setSaleSystem] = useState(DEFAULT_SALE_SYSTEM);
-  const [shopType, setShopType] = useState(DEFAULT_SHOP_TYPE);
-  const [isSetupCompleted, setIsSetupCompleted] = useState(true);
-  const [loading, setLoading] = useState(true);
+  const initialCache = readCachedSaleSystem(currentToken);
+
+  const [saleSystem, setSaleSystem] = useState(
+    () => initialCache?.saleSystem || DEFAULT_SALE_SYSTEM
+  );
+  const [shopType, setShopType] = useState(
+    () => initialCache?.shopType || DEFAULT_SHOP_TYPE
+  );
+  const [isSetupCompleted, setIsSetupCompleted] = useState(
+    () => (typeof initialCache?.isSetupCompleted === "boolean" ? initialCache.isSetupCompleted : true)
+  );
+  const [loading, setLoading] = useState(() => Boolean(currentToken && !initialCache));
 
   // Concurrency / lifecycle guards:
   // - mountedRef:    never setState (or schedule retries) after unmount
@@ -83,11 +132,23 @@ export function SaleSystemProvider({ children }) {
       });
       if (!mountedRef.current || requestId !== requestIdRef.current) return;
 
-      setSaleSystem(data?.sale_system || DEFAULT_SALE_SYSTEM);
-      setShopType(data?.shop_type || DEFAULT_SHOP_TYPE);
+      const nextSaleSystem = data?.sale_system || DEFAULT_SALE_SYSTEM;
+      const nextShopType = data?.shop_type || DEFAULT_SHOP_TYPE;
+      const nextSetup =
+        typeof data?.is_setup_completed === "boolean"
+          ? data.is_setup_completed
+          : true;
+
+      setSaleSystem(nextSaleSystem);
+      setShopType(nextShopType);
       if (typeof data?.is_setup_completed === "boolean") {
         setIsSetupCompleted(data.is_setup_completed);
       }
+      writeCachedSaleSystem(activeToken, {
+        saleSystem: nextSaleSystem,
+        shopType: nextShopType,
+        isSetupCompleted: nextSetup,
+      });
       setLoading(false);
     } catch (error) {
       if (!mountedRef.current || requestId !== requestIdRef.current) return;
@@ -110,7 +171,10 @@ export function SaleSystemProvider({ children }) {
   useEffect(() => {
     mountedRef.current = true;
     if (currentToken) {
-      setLoading(true);
+      const cached = readCachedSaleSystem(currentToken);
+      if (!cached) {
+        setLoading(true);
+      }
       fetchSaleSystem();
     } else {
       setLoading(false);

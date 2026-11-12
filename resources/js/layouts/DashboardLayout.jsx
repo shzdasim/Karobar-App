@@ -133,8 +133,9 @@ export default function DashboardLayout({ children }) {
     });
   }, []);
 
-  // Fetch lightweight branding from shared /api/sale-system endpoint
+  // Fetch lightweight branding from shared /api/sale-system endpoint (only needed in main shell)
   useEffect(() => {
+    if (isSubWindow) return;
     (async () => {
       try {
         const { data } = await axios.get("/api/sale-system");
@@ -146,7 +147,7 @@ export default function DashboardLayout({ children }) {
         setLogoUrl(null);
       }
     })();
-  }, []);
+  }, [isSubWindow]);
 
   // Page titles
   const titles = {
@@ -298,14 +299,31 @@ export default function DashboardLayout({ children }) {
     [allTabs, effectiveActiveTabId]
   );
 
+  const activeTabPath = useMemo(() => {
+    const raw = activeTabObj?.path || currentPath || location.pathname || "/dashboard";
+    return (typeof raw === "string" ? raw : "/dashboard").split("?")[0].split("#")[0];
+  }, [activeTabObj?.path, currentPath, location.pathname]);
+
   // Sync active tab ID and document.title globally
   useEffect(() => {
     if (!isSubWindow && typeof window !== "undefined") {
       window.__karobarActiveTabId = effectiveActiveTabId;
+      window.__karobarActiveTabPath = activeTabPath;
+      try {
+        window.dispatchEvent(
+          new CustomEvent("karobar:active-tab-changed", {
+            detail: {
+              tabId: effectiveActiveTabId,
+              path: activeTabPath,
+              title: activeTabObj?.title || pageTitle,
+            },
+          })
+        );
+      } catch {}
     }
     const activeTitle = isSubWindow ? pageTitle : activeTabObj?.title || pageTitle;
     document.title = `${activeTitle} - ${appName || "Karobar-App"}`;
-  }, [isSubWindow, effectiveActiveTabId, activeTabObj, pageTitle, appName]);
+  }, [isSubWindow, effectiveActiveTabId, activeTabPath, activeTabObj?.title, pageTitle, appName]);
 
   // If rendered inside a tab iframe, notify parent whenever route/title changes
   useEffect(() => {
@@ -314,18 +332,19 @@ export default function DashboardLayout({ children }) {
       const parsed = new URLSearchParams(window.location.search).get("winId");
       if (parsed) subWinIdRef.current = parsed;
     }
+    const currentFullPath = location.pathname + (location.search || "");
     try {
       window.parent?.postMessage(
         {
           type: "karobar:subwindow-route-sync",
           winId: subWinIdRef.current,
-          path: location.pathname,
+          path: currentFullPath,
           title: pageTitle,
         },
         "*"
       );
     } catch {}
-  }, [isSubWindow, location.pathname, pageTitle]);
+  }, [isSubWindow, location.pathname, location.search, pageTitle]);
 
   const showCycleHud = useCallback((targetTabId, direction = 1) => {
     if (hudTimerRef.current) {
@@ -367,17 +386,20 @@ export default function DashboardLayout({ children }) {
 
   const openSubWindow = useCallback(
     (path, title) => {
-      const cleanPath = (path || "/dashboard").split("?")[0];
+      const fullPath = path || "/dashboard";
+      const cleanPath = fullPath.split("?")[0].split("#")[0];
       const resolvedTitle =
         title || resolvePageTitle(cleanPath) || resolveTitleForPath(cleanPath, "Workspace Tab");
       const nextId = `subwin-${winIdCounterRef.current++}-${Date.now().toString(36)}`;
+      const initialSrc = `${fullPath}${fullPath.includes("?") ? "&" : "?"}subwindow=1&winId=${nextId}&reloadKey=0`;
 
       setSubWindows((prev) => [
         ...prev,
         {
           id: nextId,
           title: resolvedTitle,
-          path: cleanPath,
+          path: fullPath,
+          initialSrc,
           pinned: false,
           reloadKey: 0,
         },
@@ -526,9 +548,16 @@ export default function DashboardLayout({ children }) {
         return;
       }
       setSubWindows((prev) =>
-        prev.map((w) =>
-          w.id === targetId ? { ...w, reloadKey: (w.reloadKey || 0) + 1 } : w
-        )
+        prev.map((w) => {
+          if (w.id !== targetId) return w;
+          const nextKey = (w.reloadKey || 0) + 1;
+          const targetPath = w.path || "/dashboard";
+          return {
+            ...w,
+            reloadKey: nextKey,
+            initialSrc: `${targetPath}${targetPath.includes("?") ? "&" : "?"}subwindow=1&winId=${w.id}&reloadKey=${nextKey}`,
+          };
+        })
       );
     },
     [effectiveActiveTabId]
@@ -923,7 +952,7 @@ export default function DashboardLayout({ children }) {
               ? {
                   ...w,
                   path: data.path,
-                  title: data.title || resolvePageTitle(data.path),
+                  title: data.title || resolvePageTitle(data.path.split("?")[0].split("#")[0]),
                 }
               : w
           )
@@ -1206,6 +1235,7 @@ export default function DashboardLayout({ children }) {
               logoUrl={logoUrl}
               isPinned={sidebarPinned}
               onTogglePin={handleTogglePin}
+              currentPath={activeTabPath}
             />
           </div>
         </div>
@@ -1247,6 +1277,7 @@ export default function DashboardLayout({ children }) {
               onTogglePin={handleTogglePin}
               isDockOpen={dockOpen}
               onRequestCloseDock={() => setDockOpen(false)}
+              currentPath={activeTabPath}
             />
           </div>
         </>
@@ -1278,6 +1309,7 @@ export default function DashboardLayout({ children }) {
                 logoUrl={logoUrl}
                 isPinned={false}
                 onRequestCloseDock={() => setMobileSidebarOpen(false)}
+                currentPath={activeTabPath}
               />
             </div>
           </div>
@@ -1339,7 +1371,9 @@ export default function DashboardLayout({ children }) {
           {/* Keep-Alive Browser Tab Panels */}
           {subWindows.map((win) => {
             const isSelected = effectiveActiveTabId === win.id;
-            const iframeSrc = `${win.path}${win.path.includes("?") ? "&" : "?"}subwindow=1&winId=${win.id}&reloadKey=${win.reloadKey || 0}`;
+            const iframeSrc =
+              win.initialSrc ||
+              `${win.path}${win.path.includes("?") ? "&" : "?"}subwindow=1&winId=${win.id}&reloadKey=${win.reloadKey || 0}`;
 
             return (
               <div

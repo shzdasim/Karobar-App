@@ -83,12 +83,36 @@ export default function ClassicSidebar({
   onTogglePin,
   isDockOpen = false,
   onRequestCloseDock,
+  currentPath: propCurrentPath,
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef(null);
 
-  const { pathname } = useLocation();
+  const { pathname: routerPathname } = useLocation();
+  const [activePathOverride, setActivePathOverride] = useState(null);
+
+  useEffect(() => {
+    if (propCurrentPath) {
+      setActivePathOverride(propCurrentPath);
+    }
+  }, [propCurrentPath]);
+
+  useEffect(() => {
+    const handleActiveTabChanged = (e) => {
+      const detail = e?.detail;
+      if (detail && typeof detail.path === "string") {
+        setActivePathOverride(detail.path);
+      }
+    };
+    window.addEventListener("karobar:active-tab-changed", handleActiveTabChanged);
+    return () => {
+      window.removeEventListener("karobar:active-tab-changed", handleActiveTabChanged);
+    };
+  }, []);
+
+  const rawPath = propCurrentPath || activePathOverride || routerPathname || "/dashboard";
+  const pathname = (typeof rawPath === "string" ? rawPath : "/dashboard").split("?")[0].split("#")[0];
   const navigate = useNavigate();
   const { theme } = useTheme();
   const { hasWholesale } = useSaleSystem();
@@ -999,6 +1023,7 @@ export default function ClassicSidebar({
                       window.__karobarActiveTabId !== "main"
                     ) {
                       e.preventDefault();
+                      setActivePathOverride("/dashboard");
                       window.dispatchEvent(
                         new CustomEvent("karobar:navigate-active-tab", {
                           detail: { path: "/dashboard", title: "Dashboard" },
@@ -1200,6 +1225,7 @@ export default function ClassicSidebar({
                                   window.__karobarActiveTabId !== "main"
                                 ) {
                                   e.preventDefault();
+                                  setActivePathOverride(item.path);
                                   window.dispatchEvent(
                                     new CustomEvent("karobar:navigate-active-tab", {
                                       detail: { path: item.path, title: item.name },
@@ -1356,6 +1382,7 @@ export default function ClassicSidebar({
                                         window.__karobarActiveTabId &&
                                         window.__karobarActiveTabId !== "main"
                                       ) {
+                                        setActivePathOverride(item.quickCreatePath);
                                         window.dispatchEvent(
                                           new CustomEvent("karobar:navigate-active-tab", {
                                             detail: {

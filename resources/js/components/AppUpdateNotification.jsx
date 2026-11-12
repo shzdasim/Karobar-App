@@ -3,13 +3,13 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import {
   ArrowPathIcon,
+  CheckCircleIcon,
   CloudArrowDownIcon,
   ShieldCheckIcon,
   SparklesIcon,
   XMarkIcon,
-  CheckCircleIcon,
-  ArrowTopRightOnSquareIcon,
 } from "@heroicons/react/24/outline";
+import { GlassCard, GlassSectionHeader } from "./Glass.jsx";
 
 const UPDATE_DISMISSED_UNTIL_KEY = "karobar_update_dismissed_until";
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -33,7 +33,10 @@ export default function AppUpdateNotification() {
   const [updateInfo, setUpdateInfo] = useState(null);
   const [isDismissed, setIsDismissed] = useState(() => isDismissedForToday());
   const [isChecking, setIsChecking] = useState(false);
-  const [isInstalling, setIsInstalling] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isDownloaded, setIsDownloaded] = useState(false);
+  const [showReadyPopup, setShowReadyPopup] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
   const [progress, setProgress] = useState({
     status: "idle",
     percent: 0,
@@ -49,6 +52,7 @@ export default function AppUpdateNotification() {
     } catch {
       // ignore storage errors
     }
+    setShowReadyPopup(false);
     setIsDismissed(true);
     window.dispatchEvent(new CustomEvent("karobar:update-dismissed", { detail: { until } }));
   }, []);
@@ -242,9 +246,14 @@ export default function AppUpdateNotification() {
         ...prev,
         ...payload,
       }));
-      if (payload.status === "error") {
-        setIsInstalling(false);
-        toast.error(payload.message || "Update installation failed.");
+      if (payload.status === "downloaded") {
+        setIsDownloading(false);
+        setIsDownloaded(true);
+        setShowReadyPopup(true);
+      } else if (payload.status === "error") {
+        setIsDownloading(false);
+        setIsApplying(false);
+        toast.error(payload.message || "Update operation failed.");
       }
     });
 
@@ -258,31 +267,35 @@ export default function AppUpdateNotification() {
     };
   }, [checkForUpdates]);
 
-  const handleInstallUpdate = async () => {
-    if (!updateInfo || isInstalling) return;
+  const handleDownloadUpdate = async () => {
+    if (!updateInfo || isDownloading || isApplying) return;
 
     const desktop = typeof window !== "undefined" ? window.karobarDesktop : null;
     const downloadUrl =
       updateInfo.download_url ||
       "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
 
-    setIsInstalling(true);
+    setIsDownloading(true);
     setProgress({
       status: "starting",
       percent: 3,
       downloadedMB: null,
       totalMB: null,
-      message: "Connecting to GitHub Releases in-app updater…",
+      message: "Downloading update in background…",
     });
 
-    // 1. Try Electron IPC in-app downloader & elevated installer first
+    // 1. Try Electron IPC background downloader first
     if (desktop?.isDesktop && typeof desktop.downloadAndInstallUpdate === "function") {
       try {
         const res = await desktop.downloadAndInstallUpdate({
           downloadUrl,
           version: updateInfo.latest_version,
+          mode: "download",
         });
         if (res?.ok) {
+          setIsDownloading(false);
+          setIsDownloaded(true);
+          setShowReadyPopup(true);
           return;
         }
       } catch {
@@ -290,7 +303,7 @@ export default function AppUpdateNotification() {
       }
     }
 
-    // 2. Fallback to Laravel in-app downloader & elevated installer (never redirects to browser)
+    // 2. Fallback to Laravel in-app background downloader
     let pollTimer = null;
     try {
       pollTimer = setInterval(async () => {
@@ -313,169 +326,359 @@ export default function AppUpdateNotification() {
       const { data } = await axios.post("/api/system/install-update", {
         download_url: downloadUrl,
         version: updateInfo.latest_version,
+        mode: "download",
       });
 
-      if (!data?.ok) {
-        setIsInstalling(false);
-        toast.error(data?.message || "Unable to download and apply update right now. Please try again.");
+      if (data?.ok) {
+        setIsDownloading(false);
+        setIsDownloaded(true);
+        setShowReadyPopup(true);
+      } else {
+        setIsDownloading(false);
+        toast.error(data?.message || "Unable to download update right now. Please try again.");
       }
     } catch (err) {
-      setIsInstalling(false);
+      setIsDownloading(false);
       toast.error(
         err?.response?.data?.message ||
-          "Unable to download update in app right now. Please check your internet connection and try again."
+          "Unable to download update right now. Please check your internet connection and try again."
       );
     } finally {
       if (pollTimer) clearInterval(pollTimer);
     }
   };
 
-  const handleOpenReleasePage = () => {
-    const url =
-      updateInfo?.release_url || "https://github.com/shzdasim/Karobar-App/releases/latest";
+  const handleApplyUpdate = async () => {
+    if (!updateInfo || isApplying) return;
+
     const desktop = typeof window !== "undefined" ? window.karobarDesktop : null;
-    if (desktop?.openExternalUrl) {
-      desktop.openExternalUrl(url);
-    } else {
-      window.open(url, "_blank", "noopener,noreferrer");
+    const downloadUrl =
+      updateInfo.download_url ||
+      "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
+
+    setIsApplying(true);
+    setProgress((prev) => ({
+      ...prev,
+      status: "backing_up",
+      percent: 100,
+      message: "Creating safety backup & launching installer…",
+    }));
+
+    // 1. Try Electron IPC installer (uses already-downloaded file in temp directory)
+    if (desktop?.isDesktop && typeof desktop.downloadAndInstallUpdate === "function") {
+      try {
+        const res = await desktop.downloadAndInstallUpdate({
+          downloadUrl,
+          version: updateInfo.latest_version,
+          mode: "install",
+        });
+        if (res?.ok) {
+          return;
+        }
+      } catch {
+        // Fall through to in-app backend installer
+      }
+    }
+
+    // 2. Fallback to Laravel in-app installer
+    try {
+      const { data } = await axios.post("/api/system/install-update", {
+        download_url: downloadUrl,
+        version: updateInfo.latest_version,
+        mode: "install",
+      });
+
+      if (!data?.ok) {
+        setIsApplying(false);
+        toast.error(data?.message || "Unable to launch installer right now. Please try again.");
+      }
+    } catch (err) {
+      setIsApplying(false);
+      toast.error(
+        err?.response?.data?.message ||
+          "Unable to apply update right now. Please try again."
+      );
     }
   };
 
-  if (!updateInfo?.update_available || (isDismissed && !isInstalling)) {
+  if (!updateInfo?.update_available || (isDismissed && !isDownloading && !isDownloaded && !isApplying)) {
     return null;
   }
 
   return (
-    <div
-      className="fixed bottom-5 right-5 z-[9990] w-[410px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900/95 text-slate-100 shadow-2xl backdrop-blur-2xl print:hidden"
-      style={{
-        boxShadow:
-          "0 24px 60px -12px rgba(2, 6, 23, 0.78), 0 0 0 1px rgba(56, 189, 248, 0.22)",
-      }}
-    >
-      {/* Top gradient accent bar */}
-      <div className="h-1.5 w-full bg-gradient-to-r from-sky-500 via-blue-500 to-emerald-400" />
-
-      <div className="p-4 sm:p-5">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-lg shadow-sky-500/25">
-              <SparklesIcon className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-sky-400">
-                  Software Update Available
+    <>
+      {/* Non-blocking Bottom-Right Update Card (allows full app usage while viewing or downloading) */}
+      <div
+        className="fixed bottom-5 right-5 z-[9990] w-[410px] max-w-[calc(100vw-2rem)] print:hidden"
+        role="region"
+        aria-label="Software Update Notification"
+      >
+        <GlassCard className="overflow-hidden shadow-xl">
+          <GlassSectionHeader
+            title={
+              <span className="inline-flex items-center gap-2">
+                {isDownloaded ? (
+                  <CheckCircleIcon
+                    className="h-5 w-5 shrink-0"
+                    style={{ color: "var(--theme-primary, #2563eb)" }}
+                  />
+                ) : (
+                  <SparklesIcon
+                    className="h-5 w-5 shrink-0"
+                    style={{ color: "var(--theme-primary, #2563eb)" }}
+                  />
+                )}
+                <span>
+                  {isDownloaded
+                    ? "Update Ready to Install"
+                    : isDownloading
+                      ? "Downloading Update…"
+                      : "Software Update Available"}
                 </span>
-                <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-inset ring-emerald-500/30">
-                  Official Release
-                </span>
-              </div>
-              <h3 className="mt-0.5 text-sm font-bold text-white">
-                Karobar-App v{updateInfo.latest_version}
-              </h3>
-            </div>
-          </div>
-
-          {!isInstalling && (
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={dismissForOneDay}
-                className="rounded-lg px-2 py-1 text-[11px] font-medium text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 cursor-pointer"
-                title="Remind me again in 24 hours"
-              >
-                Later
-              </button>
-              <button
-                type="button"
-                onClick={dismissForOneDay}
-                className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 cursor-pointer"
-                title="Dismiss for 24 hours"
-              >
-                <XMarkIcon className="h-4 w-4" />
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Version comparison pill */}
-        <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs">
-          <div className="flex items-center gap-2 text-slate-400">
-            <span>Installed:</span>
-            <span className="font-mono font-semibold text-slate-200">
-              v{updateInfo.current_version}
-            </span>
-          </div>
-          <span className="text-sky-400">→</span>
-          <div className="flex items-center gap-2 text-slate-300">
-            <span>New Build:</span>
-            <span className="font-mono font-bold text-emerald-400">
-              v{updateInfo.latest_version}
-              {updateInfo.latest_build ? ` (#${updateInfo.latest_build})` : ""}
-            </span>
-          </div>
-        </div>
-
-        {/* Release Notes */}
-        {updateInfo.notes && (
-          <div className="mt-3 max-h-24 overflow-y-auto rounded-xl border border-slate-800/90 bg-slate-950/40 px-3 py-2 text-xs leading-relaxed text-slate-300">
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              What&apos;s New in This Release
-            </div>
-            <p className="whitespace-pre-line text-[11.5px] text-slate-300">
-              {String(updateInfo.notes)
-                .replace(/^#+\s*/gm, "")
-                .slice(0, 360)}
-            </p>
-          </div>
-        )}
-
-        {/* Zero Data Loss Guarantee */}
-        <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2.5 text-[11.5px] text-emerald-200">
-          <ShieldCheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
-          <div>
-            <span className="font-semibold text-emerald-300">100% Zero Data Loss Upgrade:</span>{" "}
-            Your SQLite database, invoices, products, ledgers, users &amp; license are preserved and automatically backed up before updating.
-          </div>
-        </div>
-
-        {/* Live Download & Install Progress */}
-        {isInstalling ? (
-          <div className="mt-4 space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="flex items-center gap-2 font-medium text-sky-300">
-                <ArrowPathIcon className="h-4 w-4 animate-spin text-sky-400" />
-                {progress.message || "Downloading & installing update…"}
               </span>
-              <span className="font-mono font-bold text-white">{progress.percent || 0}%</span>
+            }
+            right={
+              !isDownloading && !isApplying ? (
+                <button
+                  type="button"
+                  onClick={dismissForOneDay}
+                  className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200/60 dark:text-slate-300 dark:hover:bg-slate-700/60 transition-colors cursor-pointer"
+                  title="Remind me in 24 hours"
+                  aria-label="Close"
+                >
+                  <XMarkIcon className="w-5 h-5" />
+                </button>
+              ) : null
+            }
+          />
+
+          <div className="px-4 py-3.5 space-y-3">
+            {/* Release Title & Version Comparison */}
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200/80 dark:border-slate-700/80 bg-white/70 dark:bg-slate-800/70 px-3.5 py-2">
+              <div>
+                <div className="text-xs text-gray-500 dark:text-slate-400">
+                  Installed Version
+                </div>
+                <div className="mt-0.5 font-mono text-sm font-semibold text-gray-900 dark:text-slate-100">
+                  v{updateInfo.current_version}
+                </div>
+              </div>
+
+              <span className="text-sm font-semibold text-gray-400 dark:text-slate-500">
+                →
+              </span>
+
+              <div className="text-right">
+                <div className="text-xs text-gray-500 dark:text-slate-400">
+                  New Release
+                </div>
+                <div
+                  className="mt-0.5 font-mono text-sm font-semibold"
+                  style={{ color: "var(--theme-primary, #2563eb)" }}
+                >
+                  v{updateInfo.latest_version}
+                  {updateInfo.latest_build ? ` (#${updateInfo.latest_build})` : ""}
+                </div>
+              </div>
             </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-sky-500 to-emerald-400 transition-all duration-300"
-                style={{ width: `${Math.max(4, Math.min(100, progress.percent || 5))}%` }}
-              />
-            </div>
-            <p className="text-[11px] text-slate-400">
-              Karobar-App will automatically install the new update and restart in a few seconds.
-            </p>
+
+            {/* Release Notes (shown before download or when ready) */}
+            {!isDownloading && updateInfo.notes && (
+              <div className="rounded-xl border border-gray-200/80 dark:border-slate-700/80 bg-white/60 dark:bg-slate-800/60 px-3.5 py-2">
+                <div className="mb-1 text-xs font-semibold text-gray-700 dark:text-slate-300">
+                  Release Notes
+                </div>
+                <p className="max-h-24 overflow-y-auto whitespace-pre-line text-xs leading-relaxed text-gray-600 dark:text-slate-300">
+                  {String(updateInfo.notes)
+                    .replace(/^#+\s*/gm, "")
+                    .slice(0, 320)}
+                </p>
+              </div>
+            )}
+
+            {/* Zero Data Loss Notice */}
+            {!isDownloading && (
+              <div className="flex items-start gap-2.5 rounded-xl border border-gray-200/80 dark:border-slate-700/80 bg-white/60 dark:bg-slate-800/60 px-3.5 py-2 text-xs text-gray-600 dark:text-slate-300">
+                <ShieldCheckIcon
+                  className="mt-0.5 h-4 w-4 shrink-0"
+                  style={{ color: "var(--theme-primary, #2563eb)" }}
+                />
+                <div>
+                  <span className="font-semibold text-gray-900 dark:text-slate-100">
+                    Safe In-Place Upgrade:
+                  </span>{" "}
+                  Your database, invoices, products, ledgers, and license remain intact and are backed up automatically.
+                </div>
+              </div>
+            )}
+
+            {/* State 1: Downloading in background */}
+            {isDownloading || isApplying ? (
+              <div className="space-y-2 pt-0.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="inline-flex items-center gap-2 font-medium text-gray-700 dark:text-slate-200">
+                    <ArrowPathIcon
+                      className="h-4 w-4 animate-spin shrink-0"
+                      style={{ color: "var(--theme-primary, #2563eb)" }}
+                    />
+                    <span className="truncate">
+                      {progress.message || "Downloading update in background…"}
+                    </span>
+                  </span>
+                  <span className="font-mono font-semibold text-gray-900 dark:text-slate-100 shrink-0 ml-2">
+                    {progress.percent || 0}%
+                  </span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-slate-700">
+                  <div
+                    className="h-full rounded-full transition-all duration-300"
+                    style={{
+                      width: `${Math.max(4, Math.min(100, progress.percent || 5))}%`,
+                      backgroundColor: "var(--theme-primary, #2563eb)",
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 dark:text-slate-400">
+                  {isApplying
+                    ? "Applying update and restarting Karobar-App…"
+                    : "You can continue working while the update downloads. We will notify you when it is ready."}
+                </p>
+              </div>
+            ) : isDownloaded ? (
+              /* State 2: Downloaded & Ready (user chose "Later" to finish work first) */
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={dismissForOneDay}
+                  className="g-btn-ghost px-3 cursor-pointer"
+                >
+                  Remind Tomorrow
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyUpdate}
+                  className="g-btn-base theme-btn-primary inline-flex items-center justify-center gap-2 px-4 cursor-pointer"
+                >
+                  <ArrowPathIcon className="h-4 w-4" />
+                  <span>Update &amp; Restart Now</span>
+                </button>
+              </div>
+            ) : (
+              /* State 3: Initial notification — offer background download */
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={dismissForOneDay}
+                  className="g-btn-ghost px-3 cursor-pointer"
+                >
+                  Later
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadUpdate}
+                  disabled={isChecking}
+                  className="g-btn-base theme-btn-primary inline-flex items-center justify-center gap-2 px-4 cursor-pointer"
+                >
+                  <CloudArrowDownIcon className="h-4 w-4" />
+                  <span>Download Update</span>
+                </button>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="mt-4 flex items-center">
-            <button
-              type="button"
-              onClick={handleInstallUpdate}
-              disabled={isChecking}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-sky-500/25 transition hover:from-sky-400 hover:to-blue-500 active:scale-[0.99] cursor-pointer"
-            >
-              <CloudArrowDownIcon className="h-4 w-4" />
-              <span>Update &amp; Restart Now</span>
-            </button>
-          </div>
-        )}
+        </GlassCard>
       </div>
-    </div>
+
+      {/* Completion Popup Modal: Shown when background download completes so user can choose "Update Now" or "Later" */}
+      {showReadyPopup && isDownloaded && (
+        <div
+          className="fixed inset-0 z-[9995] flex items-center justify-center p-4 print:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="app-update-ready-modal-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isApplying) {
+              setShowReadyPopup(false);
+            }
+          }}
+        >
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-xs" />
+          <div className="relative w-full max-w-md">
+            <GlassCard className="overflow-hidden">
+              <GlassSectionHeader
+                title={
+                  <span id="app-update-ready-modal-title" className="inline-flex items-center gap-2">
+                    <CheckCircleIcon
+                      className="h-5 w-5 shrink-0"
+                      style={{ color: "var(--theme-primary, #2563eb)" }}
+                    />
+                    <span>Update Download Complete</span>
+                  </span>
+                }
+                right={
+                  !isApplying ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowReadyPopup(false)}
+                      className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200/60 dark:text-slate-300 dark:hover:bg-slate-700/60 transition-colors cursor-pointer"
+                      title="Update Later"
+                      aria-label="Close"
+                    >
+                      <XMarkIcon className="w-5 h-5" />
+                    </button>
+                  ) : null
+                }
+              />
+
+              <div className="px-4 py-4 space-y-4">
+                <p className="text-sm text-gray-600 dark:text-slate-300 leading-relaxed">
+                  Karobar-App{" "}
+                  <span className="font-mono font-semibold text-gray-900 dark:text-slate-100">
+                    v{updateInfo.latest_version}
+                  </span>{" "}
+                  has finished downloading in the background and is ready to install.
+                </p>
+
+                <div className="rounded-xl border border-gray-200/80 dark:border-slate-700/80 bg-white/60 dark:bg-slate-800/60 px-3.5 py-2.5 text-xs text-gray-600 dark:text-slate-300">
+                  If you are in the middle of an invoice or task, choose{" "}
+                  <span className="font-semibold text-gray-900 dark:text-slate-100">
+                    Update Later
+                  </span>{" "}
+                  to finish your work first — the update will stay ready at the bottom corner so you can install it anytime with one click.
+                </div>
+
+                {isApplying ? (
+                  <div className="flex items-center gap-2.5 text-xs font-medium text-gray-700 dark:text-slate-200 pt-1">
+                    <ArrowPathIcon
+                      className="h-4 w-4 animate-spin shrink-0"
+                      style={{ color: "var(--theme-primary, #2563eb)" }}
+                    />
+                    <span>{progress.message || "Creating safety backup & restarting…"}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowReadyPopup(false)}
+                      className="g-btn-ghost px-3.5 cursor-pointer"
+                    >
+                      Update Later
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplyUpdate}
+                      className="g-btn-base theme-btn-primary inline-flex items-center justify-center gap-2 px-4 cursor-pointer"
+                    >
+                      <ArrowPathIcon className="h-4 w-4" />
+                      <span>Update &amp; Restart Now</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </GlassCard>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

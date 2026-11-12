@@ -22,6 +22,17 @@ function hydrateFromSession() {
     return;
   }
   try {
+    const rootPerms = (window.top || window).__karobarAppState?.perms;
+    if (rootPerms && rootPerms.token === currentToken && Array.isArray(rootPerms.roles) && Array.isArray(rootPerms.perms)) {
+      cachedToken = currentToken;
+      cachedRoles = new Set(rootPerms.roles);
+      cachedPerms = new Set(rootPerms.perms);
+      return;
+    }
+  } catch {
+    /* ignore cross-frame errors */
+  }
+  try {
     const raw = sessionStorage.getItem(PERMS_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
@@ -85,10 +96,18 @@ function fetchPermissionsShared(force = false) {
       cachedToken = currentToken;
       cachedRoles = new Set(rArr);
       cachedPerms = new Set(pArr);
+      const cacheEntry = { token: currentToken, roles: rArr, perms: pArr };
+      try {
+        const rootWin = window.top || window;
+        rootWin.__karobarAppState = rootWin.__karobarAppState || {};
+        rootWin.__karobarAppState.perms = cacheEntry;
+      } catch {
+        /* ignore */
+      }
       try {
         sessionStorage.setItem(
           PERMS_STORAGE_KEY,
-          JSON.stringify({ token: currentToken, roles: rArr, perms: pArr })
+          JSON.stringify(cacheEntry)
         );
       } catch {
         /* ignore */

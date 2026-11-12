@@ -23,6 +23,14 @@ class CustomerController extends Controller
             return;
         }
 
+        if (
+            \App\Support\SchemaCache::hasColumn('customers', 'regular_notes')
+            && \App\Support\SchemaCache::hasColumn('customer_regular_items', 'dosage_notes')
+        ) {
+            self::$regularSchemaChecked = true;
+            return;
+        }
+
         try {
             if (Schema::hasTable('customers')) {
                 Schema::table('customers', function (Blueprint $table) {

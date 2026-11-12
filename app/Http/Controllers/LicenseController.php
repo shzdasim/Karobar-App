@@ -37,7 +37,7 @@ class LicenseController extends Controller
         ], $ok ? 200 : 422);
     }
 
-    public function deactivate(Request $req)
+    public function deactivate(Request $req, LicenseService $svc)
     {
         $user = $req->user();
         if (!$user || !$user->hasRole(['Admin', 'admin', 'super-admin'])) {
@@ -55,8 +55,9 @@ class LicenseController extends Controller
             ], 422);
         }
 
-        // Remove all licenses
+        // Remove all licenses and clear periodic verification cache
         License::query()->delete();
+        $svc->clearPeriodicStatusCache();
         return response()->json(['ok' => true]);
     }
 }

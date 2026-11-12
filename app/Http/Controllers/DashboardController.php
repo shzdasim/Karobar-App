@@ -361,11 +361,13 @@ public function nearExpiryFilters(Request $request)
         // Low stock count — running products (ever purchased) whose on-hand
         // quantity has dropped below pack_size. Mirrors the notification logic.
         $lowStockCount = DB::table('products as p')
-            ->whereExists(function ($sub) {
-                $sub->select(DB::raw(1))
-                    ->from('purchase_invoice_items as pii')
-                    ->whereColumn('pii.product_id', 'p.id');
-            })
+            ->joinSub(
+                DB::table('purchase_invoice_items')->select('product_id')->whereNotNull('product_id')->distinct(),
+                'pii',
+                'pii.product_id',
+                '=',
+                'p.id'
+            )
             ->whereNotNull('p.quantity')
             ->whereColumn('p.quantity', '<', 'p.pack_size')
             ->count();

@@ -31,10 +31,18 @@ class LicenseService
      */
     public const CLOCK_SKEW_TOLERANCE = 900;
 
+    /**
+     * Periodic verification interval in seconds (8 hours = 3 checks per day).
+     * Prevents running DB queries, Ed25519 signature checks, and hardware probes on every API request.
+     */
+    public const PERIODIC_CHECK_INTERVAL = 28800;
+
     private static ?string $cachedMachineId = null;
+    private static ?array $cachedVerifiedStatus = null;
     private static ?string $testPublicKey = null;
     private static ?string $testMachineId = null;
     private static ?int $testCurrentTime = null;
+    private ?int $cachedClockFileTs = null;
 
     public static function b64uEncode(string $bin): string
     {
@@ -64,6 +72,7 @@ class LicenseService
         self::$testMachineId = $machineId;
         self::$testCurrentTime = $currentTime;
         self::$cachedMachineId = null;
+        self::$cachedVerifiedStatus = null;
     }
 
     protected function currentTime(): int
@@ -283,7 +292,7 @@ class LicenseService
      *
      * @return array [bool valid, array|null payload, string|null reason]
      */
-    public function verifyString(string $licenseKey, ?string $machineId = null, bool $requireMachineBinding = false): array
+    public function verifyString(string $licenseKey, ?string $machineId = null, bool $requireMachineBinding = false, ?License $knownRecord = null): array
     {
         $normalized = $this->normalizeLicenseKey($licenseKey, false);
 
@@ -330,7 +339,7 @@ class LicenseService
         $now = $this->currentTime();
 
         // Anti-clock-rollback: ensure system clock hasn't been rolled backward behind recorded High-Water Mark
-        $highWaterMark = $this->getHighWaterMarkTimestamp();
+        $highWaterMark = $this->getHighWaterMarkTimestamp($knownRecord);
         if ($highWaterMark > 0 && ($now + self::CLOCK_SKEW_TOLERANCE) < $highWaterMark) {
             return [false, $payload, 'System clock tampering detected. Please restore the correct date and time.'];
         }
@@ -398,7 +407,15 @@ class LicenseService
 
         $this->recordMonotonicTimestamp($activatedTs, $rec, true);
 
-        return [true, $this->sanitizePayload($payload), null, $rec];
+        $cleanPayload = $this->sanitizePayload($payload);
+        $this->writePeriodicStatusCache([
+            'valid' => true,
+            'reason' => null,
+            'payload' => $cleanPayload,
+            'expires_at' => $cleanPayload['exp'] ?? null,
+        ], $activatedTs);
+
+        return [true, $cleanPayload, null, $rec];
     }
 
     /**
@@ -453,17 +470,29 @@ class LicenseService
     }
 
     /**
-     * Check current license status with full cryptographic, hardware-lock, and clock-tamper verification.
+     * Check current license status.
+     * Uses an HMAC-sealed 8-hour periodic verification cache (3 checks/day) so normal API requests
+     * execute with zero database queries and zero cryptographic/hardware overhead.
      */
-    public function currentStatus(): array
+    public function currentStatus(bool $force = false): array
     {
+        $now = $this->currentTime();
+
+        if (!$force && !app()->runningUnitTests()) {
+            $cached = $this->readPeriodicStatusCache($now);
+            if ($cached !== null) {
+                return $cached;
+            }
+        }
+
         $rec = License::latest('id')->first();
         if (!$rec) {
+            $this->clearPeriodicStatusCache();
             return ['valid' => false, 'reason' => 'No license installed'];
         }
 
         $currentMachineId = $this->computeMachineId();
-        [$ok, $payload, $reason] = $this->verifyString($rec->license_key, $currentMachineId);
+        [$ok, $payload, $reason] = $this->verifyString($rec->license_key, $currentMachineId, false, $rec);
 
         if ($ok) {
             if (!$this->verifyRowSeal($rec, $currentMachineId)) {
@@ -473,17 +502,119 @@ class LicenseService
         }
 
         if ($ok) {
-            $this->recordMonotonicTimestamp($this->currentTime(), $rec);
+            $this->recordMonotonicTimestamp($now, $rec);
         }
 
         $cleanPayload = $this->sanitizePayload($payload);
 
-        return [
+        $result = [
             'valid' => $ok,
             'reason' => $reason,
             'payload' => $cleanPayload,
             'expires_at' => $cleanPayload['exp'] ?? null,
         ];
+
+        if ($ok) {
+            $this->writePeriodicStatusCache($result, $now);
+        } else {
+            $this->clearPeriodicStatusCache();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Read the HMAC-sealed periodic status cache if verified within the last 8 hours (3 times/day).
+     */
+    protected function readPeriodicStatusCache(int $now): ?array
+    {
+        $entry = self::$cachedVerifiedStatus;
+
+        if ($entry === null) {
+            $cachePath = storage_path('app/.license-verified');
+            if (!is_file($cachePath)) {
+                return null;
+            }
+            $raw = @file_get_contents($cachePath);
+            $decoded = is_string($raw) ? json_decode($raw, true) : null;
+            if (!is_array($decoded) || empty($decoded['verified_at']) || empty($decoded['sig']) || !is_array($decoded['status'] ?? null)) {
+                return null;
+            }
+
+            $expectedSig = $this->computePeriodicCacheSignature((int) $decoded['verified_at'], $decoded['status']);
+            if (!hash_equals($expectedSig, (string) $decoded['sig'])) {
+                return null;
+            }
+
+            $entry = [
+                'verified_at' => (int) $decoded['verified_at'],
+                'status' => $decoded['status'],
+            ];
+            self::$cachedVerifiedStatus = $entry;
+        }
+
+        $verifiedAt = (int) ($entry['verified_at'] ?? 0);
+        $status = $entry['status'] ?? null;
+        if (!is_array($status) || empty($status['valid'])) {
+            return null;
+        }
+
+        // Re-verify if clock moved backward beyond tolerance or if 8 hours (PERIODIC_CHECK_INTERVAL) have elapsed
+        if (($now + self::CLOCK_SKEW_TOLERANCE) < $verifiedAt || ($now - $verifiedAt) >= self::PERIODIC_CHECK_INTERVAL) {
+            return null;
+        }
+
+        // Re-verify immediately if license expiration timestamp has been reached
+        $exp = $status['expires_at'] ?? null;
+        if ($exp !== null && (int) $exp > 0 && $now > (int) $exp) {
+            return null;
+        }
+
+        return $status;
+    }
+
+    /**
+     * Persist the verified license status for the next 8-hour periodic window.
+     */
+    protected function writePeriodicStatusCache(array $status, int $now): void
+    {
+        if (app()->runningUnitTests()) {
+            return;
+        }
+
+        self::$cachedVerifiedStatus = [
+            'verified_at' => $now,
+            'status' => $status,
+        ];
+
+        $cachePath = storage_path('app/.license-verified');
+        $sig = $this->computePeriodicCacheSignature($now, $status);
+        @file_put_contents($cachePath, json_encode([
+            'verified_at' => $now,
+            'status' => $status,
+            'sig' => $sig,
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
+     * Clear the periodic verification cache (called on license deactivation or invalidation).
+     */
+    public function clearPeriodicStatusCache(): void
+    {
+        self::$cachedVerifiedStatus = null;
+        if (!app()->runningUnitTests()) {
+            $cachePath = storage_path('app/.license-verified');
+            if (is_file($cachePath)) {
+                @unlink($cachePath);
+            }
+        }
+    }
+
+    private function computePeriodicCacheSignature(int $verifiedAt, array $status): string
+    {
+        $envelope = $this->computeFastOsEnvelope();
+        $data = $verifiedAt . '|' . $envelope . '|' . json_encode($status, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        return hash_hmac('sha256', $data, 'KAROBAR-PERIODIC-CACHE-V2:' . self::MASTER_PUBLIC_KEY);
     }
 
     /**
@@ -498,7 +629,7 @@ class LicenseService
         }
 
         $currentMachineId = $this->computeMachineId();
-        [$ok, $payload, $reason] = $this->verifyString($rec->license_key, $currentMachineId);
+        [$ok, $payload, $reason] = $this->verifyString($rec->license_key, $currentMachineId, false, $rec);
 
         if ($ok && !$this->verifyRowSeal($rec, $currentMachineId)) {
             $ok = false;
@@ -507,6 +638,7 @@ class LicenseService
 
         if (!$ok && $reason === 'Wrong machine') {
             $rec->delete();
+            $this->clearPeriodicStatusCache();
             return [false, 'License revoked - software moved to new device', true];
         }
 
@@ -525,7 +657,7 @@ class LicenseService
         }
 
         $currentMachineId = $this->computeMachineId();
-        [$ok, , $reason] = $this->verifyString($rec->license_key, $currentMachineId);
+        [$ok, , $reason] = $this->verifyString($rec->license_key, $currentMachineId, false, $rec);
 
         if ($ok && !$this->verifyRowSeal($rec, $currentMachineId)) {
             $ok = false;
@@ -534,6 +666,7 @@ class LicenseService
 
         if (!$ok && $reason === 'Wrong machine') {
             $rec->delete();
+            $this->clearPeriodicStatusCache();
             return true;
         }
 
@@ -544,23 +677,29 @@ class LicenseService
      * Return the highest observed timestamp across the license table, monotonic clock ledger,
      * and recent system activity to detect system clock rollback attacks.
      */
-    public function getHighWaterMarkTimestamp(): int
+    public function getHighWaterMarkTimestamp(?License $knownRecord = null): int
     {
         $maxTs = 0;
         $hasValidClockFile = false;
 
         // 1. Check HMAC-protected monotonic clock file (skip during unit tests for test isolation)
         if (!app()->runningUnitTests()) {
-            $clockPath = storage_path('app/.license-clock');
-            if (is_file($clockPath)) {
-                $raw = @file_get_contents($clockPath);
-                $data = is_string($raw) ? json_decode($raw, true) : null;
-                if (is_array($data) && isset($data['ts'], $data['sig'])) {
-                    $ts = (int) $data['ts'];
-                    $expectedSig = hash_hmac('sha256', (string) $ts, 'KAROBAR-CLOCK-SEAL-V2:' . self::MASTER_PUBLIC_KEY);
-                    if (hash_equals($expectedSig, (string) $data['sig']) && $ts > $maxTs) {
-                        $maxTs = $ts;
-                        $hasValidClockFile = true;
+            if ($this->cachedClockFileTs !== null && $this->cachedClockFileTs > 0) {
+                $maxTs = $this->cachedClockFileTs;
+                $hasValidClockFile = true;
+            } else {
+                $clockPath = storage_path('app/.license-clock');
+                if (is_file($clockPath)) {
+                    $raw = @file_get_contents($clockPath);
+                    $data = is_string($raw) ? json_decode($raw, true) : null;
+                    if (is_array($data) && isset($data['ts'], $data['sig'])) {
+                        $ts = (int) $data['ts'];
+                        $expectedSig = hash_hmac('sha256', (string) $ts, 'KAROBAR-CLOCK-SEAL-V2:' . self::MASTER_PUBLIC_KEY);
+                        if (hash_equals($expectedSig, (string) $data['sig']) && $ts > $maxTs) {
+                            $maxTs = $ts;
+                            $this->cachedClockFileTs = $ts;
+                            $hasValidClockFile = true;
+                        }
                     }
                 }
             }
@@ -568,7 +707,7 @@ class LicenseService
 
         // 2. Check active license timestamps (and scan core tables only if clock file is missing or in unit tests)
         try {
-            $rec = License::latest('id')->first();
+            $rec = $knownRecord ?? License::latest('id')->first();
             if ($rec) {
                 if ($rec->activated_at && $rec->activated_at->timestamp > $maxTs) {
                     $maxTs = $rec->activated_at->timestamp;
@@ -606,12 +745,13 @@ class LicenseService
     {
         if (!app()->runningUnitTests()) {
             $clockPath = storage_path('app/.license-clock');
-            $existingTs = 0;
-            if (is_file($clockPath)) {
+            $existingTs = $this->cachedClockFileTs ?? 0;
+            if ($existingTs <= 0 && is_file($clockPath)) {
                 $raw = @file_get_contents($clockPath);
                 $data = is_string($raw) ? json_decode($raw, true) : null;
                 if (is_array($data) && isset($data['ts'])) {
                     $existingTs = (int) $data['ts'];
+                    $this->cachedClockFileTs = $existingTs;
                 }
             }
 
@@ -622,6 +762,7 @@ class LicenseService
                     'ts' => $newTs,
                     'sig' => $sig,
                 ], JSON_UNESCAPED_SLASHES));
+                $this->cachedClockFileTs = $newTs;
             }
         }
 

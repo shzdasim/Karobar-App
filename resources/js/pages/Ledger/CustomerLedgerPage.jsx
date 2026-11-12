@@ -712,21 +712,75 @@ return (
 
         {/* Hero Top */}
         <div className="ledger-heading px-5 py-5">
-          <div className="flex items-center gap-3">
-            <div
-              className="products-identity-icon"
-            >
-              <UserIcon className="w-6 h-6 text-white" />
+          <div className="ledger-heading-top">
+            <div className="flex items-center gap-3">
+              <div
+                className="products-identity-icon"
+              >
+                <UserIcon className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="products-title">Customer Ledger</h1>
+                <p className="products-subtitle">
+                  {customerId ? "Managing ledger for selected customer" : "Select a customer to view ledger"}
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="products-title">Customer Ledger</h1>
-              <p className="products-subtitle">
-                {customerId ? "Managing ledger for selected customer" : "Select a customer to view ledger"}
-              </p>
+
+            {/* Top Action Buttons Opposite Heading: Save, Share, Load entries, Print */}
+            <div className="ledger-top-actions" role="group" aria-label="Statement and save actions">
+              <Guard when={can.update}>
+                <button
+                  onClick={openSaveModal}
+                  disabled={!customerId || (newCount === 0 && updCount === 0)}
+                  title="Save changes (Ctrl+S)"
+                  className="products-action products-action-primary theme-btn-primary"
+                >
+                  <ArrowDownOnSquareIcon className="w-4 h-4" />
+                  <span>Save changes</span>
+                  {(newCount > 0 || updCount > 0) && customerId && (
+                    <span className="ml-0.5 px-1.5 py-0.5 rounded-sm bg-white/30 text-[10px]">
+                      {newCount + updCount}
+                    </span>
+                  )}
+                </button>
+              </Guard>
+
+              <button
+                onClick={() => setShareModalOpen(true)}
+                disabled={!customerId}
+                title="Share statement via WhatsApp or Email PDF"
+                className="products-action theme-btn-secondary"
+              >
+                <ShareIcon className="w-4 h-4" />
+                <span>Share / PDF</span>
+              </button>
+
+              <Guard when={can.update}>
+                <button
+                  onClick={() => fetchData()}
+                  disabled={!customerId}
+                  title="Reload ledger entries"
+                  className="products-action theme-btn-tertiary"
+                >
+                  <ArrowPathIcon className="w-4 h-4" />
+                  <span>Load entries</span>
+                </button>
+              </Guard>
+
+              <button
+                onClick={() => handlePrint()}
+                disabled={!customerId}
+                title="Print statement (Ctrl+P)"
+                className="products-action theme-btn-secondary"
+              >
+                <PrinterIcon className="w-4 h-4" />
+                <span>Print</span>
+              </button>
             </div>
           </div>
 
-          {/* Action Buttons */}
+          {/* Customer Selector & Ledger Entry Workflow Actions */}
           <div className="ledger-actions">
             {/* Customer Select (new modal search) */}
             <div
@@ -766,37 +820,10 @@ return (
               )}
             </div>
 
-
-            {/* Shared action group */}
+            {/* Ledger Entry Workflow Actions */}
             <div
-              className="ledger-workflow-actions" role="group" aria-label="Ledger actions"
+              className="ledger-workflow-actions" role="group" aria-label="Ledger entry actions"
             >
-              <Guard when={can.update}>
-                <button
-                  onClick={rebuild}
-                  disabled={!customerId}
-                  title="Rebuild ledger from sale invoices"
-                  className="products-action theme-btn-tertiary"
-                >
-                  <ArrowPathIcon className="w-3.5 h-3.5" />
-                  <span>Rebuild</span>
-                </button>
-              </Guard>
-
-
-              <Guard when={can.update}>
-                <button
-                  onClick={() => fetchData()}
-                  disabled={!customerId}
-                  title="Reload ledger entries"
-                  className="products-action theme-btn-tertiary"
-                >
-                  <ArrowPathIcon className="w-3.5 h-3.5" />
-                  <span>Load entries</span>
-                </button>
-              </Guard>
-
-
               <Guard when={can.create}>
                 <button
                   onClick={() => setRecordPaymentOpen(true)}
@@ -804,7 +831,7 @@ return (
                   title="Record an allocated customer payment with multi-tender receipt"
                   className="products-action bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
                 >
-                  <BanknotesIcon className="w-3.5 h-3.5" />
+                  <BanknotesIcon className="w-4 h-4" />
                   <span>Record Payment</span>
                 </button>
               </Guard>
@@ -815,10 +842,9 @@ return (
                 title="View customer payment vouchers and receipts"
                 className="products-action theme-btn-secondary"
               >
-                <DocumentTextIcon className="w-3.5 h-3.5" />
+                <DocumentTextIcon className="w-4 h-4" />
                 <span>Payment Vouchers</span>
               </button>
-
 
               <Guard when={can.create}>
                 <button
@@ -827,49 +853,23 @@ return (
                   title="Add a manual ledger row (new entries are added at the top)"
                   className="products-action theme-btn-secondary"
                 >
-                  <WrenchScrewdriverIcon className="w-3.5 h-3.5" />
+                  <WrenchScrewdriverIcon className="w-4 h-4" />
                   <span>Add manual row</span>
                 </button>
               </Guard>
 
-
               <Guard when={can.update}>
                 <button
-                  onClick={openSaveModal}
-                  disabled={!customerId || (newCount === 0 && updCount === 0)}
-                  title="Save changes (Ctrl+S)"
-                  className="products-action products-action-primary theme-btn-primary"
+                  onClick={rebuild}
+                  disabled={!customerId}
+                  title="Rebuild ledger from sale invoices"
+                  className="products-action theme-btn-tertiary"
                 >
-                  <ArrowDownOnSquareIcon className="w-3.5 h-3.5" />
-                  <span>Save changes</span>
-                  {(newCount > 0 || updCount > 0) && customerId && (
-                    <span className="ml-0.5 px-1 py-0.5 rounded-sm bg-white/30 text-[10px]">
-                      {newCount + updCount}
-                    </span>
-                  )}
+                  <ArrowPathIcon className="w-4 h-4" />
+                  <span>Rebuild</span>
                 </button>
               </Guard>
             </div>
-
-            {/* Primary Print & Share Buttons */}
-            <button
-              onClick={() => handlePrint()}
-              disabled={!customerId}
-              title="Print statement (Ctrl+P)"
-              className="products-action theme-btn-secondary"
-            >
-              <PrinterIcon className="w-4 h-4" />
-              <span>Print</span>
-            </button>
-            <button
-              onClick={() => setShareModalOpen(true)}
-              disabled={!customerId}
-              title="Share statement via WhatsApp or Email PDF"
-              className="products-action theme-btn-secondary"
-            >
-              <ShareIcon className="w-4 h-4" />
-              <span>Share / PDF</span>
-            </button>
           </div>
         </div>
 

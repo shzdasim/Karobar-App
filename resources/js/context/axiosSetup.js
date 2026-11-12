@@ -1,10 +1,42 @@
 import axios from "axios";
 import { saveLastVisitedPath } from "../utils/lastVisitedPage.js";
 
-const inflightGetMap = new Map();
-const responseCacheMap = new Map();
+function getSharedCacheStore() {
+  if (typeof window !== "undefined") {
+    try {
+      const rootWin = window.top || window;
+      if (!rootWin.__karobarSharedApiCache) {
+        rootWin.__karobarSharedApiCache = {
+          inflightGetMap: new Map(),
+          responseCacheMap: new Map(),
+          stockVersion: 1,
+        };
+      }
+      return rootWin.__karobarSharedApiCache;
+    } catch {
+      if (!window.__karobarSharedApiCache) {
+        window.__karobarSharedApiCache = {
+          inflightGetMap: new Map(),
+          responseCacheMap: new Map(),
+          stockVersion: 1,
+        };
+      }
+      return window.__karobarSharedApiCache;
+    }
+  }
+  return {
+    inflightGetMap: new Map(),
+    responseCacheMap: new Map(),
+    stockVersion: 1,
+  };
+}
+
+const sharedCacheStore = getSharedCacheStore();
+const inflightGetMap = sharedCacheStore.inflightGetMap;
+const responseCacheMap = sharedCacheStore.responseCacheMap;
 
 const LONG_TTL_MS = 60_000; // 60s for session/static config endpoints
+const MEDIUM_TTL_MS = 15_000; // 15s for lookup/search endpoints (invalidated on any mutation)
 const SHORT_TTL_MS = 5_000; // 5s for burst deduplication across components
 
 const LONG_TTL_PATTERNS = [
@@ -18,10 +50,21 @@ const LONG_TTL_PATTERNS = [
   /^\/api\/license\/status(\?|$)/,
 ];
 
+const MEDIUM_TTL_PATTERNS = [
+  /^\/api\/products\/search(\?|$)/,
+  /^\/api\/customers\/search(\?|$)/,
+  /^\/api\/suppliers\/search(\?|$)/,
+  /^\/api\/brands(\?|$)/,
+  /^\/api\/categories(\?|$)/,
+];
+
 function getTtlForUrl(url) {
   if (typeof url !== "string" || !url.startsWith("/api/")) return 0;
   for (const regex of LONG_TTL_PATTERNS) {
     if (regex.test(url)) return LONG_TTL_MS;
+  }
+  for (const regex of MEDIUM_TTL_PATTERNS) {
+    if (regex.test(url)) return MEDIUM_TTL_MS;
   }
   return SHORT_TTL_MS;
 }
@@ -196,11 +239,11 @@ export function initAxiosAuth() {
   const rawGet = axios.get.bind(axios);
   axios.get = function cachedAxiosGet(url, config) {
     const ttl = getTtlForUrl(url);
+    const hasAbortControl = Boolean(config?.signal || config?.cancelToken);
     const skipCache =
       !ttl ||
       config?.cache === false ||
-      config?.signal ||
-      config?.cancelToken ||
+      config?.signal?.aborted ||
       (config?.responseType && config.responseType !== "json");
 
     if (skipCache) {
@@ -216,17 +259,21 @@ export function initAxiosAuth() {
       return Promise.resolve(cloneResponse(cached.response));
     }
 
-    const existingInflight = inflightGetMap.get(cacheKey);
-    if (existingInflight) {
-      return existingInflight.then((res) => cloneResponse(res));
+    if (!hasAbortControl) {
+      const existingInflight = inflightGetMap.get(cacheKey);
+      if (existingInflight) {
+        return Promise.resolve(existingInflight).then((res) => cloneResponse(res));
+      }
     }
 
     const reqPromise = rawGet(url, config)
       .then((res) => {
-        inflightGetMap.delete(cacheKey);
+        if (!hasAbortControl) {
+          inflightGetMap.delete(cacheKey);
+        }
         if (res && res.status >= 200 && res.status < 300) {
           // Bound cache size to prevent memory bloat
-          if (responseCacheMap.size > 200) {
+          if (responseCacheMap.size > 300) {
             const oldestKey = responseCacheMap.keys().next().value;
             if (oldestKey) responseCacheMap.delete(oldestKey);
           }
@@ -238,11 +285,15 @@ export function initAxiosAuth() {
         return res;
       })
       .catch((err) => {
-        inflightGetMap.delete(cacheKey);
+        if (!hasAbortControl) {
+          inflightGetMap.delete(cacheKey);
+        }
         throw err;
       });
 
-    inflightGetMap.set(cacheKey, reqPromise);
+    if (!hasAbortControl) {
+      inflightGetMap.set(cacheKey, reqPromise);
+    }
     return reqPromise.then((res) => cloneResponse(res));
   };
 

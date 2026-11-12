@@ -852,30 +852,14 @@ body:has(.workspace-shell) { transform: none; }
   }
 }
 
-@utility odd {
-  /* Table row backgrounds with dark mode support */
-  .g-card table tbody &tr {
-    @apply bg-white/60;
-    @apply dark:bg-slate-700/60;
-  }
-  table tbody &tr {
+@layer components {
+  table tbody tr.odd {
     @apply bg-white/60 dark:bg-slate-700/60;
   }
-}
-
-@utility even {
-  .g-card table tbody &tr {
-    @apply bg-white/40;
-    @apply dark:bg-slate-800/40;
-  }
-  table tbody &tr {
+  table tbody tr.even {
     @apply bg-white/40 dark:bg-slate-800/40;
   }
-}
-
-@utility sticky {
-  /* Sticky table header with dark mode */
-  table &thead {
+  table thead.sticky {
     @apply bg-white/85 dark:bg-slate-700/85;
   }
 }
@@ -966,7 +950,7 @@ body:has(.workspace-shell) { transform: none; }
 
 @utility g-input {
   /* Note: For muted text colors in dark mode, use inline classes or style directly */
-  @apply h-9 px-3 rounded-xl bg-white/70 backdrop-blur-xs border border-gray-200/70 ring-1 ring-transparent
+  @apply h-9 px-3 rounded-xl bg-white/70 border border-gray-200/70 ring-1 ring-transparent
            focus:ring-blue-400/40 shadow-xs focus:outline-hidden;
   @apply dark:bg-slate-700/70 dark:border-slate-600/70 dark:text-gray-100 dark:placeholder-gray-400
            dark:focus:ring-indigo-400/40;
@@ -979,7 +963,7 @@ body:has(.workspace-shell) { transform: none; }
 }
 
 @utility g-btn-ghost {
-  @apply g-btn-base bg-white/70 backdrop-blur-xs border border-gray-200/70 hover:bg-white shadow-xs text-gray-900;
+  @apply g-btn-base bg-white/70 border border-gray-200/70 hover:bg-white shadow-xs text-gray-900;
   @apply dark:bg-slate-700/70 dark:border-slate-600/70 dark:hover:bg-slate-600/70 dark:text-gray-100;
 }
 
@@ -989,7 +973,7 @@ body:has(.workspace-shell) { transform: none; }
 }
 
 @utility g-btn-chip {
-  @apply px-2 bg-white/70 backdrop-blur-xs border border-gray-200/70 hover:bg-white shadow-xs text-sm text-gray-900;
+  @apply px-2 bg-white/70 border border-gray-200/70 hover:bg-white shadow-xs text-sm text-gray-900;
   @apply dark:bg-slate-700/70 dark:border-slate-600/70 dark:hover:bg-slate-600/70 dark:text-gray-100;
   border-radius: var(--btn-radius, 0.75rem);
 }
@@ -1024,20 +1008,10 @@ body:has(.workspace-shell) { transform: none; }
     transition: none;
   }
 
-  /* Optimize backdrop blur performance by using CSS containment */
-  .g-card {
-    contain: paint layout style;
-    will-change: transform, background-color;
-    transform: translateZ(0); /* Force GPU acceleration */
-  }
-
-  /* Use more performant blur values and reduce blur complexity */
+  /* Use single content-layer blur per Design.md without forced GPU layer promotion on every card */
   .g-card {
     @apply rounded-2xl bg-white/60 backdrop-blur-xs ring-1 ring-gray-200/60 shadow-xl;
     @apply dark:bg-slate-800/60 dark:ring-gray-700/60 dark:text-gray-100;
-    /* Add GPU acceleration */
-    transform: translateZ(0);
-    backface-visibility: hidden;
   }
 
   /* ---- Glass UI primitives live here and won't be purged ---- */
@@ -1076,20 +1050,16 @@ body:has(.workspace-shell) { transform: none; }
   animation: shake 0.4s ease-in-out;
 }
 
-/* Theme transition styles */
+/* Base document layout styles */
 html {
-  @apply transition-colors duration-300;
   overflow-x: clip;
 }
 
 body {
   @apply bg-gray-100 text-gray-900;
   @apply dark:bg-slate-900 dark:text-gray-100;
-  /* Optimize body for performance */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  transform: translateZ(0);
-  backface-visibility: hidden;
   overflow-x: clip;
 }
 
@@ -2351,15 +2321,16 @@ body {
 /* Supplier and customer ledgers share one financial workspace. */
 @media screen {
 .ledger-page { min-width: 0; color: var(--workspace-ink); }
-.ledger-heading { display: flex; flex-direction: column; gap: 20px; }
+.ledger-heading { display: flex; flex-direction: column; gap: 16px; }
+.ledger-heading-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.ledger-top-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: auto; }
 .ledger-header .products-identity-icon svg { color: var(--workspace-accent); }
-.ledger-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding-top: 16px; border-top: 1px solid var(--workspace-border); }
-.ledger-party-selector { display: flex; align-items: center; min-height: 44px; width: 280px; max-width: 100%; min-width: 0; border-radius: 12px; background: var(--workspace-reading-fill); border: 1px solid var(--workspace-border); }
+.ledger-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding-top: 16px; border-top: 1px solid var(--workspace-border); }
+.ledger-party-selector { display: flex; align-items: center; min-height: 44px; width: 300px; max-width: 100%; min-width: 0; border-radius: 12px; background: var(--workspace-reading-fill); border: 1px solid var(--workspace-border); }
 .ledger-party-selector button { min-height: 44px; color: var(--workspace-ink); font-size: var(--type-label); }
-.ledger-workflow-actions { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 100%; order: 3; }
-.ledger-actions > .products-action { margin-left: auto; }
-.ledger-actions .products-action { white-space: nowrap; }
-.ledger-actions svg { width: 20px; height: 20px; flex-shrink: 0; }
+.ledger-workflow-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.ledger-actions .products-action, .ledger-top-actions .products-action { white-space: nowrap; }
+.ledger-actions svg, .ledger-top-actions svg { width: 18px; height: 18px; flex-shrink: 0; }
 .ledger-stat { padding: 16px; border: 1px solid var(--workspace-border); border-radius: 16px; background: color-mix(in srgb,var(--workspace-accent) 5%,var(--workspace-reading-fill)); }
 .ledger-stat-label { color: var(--workspace-muted); font-size: var(--type-support); margin-bottom: 8px; }
 .ledger-stat-value { color: var(--workspace-ink); font-size: var(--type-section); font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
@@ -2405,8 +2376,8 @@ body {
 .ledger-heading { padding: 16px; }
 .ledger-header .products-title { font-size: 1.625rem; }
 .ledger-party-selector { width: 100%; }
-.ledger-workflow-actions { flex-basis: 100%; }
-.ledger-workflow-actions .products-action { flex: 1 1 auto; }
+.ledger-top-actions, .ledger-workflow-actions { flex-basis: 100%; margin-left: 0; }
+.ledger-top-actions .products-action, .ledger-workflow-actions .products-action { flex: 1 1 auto; }
 .ledger-stat { padding: 12px; }
 .ledger-modal .flex.justify-end { flex-wrap: wrap; }
 }

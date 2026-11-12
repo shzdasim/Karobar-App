@@ -189,6 +189,30 @@ function spawnPhpWorker(phpBin, workerPort, publicDir, routerScript, env) {
   return workerObj;
 }
 
+let cachedSpaHtmlBuffer = null;
+
+function isSpaShellRequest(req) {
+  if (req.method !== "GET" && req.method !== "HEAD") return false;
+  const rawUrl = String(req.url || "/");
+  const qIndex = rawUrl.indexOf("?");
+  const rawPath = qIndex >= 0 ? rawUrl.slice(0, qIndex) : rawUrl;
+  if (!rawPath || rawPath.endsWith(".php")) return false;
+  if (
+    /^\/(api|sanctum|storage|up|print|password\/reset|supplier-ledger\/print|customer-ledger\/print|terms-of-service|privacy-policy)(\/|$)/.test(
+      rawPath
+    )
+  ) {
+    return false;
+  }
+  const ext = path.extname(rawPath).toLowerCase();
+  if (ext) return false;
+  const accept = String(req.headers?.accept || "");
+  if (accept.includes("application/json") && !accept.includes("text/html")) {
+    return false;
+  }
+  return true;
+}
+
 function tryServeStaticAsset(req, res, publicDir, storagePublicDir) {
   if (req.method !== "GET" && req.method !== "HEAD") return false;
 
@@ -310,8 +334,9 @@ async function startBackendServices() {
     }
   }
 
-  // Spawn 4 parallel PHP workers on internal ports so concurrent API requests never serialize on Windows
-  const WORKER_COUNT = 4;
+  // Spawn up to 8 parallel PHP workers on internal ports so concurrent API requests never serialize
+  const WORKER_COUNT = Math.min(8, Math.max(4, (os.cpus && os.cpus().length) || 4));
+  cachedSpaHtmlBuffer = null;
   phpWorkerPool = [];
   let nextPortCandidate = activePort + 1;
   for (let i = 0; i < WORKER_COUNT; i++) {
@@ -332,6 +357,21 @@ async function startBackendServices() {
       }
 
       if (tryServeStaticAsset(req, res, publicDir, storagePublicDir)) {
+        return;
+      }
+
+      const isSpaRoute = isSpaShellRequest(req);
+      if (isSpaRoute && cachedSpaHtmlBuffer) {
+        res.writeHead(200, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": cachedSpaHtmlBuffer.length,
+          "Cache-Control": "no-cache",
+        });
+        if (req.method === "HEAD") {
+          res.end();
+        } else {
+          res.end(cachedSpaHtmlBuffer);
+        }
         return;
       }
 
@@ -367,6 +407,30 @@ async function startBackendServices() {
           agent: false,
         },
         (proxyRes) => {
+          const contentType = String(proxyRes.headers?.["content-type"] || "");
+          if (
+            isSpaRoute &&
+            !cachedSpaHtmlBuffer &&
+            proxyRes.statusCode === 200 &&
+            contentType.includes("text/html") &&
+            !proxyRes.headers?.["content-encoding"]
+          ) {
+            const chunks = [];
+            proxyRes.on("data", (chunk) => chunks.push(chunk));
+            proxyRes.on("end", () => {
+              const fullBuf = Buffer.concat(chunks);
+              if (fullBuf.includes('<div id="root">')) {
+                cachedSpaHtmlBuffer = fullBuf;
+              }
+              res.writeHead(200, proxyRes.headers);
+              res.end(fullBuf);
+              done();
+            });
+            proxyRes.on("close", done);
+            proxyRes.on("error", done);
+            return;
+          }
+
           res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
           proxyRes.pipe(res);
           proxyRes.on("end", done);
@@ -2232,6 +2296,7 @@ function sendUpdateProgress(payload) {
 }
 
 ipcMain.handle("karobar:download-and-install-update", async (_event, payload = {}) => {
+  const mode = payload.mode || (payload.downloadOnly ? "download" : "download_and_install");
   const downloadUrl =
     payload.downloadUrl ||
     "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
@@ -2241,46 +2306,75 @@ ipcMain.handle("karobar:download-and-install-update", async (_event, payload = {
     `Karobar-App-Update-${versionLabel}.exe`
   );
 
-  // If a previous file exists at tempInstallerPath and cannot be overwritten, use a unique filename
-  if (fs.existsSync(tempInstallerPath)) {
-    try {
-      fs.unlinkSync(tempInstallerPath);
-    } catch {
-      tempInstallerPath = path.join(
-        os.tmpdir(),
-        `Karobar-App-Update-${versionLabel}-${Date.now()}.exe`
-      );
+  const existingStat = fs.existsSync(tempInstallerPath) ? fs.statSync(tempInstallerPath) : null;
+  const alreadyDownloaded = Boolean(existingStat && existingStat.size >= 5 * 1024 * 1024);
+
+  if (!alreadyDownloaded && mode !== "install") {
+    // If a partial/stale file exists at tempInstallerPath and cannot be overwritten, use a unique filename
+    if (fs.existsSync(tempInstallerPath)) {
+      try {
+        fs.unlinkSync(tempInstallerPath);
+      } catch {
+        tempInstallerPath = path.join(
+          os.tmpdir(),
+          `Karobar-App-Update-${versionLabel}-${Date.now()}.exe`
+        );
+      }
     }
   }
 
   try {
-    sendUpdateProgress({
-      status: "starting",
-      percent: 2,
-      message: "Preparing zero-data-loss update download…",
-    });
-
-    try {
-      await downloadFileWithProgress(downloadUrl, tempInstallerPath, (progress) => {
-        sendUpdateProgress({
-          ...progress,
-          message: progress.totalMB
-            ? `Downloading update (${progress.downloadedMB} MB / ${progress.totalMB} MB)…`
-            : `Downloading update (${progress.downloadedMB} MB)…`,
-        });
-      });
-    } catch (primaryErr) {
-      // Fallback to Windows built-in curl.exe -L -k if Node stream encountered a network/proxy issue
+    if (!alreadyDownloaded) {
       sendUpdateProgress({
-        status: "downloading",
-        percent: 25,
-        message: "Downloading update package via system downloader…",
+        status: "starting",
+        percent: 2,
+        message: "Starting background update download…",
       });
-      execFileSync(
-        "curl.exe",
-        ["-L", "-k", "--fail", "--silent", "--show-error", "-o", tempInstallerPath, downloadUrl],
-        { windowsHide: true, timeout: 10 * 60 * 1000 }
-      );
+
+      try {
+        await downloadFileWithProgress(downloadUrl, tempInstallerPath, (progress) => {
+          sendUpdateProgress({
+            ...progress,
+            message: progress.totalMB
+              ? `Downloading update (${progress.downloadedMB} MB / ${progress.totalMB} MB)…`
+              : `Downloading update (${progress.downloadedMB} MB)…`,
+          });
+        });
+      } catch (primaryErr) {
+        // Fallback to Windows built-in curl.exe -L -k if Node stream encountered a network/proxy issue
+        sendUpdateProgress({
+          status: "downloading",
+          percent: 25,
+          message: "Downloading update package via system downloader…",
+        });
+        execFileSync(
+          "curl.exe",
+          ["-L", "-k", "--fail", "--silent", "--show-error", "-o", tempInstallerPath, downloadUrl],
+          { windowsHide: true, timeout: 10 * 60 * 1000 }
+        );
+      }
+    }
+
+    // Verify the downloaded installer file exists and is a complete binary (> 5 MB)
+    const stat = fs.existsSync(tempInstallerPath) ? fs.statSync(tempInstallerPath) : null;
+    if (!stat || stat.size < 5 * 1024 * 1024) {
+      throw new Error("Downloaded update file is incomplete. Please try again.");
+    }
+
+    // If only downloading in background so user can continue working, stop here and notify ready
+    if (mode === "download") {
+      sendUpdateProgress({
+        status: "downloaded",
+        percent: 100,
+        installerPath: tempInstallerPath,
+        message: "Update downloaded and ready to install.",
+      });
+      return {
+        ok: true,
+        downloaded: true,
+        installing: false,
+        installerPath: tempInstallerPath,
+      };
     }
 
     sendUpdateProgress({
@@ -2296,12 +2390,6 @@ ipcMain.handle("karobar:download-and-install-update", async (_event, payload = {
       });
     } catch {
       // Best-effort backup; karobar:install --upgrade-only also creates pre-upgrade-YYYYmmdd.sqlite
-    }
-
-    // Verify the downloaded installer file exists and is a complete binary (> 5 MB)
-    const stat = fs.existsSync(tempInstallerPath) ? fs.statSync(tempInstallerPath) : null;
-    if (!stat || stat.size < 5 * 1024 * 1024) {
-      throw new Error("Downloaded update file is incomplete. Please try again.");
     }
 
     sendUpdateProgress({

@@ -4,23 +4,111 @@ import { useAuth } from "./AuthContext.jsx";
 
 const LicenseCtx = createContext(null);
 
+const LICENSE_STORAGE_KEY = "karobar_license_cache_v2";
+// Periodic license check interval: 8 hours (3 times a day)
+const LICENSE_CHECK_INTERVAL_MS = 8 * 60 * 60 * 1000;
+
+function isFreshValidCache(entry, token) {
+  if (!entry || !entry.valid || entry.checkedToken !== token) return false;
+  const now = Date.now();
+  const verifiedAt = Number(entry.verifiedAt || 0);
+  if (!verifiedAt || now < verifiedAt || now - verifiedAt >= LICENSE_CHECK_INTERVAL_MS) {
+    return false;
+  }
+  if (entry.expiresAt && Number(entry.expiresAt) > 0 && now >= Number(entry.expiresAt)) {
+    return false;
+  }
+  return true;
+}
+
+function readCachedLicense(token) {
+  if (!token || typeof window === "undefined") return null;
+  try {
+    const rootState = (window.top || window).__karobarAppState?.license;
+    if (isFreshValidCache(rootState, token)) {
+      return rootState;
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const raw =
+      localStorage.getItem(LICENSE_STORAGE_KEY) ||
+      sessionStorage.getItem(LICENSE_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (isFreshValidCache(parsed, token)) {
+        try {
+          const rootWin = window.top || window;
+          rootWin.__karobarAppState = rootWin.__karobarAppState || {};
+          rootWin.__karobarAppState.license = parsed;
+        } catch {}
+        return parsed;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function writeCachedLicense(statusObj) {
+  if (!statusObj?.checkedToken || typeof window === "undefined") return;
+  const payloadToStore = {
+    ...statusObj,
+    verifiedAt: statusObj.verifiedAt || Date.now(),
+  };
+  try {
+    const rootWin = window.top || window;
+    rootWin.__karobarAppState = rootWin.__karobarAppState || {};
+    rootWin.__karobarAppState.license = payloadToStore;
+  } catch {
+    /* ignore */
+  }
+  try {
+    const serialized = JSON.stringify(payloadToStore);
+    localStorage.setItem(LICENSE_STORAGE_KEY, serialized);
+    sessionStorage.setItem(LICENSE_STORAGE_KEY, serialized);
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearCachedLicense() {
+  if (typeof window === "undefined") return;
+  try {
+    const rootWin = window.top || window;
+    if (rootWin.__karobarAppState) {
+      delete rootWin.__karobarAppState.license;
+    }
+  } catch {}
+  try {
+    localStorage.removeItem(LICENSE_STORAGE_KEY);
+    sessionStorage.removeItem(LICENSE_STORAGE_KEY);
+  } catch {}
+}
+
 export function LicenseProvider({ children }) {
   const auth = useAuth();
   const currentToken =
     auth?.token || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
 
-  const [status, setStatus] = useState({
-    loading: true,
-    valid: false,
-    expiresAt: null,      // ms epoch
-    payload: null,
-    machineId: null,
-    reason: null,
-    checkedToken: null,
-  });
+  const initialCache = readCachedLicense(currentToken);
+
+  const [status, setStatus] = useState(() =>
+    initialCache || {
+      loading: true,
+      valid: false,
+      expiresAt: null,      // ms epoch
+      payload: null,
+      machineId: null,
+      reason: null,
+      checkedToken: null,
+    }
+  );
 
   // Track if we've seen a valid license at least once
-  const [hasEverBeenValid, setHasEverBeenValid] = useState(false);
+  const [hasEverBeenValid, setHasEverBeenValid] = useState(() => Boolean(initialCache?.valid));
 
   const refresh = useCallback(async (retryOnFail = true) => {
     const activeToken =
@@ -47,8 +135,7 @@ export function LicenseProvider({ children }) {
         typeof expSec === "string" ? Date.parse(expSec) : null;
 
       const isValid = !!data?.valid;
-      
-      setStatus({
+      const nextStatus = {
         loading: false,
         valid: isValid,
         expiresAt: expMs,
@@ -56,10 +143,16 @@ export function LicenseProvider({ children }) {
         machineId: data?.machine_id ?? null,
         reason: data?.reason ?? null,
         checkedToken: activeToken,
-      });
+        verifiedAt: Date.now(),
+      };
+      
+      setStatus(nextStatus);
 
       if (isValid) {
         setHasEverBeenValid(true);
+        writeCachedLicense(nextStatus);
+      } else {
+        clearCachedLicense();
       }
     } catch (error) {
       // A 401 means unauthenticated/expired session, NOT an invalid license
@@ -87,15 +180,32 @@ export function LicenseProvider({ children }) {
   }, [hasEverBeenValid]);
 
   useEffect(() => {
-    if (currentToken) {
-      refresh();
-    } else {
+    if (!currentToken) {
       setStatus((s) => ({
         ...s,
         loading: true,
         checkedToken: null,
       }));
+      return undefined;
     }
+
+    const cached = readCachedLicense(currentToken);
+    if (cached) {
+      setStatus(cached);
+      setHasEverBeenValid(true);
+      const elapsed = Math.max(0, Date.now() - Number(cached.verifiedAt || 0));
+      const nextDelay = Math.max(60_000, LICENSE_CHECK_INTERVAL_MS - elapsed);
+      const timerId = setTimeout(() => {
+        refresh();
+      }, nextDelay);
+      return () => clearTimeout(timerId);
+    }
+
+    refresh();
+    const intervalId = setInterval(() => {
+      refresh();
+    }, LICENSE_CHECK_INTERVAL_MS);
+    return () => clearInterval(intervalId);
   }, [currentToken, refresh]);
 
   // Only tick when a finite expiresAt exists; use 60s interval when >24h remains to avoid 1-second global re-renders

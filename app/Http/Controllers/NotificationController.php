@@ -49,27 +49,20 @@ class NotificationController extends Controller
             $dismissed = [];
         }
 
-        $buildQuery = function ($query) use ($dismissed) {
-            $query->whereExists(function ($sub) {
-                    $sub->select(DB::raw(1))
-                        ->from('purchase_invoice_items as pii')
-                        ->whereColumn('pii.product_id', 'p.id');
-                })
-                ->whereNotNull('p.quantity')
-                ->whereColumn('p.quantity', '<', 'p.pack_size');
-
-            if (count($dismissed) > 0) {
-                $query->whereNotIn('p.id', array_map('intval', $dismissed));
-            }
-
-            return $query;
-        };
-
         $rows = DB::table('products as p')
+            ->joinSub(
+                DB::table('purchase_invoice_items')->select('product_id')->whereNotNull('product_id')->distinct(),
+                'pii',
+                'pii.product_id',
+                '=',
+                'p.id'
+            )
             ->leftJoin('brands as b', 'b.id', '=', 'p.brand_id')
             ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
-            ->where(function ($q) use ($buildQuery) {
-                $buildQuery($q);
+            ->whereNotNull('p.quantity')
+            ->whereColumn('p.quantity', '<', 'p.pack_size')
+            ->when(count($dismissed) > 0, function ($q) use ($dismissed) {
+                $q->whereNotIn('p.id', array_map('intval', $dismissed));
             })
             ->select(
                 'p.id as product_id',
@@ -90,7 +83,20 @@ class NotificationController extends Controller
 
         $count = $rows->count() < $limit
             ? $rows->count()
-            : $buildQuery(DB::table('products as p'))->count();
+            : DB::table('products as p')
+                ->joinSub(
+                    DB::table('purchase_invoice_items')->select('product_id')->whereNotNull('product_id')->distinct(),
+                    'pii',
+                    'pii.product_id',
+                    '=',
+                    'p.id'
+                )
+                ->whereNotNull('p.quantity')
+                ->whereColumn('p.quantity', '<', 'p.pack_size')
+                ->when(count($dismissed) > 0, function ($q) use ($dismissed) {
+                    $q->whereNotIn('p.id', array_map('intval', $dismissed));
+                })
+                ->count();
 
         return response()->json([
             'count' => $count,

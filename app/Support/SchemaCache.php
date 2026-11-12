@@ -40,7 +40,12 @@ final class SchemaCache
 
         $key = $table . '.' . $column;
         if (!array_key_exists($key, self::$columns)) {
-            self::$columns[$key] = Schema::hasColumn($table, $column);
+            $listing = self::getColumnListing($table);
+            $lookup = array_flip($listing);
+            foreach ($listing as $col) {
+                self::$columns[$table . '.' . $col] = true;
+            }
+            self::$columns[$key] = isset($lookup[$column]);
         }
 
         return self::$columns[$key];

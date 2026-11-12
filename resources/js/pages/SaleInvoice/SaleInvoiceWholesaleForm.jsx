@@ -638,7 +638,7 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
 
   const fetchProducts = async (q = "") => {
     try {
-      const { data } = await axios.get("/api/products/search", { params: { q, limit: 150 }, cache: false });
+      const { data } = await axios.get("/api/products/search", { params: { q, limit: 60 } });
       const list = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
       upsertProducts(list);
       return list;

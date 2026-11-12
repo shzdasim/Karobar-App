@@ -46,8 +46,12 @@ class ProductController extends Controller
         }
 
         $query = Product::select($selectCols ?: ['*'])
-            ->with($relations)
-            ->orderBy('name');
+            ->with($relations);
+        if (\Illuminate\Support\Facades\DB::getDriverName() === 'sqlite') {
+            $query->orderByRaw('name COLLATE NOCASE ASC');
+        } else {
+            $query->orderBy('name');
+        }
         if (\App\Support\SchemaCache::hasTable('batches') && \App\Support\SchemaCache::hasColumn('batches', 'quantity')) {
             $query->withSum('batches', 'quantity');
         }
@@ -223,10 +227,11 @@ class ProductController extends Controller
         // quantity has dropped below pack_size. Matches the dashboard count and
         // the low-stock notification logic.
         if ($lowStock === 1) {
-            $q->whereExists(function ($sub) {
-                    $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+            $q->whereIn('products.id', function ($sub) {
+                    $sub->select('pii.product_id')
+                        ->distinct()
                         ->from('purchase_invoice_items as pii')
-                        ->whereColumn('pii.product_id', 'products.id');
+                        ->whereNotNull('pii.product_id');
                 })
                 ->whereNotNull('quantity')
                 ->whereColumn('quantity', '<', 'pack_size');
