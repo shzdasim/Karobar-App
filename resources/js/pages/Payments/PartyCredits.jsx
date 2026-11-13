@@ -233,7 +233,7 @@ export default function PartyCredits() {
   };
 
   return (
-    <div className="products-page p-4 sm:p-6 max-w-7xl mx-auto space-y-5">
+    <div className="products-page w-full p-4 sm:p-6 space-y-5">
       {/* Page Header */}
       <div className="products-panel p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-start gap-3.5">
@@ -553,7 +553,7 @@ export default function PartyCredits() {
             aria-modal="true"
             aria-label="Party Credit Details"
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-4xl max-h-[88vh] flex flex-col rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden"
+            className="w-full max-w-[95vw] xl:max-w-6xl max-h-[90vh] flex flex-col rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden"
           >
             {/* Modal Header */}
             <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-start justify-between gap-4 bg-slate-50/70 dark:bg-slate-800/50">
