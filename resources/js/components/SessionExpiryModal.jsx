@@ -83,7 +83,16 @@ export default function SessionExpiryModal() {
     };
 
     checkExpiry();
-    const interval = setInterval(checkExpiry, 5000);
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      checkExpiry();
+    }, 5000);
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== "undefined" && !document.hidden) {
+        checkExpiry();
+      }
+    };
 
     const handleSessionExpiredEvent = () => {
       triggerPopup();
@@ -101,11 +110,13 @@ export default function SessionExpiryModal() {
       }
     };
 
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("karobar:session-expired", handleSessionExpiredEvent);
     window.addEventListener("storage", handleStorage);
 
     return () => {
       clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("karobar:session-expired", handleSessionExpiredEvent);
       window.removeEventListener("storage", handleStorage);
     };

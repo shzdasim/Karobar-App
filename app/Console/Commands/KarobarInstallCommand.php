@@ -280,6 +280,14 @@ class KarobarInstallCommand extends Command
             $rawEnv = preg_replace('/^APP_DEBUG=.*$/m', 'APP_DEBUG=false', $rawEnv) ?? $rawEnv;
             @file_put_contents($envPath, $rawEnv);
             $justCreatedEnv = true;
+        } elseif (is_file($envPath)) {
+            // Migrate existing desktop installs off SQLite-backed cache/session to local file storage
+            $existingEnv = (string) @file_get_contents($envPath);
+            $updatedEnv = preg_replace('/^CACHE_STORE=database\s*$/m', 'CACHE_STORE=file', $existingEnv) ?? $existingEnv;
+            $updatedEnv = preg_replace('/^SESSION_DRIVER=database\s*$/m', 'SESSION_DRIVER=file', $updatedEnv) ?? $updatedEnv;
+            if ($updatedEnv !== $existingEnv) {
+                @file_put_contents($envPath, $updatedEnv);
+            }
         }
 
         if ($justCreatedEnv || empty(config('app.key'))) {

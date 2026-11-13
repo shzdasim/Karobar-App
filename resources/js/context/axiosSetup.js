@@ -187,6 +187,7 @@ function broadcastInventoryChange(meta = {}) {
       }
     } catch {}
 
+    let sentViaChannel = false;
     try {
       if (inventoryChannel) {
         inventoryChannel.postMessage({
@@ -194,12 +195,15 @@ function broadcastInventoryChange(meta = {}) {
           ...meta,
           timestamp: Date.now(),
         });
+        sentViaChannel = true;
       }
     } catch {}
 
-    try {
-      localStorage.setItem("karobar_inventory_sync", String(Date.now()));
-    } catch {}
+    if (!sentViaChannel) {
+      try {
+        localStorage.setItem("karobar_inventory_sync", String(Date.now()));
+      } catch {}
+    }
   }, 100);
 }
 

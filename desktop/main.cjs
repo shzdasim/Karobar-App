@@ -100,7 +100,6 @@ function buildRuntimeEnv(port) {
   return {
     ...process.env,
     APP_URL: `http://127.0.0.1:${port}`,
-    PHP_CLI_SERVER_WORKERS: "4",
     WHATSAPP_NODE_BINARY: nodeBin,
     NODE_BINARY: nodeBin,
     PATH: [...extraPaths, process.env.PATH || ""].join(sep),
@@ -190,6 +189,10 @@ function spawnPhpWorker(phpBin, workerPort, publicDir, routerScript, env) {
 }
 
 let cachedSpaHtmlBuffer = null;
+const staticAssetCache = new Map();
+let staticAssetCacheBytes = 0;
+const MAX_STATIC_ASSET_CACHE_BYTES = 50 * 1024 * 1024;
+const MAX_SINGLE_CACHED_ASSET_BYTES = 2 * 1024 * 1024;
 
 function isSpaShellRequest(req) {
   if (req.method !== "GET" && req.method !== "HEAD") return false;
@@ -262,6 +265,20 @@ function tryServeStaticAsset(req, res, publicDir, storagePublicDir) {
 
   if (!targetFile) return false;
 
+  const isImmutableBuildAsset = decodedPath.startsWith("/build/assets/");
+  if (isImmutableBuildAsset) {
+    const memHit = staticAssetCache.get(targetFile);
+    if (memHit) {
+      res.writeHead(200, memHit.headers);
+      if (req.method === "HEAD") {
+        res.end();
+      } else {
+        res.end(memHit.buffer);
+      }
+      return true;
+    }
+  }
+
   try {
     const stat = fs.statSync(targetFile);
     if (!stat.isFile()) return false;
@@ -269,10 +286,24 @@ function tryServeStaticAsset(req, res, publicDir, storagePublicDir) {
     const headers = {
       "Content-Type": STATIC_MIME_TYPES[ext] || "application/octet-stream",
       "Content-Length": stat.size,
-      "Cache-Control": decodedPath.startsWith("/build/assets/")
+      "Cache-Control": isImmutableBuildAsset
         ? "public, max-age=31536000, immutable"
         : "public, max-age=300",
     };
+
+    if (
+      req.method === "GET" &&
+      isImmutableBuildAsset &&
+      stat.size <= MAX_SINGLE_CACHED_ASSET_BYTES &&
+      staticAssetCacheBytes + stat.size <= MAX_STATIC_ASSET_CACHE_BYTES
+    ) {
+      const buf = fs.readFileSync(targetFile);
+      staticAssetCache.set(targetFile, { headers, buffer: buf });
+      staticAssetCacheBytes += buf.length;
+      res.writeHead(200, headers);
+      res.end(buf);
+      return true;
+    }
 
     res.writeHead(200, headers);
     if (req.method === "HEAD") {
@@ -419,10 +450,13 @@ async function startBackendServices() {
             proxyRes.on("data", (chunk) => chunks.push(chunk));
             proxyRes.on("end", () => {
               const fullBuf = Buffer.concat(chunks);
-              if (fullBuf.includes('<div id="root">')) {
+              if (fullBuf.includes('<div id="app">') || fullBuf.includes('<div id="root">')) {
                 cachedSpaHtmlBuffer = fullBuf;
               }
-              res.writeHead(200, proxyRes.headers);
+              const clientHeaders = { ...proxyRes.headers };
+              delete clientHeaders.connection;
+              delete clientHeaders["keep-alive"];
+              res.writeHead(200, clientHeaders);
               res.end(fullBuf);
               done();
             });
@@ -431,7 +465,10 @@ async function startBackendServices() {
             return;
           }
 
-          res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
+          const clientHeaders = { ...proxyRes.headers };
+          delete clientHeaders.connection;
+          delete clientHeaders["keep-alive"];
+          res.writeHead(proxyRes.statusCode || 200, clientHeaders);
           proxyRes.pipe(res);
           proxyRes.on("end", done);
           proxyRes.on("close", done);
@@ -457,14 +494,21 @@ async function startBackendServices() {
     gatewayServer.listen(activePort, "127.0.0.1", () => resolve());
   });
 
-  // Precompile Blade templates in the background so print views never compile on first click
+  // Precompile Blade templates, routes, and events in the background for native-speed PHP responses
   try {
-    spawn(phpBin, ["artisan", "view:cache"], {
-      cwd: APP_ROOT,
-      env,
-      windowsHide: true,
-      stdio: "ignore",
-    });
+    const isProductionBuild =
+      app.isPackaged || (fs.existsSync(manifestFile) && !fs.existsSync(hotFile) && !process.env.KAROBAR_DEV_HMR);
+    const cacheArgs = isProductionBuild
+      ? ["view:cache", "route:cache", "event:cache"]
+      : ["view:cache"];
+    for (const cmd of cacheArgs) {
+      spawn(phpBin, ["artisan", cmd], {
+        cwd: APP_ROOT,
+        env,
+        windowsHide: true,
+        stdio: "ignore",
+      });
+    }
   } catch {
     // ignore
   }
@@ -870,18 +914,42 @@ function buildWindowMenu() {
   };
 }
 
+let menuUpdateTimer = null;
+let lastMenuSignature = "";
+
 function updateApplicationMenus() {
-  try {
-    const appMenu = createApplicationMenu();
-    Menu.setApplicationMenu(appMenu);
-    for (const win of activeAppWindows) {
-      if (win && !win.isDestroyed()) {
-        win.setMenu(appMenu);
-      }
-    }
-  } catch {
-    // ignore
+  if (menuUpdateTimer) {
+    clearTimeout(menuUpdateTimer);
   }
+  menuUpdateTimer = setTimeout(() => {
+    menuUpdateTimer = null;
+    try {
+      const focusedWin = getActiveWindow();
+      const sigParts = [];
+      for (const win of activeAppWindows) {
+        if (win && !win.isDestroyed()) {
+          sigParts.push(`${win.id}:${win === focusedWin ? 1 : 0}:${win.getTitle() || ""}`);
+        }
+      }
+      const nextSignature = sigParts.join("|");
+      if (nextSignature === lastMenuSignature) {
+        return;
+      }
+      lastMenuSignature = nextSignature;
+
+      const appMenu = createApplicationMenu();
+      Menu.setApplicationMenu(appMenu);
+      if (process.platform !== "darwin") {
+        for (const win of activeAppWindows) {
+          if (win && !win.isDestroyed()) {
+            win.setMenu(appMenu);
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, 150);
 }
 
 function isLocalPrintRouteUrl(rawUrl) {
@@ -990,6 +1058,7 @@ function createAppWindow(routePath = "/", options = {}) {
     minWidth: 1024,
     minHeight: 680,
     show: false,
+    backgroundColor: "#f3f4f6",
     title: options.title || "Karobar-App",
     icon: iconPath,
     autoHideMenuBar: false,
@@ -1025,15 +1094,6 @@ function createAppWindow(routePath = "/", options = {}) {
     win.show();
     win.focus();
     updateApplicationMenus();
-
-    setTimeout(() => {
-      try {
-        ensurePrintWorkerWindow();
-        getCachedPrinters(win.webContents).catch(() => {});
-      } catch {
-        // ignore
-      }
-    }, 600);
   });
 
   win.on("focus", () => {
@@ -1173,13 +1233,6 @@ if (!gotSingleLock) {
     await startBackendServices();
     createSystemTray();
     createMainWindow();
-    setTimeout(() => {
-      try {
-        prewarmPrintWindow();
-      } catch {
-        // ignore
-      }
-    }, 600);
   });
 }
 
@@ -1947,7 +2000,7 @@ function createHiddenPrintWindow() {
       session: sessionToUse,
       contextIsolation: true,
       nodeIntegration: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
       additionalArguments: ["--karobar-offscreen-print=1"],
     },
   });
@@ -2017,6 +2070,9 @@ function runOffscreenPrintJob(loadTargetFn, options = {}) {
   const job = printJobChain.then(async () => {
     const printWin = acquirePrintWindow();
     try {
+      if (!printWin.isDestroyed() && printWin.webContents) {
+        printWin.webContents.setBackgroundThrottling(false);
+      }
       await loadTargetFn(printWin);
       const layout = await prepareDocumentForPrint(printWin.webContents);
       return await executeSilentSpoolOrPdf(printWin.webContents, options, layout);

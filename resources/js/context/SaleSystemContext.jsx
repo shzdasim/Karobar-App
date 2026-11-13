@@ -40,6 +40,7 @@ const FALLBACK_CONTEXT = {
 };
 
 const SALE_SYSTEM_STORAGE_KEY = "karobar_sale_system_cache_v1";
+const SALE_SYSTEM_LOCAL_TTL_MS = 5 * 60 * 1000;
 
 function readCachedSaleSystem(token) {
   if (!token || typeof window === "undefined") return null;
@@ -52,10 +53,11 @@ function readCachedSaleSystem(token) {
     /* ignore cross-frame errors */
   }
   try {
-    const raw = sessionStorage.getItem(SALE_SYSTEM_STORAGE_KEY);
+    const raw = sessionStorage.getItem(SALE_SYSTEM_STORAGE_KEY) || localStorage.getItem(SALE_SYSTEM_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.token === token) return parsed;
+      const isFresh = !parsed?.cachedAt || (Date.now() - parsed.cachedAt < SALE_SYSTEM_LOCAL_TTL_MS);
+      if (isFresh && parsed && parsed.token === token) return parsed;
     }
   } catch {
     /* ignore */
@@ -65,7 +67,7 @@ function readCachedSaleSystem(token) {
 
 function writeCachedSaleSystem(token, payload) {
   if (!token || typeof window === "undefined") return;
-  const entry = { token, ...payload };
+  const entry = { token, ...payload, cachedAt: Date.now() };
   try {
     const rootWin = window.top || window;
     rootWin.__karobarAppState = rootWin.__karobarAppState || {};
@@ -74,7 +76,9 @@ function writeCachedSaleSystem(token, payload) {
     /* ignore */
   }
   try {
-    sessionStorage.setItem(SALE_SYSTEM_STORAGE_KEY, JSON.stringify(entry));
+    const serialized = JSON.stringify(entry);
+    sessionStorage.setItem(SALE_SYSTEM_STORAGE_KEY, serialized);
+    localStorage.setItem(SALE_SYSTEM_STORAGE_KEY, serialized);
   } catch {
     /* ignore */
   }

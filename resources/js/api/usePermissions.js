@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 
 const PERMS_STORAGE_KEY = "karobar_perms_cache_v1";
+const PERMS_LOCAL_TTL_MS = 5 * 60 * 1000;
 
 let cachedToken = null;
 let cachedRoles = null;
@@ -33,10 +34,11 @@ function hydrateFromSession() {
     /* ignore cross-frame errors */
   }
   try {
-    const raw = sessionStorage.getItem(PERMS_STORAGE_KEY);
+    const raw = sessionStorage.getItem(PERMS_STORAGE_KEY) || localStorage.getItem(PERMS_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.token === currentToken && Array.isArray(parsed.roles) && Array.isArray(parsed.perms)) {
+      const isFresh = !parsed?.cachedAt || (Date.now() - parsed.cachedAt < PERMS_LOCAL_TTL_MS);
+      if (isFresh && parsed && parsed.token === currentToken && Array.isArray(parsed.roles) && Array.isArray(parsed.perms)) {
         cachedToken = currentToken;
         cachedRoles = new Set(parsed.roles);
         cachedPerms = new Set(parsed.perms);
@@ -64,6 +66,7 @@ export function invalidatePermissionsCache() {
   inflightMePromise = null;
   try {
     sessionStorage.removeItem(PERMS_STORAGE_KEY);
+    localStorage.removeItem(PERMS_STORAGE_KEY);
   } catch {
     /* ignore */
   }
@@ -96,7 +99,7 @@ function fetchPermissionsShared(force = false) {
       cachedToken = currentToken;
       cachedRoles = new Set(rArr);
       cachedPerms = new Set(pArr);
-      const cacheEntry = { token: currentToken, roles: rArr, perms: pArr };
+      const cacheEntry = { token: currentToken, roles: rArr, perms: pArr, cachedAt: Date.now() };
       try {
         const rootWin = window.top || window;
         rootWin.__karobarAppState = rootWin.__karobarAppState || {};
@@ -105,10 +108,9 @@ function fetchPermissionsShared(force = false) {
         /* ignore */
       }
       try {
-        sessionStorage.setItem(
-          PERMS_STORAGE_KEY,
-          JSON.stringify(cacheEntry)
-        );
+        const serialized = JSON.stringify(cacheEntry);
+        sessionStorage.setItem(PERMS_STORAGE_KEY, serialized);
+        localStorage.setItem(PERMS_STORAGE_KEY, serialized);
       } catch {
         /* ignore */
       }

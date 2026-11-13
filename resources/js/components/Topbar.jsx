@@ -608,20 +608,45 @@ export default function Topbar({
         if (!cancelled) setNotifCount(0);
       }
     };
+    let lastFetchAt = Date.now();
+    let changedTimer = null;
+
     fetchCount({ isInitialMount: true });
-    const interval = setInterval(() => fetchCount({ isInitialMount: false }), 30000); // poll every 30s
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      lastFetchAt = Date.now();
+      fetchCount({ isInitialMount: false });
+    }, 30000); // poll every 30s only while window is visible
+
+    const onVisibilityChange = () => {
+      if (typeof document !== "undefined" && !document.hidden && Date.now() - lastFetchAt >= 30000) {
+        lastFetchAt = Date.now();
+        fetchCount({ isInitialMount: false });
+      }
+    };
 
     // Refresh immediately when any relevant event occurs across the application
-    const onChanged = () => fetchCount({ isInitialMount: false });
+    const onChanged = () => {
+      if (changedTimer) clearTimeout(changedTimer);
+      changedTimer = setTimeout(() => {
+        changedTimer = null;
+        if (typeof document !== "undefined" && document.hidden) return;
+        lastFetchAt = Date.now();
+        fetchCount({ isInitialMount: false });
+      }, 250);
+    };
     const onCustomLive = (e) => {
       if (e?.detail) showLiveNotificationCard(e.detail);
     };
+    document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("notifications-changed", onChanged);
     window.addEventListener("live-notification", onCustomLive);
 
     return () => {
       cancelled = true;
       clearInterval(interval);
+      if (changedTimer) clearTimeout(changedTimer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("notifications-changed", onChanged);
       window.removeEventListener("live-notification", onCustomLive);
     };
