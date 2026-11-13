@@ -1021,16 +1021,6 @@ export default function ClassicSidebar({
                           detail: { path: "/dashboard", title: "Dashboard" },
                         })
                       );
-                      window.dispatchEvent(
-                        new CustomEvent("karobar:open-window", {
-                          detail: { path: "/dashboard", title: "Dashboard" },
-                        })
-                      );
-                      window.dispatchEvent(
-                        new CustomEvent("karobar:open-subwindow", {
-                          detail: { path: "/dashboard", title: "Dashboard" },
-                        })
-                      );
                       return;
                     }
                     if (
@@ -1055,11 +1045,6 @@ export default function ClassicSidebar({
                       }
                       window.dispatchEvent(
                         new CustomEvent("karobar:open-window", {
-                          detail: { path: "/dashboard", title: "Dashboard" },
-                        })
-                      );
-                      window.dispatchEvent(
-                        new CustomEvent("karobar:open-subwindow", {
                           detail: { path: "/dashboard", title: "Dashboard" },
                         })
                       );
@@ -1238,11 +1223,6 @@ export default function ClassicSidebar({
                                       detail: { path: item.path, title: item.name },
                                     })
                                   );
-                                  window.dispatchEvent(
-                                    new CustomEvent("karobar:open-subwindow", {
-                                      detail: { path: item.path, title: item.name },
-                                    })
-                                  );
                                   return;
                                 }
                                 if (
@@ -1267,11 +1247,6 @@ export default function ClassicSidebar({
                                   }
                                   window.dispatchEvent(
                                     new CustomEvent("karobar:open-window", {
-                                      detail: { path: item.path, title: item.name },
-                                    })
-                                  );
-                                  window.dispatchEvent(
-                                    new CustomEvent("karobar:open-subwindow", {
                                       detail: { path: item.path, title: item.name },
                                     })
                                   );
@@ -1378,15 +1353,10 @@ export default function ClassicSidebar({
                                         detail: { path: item.path, title: item.name },
                                       })
                                     );
-                                    window.dispatchEvent(
-                                      new CustomEvent("karobar:open-subwindow", {
-                                        detail: { path: item.path, title: item.name },
-                                      })
-                                    );
                                   }}
                                   title={`Open "${item.name}" in a New Window`}
                                   aria-label={`Open ${item.name} in New Window`}
-                                  className="workspace-nav-action-btn px-1.5 py-0.5 rounded-lg text-[11px] font-bold text-slate-500 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-500/15 transition-all cursor-pointer"
+                                  className="workspace-nav-action-btn min-w-[28px] min-h-[28px] flex items-center justify-center rounded-lg text-xs font-bold text-slate-500 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-500/15 transition-all cursor-pointer"
                                 >
                                   ⧉
                                 </button>
@@ -1405,14 +1375,6 @@ export default function ClassicSidebar({
                                       if (e.ctrlKey || e.metaKey) {
                                         window.dispatchEvent(
                                           new CustomEvent("karobar:open-window", {
-                                            detail: {
-                                              path: item.quickCreatePath,
-                                              title: item.quickCreateLabel || `Add ${item.name}`,
-                                            },
-                                          })
-                                        );
-                                        window.dispatchEvent(
-                                          new CustomEvent("karobar:open-subwindow", {
                                             detail: {
                                               path: item.quickCreatePath,
                                               title: item.quickCreateLabel || `Add ${item.name}`,

@@ -207,6 +207,9 @@ export default function DashboardLayout({ children }) {
       "/stocktake-sessions/create": "New Stocktake Session",
       "/backups": "Backups & Offsite Storage",
       "/activate": "License Activation",
+      "/wholesale-invoices": "Wholesale Invoices",
+      "/wholesale-invoices/create": "Create Wholesale Invoice",
+      "/setup": "Initial Setup Wizard",
     }),
     []
   );
@@ -234,6 +237,10 @@ export default function DashboardLayout({ children }) {
       if (/^\/purchase-returns\/\d+$/.test(cleanPath)) return "Purchase Return Details";
       if (/^\/purchase-orders\/\d+\/edit$/.test(cleanPath)) return "Edit Purchase Order";
       if (/^\/purchase-orders\/\d+$/.test(cleanPath)) return "Purchase Order Details";
+      if (/^\/wholesale-invoices\/\d+\/edit$/.test(cleanPath)) return "Edit Wholesale Invoice";
+      if (/^\/wholesale-invoices\/\d+$/.test(cleanPath)) return "Wholesale Invoice Details";
+      if (/^\/customers\/\d+$/.test(cleanPath)) return "Customer Details";
+      if (/^\/suppliers\/\d+$/.test(cleanPath)) return "Supplier Details";
       if (/^\/users\/\d+\/edit$/.test(cleanPath)) return "Edit User";
       if (/^\/roles\/\d+\/edit$/.test(cleanPath)) return "Edit Role";
       return "Dashboard";

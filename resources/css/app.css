@@ -699,7 +699,7 @@ body:has(.workspace-shell) { transform: none; }
   color: var(--workspace-accent);
 }
 
-.workspace-topbar-slot { position: relative; z-index: 30; }
+.workspace-topbar-slot { position: relative; z-index: 36; }
 .workspace-topbar { min-height: 54px; padding: 8px 14px; border: 1px solid var(--workspace-edge); border-radius: 16px; background: var(--workspace-surface); box-shadow: inset 0 1px 0 var(--workspace-edge), var(--workspace-shadow); display: flex; align-items: center; }
 .workspace-topbar-row { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-width: 0; }
 .workspace-search { flex: 1; min-width: min(220px, 100%); max-width: 480px; }
@@ -797,23 +797,7 @@ body:has(.workspace-shell) { transform: none; }
   --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/*
-  The default border color has changed to `currentcolor` in Tailwind CSS v4,
-  so we've added these compatibility styles to make sure everything still
-  looks the same as it did with Tailwind CSS v3.
 
-  If we ever want to remove these styles, we need to add an explicit border
-  color utility to any element that depends on these defaults.
-*/
-@layer base {
-  *,
-  ::after,
-  ::before,
-  ::backdrop,
-  ::file-selector-button {
-    border-color: var(--color-gray-200, currentcolor);
-  }
-}
 
 @utility g-card {
   & table {
@@ -3636,8 +3620,11 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
 @media (hover: hover) and (pointer: fine) {
   :is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) {
     background: var(--sl-deep) !important;
-    color: transparent !important;
+    color: var(--btn-accent-ink, #ffffff) !important;
     transform: none;
+  }
+  .btn-slide:not([class*="theme-btn"]):not([class*="g-btn"]):is(:hover, :focus-visible):not(:disabled) {
+    color: transparent !important;
   }
   :is(.btn-slide, html[data-btn-style="soft"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled)::after {
     width: 100%;
@@ -3812,22 +3799,21 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
 @media (hover: hover) and (pointer: fine) {
   :is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):is(:hover, :focus-visible):not(:disabled) {
     background: var(--lift-face) !important;
-    transform: translateY(-10px);
+    transform: translateY(-2px);
     box-shadow:
       inset 0 0 0 1px var(--lift-ring),
-      0 7px 0 -2px var(--lift-a),
-      0 15px 0 -4px var(--lift-b),
-      0 16px 10px -3px var(--lift-b) !important;
+      0 3px 0 -1px var(--lift-a),
+      0 5px 0 -2px var(--lift-b),
+      0 6px 6px -2px var(--lift-b) !important;
   }
 }
 :is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])):active:not(:disabled) {
   transition-duration: 200ms;
-  transform: translateY(-5px);
+  transform: translateY(0);
   box-shadow:
     inset 0 0 0 1px var(--lift-ring),
-    0 2px 0 -2px var(--lift-a),
-    0 8px 0 -4px var(--lift-b),
-    0 12px 10px -3px var(--lift-b) !important;
+    0 1px 0 -1px var(--lift-a),
+    0 2px 0 -2px var(--lift-b) !important;
 }
 @media (prefers-reduced-motion: reduce) {
   :is(.btn-lift, html[data-btn-style="outlined"] :is(.theme-btn-primary, .g-btn-primary, .products-action-primary, .purchase-order-action-primary, .activity-primary-button, .product-modal-save, .theme-btn-secondary, .g-btn-secondary, .activity-secondary-button, .product-modal-cancel, .theme-btn-tertiary, .g-btn-tertiary, .theme-btn-danger, .products-action-danger, .purchase-order-action-danger, .theme-btn-success, .products-action-success):not([data-btn-preview])),

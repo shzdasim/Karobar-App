@@ -44,6 +44,7 @@ export default function SessionExpiryModal() {
   const navigate = useNavigate();
   const location = useLocation();
   const autoGraceProtectedRef = useRef(false);
+  const primaryActionRef = useRef(null);
 
   // Ensure backend token stays alive while the popup is visible on screen
   // so an in-progress invoice save never fails with 401 before the user clicks a button
@@ -175,6 +176,31 @@ export default function SessionExpiryModal() {
     }
   };
 
+  // Focus primary action on open and trap escape/shortcuts
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setTimeout(() => {
+      primaryActionRef.current?.focus();
+    }, 50);
+
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        handleWaitTenMinutes();
+      } else if (e.ctrlKey || e.metaKey) {
+        // Prevent background global shortcuts while session alert is active
+        e.stopPropagation();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [isOpen, isExtending]);
+
   if (!isOpen) return null;
 
   return (
@@ -192,7 +218,7 @@ export default function SessionExpiryModal() {
               <span id="session-expiry-title" className="inline-flex items-center gap-2">
                 <ClockIcon
                   className="h-5 w-5 shrink-0"
-                  style={{ color: "var(--theme-primary, #2563eb)" }}
+                  style={{ color: "var(--color-primary, #2563eb)" }}
                 />
                 <span>Session Timeout Notice</span>
               </span>
@@ -211,7 +237,7 @@ export default function SessionExpiryModal() {
             <div className="flex items-start gap-2.5 rounded-xl border border-gray-200/80 dark:border-slate-700/80 bg-white/60 dark:bg-slate-800/60 px-3.5 py-2.5 text-xs text-gray-600 dark:text-slate-300">
               <ShieldCheckIcon
                 className="mt-0.5 h-4 w-4 shrink-0"
-                style={{ color: "var(--theme-primary, #2563eb)" }}
+                style={{ color: "var(--color-primary, #2563eb)" }}
               />
               <div>
                 <span className="font-semibold text-gray-900 dark:text-slate-100">
@@ -233,6 +259,7 @@ export default function SessionExpiryModal() {
               </button>
 
               <button
+                ref={primaryActionRef}
                 type="button"
                 onClick={handleWaitTenMinutes}
                 disabled={isExtending || isLoggingOut}

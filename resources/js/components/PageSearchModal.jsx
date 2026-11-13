@@ -714,11 +714,6 @@ export default function PageSearchModal({ isOpen, onClose }) {
           detail: { path: page.path, title: page.name },
         })
       );
-      window.dispatchEvent(
-        new CustomEvent("karobar:open-subwindow", {
-          detail: { path: page.path, title: page.name },
-        })
-      );
     } else {
       navigate(page.path);
     }

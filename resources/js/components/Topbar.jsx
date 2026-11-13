@@ -673,6 +673,9 @@ export default function Topbar({
   const buttonStyle = theme?.button_style || 'modern';
   const isOutlined = buttonStyle === 'outlined';
   const buttonStyleClass = {
+    'apple':      'rounded-[10px]',
+    'windows':    'rounded-[4px]',
+    'tactile':    'rounded-[14px]',
     'modern':     'rounded-xl',
     'rounded':    'rounded-lg',
     'rounded-sm': 'rounded-md',
@@ -688,7 +691,7 @@ export default function Topbar({
 
   // Dynamic button class generator
   const getButtonClass = (baseColor, hoverColor, shadowColor) => 
-    `inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-colors focus:outline-hidden focus:ring-2 focus:ring-${baseColor}/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-xs'}`;
+    `inline-flex items-center gap-1.5 ${buttonStyleClass} px-3 py-1 text-xs font-semibold transition-colors focus:outline-hidden focus:ring-2 focus:ring-blue-500/50 relative z-50 ${isOutlined ? 'border-2' : 'shadow-xs'}`;
 
   const openInNewTab = (path, title) =>
     window.dispatchEvent(
@@ -1030,7 +1033,7 @@ export default function Topbar({
               onClick={() => setNotifOpen(true)}
               title="Notifications & Stock Alerts"
               aria-label="Open notification center"
-              className={`relative inline-flex items-center justify-center h-9 w-9 ${buttonStyleClass} transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 shrink-0 cursor-pointer ${isOutlined ? 'border-2' : 'shadow-xs'}`}
+              className={`relative inline-flex items-center justify-center h-9 w-9 ${buttonStyleClass} transition-colors focus:outline-hidden focus:ring-2 focus:ring-blue-500/50 shrink-0 cursor-pointer ${isOutlined ? 'border-2' : 'shadow-xs'}`}
               style={{
                 background: getButtonBg(themeColors.primary),
                 border: getButtonBorder(themeColors.primary),
@@ -1058,7 +1061,7 @@ export default function Topbar({
               title="Keyboard Shortcuts (?)"
               aria-label="Open keyboard shortcuts guide"
               aria-keyshortcuts="?"
-              className={`relative hidden md:inline-flex items-center justify-center h-9 w-9 ${buttonStyleClass} transition-colors focus:outline-hidden focus:ring-2 focus:ring-${themeColors.primary}/50 shrink-0 cursor-pointer ${isOutlined ? 'border-2' : 'shadow-xs'}`}
+              className={`relative hidden md:inline-flex items-center justify-center h-9 w-9 ${buttonStyleClass} transition-colors focus:outline-hidden focus:ring-2 focus:ring-blue-500/50 shrink-0 cursor-pointer ${isOutlined ? 'border-2' : 'shadow-xs'}`}
               style={{
                 background: getButtonBg(themeColors.primary),
                 border: getButtonBorder(themeColors.primary),

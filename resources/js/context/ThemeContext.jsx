@@ -168,6 +168,53 @@ function applyThemeCssVariables(targetTheme, darkFlag) {
   root.style.setProperty('--color-shadow', targetTheme.shadow_color);
 }
 
+export const THEME_RADIUS_MAP = {
+  'apple':      '0.625rem', // 10px Apple squircle
+  'windows':    '0.25rem',  // 4px Windows 11 Fluent
+  'tactile':    '0.875rem', // 14px
+  'modern':     '0.75rem',  // 12px – modern default
+  'rounded':    '0.5rem',   // 8px
+  'rounded-sm': '0.375rem', // 6px
+  'outlined':   '5px',      // Stacked Lift (stored id "outlined")
+  'soft':       '1rem',     // 16px
+  'pill':       '5px',      // Letter Cascade (stored id "pill")
+};
+
+export function resolveThemeForData(data, isDark) {
+  if (!data) return isDark ? DARK_THEME : DEFAULT_THEME;
+  const currentType = detectThemeType(data);
+  let modeBase = isDark ? DARK_THEME : DEFAULT_THEME;
+  if (currentType === 'apple') {
+    modeBase = isDark ? APPLE_DARK_THEME : APPLE_LIGHT_THEME;
+  } else if (currentType === 'windows') {
+    modeBase = isDark ? WINDOWS_DARK_THEME : WINDOWS_LIGHT_THEME;
+  }
+  return {
+    name: data.name || modeBase.name,
+    primary_color: data.primary_color || modeBase.primary_color,
+    primary_hover: data.primary_hover || modeBase.primary_hover,
+    primary_light: isDark ? modeBase.primary_light : (data.primary_light || modeBase.primary_light),
+    secondary_color: data.secondary_color || modeBase.secondary_color,
+    secondary_hover: data.secondary_hover || modeBase.secondary_hover,
+    secondary_light: isDark ? modeBase.secondary_light : (data.secondary_light || modeBase.secondary_light),
+    tertiary_color: data.tertiary_color || modeBase.tertiary_color,
+    tertiary_hover: data.tertiary_hover || modeBase.tertiary_hover,
+    tertiary_light: isDark ? modeBase.tertiary_light : (data.tertiary_light || modeBase.tertiary_light),
+    background_color: isDark ? modeBase.background_color : (data.background_color || modeBase.background_color),
+    surface_color: isDark ? modeBase.surface_color : (data.surface_color || modeBase.surface_color),
+    text_primary: isDark ? modeBase.text_primary : (data.text_primary || modeBase.text_primary),
+    text_secondary: isDark ? modeBase.text_secondary : (data.text_secondary || modeBase.text_secondary),
+    success_color: data.success_color || modeBase.success_color,
+    warning_color: data.warning_color || modeBase.warning_color,
+    danger_color: data.danger_color || modeBase.danger_color,
+    border_color: isDark ? modeBase.border_color : (data.border_color || modeBase.border_color),
+    shadow_color: isDark ? modeBase.shadow_color : (data.shadow_color || modeBase.shadow_color),
+    button_style: data.button_style || modeBase.button_style,
+    sidebar_template: data.sidebar_template || modeBase.sidebar_template,
+    topbar_template: data.topbar_template || modeBase.topbar_template,
+  };
+}
+
 const THEME_CACHE_KEY = 'karobar_active_theme_v1';
 
 export function ThemeProvider({ children }) {
@@ -365,13 +412,11 @@ export function ThemeProvider({ children }) {
   // Load saved theme mode from localStorage on mount
   useEffect(() => {
     const savedMode = localStorage.getItem('theme_mode');
-    if (savedMode === 'dark') {
-      setIsDark(true);
-      setTheme(DARK_THEME);
-      applyThemeCssVariables(DARK_THEME, true);
-    } else {
-      applyThemeCssVariables(LIGHT_THEME, false);
+    const isSavedDark = savedMode === 'dark';
+    if (isSavedDark !== isDark) {
+      setIsDark(isSavedDark);
     }
+    applyThemeCssVariables(theme, isSavedDark);
   }, []);
 
   // Sync dark class with Tailwind when isDark changes
@@ -390,37 +435,7 @@ export function ThemeProvider({ children }) {
       
       if (data) {
         const savedDark = localStorage.getItem('theme_mode') === 'dark';
-        const currentType = detectThemeType(data);
-        let modeBase = savedDark ? DARK_THEME : DEFAULT_THEME;
-        if (currentType === 'apple') {
-          modeBase = savedDark ? APPLE_DARK_THEME : APPLE_LIGHT_THEME;
-        } else if (currentType === 'windows') {
-          modeBase = savedDark ? WINDOWS_DARK_THEME : WINDOWS_LIGHT_THEME;
-        }
-        const resolvedTheme = {
-          name: data.name || modeBase.name,
-          primary_color: data.primary_color || modeBase.primary_color,
-          primary_hover: data.primary_hover || modeBase.primary_hover,
-          primary_light: savedDark ? modeBase.primary_light : (data.primary_light || modeBase.primary_light),
-          secondary_color: data.secondary_color || modeBase.secondary_color,
-          secondary_hover: data.secondary_hover || modeBase.secondary_hover,
-          secondary_light: savedDark ? modeBase.secondary_light : (data.secondary_light || modeBase.secondary_light),
-          tertiary_color: data.tertiary_color || modeBase.tertiary_color,
-          tertiary_hover: data.tertiary_hover || modeBase.tertiary_hover,
-          tertiary_light: savedDark ? modeBase.tertiary_light : (data.tertiary_light || modeBase.tertiary_light),
-          background_color: savedDark ? modeBase.background_color : (data.background_color || modeBase.background_color),
-          surface_color: savedDark ? modeBase.surface_color : (data.surface_color || modeBase.surface_color),
-          text_primary: savedDark ? modeBase.text_primary : (data.text_primary || modeBase.text_primary),
-          text_secondary: savedDark ? modeBase.text_secondary : (data.text_secondary || modeBase.text_secondary),
-          success_color: data.success_color || modeBase.success_color,
-          warning_color: data.warning_color || modeBase.warning_color,
-          danger_color: data.danger_color || modeBase.danger_color,
-          border_color: savedDark ? modeBase.border_color : (data.border_color || modeBase.border_color),
-          shadow_color: savedDark ? modeBase.shadow_color : (data.shadow_color || modeBase.shadow_color),
-          button_style: data.button_style || modeBase.button_style,
-          sidebar_template: data.sidebar_template || modeBase.sidebar_template,
-          topbar_template: data.topbar_template || modeBase.topbar_template,
-        };
+        const resolvedTheme = resolveThemeForData(data, savedDark);
         setTheme(resolvedTheme);
         applyThemeCssVariables(resolvedTheme, savedDark);
         try {
@@ -491,18 +506,7 @@ export function ThemeProvider({ children }) {
     root.style.setProperty('--color-shadow', theme.shadow_color);
     
     // Button style radius
-    const radiusMap = {
-      'apple':      '0.625rem', // 10px Apple squircle
-      'windows':    '0.25rem',  // 4px Windows 11 Fluent
-      'tactile':    '0.875rem', // 14px
-      'modern':     '0.75rem',  // 12px – modern default
-      'rounded':    '0.5rem',   // 8px
-      'rounded-sm': '0.375rem', // 6px
-      'outlined':   '5px',      // Stacked Lift (stored id "outlined")
-      'soft':       '1rem',     // 16px
-      'pill':       '5px',      // Letter Cascade (stored id "pill")
-    };
-    root.style.setProperty('--btn-radius', radiusMap[theme.button_style] || '0.25rem');
+    root.style.setProperty('--btn-radius', THEME_RADIUS_MAP[theme.button_style] || '0.75rem');
     
     // Sidebar template
     root.style.setProperty('--sidebar-template', theme.sidebar_template || 'classic');
@@ -570,67 +574,24 @@ export function ThemeProvider({ children }) {
       
       console.log('Saving theme to server:', themeData);
       
-      // Save to server and use the response directly (no refetch to avoid race conditions)
+      // Save to server and resolve safely with active appearance (preserving Dark Mode)
       const { data } = await axios.put('/api/theme-settings/active', themeData);
       console.log('Theme saved successfully:', data);
       
-      // Update with fresh data from server
-      setTheme(data);
+      const savedDark = localStorage.getItem('theme_mode') === 'dark';
+      const resolvedTheme = resolveThemeForData(data, savedDark);
       
-      // Apply all CSS variables from server response
-      const cssVars = {
-        primary_color: data.primary_color,
-        primary_hover: data.primary_hover,
-        primary_light: data.primary_light,
-        secondary_color: data.secondary_color,
-        secondary_hover: data.secondary_hover,
-        secondary_light: data.secondary_light,
-        tertiary_color: data.tertiary_color,
-        tertiary_hover: data.tertiary_hover,
-        tertiary_light: data.tertiary_light,
-        background_color: data.background_color,
-        surface_color: data.surface_color,
-        text_primary: data.text_primary,
-        text_secondary: data.text_secondary,
-        success_color: data.success_color,
-        warning_color: data.warning_color,
-        danger_color: data.danger_color,
-        border_color: data.border_color,
-        shadow_color: data.shadow_color,
-        button_style: data.button_style,
-        sidebar_template: data.sidebar_template,
-        topbar_template: data.topbar_template,
-      };
-      Object.entries(cssVars).forEach(([key, value]) => {
-        if (value) {
-          const cssVar = `--color-${key.replace(/_/g, '-')}`;
-          root.style.setProperty(cssVar, value);
-        }
-      });
-      
-      // Apply button style radius
-      const radiusMap = {
-        'apple':      '0.625rem', // 10px Apple squircle
-        'windows':    '0.25rem',  // 4px Windows Fluent
-        'modern':     '0.75rem',  // 12px – modern default
-        'rounded':    '0.5rem',   // 8px
-        'rounded-sm': '0.375rem', // 6px
-        'outlined':   '0.5rem',   // 8px
-        'soft':       '1rem',     // 16px
-        'pill':       '9999px',   // full pill
-      };
-      root.style.setProperty('--btn-radius', radiusMap[data.button_style] || '0.75rem');
-      
-      // Apply sidebar template
-      root.style.setProperty('--sidebar-template', data.sidebar_template || 'classic');
-      
-      // Apply topbar template
-      root.style.setProperty('--topbar-template', data.topbar_template || 'classic');
+      // Update state and apply CSS variables
+      setTheme(resolvedTheme);
+      applyThemeCssVariables(resolvedTheme, savedDark);
+      try {
+        localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(resolvedTheme));
+      } catch {}
       
       // Dispatch event for other components
-      window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: data } }));
+      window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: resolvedTheme } }));
       
-      return data;
+      return resolvedTheme;
     } catch (err) {
       console.error('Failed to save theme:', err.response || err);
       // Revert to saved theme on error - fetch fresh data
@@ -644,40 +605,20 @@ export function ThemeProvider({ children }) {
     try {
       const { data } = await axios.put(`/api/theme-settings/${id}/activate`);
       
-      // Immediately update local state for instant feedback
-      setTheme(data);
+      const savedDark = localStorage.getItem('theme_mode') === 'dark';
+      const resolvedTheme = resolveThemeForData(data, savedDark);
       
-      // Apply CSS variables immediately
-      const root = document.documentElement;
-      root.style.setProperty('--color-primary', data.primary_color);
-      root.style.setProperty('--color-primary-hover', data.primary_hover);
-      root.style.setProperty('--color-primary-light', data.primary_light);
-      root.style.setProperty('--color-secondary', data.secondary_color);
-      root.style.setProperty('--color-secondary-hover', data.secondary_hover);
-      root.style.setProperty('--color-secondary-light', data.secondary_light);
-      root.style.setProperty('--color-tertiary', data.tertiary_color);
-      root.style.setProperty('--color-tertiary-hover', data.tertiary_hover);
-      root.style.setProperty('--color-tertiary-light', data.tertiary_light);
-      root.style.setProperty('--sidebar-template', data.sidebar_template || 'classic');
-      root.style.setProperty('--topbar-template', data.topbar_template || 'classic');
-      
-      // Apply button style radius
-      const activateRadiusMap = {
-        'apple':      '0.625rem',
-        'windows':    '0.25rem',
-        'modern':     '0.75rem',
-        'rounded':    '0.5rem',
-        'rounded-sm': '0.375rem',
-        'outlined':   '0.5rem',
-        'soft':       '1rem',
-        'pill':       '9999px',
-      };
-      root.style.setProperty('--btn-radius', activateRadiusMap[data.button_style] || '0.75rem');
+      // Update state and apply CSS variables (preserving Dark Mode)
+      setTheme(resolvedTheme);
+      applyThemeCssVariables(resolvedTheme, savedDark);
+      try {
+        localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(resolvedTheme));
+      } catch {}
       
       // Dispatch event for other components
-      window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: data } }));
+      window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: resolvedTheme } }));
       
-      return data;
+      return resolvedTheme;
     } catch (err) {
       console.error('Failed to activate theme:', err);
       throw err;

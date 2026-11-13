@@ -2669,8 +2669,32 @@ export default function HrPayrollCenter() {
       {/* MODAL 5: PRINTABLE PAYSLIP VIEW */}
       {printingPayslip && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="bg-white text-slate-900 rounded-2xl max-w-xl w-full max-h-[90dvh] overflow-y-auto p-4 sm:p-6 shadow-2xl space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3 print:hidden">
+          <style>{`
+            @media print {
+              body * {
+                visibility: hidden;
+              }
+              #payslip-printable-voucher, #payslip-printable-voucher * {
+                visibility: visible;
+              }
+              #payslip-printable-voucher {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                background: white !important;
+                color: black !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+          `}</style>
+          <div
+            id="payslip-printable-voucher"
+            className="bg-white text-slate-900 rounded-2xl max-w-xl w-full max-h-[90dvh] overflow-y-auto p-4 sm:p-6 shadow-2xl space-y-4 print:p-0 print:border-none print:shadow-none"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3 print:hidden no-print">
               <h3 className="text-base font-bold">Employee Payslip ({printingPayslip.period_month})</h3>
               <div className="flex items-center gap-2">
                 <button

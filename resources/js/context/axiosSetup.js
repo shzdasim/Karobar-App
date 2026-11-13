@@ -117,6 +117,9 @@ const SESSION_CONFIG_MUTATION_REGEX =
   /\/api\/(settings|theme-settings|preferences|roles|permissions|users|profile|license|login|logout)/;
 
 function invalidateCacheForMutation(mutationUrl = "") {
+  if (mutationUrl.includes("/session/extend")) {
+    return;
+  }
   if (!mutationUrl || SESSION_CONFIG_MUTATION_REGEX.test(mutationUrl)) {
     clearApiCache();
     return;
@@ -313,7 +316,8 @@ export function initAxiosAuth() {
       const reqUrl = config?.url || "";
       if (
         ["post", "put", "patch", "delete"].includes(method) &&
-        !reqUrl.includes("/api/cube/")
+        !reqUrl.includes("/api/cube/") &&
+        !reqUrl.includes("/session/extend")
       ) {
         invalidateCacheForMutation(reqUrl);
       }
@@ -333,7 +337,8 @@ export function initAxiosAuth() {
         const cubeDidMutateProducts = Boolean(r?.data?.task_meta?.refresh_products);
         if (
           ["post", "put", "patch", "delete"].includes(method) &&
-          (!isCubeEndpoint || cubeDidMutateProducts)
+          (!isCubeEndpoint || cubeDidMutateProducts) &&
+          !url.includes("/session/extend")
         ) {
           invalidateCacheForMutation(url);
         }
