@@ -82,15 +82,26 @@ class CustomerLedger extends Model
     }
 
     /**
-     * Compute total positive customer receivables across all customers in 2 grouped SQL queries.
+     * Compute positive customer receivables per customer in 2 grouped SQL queries.
+     *
+     * @param  array<int, int>|null  $customerIds
+     * @return array<int, float>
      */
-    public static function getTotalReceivablesBalance(): float
+    public static function getBulkCustomerNetBalances(?array $customerIds = null): array
     {
         $walkInIds = Customer::walkInIds();
+        $filterIds = $customerIds !== null
+            ? array_values(array_unique(array_filter(array_map('intval', $customerIds))))
+            : null;
+
+        if ($filterIds !== null && empty($filterIds)) {
+            return [];
+        }
 
         $invRows = DB::table('customer_ledgers as cl')
             ->leftJoin('sale_invoices as si', 'si.id', '=', 'cl.sale_invoice_id')
             ->whereNotNull('cl.customer_id')
+            ->when($filterIds !== null, fn ($q) => $q->whereIn('cl.customer_id', $filterIds))
             ->when(!empty($walkInIds), fn ($q) => $q->whereNotIn('cl.customer_id', $walkInIds))
             ->whereIn('cl.entry_type', ['invoice', 'manual'])
             ->where(function ($q) {
@@ -109,6 +120,7 @@ class CustomerLedger extends Model
 
         $payRows = DB::table('customer_ledgers')
             ->whereNotNull('customer_id')
+            ->when($filterIds !== null, fn ($q) => $q->whereIn('customer_id', $filterIds))
             ->when(!empty($walkInIds), fn ($q) => $q->whereNotIn('customer_id', $walkInIds))
             ->where('entry_type', 'payment')
             ->selectRaw('customer_id, SUM(COALESCE(credited_amount, 0)) as total_credited')
@@ -116,7 +128,7 @@ class CustomerLedger extends Model
             ->get()
             ->keyBy('customer_id');
 
-        $totalReceivables = 0.0;
+        $balances = [];
         $allCustIds = $invRows->keys()->merge($payRows->keys())->unique();
         foreach ($allCustIds as $cid) {
             if (!$cid) {
@@ -125,12 +137,20 @@ class CustomerLedger extends Model
             $inv = $invRows->get($cid);
             $pay = $payRows->get($cid);
             $net = (($inv->total_inv ?? 0) - ($inv->received_on_inv ?? 0)) - ($pay->total_credited ?? 0);
-            if ($net > 0) {
-                $totalReceivables += round((float) $net, 2);
+            if ($net > 0.01) {
+                $balances[(int) $cid] = round((float) $net, 2);
             }
         }
 
-        return round($totalReceivables, 2);
+        return $balances;
+    }
+
+    /**
+     * Compute total positive customer receivables across all customers in 2 grouped SQL queries.
+     */
+    public static function getTotalReceivablesBalance(): float
+    {
+        return round(array_sum(self::getBulkCustomerNetBalances()), 2);
     }
 
     public function customer(): BelongsTo

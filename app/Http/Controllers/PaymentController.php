@@ -264,7 +264,7 @@ class PaymentController extends Controller
     }
 
     /**
-     * Get aggregated available unapplied credits grouped by supplier/customer.
+     * Get aggregated net due balances grouped by supplier/customer.
      */
     public function partyCredits(Request $request): JsonResponse
     {
@@ -272,15 +272,33 @@ class PaymentController extends Controller
 
         $validated = $request->validate([
             'party_type' => ['nullable', Rule::in(['all', 'customer', 'supplier'])],
-            'source'     => ['nullable', Rule::in(['all', 'advance', 'return'])],
+            'status'     => ['nullable', Rule::in(['all', 'overdue'])],
             'search'     => ['nullable', 'string', 'max:150'],
             'min_amount' => ['nullable', 'numeric', 'min:0'],
-            'date_from'  => ['nullable', 'date'],
-            'date_to'    => ['nullable', 'date'],
-            'sort'       => ['nullable', Rule::in(['highest', 'lowest', 'name_asc', 'recent'])],
+            'sort'       => ['nullable', Rule::in(['highest', 'lowest', 'name_asc', 'overdue'])],
         ]);
 
         return response()->json($this->paymentService->getPartyCreditsSummary($validated));
+    }
+
+    /**
+     * Get open due invoices & manual balances for a single supplier or customer.
+     */
+    public function partyDueDetails(Request $request): JsonResponse
+    {
+        $this->authorize('viewAny', Payment::class);
+
+        $validated = $request->validate([
+            'party_type' => ['required', Rule::in(['customer', 'supplier'])],
+            'party_id'   => ['required', 'integer'],
+        ]);
+
+        return response()->json(
+            $this->paymentService->getPartyDueDetails(
+                (string) $validated['party_type'],
+                (int) $validated['party_id']
+            )
+        );
     }
 
     /**

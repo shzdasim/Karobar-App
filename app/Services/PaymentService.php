@@ -1132,163 +1132,179 @@ class PaymentService
     }
 
     /**
-     * Get aggregated available unapplied credits grouped by party (one row per supplier/customer).
+     * Get aggregated net due balances grouped by party (one row per supplier/customer).
+     * Shows what we need to collect from customers and what we owe to suppliers right now.
      */
     public function getPartyCreditsSummary(array $filters = []): array
     {
         $partyTypeFilter = $filters['party_type'] ?? 'all';
-        $sourceFilter = $filters['source'] ?? 'all';
+        $statusFilter = $filters['status'] ?? 'all'; // all | overdue
         $search = trim((string) ($filters['search'] ?? ''));
         $minAmount = isset($filters['min_amount']) && $filters['min_amount'] !== '' ? (float) $filters['min_amount'] : null;
-        $dateFrom = !empty($filters['date_from']) ? (string) $filters['date_from'] : null;
-        $dateTo = !empty($filters['date_to']) ? (string) $filters['date_to'] : null;
         $sort = $filters['sort'] ?? 'highest';
-
-        $syncType = in_array($partyTypeFilter, ['customer', 'supplier'], true) ? $partyTypeFilter : null;
-        $this->syncMissingReturnCreditPayments($syncType, null);
-
-        $query = Payment::query()
-            ->where('status', 'posted')
-            ->where('unapplied_amount', '>', 0)
-            ->whereIn('party_type', ['customer', 'supplier'])
-            ->whereNotNull('party_id');
-
-        if (in_array($partyTypeFilter, ['customer', 'supplier'], true)) {
-            $query->where('party_type', $partyTypeFilter);
-        }
-
-        if ($sourceFilter === 'return') {
-            $query->where(function ($q) {
-                $q->where('idempotency_key', 'like', 'sale_return:%')
-                    ->orWhere('idempotency_key', 'like', 'purchase_return:%');
-            });
-        } elseif ($sourceFilter === 'advance') {
-            $query->where(function ($q) {
-                $q->whereNull('idempotency_key')
-                    ->orWhere(function ($q2) {
-                        $q2->where('idempotency_key', 'not like', 'sale_return:%')
-                            ->where('idempotency_key', 'not like', 'purchase_return:%');
-                    });
-            });
-        }
-
-        if ($dateFrom) {
-            $query->whereDate('payment_date', '>=', $dateFrom);
-        }
-        if ($dateTo) {
-            $query->whereDate('payment_date', '<=', $dateTo);
-        }
-
-        $payments = $query->get([
-            'id',
-            'party_type',
-            'party_id',
-            'payment_date',
-            'amount',
-            'allocated_amount',
-            'unapplied_amount',
-            'idempotency_key',
-        ]);
-
-        $grouped = [];
-        $customerIds = [];
-        $supplierIds = [];
-
-        foreach ($payments as $p) {
-            $pType = (string) $p->party_type;
-            $pId = (int) $p->party_id;
-            $key = $pType . ':' . $pId;
-            $unapplied = round((float) $p->unapplied_amount, 2);
-            if ($unapplied <= 0) {
-                continue;
-            }
-
-            $idem = (string) ($p->idempotency_key ?? '');
-            $isReturn = str_starts_with($idem, 'sale_return:') || str_starts_with($idem, 'purchase_return:');
-            $pDate = $p->payment_date ? $p->payment_date->toDateString() : null;
-
-            if (!isset($grouped[$key])) {
-                $grouped[$key] = [
-                    'party_type'            => $pType,
-                    'party_id'              => $pId,
-                    'credit_count'          => 0,
-                    'advance_credit'        => 0.0,
-                    'return_credit'         => 0.0,
-                    'total_credit'          => 0.0,
-                    'total_original_amount' => 0.0,
-                    'total_applied_amount'  => 0.0,
-                    'latest_credit_date'    => $pDate,
-                    'oldest_credit_date'    => $pDate,
-                ];
-                if ($pType === 'customer') {
-                    $customerIds[$pId] = true;
-                } else {
-                    $supplierIds[$pId] = true;
-                }
-            }
-
-            $grouped[$key]['credit_count']++;
-            if ($isReturn) {
-                $grouped[$key]['return_credit'] = round($grouped[$key]['return_credit'] + $unapplied, 2);
-            } else {
-                $grouped[$key]['advance_credit'] = round($grouped[$key]['advance_credit'] + $unapplied, 2);
-            }
-            $grouped[$key]['total_credit'] = round($grouped[$key]['total_credit'] + $unapplied, 2);
-            $grouped[$key]['total_original_amount'] = round($grouped[$key]['total_original_amount'] + (float) $p->amount, 2);
-            $grouped[$key]['total_applied_amount'] = round($grouped[$key]['total_applied_amount'] + (float) $p->allocated_amount, 2);
-
-            if ($pDate !== null) {
-                if ($grouped[$key]['latest_credit_date'] === null || $pDate > $grouped[$key]['latest_credit_date']) {
-                    $grouped[$key]['latest_credit_date'] = $pDate;
-                }
-                if ($grouped[$key]['oldest_credit_date'] === null || $pDate < $grouped[$key]['oldest_credit_date']) {
-                    $grouped[$key]['oldest_credit_date'] = $pDate;
-                }
-            }
-        }
-
-        $customers = !empty($customerIds)
-            ? Customer::whereIn('id', array_keys($customerIds))->get(['id', 'name', 'phone', 'email'])->keyBy('id')
-            : collect();
-        $suppliers = !empty($supplierIds)
-            ? Supplier::whereIn('id', array_keys($supplierIds))->get(['id', 'name', 'phone', 'email'])->keyBy('id')
-            : collect();
+        $today = now()->toDateString();
 
         $rows = [];
         $searchLower = mb_strtolower($search);
 
-        foreach ($grouped as $row) {
-            $party = $row['party_type'] === 'customer'
-                ? $customers->get($row['party_id'])
-                : $suppliers->get($row['party_id']);
+        // 1. Customers (Receivable: money to collect)
+        if ($partyTypeFilter === 'all' || $partyTypeFilter === 'customer') {
+            $customerBalances = Schema::hasTable('customer_ledgers')
+                ? CustomerLedger::getBulkCustomerNetBalances()
+                : [];
 
-            $partyName = $party?->name ?? ucfirst($row['party_type']) . ' #' . $row['party_id'];
-            $partyPhone = $party?->phone ?? '';
-            $partyEmail = $party?->email ?? '';
+            if (!empty($customerBalances)) {
+                $custIds = array_keys($customerBalances);
+                $customers = Customer::whereIn('id', $custIds)
+                    ->get(['id', 'name', 'phone', 'email', 'credit_limit', 'credit_days'])
+                    ->keyBy('id');
 
+                $openSaleStats = SaleInvoice::query()
+                    ->whereIn('customer_id', $custIds)
+                    ->where('invoice_type', 'credit')
+                    ->where(fn ($q) => $q->whereNull('status')->orWhere('status', '!=', 'reversed'))
+                    ->whereRaw('COALESCE(total, 0) - COALESCE(total_receive, 0) > 0.01')
+                    ->get(['id', 'customer_id', 'date', 'due_date', 'total', 'total_receive'])
+                    ->groupBy('customer_id');
+
+                foreach ($customerBalances as $custId => $netDue) {
+                    if ($netDue <= 0.01) {
+                        continue;
+                    }
+                    $customer = $customers->get($custId);
+                    $name = $customer?->name ?? "Customer #{$custId}";
+                    $phone = $customer?->phone ?? '';
+                    $email = $customer?->email ?? '';
+
+                    $invList = $openSaleStats->get($custId, collect());
+                    $openCount = $invList->count();
+                    $overdueAmt = 0.0;
+                    $overdueCount = 0;
+                    $oldestDueDate = null;
+
+                    foreach ($invList as $inv) {
+                        $dueAmt = max(0.0, round((float) ($inv->total ?? 0) - (float) ($inv->total_receive ?? 0), 2));
+                        $dDate = $inv->due_date ? (string) $inv->due_date : (string) $inv->date;
+                        if ($dDate && ($oldestDueDate === null || $dDate < $oldestDueDate)) {
+                            $oldestDueDate = $dDate;
+                        }
+                        if ($dDate && $dDate < $today && $dueAmt > 0.01) {
+                            $overdueAmt = round($overdueAmt + $dueAmt, 2);
+                            $overdueCount++;
+                        }
+                    }
+                    $overdueAmt = min($overdueAmt, $netDue);
+
+                    $rows[] = [
+                        'party_type'          => 'customer',
+                        'party_id'            => (int) $custId,
+                        'party_name'          => $name,
+                        'party_phone'         => $phone,
+                        'party_email'         => $email,
+                        'credit_limit'        => $customer?->credit_limit !== null ? (float) $customer->credit_limit : null,
+                        'credit_days'         => (int) ($customer?->credit_days ?? 30),
+                        'open_invoices_count' => $openCount,
+                        'overdue_count'       => $overdueCount,
+                        'overdue_amount'      => round($overdueAmt, 2),
+                        'oldest_due_date'     => $oldestDueDate,
+                        'total_due'           => round($netDue, 2),
+                    ];
+                }
+            }
+        }
+
+        // 2. Suppliers (Payable: money we owe)
+        if ($partyTypeFilter === 'all' || $partyTypeFilter === 'supplier') {
+            $allSupplierIds = Supplier::pluck('id')->all();
+            $supplierBalances = (!empty($allSupplierIds) && Schema::hasTable('supplier_ledgers'))
+                ? SupplierLedger::getBulkSupplierNetBalances($allSupplierIds)
+                : [];
+
+            $positiveSupplierIds = array_keys(array_filter($supplierBalances, fn ($b) => $b > 0.01));
+            if (!empty($positiveSupplierIds)) {
+                $suppliers = Supplier::whereIn('id', $positiveSupplierIds)
+                    ->get(['id', 'name', 'phone', 'email', 'credit_limit', 'credit_days'])
+                    ->keyBy('id');
+
+                $openPurchaseStats = PurchaseInvoice::query()
+                    ->whereIn('supplier_id', $positiveSupplierIds)
+                    ->where('invoice_type', 'credit')
+                    ->where(fn ($q) => $q->whereNull('status')->orWhere('status', '!=', 'reversed'))
+                    ->whereRaw('COALESCE(total_amount, 0) - COALESCE(total_paid, 0) > 0.01')
+                    ->get(['id', 'supplier_id', 'posted_date', 'due_date', 'total_amount', 'total_paid'])
+                    ->groupBy('supplier_id');
+
+                foreach ($positiveSupplierIds as $supId) {
+                    $netDue = round((float) ($supplierBalances[$supId] ?? 0), 2);
+                    if ($netDue <= 0.01) {
+                        continue;
+                    }
+                    $supplier = $suppliers->get($supId);
+                    $name = $supplier?->name ?? "Supplier #{$supId}";
+                    $phone = $supplier?->phone ?? '';
+                    $email = $supplier?->email ?? '';
+
+                    $invList = $openPurchaseStats->get($supId, collect());
+                    $openCount = $invList->count();
+                    $overdueAmt = 0.0;
+                    $overdueCount = 0;
+                    $oldestDueDate = null;
+
+                    foreach ($invList as $inv) {
+                        $dueAmt = max(0.0, round((float) ($inv->total_amount ?? 0) - (float) ($inv->total_paid ?? 0), 2));
+                        $dDate = $inv->due_date ? (string) $inv->due_date : (string) $inv->posted_date;
+                        if ($dDate && ($oldestDueDate === null || $dDate < $oldestDueDate)) {
+                            $oldestDueDate = $dDate;
+                        }
+                        if ($dDate && $dDate < $today && $dueAmt > 0.01) {
+                            $overdueAmt = round($overdueAmt + $dueAmt, 2);
+                            $overdueCount++;
+                        }
+                    }
+                    $overdueAmt = min($overdueAmt, $netDue);
+
+                    $rows[] = [
+                        'party_type'          => 'supplier',
+                        'party_id'            => (int) $supId,
+                        'party_name'          => $name,
+                        'party_phone'         => $phone,
+                        'party_email'         => $email,
+                        'credit_limit'        => $supplier?->credit_limit !== null ? (float) $supplier->credit_limit : null,
+                        'credit_days'         => (int) ($supplier?->credit_days ?? 30),
+                        'open_invoices_count' => $openCount,
+                        'overdue_count'       => $overdueCount,
+                        'overdue_amount'      => round($overdueAmt, 2),
+                        'oldest_due_date'     => $oldestDueDate,
+                        'total_due'           => $netDue,
+                    ];
+                }
+            }
+        }
+
+        // Apply search, overdue, and min_amount filters
+        $filtered = [];
+        foreach ($rows as $row) {
             if ($searchLower !== '') {
-                $haystack = mb_strtolower($partyName . ' ' . $partyPhone . ' ' . $partyEmail);
+                $haystack = mb_strtolower($row['party_name'] . ' ' . $row['party_phone'] . ' ' . $row['party_email']);
                 if (!str_contains($haystack, $searchLower)) {
                     continue;
                 }
             }
-
-            if ($minAmount !== null && $row['total_credit'] < $minAmount) {
+            if ($statusFilter === 'overdue' && $row['overdue_amount'] <= 0.01) {
                 continue;
             }
-
-            $row['party_name'] = $partyName;
-            $row['party_phone'] = $partyPhone;
-            $row['party_email'] = $partyEmail;
-            $rows[] = $row;
+            if ($minAmount !== null && $row['total_due'] < $minAmount) {
+                continue;
+            }
+            $filtered[] = $row;
         }
 
-        usort($rows, function ($a, $b) use ($sort) {
+        usort($filtered, function ($a, $b) use ($sort) {
             return match ($sort) {
-                'lowest'   => $a['total_credit'] <=> $b['total_credit'],
+                'lowest'   => $a['total_due'] <=> $b['total_due'],
                 'name_asc' => strcasecmp($a['party_name'], $b['party_name']),
-                'recent'   => strcmp((string) ($b['latest_credit_date'] ?? ''), (string) ($a['latest_credit_date'] ?? '')),
-                default    => $b['total_credit'] <=> $a['total_credit'],
+                'overdue'  => ($b['overdue_amount'] <=> $a['overdue_amount']) ?: ($b['total_due'] <=> $a['total_due']),
+                default    => $b['total_due'] <=> $a['total_due'],
             };
         });
 
@@ -1296,26 +1312,189 @@ class PaymentService
         $supplierCount = 0;
         $customerTotal = 0.0;
         $customerCount = 0;
-        foreach ($rows as $r) {
+        $overdueTotal = 0.0;
+
+        foreach ($filtered as $r) {
+            $overdueTotal = round($overdueTotal + $r['overdue_amount'], 2);
             if ($r['party_type'] === 'supplier') {
-                $supplierTotal = round($supplierTotal + $r['total_credit'], 2);
+                $supplierTotal = round($supplierTotal + $r['total_due'], 2);
                 $supplierCount++;
             } else {
-                $customerTotal = round($customerTotal + $r['total_credit'], 2);
+                $customerTotal = round($customerTotal + $r['total_due'], 2);
                 $customerCount++;
             }
         }
 
         return [
             'summary' => [
-                'total_credit'   => round($supplierTotal + $customerTotal, 2),
+                'total_due'      => round($supplierTotal + $customerTotal, 2),
                 'supplier_total' => $supplierTotal,
                 'supplier_count' => $supplierCount,
                 'customer_total' => $customerTotal,
                 'customer_count' => $customerCount,
-                'party_count'    => count($rows),
+                'overdue_total'  => $overdueTotal,
+                'party_count'    => count($filtered),
             ],
-            'rows' => $rows,
+            'rows' => $filtered,
+        ];
+    }
+
+    /**
+     * Get detailed breakdown of open due invoices & manual balances for a single customer or supplier.
+     */
+    public function getPartyDueDetails(string $partyType, int $partyId): array
+    {
+        $today = now()->toDateString();
+        $todayCarbon = Carbon::parse($today);
+        $items = [];
+
+        if ($partyType === 'customer') {
+            $party = Customer::findOrFail($partyId);
+            $netDue = CustomerLedger::getCustomerNetBalance($party->id);
+            $openInvoices = $this->getOpenInvoicesForCustomer($party->id);
+
+            foreach ($openInvoices as $inv) {
+                $dueDate = (string) ($inv['due_date'] ?? $inv['date'] ?? '');
+                $isOverdue = $dueDate !== '' && $dueDate < $today;
+                $daysOverdue = $isOverdue ? (int) Carbon::parse($dueDate)->diffInDays($todayCarbon) : 0;
+
+                $items[] = [
+                    'id'               => 'inv-' . $inv['id'],
+                    'type'             => 'Sale Invoice',
+                    'reference_number' => $inv['posted_number'],
+                    'date'             => (string) $inv['date'],
+                    'due_date'         => $dueDate,
+                    'is_overdue'       => $isOverdue,
+                    'days_overdue'     => $daysOverdue,
+                    'total'            => round((float) $inv['total'], 2),
+                    'paid_or_received' => round((float) $inv['received'], 2),
+                    'due'              => round((float) $inv['due'], 2),
+                ];
+            }
+
+            // Include manual/opening balance ledger entries if any
+            if (Schema::hasTable('customer_ledgers')) {
+                $creditDays = (int) ($party->credit_days ?? 30);
+                $manualRows = CustomerLedger::where('customer_id', $party->id)
+                    ->whereNull('sale_invoice_id')
+                    ->whereIn('entry_type', ['manual', 'invoice'])
+                    ->orderBy('entry_date', 'asc')
+                    ->get();
+
+                foreach ($manualRows as $mRow) {
+                    $mTotal = round((float) ($mRow->invoice_total ?? 0), 2);
+                    $mPaid = round((float) ($mRow->total_received ?? 0), 2);
+                    $mDue = max(0.0, round($mTotal - $mPaid, 2));
+                    if ($mDue <= 0.01) {
+                        continue;
+                    }
+                    $eDate = $mRow->entry_date ? $mRow->entry_date->toDateString() : '';
+                    $dDate = $mRow->due_date
+                        ? $mRow->due_date->toDateString()
+                        : ($mRow->entry_date ? $mRow->entry_date->copy()->addDays($creditDays)->toDateString() : '');
+                    $isOverdue = $dDate !== '' && $dDate < $today;
+                    $daysOverdue = $isOverdue ? (int) Carbon::parse($dDate)->diffInDays($todayCarbon) : 0;
+
+                    $items[] = [
+                        'id'               => 'manual-' . $mRow->id,
+                        'type'             => 'Opening / Manual',
+                        'reference_number' => $mRow->description ?: "Entry #{$mRow->id}",
+                        'date'             => $eDate,
+                        'due_date'         => $dDate,
+                        'is_overdue'       => $isOverdue,
+                        'days_overdue'     => $daysOverdue,
+                        'total'            => $mTotal,
+                        'paid_or_received' => $mPaid,
+                        'due'              => $mDue,
+                    ];
+                }
+            }
+        } else {
+            $party = Supplier::findOrFail($partyId);
+            $netDue = Schema::hasTable('supplier_ledgers')
+                ? SupplierLedger::getSupplierNetBalance($party->id)
+                : round((float) collect($this->getOpenInvoicesForSupplier($party->id))->sum('due'), 2);
+            $openInvoices = $this->getOpenInvoicesForSupplier($party->id);
+
+            foreach ($openInvoices as $inv) {
+                $dueDate = (string) ($inv['due_date'] ?? $inv['date'] ?? '');
+                $isOverdue = $dueDate !== '' && $dueDate < $today;
+                $daysOverdue = $isOverdue ? (int) Carbon::parse($dueDate)->diffInDays($todayCarbon) : 0;
+
+                $items[] = [
+                    'id'               => 'inv-' . $inv['id'],
+                    'type'             => 'Purchase Invoice',
+                    'reference_number' => $inv['posted_number'],
+                    'date'             => (string) $inv['date'],
+                    'due_date'         => $dueDate,
+                    'is_overdue'       => $isOverdue,
+                    'days_overdue'     => $daysOverdue,
+                    'total'            => round((float) $inv['total'], 2),
+                    'paid_or_received' => round((float) $inv['paid'], 2),
+                    'due'              => round((float) $inv['due'], 2),
+                ];
+            }
+
+            if (Schema::hasTable('supplier_ledgers')) {
+                $creditDays = (int) ($party->credit_days ?? 30);
+                $manualRows = SupplierLedger::where('supplier_id', $party->id)
+                    ->whereNull('purchase_invoice_id')
+                    ->whereIn('entry_type', ['manual', 'invoice'])
+                    ->orderBy('entry_date', 'asc')
+                    ->get();
+
+                foreach ($manualRows as $mRow) {
+                    $mTotal = round((float) ($mRow->invoice_total ?? 0), 2);
+                    $mPaid = round((float) ($mRow->total_paid ?? 0), 2);
+                    $mDue = max(0.0, round($mTotal - $mPaid, 2));
+                    if ($mDue <= 0.01) {
+                        continue;
+                    }
+                    $eDate = $mRow->entry_date ? $mRow->entry_date->toDateString() : '';
+                    $dDate = $mRow->due_date
+                        ? $mRow->due_date->toDateString()
+                        : ($mRow->entry_date ? $mRow->entry_date->copy()->addDays($creditDays)->toDateString() : '');
+                    $isOverdue = $dDate !== '' && $dDate < $today;
+                    $daysOverdue = $isOverdue ? (int) Carbon::parse($dDate)->diffInDays($todayCarbon) : 0;
+
+                    $items[] = [
+                        'id'               => 'manual-' . $mRow->id,
+                        'type'             => 'Opening / Manual',
+                        'reference_number' => $mRow->description ?: "Entry #{$mRow->id}",
+                        'date'             => $eDate,
+                        'due_date'         => $dDate,
+                        'is_overdue'       => $isOverdue,
+                        'days_overdue'     => $daysOverdue,
+                        'total'            => $mTotal,
+                        'paid_or_received' => $mPaid,
+                        'due'              => $mDue,
+                    ];
+                }
+            }
+        }
+
+        $totalOverdue = 0.0;
+        $overdueCount = 0;
+        foreach ($items as $it) {
+            if ($it['is_overdue']) {
+                $totalOverdue = round($totalOverdue + $it['due'], 2);
+                $overdueCount++;
+            }
+        }
+        $totalOverdue = min($totalOverdue, $netDue);
+
+        return [
+            'party_type'    => $partyType,
+            'party_id'      => (int) $party->id,
+            'party_name'    => $party->name,
+            'party_phone'   => $party->phone,
+            'party_email'   => $party->email,
+            'credit_limit'  => $party->credit_limit !== null ? (float) $party->credit_limit : null,
+            'credit_days'   => (int) ($party->credit_days ?? 30),
+            'total_due'     => round($netDue, 2),
+            'total_overdue' => round($totalOverdue, 2),
+            'overdue_count' => $overdueCount,
+            'items'         => $items,
         ];
     }
 }

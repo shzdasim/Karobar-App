@@ -1,669 +1,773 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import axios from "axios";
-import toast from "react-hot-toast";
 import Select from "react-select";
 import { useNavigate } from "react-router-dom";
 import {
   MagnifyingGlassIcon,
-  ArrowPathIcon,
-  BuildingStorefrontIcon,
-  UsersIcon,
-  BanknotesIcon,
   XMarkIcon,
-  EyeIcon,
-  FunnelIcon,
-  ArrowTopRightOnSquareIcon,
+  ArrowPathIcon,
+  BanknotesIcon,
+  UserGroupIcon,
+  BuildingStorefrontIcon,
+  ClockIcon,
+  ExclamationTriangleIcon,
   DocumentTextIcon,
+  ArrowTopRightOnSquareIcon,
 } from "@heroicons/react/24/outline";
-import { useCurrency } from "@/context/CurrencyContext.jsx";
-import { useTheme } from "@/context/ThemeContext.jsx";
+import { useCurrency } from "../../context/CurrencyContext";
 
-function formatDisplayDate(dateStr) {
-  if (!dateStr) return "—";
-  const raw = String(dateStr).slice(0, 10);
-  const parts = raw.split("-");
-  if (parts.length !== 3) return raw;
-  return `${parts[2]}-${parts[1]}-${parts[0]}`;
-}
-
-function getCreditSourceLabel(payment) {
-  const idem = String(payment?.idempotency_key || "");
-  if (idem.startsWith("sale_return:")) return "Sale Return Credit";
-  if (idem.startsWith("purchase_return:")) return "Purchase Return Credit";
-  return "Advance / Overpayment";
-}
-
-function isReturnCredit(payment) {
-  const idem = String(payment?.idempotency_key || "");
-  return idem.startsWith("sale_return:") || idem.startsWith("purchase_return:");
-}
-
-const SOURCE_OPTIONS = [
-  { value: "all", label: "All Sources" },
-  { value: "advance", label: "Advance / Overpayment" },
-  { value: "return", label: "Return Credit Notes" },
+const STATUS_OPTIONS = [
+  { value: "all", label: "All Due Balances" },
+  { value: "overdue", label: "Overdue Only" },
 ];
 
 const SORT_OPTIONS = [
-  { value: "highest", label: "Highest Credit" },
-  { value: "lowest", label: "Lowest Credit" },
-  { value: "name_asc", label: "Name (A–Z)" },
-  { value: "recent", label: "Most Recent" },
+  { value: "highest", label: "Highest Due" },
+  { value: "lowest", label: "Lowest Due" },
+  { value: "overdue", label: "Highest Overdue" },
+  { value: "name_asc", label: "Name (A-Z)" },
 ];
 
 export default function PartyCredits() {
-  const navigate = useNavigate();
   const { formatCurrency } = useCurrency();
-  const { isDark, theme } = useTheme();
-  const primaryColor = theme?.primary_color || "#2563eb";
+  const navigate = useNavigate();
+
+  const [isDark, setIsDark] = useState(() =>
+    document.documentElement.classList.contains("dark")
+  );
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDark(document.documentElement.classList.contains("dark"));
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    return () => observer.disconnect();
+  }, []);
 
   const selectStyles = useMemo(
     () => ({
       control: (base, state) => ({
         ...base,
-        backgroundColor: isDark ? "rgba(15, 23, 42, 0.7)" : "#ffffff",
-        borderColor: state.isFocused ? primaryColor : isDark ? "#334155" : "#e2e8f0",
-        borderRadius: "0.75rem",
-        minHeight: "42px",
-        boxShadow: state.isFocused ? `0 0 0 2px ${primaryColor}33` : "none",
+        minHeight: "38px",
+        height: "38px",
+        backgroundColor: isDark ? "#0f172a" : "#ffffff",
+        borderColor: state.isFocused
+          ? "#3b82f6"
+          : isDark
+          ? "#334155"
+          : "#d1d5db",
+        boxShadow: state.isFocused ? "0 0 0 1px #3b82f6" : "none",
         "&:hover": {
-          borderColor: state.isFocused ? primaryColor : isDark ? "#475569" : "#cbd5e1",
+          borderColor: state.isFocused
+            ? "#3b82f6"
+            : isDark
+            ? "#475569"
+            : "#9ca3af",
         },
+        borderRadius: "0.5rem",
+        fontSize: "0.875rem",
+        cursor: "pointer",
+      }),
+      valueContainer: (base) => ({
+        ...base,
+        padding: "0 10px",
       }),
       singleValue: (base) => ({
         ...base,
-        color: isDark ? "#f8fafc" : "#0f172a",
-        fontSize: "0.875rem",
+        color: isDark ? "#f1f5f9" : "#111827",
+      }),
+      input: (base) => ({
+        ...base,
+        color: isDark ? "#f1f5f9" : "#111827",
+      }),
+      placeholder: (base) => ({
+        ...base,
+        color: isDark ? "#94a3b8" : "#6b7280",
+      }),
+      indicatorSeparator: (base) => ({
+        ...base,
+        backgroundColor: isDark ? "#334155" : "#e5e7eb",
+      }),
+      dropdownIndicator: (base) => ({
+        ...base,
+        color: isDark ? "#94a3b8" : "#6b7280",
+        padding: "6px",
+        "&:hover": {
+          color: isDark ? "#e2e8f0" : "#374151",
+        },
+      }),
+      menuPortal: (base) => ({
+        ...base,
+        zIndex: 9999,
       }),
       menu: (base) => ({
         ...base,
         backgroundColor: isDark ? "#0f172a" : "#ffffff",
-        border: `1px solid ${isDark ? "#334155" : "#e2e8f0"}`,
-        borderRadius: "0.75rem",
-        zIndex: 60,
+        border: `1px solid ${isDark ? "#334155" : "#e5e7eb"}`,
+        borderRadius: "0.5rem",
+        boxShadow:
+          "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
         overflow: "hidden",
       }),
-      menuPortal: (base) => ({ ...base, zIndex: 9999 }),
       option: (base, state) => ({
         ...base,
+        fontSize: "0.875rem",
+        cursor: "pointer",
         backgroundColor: state.isSelected
-          ? primaryColor
+          ? "#2563eb"
           : state.isFocused
           ? isDark
             ? "#1e293b"
-            : "#f1f5f9"
+            : "#f3f4f6"
           : "transparent",
-        color: state.isSelected ? "#ffffff" : isDark ? "#e2e8f0" : "#0f172a",
-        fontSize: "0.875rem",
-        cursor: "pointer",
+        color: state.isSelected
+          ? "#ffffff"
+          : isDark
+          ? "#e2e8f0"
+          : "#111827",
+        "&:active": {
+          backgroundColor: state.isSelected ? "#2563eb" : "#dbeafe",
+        },
       }),
-      input: (base) => ({ ...base, color: isDark ? "#f8fafc" : "#0f172a" }),
-      placeholder: (base) => ({ ...base, color: isDark ? "#64748b" : "#94a3b8" }),
-      indicatorSeparator: () => ({ display: "none" }),
     }),
-    [isDark, primaryColor]
+    [isDark]
   );
 
   // Filters
   const [partyType, setPartyType] = useState("all");
-  const [source, setSource] = useState("all");
-  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("highest");
+  const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [minAmount, setMinAmount] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [sort, setSort] = useState("highest");
 
   // Data
-  const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({
-    total_credit: 0,
+    total_due: 0,
     supplier_total: 0,
     supplier_count: 0,
     customer_total: 0,
     customer_count: 0,
+    overdue_total: 0,
     party_count: 0,
   });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  // Detail modal state
+  // Detail modal
   const [selectedParty, setSelectedParty] = useState(null);
-  const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search.trim()), 250);
-    return () => clearTimeout(t);
-  }, [search]);
+    const timer = setTimeout(() => setDebouncedSearch(searchInput.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
-  const fetchPartyCredits = useCallback(async () => {
+  const fetchPartyDues = useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
       const params = {
         party_type: partyType,
-        source,
-        sort,
+        status: statusFilter,
+        sort: sortBy,
       };
       if (debouncedSearch) params.search = debouncedSearch;
-      if (minAmount !== "") params.min_amount = minAmount;
-      if (dateFrom) params.date_from = dateFrom;
-      if (dateTo) params.date_to = dateTo;
+      if (minAmount !== "" && !Number.isNaN(Number(minAmount))) {
+        params.min_amount = Number(minAmount);
+      }
 
-      const { data } = await axios.get("/api/payments/party-credits", {
-        params,
-        cache: false,
-      });
-      setRows(Array.isArray(data?.rows) ? data.rows : []);
+      const res = await axios.get("/api/payments/party-credits", { params });
+      setRows(res.data?.rows || []);
       setSummary(
-        data?.summary || {
-          total_credit: 0,
+        res.data?.summary || {
+          total_due: 0,
           supplier_total: 0,
           supplier_count: 0,
           customer_total: 0,
           customer_count: 0,
+          overdue_total: 0,
           party_count: 0,
         }
       );
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Failed to load party credits");
+      setError(
+        err.response?.data?.message || "Failed to load party due balances."
+      );
     } finally {
       setLoading(false);
     }
-  }, [partyType, source, debouncedSearch, minAmount, dateFrom, dateTo, sort]);
+  }, [partyType, statusFilter, sortBy, debouncedSearch, minAmount]);
 
   useEffect(() => {
-    fetchPartyCredits();
-  }, [fetchPartyCredits]);
+    fetchPartyDues();
+  }, [fetchPartyDues]);
 
-  const openDetailModal = useCallback(async (row) => {
-    setSelectedParty(row);
+  const openPartyModal = async (party) => {
+    setSelectedParty(party);
     setDetailData(null);
+    setDetailError("");
     setDetailLoading(true);
     try {
-      const { data } = await axios.get("/api/payments/available-credits", {
+      const res = await axios.get("/api/payments/party-due-details", {
         params: {
-          party_type: row.party_type,
-          party_id: row.party_id,
+          party_type: party.party_type,
+          party_id: party.party_id,
         },
-        cache: false,
       });
-      setDetailData(data);
+      setDetailData(res.data);
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Failed to load credit details");
+      setDetailError(
+        err.response?.data?.message || "Failed to load party due breakdown."
+      );
     } finally {
       setDetailLoading(false);
     }
-  }, []);
-
-  const closeDetailModal = useCallback(() => {
-    setSelectedParty(null);
-    setDetailData(null);
-  }, []);
-
-  useEffect(() => {
-    if (!selectedParty) return;
-    const onKeyDown = (e) => {
-      if (e.key === "Escape") closeDetailModal();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedParty, closeDetailModal]);
-
-  const hasActiveFilters = useMemo(
-    () =>
-      partyType !== "all" ||
-      source !== "all" ||
-      search !== "" ||
-      minAmount !== "" ||
-      dateFrom !== "" ||
-      dateTo !== "" ||
-      sort !== "highest",
-    [partyType, source, search, minAmount, dateFrom, dateTo, sort]
-  );
-
-  const resetFilters = () => {
-    setPartyType("all");
-    setSource("all");
-    setSearch("");
-    setDebouncedSearch("");
-    setMinAmount("");
-    setDateFrom("");
-    setDateTo("");
-    setSort("highest");
   };
 
-  return (
-    <div className="products-page w-full p-4 sm:p-6 space-y-5">
-      {/* Page Header */}
-      <div className="products-panel p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-start gap-3.5">
-          <div
-            className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border"
-            style={{
-              backgroundColor: `${primaryColor}15`,
-              borderColor: `${primaryColor}30`,
-              color: primaryColor,
-            }}
-          >
-            <BanknotesIcon className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
-              Supplier &amp; Customer Credits
-            </h1>
-            <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
-              One row per supplier or customer showing total unapplied advance payments &amp; return credit notes. Click any row for full voucher details.
-            </p>
-          </div>
-        </div>
+  const closePartyModal = () => {
+    setSelectedParty(null);
+    setDetailData(null);
+    setDetailError("");
+  };
 
-        <button
-          type="button"
-          onClick={fetchPartyCredits}
-          disabled={loading}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/70 transition disabled:opacity-60 shrink-0"
-        >
-          <ArrowPathIcon className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
+  const clearFilters = () => {
+    setPartyType("all");
+    setStatusFilter("all");
+    setSortBy("highest");
+    setSearchInput("");
+    setDebouncedSearch("");
+    setMinAmount("");
+  };
+
+  const hasActiveFilters =
+    partyType !== "all" ||
+    statusFilter !== "all" ||
+    sortBy !== "highest" ||
+    searchInput !== "" ||
+    minAmount !== "";
+
+  return (
+    <div className="w-full p-4 sm:p-6 space-y-5">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">
+            Party Due Balances
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
+            Net outstanding due to collect from customers or owed to suppliers
+            right now. Click any row for open invoices and due details.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={fetchPartyDues}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <ArrowPathIcon
+              className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate("/payments")}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-sm font-medium text-white shadow-sm transition-colors cursor-pointer"
+          >
+            <BanknotesIcon className="w-4 h-4" />
+            Record Payment
+          </button>
+        </div>
       </div>
 
-      {/* KPI Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="products-panel p-4 sm:p-5">
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="bg-white dark:bg-slate-800/90 border border-gray-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Total Available Credit
+            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400">
+              Total Due (Filtered)
             </span>
-            <BanknotesIcon className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+            <span className="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+              <BanknotesIcon className="w-5 h-5" />
+            </span>
           </div>
-          <div className="mt-2 text-2xl font-bold tabular-nums text-slate-900 dark:text-white">
-            {formatCurrency(summary.total_credit)}
+          <div className="mt-2 text-2xl font-bold text-gray-900 dark:text-slate-100 tabular-nums">
+            {formatCurrency(summary.total_due)}
           </div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Across {summary.party_count} {summary.party_count === 1 ? "party" : "parties"}
+          <div className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+            Across {summary.party_count}{" "}
+            {summary.party_count === 1 ? "party" : "parties"}
           </div>
         </div>
 
-        <div className="products-panel p-4 sm:p-5">
+        <div className="bg-white dark:bg-slate-800/90 border border-gray-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Credit With Suppliers
+            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400">
+              To Collect (Customers)
             </span>
-            <BuildingStorefrontIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-          </div>
-          <div className="mt-2 text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
-            {formatCurrency(summary.supplier_total)}
-          </div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            {summary.supplier_count} {summary.supplier_count === 1 ? "supplier" : "suppliers"}
-          </div>
-        </div>
-
-        <div className="products-panel p-4 sm:p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Customer Credit Balances
+            <span className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+              <UserGroupIcon className="w-5 h-5" />
             </span>
-            <UsersIcon className="w-5 h-5 text-violet-600 dark:text-violet-400" />
           </div>
-          <div className="mt-2 text-2xl font-bold tabular-nums text-violet-600 dark:text-violet-400">
+          <div className="mt-2 text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
             {formatCurrency(summary.customer_total)}
           </div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            {summary.customer_count} {summary.customer_count === 1 ? "customer" : "customers"}
+          <div className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+            {summary.customer_count}{" "}
+            {summary.customer_count === 1 ? "customer" : "customers"} with due
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-800/90 border border-gray-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400">
+              Owed to Suppliers
+            </span>
+            <span className="p-2 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
+              <BuildingStorefrontIcon className="w-5 h-5" />
+            </span>
+          </div>
+          <div className="mt-2 text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">
+            {formatCurrency(summary.supplier_total)}
+          </div>
+          <div className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+            {summary.supplier_count}{" "}
+            {summary.supplier_count === 1 ? "supplier" : "suppliers"} with due
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-800/90 border border-gray-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400">
+              Overdue Portion
+            </span>
+            <span className="p-2 rounded-lg bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400">
+              <ExclamationTriangleIcon className="w-5 h-5" />
+            </span>
+          </div>
+          <div className="mt-2 text-2xl font-bold text-rose-600 dark:text-rose-400 tabular-nums">
+            {formatCurrency(summary.overdue_total)}
+          </div>
+          <div className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+            Past invoice due date
           </div>
         </div>
       </div>
 
-      {/* Filters Panel */}
-      <div className="products-panel p-4 sm:p-5 space-y-4">
+      {/* Filters Bar */}
+      <div className="bg-white dark:bg-slate-800/90 border border-gray-200 dark:border-slate-700 rounded-xl p-4 shadow-sm space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Party Type Segmented Tabs */}
-          <div className="inline-flex rounded-xl p-1 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+          <div className="inline-flex rounded-lg bg-gray-100 dark:bg-slate-900 p-1">
             {[
               { id: "all", label: "All Parties" },
-              { id: "supplier", label: "Suppliers" },
-              { id: "customer", label: "Customers" },
-            ].map((tab) => {
-              const active = partyType === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setPartyType(tab.id)}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition ${
-                    active
-                      ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs"
-                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
+              { id: "customer", label: "Customers (Receivable)" },
+              { id: "supplier", label: "Suppliers (Payable)" },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setPartyType(tab.id)}
+                className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors cursor-pointer ${
+                  partyType === tab.id
+                    ? "bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow-sm"
+                    : "text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-200"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
 
           {hasActiveFilters && (
             <button
               type="button"
-              onClick={resetFilters}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-600 dark:text-rose-400 hover:underline"
+              onClick={clearFilters}
+              className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
             >
-              <FunnelIcon className="w-3.5 h-3.5" />
-              Reset Filters
+              Reset filters
             </button>
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
           {/* Search */}
-          <div className="relative lg:col-span-2">
-            <MagnifyingGlassIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <div className="lg:col-span-5 relative">
+            <MagnifyingGlassIcon className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search supplier or customer name / phone..."
-              className="w-full pl-9 pr-3 py-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/70 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search party name, phone, or email..."
+              className="w-full h-[38px] pl-9 pr-8 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-gray-900 dark:text-slate-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => setSearchInput("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                <XMarkIcon className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Status Select */}
+          <div className="lg:col-span-3">
+            <Select
+              value={
+                STATUS_OPTIONS.find((o) => o.value === statusFilter) ||
+                STATUS_OPTIONS[0]
+              }
+              onChange={(opt) => setStatusFilter(opt ? opt.value : "all")}
+              options={STATUS_OPTIONS}
+              styles={selectStyles}
+              isSearchable={false}
+              menuPortalTarget={document.body}
+              menuPosition="fixed"
+              aria-label="Filter by due status"
             />
           </div>
 
-          {/* Credit Source */}
-          <Select
-            options={SOURCE_OPTIONS}
-            value={SOURCE_OPTIONS.find((opt) => opt.value === source) || SOURCE_OPTIONS[0]}
-            onChange={(opt) => setSource(opt?.value || "all")}
-            styles={selectStyles}
-            isSearchable={false}
-            menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-            aria-label="Filter by credit source"
-          />
-
-          {/* Min Amount */}
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={minAmount}
-            onChange={(e) => setMinAmount(e.target.value)}
-            placeholder="Min Credit"
-            className="px-3 py-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/70 text-slate-900 dark:text-white"
-          />
-
-          {/* Date Range */}
-          <div className="grid grid-cols-2 gap-2 lg:col-span-1">
+          {/* Min Due */}
+          <div className="lg:col-span-2">
             <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              title="From Date"
-              className="px-2.5 py-2.5 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/70 text-slate-900 dark:text-white"
-            />
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              title="To Date"
-              className="px-2.5 py-2.5 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/70 text-slate-900 dark:text-white"
+              type="number"
+              min="0"
+              step="any"
+              value={minAmount}
+              onChange={(e) => setMinAmount(e.target.value)}
+              placeholder="Min due..."
+              className="w-full h-[38px] px-3 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-gray-900 dark:text-slate-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
-          {/* Sort */}
-          <Select
-            options={SORT_OPTIONS}
-            value={SORT_OPTIONS.find((opt) => opt.value === sort) || SORT_OPTIONS[0]}
-            onChange={(opt) => setSort(opt?.value || "highest")}
-            styles={selectStyles}
-            isSearchable={false}
-            menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-            aria-label="Sort party credits"
-          />
+          {/* Sort Select */}
+          <div className="lg:col-span-2">
+            <Select
+              value={
+                SORT_OPTIONS.find((o) => o.value === sortBy) || SORT_OPTIONS[0]
+              }
+              onChange={(opt) => setSortBy(opt ? opt.value : "highest")}
+              options={SORT_OPTIONS}
+              styles={selectStyles}
+              isSearchable={false}
+              menuPortalTarget={document.body}
+              menuPosition="fixed"
+              aria-label="Sort party due list"
+            />
+          </div>
         </div>
       </div>
 
-      {/* Single-Row-Per-Party Table */}
-      <div className="products-panel overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-700/80 bg-slate-50/80 dark:bg-slate-800/50 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                <th className="py-3.5 px-4">Supplier / Customer</th>
-                <th className="py-3.5 px-4">Type</th>
-                <th className="py-3.5 px-4 text-center">Vouchers</th>
-                <th className="py-3.5 px-4">Breakdown</th>
-                <th className="py-3.5 px-4">Last Credit Date</th>
-                <th className="py-3.5 px-4 text-right">Total Credit</th>
-                <th className="py-3.5 px-4 text-right">Detail</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200/80 dark:divide-slate-700/60 text-sm">
-              {loading ? (
-                <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-500 dark:text-slate-400">
-                    Loading party credits...
-                  </td>
+      {/* Table */}
+      <div className="bg-white dark:bg-slate-800/90 border border-gray-200 dark:border-slate-700 rounded-xl shadow-sm overflow-hidden">
+        {error ? (
+          <div className="p-8 text-center text-rose-600 dark:text-rose-400 text-sm">
+            {error}
+          </div>
+        ) : loading ? (
+          <div className="p-10 text-center text-gray-500 dark:text-slate-400 text-sm">
+            Loading party due balances...
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="p-12 text-center">
+            <BanknotesIcon className="w-10 h-10 mx-auto text-gray-300 dark:text-slate-600 mb-2" />
+            <p className="text-sm font-medium text-gray-700 dark:text-slate-300">
+              No due balances match your filters.
+            </p>
+            <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+              All filtered parties are settled, or try resetting your filters.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-slate-700 bg-gray-50/80 dark:bg-slate-900/50 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400">
+                  <th className="py-3 px-4">Party</th>
+                  <th className="py-3 px-4">Type</th>
+                  <th className="py-3 px-4 text-center">Open Invoices</th>
+                  <th className="py-3 px-4">Oldest Due Date</th>
+                  <th className="py-3 px-4 text-right">Overdue</th>
+                  <th className="py-3 px-4 text-right">Total Due</th>
+                  <th className="py-3 px-4 text-right">Action</th>
                 </tr>
-              ) : rows.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-14 text-center">
-                    <div className="flex flex-col items-center gap-2 text-slate-500 dark:text-slate-400">
-                      <BanknotesIcon className="w-9 h-9 opacity-40" />
-                      <p className="font-medium text-slate-700 dark:text-slate-300">
-                        No unapplied credits found
-                      </p>
-                      <p className="text-xs">
-                        {hasActiveFilters
-                          ? "Try adjusting or resetting your filters."
-                          : "Advance payments, overpayments, and return credit notes will appear here."}
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                rows.map((row) => {
-                  const isSupplier = row.party_type === "supplier";
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-slate-700/70 text-sm">
+                {rows.map((row) => {
+                  const isCustomer = row.party_type === "customer";
+                  const hasOverdue = row.overdue_amount > 0.01;
                   return (
                     <tr
                       key={`${row.party_type}-${row.party_id}`}
-                      onClick={() => openDetailModal(row)}
-                      className="cursor-pointer hover:bg-blue-50/60 dark:hover:bg-slate-800/60 transition-colors"
+                      onClick={() => openPartyModal(row)}
+                      className="hover:bg-blue-50/50 dark:hover:bg-slate-700/40 transition-colors cursor-pointer"
                     >
                       <td className="py-3.5 px-4">
-                        <div className="font-semibold text-slate-900 dark:text-white">
+                        <div className="font-semibold text-gray-900 dark:text-slate-100">
                           {row.party_name}
                         </div>
                         {(row.party_phone || row.party_email) && (
-                          <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                            {[row.party_phone, row.party_email].filter(Boolean).join(" · ")}
+                          <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                            {[row.party_phone, row.party_email]
+                              .filter(Boolean)
+                              .join(" • ")}
                           </div>
                         )}
                       </td>
                       <td className="py-3.5 px-4">
                         <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
-                            isSupplier
-                              ? "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300"
-                              : "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300"
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            isCustomer
+                              ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300"
+                              : "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
                           }`}
                         >
-                          {isSupplier ? (
-                            <BuildingStorefrontIcon className="w-3.5 h-3.5" />
-                          ) : (
-                            <UsersIcon className="w-3.5 h-3.5" />
-                          )}
-                          {isSupplier ? "Supplier" : "Customer"}
+                          {isCustomer ? "Customer" : "Supplier"}
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-center">
-                        <span className="inline-flex items-center justify-center min-w-7 px-2 py-0.5 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 tabular-nums">
-                          {row.credit_count}
+                        <span className="inline-flex items-center justify-center min-w-[28px] px-2 py-0.5 rounded-md bg-gray-100 dark:bg-slate-700 text-xs font-semibold text-gray-700 dark:text-slate-200">
+                          {row.open_invoices_count}
                         </span>
                       </td>
-                      <td className="py-3.5 px-4">
-                        <div className="flex flex-wrap gap-1.5 text-xs">
-                          {row.advance_credit > 0 && (
-                            <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 tabular-nums">
-                              Advance: {formatCurrency(row.advance_credit)}
+                      <td className="py-3.5 px-4 text-gray-600 dark:text-slate-300 whitespace-nowrap">
+                        {row.oldest_due_date ? (
+                          <span className="inline-flex items-center gap-1 text-xs">
+                            <ClockIcon className="w-3.5 h-3.5 text-gray-400" />
+                            {row.oldest_due_date}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-right tabular-nums whitespace-nowrap">
+                        {hasOverdue ? (
+                          <div>
+                            <span className="font-semibold text-rose-600 dark:text-rose-400">
+                              {formatCurrency(row.overdue_amount)}
                             </span>
-                          )}
-                          {row.return_credit > 0 && (
-                            <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300 tabular-nums">
-                              Return: {formatCurrency(row.return_credit)}
-                            </span>
-                          )}
-                        </div>
+                            <div className="text-[11px] text-rose-500 dark:text-rose-400">
+                              {row.overdue_count}{" "}
+                              {row.overdue_count === 1 ? "invoice" : "invoices"}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
                       </td>
-                      <td className="py-3.5 px-4 text-slate-600 dark:text-slate-300 tabular-nums">
-                        {formatDisplayDate(row.latest_credit_date)}
+                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                        <span
+                          className={`text-base font-bold tabular-nums ${
+                            isCustomer
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-amber-600 dark:text-amber-400"
+                          }`}
+                        >
+                          {formatCurrency(row.total_due)}
+                        </span>
                       </td>
-                      <td className="py-3.5 px-4 text-right font-bold text-emerald-600 dark:text-emerald-400 tabular-nums text-base">
-                        {formatCurrency(row.total_credit)}
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
+                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            openDetailModal(row);
+                            openPartyModal(row);
                           }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-600 transition-colors cursor-pointer"
                         >
-                          <EyeIcon className="w-3.5 h-3.5" />
+                          <DocumentTextIcon className="w-3.5 h-3.5" />
                           Details
                         </button>
                       </td>
                     </tr>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* Credit Detail Popup Modal */}
+      {/* Party Due Detail Modal */}
       {selectedParty && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/55"
-          onClick={closeDetailModal}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-3 sm:p-6"
+          onClick={closePartyModal}
         >
           <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Party Credit Details"
+            className="w-full max-w-[95vw] xl:max-w-6xl max-h-[90vh] flex flex-col bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-2xl shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-[95vw] xl:max-w-6xl max-h-[90vh] flex flex-col rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden"
           >
             {/* Modal Header */}
-            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-start justify-between gap-4 bg-slate-50/70 dark:bg-slate-800/50">
+            <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-gray-200 dark:border-slate-700 bg-gray-50/70 dark:bg-slate-900/50">
               <div>
                 <div className="flex items-center gap-2.5 flex-wrap">
-                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                  <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-slate-100">
                     {selectedParty.party_name}
                   </h2>
                   <span
-                    className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      selectedParty.party_type === "supplier"
-                        ? "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300"
-                        : "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300"
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      selectedParty.party_type === "customer"
+                        ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300"
+                        : "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
                     }`}
                   >
-                    {selectedParty.party_type === "supplier" ? "Supplier" : "Customer"}
+                    {selectedParty.party_type === "customer"
+                      ? "Customer (Receivable)"
+                      : "Supplier (Payable)"}
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  {selectedParty.party_phone ? `Phone: ${selectedParty.party_phone} · ` : ""}
-                  Total Available Credit:{" "}
-                  <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                    {formatCurrency(detailData?.total_unapplied ?? selectedParty.total_credit)}
-                  </span>
-                </p>
+                {(selectedParty.party_phone || selectedParty.party_email) && (
+                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                    {[selectedParty.party_phone, selectedParty.party_email]
+                      .filter(Boolean)
+                      .join(" • ")}
+                  </p>
+                )}
               </div>
-
               <button
                 type="button"
-                onClick={closeDetailModal}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                aria-label="Close"
+                onClick={closePartyModal}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
               >
                 <XMarkIcon className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-5 overflow-y-auto flex-1">
-              {detailLoading ? (
-                <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">
-                  Loading credit breakdown...
+            {/* Modal Summary Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-5 py-3.5 border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+              <div className="p-3 rounded-xl bg-gray-50 dark:bg-slate-900/60 border border-gray-100 dark:border-slate-700/70">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400">
+                  Total Due
                 </div>
-              ) : !detailData?.credits?.length ? (
-                <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">
-                  No unapplied credit entries found for this party.
+                <div
+                  className={`mt-1 text-lg font-bold tabular-nums ${
+                    selectedParty.party_type === "customer"
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-amber-600 dark:text-amber-400"
+                  }`}
+                >
+                  {formatCurrency(
+                    detailData?.total_due ?? selectedParty.total_due
+                  )}
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-gray-50 dark:bg-slate-900/60 border border-gray-100 dark:border-slate-700/70">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400">
+                  Overdue Amount
+                </div>
+                <div className="mt-1 text-lg font-bold text-rose-600 dark:text-rose-400 tabular-nums">
+                  {formatCurrency(
+                    detailData?.total_overdue ?? selectedParty.overdue_amount
+                  )}
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-gray-50 dark:bg-slate-900/60 border border-gray-100 dark:border-slate-700/70">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400">
+                  Open Items
+                </div>
+                <div className="mt-1 text-lg font-bold text-gray-900 dark:text-slate-100 tabular-nums">
+                  {detailData?.items?.length ?? selectedParty.open_invoices_count}
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-gray-50 dark:bg-slate-900/60 border border-gray-100 dark:border-slate-700/70">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400">
+                  Credit Terms
+                </div>
+                <div className="mt-1 text-lg font-bold text-gray-900 dark:text-slate-100">
+                  {selectedParty.credit_days
+                    ? `${selectedParty.credit_days} days`
+                    : "Standard"}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-5">
+              {detailLoading ? (
+                <div className="py-12 text-center text-sm text-gray-500 dark:text-slate-400">
+                  Loading due breakdown...
+                </div>
+              ) : detailError ? (
+                <div className="py-10 text-center text-sm text-rose-600 dark:text-rose-400">
+                  {detailError}
+                </div>
+              ) : !detailData?.items?.length ? (
+                <div className="py-10 text-center text-sm text-gray-500 dark:text-slate-400">
+                  No open due items found for this party.
                 </div>
               ) : (
-                <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-xl">
-                  <table className="w-full text-left border-collapse text-sm">
+                <div className="overflow-x-auto border border-gray-200 dark:border-slate-700 rounded-xl">
+                  <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        <th className="py-3 px-3.5">Date</th>
-                        <th className="py-3 px-3.5">Voucher #</th>
-                        <th className="py-3 px-3.5">Source</th>
-                        <th className="py-3 px-3.5">Method / Account</th>
-                        <th className="py-3 px-3.5 text-right">Original</th>
-                        <th className="py-3 px-3.5 text-right">Applied</th>
-                        <th className="py-3 px-3.5 text-right">Remaining Credit</th>
-                        <th className="py-3 px-3.5">Notes / Ref</th>
+                      <tr className="border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900/60 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400">
+                        <th className="py-2.5 px-3.5">Date</th>
+                        <th className="py-2.5 px-3.5">Reference</th>
+                        <th className="py-2.5 px-3.5">Type</th>
+                        <th className="py-2.5 px-3.5">Due Date</th>
+                        <th className="py-2.5 px-3.5 text-right">Total</th>
+                        <th className="py-2.5 px-3.5 text-right">
+                          {selectedParty.party_type === "customer"
+                            ? "Received"
+                            : "Paid"}
+                        </th>
+                        <th className="py-2.5 px-3.5 text-right">Due</th>
+                        <th className="py-2.5 px-3.5 text-center">Status</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700/60">
-                      {detailData.credits.map((item) => {
-                        const ret = isReturnCredit(item);
-                        return (
-                          <tr key={item.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
-                            <td className="py-3 px-3.5 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300">
-                              {formatDisplayDate(item.payment_date)}
-                            </td>
-                            <td className="py-3 px-3.5 whitespace-nowrap font-medium text-slate-900 dark:text-white">
-                              <span className="inline-flex items-center gap-1.5">
-                                <DocumentTextIcon className="w-4 h-4 text-slate-400" />
-                                {item.payment_number || `#${item.id}`}
+                    <tbody className="divide-y divide-gray-100 dark:divide-slate-700/70 text-sm">
+                      {detailData.items.map((item) => (
+                        <tr
+                          key={item.id}
+                          className="hover:bg-gray-50/70 dark:hover:bg-slate-700/30"
+                        >
+                          <td className="py-2.5 px-3.5 text-gray-700 dark:text-slate-300 whitespace-nowrap">
+                            {item.date || "—"}
+                          </td>
+                          <td className="py-2.5 px-3.5 font-medium text-gray-900 dark:text-slate-100 whitespace-nowrap">
+                            {item.reference_number || "—"}
+                          </td>
+                          <td className="py-2.5 px-3.5 text-gray-600 dark:text-slate-300 whitespace-nowrap">
+                            {item.type}
+                          </td>
+                          <td className="py-2.5 px-3.5 text-gray-600 dark:text-slate-300 whitespace-nowrap">
+                            {item.due_date || "—"}
+                          </td>
+                          <td className="py-2.5 px-3.5 text-right tabular-nums text-gray-700 dark:text-slate-300 whitespace-nowrap">
+                            {formatCurrency(item.total)}
+                          </td>
+                          <td className="py-2.5 px-3.5 text-right tabular-nums text-gray-600 dark:text-slate-400 whitespace-nowrap">
+                            {formatCurrency(item.paid_or_received)}
+                          </td>
+                          <td className="py-2.5 px-3.5 text-right font-semibold tabular-nums text-gray-900 dark:text-slate-100 whitespace-nowrap">
+                            {formatCurrency(item.due)}
+                          </td>
+                          <td className="py-2.5 px-3.5 text-center whitespace-nowrap">
+                            {item.is_overdue ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300">
+                                {item.days_overdue}d Overdue
                               </span>
-                            </td>
-                            <td className="py-3 px-3.5 whitespace-nowrap">
-                              <span
-                                className={`px-2 py-0.5 rounded-md text-xs font-medium ${
-                                  ret
-                                    ? "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
-                                    : "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
-                                }`}
-                              >
-                                {getCreditSourceLabel(item)}
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                                Open
                               </span>
-                            </td>
-                            <td className="py-3 px-3.5 text-xs text-slate-600 dark:text-slate-300">
-                              <div className="capitalize">{item.payment_method || "—"}</div>
-                              {item.account?.name && (
-                                <div className="text-slate-400">{item.account.name}</div>
-                              )}
-                            </td>
-                            <td className="py-3 px-3.5 text-right tabular-nums text-slate-700 dark:text-slate-300">
-                              {formatCurrency(item.amount)}
-                            </td>
-                            <td className="py-3 px-3.5 text-right tabular-nums text-slate-500 dark:text-slate-400">
-                              {formatCurrency(item.allocated_amount)}
-                            </td>
-                            <td className="py-3 px-3.5 text-right font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                              {formatCurrency(item.unapplied_amount)}
-                            </td>
-                            <td className="py-3 px-3.5 text-xs text-slate-600 dark:text-slate-400 max-w-xs">
-                              {item.reference && <div className="font-medium">Ref: {item.reference}</div>}
-                              {item.notes && <div className="truncate" title={item.notes}>{item.notes}</div>}
-                              {!item.reference && !item.notes && "—"}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                            )}
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
@@ -671,43 +775,47 @@ export default function PartyCredits() {
             </div>
 
             {/* Modal Footer */}
-            <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    closeDetailModal();
-                    navigate(
-                      selectedParty.party_type === "supplier"
-                        ? "/supplier-ledger"
-                        : "/customer-ledger"
-                    );
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-medium border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition"
-                >
-                  <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
-                  Open {selectedParty.party_type === "supplier" ? "Supplier" : "Customer"} Ledger
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    closeDetailModal();
-                    navigate("/payments");
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-medium border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition"
-                >
-                  <BanknotesIcon className="w-3.5 h-3.5" />
-                  Payment Vouchers
-                </button>
-              </div>
-
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-t border-gray-200 dark:border-slate-700 bg-gray-50/70 dark:bg-slate-900/50">
               <button
                 type="button"
-                onClick={closeDetailModal}
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 transition"
+                onClick={() => {
+                  const target =
+                    selectedParty.party_type === "customer"
+                      ? `/customer-ledger?customer_id=${selectedParty.party_id}`
+                      : `/supplier-ledger?supplier_id=${selectedParty.party_id}`;
+                  closePartyModal();
+                  navigate(target);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs sm:text-sm font-medium text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
               >
-                Close
+                <ArrowTopRightOnSquareIcon className="w-4 h-4" />
+                Open{" "}
+                {selectedParty.party_type === "customer"
+                  ? "Customer"
+                  : "Supplier"}{" "}
+                Ledger
               </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    closePartyModal();
+                    navigate("/payments");
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-xs sm:text-sm font-medium text-white transition-colors cursor-pointer"
+                >
+                  <BanknotesIcon className="w-4 h-4" />
+                  Record Payment
+                </button>
+                <button
+                  type="button"
+                  onClick={closePartyModal}
+                  className="px-3.5 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs sm:text-sm font-medium text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>
