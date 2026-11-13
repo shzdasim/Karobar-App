@@ -32,7 +32,7 @@ const BUTTON_STYLES = [
     id: 'apple',
     name: 'Apple Native',
     icon: '',
-    description: 'macOS tactile capsule with specular highlight & micro-press',
+    description: 'Apple Liquid Glass with frosted blur, specular rim & micro-press',
     className: 'rounded-[10px]',
     variant: 'apple',
   },
