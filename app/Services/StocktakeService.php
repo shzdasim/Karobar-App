@@ -403,6 +403,11 @@ class StocktakeService
                         ]);
                     }
                     $product->quantity = max(0, (float) ($product->quantity ?? 0) + $liveVarianceQty);
+                    if ($product->quantity <= 0) {
+                        $product->avg_price         = 0;
+                        $product->margin            = 0;
+                        $product->whole_sale_margin = 0;
+                    }
                     $product->save();
                 } else {
                     $product->quantity = max(0, (float) ($product->quantity ?? 0) + $liveVarianceQty);
@@ -413,19 +418,6 @@ class StocktakeService
                         $product->whole_sale_margin = 0;
                     }
                     $product->save();
-                }
-
-                $touchedProducts[$product->id] = true;
-            }
-
-            // Sync product-level qty from batch sums for touched pure-batched products
-            foreach (array_keys($touchedProducts) as $pid) {
-                /** @var Product $p */
-                $p          = Product::lockForUpdate()->findOrFail($pid);
-                $batchCount = Batch::where('product_id', $pid)->count();
-                $hasUnbatchedSessionItem = $items->contains(fn ($it) => (int) $it->product_id === (int) $pid && empty($it->batch_number));
-                if ($batchCount > 0 && !$hasUnbatchedSessionItem) {
-                    $this->setProductQty($p, $this->sumBatches($p));
                 }
             }
 

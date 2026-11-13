@@ -194,9 +194,10 @@ class StockAdjustmentController extends Controller
 
                     $totalWorth += $worth;
 
-                    // Apply to batch
+                    // Apply to batch and mirror delta to product
                     $batch->quantity = $actual;
                     $batch->save();
+                    $this->setProductQty($product, max(0, $this->getProductQty($product) + $diff));
 
                 } else {
                     // Product-level adjustment
@@ -220,19 +221,6 @@ class StockAdjustmentController extends Controller
 
                     // Apply to product-level qty
                     $this->setProductQty($product, $actual);
-                }
-
-                $touchedProducts[$product->id] = true;
-            }
-
-            // Sync product-level totals with batch sums (for products where all adjustment items were batch-level)
-            foreach (array_keys($touchedProducts) as $pid) {
-                /** @var Product $p */
-                $p = Product::query()->lockForUpdate()->findOrFail($pid);
-                $batchCount = Batch::where('product_id', $pid)->count();
-                $hasUnbatchedRow = collect($data['items'])->contains(fn ($r) => (int) ($r['product_id'] ?? 0) === (int) $pid && empty(trim((string) ($r['batch_number'] ?? ''))));
-                if ($batchCount > 0 && !$hasUnbatchedRow) {
-                    $this->setProductQty($p, $this->sumBatches($p));
                 }
             }
 
@@ -287,23 +275,14 @@ class StockAdjustmentController extends Controller
                     if ($batch) {
                         $this->addBatchQty($batch, -$inverseDiff);
                     }
+                    $this->setProductQty($product, max(0, $this->getProductQty($product) - $inverseDiff));
                 } else {
-                    $this->addProductQty($product, -$inverseDiff);
+                    $this->setProductQty($product, max(0, $this->getProductQty($product) - $inverseDiff));
                 }
-                $touchedProducts[$product->id] = true;
             }
 
             $adj->items()->delete();
             $adj->delete();
-
-            foreach (array_keys($touchedProducts) as $pid) {
-                /** @var Product $p */
-                $p = Product::query()->lockForUpdate()->findOrFail($pid);
-                $batchCount = Batch::where('product_id', $pid)->count();
-                if ($batchCount > 0) {
-                    $this->setProductQty($p, $this->sumBatches($p));
-                }
-            }
 
             return response()->noContent();
         });

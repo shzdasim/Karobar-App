@@ -239,21 +239,9 @@ class StockDisposalService
                 if ($batch) {
                     $batch->quantity = $pItem['remaining_qty'];
                     $batch->save();
+                    $this->setProductQty($product, max(0, $this->getProductQty($product) - (float) $pItem['dispose_qty']));
                 } else {
                     $this->setProductQty($product, $pItem['remaining_qty']);
-                }
-
-                $touchedProducts[$product->id] = true;
-            }
-
-            // Sync product-level stock from batch sums where all disposed items for that product were batch-tracked
-            foreach (array_keys($touchedProducts) as $pid) {
-                /** @var Product $p */
-                $p = Product::query()->lockForUpdate()->findOrFail($pid);
-                $batchCount = Batch::where('product_id', $pid)->count();
-                $hasUnbatchedItem = collect($preparedItems)->contains(fn ($it) => (int) $it['product']->id === (int) $pid && $it['batch'] === null);
-                if ($batchCount > 0 && !$hasUnbatchedItem) {
-                    $this->setProductQty($p, $this->sumBatches($p));
                 }
             }
 
@@ -385,20 +373,9 @@ class StockDisposalService
                 if ($batch) {
                     $batch->quantity = (float) ($batch->quantity ?? 0) + (float) $item->dispose_qty;
                     $batch->save();
+                    $this->setProductQty($product, $this->getProductQty($product) + (float) $item->dispose_qty);
                 } else {
                     $this->setProductQty($product, $this->getProductQty($product) + (float) $item->dispose_qty);
-                }
-
-                $touchedProducts[$product->id] = true;
-            }
-
-            foreach (array_keys($touchedProducts) as $pid) {
-                /** @var Product $p */
-                $p = Product::query()->lockForUpdate()->findOrFail($pid);
-                $batchCount = Batch::where('product_id', $pid)->count();
-                $hasUnbatchedRestore = $disposal->items->contains(fn ($it) => (int) $it->product_id === (int) $pid && empty($it->batch_id) && empty($it->batch_number));
-                if ($batchCount > 0 && !$hasUnbatchedRestore) {
-                    $this->setProductQty($p, $this->sumBatches($p));
                 }
             }
 
