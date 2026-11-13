@@ -214,6 +214,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
 
     // Payments & Allocations (Project 3)
     Route::get('payments/open-invoices',          [PaymentController::class, 'openInvoices']);
+    Route::get('payments/party-credits',          [PaymentController::class, 'partyCredits']);
     Route::get('payments/available-credits',      [PaymentController::class, 'availableCredits']);
     Route::post('payments/apply-credits',         [PaymentController::class, 'applyCredits']);
     Route::post('payments/{id}/allocate',         [PaymentController::class, 'allocate']);

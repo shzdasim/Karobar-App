@@ -264,6 +264,26 @@ class PaymentController extends Controller
     }
 
     /**
+     * Get aggregated available unapplied credits grouped by supplier/customer.
+     */
+    public function partyCredits(Request $request): JsonResponse
+    {
+        $this->authorize('viewAny', Payment::class);
+
+        $validated = $request->validate([
+            'party_type' => ['nullable', Rule::in(['all', 'customer', 'supplier'])],
+            'source'     => ['nullable', Rule::in(['all', 'advance', 'return'])],
+            'search'     => ['nullable', 'string', 'max:150'],
+            'min_amount' => ['nullable', 'numeric', 'min:0'],
+            'date_from'  => ['nullable', 'date'],
+            'date_to'    => ['nullable', 'date'],
+            'sort'       => ['nullable', Rule::in(['highest', 'lowest', 'name_asc', 'recent'])],
+        ]);
+
+        return response()->json($this->paymentService->getPartyCreditsSummary($validated));
+    }
+
+    /**
      * Get available unapplied payment credits and credit notes for a party.
      */
     public function availableCredits(Request $request): JsonResponse

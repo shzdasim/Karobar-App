@@ -106,6 +106,7 @@ const CreateStockDisposal = registerLazy(() => import("../pages/StockDisposals/C
 // Financial Accounts & Payment Vouchers
 const AccountsPage = registerLazy(() => import("../pages/Accounts/index.jsx"), ["/accounts"]);
 const PaymentsPage = registerLazy(() => import("../pages/Payments/index.jsx"), ["/payments"]);
+const PartyCreditsPage = registerLazy(() => import("../pages/Payments/PartyCredits.jsx"), ["/party-credits"]);
 const AccountingPage = registerLazy(() => import("../pages/Accounting/index.jsx"), ["/accounting"]);
 const TaxReturnReport = registerLazy(() => import("../pages/Reports/TaxReturnReport.jsx"), ["/reports/tax-return"]);
 const ProductBatchWorkbench = registerLazy(() => import("../pages/Batches/ProductBatchWorkbench.jsx"), ["/product-batches"]);
@@ -365,6 +366,7 @@ export default function AppRoutes() {
           <Route path="/accounting" element={<AccountingPage />} />
           <Route path="/hr-payroll" element={<HrPayrollCenter />} />
           <Route path="/payments" element={<PaymentsPage />} />
+          <Route path="/party-credits" element={<PartyCreditsPage />} />
           <Route path="/cash-drawer" element={<CashDrawerPage />} />
           <Route path="/supplier-ledger" element={<SupplierLedgerPage />} />
           <Route path="/customer-ledger" element={<CustomerLedgerPage />} />

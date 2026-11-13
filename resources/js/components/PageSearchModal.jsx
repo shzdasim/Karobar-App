@@ -379,6 +379,14 @@ export function useAvailablePages() {
         perm: "payment.view",
       },
       {
+        name: "Party Credits",
+        path: "/party-credits",
+        section: "Finance & Ledgers",
+        keywords: "supplier customer credit advance unapplied credit note",
+        icon: BanknotesIcon,
+        perm: "payment.view",
+      },
+      {
         name: "Cash Drawer",
         path: "/cash-drawer",
         section: "Finance & Ledgers",

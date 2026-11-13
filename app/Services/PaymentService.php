@@ -881,7 +881,7 @@ class PaymentService
     {
         $this->syncMissingReturnCreditPayments($partyType, $partyId);
 
-        $credits = Payment::with('allocations')
+        $credits = Payment::with(['allocations', 'account'])
             ->where('party_type', $partyType)
             ->where('party_id', $partyId)
             ->where('status', 'posted')
@@ -1129,5 +1129,193 @@ class PaymentService
 
             return $totalDetached;
         });
+    }
+
+    /**
+     * Get aggregated available unapplied credits grouped by party (one row per supplier/customer).
+     */
+    public function getPartyCreditsSummary(array $filters = []): array
+    {
+        $partyTypeFilter = $filters['party_type'] ?? 'all';
+        $sourceFilter = $filters['source'] ?? 'all';
+        $search = trim((string) ($filters['search'] ?? ''));
+        $minAmount = isset($filters['min_amount']) && $filters['min_amount'] !== '' ? (float) $filters['min_amount'] : null;
+        $dateFrom = !empty($filters['date_from']) ? (string) $filters['date_from'] : null;
+        $dateTo = !empty($filters['date_to']) ? (string) $filters['date_to'] : null;
+        $sort = $filters['sort'] ?? 'highest';
+
+        $syncType = in_array($partyTypeFilter, ['customer', 'supplier'], true) ? $partyTypeFilter : null;
+        $this->syncMissingReturnCreditPayments($syncType, null);
+
+        $query = Payment::query()
+            ->where('status', 'posted')
+            ->where('unapplied_amount', '>', 0)
+            ->whereIn('party_type', ['customer', 'supplier'])
+            ->whereNotNull('party_id');
+
+        if (in_array($partyTypeFilter, ['customer', 'supplier'], true)) {
+            $query->where('party_type', $partyTypeFilter);
+        }
+
+        if ($sourceFilter === 'return') {
+            $query->where(function ($q) {
+                $q->where('idempotency_key', 'like', 'sale_return:%')
+                    ->orWhere('idempotency_key', 'like', 'purchase_return:%');
+            });
+        } elseif ($sourceFilter === 'advance') {
+            $query->where(function ($q) {
+                $q->whereNull('idempotency_key')
+                    ->orWhere(function ($q2) {
+                        $q2->where('idempotency_key', 'not like', 'sale_return:%')
+                            ->where('idempotency_key', 'not like', 'purchase_return:%');
+                    });
+            });
+        }
+
+        if ($dateFrom) {
+            $query->whereDate('payment_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('payment_date', '<=', $dateTo);
+        }
+
+        $payments = $query->get([
+            'id',
+            'party_type',
+            'party_id',
+            'payment_date',
+            'amount',
+            'allocated_amount',
+            'unapplied_amount',
+            'idempotency_key',
+        ]);
+
+        $grouped = [];
+        $customerIds = [];
+        $supplierIds = [];
+
+        foreach ($payments as $p) {
+            $pType = (string) $p->party_type;
+            $pId = (int) $p->party_id;
+            $key = $pType . ':' . $pId;
+            $unapplied = round((float) $p->unapplied_amount, 2);
+            if ($unapplied <= 0) {
+                continue;
+            }
+
+            $idem = (string) ($p->idempotency_key ?? '');
+            $isReturn = str_starts_with($idem, 'sale_return:') || str_starts_with($idem, 'purchase_return:');
+            $pDate = $p->payment_date ? $p->payment_date->toDateString() : null;
+
+            if (!isset($grouped[$key])) {
+                $grouped[$key] = [
+                    'party_type'            => $pType,
+                    'party_id'              => $pId,
+                    'credit_count'          => 0,
+                    'advance_credit'        => 0.0,
+                    'return_credit'         => 0.0,
+                    'total_credit'          => 0.0,
+                    'total_original_amount' => 0.0,
+                    'total_applied_amount'  => 0.0,
+                    'latest_credit_date'    => $pDate,
+                    'oldest_credit_date'    => $pDate,
+                ];
+                if ($pType === 'customer') {
+                    $customerIds[$pId] = true;
+                } else {
+                    $supplierIds[$pId] = true;
+                }
+            }
+
+            $grouped[$key]['credit_count']++;
+            if ($isReturn) {
+                $grouped[$key]['return_credit'] = round($grouped[$key]['return_credit'] + $unapplied, 2);
+            } else {
+                $grouped[$key]['advance_credit'] = round($grouped[$key]['advance_credit'] + $unapplied, 2);
+            }
+            $grouped[$key]['total_credit'] = round($grouped[$key]['total_credit'] + $unapplied, 2);
+            $grouped[$key]['total_original_amount'] = round($grouped[$key]['total_original_amount'] + (float) $p->amount, 2);
+            $grouped[$key]['total_applied_amount'] = round($grouped[$key]['total_applied_amount'] + (float) $p->allocated_amount, 2);
+
+            if ($pDate !== null) {
+                if ($grouped[$key]['latest_credit_date'] === null || $pDate > $grouped[$key]['latest_credit_date']) {
+                    $grouped[$key]['latest_credit_date'] = $pDate;
+                }
+                if ($grouped[$key]['oldest_credit_date'] === null || $pDate < $grouped[$key]['oldest_credit_date']) {
+                    $grouped[$key]['oldest_credit_date'] = $pDate;
+                }
+            }
+        }
+
+        $customers = !empty($customerIds)
+            ? Customer::whereIn('id', array_keys($customerIds))->get(['id', 'name', 'phone', 'email'])->keyBy('id')
+            : collect();
+        $suppliers = !empty($supplierIds)
+            ? Supplier::whereIn('id', array_keys($supplierIds))->get(['id', 'name', 'phone', 'email'])->keyBy('id')
+            : collect();
+
+        $rows = [];
+        $searchLower = mb_strtolower($search);
+
+        foreach ($grouped as $row) {
+            $party = $row['party_type'] === 'customer'
+                ? $customers->get($row['party_id'])
+                : $suppliers->get($row['party_id']);
+
+            $partyName = $party?->name ?? ucfirst($row['party_type']) . ' #' . $row['party_id'];
+            $partyPhone = $party?->phone ?? '';
+            $partyEmail = $party?->email ?? '';
+
+            if ($searchLower !== '') {
+                $haystack = mb_strtolower($partyName . ' ' . $partyPhone . ' ' . $partyEmail);
+                if (!str_contains($haystack, $searchLower)) {
+                    continue;
+                }
+            }
+
+            if ($minAmount !== null && $row['total_credit'] < $minAmount) {
+                continue;
+            }
+
+            $row['party_name'] = $partyName;
+            $row['party_phone'] = $partyPhone;
+            $row['party_email'] = $partyEmail;
+            $rows[] = $row;
+        }
+
+        usort($rows, function ($a, $b) use ($sort) {
+            return match ($sort) {
+                'lowest'   => $a['total_credit'] <=> $b['total_credit'],
+                'name_asc' => strcasecmp($a['party_name'], $b['party_name']),
+                'recent'   => strcmp((string) ($b['latest_credit_date'] ?? ''), (string) ($a['latest_credit_date'] ?? '')),
+                default    => $b['total_credit'] <=> $a['total_credit'],
+            };
+        });
+
+        $supplierTotal = 0.0;
+        $supplierCount = 0;
+        $customerTotal = 0.0;
+        $customerCount = 0;
+        foreach ($rows as $r) {
+            if ($r['party_type'] === 'supplier') {
+                $supplierTotal = round($supplierTotal + $r['total_credit'], 2);
+                $supplierCount++;
+            } else {
+                $customerTotal = round($customerTotal + $r['total_credit'], 2);
+                $customerCount++;
+            }
+        }
+
+        return [
+            'summary' => [
+                'total_credit'   => round($supplierTotal + $customerTotal, 2),
+                'supplier_total' => $supplierTotal,
+                'supplier_count' => $supplierCount,
+                'customer_total' => $customerTotal,
+                'customer_count' => $customerCount,
+                'party_count'    => count($rows),
+            ],
+            'rows' => $rows,
+        ];
     }
 }

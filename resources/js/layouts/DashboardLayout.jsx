@@ -195,6 +195,7 @@ export default function DashboardLayout({ children }) {
       "/accounting": "Double-Entry Accounting & GL",
       "/hr-payroll": "HR, Payroll & Sales Commissions",
       "/payments": "Payment Vouchers",
+      "/party-credits": "Supplier & Customer Credits",
       "/cash-drawer": "Cash Drawer",
       "/expenses": "Operating Expenses",
       "/product-batches": "Product Batches",

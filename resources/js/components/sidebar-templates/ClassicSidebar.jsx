@@ -448,6 +448,12 @@ export default function ClassicSidebar({
             perm: "payment.view",
           },
           {
+            name: "Party Credits",
+            path: "/party-credits",
+            icon: <BanknotesIcon className="w-5 h-5" />,
+            perm: "payment.view",
+          },
+          {
             name: "Cash Drawer",
             path: "/cash-drawer",
             icon: <BanknotesIcon className="w-5 h-5" />,
