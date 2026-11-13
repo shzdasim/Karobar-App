@@ -3048,6 +3048,182 @@ html[data-btn-style="outlined"] :is(.theme-btn-success, .products-action-success
   background: color-mix(in srgb, var(--color-success, #10b981) 12%, transparent) !important;
 }
 
+/* ============================ APPLE NATIVE ============================== */
+/* macOS tactile capsule with specular highlight, 10px squircle, and micro-press. */
+:is(.btn-apple, html[data-btn-style="apple"] :is(
+  .theme-btn-primary, .g-btn-primary, .products-action-primary,
+  .purchase-order-action-primary, .activity-primary-button, .product-modal-save
+):not([data-btn-preview])) {
+  border-radius: 10px !important;
+  background: linear-gradient(180deg, var(--color-primary, #007aff) 0%, color-mix(in srgb, var(--color-primary, #007aff) 86%, #000) 100%) !important;
+  color: #ffffff !important;
+  font-weight: 500 !important;
+  border: 1px solid rgba(0, 0, 0, 0.15) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.35), 0 1px 3px 0 rgba(0, 0, 0, 0.12) !important;
+  transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1), filter 120ms ease-out, box-shadow 120ms ease-out !important;
+}
+
+:is(.btn-apple, html[data-btn-style="apple"] :is(
+  .theme-btn-primary, .g-btn-primary, .products-action-primary,
+  .purchase-order-action-primary, .activity-primary-button, .product-modal-save
+):not([data-btn-preview])):hover:not(:disabled) {
+  filter: brightness(1.05) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.45), 0 2px 6px 0 rgba(0, 0, 0, 0.16) !important;
+}
+
+:is(.btn-apple, html[data-btn-style="apple"] :is(
+  .theme-btn-primary, .g-btn-primary, .products-action-primary,
+  .purchase-order-action-primary, .activity-primary-button, .product-modal-save
+):not([data-btn-preview])):active:not(:disabled) {
+  transform: scale(0.975) !important;
+  filter: brightness(0.96) !important;
+}
+
+:is(.btn-apple-secondary, html[data-btn-style="apple"] :is(.theme-btn-secondary, .g-btn-secondary):not([data-btn-preview])) {
+  border-radius: 10px !important;
+  background: rgba(0, 0, 0, 0.05) !important;
+  color: var(--color-text-primary, #1d1d1f) !important;
+  font-weight: 500 !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  transition: all 120ms ease-out !important;
+}
+.dark :is(.btn-apple-secondary, html[data-btn-style="apple"] :is(.theme-btn-secondary, .g-btn-secondary):not([data-btn-preview])) {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #f5f5f7 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+:is(.btn-apple-secondary, html[data-btn-style="apple"] :is(.theme-btn-secondary, .g-btn-secondary):not([data-btn-preview])):hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.08) !important;
+}
+.dark :is(.btn-apple-secondary, html[data-btn-style="apple"] :is(.theme-btn-secondary, .g-btn-secondary):not([data-btn-preview])):hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16) !important;
+}
+:is(.btn-apple-secondary, html[data-btn-style="apple"] :is(.theme-btn-secondary, .g-btn-secondary):not([data-btn-preview])):active:not(:disabled) {
+  transform: scale(0.975) !important;
+}
+
+:is(html[data-btn-style="apple"] :is(.theme-btn-danger, .products-action-danger, .purchase-order-action-danger):not([data-btn-preview])) {
+  border-radius: 10px !important;
+  background: linear-gradient(180deg, #ff3b30 0%, #d70015 100%) !important;
+  color: #ffffff !important;
+  font-weight: 500 !important;
+  border: 1px solid rgba(0, 0, 0, 0.15) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.35), 0 1px 3px rgba(0,0,0,0.12) !important;
+}
+:is(html[data-btn-style="apple"] :is(.theme-btn-danger, .products-action-danger, .purchase-order-action-danger):not([data-btn-preview])):hover:not(:disabled) {
+  filter: brightness(1.05) !important;
+}
+:is(html[data-btn-style="apple"] :is(.theme-btn-danger, .products-action-danger, .purchase-order-action-danger):not([data-btn-preview])):active:not(:disabled) {
+  transform: scale(0.975) !important;
+}
+
+:is(html[data-btn-style="apple"] :is(.theme-btn-success, .products-action-success):not([data-btn-preview])) {
+  border-radius: 10px !important;
+  background: linear-gradient(180deg, #34c759 0%, #248a3d 100%) !important;
+  color: #ffffff !important;
+  font-weight: 500 !important;
+  border: 1px solid rgba(0, 0, 0, 0.15) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.35), 0 1px 3px rgba(0,0,0,0.12) !important;
+}
+
+/* ============================ WINDOWS 11 FLUENT ========================== */
+/* Crisp 4px key with signature WinUI 3 3D bottom bevel elevation.           */
+:is(.btn-windows, html[data-btn-style="windows"] :is(
+  .theme-btn-primary, .g-btn-primary, .products-action-primary,
+  .purchase-order-action-primary, .activity-primary-button, .product-modal-save
+):not([data-btn-preview])) {
+  border-radius: 4px !important;
+  background: var(--color-primary, #005fb8) !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  letter-spacing: 0.01em !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.32) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06) !important;
+  transition: background-color 100ms ease-out, border-color 100ms ease-out, transform 80ms ease-out !important;
+}
+
+:is(.btn-windows, html[data-btn-style="windows"] :is(
+  .theme-btn-primary, .g-btn-primary, .products-action-primary,
+  .purchase-order-action-primary, .activity-primary-button, .product-modal-save
+):not([data-btn-preview])):hover:not(:disabled) {
+  background: var(--color-primary-hover, #0054a6) !important;
+  border-bottom-color: rgba(0, 0, 0, 0.42) !important;
+}
+
+:is(.btn-windows, html[data-btn-style="windows"] :is(
+  .theme-btn-primary, .g-btn-primary, .products-action-primary,
+  .purchase-order-action-primary, .activity-primary-button, .product-modal-save
+):not([data-btn-preview])):active:not(:disabled) {
+  transform: translateY(1px) !important;
+  border-bottom-width: 1px !important;
+  box-shadow: none !important;
+}
+
+:is(.btn-windows-secondary, html[data-btn-style="windows"] :is(.theme-btn-secondary, .g-btn-secondary):not([data-btn-preview])) {
+  border-radius: 4px !important;
+  background: #FDFDFD !important;
+  color: #1B1B1B !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  border: 1px solid #D1D1D1 !important;
+  border-bottom: 2px solid #8E8E8E !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  transition: background-color 100ms ease-out, border-color 100ms ease-out, transform 80ms ease-out !important;
+}
+.dark :is(.btn-windows-secondary, html[data-btn-style="windows"] :is(.theme-btn-secondary, .g-btn-secondary):not([data-btn-preview])) {
+  background: #323232 !important;
+  color: #FFFFFF !important;
+  border: 1px solid #454545 !important;
+  border-bottom: 2px solid #202020 !important;
+}
+:is(.btn-windows-secondary, html[data-btn-style="windows"] :is(.theme-btn-secondary, .g-btn-secondary):not([data-btn-preview])):hover:not(:disabled) {
+  background: #F5F5F5 !important;
+}
+.dark :is(.btn-windows-secondary, html[data-btn-style="windows"] :is(.theme-btn-secondary, .g-btn-secondary):not([data-btn-preview])):hover:not(:disabled) {
+  background: #3C3C3C !important;
+}
+:is(.btn-windows-secondary, html[data-btn-style="windows"] :is(.theme-btn-secondary, .g-btn-secondary):not([data-btn-preview])):active:not(:disabled) {
+  transform: translateY(1px) !important;
+  border-bottom-width: 1px !important;
+}
+
+:is(html[data-btn-style="windows"] :is(.theme-btn-danger, .products-action-danger, .purchase-order-action-danger):not([data-btn-preview])) {
+  border-radius: 4px !important;
+  background: #C42B1C !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.35) !important;
+}
+:is(html[data-btn-style="windows"] :is(.theme-btn-danger, .products-action-danger, .purchase-order-action-danger):not([data-btn-preview])):hover:not(:disabled) {
+  background: #B22416 !important;
+}
+:is(html[data-btn-style="windows"] :is(.theme-btn-danger, .products-action-danger, .purchase-order-action-danger):not([data-btn-preview])):active:not(:disabled) {
+  transform: translateY(1px) !important;
+  border-bottom-width: 1px !important;
+}
+
+:is(html[data-btn-style="windows"] :is(.theme-btn-success, .products-action-success):not([data-btn-preview])) {
+  border-radius: 4px !important;
+  background: #0F7B0F !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.35) !important;
+}
+:is(html[data-btn-style="windows"] :is(.theme-btn-success, .products-action-success):not([data-btn-preview])):hover:not(:disabled) {
+  background: #0B6A0B !important;
+}
+:is(html[data-btn-style="windows"] :is(.theme-btn-success, .products-action-success):not([data-btn-preview])):active:not(:disabled) {
+  transform: translateY(1px) !important;
+  border-bottom-width: 1px !important;
+}
+
 /* ---- 3. Fallback before the theme attribute lands (SSR / first paint) ----- */
 html:not([data-btn-style]) :is(
   .theme-btn-primary, .g-btn-primary, .products-action-primary,
@@ -3684,6 +3860,107 @@ html:not([data-btn-style]) :is(.theme-btn-success, .products-action-success) {
     --g2: oklch(from var(--btn-accent, var(--color-primary, #6366f1)) l c calc(h + 40));
     --g3: oklch(from var(--btn-accent, var(--color-primary, #6366f1)) calc(l + 0.12) c calc(h - 40));
   }
+}
+
+/* ==========================================================================
+   THEME STYLES: APPLE MACOS & WINDOWS 11 FLUENT
+   ========================================================================== */
+
+/* --- Theme A: Apple macOS (Liquid Glass, 20px blur, smooth squircles) --- */
+html[data-theme="apple"] {
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", sans-serif;
+  --btn-radius: 0.625rem;
+}
+
+html[data-theme="apple"] .workspace-shell {
+  background: #F5F5F7 !important;
+  font-family: var(--font-ui) !important;
+}
+html[data-theme="apple"].dark .workspace-shell {
+  background: #000000 !important;
+}
+
+html[data-theme="apple"] :is(.settings-block, .products-panel, .purchase-order-panel, .people-form-page .products-panel) {
+  border-radius: 16px !important;
+  background: rgba(255, 255, 255, 0.82) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.04) !important;
+}
+html[data-theme="apple"].dark :is(.settings-block, .products-panel, .purchase-order-panel, .people-form-page .products-panel) {
+  background: rgba(28, 28, 30, 0.82) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.45) !important;
+}
+
+/* Apple inputs: 10px squircle + blue focus ring */
+html[data-theme="apple"] :is(.g-input, input:not([type=checkbox]):not([type=radio]), select, textarea) {
+  border-radius: 10px !important;
+  transition: all 140ms ease-out !important;
+}
+html[data-theme="apple"] :is(.g-input, input:not([type=checkbox]):not([type=radio]), select, textarea):focus {
+  border-color: var(--color-primary, #007aff) !important;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.25) !important;
+  outline: none !important;
+}
+
+/* --- Theme B: Windows 11 Fluent (Mica material, 4px-8px, bottom focus line) --- */
+html[data-theme="windows"] {
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", -apple-system, sans-serif;
+  --btn-radius: 0.25rem;
+}
+
+html[data-theme="windows"] .workspace-shell {
+  background: #F3F3F3 !important;
+  font-family: var(--font-ui) !important;
+}
+html[data-theme="windows"].dark .workspace-shell {
+  background: #202020 !important;
+}
+
+html[data-theme="windows"] :is(.settings-block, .products-panel, .purchase-order-panel, .people-form-page .products-panel) {
+  border-radius: 8px !important;
+  background: #FFFFFF !important;
+  border: 1px solid #E5E5E5 !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html[data-theme="windows"].dark :is(.settings-block, .products-panel, .purchase-order-panel, .people-form-page .products-panel) {
+  background: #2C2C2C !important;
+  border-color: #383838 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28) !important;
+}
+
+/* Windows 11 inputs: 4px radius + signature bottom focus accent line */
+html[data-theme="windows"] :is(.g-input, input:not([type=checkbox]):not([type=radio]), select, textarea) {
+  border-radius: 4px !important;
+  border: 1px solid #D1D1D1 !important;
+  border-bottom: 2px solid #8E8E8E !important;
+  background: #FFFFFF !important;
+  color: #1B1B1B !important;
+  transition: border-color 100ms ease-out !important;
+}
+html[data-theme="windows"].dark :is(.g-input, input:not([type=checkbox]):not([type=radio]), select, textarea) {
+  background: #2C2C2C !important;
+  border-color: #383838 !important;
+  border-bottom: 2px solid #757575 !important;
+  color: #E0E0E0 !important;
+}
+html[data-theme="windows"] :is(.g-input, input:not([type=checkbox]):not([type=radio]), select, textarea):focus,
+html[data-theme="windows"] :is(.g-input, input:not([type=checkbox]):not([type=radio]), select, textarea):focus-visible {
+  border-color: #D1D1D1 !important;
+  border-bottom: 2px solid var(--color-primary, #005fb8) !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+html[data-theme="windows"].dark :is(.g-input, input:not([type=checkbox]):not([type=radio]), select, textarea):focus,
+html[data-theme="windows"].dark :is(.g-input, input:not([type=checkbox]):not([type=radio]), select, textarea):focus-visible {
+  border-color: #383838 !important;
+  border-bottom: 2px solid var(--color-primary, #60cdff) !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 /* ==========================================================================

@@ -1,6 +1,9 @@
 // resources/js/utils/buttonStyles.js
 
 export const BUTTON_RADIUS_MAP = {
+  apple: 'rounded-[10px]',
+  windows: 'rounded',
+  tactile: 'rounded-xl',
   modern: 'rounded-xl',
   rounded: 'rounded-lg',
   'rounded-sm': 'rounded-md',
@@ -44,6 +47,9 @@ export function getThemeButtonClasses(buttonStyle = 'modern', themeColors = {}, 
   const successText = getButtonTextColor(success, successHover);
 
   const styleClassMap = {
+    apple: 'btn-apple font-medium',
+    windows: 'btn-windows font-semibold',
+    tactile: 'btn-tactile font-semibold',
     modern: 'btn-glass font-semibold',
     rounded: 'btn-neu font-medium',
     'rounded-sm': 'btn-neu font-medium',

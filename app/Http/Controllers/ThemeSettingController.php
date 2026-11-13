@@ -63,11 +63,11 @@ class ThemeSettingController extends Controller
             'success_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'warning_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'danger_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
-            'border_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
-            'shadow_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
-            'button_style' => ['nullable', 'string', 'in:modern,rounded,rounded-sm,outlined,pill,soft'],
-            'sidebar_template' => ['nullable', 'string', 'in:classic,mini,modern,floating,glass,gradient,minimal,cyber,aurora,nebula,elegant,vibrant'],
-            'topbar_template' => ['nullable', 'string', 'in:classic,mini,modern,floating,glass,gradient,minimal,cyber,aurora,nebula,elegant,vibrant'],
+            'border_color' => ['nullable', 'string', 'max:50'],
+            'shadow_color' => ['nullable', 'string', 'max:50'],
+            'button_style' => ['nullable', 'string', 'in:apple,windows,tactile,modern,rounded,rounded-sm,outlined,pill,soft'],
+            'sidebar_template' => ['nullable', 'string', 'in:apple,windows,tactile,classic,mini,modern,floating,glass,gradient,minimal,cyber,aurora,nebula,elegant,vibrant'],
+            'topbar_template' => ['nullable', 'string', 'in:apple,windows,tactile,classic,mini,modern,floating,glass,gradient,minimal,cyber,aurora,nebula,elegant,vibrant'],
         ]);
 
         $theme = ThemeSetting::create($validated);
@@ -108,11 +108,11 @@ class ThemeSettingController extends Controller
             'success_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'warning_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'danger_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
-            'border_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
-            'shadow_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
-            'button_style' => ['nullable', 'string', 'in:modern,rounded,rounded-sm,outlined,pill,soft'],
-            'sidebar_template' => ['nullable', 'string', 'in:classic,mini,modern,floating,glass,gradient,minimal,cyber,aurora,nebula,elegant,vibrant'],
-            'topbar_template' => ['nullable', 'string', 'in:classic,mini,modern,floating,glass,gradient,minimal,cyber,aurora,nebula,elegant,vibrant'],
+            'border_color' => ['nullable', 'string', 'max:50'],
+            'shadow_color' => ['nullable', 'string', 'max:50'],
+            'button_style' => ['nullable', 'string', 'in:apple,windows,tactile,modern,rounded,rounded-sm,outlined,pill,soft'],
+            'sidebar_template' => ['nullable', 'string', 'in:apple,windows,tactile,classic,mini,modern,floating,glass,gradient,minimal,cyber,aurora,nebula,elegant,vibrant'],
+            'topbar_template' => ['nullable', 'string', 'in:apple,windows,tactile,classic,mini,modern,floating,glass,gradient,minimal,cyber,aurora,nebula,elegant,vibrant'],
         ]);
 
         $activeTheme->update($validated);
@@ -144,11 +144,11 @@ class ThemeSettingController extends Controller
             'success_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'warning_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'danger_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
-            'border_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
-            'shadow_color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
-            'button_style' => ['nullable', 'string', 'in:modern,rounded,rounded-sm,outlined,pill,soft'],
-            'sidebar_template' => ['nullable', 'string', 'in:classic,mini,modern,floating,glass,gradient,minimal,cyber,aurora,nebula,elegant,vibrant'],
-            'topbar_template' => ['nullable', 'string', 'in:classic,mini,modern,floating,glass,gradient,minimal,cyber,aurora,nebula,elegant,vibrant'],
+            'border_color' => ['nullable', 'string', 'max:50'],
+            'shadow_color' => ['nullable', 'string', 'max:50'],
+            'button_style' => ['nullable', 'string', 'in:apple,windows,tactile,modern,rounded,rounded-sm,outlined,pill,soft'],
+            'sidebar_template' => ['nullable', 'string', 'in:apple,windows,tactile,classic,mini,modern,floating,glass,gradient,minimal,cyber,aurora,nebula,elegant,vibrant'],
+            'topbar_template' => ['nullable', 'string', 'in:apple,windows,tactile,classic,mini,modern,floating,glass,gradient,minimal,cyber,aurora,nebula,elegant,vibrant'],
             'is_active' => ['nullable', 'boolean'],
         ]);
 

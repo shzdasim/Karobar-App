@@ -9,63 +9,145 @@ const ThemeCurtainStage = lazy(() =>
 
 const ThemeContext = createContext(null);
 
-// Dark mode theme presets
-const DARK_THEME = {
-  primary_color: '#3b82f6',
-  primary_hover: '#2563eb',
-  primary_light: '#1e3a5f',
-  secondary_color: '#8b5cf6',
-  secondary_hover: '#7c3aed',
-  secondary_light: '#312e81',
-  tertiary_color: '#06b6d4',
-  tertiary_hover: '#0891b2',
-  tertiary_light: '#164e63',
-  background_color: '#0f172a',
-  surface_color: '#1e293b',
-  text_primary: '#f1f5f9',
-  text_secondary: '#94a3b8',
-  success_color: '#10b981',
-  warning_color: '#f59e0b',
-  danger_color: '#ef4444',
-  border_color: '#334155',
-  shadow_color: '#000000',
-  button_style: 'modern',
-  sidebar_template: 'classic',
-  topbar_template: 'classic',
-};
-
-const LIGHT_THEME = {
-  primary_color: '#3b82f6',
-  primary_hover: '#2563eb',
-  primary_light: '#dbeafe',
-  secondary_color: '#8b5cf6',
-  secondary_hover: '#7c3aed',
-  secondary_light: '#ede9fe',
-  tertiary_color: '#06b6d4',
-  tertiary_hover: '#0891b2',
-  tertiary_light: '#cffafe',
-  background_color: '#f8fafc',
+// ============================================================================
+// THEME A: APPLE MACOS THEME (Liquid Glass, 24px blur, 10px squircle)
+// ============================================================================
+export const APPLE_LIGHT_THEME = {
+  name: 'Apple Light',
+  primary_color: '#007aff',
+  primary_hover: '#0062cc',
+  primary_light: '#e5f1ff',
+  secondary_color: '#5856d6',
+  secondary_hover: '#4745b4',
+  secondary_light: '#eeedfb',
+  tertiary_color: '#34c759',
+  tertiary_hover: '#28a745',
+  tertiary_light: '#eafaf0',
+  background_color: '#f5f5f7',
   surface_color: '#ffffff',
-  text_primary: '#1e293b',
-  text_secondary: '#64748b',
-  success_color: '#10b981',
-  warning_color: '#f59e0b',
-  danger_color: '#ef4444',
-  border_color: '#e2e8f0',
-  shadow_color: '#1e293b',
-  button_style: 'modern',
+  text_primary: '#1d1d1f',
+  text_secondary: '#86868b',
+  success_color: '#34c759',
+  warning_color: '#ff9500',
+  danger_color: '#ff3b30',
+  border_color: '#d2d2d7',
+  shadow_color: '#86868b',
+  button_style: 'apple',
+  sidebar_template: 'glass',
+  topbar_template: 'glass',
+};
+
+export const APPLE_DARK_THEME = {
+  name: 'Apple Dark',
+  primary_color: '#0a84ff',
+  primary_hover: '#409cff',
+  primary_light: '#143a66',
+  secondary_color: '#5e5ce6',
+  secondary_hover: '#7977eb',
+  secondary_light: '#2a2866',
+  tertiary_color: '#30d158',
+  tertiary_hover: '#57dc79',
+  tertiary_light: '#164d26',
+  background_color: '#000000',
+  surface_color: '#1c1c1e',
+  text_primary: '#f5f5f7',
+  text_secondary: '#86868b',
+  success_color: '#30d158',
+  warning_color: '#ffd60a',
+  danger_color: '#ff453a',
+  border_color: '#38383a',
+  shadow_color: '#000000',
+  button_style: 'apple',
+  sidebar_template: 'glass',
+  topbar_template: 'glass',
+};
+
+// ============================================================================
+// THEME B: WINDOWS 11 FLUENT THEME (WinUI 3, Mica, 4px-8px, 3D bottom bevel)
+// ============================================================================
+export const WINDOWS_LIGHT_THEME = {
+  name: 'Windows Light',
+  primary_color: '#005fb8',
+  primary_hover: '#0054a6',
+  primary_light: '#e5f1fb',
+  secondary_color: '#008272',
+  secondary_hover: '#007365',
+  secondary_light: '#e0f3f0',
+  tertiary_color: '#c43e1c',
+  tertiary_hover: '#af3618',
+  tertiary_light: '#fbe9e5',
+  background_color: '#F3F3F3',
+  surface_color: '#FFFFFF',
+  text_primary: '#1B1B1B',
+  text_secondary: '#5D5D5D',
+  success_color: '#0f7b0f',
+  warning_color: '#9d5d00',
+  danger_color: '#c42b1c',
+  border_color: '#E5E5E5',
+  shadow_color: '#D1D1D1',
+  button_style: 'windows',
   sidebar_template: 'classic',
   topbar_template: 'classic',
 };
 
+export const WINDOWS_DARK_THEME = {
+  name: 'Windows Dark',
+  primary_color: '#60cdff',
+  primary_hover: '#70d4ff',
+  primary_light: '#10394d',
+  secondary_color: '#4cc2ba',
+  secondary_hover: '#5dd0c8',
+  secondary_light: '#123d3a',
+  tertiary_color: '#ff8c68',
+  tertiary_hover: '#ff9a7b',
+  tertiary_light: '#4d261a',
+  background_color: '#202020',
+  surface_color: '#2C2C2C',
+  text_primary: '#E0E0E0',
+  text_secondary: '#9E9E9E',
+  success_color: '#6ccb5f',
+  warning_color: '#fce100',
+  danger_color: '#ff99a4',
+  border_color: '#383838',
+  shadow_color: '#141414',
+  button_style: 'windows',
+  sidebar_template: 'classic',
+  topbar_template: 'classic',
+};
+
+// Dark mode theme presets
+export const DARK_THEME = WINDOWS_DARK_THEME;
+export const LIGHT_THEME = WINDOWS_LIGHT_THEME;
 const DEFAULT_THEME = LIGHT_THEME;
 const CURTAIN_DURATION_MS = 2800;
+
+export function detectThemeType(theme) {
+  if (!theme) return 'windows';
+  const name = String(theme.name || '').toLowerCase();
+  const btn = String(theme.button_style || '').toLowerCase();
+  const bg = String(theme.background_color || '').toLowerCase();
+
+  if (name.includes('apple') || name.includes('cupertino') || btn === 'apple' || bg === '#f5f5f7' || bg === '#000000') {
+    return 'apple';
+  }
+  if (name.includes('windows') || name.includes('fluent') || btn === 'windows' || bg === '#f3f3f3' || bg === '#202020') {
+    return 'windows';
+  }
+  return 'default';
+}
 
 function applyThemeCssVariables(targetTheme, darkFlag) {
   const root = document.documentElement;
   if (typeof darkFlag === 'boolean') {
     root.classList.toggle('dark', darkFlag);
   }
+  const themeType = detectThemeType(targetTheme);
+  root.setAttribute('data-theme', themeType);
+  root.setAttribute('data-btn-style', targetTheme.button_style || 'windows');
+  root.style.setProperty(
+    '--color-button-text',
+    getButtonTextColor(targetTheme.primary_color || '#005fb8')
+  );
   root.style.setProperty('--color-primary', targetTheme.primary_color);
   root.style.setProperty('--color-primary-hover', targetTheme.primary_hover);
   root.style.setProperty('--color-primary-light', targetTheme.primary_light);
@@ -96,7 +178,13 @@ export function ThemeProvider({ children }) {
         if (cached) {
           const parsed = JSON.parse(cached);
           const isDarkSaved = localStorage.getItem('theme_mode') === 'dark';
-          const base = isDarkSaved ? DARK_THEME : DEFAULT_THEME;
+          const themeType = detectThemeType(parsed);
+          let base = isDarkSaved ? DARK_THEME : DEFAULT_THEME;
+          if (themeType === 'apple') {
+            base = isDarkSaved ? APPLE_DARK_THEME : APPLE_LIGHT_THEME;
+          } else if (themeType === 'windows') {
+            base = isDarkSaved ? WINDOWS_DARK_THEME : WINDOWS_LIGHT_THEME;
+          }
           return { ...base, ...parsed };
         }
       } catch {
@@ -132,7 +220,7 @@ export function ThemeProvider({ children }) {
   const checkIsDark = useCallback((currentTheme) => {
     const bg = currentTheme.background_color || '';
     // Check for dark background colors (starts with #1, #0, or dark slates)
-    return bg.startsWith('#1') || bg.startsWith('#0') || 
+    return bg.startsWith('#1') || bg.startsWith('#0') || bg.startsWith('#2') ||
            bg.includes('slate-800') || bg.includes('slate-900') ||
            bg.includes('gray-800') || bg.includes('gray-900');
   }, []);
@@ -147,9 +235,16 @@ export function ThemeProvider({ children }) {
 
     const newIsDark = !isDark;
     const direction = newIsDark ? 'to-dark' : 'to-light';
-    const basePreset = newIsDark ? DARK_THEME : LIGHT_THEME;
+    const currentType = detectThemeType(theme);
+    let basePreset = newIsDark ? DARK_THEME : LIGHT_THEME;
+    if (currentType === 'apple') {
+      basePreset = newIsDark ? APPLE_DARK_THEME : APPLE_LIGHT_THEME;
+    } else if (currentType === 'windows') {
+      basePreset = newIsDark ? WINDOWS_DARK_THEME : WINDOWS_LIGHT_THEME;
+    }
     const newTheme = {
       ...basePreset,
+      name: theme.name || basePreset.name,
       primary_color: theme.primary_color || basePreset.primary_color,
       primary_hover: theme.primary_hover || basePreset.primary_hover,
       secondary_color: theme.secondary_color || basePreset.secondary_color,
@@ -295,8 +390,15 @@ export function ThemeProvider({ children }) {
       
       if (data) {
         const savedDark = localStorage.getItem('theme_mode') === 'dark';
-        const modeBase = savedDark ? DARK_THEME : DEFAULT_THEME;
+        const currentType = detectThemeType(data);
+        let modeBase = savedDark ? DARK_THEME : DEFAULT_THEME;
+        if (currentType === 'apple') {
+          modeBase = savedDark ? APPLE_DARK_THEME : APPLE_LIGHT_THEME;
+        } else if (currentType === 'windows') {
+          modeBase = savedDark ? WINDOWS_DARK_THEME : WINDOWS_LIGHT_THEME;
+        }
         const resolvedTheme = {
+          name: data.name || modeBase.name,
           primary_color: data.primary_color || modeBase.primary_color,
           primary_hover: data.primary_hover || modeBase.primary_hover,
           primary_light: savedDark ? modeBase.primary_light : (data.primary_light || modeBase.primary_light),
@@ -306,32 +408,23 @@ export function ThemeProvider({ children }) {
           tertiary_color: data.tertiary_color || modeBase.tertiary_color,
           tertiary_hover: data.tertiary_hover || modeBase.tertiary_hover,
           tertiary_light: savedDark ? modeBase.tertiary_light : (data.tertiary_light || modeBase.tertiary_light),
-          background_color: savedDark ? DARK_THEME.background_color : (data.background_color || DEFAULT_THEME.background_color),
-          surface_color: savedDark ? DARK_THEME.surface_color : (data.surface_color || DEFAULT_THEME.surface_color),
-          text_primary: savedDark ? DARK_THEME.text_primary : (data.text_primary || DEFAULT_THEME.text_primary),
-          text_secondary: savedDark ? DARK_THEME.text_secondary : (data.text_secondary || DEFAULT_THEME.text_secondary),
+          background_color: savedDark ? modeBase.background_color : (data.background_color || modeBase.background_color),
+          surface_color: savedDark ? modeBase.surface_color : (data.surface_color || modeBase.surface_color),
+          text_primary: savedDark ? modeBase.text_primary : (data.text_primary || modeBase.text_primary),
+          text_secondary: savedDark ? modeBase.text_secondary : (data.text_secondary || modeBase.text_secondary),
           success_color: data.success_color || modeBase.success_color,
           warning_color: data.warning_color || modeBase.warning_color,
           danger_color: data.danger_color || modeBase.danger_color,
-          border_color: savedDark ? DARK_THEME.border_color : (data.border_color || DEFAULT_THEME.border_color),
-          shadow_color: savedDark ? DARK_THEME.shadow_color : (data.shadow_color || DEFAULT_THEME.shadow_color),
+          border_color: savedDark ? modeBase.border_color : (data.border_color || modeBase.border_color),
+          shadow_color: savedDark ? modeBase.shadow_color : (data.shadow_color || modeBase.shadow_color),
           button_style: data.button_style || modeBase.button_style,
           sidebar_template: data.sidebar_template || modeBase.sidebar_template,
           topbar_template: data.topbar_template || modeBase.topbar_template,
         };
         setTheme(resolvedTheme);
+        applyThemeCssVariables(resolvedTheme, savedDark);
         try {
-          localStorage.setItem(THEME_CACHE_KEY, JSON.stringify({
-            primary_color: resolvedTheme.primary_color,
-            primary_hover: resolvedTheme.primary_hover,
-            secondary_color: resolvedTheme.secondary_color,
-            secondary_hover: resolvedTheme.secondary_hover,
-            tertiary_color: resolvedTheme.tertiary_color,
-            tertiary_hover: resolvedTheme.tertiary_hover,
-            button_style: resolvedTheme.button_style,
-            sidebar_template: resolvedTheme.sidebar_template,
-            topbar_template: resolvedTheme.topbar_template,
-          }));
+          localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(resolvedTheme));
         } catch {
           /* ignore */
         }
@@ -362,7 +455,9 @@ export function ThemeProvider({ children }) {
   // Apply CSS variables to document
   useEffect(() => {
     const root = document.documentElement;
-    
+    const themeType = detectThemeType(theme);
+    root.setAttribute('data-theme', themeType);
+
     // Primary colors
     root.style.setProperty('--color-primary', theme.primary_color);
     root.style.setProperty('--color-primary-hover', theme.primary_hover);
@@ -397,6 +492,9 @@ export function ThemeProvider({ children }) {
     
     // Button style radius
     const radiusMap = {
+      'apple':      '0.625rem', // 10px Apple squircle
+      'windows':    '0.25rem',  // 4px Windows 11 Fluent
+      'tactile':    '0.875rem', // 14px
       'modern':     '0.75rem',  // 12px – modern default
       'rounded':    '0.5rem',   // 8px
       'rounded-sm': '0.375rem', // 6px
@@ -404,7 +502,7 @@ export function ThemeProvider({ children }) {
       'soft':       '1rem',     // 16px
       'pill':       '5px',      // Letter Cascade (stored id "pill")
     };
-    root.style.setProperty('--btn-radius', radiusMap[theme.button_style] || '0.75rem');
+    root.style.setProperty('--btn-radius', radiusMap[theme.button_style] || '0.25rem');
     
     // Sidebar template
     root.style.setProperty('--sidebar-template', theme.sidebar_template || 'classic');
@@ -424,12 +522,14 @@ export function ThemeProvider({ children }) {
   // the style picked in Settings → Theme.
   useEffect(() => {
     const root = document.documentElement;
-    root.setAttribute('data-btn-style', theme.button_style || 'modern');
+    const themeType = detectThemeType(theme);
+    root.setAttribute('data-theme', themeType);
+    root.setAttribute('data-btn-style', theme.button_style || 'windows');
     root.style.setProperty(
       '--color-button-text',
-      getButtonTextColor(theme.primary_color || '#3b82f6')
+      getButtonTextColor(theme.primary_color || '#005fb8')
     );
-  }, [theme.button_style, theme.primary_color]);
+  }, [theme.button_style, theme.primary_color, theme.name, theme.background_color]);
 
   // Update theme
   const updateTheme = useCallback(async (updates) => {
@@ -510,6 +610,8 @@ export function ThemeProvider({ children }) {
       
       // Apply button style radius
       const radiusMap = {
+        'apple':      '0.625rem', // 10px Apple squircle
+        'windows':    '0.25rem',  // 4px Windows Fluent
         'modern':     '0.75rem',  // 12px – modern default
         'rounded':    '0.5rem',   // 8px
         'rounded-sm': '0.375rem', // 6px
@@ -561,6 +663,8 @@ export function ThemeProvider({ children }) {
       
       // Apply button style radius
       const activateRadiusMap = {
+        'apple':      '0.625rem',
+        'windows':    '0.25rem',
         'modern':     '0.75rem',
         'rounded':    '0.5rem',
         'rounded-sm': '0.375rem',

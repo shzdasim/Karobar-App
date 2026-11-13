@@ -46,6 +46,9 @@ class ThemeSetting extends Model
     {
         // Map button style to border radius
         $radiusMap = [
+            'apple'      => '0.625rem', // 10px Apple squircle
+            'windows'    => '0.25rem',  // 4px Windows 11 Fluent
+            'tactile'    => '0.875rem', // 14px Hardware key
             'modern'     => '0.75rem',
             'rounded'    => '0.5rem',
             'rounded-sm' => '0.375rem',
