@@ -2983,7 +2983,7 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
                         Margin %
                       </th>
                       <th
-                        className="w-20 text-center sale-th-readonly"
+                        className="w-24 text-center sale-th-readonly"
                         title="Row Sub Total (Auto)"
                       >
                         Sub Total

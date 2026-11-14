@@ -1957,15 +1957,17 @@ body {
 
  /* Read-only Sub-Total field in repeater rows (accented computed badge) */
  .sale-entry-form input[readonly].sale-subtotal-field {
-   background: color-mix(in srgb, var(--workspace-accent) 8%, var(--workspace-canvas)) !important;
+   background: color-mix(in srgb, var(--workspace-accent) 10%, var(--workspace-surface)) !important;
    color: var(--workspace-ink) !important;
-   border: 1px solid color-mix(in srgb, var(--workspace-accent) 24%, var(--workspace-border)) !important;
-   font-weight: 700 !important;
+   border: 1px solid color-mix(in srgb, var(--workspace-accent) 35%, var(--workspace-border)) !important;
+   font-weight: 800 !important;
+   font-size: 12px !important;
+   padding-inline: 6px !important;
  }
  .dark .sale-entry-form input[readonly].sale-subtotal-field {
-   background: color-mix(in srgb, var(--workspace-accent) 14%, #090d16) !important;
-   color: var(--workspace-ink) !important;
-   border: 1px solid color-mix(in srgb, var(--workspace-accent) 30%, transparent) !important;
+   background: color-mix(in srgb, var(--workspace-accent) 18%, #0f172a) !important;
+   color: #f8fafc !important;
+   border: 1px solid color-mix(in srgb, var(--workspace-accent) 42%, transparent) !important;
  }
 
  .sale-entry-form .sale-summary-body { padding: 6px 10px; }
@@ -1995,41 +1997,42 @@ body {
  .sale-entry-form:not(.wholesale-entry-form) .sale-summary-body { flex: 1 1 0%; min-height: 0; overflow-y: auto; }
 }
 @media screen and (min-width: 1024px) {
- /* Balanced 12-column repeater layout summing to 100% (Retail Form) — wide Product, compact Batch & Expiry */
+ /* Balanced 13-column repeater layout summing to 100% (Retail Form) — prominent Sub Total, balanced Product & numeric columns */
  .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th { width: auto; }
- .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(1) { width: 3%; }    /* DEL */
- .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(2) { width: 2.5%; }  /* # */
- .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(3) { width: 35%; }   /* Product (Editable) */
+ .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(1) { width: 2.8%; }  /* DEL */
+ .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(2) { width: 2.4%; }  /* # */
+ .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(3) { width: 29.5%; } /* Product (Editable) */
  .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(4) { width: 4.5%; }  /* PSize (Read-only) */
- .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(5) { width: 8%; }    /* Batch (Editable) */
- .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(6) { width: 8.5%; }  /* Expiry (Read-only) */
- .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(7) { width: 6%; }    /* Avail (Read-only) */
- .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(8) { width: 6.5%; }  /* Qty (Editable) */
- .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(9) { width: 8%; }    /* Price (Read-only) */
- .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(10) { width: 5.5%; } /* Disc% (Editable) */
- .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(11) { width: 9.5%; } /* Sub Total (Read-only) */
- .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(12) { width: 3%; }   /* + */
+ .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(5) { width: 8.5%; }  /* Batch (Editable) */
+ .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(6) { width: 6.8%; }  /* Expiry (Read-only) */
+ .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(7) { width: 5.8%; }  /* Avail (Read-only) */
+ .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(8) { width: 6.2%; }  /* Qty (Editable) */
+ .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(9) { width: 5.5%; }  /* Bonus (Editable) */
+ .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(10) { width: 8.2%; } /* Price (Read-only) */
+ .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(11) { width: 5.5%; } /* Disc% (Editable) */
+ .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(12) { width: 11.5%; }/* Sub Total (Read-only) */
+ .sale-entry-form:not(.wholesale-entry-form) .sale-entry-items th:nth-child(13) { width: 2.8%; }  /* + */
 
- /* Balanced 18-column repeater layout summing to 100% (Wholesale Form) — wide Product, compact Batch & Expiry */
+ /* Balanced 18-column repeater layout summing to 100% (Wholesale Form) — prominent Sub Total, compact Batch & Expiry */
  .sale-entry-form.wholesale-entry-form .sale-entry-items th { width: auto; }
- .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(1) { width: 2%; }     /* DEL */
- .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(2) { width: 2%; }     /* # */
- .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(3) { width: 22.5%; }  /* Product (Editable) */
+ .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(1) { width: 2.0%; }   /* DEL */
+ .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(2) { width: 2.0%; }   /* # */
+ .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(3) { width: 21.5%; }  /* Product (Editable) */
  .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(4) { width: 3.5%; }   /* PSize (Read-only) */
  .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(5) { width: 6.5%; }   /* Batch (Editable) */
- .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(6) { width: 6.5%; }   /* Expiry (Read-only) */
- .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(7) { width: 5.8%; }   /* Avail P/U (Read-only) */
- .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(8) { width: 4.3%; }   /* Pack.Q (Editable) */
- .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(9) { width: 4.3%; }   /* Unit.Q (Editable) */
- .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(10) { width: 4.2%; }  /* Disc% (Editable) */
+ .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(6) { width: 5.8%; }   /* Expiry (Read-only) */
+ .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(7) { width: 5.6%; }   /* Avail P/U (Read-only) */
+ .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(8) { width: 4.2%; }   /* Pack.Q (Editable) */
+ .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(9) { width: 4.2%; }   /* Unit.Q (Editable) */
+ .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(10) { width: 4.0%; }  /* Disc% (Editable) */
  .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(11) { width: 4.0%; }  /* Pack.B (Editable) */
  .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(12) { width: 4.0%; }  /* Unit.B (Editable) */
  .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(13) { width: 4.6%; }  /* Tot.U (Read-only) */
- .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(14) { width: 5.6%; }  /* Pack.P (Editable) */
- .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(15) { width: 5.3%; }  /* Unit.P (Editable) */
- .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(16) { width: 4.9%; }  /* Margin% (Read-only) */
- .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(17) { width: 6.8%; }  /* Sub Total (Read-only) */
- .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(18) { width: 2.2%; }  /* + */
+ .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(14) { width: 6.0%; }  /* Pack.P (Editable) */
+ .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(15) { width: 5.8%; }  /* Unit.P (Editable) */
+ .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(16) { width: 5.1%; }  /* Margin% (Read-only) */
+ .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(17) { width: 9.0%; }   /* Sub Total (Read-only) */
+ .sale-entry-form.wholesale-entry-form .sale-entry-items th:nth-child(18) { width: 2.2%; }   /* + */
 
  .sale-entry-form .sale-entry-items td { min-width: 0; }
  .sale-entry-form .sale-summary-body > .space-y-2 > :not(:last-child) { margin-bottom: 2px; }

@@ -2717,16 +2717,16 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                 <tr className="[&>th]:text-left">
                   <th className={`w-7 text-center ${isDark ? "text-rose-400" : "text-red-600"}`}>DEL</th>
                   <th className="w-6 text-center sale-th-readonly">#</th>
-                  <th className="min-w-[240px] w-[34%] sale-th-editable">Product *</th>
-                  <th className="w-12 text-center sale-th-readonly" title="Pack Size (Auto)">PSize</th>
-                  <th className="w-20 sale-th-editable">Batch</th>
-                  <th className="w-[80px] text-center sale-th-readonly" title="Expiry Date (Auto)">Expiry</th>
-                  <th className="w-14 text-center sale-th-readonly" title="Available Units (Auto)">Avail</th>
-                  <th className="w-16 text-center sale-th-editable">Qty *</th>
-                  <th className="w-14 text-center sale-th-editable" title="Free Bonus Units (Scheme or Manual override)">Bonus</th>
+                  <th className="min-w-[200px] w-[29.5%] sale-th-editable">Product *</th>
+                  <th className="w-11 text-center sale-th-readonly" title="Pack Size (Auto)">PSize</th>
+                  <th className="w-18 sale-th-editable">Batch</th>
+                  <th className="w-[68px] text-center sale-th-readonly" title="Expiry Date (Auto)">Expiry</th>
+                  <th className="w-13 text-center sale-th-readonly" title="Available Units (Auto)">Avail</th>
+                  <th className="w-14 text-center sale-th-editable">Qty *</th>
+                  <th className="w-12 text-center sale-th-editable" title="Free Bonus Units (Scheme or Manual override)">Bonus</th>
                   <th className="w-18 text-center sale-th-readonly" title="Unit Sale Price (Auto)">Price</th>
-                  <th className="w-14 text-center sale-th-editable">Disc %</th>
-                  <th className="w-22 text-center sale-th-readonly" title="Row Sub Total (Auto)">Sub Total</th>
+                  <th className="w-12 text-center sale-th-editable">Disc %</th>
+                  <th className="w-26 text-center sale-th-readonly" title="Row Sub Total (Auto)">Sub Total</th>
                   <th className="w-7 text-center">+</th>
                 </tr>
               </thead>
