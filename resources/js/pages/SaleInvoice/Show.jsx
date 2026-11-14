@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { MagnifyingGlassIcon, PrinterIcon, PencilSquareIcon, TrashIcon, PlusIcon, ArrowLeftIcon, ClockIcon, ArrowUturnLeftIcon, BanknotesIcon, ShareIcon } from "@heroicons/react/24/outline";
+import { MagnifyingGlassIcon, PrinterIcon, PencilSquareIcon, TrashIcon, PlusIcon, ArrowLeftIcon, ClockIcon, ArrowUturnLeftIcon, BanknotesIcon, ShareIcon, SparklesIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 // permissions
 import { usePermissions, Guard } from "@/api/usePermissions.js";
@@ -16,6 +16,7 @@ import VoidInvoiceModal from "@/components/VoidInvoiceModal.jsx";
 import RecordPaymentModal from "@/components/RecordPaymentModal.jsx";
 import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
 import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
+import MakeRegularCustomerModal from "@/components/MakeRegularCustomerModal.jsx";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 import { printSlipUrl } from "@/utils/printHelper.js";
 
@@ -53,6 +54,7 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [challanModalOpen, setChallanModalOpen] = useState(false);
+  const [regularModalOpen, setRegularModalOpen] = useState(false);
   const [isReversing, setIsReversing] = useState(false);
 
   // Held Invoices & Drafts state
@@ -443,9 +445,20 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
       <div className={`sale-entry-header shrink-0 sticky top-0 z-20 border-b ${isDark ? "border-slate-700" : "border-gray-200"}`}>
         {/* Branded Banner */}
         <div className="sale-entry-banner px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
+          {/* In front of heading: Back Navigation + Identity + Badges */}
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="h-8 px-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 text-white bg-white/15 hover:bg-white/25 active:scale-95 transition-all shadow-xs cursor-pointer border border-white/20 shrink-0"
+              title="Back to invoices (Ctrl+B)"
+            >
+              <ArrowLeftIcon className="w-4 h-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Back</span>
+            </button>
+
             <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center shadow-inner"
+              className="w-9 h-9 rounded-xl flex items-center justify-center shadow-inner shrink-0"
               style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(4px)" }}
             >
               {isWholesale ? (
@@ -473,7 +486,7 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
               )}
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-lg font-extrabold tracking-wide text-white leading-none">
                   {isWholesale ? "Wholesale Invoice" : "Sale Invoice"}
                 </h2>
@@ -484,10 +497,19 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
                   {isWholesale ? "B2B PACK & UNIT" : (inv?.sale_type || "retail").toUpperCase()}
                 </span>
                 <span
-                  className="px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest text-white"
+                  className="px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest text-white font-mono"
                   style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(4px)" }}
                 >
                   #{fmt(inv.posted_number)}
+                </span>
+                <span
+                  className="px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest uppercase text-white shadow-2xs"
+                  style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(4px)" }}
+                  title="Payment Mode"
+                >
+                  {inv?.invoice_type === "credit"
+                    ? (isWholesale ? "Credit (Ledger)" : "Credit")
+                    : (isWholesale ? "Debit (Cash)" : "Debit")}
                 </span>
                 {inv?.status === "reversed" && (
                   <span className="px-2 py-0.5 rounded-md text-[9px] font-extrabold tracking-widest text-white bg-rose-600 uppercase shadow-xs border border-rose-400">
@@ -501,136 +523,57 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 no-print">
-            {/* Invoice Type Segmented Control (read-only) */}
-            <div
-              className="flex items-center rounded-lg p-0.5 shadow-inner"
-              style={{ backgroundColor: "rgba(0,0,0,0.18)" }}
-            >
-              {["debit", "credit"].map((type) => {
-                const active = inv?.invoice_type === type;
-                return (
-                  <span
-                    key={type}
-                    className={`px-3.5 py-1.5 text-[11px] font-semibold rounded-md ${
-                      active ? "text-white shadow-sm" : "text-white/70"
-                    }`}
-                    style={{
-                      backgroundColor: active ? "rgba(255,255,255,0.22)" : "transparent",
-                      backdropFilter: active ? "blur(4px)" : "none",
-                    }}
-                  >
-                    {type === "debit" ? (isWholesale ? "Debit (Cash)" : "Debit") : (isWholesale ? "Credit (Ledger)" : "Credit")}
-                  </span>
-                );
-              })}
-            </div>
-
-            {/* Action buttons */}
-            <button
-              type="button"
-              onClick={() => setSearchOpen(true)}
-              className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnSecondary.className}`}
-              style={btnSecondary.style}
-            >
-              <MagnifyingGlassIcon className="w-4 h-4" aria-hidden="true" />
-              <span>Search</span>
-            </button>
-            <button
-              type="button"
-              onClick={handlePrint}
-              className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnSuccess.className}`}
-              style={btnSuccess.style}
-            >
-              <PrinterIcon className="w-4 h-4" aria-hidden="true" />
-              <span>Print</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShareModalOpen(true)}
-              className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnPrimary.className}`}
-              style={btnPrimary.style}
-              title="Share via WhatsApp, Email PDF, or Download PDF"
-            >
-              <ShareIcon className="w-4 h-4" aria-hidden="true" />
-              <span>Share / PDF</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setChallanModalOpen(true)}
-              className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnSecondary.className}`}
-              style={btnSecondary.style}
-              title="Print / Share Delivery Challan (Gate Pass without prices)"
-            >
-              <PrinterIcon className="w-4 h-4" aria-hidden="true" />
-              <span>Delivery Challan</span>
-            </button>
+          {/* Primary Quick Actions (Opposite the Heading) */}
+          <div className="flex items-center gap-1.5 flex-wrap no-print">
             {invoiceDue > 0.01 && inv?.status !== "reversed" && (
               <button
                 type="button"
                 onClick={() => setPaymentModalOpen(true)}
-                className="px-3 py-2 text-[11px] font-bold rounded-xl transition-all duration-200 bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm flex items-center gap-1"
+                className="h-8 px-3 text-[11px] font-bold rounded-xl transition-all duration-200 bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm flex items-center gap-1.5 active:scale-95 cursor-pointer"
                 title="Receive payment against this invoice"
               >
                 <BanknotesIcon className="w-4 h-4" aria-hidden="true" />
                 <span>Receive Payment</span>
               </button>
             )}
+
             <button
               type="button"
-              onClick={() => setHistoryModalOpen(true)}
-              className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnSecondary.className}`}
-              style={btnSecondary.style}
-              title="View change history and reversal logs"
+              onClick={handlePrint}
+              className={`h-8 px-3 text-[11px] font-bold rounded-xl transition-all duration-200 ${btnSuccess.className} flex items-center gap-1.5 active:scale-95 cursor-pointer`}
+              style={btnSuccess.style}
+              title="Print invoice (Ctrl+P)"
             >
-              <ClockIcon className="w-4 h-4" aria-hidden="true" />
-              <span>History</span>
+              <PrinterIcon className="w-4 h-4" aria-hidden="true" />
+              <span>Print</span>
             </button>
+
             <button
               type="button"
-              onClick={() => {
-                fetchDrafts();
-                setIsDraftsOpen(true);
-              }}
-              className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnSecondary.className} relative flex items-center gap-1.5`}
-              style={btnSecondary.style}
-              title="Open Held Invoices (Ctrl+H)"
+              onClick={() => setShareModalOpen(true)}
+              className={`h-8 px-3 text-[11px] font-bold rounded-xl transition-all duration-200 ${btnPrimary.className} flex items-center gap-1.5 active:scale-95 cursor-pointer`}
+              style={btnPrimary.style}
+              title="Share via WhatsApp, Email PDF, or Download PDF"
             >
-              <ClockIcon className="w-4 h-4 text-amber-400" aria-hidden="true" />
-              <span>Held Invoices</span>
-              {draftsList.length > 0 && (
-                <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-amber-500 text-white">
-                  {draftsList.length}
-                </span>
-              )}
+              <ShareIcon className="w-4 h-4" aria-hidden="true" />
+              <span>Share / PDF</span>
             </button>
-            <Guard when={can.delete}>
-              {inv?.status !== "reversed" && (
-                <button
-                  type="button"
-                  onClick={() => setVoidModalOpen(true)}
-                  className="px-3 py-2 text-[11px] font-bold rounded-xl transition-all duration-200 bg-amber-500 hover:bg-amber-600 text-white shadow-sm flex items-center gap-1"
-                  title="Void / Reverse this invoice safely"
-                >
-                  <ArrowUturnLeftIcon className="w-4 h-4" aria-hidden="true" />
-                  <span>Void</span>
-                </button>
-              )}
-            </Guard>
+
             <Guard when={can.update}>
               {inv?.status !== "reversed" ? (
                 <button
                   type="button"
                   onClick={() => navigate(`/sale-invoices/${id}/edit`)}
-                  className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnSecondary.className}`}
+                  className={`h-8 px-3 text-[11px] font-bold rounded-xl transition-all duration-200 ${btnSecondary.className} flex items-center gap-1.5 active:scale-95 cursor-pointer`}
                   style={btnSecondary.style}
+                  title="Edit invoice (Ctrl+E)"
                 >
                   <PencilSquareIcon className="w-4 h-4" aria-hidden="true" />
                   <span>Edit</span>
                 </button>
               ) : (
                 <span
-                  className="px-3 py-2 text-[11px] font-bold rounded-xl opacity-40 cursor-not-allowed bg-gray-200 dark:bg-slate-700 text-gray-500 flex items-center gap-1"
+                  className="h-8 px-3 text-[11px] font-bold rounded-xl opacity-40 cursor-not-allowed bg-white/20 text-white/70 flex items-center gap-1.5"
                   title="Reversed invoices cannot be edited"
                 >
                   <PencilSquareIcon className="w-4 h-4" aria-hidden="true" />
@@ -638,17 +581,7 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
                 </span>
               )}
             </Guard>
-            <Guard when={can.delete}>
-              <button
-                type="button"
-                onClick={openDeleteModal}
-                className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnDanger.className}`}
-                style={btnDanger.style}
-              >
-                <TrashIcon className="w-4 h-4" aria-hidden="true" />
-                <span>Delete</span>
-              </button>
-            </Guard>
+
             <Guard when={can.create}>
               <button
                 type="button"
@@ -656,22 +589,149 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
                   if (isWholesale) navigate("/sale-invoices/create/wholesale");
                   else navigate("/sale-invoices/create/retail");
                 }}
-                className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnPrimary.className}`}
+                className={`h-8 px-3 text-[11px] font-bold rounded-xl transition-all duration-200 ${btnPrimary.className} flex items-center gap-1.5 active:scale-95 cursor-pointer`}
                 style={btnPrimary.style}
+                title="New invoice (Ctrl+N)"
               >
                 <PlusIcon className="w-4 h-4" aria-hidden="true" />
                 <span>New</span>
               </button>
             </Guard>
+          </div>
+        </div>
+
+        {/* Secondary Document & Utility Action Bar */}
+        <div
+          className={`px-4 py-2 flex flex-wrap items-center justify-between gap-2 border-b text-xs transition-colors no-print ${
+            isDark
+              ? "bg-slate-800/80 border-slate-700/80 text-slate-300"
+              : "bg-slate-50/90 border-gray-200/80 text-gray-700"
+          }`}
+        >
+          {/* Left Group: Document Utilities & Quick Lookups */}
+          <div className="flex items-center gap-1.5 flex-wrap">
             <button
               type="button"
-              onClick={() => navigate(-1)}
-              className={`px-3 py-2 text-[11px] font-bold transition-all duration-200 ${btnGlass.className}`}
-              style={btnGlass.style}
+              onClick={() => setSearchOpen(true)}
+              className={`h-7 px-2.5 text-xs font-semibold rounded-lg transition-all duration-150 flex items-center gap-1.5 cursor-pointer border ${
+                isDark
+                  ? "bg-slate-800 hover:bg-slate-700/80 border-slate-700 text-slate-200"
+                  : "bg-white hover:bg-gray-100 border-gray-200 text-gray-700 shadow-2xs"
+              }`}
+              title="Search invoices (Ctrl+F)"
             >
-              <ArrowLeftIcon className="w-4 h-4" aria-hidden="true" />
-              <span>Back</span>
+              <MagnifyingGlassIcon className="w-3.5 h-3.5 text-gray-500 dark:text-slate-400" aria-hidden="true" />
+              <span>Search</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                fetchDrafts();
+                setIsDraftsOpen(true);
+              }}
+              className={`h-7 px-2.5 text-xs font-semibold rounded-lg transition-all duration-150 flex items-center gap-1.5 cursor-pointer border ${
+                isDark
+                  ? "bg-slate-800 hover:bg-slate-700/80 border-slate-700 text-slate-200"
+                  : "bg-white hover:bg-gray-100 border-gray-200 text-gray-700 shadow-2xs"
+              }`}
+              title="Open Held Invoices (Ctrl+H)"
+            >
+              <ClockIcon className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />
+              <span>Held Invoices</span>
+              {draftsList.length > 0 && (
+                <span className="px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-amber-500 text-white">
+                  {draftsList.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setChallanModalOpen(true)}
+              className={`h-7 px-2.5 text-xs font-semibold rounded-lg transition-all duration-150 flex items-center gap-1.5 cursor-pointer border ${
+                isDark
+                  ? "bg-slate-800 hover:bg-slate-700/80 border-slate-700 text-slate-200"
+                  : "bg-white hover:bg-gray-100 border-gray-200 text-gray-700 shadow-2xs"
+              }`}
+              title="Print / Share Delivery Challan (Gate Pass without prices)"
+            >
+              <PrinterIcon className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" aria-hidden="true" />
+              <span>Delivery Challan</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setRegularModalOpen(true)}
+              className={`h-7 px-2.5 text-xs font-semibold rounded-lg transition-all duration-150 flex items-center gap-1.5 cursor-pointer border ${
+                inv?.customer?.is_regular
+                  ? isDark
+                    ? "bg-purple-950/40 hover:bg-purple-900/50 border-purple-800 text-purple-300"
+                    : "bg-purple-50 hover:bg-purple-100 border-purple-200 text-purple-700 shadow-2xs"
+                  : isDark
+                  ? "bg-emerald-950/30 hover:bg-emerald-900/40 border-emerald-800 text-emerald-300"
+                  : "bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700 shadow-2xs"
+              }`}
+              title={
+                inv?.customer?.is_regular
+                  ? "View or update regular refill schedule and recurring medicines"
+                  : "Make this customer a regular customer with recurring refill reminders"
+              }
+            >
+              <SparklesIcon className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />
+              <span>{inv?.customer?.is_regular ? "Regular Refill" : "Make Regular"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setHistoryModalOpen(true)}
+              className={`h-7 px-2.5 text-xs font-semibold rounded-lg transition-all duration-150 flex items-center gap-1.5 cursor-pointer border ${
+                isDark
+                  ? "bg-slate-800 hover:bg-slate-700/80 border-slate-700 text-slate-200"
+                  : "bg-white hover:bg-gray-100 border-gray-200 text-gray-700 shadow-2xs"
+              }`}
+              title="View change history and reversal logs"
+            >
+              <ClockIcon className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" aria-hidden="true" />
+              <span>History</span>
+            </button>
+          </div>
+
+          {/* Right Group: Danger / Audit Actions */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Guard when={can.delete}>
+              {inv?.status !== "reversed" && (
+                <button
+                  type="button"
+                  onClick={() => setVoidModalOpen(true)}
+                  className={`h-7 px-2.5 text-xs font-semibold rounded-lg transition-all duration-150 flex items-center gap-1.5 cursor-pointer border ${
+                    isDark
+                      ? "bg-amber-950/30 hover:bg-amber-900/40 border-amber-800 text-amber-300"
+                      : "bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-800 shadow-2xs"
+                  }`}
+                  title="Void / Reverse this invoice safely"
+                >
+                  <ArrowUturnLeftIcon className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                  <span>Void</span>
+                </button>
+              )}
+            </Guard>
+
+            <Guard when={can.delete}>
+              <button
+                type="button"
+                onClick={openDeleteModal}
+                className={`h-7 px-2.5 text-xs font-semibold rounded-lg transition-all duration-150 flex items-center gap-1.5 cursor-pointer border ${
+                  isDark
+                    ? "bg-rose-950/30 hover:bg-rose-900/40 border-rose-800 text-rose-300"
+                    : "bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-700 shadow-2xs"
+                }`}
+                title="Permanently delete invoice"
+              >
+                <TrashIcon className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+                <span>Delete</span>
+              </button>
+            </Guard>
           </div>
         </div>
 
@@ -703,13 +763,34 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
                       {fmt(inv.date) || "—"}
                     </td>
                     <td className={`px-3 py-1.5 font-medium border-r ${isDark ? "border-slate-700 text-blue-300" : "border-gray-200 text-blue-700"}`}>
-                      <span className="inline-flex flex-wrap items-center gap-1.5">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                          <circle cx="12" cy="7" r="4" />
-                        </svg>
-                        <span>{inv.customer?.name ?? inv.customer_id ?? "Walk-in Customer"}</span>
-                      </span>
+                      <div className="flex flex-wrap items-center justify-between gap-1.5">
+                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                            <circle cx="12" cy="7" r="4" />
+                          </svg>
+                          <span>{inv.customer?.name ?? inv.customer_id ?? "Walk-in Customer"}</span>
+                        </span>
+                        {inv?.customer?.is_regular ? (
+                          <button
+                            type="button"
+                            onClick={() => setRegularModalOpen(true)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 border border-purple-300 dark:border-purple-800 hover:bg-purple-200 transition-colors cursor-pointer"
+                            title="Click to view/update regular refill schedule and medicines"
+                          >
+                            <span>★ Regular</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setRegularModalOpen(true)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 transition-colors cursor-pointer"
+                            title="Click to make this customer regular and attach these medicines"
+                          >
+                            <span>+ Make Regular</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
                     {hasClinicalCols && (
                       <>
@@ -837,25 +918,46 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
                         }`}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="inline-flex flex-wrap items-center gap-1.5">
-                            <svg
-                              width="13"
-                              height="13"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.8"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className="shrink-0"
-                            >
-                              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                              <circle cx="12" cy="7" r="4" />
-                            </svg>
-                            <span>
-                              {inv.customer?.name ?? inv.customer_id ?? "Walk-in Customer"}
+                          <div className="flex flex-wrap items-center justify-between gap-1.5 w-full">
+                            <span className="inline-flex flex-wrap items-center gap-1.5">
+                              <svg
+                                width="13"
+                                height="13"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="shrink-0"
+                              >
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                                <circle cx="12" cy="7" r="4" />
+                              </svg>
+                              <span>
+                                {inv.customer?.name ?? inv.customer_id ?? "Walk-in Customer"}
+                              </span>
                             </span>
-                          </span>
+                            {inv?.customer?.is_regular ? (
+                              <button
+                                type="button"
+                                onClick={() => setRegularModalOpen(true)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 border border-purple-300 dark:border-purple-800 hover:bg-purple-200 transition-colors cursor-pointer"
+                                title="Click to view/update regular refill schedule and medicines"
+                              >
+                                <span>★ Regular</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setRegularModalOpen(true)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 transition-colors cursor-pointer"
+                                title="Click to make this customer regular and attach these medicines"
+                              >
+                                <span>+ Make Regular</span>
+                              </button>
+                            )}
+                          </div>
                           {(inv.customer?.phone || inv.customer?.address) && (
                             <span className="text-[10px] font-mono opacity-80">
                               {[inv.customer?.phone, inv.customer?.address]
@@ -2134,6 +2236,20 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
         onClose={() => setChallanModalOpen(false)}
         documentType="delivery_challan"
         documentId={id}
+      />
+
+      {/* Make Regular Customer & Refill Schedule Modal */}
+      <MakeRegularCustomerModal
+        isOpen={regularModalOpen}
+        onClose={() => setRegularModalOpen(false)}
+        invoice={inv}
+        onSuccess={(data) => {
+          if (data?.invoice) {
+            setInv(data.invoice);
+          } else if (data?.customer) {
+            setInv((prev) => ({ ...prev, customer: data.customer }));
+          }
+        }}
       />
     </div>
   );

@@ -207,6 +207,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('sale-invoices/search',            [SaleInvoiceController::class, 'search']);
     Route::get('sale-invoices/{saleInvoice}/print-url', [SaleInvoiceController::class, 'printUrl']);
     Route::post('sale-invoices/{id}/reverse',     [SaleInvoiceController::class, 'reverse']);
+    Route::post('sale-invoices/{id}/make-regular-customer', [SaleInvoiceController::class, 'makeRegularCustomer']);
     Route::apiResource('sale-invoices',           SaleInvoiceController::class);
 
     // Document Audit History

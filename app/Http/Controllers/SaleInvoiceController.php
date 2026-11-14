@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Batch;
 use App\Models\Customer;
 use App\Models\CustomerLedger;
+use App\Models\CustomerRegularItem;
 use App\Models\CustomerWholeSalePrice;
 use App\Models\Product;
 use App\Models\SaleInvoice;
@@ -368,7 +369,10 @@ class SaleInvoiceController extends Controller
 
     public function show($id)
     {
-        $invoice = SaleInvoice::with(['customer', 'items.product'])->findOrFail($id);
+        $invoice = SaleInvoice::with([
+            'customer.regularItems.product:id,name,product_code,quantity,pack_size,unit_sale_price,pack_sale_price',
+            'items.product',
+        ])->findOrFail($id);
         $this->authorize('view', $invoice);
         app(\App\Services\ReturnEntitlement::class)->annotate('sale', $invoice, request()->integer('exclude_return_id') ?: null);
         return response()->json($invoice);
@@ -1444,6 +1448,177 @@ class SaleInvoiceController extends Controller
         'patient_name' => $saleInvoice->patient_name,
     ]);
 }
+
+    public function makeRegularCustomer(Request $request, $id)
+    {
+        $invoice = SaleInvoice::with(['customer', 'items.product'])->findOrFail($id);
+        $user = $request->user();
+        if (
+            !$user
+            || (
+                !$user->hasRole(['Admin', 'admin', 'super-admin'])
+                && !$user->can('sale-invoice.update')
+                && !$user->can('customer.update')
+                && !$user->can('customer.create')
+            )
+        ) {
+            abort(403, 'Unauthorized to update customer or invoice.');
+        }
+
+        CustomerController::ensureRegularCustomerSchema();
+
+        $validated = $request->validate([
+            'customer_id'              => 'nullable|integer|exists:customers,id',
+            'new_customer'             => 'nullable|array',
+            'new_customer.name'        => 'required_with:new_customer|string|max:255',
+            'new_customer.phone'       => 'nullable|string|max:50',
+            'new_customer.address'     => 'nullable|string|max:500',
+            'is_regular'               => 'nullable|boolean',
+            'refill_cycle'             => 'nullable|string|in:weekly,biweekly,monthly,custom',
+            'refill_custom_days'       => 'nullable|integer|min:1|max:365',
+            'reminder_lead_days'       => 'nullable|integer|min:0|max:60',
+            'next_refill_date'         => 'nullable|date',
+            'reminder_language'        => 'nullable|string|in:english,urdu',
+            'regular_notes'            => 'nullable|string|max:2000',
+            'merge_mode'               => 'nullable|string|in:replace,merge',
+            'update_invoice_customer'  => 'nullable|boolean',
+            'items'                    => 'required|array|min:1',
+            'items.*.product_id'       => 'required|integer|exists:products,id',
+            'items.*.pack_quantity'    => 'nullable|numeric|min:0',
+            'items.*.unit_quantity'    => 'nullable|integer|min:0',
+            'items.*.dosage_notes'     => 'nullable|string|max:255',
+        ]);
+
+        return DB::transaction(function () use ($invoice, $validated) {
+            // 1. Resolve or create customer
+            if (!empty($validated['new_customer']['name'])) {
+                $name = trim($validated['new_customer']['name']);
+                $phone = trim($validated['new_customer']['phone'] ?? '');
+                $address = trim($validated['new_customer']['address'] ?? '');
+
+                $customer = Customer::where('name', $name)->first();
+                if (!$customer) {
+                    $customer = Customer::create([
+                        'name'    => $name,
+                        'phone'   => $phone ?: null,
+                        'address' => $address ?: null,
+                    ]);
+                } elseif ($phone && empty($customer->phone)) {
+                    $customer->phone = $phone;
+                }
+            } elseif (!empty($validated['customer_id'])) {
+                $customer = Customer::findOrFail($validated['customer_id']);
+            } else {
+                $customer = $invoice->customer;
+                if (!$customer || $customer->isWalkIn()) {
+                    return response()->json([
+                        'message' => 'Please select an existing customer or provide a customer name to register regular refills.',
+                    ], 422);
+                }
+            }
+
+            // Update phone if provided and not yet set on customer
+            if (!empty($validated['new_customer']['phone']) && empty($customer->phone)) {
+                $customer->phone = trim($validated['new_customer']['phone']);
+            }
+
+            // 2. Set regular attributes
+            $cycle = $validated['refill_cycle'] ?? $customer->refill_cycle ?? 'monthly';
+            $customDays = max(1, (int) ($validated['refill_custom_days'] ?? $customer->refill_custom_days ?? 30));
+            $nextDate = $validated['next_refill_date'] ?? null;
+            if (empty($nextDate)) {
+                $nextDate = match ($cycle) {
+                    'weekly'   => now()->addDays(7)->toDateString(),
+                    'biweekly' => now()->addDays(14)->toDateString(),
+                    'custom'   => now()->addDays($customDays)->toDateString(),
+                    default    => now()->addMonth()->toDateString(),
+                };
+            }
+
+            $customer->is_regular = true;
+            $customer->refill_cycle = $cycle;
+            $customer->refill_custom_days = $cycle === 'custom' ? $customDays : null;
+            $customer->reminder_lead_days = (int) ($validated['reminder_lead_days'] ?? $customer->reminder_lead_days ?? 2);
+            $customer->next_refill_date = $nextDate;
+            $customer->reminder_language = $validated['reminder_language'] ?? $customer->reminder_language ?? 'english';
+            if (array_key_exists('regular_notes', $validated)) {
+                $customer->regular_notes = $validated['regular_notes'];
+            }
+            $customer->save();
+
+            // 3. Synchronize regular items
+            $mergeMode = $validated['merge_mode'] ?? 'replace';
+            if ($mergeMode === 'replace') {
+                $customer->regularItems()->delete();
+            }
+
+            $productIds = collect($validated['items'])->pluck('product_id')->filter()->unique()->values()->all();
+            $packSizes = Product::whereIn('id', $productIds)->pluck('pack_size', 'id')->all();
+
+            foreach ($validated['items'] as $item) {
+                $pId = (int) $item['product_id'];
+                $packSize = max(1, (int) ($packSizes[$pId] ?? 1));
+                $packQty = max(0, (float) ($item['pack_quantity'] ?? 0));
+                $unitQty = max(0, (int) ($item['unit_quantity'] ?? 0));
+
+                if ($unitQty > 0) {
+                    $finalUnit = $unitQty;
+                    $finalPack = (int) floor($unitQty / $packSize);
+                } elseif ($packQty > 0) {
+                    $finalUnit = max(1, (int) round($packQty * $packSize));
+                    $finalPack = (int) floor($packQty);
+                } else {
+                    $finalUnit = $packSize;
+                    $finalPack = 1;
+                }
+
+                $dosageNotes = isset($item['dosage_notes']) ? trim((string) $item['dosage_notes']) : null;
+
+                if ($mergeMode === 'merge') {
+                    $existing = CustomerRegularItem::where('customer_id', $customer->id)
+                        ->where('product_id', $pId)
+                        ->first();
+                    if ($existing) {
+                        $existing->update([
+                            'pack_quantity' => $finalPack,
+                            'unit_quantity' => $finalUnit,
+                            'dosage_notes'  => $dosageNotes ?: $existing->dosage_notes,
+                        ]);
+                        continue;
+                    }
+                }
+
+                CustomerRegularItem::create([
+                    'customer_id'   => $customer->id,
+                    'product_id'    => $pId,
+                    'pack_quantity' => $finalPack,
+                    'unit_quantity' => $finalUnit,
+                    'dosage_notes'  => $dosageNotes,
+                ]);
+            }
+
+            // 4. Update invoice customer if requested and differs
+            $updateInvoiceCustomer = $validated['update_invoice_customer'] ?? true;
+            if ($updateInvoiceCustomer && (int) $invoice->customer_id !== (int) $customer->id) {
+                $invoice->customer_id = $customer->id;
+                $invoice->save();
+
+                DB::table('customer_ledgers')
+                    ->where('sale_invoice_id', $invoice->id)
+                    ->update(['customer_id' => $customer->id]);
+            }
+
+            $customer->load(['regularItems.product:id,name,product_code,quantity,pack_size,unit_sale_price,pack_sale_price']);
+            $invoice->refresh()->load(['customer.regularItems.product:id,name,product_code,quantity,pack_size,unit_sale_price,pack_sale_price', 'items.product']);
+
+            return response()->json([
+                'message'          => "Customer '{$customer->name}' set as Regular Customer with " . count($validated['items']) . " regular medicines.",
+                'customer'         => $customer,
+                'invoice'          => $invoice,
+                'next_refill_date' => $customer->next_refill_date?->format('Y-m-d'),
+            ]);
+        });
+    }
 
     public function search(Request $request)
     {

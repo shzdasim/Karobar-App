@@ -115,6 +115,8 @@ export default function PurchaseInvoiceShow() {
         dangerLight: "#fee2e2",
         tertiary: "#06b6d4",
         tertiaryHover: "#0891b2",
+        success: "#10b981",
+        successHover: "#059669",
       };
     }
     return {
@@ -130,6 +132,8 @@ export default function PurchaseInvoiceShow() {
       danger: theme.danger_color || "#ef4444",
       dangerHover: "#dc2626",
       dangerLight: "#fee2e2",
+      success: theme.success_color || "#10b981",
+      successHover: theme.success_hover || "#059669",
     };
   }, [theme]);
 
@@ -145,6 +149,7 @@ export default function PurchaseInvoiceShow() {
   const btnPrimary = getButtonClasses.primary;
   const btnSecondary = getButtonClasses.secondary;
   const btnDanger = getButtonClasses.danger;
+  const btnSuccess = getButtonClasses.success;
   const btnGlass = getButtonClasses.glass;
 
   // permissions
@@ -378,7 +383,18 @@ export default function PurchaseInvoiceShow() {
       <div className="purchase-show-header purchase-entry-header sticky top-0 z-10 shadow-sm" autoComplete="off">
         {/* ---- Compact Branded Title Banner ---- */}
         <div className="purchase-show-banner purchase-entry-banner px-3 py-1.5 flex items-center justify-between gap-2 flex-wrap">
+          {/* In front of heading: Back Navigation + Identity + Badges */}
           <div className="flex items-center gap-2.5 min-w-0">
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="h-7 px-2 rounded-lg font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all duration-150 active:scale-95 shrink-0 border shadow-2xs text-gray-700 dark:text-slate-200 bg-white/70 dark:bg-slate-800/80 hover:bg-white dark:hover:bg-slate-700 border-gray-300/80 dark:border-slate-700"
+              title="Back to invoices (Ctrl+B)"
+            >
+              <ArrowLeftIcon className="w-3.5 h-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Back</span>
+            </button>
+
             <div className="purchase-show-icon purchase-entry-icon w-8 h-8 rounded-lg flex items-center justify-center shadow-inner shrink-0">
               <DocumentTextIcon aria-hidden="true" className="w-4 h-4" />
             </div>
@@ -397,6 +413,12 @@ export default function PurchaseInvoiceShow() {
                     Bill #{fmt(inv.invoice_number)}
                   </span>
                 )}
+                <span
+                  className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold tracking-wide uppercase border bg-blue-500/15 text-blue-700 dark:bg-blue-400/20 dark:text-blue-200 border-blue-500/20"
+                  title="Payment Terms"
+                >
+                  {(inv.invoice_type || "debit").toUpperCase()}
+                </span>
                 {inv.status === "reversed" && (
                   <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase bg-rose-600 text-white tracking-wider border border-rose-400 shadow-xs">
                     REVERSED
@@ -409,43 +431,13 @@ export default function PurchaseInvoiceShow() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 no-print">
-            {/* Read-only Debit / Credit Segmented Indicator */}
-            <div
-              className="purchase-entry-type flex items-center gap-0.5 rounded-md p-0.5 shadow-inner"
-              aria-label="Invoice type"
-            >
-              {["debit", "credit"].map((type) => {
-                const active = (inv.invoice_type || "debit") === type;
-                return (
-                  <span
-                    key={type}
-                    className={`purchase-entry-type-button inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-semibold rounded ${
-                      active ? "is-active theme-btn-primary shadow-xs" : "opacity-60"
-                    }`}
-                  >
-                    <span>{type === "debit" ? "Debit" : "Credit"}</span>
-                  </span>
-                );
-              })}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setSearchOpen(true)}
-              className={`h-7 px-2.5 rounded-md text-[11px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
-              style={btnSecondary.style}
-              title="Search Purchase Invoices (Ctrl+F)"
-            >
-              <MagnifyingGlassIcon className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Search</span>
-            </button>
-
+          {/* Primary Quick Actions (Opposite the Heading) */}
+          <div className="flex items-center gap-1.5 flex-wrap no-print">
             {remainingAmount > 0.01 && inv.status !== "reversed" && (
               <button
                 type="button"
                 onClick={() => setPaymentModalOpen(true)}
-                className="h-7 px-2.5 rounded-md text-[11px] font-semibold transition-all duration-200 bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs flex items-center gap-1"
+                className="h-7 px-2.5 rounded-lg text-[11px] font-bold transition-all duration-200 bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs flex items-center gap-1 active:scale-95 cursor-pointer"
                 title="Record payment to supplier against this invoice"
               >
                 <BanknotesIcon className="w-3.5 h-3.5" aria-hidden="true" />
@@ -456,8 +448,8 @@ export default function PurchaseInvoiceShow() {
             <button
               type="button"
               onClick={() => printCurrentView()}
-              className={`h-7 px-2.5 rounded-md text-[11px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
-              style={btnSecondary.style}
+              className={`h-7 px-2.5 rounded-lg text-[11px] font-bold transition-all duration-200 ${btnSuccess.className} flex items-center gap-1 active:scale-95 cursor-pointer`}
+              style={btnSuccess.style}
               title="Print GRN / Purchase Invoice (Ctrl+P)"
             >
               <PrinterIcon className="w-3.5 h-3.5" aria-hidden="true" />
@@ -467,64 +459,20 @@ export default function PurchaseInvoiceShow() {
             <button
               type="button"
               onClick={() => setShareModalOpen(true)}
-              className={`h-7 px-2.5 rounded-md text-[11px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
-              style={btnSecondary.style}
+              className={`h-7 px-2.5 rounded-lg text-[11px] font-bold transition-all duration-200 ${btnPrimary.className} flex items-center gap-1 active:scale-95 cursor-pointer`}
+              style={btnPrimary.style}
               title="Download PDF or Share via WhatsApp / Email"
             >
               <ShareIcon className="w-3.5 h-3.5" aria-hidden="true" />
               <span>PDF / Share</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setHistoryModalOpen(true)}
-              className={`h-7 px-2.5 rounded-md text-[11px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
-              style={btnSecondary.style}
-              title="View audit history"
-            >
-              <ClockIcon className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>History</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                fetchDrafts();
-                setIsDraftsOpen(true);
-              }}
-              className={`h-7 px-2.5 rounded-md text-[11px] font-semibold transition-all duration-200 ${btnSecondary.className} relative flex items-center gap-1.5`}
-              style={btnSecondary.style}
-              title="Open Held Invoices (Ctrl+H)"
-            >
-              <ClockIcon className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
-              <span>Held</span>
-              {draftsList.length > 0 && (
-                <span className="inline-flex items-center justify-center px-1.5 py-0.2 text-[10px] font-bold leading-none text-white bg-amber-500 rounded-full">
-                  {draftsList.length}
-                </span>
-              )}
-            </button>
-
-            <Guard when={can.delete}>
-              {inv.status !== "reversed" && (
-                <button
-                  type="button"
-                  onClick={() => setVoidModalOpen(true)}
-                  className="h-7 px-2.5 rounded-md text-[11px] font-semibold transition-all duration-200 bg-amber-500 hover:bg-amber-600 text-white shadow-xs flex items-center gap-1"
-                  title="Void / Reverse this invoice safely"
-                >
-                  <ArrowUturnLeftIcon className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>Void</span>
-                </button>
-              )}
-            </Guard>
-
             <Guard when={can.update}>
               {inv.status !== "reversed" ? (
                 <button
                   type="button"
                   onClick={() => navigate(`/purchase-invoices/${id}/edit`)}
-                  className={`h-7 px-2.5 rounded-md text-[11px] font-semibold transition-all duration-200 ${btnSecondary.className}`}
+                  className={`h-7 px-2.5 rounded-lg text-[11px] font-bold transition-all duration-200 ${btnSecondary.className} flex items-center gap-1 active:scale-95 cursor-pointer`}
                   style={btnSecondary.style}
                   title="Edit Invoice (Ctrl+E)"
                 >
@@ -533,7 +481,7 @@ export default function PurchaseInvoiceShow() {
                 </button>
               ) : (
                 <span
-                  className="h-7 px-2.5 rounded-md text-[11px] font-semibold opacity-40 cursor-not-allowed bg-gray-200 dark:bg-slate-700 text-gray-500 flex items-center gap-1"
+                  className="h-7 px-2.5 rounded-lg text-[11px] font-semibold opacity-40 cursor-not-allowed bg-gray-200 dark:bg-slate-700 text-gray-500 flex items-center gap-1"
                   title="Reversed invoices cannot be edited"
                 >
                   <PencilSquareIcon className="w-3.5 h-3.5" aria-hidden="true" />
@@ -542,24 +490,11 @@ export default function PurchaseInvoiceShow() {
               )}
             </Guard>
 
-            <Guard when={can.delete}>
-              <button
-                type="button"
-                onClick={openDeleteModal}
-                className={`h-7 px-2.5 rounded-md text-[11px] font-semibold transition-all duration-200 ${btnDanger.className}`}
-                style={btnDanger.style}
-                title="Delete Invoice (Ctrl+D)"
-              >
-                <TrashIcon className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Delete</span>
-              </button>
-            </Guard>
-
             <Guard when={can.create}>
               <button
                 type="button"
                 onClick={() => navigate("/purchase-invoices/create")}
-                className={`h-7 px-2.5 rounded-md text-[11px] font-semibold transition-all duration-200 ${btnPrimary.className}`}
+                className={`h-7 px-2.5 rounded-lg text-[11px] font-bold transition-all duration-200 ${btnPrimary.className} flex items-center gap-1 active:scale-95 cursor-pointer`}
                 style={btnPrimary.style}
                 title="New Purchase Invoice (Ctrl+N)"
               >
@@ -567,17 +502,105 @@ export default function PurchaseInvoiceShow() {
                 <span>New</span>
               </button>
             </Guard>
+          </div>
+        </div>
+
+        {/* Secondary Document & Utility Action Bar */}
+        <div
+          className={`px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 border-b text-xs transition-colors no-print ${
+            isDark
+              ? "bg-slate-800/80 border-slate-700/80 text-slate-300"
+              : "bg-slate-50/90 border-gray-200/80 text-gray-700"
+          }`}
+        >
+          {/* Left Group: Document Utilities & Quick Lookups */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              className={`h-7 px-2.5 text-xs font-semibold rounded-lg transition-all duration-150 flex items-center gap-1.5 cursor-pointer border ${
+                isDark
+                  ? "bg-slate-800 hover:bg-slate-700/80 border-slate-700 text-slate-200"
+                  : "bg-white hover:bg-gray-100 border-gray-200 text-gray-700 shadow-2xs"
+              }`}
+              title="Search Purchase Invoices (Ctrl+F)"
+            >
+              <MagnifyingGlassIcon className="w-3.5 h-3.5 text-gray-500 dark:text-slate-400" aria-hidden="true" />
+              <span>Search</span>
+            </button>
 
             <button
               type="button"
-              onClick={() => navigate(-1)}
-              className={`h-7 px-2.5 rounded-md text-[11px] font-medium transition-all duration-200 ${btnGlass.className}`}
-              style={btnGlass.style}
-              title="Back (Ctrl+B)"
+              onClick={() => {
+                fetchDrafts();
+                setIsDraftsOpen(true);
+              }}
+              className={`h-7 px-2.5 text-xs font-semibold rounded-lg transition-all duration-150 flex items-center gap-1.5 cursor-pointer border ${
+                isDark
+                  ? "bg-slate-800 hover:bg-slate-700/80 border-slate-700 text-slate-200"
+                  : "bg-white hover:bg-gray-100 border-gray-200 text-gray-700 shadow-2xs"
+              }`}
+              title="Open Held Invoices (Ctrl+H)"
             >
-              <ArrowLeftIcon className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Back</span>
+              <ClockIcon className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />
+              <span>Held</span>
+              {draftsList.length > 0 && (
+                <span className="inline-flex items-center justify-center px-1.5 py-0.2 text-[10px] font-bold leading-none text-white bg-amber-500 rounded-full">
+                  {draftsList.length}
+                </span>
+              )}
             </button>
+
+            <button
+              type="button"
+              onClick={() => setHistoryModalOpen(true)}
+              className={`h-7 px-2.5 text-xs font-semibold rounded-lg transition-all duration-150 flex items-center gap-1.5 cursor-pointer border ${
+                isDark
+                  ? "bg-slate-800 hover:bg-slate-700/80 border-slate-700 text-slate-200"
+                  : "bg-white hover:bg-gray-100 border-gray-200 text-gray-700 shadow-2xs"
+              }`}
+              title="View audit history"
+            >
+              <ClockIcon className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" aria-hidden="true" />
+              <span>History</span>
+            </button>
+          </div>
+
+          {/* Right Group: Audit & Destructive Actions */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Guard when={can.delete}>
+              {inv.status !== "reversed" && (
+                <button
+                  type="button"
+                  onClick={() => setVoidModalOpen(true)}
+                  className={`h-7 px-2.5 text-xs font-semibold rounded-lg transition-all duration-150 flex items-center gap-1.5 cursor-pointer border ${
+                    isDark
+                      ? "bg-amber-950/30 hover:bg-amber-900/40 border-amber-800 text-amber-300"
+                      : "bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-800 shadow-2xs"
+                  }`}
+                  title="Void / Reverse this invoice safely"
+                >
+                  <ArrowUturnLeftIcon className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                  <span>Void</span>
+                </button>
+              )}
+            </Guard>
+
+            <Guard when={can.delete}>
+              <button
+                type="button"
+                onClick={openDeleteModal}
+                className={`h-7 px-2.5 text-xs font-semibold rounded-lg transition-all duration-150 flex items-center gap-1.5 cursor-pointer border ${
+                  isDark
+                    ? "bg-rose-950/30 hover:bg-rose-900/40 border-rose-800 text-rose-300"
+                    : "bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-700 shadow-2xs"
+                }`}
+                title="Delete Invoice (Ctrl+D)"
+              >
+                <TrashIcon className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+                <span>Delete</span>
+              </button>
+            </Guard>
           </div>
         </div>
 
