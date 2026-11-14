@@ -4,12 +4,13 @@ import { lazy, Suspense, useEffect, useRef, useState, useMemo, useCallback } fro
 import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
 import Select from "react-select";
-import { TrashIcon, PlusIcon, CubeIcon, HashtagIcon, CheckIcon, QrCodeIcon, ArrowsRightLeftIcon } from "@heroicons/react/24/outline";
+import { TrashIcon, PlusIcon, CubeIcon, HashtagIcon, CheckIcon, QrCodeIcon, ArrowsRightLeftIcon, GiftIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
 import CustomerSearch from "../../components/CustomerSearch.jsx";
-import { recalcItem, recalcFooter } from "../../Formula/SaleInvoice.js";
+import { recalcItem, recalcFooter, calculateRowMargin } from "../../Formula/SaleInvoice.js";
+import { evaluateTradeScheme } from "../../Formula/TradeScheme.js";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
@@ -83,12 +84,18 @@ const normalizeFormLoaded = (f) => {
           product_id: it?.product_id ?? "",
           product_name: it?.product_name ?? it?.product?.name ?? "",
           product: it?.product ?? null,
-          pack_size: it?.pack_size ?? "",
+          pack_size: it?.pack_size ?? it?.product?.pack_size ?? "",
+          avg_price: it?.avg_price ?? it?.product?.avg_price ?? "",
+          unit_purchase_price: it?.unit_purchase_price ?? it?.product?.unit_purchase_price ?? "",
           batch_number: it?.batch_number ?? "",
           is_unbatched: isUnbatched,
           expiry: it?.expiry ?? "",
           current_quantity: it?.current_quantity ?? "",
           quantity: it?.quantity ?? "",
+          bonus: it?.bonus ? String(it.bonus) : "",
+          applied_scheme_id: it?.applied_scheme_id ?? null,
+          applied_scheme_name: it?.applied_scheme_name ?? "",
+          is_custom_bonus: Boolean(it?.is_custom_bonus || (!it?.applied_scheme_id && Number(it?.bonus || 0) > 0)),
           price: it?.price ?? "",
           item_discount_percentage: it?.item_discount_percentage ?? "",
           sub_total: it?.sub_total ?? "",
@@ -159,6 +166,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         expiry: "",
         current_quantity: "",
         quantity: "",
+        bonus: "",
+        applied_scheme_id: null,
+        applied_scheme_name: "",
+        is_custom_bonus: false,
         price: "",
         item_discount_percentage: "",
         sub_total: "",
@@ -175,6 +186,66 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   const [marginPct, setMarginPct] = useState("");
   const [focusedRowIndex, setFocusedRowIndex] = useState(0);
   const [originalItems, setOriginalItems] = useState({}); // Store original items for edit mode to calculate available quantity correctly
+
+  // Automated Trade Schemes state
+  const [activeSchemes, setActiveSchemes] = useState([]);
+  const [enableTradeSchemes, setEnableTradeSchemes] = useState(true);
+  const activeSchemesRef = useRef([]);
+  activeSchemesRef.current = activeSchemes;
+  const enableTradeSchemesRef = useRef(enableTradeSchemes);
+  enableTradeSchemesRef.current = enableTradeSchemes;
+  const productDataCacheRef = useRef(productDataCache);
+  productDataCacheRef.current = productDataCache;
+  const productsListRef = useRef([]);
+
+  const fetchActiveSchemes = useCallback(async (custId, dateVal) => {
+    try {
+      const params = new URLSearchParams({
+        sale_type: "retail",
+        date: dateVal || new Date().toISOString().split("T")[0],
+      });
+      if (custId) params.set("customer_id", String(custId));
+      const res = await axios.get(`/api/trade-schemes/active-lookup?${params.toString()}`);
+      const schemes = Array.isArray(res.data?.schemes) ? res.data.schemes : [];
+      activeSchemesRef.current = schemes;
+      setActiveSchemes(schemes);
+
+      setForm((prev) => {
+        let changed = false;
+        const newItems = prev.items.map((row) => {
+          if (!row.product_id || row.is_custom_bonus || !enableTradeSchemesRef.current) return row;
+          const productObj =
+            productDataCacheRef.current?.[row.product_id] ||
+            productsListRef.current?.find((p) => eqId(p.id, row.product_id)) ||
+            row.product;
+          const schemeRes = evaluateTradeScheme(row, schemes, productObj, { sale_type: "retail" });
+          if (schemeRes.matched && Number(schemeRes.bonus || 0) > 0) {
+            changed = true;
+            return recalcItem({
+              ...row,
+              bonus: String(schemeRes.bonus),
+              applied_scheme_id: schemeRes.scheme_id,
+              applied_scheme_name: schemeRes.scheme_name,
+            });
+          }
+          return row;
+        });
+        if (!changed) return prev;
+        return recalcFooter({ ...prev, items: newItems }, "items");
+      });
+
+      return schemes;
+    } catch (e) {
+      console.warn("Failed to load active trade schemes:", e);
+      activeSchemesRef.current = [];
+      setActiveSchemes([]);
+      return [];
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchActiveSchemes(form.customer_id, form.date);
+  }, [form.customer_id, form.date, fetchActiveSchemes]);
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
   const [drawerPrompt, setDrawerPrompt] = useState(null);
   const [customerCreditSummary, setCustomerCreditSummary] = useState(null);
@@ -222,6 +293,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
           expiry: "",
           current_quantity: "",
           quantity: "",
+          bonus: "",
+          applied_scheme_id: null,
+          applied_scheme_name: "",
+          is_custom_bonus: false,
           price: "",
           item_discount_percentage: "",
           sub_total: "",
@@ -278,32 +353,45 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     },
   });
 
-  // Calculate margin based on sale type (retail) - use focused row
+  const [products, setProducts] = useState([]);
+  productsListRef.current = products;
+  const [batchesByProduct, setBatchesByProduct] = useState({});
+
+  // Calculate live margin % for focused row (accounts for unit price, item discount %, bonus units, and bill discount %)
   useEffect(() => {
     const rowIndex = focusedRowIndex >= 0 && focusedRowIndex < form.items.length ? focusedRowIndex : 0;
-    if (form.items.length > 0 && form.items[rowIndex].product_id) {
-      const focusedItem = form.items[rowIndex];
-      if (focusedItem.price) {
-        // For retail, use the cached product margin
-        const productData = productDataCache[focusedItem.product_id];
-        if (productData?.margin) {
-          setMarginPct(sanitizeNumberInput(String(productData.margin), true));
-          return;
-        }
+    const activeRow =
+      form.items[rowIndex]?.product_id
+        ? form.items[rowIndex]
+        : form.items.find((r) => r.product_id);
+    if (activeRow && activeRow.product_id && Number(activeRow.price || 0) > 0) {
+      const productObj =
+        productDataCache[activeRow.product_id] ||
+        products.find((p) => String(p?.id ?? "") === String(activeRow.product_id ?? "")) ||
+        activeRow.product ||
+        {};
+      const m = calculateRowMargin(activeRow, productObj, Number(form.discount_percentage || 0));
+      if (m !== null) {
+        setMarginPct(String(m));
+        return;
+      }
+      const hasBonusOrDisc =
+        Number(activeRow.bonus || 0) > 0 ||
+        Number(activeRow.item_discount_percentage || 0) !== 0 ||
+        Number(form.discount_percentage || 0) !== 0;
+      if (!hasBonusOrDisc && productObj?.margin !== undefined && productObj?.margin !== "") {
+        setMarginPct(String(productObj.margin));
+        return;
       }
     }
     setMarginPct("");
-  }, [form.items, productDataCache, focusedRowIndex]);
+  }, [form.items, form.discount_percentage, productDataCache, products, focusedRowIndex]);
 
   useEffect(() => {
     setMarginPct("");
     setReceiveTouched(false);
     setOriginalItems({}); // Clear original items when creating a new invoice
   }, [saleId]);
-
-
-  const [products, setProducts] = useState([]);
-  const [batchesByProduct, setBatchesByProduct] = useState({});
   const byIdsSupportedRef = useRef(true);
 
   const formRef = useRef(form);
@@ -320,6 +408,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   const productRefs = useRef([]);
   const batchRefs = useRef([]);
   const qtyRefs = useRef([]);
+  const bonusRefs = useRef([]);
   const priceRefs = useRef([]);
   const discRefs = useRef([]);
   const focusedOnce = useRef(false);
@@ -1292,13 +1381,55 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
           items[index] = { ...items[index], item_discount_percentage: value };
           return { ...prev, items };
         });
-    } else if (field === "quantity" || field === "pack_size") {
+    } else if (field === "quantity" || field === "pack_size" || field === "bonus") {
       value = sanitizeNumberInput(value, false, false);
     }
     setForm((prev) => {
       const items = [...prev.items];
-      let row = recalcItem({ ...items[index], [field]: value }, field);
+      const existingRow = items[index] || {};
+      const currentRow = { ...existingRow, [field]: value };
+      if (field === "bonus") {
+        currentRow.is_custom_bonus = true;
+        currentRow.applied_scheme_id = null;
+        currentRow.applied_scheme_name = "";
+      }
+      let row = recalcItem(currentRow, field);
       if (field === "item_discount_percentage") row.item_discount_percentage = value;
+
+      // Automated Trade Scheme evaluation (if enabled and user hasn't set custom bonus)
+      if (
+        enableTradeSchemesRef.current &&
+        !row.is_custom_bonus &&
+        (field === "quantity" || field === "pack_size")
+      ) {
+        const productObj =
+          productDataCache[row.product_id] ||
+          products.find((p) => eqId(p.id, row.product_id)) ||
+          row.product;
+        const schemeRes = evaluateTradeScheme(row, activeSchemesRef.current, productObj, { sale_type: "retail" });
+        if (schemeRes.matched && Number(schemeRes.bonus || 0) > 0) {
+          row = recalcItem(
+            {
+              ...row,
+              bonus: String(schemeRes.bonus),
+              applied_scheme_id: schemeRes.scheme_id,
+              applied_scheme_name: schemeRes.scheme_name,
+            },
+            field
+          );
+        } else if (row.applied_scheme_id) {
+          row = recalcItem(
+            {
+              ...row,
+              bonus: "",
+              applied_scheme_id: null,
+              applied_scheme_name: "",
+            },
+            field
+          );
+        }
+      }
+
       items[index] = row;
       let updated = recalcFooter({ ...prev, items }, "items");
       if (prev.invoice_type !== "credit") updated.total_receive = updated.total ?? "";
@@ -1306,6 +1437,110 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       return updated;
     });
   }
+
+  const handleWaiveScheme = (index) => {
+    setForm((prev) => {
+      const items = [...prev.items];
+      if (!items[index]) return prev;
+      items[index] = recalcItem({
+        ...items[index],
+        bonus: "",
+        applied_scheme_id: null,
+        applied_scheme_name: "",
+        is_custom_bonus: true, // Manual waive/override
+      });
+      toast.success("Bonus waived for this item.", { duration: 2000, id: `waive-${index}` });
+      let updated = recalcFooter({ ...prev, items }, "items");
+      if (prev.invoice_type !== "credit") updated.total_receive = updated.total ?? "";
+      if (!receiveTouched && prev.invoice_type === "credit") updated.total_receive = "";
+      return updated;
+    });
+  };
+
+  const handleReapplyScheme = (index) => {
+    setForm((prev) => {
+      const items = [...prev.items];
+      const item = items[index];
+      if (!item) return prev;
+      const productObj =
+        productDataCache[item.product_id] ||
+        products.find((p) => eqId(p.id, item.product_id)) ||
+        item.product;
+      const unoverridden = { ...item, is_custom_bonus: false };
+      const schemeRes = evaluateTradeScheme(unoverridden, activeSchemesRef.current, productObj, { sale_type: "retail" });
+      if (schemeRes.matched && Number(schemeRes.bonus || 0) > 0) {
+        items[index] = recalcItem({
+          ...unoverridden,
+          bonus: String(schemeRes.bonus),
+          applied_scheme_id: schemeRes.scheme_id,
+          applied_scheme_name: schemeRes.scheme_name,
+        });
+        toast.success(`Scheme '${schemeRes.scheme_name}' applied!`, {
+          duration: 2500,
+          id: `reapply-${index}`,
+        });
+      } else {
+        items[index] = unoverridden;
+        toast.error("Quantity does not reach any active scheme slab threshold.", {
+          duration: 2500,
+          id: `reapply-${index}`,
+        });
+      }
+      let updated = recalcFooter({ ...prev, items }, "items");
+      if (prev.invoice_type !== "credit") updated.total_receive = updated.total ?? "";
+      if (!receiveTouched && prev.invoice_type === "credit") updated.total_receive = "";
+      return updated;
+    });
+  };
+
+  const toggleTradeSchemes = () => {
+    const nextState = !enableTradeSchemes;
+    setEnableTradeSchemes(nextState);
+    setForm((prev) => {
+      const items = prev.items.map((row) => {
+        if (!nextState) {
+          if (row.applied_scheme_id && !row.is_custom_bonus) {
+            return recalcItem({
+              ...row,
+              bonus: "",
+              applied_scheme_id: null,
+              applied_scheme_name: "",
+            });
+          }
+          return row;
+        } else {
+          if (!row.is_custom_bonus && row.product_id) {
+            const productObj =
+              productDataCache[row.product_id] ||
+              products.find((p) => eqId(p.id, row.product_id)) ||
+              row.product;
+            const res = evaluateTradeScheme(row, activeSchemesRef.current, productObj, { sale_type: "retail" });
+            if (res.matched && Number(res.bonus || 0) > 0) {
+              return recalcItem({
+                ...row,
+                bonus: String(res.bonus),
+                applied_scheme_id: res.scheme_id,
+                applied_scheme_name: res.scheme_name,
+              });
+            }
+          }
+          return row;
+        }
+      });
+      let updated = recalcFooter({ ...prev, items }, "items");
+      if (prev.invoice_type !== "credit") updated.total_receive = updated.total ?? "";
+      if (!receiveTouched && prev.invoice_type === "credit") updated.total_receive = "";
+      return updated;
+    });
+    toast(
+      nextState
+        ? "Automated trade schemes enabled"
+        : "Automated trade schemes paused for this invoice",
+      {
+        icon: nextState ? "🎁" : "⏸️",
+      }
+    );
+  };
 
   const addRow = () => {
     setForm((prev) => {
@@ -1321,6 +1556,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
             expiry: "",
             current_quantity: "",
             quantity: "",
+            bonus: "",
+            applied_scheme_id: null,
+            applied_scheme_name: "",
+            is_custom_bonus: false,
             price: "",
             item_discount_percentage: "",
             sub_total: "",
@@ -1402,11 +1641,15 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         isNarcotic = data?.narcotic === "yes";
         freshProductData = data;
         
-        // Cache the product data for validation
+        // Cache the product data for validation and live profit/margin calculation
         setProductDataCache(prev => ({
           ...prev,
           [productId]: {
+            ...data,
             pack_purchase_price: data?.pack_purchase_price || 0,
+            unit_purchase_price: data?.unit_purchase_price || 0,
+            avg_price: data?.avg_price || 0,
+            pack_size: data?.pack_size || 1,
             unit_sale_price: data?.unit_sale_price || 0,
             margin: data?.margin || data?.margin_percentage || data?.default_margin || "",
           }
@@ -1417,7 +1660,11 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
           setProductDataCache(prev => ({
             ...prev,
             [productId]: {
+              ...selected,
               pack_purchase_price: selected?.pack_purchase_price || 0,
+              unit_purchase_price: selected?.unit_purchase_price || 0,
+              avg_price: selected?.avg_price || 0,
+              pack_size: selected?.pack_size || 1,
               unit_sale_price: selected?.unit_sale_price || 0,
               margin: selected?.margin || selected?.margin_percentage || selected?.default_margin || "",
             }
@@ -1426,9 +1673,9 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       }
     }
 
-    const rawMargin = freshProductData?.margin ?? selected?.margin ?? selected?.margin_percentage ?? selected?.default_margin ?? "";
-    setMarginPct(sanitizeNumberInput(String(rawMargin), true));
     const packSize = freshProductData?.pack_size ?? selected?.pack_size ?? "";
+    const avgPrice = freshProductData?.avg_price ?? selected?.avg_price ?? "";
+    const unitPurchasePrice = freshProductData?.unit_purchase_price ?? selected?.unit_purchase_price ?? "";
     
     // Use fresh product data if available, otherwise fall back to cached data
     const baseAvailable = freshProductData?.quantity ?? freshProductData?.available_units ?? selected?.quantity ?? selected?.available_units ?? 0;
@@ -1544,19 +1791,26 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
           ? fefoUnitSalePrice
           : price;
       
-      items[rowIndex] = recalcItem(
+      const isSameProd = eqId(items[rowIndex]?.product_id, productId);
+      let updatedRow = recalcItem(
         {
           ...items[rowIndex],
           product_id: productId,
           product_name: freshProductData?.name ?? selected?.name ?? items[rowIndex]?.product_name ?? "",
           product: freshProductData ?? (selected?.id ? selected : null),
           pack_size: packSize,
+          avg_price: avgPrice,
+          unit_purchase_price: unitPurchasePrice,
           price: effectivePrice,
           batch_number: allocatedBatchNumber,
           is_unbatched: allocatedIsUnbatched,
           expiry: allocatedExpiry,
           current_quantity: batchAvailable.toString(),
           quantity: presetQty,
+          bonus: isSameProd ? items[rowIndex]?.bonus ?? "" : "",
+          applied_scheme_id: isSameProd ? items[rowIndex]?.applied_scheme_id ?? null : null,
+          applied_scheme_name: isSameProd ? items[rowIndex]?.applied_scheme_name ?? "" : "",
+          is_custom_bonus: isSameProd ? Boolean(items[rowIndex]?.is_custom_bonus) : false,
           item_discount_percentage: items[rowIndex]?.item_discount_percentage ?? "",
           sub_total: items[rowIndex]?.sub_total ?? "",
           is_narcotic: isNarcotic,
@@ -1564,6 +1818,28 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         },
         "product_select"
       );
+
+      if (enableTradeSchemesRef.current && !updatedRow.is_custom_bonus) {
+        const schemeRes = evaluateTradeScheme(
+          updatedRow,
+          activeSchemesRef.current,
+          freshProductData || selected,
+          { sale_type: "retail" }
+        );
+        if (schemeRes.matched && Number(schemeRes.bonus || 0) > 0) {
+          updatedRow = recalcItem(
+            {
+              ...updatedRow,
+              bonus: String(schemeRes.bonus),
+              applied_scheme_id: schemeRes.scheme_id,
+              applied_scheme_name: schemeRes.scheme_name,
+            },
+            "product_select"
+          );
+        }
+      }
+
+      items[rowIndex] = updatedRow;
       let next = recalcFooter({ ...prev, items }, "items");
       // For credit sales, total_receive stays at 0 if untouched; for debit, always sync with total
       if (prev.invoice_type !== "credit") next.total_receive = next.total ?? "";
@@ -1783,8 +2059,11 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       if (it.quantity === "" || it.quantity == null || Number(it.quantity) <= 0)
         return invoiceErrors.showMessage(`Row ${i + 1}: enter quantity`);
       const available = Number(it.current_quantity || 0);
-      if (Number(it.quantity || 0) > available) {
-        return invoiceErrors.showMessage(`Row ${i + 1}: quantity exceeds available (${available})`);
+      const totalStockNeeded = Number(it.quantity || 0) + Math.max(0, Number(it.bonus || 0));
+      if (totalStockNeeded > available) {
+        return invoiceErrors.showMessage(
+          `Row ${i + 1}: total units (${it.quantity}${Number(it.bonus || 0) > 0 ? ` + ${it.bonus} bonus` : ""}) exceeds available stock (${available})`
+        );
       }
     }
 
@@ -1853,10 +2132,15 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         // For existing items (numeric IDs), convert id to integer
         const isNewItem = String(it.id).startsWith('row_') || !it.id;
         const { id, ...itemWithoutId } = it;
+        const bonusUnits = Math.max(0, parseInt(it.bonus || 0, 10));
         return {
           ...itemWithoutId,
           ...(isNewItem ? {} : { id: parseInt(it.id, 10) }),
           quantity: it.quantity,
+          bonus: bonusUnits,
+          unit_bonus: bonusUnits,
+          applied_scheme_id: it.applied_scheme_id ? parseInt(it.applied_scheme_id, 10) : null,
+          applied_scheme_name: it.applied_scheme_name ? String(it.applied_scheme_name).trim() : null,
           item_discount_percentage:
             it.item_discount_percentage === "-" || it.item_discount_percentage === "-."
               ? "-0"
@@ -2021,10 +2305,17 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     }
   };
 
-  // --- keyboard nav (Retail: product -> batch -> quantity -> disc) ---
-  const COLS = ["product", "batch", "quantity", "disc"];
+  // --- keyboard nav (Retail: product -> batch -> quantity -> bonus -> disc) ---
+  const COLS = ["product", "batch", "quantity", "bonus", "disc"];
   const focusCell = (row, col) => {
-    const map = { product: productRefs, batch: batchRefs, quantity: qtyRefs, price: priceRefs, disc: discRefs };
+    const map = {
+      product: productRefs,
+      batch: batchRefs,
+      quantity: qtyRefs,
+      bonus: bonusRefs,
+      price: priceRefs,
+      disc: discRefs,
+    };
     const ref = map[col]?.current?.[row];
     if (!ref) return;
     const input = ref.querySelector?.("input") || ref;
@@ -2165,6 +2456,26 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
           </div>
 
           <div className="flex flex-wrap items-center ml-auto gap-2">
+            {/* Trade Schemes Auto Toggle */}
+            <button
+              type="button"
+              onClick={toggleTradeSchemes}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border shadow-xs ${
+                enableTradeSchemes
+                  ? "bg-amber-400/25 border-amber-300/60 text-amber-100 hover:bg-amber-400/35"
+                  : "bg-white/10 border-white/20 text-white/60 hover:text-white/90"
+              }`}
+              title="Toggle automated trade schemes & bonus slabs calculation for this invoice"
+            >
+              <GiftIcon className={`w-3.5 h-3.5 ${enableTradeSchemes ? "text-amber-300" : "text-white/60"}`} />
+              <span>Schemes:</span>
+              <span className={`px-1 rounded text-[10px] uppercase font-bold ${
+                enableTradeSchemes ? "bg-amber-400 text-slate-900" : "bg-white/20 text-white"
+              }`}>
+                {enableTradeSchemes ? "ON" : "OFF"}
+              </span>
+            </button>
+
             {!saleId && (
               <InvoiceDraftIndicator
                 saveStatus={draftHook.saveStatus}
@@ -2412,6 +2723,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                   <th className="w-[80px] text-center sale-th-readonly" title="Expiry Date (Auto)">Expiry</th>
                   <th className="w-14 text-center sale-th-readonly" title="Available Units (Auto)">Avail</th>
                   <th className="w-16 text-center sale-th-editable">Qty *</th>
+                  <th className="w-14 text-center sale-th-editable" title="Free Bonus Units (Scheme or Manual override)">Bonus</th>
                   <th className="w-18 text-center sale-th-readonly" title="Unit Sale Price (Auto)">Price</th>
                   <th className="w-14 text-center sale-th-editable">Disc %</th>
                   <th className="w-22 text-center sale-th-readonly" title="Row Sub Total (Auto)">Sub Total</th>
@@ -2475,6 +2787,42 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                           </button>
                         )}
                       </div>
+                      {/* Trade Scheme Indicator & Waiver */}
+                      {it.applied_scheme_name ? (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30"
+                            title={`Automated Scheme: ${it.applied_scheme_name}. Click ✕ to waive bonus for this item.`}
+                          >
+                            <GiftIcon className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span className="truncate max-w-[160px] font-semibold">{it.applied_scheme_name}</span>
+                            <button
+                              type="button"
+                              tabIndex={-1}
+                              onClick={() => handleWaiveScheme(i)}
+                              className="ml-0.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 focus:outline-none p-0.5 rounded"
+                              title="Waive / remove bonus for this item"
+                            >
+                              <XMarkIcon className="w-3 h-3" />
+                            </button>
+                          </span>
+                        </div>
+                      ) : it.is_custom_bonus && it.product_id ? (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20">
+                            <span>Custom Bonus</span>
+                            <button
+                              type="button"
+                              tabIndex={-1}
+                              onClick={() => handleReapplyScheme(i)}
+                              className="ml-1 text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+                              title="Check and restore automated trade scheme calculation"
+                            >
+                              ↺ Restore
+                            </button>
+                          </span>
+                        </div>
+                      ) : null}
                     </td>
 
                     <td data-label="Pack Size" className="text-center">
@@ -2552,11 +2900,46 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                               ? "bg-slate-700 border-slate-500 text-slate-100" 
                               : "bg-white border-gray-300 text-gray-900"
                           } ` +
-                          (Number(it.quantity || 0) > Number(it.current_quantity || 0)
+                          (Number(it.quantity || 0) + Number(it.bonus || 0) > Number(it.current_quantity || 0)
                             ? "!border-red-500 ring-1 ring-red-400"
                             : "")
                         }
                         onKeyDown={(e) => onKeyNav(e, i, "quantity")}
+                        onFocus={(e) => {
+                          setFocusedRowIndex(i);
+                          e.target.select();
+                        }}
+                      />
+                    </td>
+
+                    {/* Bonus Units */}
+                    <td data-label="Bonus" className="text-center">
+                      <input
+                        ref={(el) => (bonusRefs.current[i] = el)}
+                        type="text"
+                        name="bonus"
+                        inputMode="numeric"
+                        placeholder="0"
+                        title={
+                          it.applied_scheme_name
+                            ? `Scheme: ${it.applied_scheme_name} (overridable)`
+                            : it.is_custom_bonus
+                            ? "Custom bonus manually entered"
+                            : "Bonus units"
+                        }
+                        value={zeroToEmpty(it.bonus)}
+                        onChange={(e) => handleItemChange(i, "bonus", e.target.value)}
+                        autoComplete="off"
+                        className={`w-full h-7 border rounded-md px-1 text-center font-semibold ${
+                          Number(it.bonus || 0) > 0
+                            ? isDark
+                              ? "bg-emerald-950/60 border-emerald-500 text-emerald-300"
+                              : "bg-emerald-50 border-emerald-400 text-emerald-800"
+                            : isDark
+                            ? "bg-slate-700 border-slate-500 text-slate-100"
+                            : "bg-white border-gray-300 text-gray-900"
+                        }`}
+                        onKeyDown={(e) => onKeyNav(e, i, "bonus")}
                         onFocus={(e) => {
                           setFocusedRowIndex(i);
                           e.target.select();
@@ -2665,10 +3048,18 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                     name="margin_percentage"
                     readOnly
                     tabIndex={-1}
-                    value={marginPct}
-                    onChange={(e) => setMarginPct(sanitizeNumberInput(e.target.value, true))}
+                    value={marginPct !== "" ? `${marginPct}%` : ""}
+                    placeholder="—"
+                    title="Live realized margin % (after item discount, bonus units, and bill discount)"
+                    onChange={(e) => setMarginPct(sanitizeNumberInput(e.target.value, true, true))}
                     autoComplete="off"
-                    className="sale-readonly-field w-24 h-6.5 rounded-md px-2 text-center font-extrabold text-xs"
+                    className={`sale-readonly-field w-24 h-6.5 rounded-md px-2 text-center font-extrabold text-xs ${
+                      marginPct !== "" && Number(marginPct) < 0
+                        ? "!bg-red-100 dark:!bg-red-950/80 !text-red-700 dark:!text-red-300 !border !border-red-500"
+                        : marginPct !== "" && Number(marginPct) > 0
+                        ? "!text-emerald-700 dark:!text-emerald-300"
+                        : ""
+                    }`}
                   />
                 </div>
 

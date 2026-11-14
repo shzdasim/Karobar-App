@@ -25,12 +25,14 @@ class Customer extends Model
         'last_refill_collected_at',
         'reminder_language',
         'regular_notes',
+        'eligible_for_schemes',
     ];
 
     protected $casts = [
         'credit_limit'             => 'decimal:2',
         'credit_days'              => 'integer',
         'is_regular'               => 'boolean',
+        'eligible_for_schemes'     => 'boolean',
         'refill_custom_days'       => 'integer',
         'reminder_lead_days'       => 'integer',
         'next_refill_date'         => 'date:Y-m-d',

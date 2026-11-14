@@ -26,6 +26,8 @@ class SaleInvoiceItem extends Model
         'sub_total',
         'sale_type',
         'is_custom_price',
+        'applied_scheme_id',
+        'applied_scheme_name',
     ];
     public function saleInvoice()
     {
@@ -34,5 +36,9 @@ class SaleInvoiceItem extends Model
     public function product()
     {
         return $this->belongsTo(Product::class);
+    }
+    public function appliedScheme()
+    {
+        return $this->belongsTo(TradeScheme::class, 'applied_scheme_id');
     }
 }

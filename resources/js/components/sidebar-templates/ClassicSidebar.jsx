@@ -47,6 +47,7 @@ import {
   LockClosedIcon,
   LockOpenIcon,
   CircleStackIcon,
+  GiftIcon,
 } from "@heroicons/react/24/outline";
 import { StarIcon as StarSolidIcon } from "@heroicons/react/24/solid";
 import { usePermissions } from "@/api/usePermissions";
@@ -327,6 +328,15 @@ export default function ClassicSidebar({
                 },
               ]
             : []),
+          {
+            name: "Trade Schemes",
+            path: "/trade-schemes",
+            icon: <GiftIcon className="w-5 h-5" />,
+            perm: "sale-invoice.view",
+            quickCreatePath: "/trade-schemes/create",
+            quickCreatePerm: "sale-invoice.create",
+            quickCreateLabel: "Create Trade Scheme",
+          },
           {
             name: "Purchase Invoices",
             path: "/purchase-invoices",

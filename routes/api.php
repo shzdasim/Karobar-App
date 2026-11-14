@@ -44,6 +44,7 @@ use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\SupplierImportController;
 use App\Http\Controllers\SupplierLedgerController;
 use App\Http\Controllers\ThemeSettingController;
+use App\Http\Controllers\TradeSchemeController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserPreferenceController;
 use App\Http\Controllers\NotificationController;
@@ -209,6 +210,11 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::post('sale-invoices/{id}/reverse',     [SaleInvoiceController::class, 'reverse']);
     Route::post('sale-invoices/{id}/make-regular-customer', [SaleInvoiceController::class, 'makeRegularCustomer']);
     Route::apiResource('sale-invoices',           SaleInvoiceController::class);
+
+    // Trade Schemes & Free Bonus Slabs
+    Route::get('trade-schemes/active-lookup',     [TradeSchemeController::class, 'activeLookup']);
+    Route::post('trade-schemes/{id}/toggle-active', [TradeSchemeController::class, 'toggleActive']);
+    Route::apiResource('trade-schemes',           TradeSchemeController::class);
 
     // Document Audit History
     Route::get('/document-histories',             [DocumentHistoryController::class, 'index']);

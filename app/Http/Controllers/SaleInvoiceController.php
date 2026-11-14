@@ -151,6 +151,8 @@ class SaleInvoiceController extends Controller
                 'sub_total'                => $this->f($raw['sub_total'] ?? 0),
                 'sale_type'                => $raw['sale_type'] ?? ($invoice->sale_type ?? 'retail'),
                 'is_custom_price'          => $raw['is_custom_price'] ?? false,
+                'applied_scheme_id'        => !empty($raw['applied_scheme_id']) ? (int) $raw['applied_scheme_id'] : null,
+                'applied_scheme_name'      => !empty($raw['applied_scheme_name']) ? trim($raw['applied_scheme_name']) : null,
             ];
 
             $dbPayload = $itemColumns ? array_intersect_key($payload, $itemColumns) : $payload;
@@ -446,6 +448,8 @@ class SaleInvoiceController extends Controller
             'items.*.sub_total'                => 'nullable|numeric|min:0',
             'items.*.sale_type'                => 'nullable|string|in:retail,wholesale',
             'items.*.is_custom_price'          => 'nullable|boolean',
+            'items.*.applied_scheme_id'        => 'nullable|integer',
+            'items.*.applied_scheme_name'      => 'nullable|string',
         ]);
 
         $clientSubmittedTotal = $request->has('total') && is_numeric($request->input('total'))
@@ -829,6 +833,8 @@ class SaleInvoiceController extends Controller
             'items.*.sub_total'                => 'nullable|numeric|min:0',
             'items.*.sale_type'                => 'nullable|string|in:retail,wholesale',
             'items.*.is_custom_price'          => 'nullable|boolean',
+            'items.*.applied_scheme_id'        => 'nullable|integer',
+            'items.*.applied_scheme_name'      => 'nullable|string',
         ]);
 
         $clientUpdateTotal = $request->has('total') && is_numeric($request->input('total'))

@@ -62,6 +62,9 @@ const CreateSaleInvoiceWholesale = registerLazy(() => import("../pages/SaleInvoi
 const BarcodePos = registerLazy(() => import("../pages/SaleInvoice/BarcodePos.jsx"), ["/sale-invoices/pos", "/sale-invoices/barcode-pos"]);
 const EditSaleInvoice = registerLazy(() => import("../pages/SaleInvoice/Edit.jsx"));
 const ShowSaleInvoice = registerLazy(() => import("../pages/SaleInvoice/Show.jsx"));
+const TradeSchemesIndex = registerLazy(() => import("../pages/TradeSchemes/index.jsx"), ["/trade-schemes"]);
+const CreateTradeScheme = registerLazy(() => import("../pages/TradeSchemes/Create.jsx"), ["/trade-schemes/create"]);
+const EditTradeScheme = registerLazy(() => import("../pages/TradeSchemes/Edit.jsx"));
 const IndexSaleReturn = registerLazy(() => import("../pages/SaleReturn/Index.jsx"), ["/sale-returns"]);
 const CreateSaleReturn = registerLazy(() => import("../pages/SaleReturn/Create.jsx"), ["/sale-returns/create"]);
 const EditSaleReturn = registerLazy(() => import("../pages/SaleReturn/Edit.jsx"));
@@ -295,6 +298,9 @@ export default function AppRoutes() {
               </SaleSystemGuard>
             }
           />
+          <Route path="/trade-schemes" element={<TradeSchemesIndex />} />
+          <Route path="/trade-schemes/create" element={<CreateTradeScheme />} />
+          <Route path="/trade-schemes/:id/edit" element={<EditTradeScheme />} />
 
           {/* Sale Returns */}
           <Route path="/sale-returns" element={<IndexSaleReturn />} />

@@ -3,12 +3,13 @@ import { useInvoiceErrors, InvoiceErrorSummary, InvoiceRowError } from "../../co
 import { lazy, Suspense, useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import { TrashIcon, PlusIcon, CheckIcon } from "@heroicons/react/24/outline";
+import { TrashIcon, PlusIcon, CheckIcon, GiftIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
 import CustomerSearch from "../../components/CustomerSearch.jsx";
-import { recalcWholesaleItem, recalcFooter } from "../../Formula/SaleInvoice.js";
+import { recalcWholesaleItem, recalcFooter, calculateRowMargin } from "../../Formula/SaleInvoice.js";
+import { evaluateTradeScheme } from "../../Formula/TradeScheme.js";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
@@ -113,6 +114,9 @@ const normalizeFormLoaded = (f) => {
           pack_bonus: packBonus > 0 ? String(packBonus) : "",
           unit_bonus: unitBonus > 0 ? String(unitBonus) : "",
           bonus: bonusQty > 0 ? String(bonusQty) : "",
+          applied_scheme_id: it?.applied_scheme_id ?? null,
+          applied_scheme_name: it?.applied_scheme_name ?? "",
+          is_custom_bonus: Boolean(it?.is_custom_bonus || (!it?.applied_scheme_id && bonusQty > 0)),
           pack_price: packPrice > 0 ? packPrice : "",
           price: unitPrice > 0 ? unitPrice : "",
           avg_price: avgPrice > 0 ? avgPrice : "",
@@ -143,6 +147,9 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
     pack_bonus: "",
     unit_bonus: "",
     bonus: "",
+    applied_scheme_id: null,
+    applied_scheme_name: "",
+    is_custom_bonus: false,
     pack_price: "",
     price: "",
     item_discount_percentage: "",
@@ -209,6 +216,75 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
   const [focusedRowIndex, setFocusedRowIndex] = useState(0);
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
   const [originalInvoiceQuantities, setOriginalInvoiceQuantities] = useState({});
+
+  // Automated Trade Schemes state
+  const [activeSchemes, setActiveSchemes] = useState([]);
+  const [enableTradeSchemes, setEnableTradeSchemes] = useState(true);
+  const activeSchemesRef = useRef([]);
+  activeSchemesRef.current = activeSchemes;
+  const enableTradeSchemesRef = useRef(enableTradeSchemes);
+  enableTradeSchemesRef.current = enableTradeSchemes;
+  const productDataCacheRef = useRef(productDataCache);
+  productDataCacheRef.current = productDataCache;
+  const productsListRef = useRef(products);
+  productsListRef.current = products;
+
+  const fetchActiveSchemes = useCallback(async (custId, dateVal) => {
+    try {
+      const params = new URLSearchParams({
+        sale_type: "wholesale",
+        date: dateVal || new Date().toISOString().split("T")[0],
+      });
+      if (custId) params.set("customer_id", String(custId));
+      const res = await axios.get(`/api/trade-schemes/active-lookup?${params.toString()}`);
+      const schemes = Array.isArray(res.data?.schemes) ? res.data.schemes : [];
+      activeSchemesRef.current = schemes;
+      setActiveSchemes(schemes);
+
+      setForm((prev) => {
+        let changed = false;
+        const newItems = prev.items.map((row) => {
+          if (!row.product_id || row.is_custom_bonus || !enableTradeSchemesRef.current) return row;
+          const productObj =
+            productDataCacheRef.current?.[row.product_id] ||
+            productsListRef.current?.find((p) => eqId(p.id, row.product_id)) ||
+            row.product;
+          const schemeRes = evaluateTradeScheme(row, schemes, productObj, { sale_type: "wholesale" });
+          if (
+            schemeRes.matched &&
+            (Number(schemeRes.pack_bonus || 0) > 0 || Number(schemeRes.unit_bonus || 0) > 0)
+          ) {
+            changed = true;
+            return recalcWholesaleItem(
+              {
+                ...row,
+                pack_bonus: schemeRes.pack_bonus,
+                unit_bonus: schemeRes.unit_bonus,
+                bonus: schemeRes.bonus,
+                applied_scheme_id: schemeRes.scheme_id,
+                applied_scheme_name: schemeRes.scheme_name,
+              },
+              "pack_bonus"
+            );
+          }
+          return row;
+        });
+        if (!changed) return prev;
+        return recalcFooter({ ...prev, items: newItems });
+      });
+
+      return schemes;
+    } catch (e) {
+      console.warn("Failed to load active trade schemes:", e);
+      activeSchemesRef.current = [];
+      setActiveSchemes([]);
+      return [];
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchActiveSchemes(form.customer_id, form.date);
+  }, [form.customer_id, form.date, fetchActiveSchemes]);
 
   const formRef = useRef(form);
   useEffect(() => {
@@ -327,24 +403,15 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
     return unitPurchase > 0 ? unitPurchase : 0;
   };
 
-  // Helper: Compute live margin % for a row (accounts for unit/pack price, item discount %, and bonus units)
+  // Helper: Compute live margin % for a row (accounts for unit/pack price, item discount %, bonus units, and bill discount %)
   const computeRowMargin = (row) => {
     if (!row?.product_id) return null;
-    const unitPrice = Number(row.price || 0);
-    const unitCost = getRowUnitCost(row);
-    if (unitPrice <= 0 || unitCost <= 0) return null;
-    const discPct = Number(row.item_discount_percentage || 0);
-    const netUnitPrice = unitPrice * (1 - discPct / 100);
-    const qty = Number(row.quantity || 0);
-    const bonus = Number(row.bonus || 0);
-    const subTotal = Number(row.sub_total ?? qty * netUnitPrice);
-    if (qty > 0 && bonus > 0) {
-      if (subTotal <= 0) return -100;
-      const totalRowCost = (qty + bonus) * unitCost;
-      return Number((((subTotal - totalRowCost) / subTotal) * 100).toFixed(2));
-    }
-    if (netUnitPrice <= 0) return -100;
-    return Number((((netUnitPrice - unitCost) / netUnitPrice) * 100).toFixed(2));
+    const productObj =
+      productDataCache[row.product_id] ||
+      products.find((p) => String(p?.id ?? "") === String(row.product_id ?? "")) ||
+      row.product ||
+      {};
+    return calculateRowMargin(row, productObj, Number(form.discount_percentage || 0));
   };
 
   // Calculate live margin % for focused row (or first populated row) and track rows with margin < 0
@@ -372,7 +439,7 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
       }
     }
     setMarginPct("");
-  }, [form.items, focusedRowIndex, productDataCache, products]);
+  }, [form.items, form.discount_percentage, focusedRowIndex, productDataCache, products]);
 
   useEffect(() => {
     setMarginPct("");
@@ -1177,8 +1244,50 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
       if (field === "price" || field === "pack_price") {
         currentRow.is_custom_price = true;
       }
+      if (field === "pack_bonus" || field === "unit_bonus" || field === "bonus") {
+        currentRow.is_custom_bonus = true;
+        currentRow.applied_scheme_id = null;
+        currentRow.applied_scheme_name = "";
+      }
 
-      const row = recalcWholesaleItem(currentRow, field);
+      let row = recalcWholesaleItem(currentRow, field);
+
+      // Automated Trade Scheme evaluation (if enabled and user hasn't set custom bonus)
+      if (
+        enableTradeSchemesRef.current &&
+        !row.is_custom_bonus &&
+        (field === "pack_quantity" || field === "unit_quantity" || field === "quantity" || field === "pack_size")
+      ) {
+        const schemeRes = evaluateTradeScheme(row, activeSchemesRef.current, productObj, { sale_type: "wholesale" });
+        if (
+          schemeRes.matched &&
+          (Number(schemeRes.pack_bonus || 0) > 0 || Number(schemeRes.unit_bonus || 0) > 0)
+        ) {
+          row = recalcWholesaleItem(
+            {
+              ...row,
+              pack_bonus: schemeRes.pack_bonus,
+              unit_bonus: schemeRes.unit_bonus,
+              bonus: schemeRes.bonus,
+              applied_scheme_id: schemeRes.scheme_id,
+              applied_scheme_name: schemeRes.scheme_name,
+            },
+            "pack_bonus"
+          );
+        } else if (row.applied_scheme_id) {
+          row = recalcWholesaleItem(
+            {
+              ...row,
+              pack_bonus: "",
+              unit_bonus: "",
+              bonus: "",
+              applied_scheme_id: null,
+              applied_scheme_name: "",
+            },
+            "pack_bonus"
+          );
+        }
+      }
 
       items[index] = row;
       let updated = recalcFooter({ ...prev, items }, "items");
@@ -1187,6 +1296,133 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
       return updated;
     });
   }
+
+  const handleWaiveScheme = (index) => {
+    setForm((prev) => {
+      const items = [...prev.items];
+      if (!items[index]) return prev;
+      items[index] = recalcWholesaleItem(
+        {
+          ...items[index],
+          pack_bonus: "",
+          unit_bonus: "",
+          bonus: "",
+          applied_scheme_id: null,
+          applied_scheme_name: "",
+          is_custom_bonus: true, // Manual waive/override
+        },
+        "pack_bonus"
+      );
+      toast.success("Bonus waived for this item.", { duration: 2000, id: `waive-${index}` });
+      let updated = recalcFooter({ ...prev, items }, "items");
+      if (prev.invoice_type !== "credit") updated.total_receive = updated.total ?? "";
+      if (!receiveTouched && prev.invoice_type === "credit") updated.total_receive = "";
+      return updated;
+    });
+  };
+
+  const handleReapplyScheme = (index) => {
+    setForm((prev) => {
+      const items = [...prev.items];
+      const item = items[index];
+      if (!item) return prev;
+      const productObj =
+        productDataCache[item.product_id] ||
+        products.find((p) => eqId(p.id, item.product_id)) ||
+        item.product;
+      const unoverridden = { ...item, is_custom_bonus: false };
+      const schemeRes = evaluateTradeScheme(unoverridden, activeSchemesRef.current, productObj, { sale_type: "wholesale" });
+      if (
+        schemeRes.matched &&
+        (Number(schemeRes.pack_bonus || 0) > 0 || Number(schemeRes.unit_bonus || 0) > 0)
+      ) {
+        items[index] = recalcWholesaleItem(
+          {
+            ...unoverridden,
+            pack_bonus: schemeRes.pack_bonus,
+            unit_bonus: schemeRes.unit_bonus,
+            bonus: schemeRes.bonus,
+            applied_scheme_id: schemeRes.scheme_id,
+            applied_scheme_name: schemeRes.scheme_name,
+          },
+          "pack_bonus"
+        );
+        toast.success(`Scheme '${schemeRes.scheme_name}' applied!`, {
+          duration: 2500,
+          id: `reapply-${index}`,
+        });
+      } else {
+        items[index] = unoverridden;
+        toast.error("Quantity does not reach any active scheme slab threshold.", {
+          duration: 2500,
+          id: `reapply-${index}`,
+        });
+      }
+      let updated = recalcFooter({ ...prev, items }, "items");
+      if (prev.invoice_type !== "credit") updated.total_receive = updated.total ?? "";
+      if (!receiveTouched && prev.invoice_type === "credit") updated.total_receive = "";
+      return updated;
+    });
+  };
+
+  const toggleTradeSchemes = () => {
+    const nextState = !enableTradeSchemes;
+    setEnableTradeSchemes(nextState);
+    setForm((prev) => {
+      const items = prev.items.map((row) => {
+        if (!nextState) {
+          if (row.applied_scheme_id && !row.is_custom_bonus) {
+            return recalcWholesaleItem(
+              {
+                ...row,
+                pack_bonus: "",
+                unit_bonus: "",
+                bonus: "",
+                applied_scheme_id: null,
+                applied_scheme_name: "",
+              },
+              "pack_bonus"
+            );
+          }
+          return row;
+        } else {
+          if (!row.is_custom_bonus && row.product_id) {
+            const productObj =
+              productDataCache[row.product_id] ||
+              products.find((p) => eqId(p.id, row.product_id)) ||
+              row.product;
+            const res = evaluateTradeScheme(row, activeSchemesRef.current, productObj, { sale_type: "wholesale" });
+            if (res.matched && (Number(res.pack_bonus || 0) > 0 || Number(res.unit_bonus || 0) > 0)) {
+              return recalcWholesaleItem(
+                {
+                  ...row,
+                  pack_bonus: res.pack_bonus,
+                  unit_bonus: res.unit_bonus,
+                  bonus: res.bonus,
+                  applied_scheme_id: res.scheme_id,
+                  applied_scheme_name: res.scheme_name,
+                },
+                "pack_bonus"
+              );
+            }
+          }
+          return row;
+        }
+      });
+      let updated = recalcFooter({ ...prev, items }, "items");
+      if (prev.invoice_type !== "credit") updated.total_receive = updated.total ?? "";
+      if (!receiveTouched && prev.invoice_type === "credit") updated.total_receive = "";
+      return updated;
+    });
+    toast(
+      nextState
+        ? "Automated trade schemes enabled"
+        : "Automated trade schemes paused for this invoice",
+      {
+        icon: nextState ? "🎁" : "⏸️",
+      }
+    );
+  };
 
   const addRow = () => {
     setForm((prev) => {
@@ -1508,12 +1744,40 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
           pack_bonus: isSameProd ? items[rowIndex]?.pack_bonus ?? "" : "",
           unit_bonus: isSameProd ? items[rowIndex]?.unit_bonus ?? "" : "",
           bonus: isSameProd ? items[rowIndex]?.bonus ?? "" : "",
+          applied_scheme_id: isSameProd ? items[rowIndex]?.applied_scheme_id ?? null : null,
+          applied_scheme_name: isSameProd ? items[rowIndex]?.applied_scheme_name ?? "" : "",
+          is_custom_bonus: isSameProd ? Boolean(items[rowIndex]?.is_custom_bonus) : false,
           item_discount_percentage: items[rowIndex]?.item_discount_percentage ?? "",
           is_narcotic: isNarcotic,
           is_custom_price: isCustomPrice,
         },
         defaultPackQty ? "pack_quantity" : "unit_quantity"
       );
+
+      if (enableTradeSchemesRef.current && !items[rowIndex].is_custom_bonus) {
+        const schemeRes = evaluateTradeScheme(
+          items[rowIndex],
+          activeSchemesRef.current,
+          freshProductData || selected,
+          { sale_type: "wholesale" }
+        );
+        if (
+          schemeRes.matched &&
+          (Number(schemeRes.pack_bonus || 0) > 0 || Number(schemeRes.unit_bonus || 0) > 0)
+        ) {
+          items[rowIndex] = recalcWholesaleItem(
+            {
+              ...items[rowIndex],
+              pack_bonus: schemeRes.pack_bonus,
+              unit_bonus: schemeRes.unit_bonus,
+              bonus: schemeRes.bonus,
+              applied_scheme_id: schemeRes.scheme_id,
+              applied_scheme_name: schemeRes.scheme_name,
+            },
+            "pack_bonus"
+          );
+        }
+      }
 
       let next = recalcFooter({ ...prev, items }, "items");
       if (prev.invoice_type !== "credit") next.total_receive = next.total ?? "";
@@ -1906,6 +2170,8 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
           pack_bonus: packBonus,
           unit_bonus: unitBonus,
           bonus: bonusUnits,
+          applied_scheme_id: it.applied_scheme_id ? parseInt(it.applied_scheme_id, 10) : null,
+          applied_scheme_name: it.applied_scheme_name ? String(it.applied_scheme_name).trim() : null,
           pack_price: packPrice,
           price: unitPrice,
           item_discount_percentage:
@@ -2268,6 +2534,26 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {/* Trade Schemes Auto Toggle */}
+              <button
+                type="button"
+                onClick={toggleTradeSchemes}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border shadow-xs ${
+                  enableTradeSchemes
+                    ? "bg-amber-400/25 border-amber-300/60 text-amber-100 hover:bg-amber-400/35"
+                    : "bg-white/10 border-white/20 text-white/60 hover:text-white/90"
+                }`}
+                title="Toggle automated trade schemes & bonus slabs calculation for this invoice"
+              >
+                <GiftIcon className={`w-3.5 h-3.5 ${enableTradeSchemes ? "text-amber-300" : "text-white/60"}`} />
+                <span>Schemes:</span>
+                <span className={`px-1 rounded text-[10px] uppercase font-bold ${
+                  enableTradeSchemes ? "bg-amber-400 text-slate-900" : "bg-white/20 text-white"
+                }`}>
+                  {enableTradeSchemes ? "ON" : "OFF"}
+                </span>
+              </button>
+
               {!saleId && (
                 <InvoiceDraftIndicator
                   saveStatus={draftHook.saveStatus}
@@ -2767,6 +3053,42 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
                                 }}
                               />
                             </div>
+                            {/* Trade Scheme Indicator & Waiver */}
+                            {it.applied_scheme_name ? (
+                              <div className="flex items-center gap-1.5 mt-1">
+                                <span
+                                  className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30"
+                                  title={`Automated Scheme: ${it.applied_scheme_name}. Click ✕ to waive bonus for this item.`}
+                                >
+                                  <GiftIcon className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                  <span className="truncate max-w-[160px] font-semibold">{it.applied_scheme_name}</span>
+                                  <button
+                                    type="button"
+                                    tabIndex={-1}
+                                    onClick={() => handleWaiveScheme(i)}
+                                    className="ml-0.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 focus:outline-none p-0.5 rounded"
+                                    title="Waive / remove bonus for this item"
+                                  >
+                                    <XMarkIcon className="w-3 h-3" />
+                                  </button>
+                                </span>
+                              </div>
+                            ) : it.is_custom_bonus && it.product_id ? (
+                              <div className="flex items-center gap-1.5 mt-1">
+                                <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20">
+                                  <span>Custom Bonus</span>
+                                  <button
+                                    type="button"
+                                    tabIndex={-1}
+                                    onClick={() => handleReapplyScheme(i)}
+                                    className="ml-1 text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+                                    title="Check and restore automated trade scheme calculation"
+                                  >
+                                    ↺ Restore
+                                  </button>
+                                </span>
+                              </div>
+                            ) : null}
                           </td>
 
                           {/* Pack Size */}
@@ -2944,6 +3266,13 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
                               name="pack_bonus"
                               inputMode="decimal"
                               placeholder="0"
+                              title={
+                                it.applied_scheme_name
+                                  ? `Scheme: ${it.applied_scheme_name} (overridable)`
+                                  : it.is_custom_bonus
+                                  ? "Custom bonus manually entered"
+                                  : "Pack bonus"
+                              }
                               value={zeroToEmpty(it.pack_bonus)}
                               onChange={(e) => handleItemChange(i, "pack_bonus", e.target.value)}
                               autoComplete="off"
@@ -2969,6 +3298,13 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
                               name="unit_bonus"
                               inputMode="numeric"
                               placeholder="0"
+                              title={
+                                it.applied_scheme_name
+                                  ? `Scheme: ${it.applied_scheme_name} (overridable)`
+                                  : it.is_custom_bonus
+                                  ? "Custom bonus manually entered"
+                                  : "Unit bonus"
+                              }
                               value={zeroToEmpty(it.unit_bonus)}
                               onChange={(e) => handleItemChange(i, "unit_bonus", e.target.value)}
                               autoComplete="off"
@@ -3172,15 +3508,25 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
                       <div className="flex items-center gap-2">
                         <span
                           className="text-xs font-extrabold uppercase tracking-wide"
-                          style={{ color: "#dc2626" }}
+                          style={{
+                            color:
+                              marginPct !== "" && Number(marginPct) < 0
+                                ? "#dc2626"
+                                : isDark
+                                ? "#34d399"
+                                : "#059669",
+                          }}
                         >
                           Row Margin %:
                         </span>
                         <span
-                          className="px-2.5 py-0.5 rounded-md text-base sm:text-lg font-black font-mono border-2 border-red-500 bg-red-50 dark:bg-red-950/60 shadow-2xs"
-                          style={{ color: isDark ? "#f87171" : "#dc2626" }}
+                          className={`px-2.5 py-0.5 rounded-md text-base sm:text-lg font-black font-mono border-2 shadow-2xs ${
+                            marginPct !== "" && Number(marginPct) < 0
+                              ? "border-red-500 bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400"
+                              : "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300"
+                          }`}
                         >
-                          {marginPct ? `${marginPct}%` : "—"}
+                          {marginPct !== "" ? `${marginPct}%` : "—"}
                         </span>
                       </div>
                     </div>
