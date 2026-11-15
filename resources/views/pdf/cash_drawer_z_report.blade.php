@@ -69,7 +69,41 @@
     if ($session->relationLoaded('transactions') && $session->transactions) {
       $drawerSvc->enrichTransactions($session->transactions);
     }
+    $shiftSales = $summary['shift_sales'] ?? [];
+    $denominations = is_array($session->closing_denominations ?? null)
+      ? $session->closing_denominations
+      : (is_array($summary['closing_denominations'] ?? null) ? $summary['closing_denominations'] : []);
   @endphp
+
+  @if(!empty($shiftSales))
+  <h3 style="font-size:12px; margin: 10px 0 6px 0;">Shift Sales &amp; Tender Summary</h3>
+  <table class="summary-table" style="margin-bottom: 14px;">
+    <tr>
+      <th>Total Invoices Issued</th>
+      <td class="text-right">
+        <strong>{{ (int)($shiftSales['total_invoices_count'] ?? 0) }}</strong>
+        (Retail: {{ (int)($shiftSales['retail_invoices_count'] ?? 0) }} / Wholesale: {{ (int)($shiftSales['wholesale_invoices_count'] ?? 0) }})
+      </td>
+      <th>Gross Sales / Discounts</th>
+      <td class="text-right">
+        Rs. {{ number_format((float)($shiftSales['gross_sales'] ?? 0), 2) }}
+        @if((float)($shiftSales['discount_total'] ?? 0) > 0)
+          (Disc: -Rs. {{ number_format((float)($shiftSales['discount_total'] ?? 0), 2) }})
+        @endif
+      </td>
+    </tr>
+    <tr>
+      <th>Net Shift Sales</th>
+      <td class="text-right"><strong>Rs. {{ number_format((float)($shiftSales['net_sales'] ?? 0), 2) }}</strong></td>
+      <th>Cash vs Non-Cash / Credit</th>
+      <td class="text-right">
+        Cash: Rs. {{ number_format((float)($shiftSales['cash_tender_sales'] ?? 0), 2) }} |
+        Bank/Card: Rs. {{ number_format((float)($shiftSales['card_bank_online_sales'] ?? 0), 2) }} |
+        Udhar: Rs. {{ number_format((float)($shiftSales['credit_udhar_sales'] ?? 0), 2) }}
+      </td>
+    </tr>
+  </table>
+  @endif
 
   <h3 style="font-size:12px; margin: 10px 0 6px 0;">Cash Flow Formula &amp; Category Breakdown</h3>
   <table class="summary-table" style="margin-bottom: 14px;">

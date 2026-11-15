@@ -18,11 +18,22 @@ import {
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { usePermissions } from "@/api/usePermissions.js";
-import { printHtmlViaIframe } from "@/utils/printHelper.js";
+import { printHtmlViaIframe, printSlipUrl } from "@/utils/printHelper.js";
 
 const TRANSACTION_TYPE_OPTIONS = [
   { value: "cash_in", label: "Cash In (Add Money / Float)" },
   { value: "cash_out", label: "Cash Out (Petty Cash / Expense / Withdrawal)" },
+];
+
+const PKR_DENOMINATIONS = [
+  { key: "5000", label: "Rs. 5,000", multiplier: 5000 },
+  { key: "1000", label: "Rs. 1,000", multiplier: 1000 },
+  { key: "500", label: "Rs. 500", multiplier: 500 },
+  { key: "100", label: "Rs. 100", multiplier: 100 },
+  { key: "50", label: "Rs. 50", multiplier: 50 },
+  { key: "20", label: "Rs. 20", multiplier: 20 },
+  { key: "10", label: "Rs. 10", multiplier: 10 },
+  { key: "coins", label: "Coins (Rs. 1/2/5)", multiplier: 1 },
 ];
 
 const CASH_IN_TYPES = ["cash_sale", "customer_payment", "purchase_return", "cash_in"];
@@ -68,7 +79,11 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
 
   // Close shift form
   const [actualClosingBalance, setActualClosingBalance] = useState("");
+  const [closingDenominations, setClosingDenominations] = useState({});
+  const [showDenomCalc, setShowDenomCalc] = useState(false);
+  const [autoPrintZReport, setAutoPrintZReport] = useState(true);
   const [closingNotes, setClosingNotes] = useState("");
+  const [printingThermalId, setPrintingThermalId] = useState(null);
 
   // History state
   const [historyList, setHistoryList] = useState([]);
@@ -182,6 +197,22 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
       setLoadingReport(false);
     }
   }, [sessionData]);
+
+  const handlePrintThermalSlip = useCallback(async (targetSessionId) => {
+    const idToPrint = targetSessionId || reportSessionId || sessionData?.session?.id || sessionData?.last_closed_session?.id;
+    if (!idToPrint) return;
+    setPrintingThermalId(idToPrint);
+    setErrorMsg("");
+    try {
+      const { data } = await axios.get(`/api/cash-drawer/session/${idToPrint}/thermal-slip`);
+      await printSlipUrl(data.url, data.html);
+      setSuccessMsg(`${data.report_type || "Z-REPORT"} thermal slip sent to printer.`);
+    } catch (err) {
+      setErrorMsg(err.response?.data?.message || "Failed to print thermal shift slip.");
+    } finally {
+      setPrintingThermalId(null);
+    }
+  }, [reportSessionId, sessionData]);
 
   const handlePrintDetailedReport = async () => {
     if (!detailedReport?.session || !detailedReport?.summary) return;
@@ -428,12 +459,16 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
     try {
       const res = await axios.post("/api/cash-drawer/close", {
         closing_balance_actual: Number(actualClosingBalance),
+        closing_denominations: closingDenominations,
         notes: closingNotes.trim(),
       });
+      const closedSessionId = res.data?.session?.id;
       const diff = Number(res.data?.session?.difference || 0);
       const diffLabel = diff === 0 ? "Perfect balance" : diff > 0 ? `Over by ${formatCurrency(diff)}` : `Short by ${formatCurrency(Math.abs(diff))}`;
       setSuccessMsg(`Register shift closed successfully (${diffLabel}).`);
       setClosingNotes("");
+      setClosingDenominations({});
+      setShowDenomCalc(false);
       await fetchCurrentDrawer();
       setActiveTab("overview");
       window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
@@ -441,6 +476,9 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
       try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
       try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
       if (onSessionUpdated) onSessionUpdated(null);
+      if (autoPrintZReport && closedSessionId) {
+        handlePrintThermalSlip(closedSessionId);
+      }
     } catch (err) {
       setErrorMsg(err.response?.data?.message || err.response?.data?.errors?.session?.[0] || "Failed to close drawer.");
     } finally {
@@ -610,13 +648,27 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                       Counted: <strong>{formatCurrency(sessionData.last_closed_session.closing_balance_actual ?? 0)}</strong>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setOpeningBalance(String(sessionData.last_closed_session.closing_balance_actual ?? 0))}
-                    className="px-2.5 py-1.5 rounded-lg font-bold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
-                  >
-                    Use {formatCurrency(sessionData.last_closed_session.closing_balance_actual ?? 0)}
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={printingThermalId === sessionData.last_closed_session.id}
+                      onClick={() => handlePrintThermalSlip(sessionData.last_closed_session.id)}
+                      className={`px-2.5 py-1.5 rounded-lg font-bold border transition-colors flex items-center gap-1 ${
+                        isDark ? "border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700" : "border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50"
+                      }`}
+                      title="Print Last Shift 80mm/58mm Thermal Z-Report Slip"
+                    >
+                      <PrinterIcon className="w-3.5 h-3.5" />
+                      <span>{printingThermalId === sessionData.last_closed_session.id ? "Printing…" : "Z-Slip"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOpeningBalance(String(sessionData.last_closed_session.closing_balance_actual ?? 0))}
+                      className="px-2.5 py-1.5 rounded-lg font-bold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
+                    >
+                      Use {formatCurrency(sessionData.last_closed_session.closing_balance_actual ?? 0)}
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -945,15 +997,26 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                 })()}
               </div>
 
-              {/* View Full Detailed Report Button */}
-              <div className="pt-1">
+              {/* View Full Detailed Report & Thermal X-Report Buttons */}
+              <div className="pt-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={printingThermalId === session?.id}
+                  onClick={() => handlePrintThermalSlip(session?.id)}
+                  className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                    isDark ? "border-emerald-700/60 bg-emerald-950/20 hover:bg-emerald-900/40 text-emerald-400" : "border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100 text-emerald-700"
+                  }`}
+                >
+                  <PrinterIcon className="w-4 h-4" />
+                  <span>{printingThermalId === session?.id ? "Printing Thermal Slip…" : "Print X-Report Slip (Thermal)"}</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
                     setReportSessionId(session?.id);
                     setActiveTab("report");
                   }}
-                  className={`w-full py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                  className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                     isDark ? "border-slate-700 hover:bg-slate-800 text-blue-400" : "border-blue-200 hover:bg-blue-50 text-blue-700"
                   }`}
                 >
@@ -1056,9 +1119,19 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider mb-1">
-                  Actual Cash Counted in Hand
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold uppercase tracking-wider">
+                    Actual Cash Counted in Hand
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowDenomCalc((v) => !v)}
+                    className="text-[11px] font-bold text-blue-500 hover:underline flex items-center gap-1"
+                  >
+                    <BanknotesIcon className="w-3.5 h-3.5" />
+                    {showDenomCalc ? "Hide Note Counter" : "Use PKR Note Counter"}
+                  </button>
+                </div>
                 <input
                   type="number"
                   step="any"
@@ -1074,6 +1147,62 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                   } focus:outline-hidden`}
                 />
               </div>
+
+              {showDenomCalc && (
+                <div className={`p-3 rounded-xl border space-y-2 ${isDark ? "bg-slate-800/60 border-slate-700" : "bg-slate-50 border-gray-200"}`}>
+                  <div className="flex items-center justify-between text-[11px] font-bold">
+                    <span className={isDark ? "text-slate-300" : "text-gray-700"}>PKR Denomination Breakdown (Prints on Z-Report)</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setClosingDenominations({});
+                        setActualClosingBalance("0");
+                      }}
+                      className="text-rose-500 hover:underline"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {PKR_DENOMINATIONS.map((d) => {
+                      const qty = Math.max(parseFloat(closingDenominations[d.key]) || 0, 0);
+                      const sub = qty * d.multiplier;
+                      return (
+                        <div key={d.key} className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-xs ${isDark ? "bg-slate-900/60 border-slate-700" : "bg-white border-gray-200"}`}>
+                          <span className="font-semibold">{d.label}</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] opacity-60">×</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              placeholder="0"
+                              value={closingDenominations[d.key] || ""}
+                              onChange={(e) => {
+                                const next = { ...closingDenominations, [d.key]: e.target.value };
+                                setClosingDenominations(next);
+                                const nextTotal = PKR_DENOMINATIONS.reduce((sum, item) => {
+                                  const q = Math.max(parseFloat(next[item.key]) || 0, 0);
+                                  return sum + q * item.multiplier;
+                                }, 0);
+                                setActualClosingBalance(String(nextTotal));
+                              }}
+                              className={`w-14 px-1.5 py-0.5 text-right text-xs rounded border ${
+                                isDark ? "bg-slate-800 border-slate-600 text-white" : "bg-gray-50 border-gray-300 text-gray-900"
+                              }`}
+                            />
+                          </div>
+                          {sub > 0 && (
+                            <span className="text-[10px] font-mono font-bold text-emerald-500">
+                              {sub.toLocaleString()}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Over / Short indicator */}
               <div
@@ -1112,6 +1241,19 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                 />
               </div>
 
+              <label className={`flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer text-xs font-semibold ${
+                isDark ? "bg-slate-800/50 border-slate-700 text-slate-200" : "bg-blue-50/50 border-blue-100 text-gray-800"
+              }`}>
+                <input
+                  type="checkbox"
+                  checked={autoPrintZReport}
+                  onChange={(e) => setAutoPrintZReport(e.target.checked)}
+                  className="w-4 h-4 rounded text-blue-600"
+                />
+                <PrinterIcon className="w-4 h-4 text-blue-500 shrink-0" />
+                <span>Auto-print 80mm/58mm Thermal Z-Report Slip on Close</span>
+              </label>
+
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
@@ -1127,7 +1269,7 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                   disabled={submitting}
                   className="flex-1 py-2.5 rounded-xl font-bold text-xs text-white bg-rose-600 hover:bg-rose-700 shadow-sm transition-all"
                 >
-                  {submitting ? "Closing Shift…" : "Confirm & Close Shift"}
+                  {submitting ? "Closing Shift…" : autoPrintZReport ? "Close & Print Z-Report" : "Confirm & Close Shift"}
                 </button>
               </div>
             </form>
@@ -1209,11 +1351,27 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                           </button>
                           <button
                             type="button"
+                            disabled={printingThermalId === repSession.id}
+                            onClick={() => handlePrintThermalSlip(repSession.id)}
+                            className="px-3 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 shadow-sm flex items-center gap-1.5 transition-all"
+                            title="Print 80mm/58mm POS Thermal Z-Report / X-Report Slip"
+                          >
+                            <PrinterIcon className="w-4 h-4" />
+                            <span>
+                              {printingThermalId === repSession.id
+                                ? "Printing…"
+                                : isClosed
+                                ? "Thermal Z-Report Slip"
+                                : "Thermal X-Report Slip"}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
                             onClick={handlePrintDetailedReport}
                             className="px-3 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm flex items-center gap-1.5 transition-all"
                           >
                             <PrinterIcon className="w-4 h-4" />
-                            <span>Print Shift Report</span>
+                            <span>Print A4 Report</span>
                           </button>
                         </div>
                       </div>
@@ -1510,7 +1668,19 @@ export default function CashDrawerModal({ isOpen, onClose, onSessionUpdated }) {
                           )}
                         </div>
 
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={printingThermalId === h.id}
+                            onClick={() => handlePrintThermalSlip(h.id)}
+                            className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors flex items-center gap-1 shrink-0 ${
+                              isDark ? "border-emerald-800/60 bg-emerald-950/30 hover:bg-emerald-900/40 text-emerald-400" : "border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700"
+                            }`}
+                            title="Print 80mm/58mm POS Thermal Z-Report Slip"
+                          >
+                            <PrinterIcon className="w-3.5 h-3.5" />
+                            <span>{printingThermalId === h.id ? "…" : h.status === "closed" ? "Z-Slip" : "X-Slip"}</span>
+                          </button>
                           <button
                             type="button"
                             onClick={() => {

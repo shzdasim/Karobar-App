@@ -266,9 +266,13 @@ class CashDrawerService
     /**
      * Close a drawer session with cash count reconciliation.
      */
-    public function closeSession(CashDrawerSession $session, float $actualCount, ?string $notes = null): CashDrawerSession
-    {
-        return DB::transaction(function () use ($session, $actualCount, $notes) {
+    public function closeSession(
+        CashDrawerSession $session,
+        float $actualCount,
+        ?string $notes = null,
+        ?array $denominations = null
+    ): CashDrawerSession {
+        return DB::transaction(function () use ($session, $actualCount, $notes, $denominations) {
             $lockedSession = CashDrawerSession::lockForUpdate()->findOrFail($session->id);
 
             if ($lockedSession->status !== 'open') {
@@ -291,14 +295,34 @@ class CashDrawerService
 
             $combinedNotes = trim(($lockedSession->notes ? $lockedSession->notes . "\n" : '') . ($notes ?? ''));
 
-            $lockedSession->update([
+            $cleanDenominations = null;
+            if (is_array($denominations) && !empty($denominations)) {
+                $allowedKeys = ['5000', '1000', '500', '100', '50', '20', '10', 'coins'];
+                $filtered = [];
+                foreach ($allowedKeys as $k) {
+                    if (isset($denominations[$k]) && (float) $denominations[$k] > 0) {
+                        $filtered[$k] = round((float) $denominations[$k], 2);
+                    }
+                }
+                if (!empty($filtered)) {
+                    $cleanDenominations = $filtered;
+                }
+            }
+
+            $updatePayload = [
                 'status'                   => 'closed',
                 'closed_at'                => Carbon::now(),
                 'closing_balance_expected' => $expected,
                 'closing_balance_actual'   => $actual,
                 'difference'               => $difference,
                 'notes'                    => $combinedNotes ?: null,
-            ]);
+            ];
+
+            if (SchemaCache::hasColumn('cash_drawer_sessions', 'closing_denominations')) {
+                $updatePayload['closing_denominations'] = $cleanDenominations;
+            }
+
+            $lockedSession->update($updatePayload);
 
             if (Schema::hasTable('accounts')) {
                 $accountService = app(AccountService::class);
@@ -341,61 +365,264 @@ class CashDrawerService
         $transactions = $session->relationLoaded('transactions')
             ? $session->transactions
             : CashDrawerTransaction::where('session_id', $session->id)
-                ->select(['id', 'session_id', 'type', 'reference_type', 'amount'])
+                ->select(['id', 'session_id', 'type', 'reference_type', 'reference_id', 'amount'])
                 ->get();
 
-        $cashSales = (float) $transactions->where('type', 'cash_sale')->sum('amount');
-        $cashReturns = (float) $transactions->where('type', 'cash_return')->sum('amount');
-        $cashPurchases = (float) $transactions->where('type', 'cash_purchase')->sum('amount');
-        $purchaseReturns = (float) $transactions->where('type', 'purchase_return')->sum('amount');
-        $customerPayments = (float) $transactions->where('type', 'customer_payment')->sum('amount');
-        $supplierPayments = (float) $transactions->where('type', 'supplier_payment')->sum('amount');
-        $cashIn = (float) $transactions->where('type', 'cash_in')->sum('amount');
-        $expenses = (float) $transactions->filter(function ($t) {
+        $cashSalesTxns = $transactions->where('type', 'cash_sale');
+        $cashReturnsTxns = $transactions->where('type', 'cash_return');
+        $cashPurchasesTxns = $transactions->where('type', 'cash_purchase');
+        $purchaseReturnsTxns = $transactions->where('type', 'purchase_return');
+        $customerPaymentsTxns = $transactions->where('type', 'customer_payment');
+        $supplierPaymentsTxns = $transactions->where('type', 'supplier_payment');
+        $cashInTxns = $transactions->where('type', 'cash_in');
+        $expenseTxns = $transactions->filter(function ($t) {
             return $t->type === 'expense' || ($t->type === 'cash_out' && ($t->reference_type === \App\Models\Expense::class || $t->reference_type === 'expense'));
-        })->sum('amount');
-        $staffAdvances = (float) $transactions->filter(function ($t) {
+        });
+        $staffAdvanceTxns = $transactions->filter(function ($t) {
             return $t->type === 'cash_out' && ($t->reference_type === \App\Models\EmployeeAdvance::class || $t->reference_type === 'employee_advance');
-        })->sum('amount');
-        $cashOut = (float) $transactions->filter(function ($t) {
+        });
+        $cashOutTxns = $transactions->filter(function ($t) {
             return $t->type === 'cash_out'
                 && $t->reference_type !== \App\Models\Expense::class
                 && $t->reference_type !== 'expense'
                 && $t->reference_type !== \App\Models\EmployeeAdvance::class
                 && $t->reference_type !== 'employee_advance';
-        })->sum('amount');
+        });
+
+        $cashSales = (float) $cashSalesTxns->sum('amount');
+        $cashReturns = (float) $cashReturnsTxns->sum('amount');
+        $cashPurchases = (float) $cashPurchasesTxns->sum('amount');
+        $purchaseReturns = (float) $purchaseReturnsTxns->sum('amount');
+        $customerPayments = (float) $customerPaymentsTxns->sum('amount');
+        $supplierPayments = (float) $supplierPaymentsTxns->sum('amount');
+        $cashIn = (float) $cashInTxns->sum('amount');
+        $expenses = (float) $expenseTxns->sum('amount');
+        $staffAdvances = (float) $staffAdvanceTxns->sum('amount');
+        $cashOut = (float) $cashOutTxns->sum('amount');
 
         $totalCashIn = $cashSales + $customerPayments + $purchaseReturns + $cashIn;
         $totalCashOut = $cashPurchases + $cashReturns + $supplierPayments + $expenses + $staffAdvances + $cashOut;
         $expected = round((float) $session->opening_balance + $totalCashIn - $totalCashOut, 2);
 
+        $shiftSales = $this->getShiftSalesAndTenderMetrics($session, $transactions);
+
         return [
-            'session_id'        => $session->id,
-            'status'            => $session->status,
-            'opened_at'         => $session->opened_at,
-            'closed_at'         => $session->closed_at,
-            'duration'          => $session->closed_at 
+            'session_id'            => $session->id,
+            'status'                => $session->status,
+            'report_type'           => $session->status === 'closed' ? 'Z-REPORT' : 'X-REPORT',
+            'opened_at'             => $session->opened_at,
+            'closed_at'             => $session->closed_at,
+            'duration'              => $session->closed_at 
                 ? Carbon::parse($session->opened_at)->diffForHumans(Carbon::parse($session->closed_at), true)
                 : Carbon::parse($session->opened_at)->diffForHumans(now(), true),
-            'user'              => $session->user ? ['id' => $session->user->id, 'name' => $session->user->name] : null,
-            'opening_balance'   => (float) $session->opening_balance,
-            'cash_sales'        => $cashSales,
-            'cash_returns'      => $cashReturns,
-            'cash_purchases'    => $cashPurchases,
-            'purchase_returns'  => $purchaseReturns,
-            'customer_payments' => $customerPayments,
-            'supplier_payments' => $supplierPayments,
-            'expenses'          => $expenses,
-            'staff_advances'    => $staffAdvances,
-            'manual_cash_in'    => $cashIn,
-            'manual_cash_out'   => $cashOut,
-            'total_cash_in'     => $totalCashIn,
-            'total_cash_out'    => $totalCashOut,
-            'expected_balance'  => $expected,
-            'actual_balance'    => $session->closing_balance_actual,
-            'difference'        => $session->difference,
-            'notes'             => $session->notes,
-            'transactions_count'=> $transactions->count(),
+            'user'                  => $session->user ? ['id' => $session->user->id, 'name' => $session->user->name] : null,
+            'opening_balance'       => (float) $session->opening_balance,
+            'cash_sales'            => $cashSales,
+            'cash_returns'          => $cashReturns,
+            'cash_purchases'        => $cashPurchases,
+            'purchase_returns'      => $purchaseReturns,
+            'customer_payments'     => $customerPayments,
+            'supplier_payments'     => $supplierPayments,
+            'expenses'              => $expenses,
+            'staff_advances'        => $staffAdvances,
+            'manual_cash_in'        => $cashIn,
+            'manual_cash_out'       => $cashOut,
+            'total_cash_in'         => $totalCashIn,
+            'total_cash_out'        => $totalCashOut,
+            'expected_balance'      => $expected,
+            'actual_balance'        => $session->closing_balance_actual,
+            'difference'            => $session->difference,
+            'closing_denominations' => $session->closing_denominations ?? null,
+            'notes'                 => $session->notes,
+            'transactions_count'    => $transactions->count(),
+            'counts'                => [
+                'cash_sales'        => $cashSalesTxns->count(),
+                'customer_payments' => $customerPaymentsTxns->count(),
+                'purchase_returns'  => $purchaseReturnsTxns->count(),
+                'manual_cash_in'    => $cashInTxns->count(),
+                'cash_purchases'    => $cashPurchasesTxns->count(),
+                'cash_returns'      => $cashReturnsTxns->count(),
+                'supplier_payments' => $supplierPaymentsTxns->count(),
+                'expenses'          => $expenseTxns->count(),
+                'staff_advances'    => $staffAdvanceTxns->count(),
+                'manual_cash_out'   => $cashOutTxns->count(),
+            ],
+            'shift_sales'           => $shiftSales,
+        ];
+    }
+
+    /**
+     * Compute shift-wide sales, non-cash tenders (Card/Bank/Online/Credit Udhar), and sale returns
+     * during the shift window (opened_at -> closed_at ?? now()).
+     */
+    public function getShiftSalesAndTenderMetrics(CashDrawerSession $session, $transactions = null): array
+    {
+        $start = $session->opened_at ? Carbon::parse($session->opened_at) : now()->startOfDay();
+        $end = $session->closed_at ? Carbon::parse($session->closed_at) : now();
+
+        if (!$transactions) {
+            $transactions = $session->relationLoaded('transactions')
+                ? $session->transactions
+                : CashDrawerTransaction::where('session_id', $session->id)
+                    ->select(['id', 'session_id', 'type', 'reference_type', 'reference_id', 'amount'])
+                    ->get();
+        }
+
+        $linkedSaleIds = $transactions
+            ->filter(fn ($t) => $t->type === 'cash_sale' && ($t->reference_type === 'sale_invoice' || $t->reference_type === \App\Models\SaleInvoice::class) && (int) $t->reference_id > 0)
+            ->pluck('reference_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $linkedReturnIds = $transactions
+            ->filter(fn ($t) => $t->type === 'cash_return' && ($t->reference_type === 'sale_return' || $t->reference_type === \App\Models\SaleReturn::class) && (int) $t->reference_id > 0)
+            ->pluck('reference_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $totalInvoicesCount = 0;
+        $retailCount = 0;
+        $wholesaleCount = 0;
+        $grossSales = 0.0;
+        $discountTotal = 0.0;
+        $taxTotal = 0.0;
+        $netSales = 0.0;
+        $cashTenderSales = 0.0;
+        $cardBankOnlineSales = 0.0;
+        $creditUdharSales = 0.0;
+
+        if (SchemaCache::hasTable('sale_invoices')) {
+            $cashAccountIds = [];
+            if (SchemaCache::hasTable('accounts')) {
+                $cashAccountIds = DB::table('accounts')
+                    ->where('type', 'cash')
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+            }
+
+            $invoices = \App\Models\SaleInvoice::query()
+                ->where(function ($q) use ($start, $end, $linkedSaleIds) {
+                    $q->whereBetween('created_at', [$start, $end]);
+                    if (!empty($linkedSaleIds)) {
+                        $q->orWhereIn('id', $linkedSaleIds);
+                    }
+                })
+                ->where(function ($q) {
+                    $q->whereNull('status')
+                        ->orWhereNotIn('status', ['reversed', 'cancelled']);
+                })
+                ->get([
+                    'id',
+                    'sale_type',
+                    'invoice_type',
+                    'payment_method',
+                    'account_id',
+                    'gross_amount',
+                    'discount_amount',
+                    'item_discount',
+                    'tax_amount',
+                    'total',
+                    'total_receive',
+                ]);
+
+            foreach ($invoices as $inv) {
+                $totalInvoicesCount++;
+                $saleType = strtolower((string) ($inv->sale_type ?? 'retail'));
+                if ($saleType === 'wholesale') {
+                    $wholesaleCount++;
+                } else {
+                    $retailCount++;
+                }
+
+                $invTotal = round((float) ($inv->total ?? 0), 2);
+                $invDisc = round((float) ($inv->discount_amount ?? 0) + (float) ($inv->item_discount ?? 0), 2);
+                $invTax = round((float) ($inv->tax_amount ?? 0), 2);
+                $invGross = (float) ($inv->gross_amount ?? 0);
+                if ($invGross <= 0) {
+                    $invGross = max(0.0, round($invTotal + (float) ($inv->discount_amount ?? 0) - $invTax, 2));
+                }
+
+                $grossSales += $invGross;
+                $discountTotal += $invDisc;
+                $taxTotal += $invTax;
+                $netSales += $invTotal;
+
+                $invType = strtolower((string) ($inv->invoice_type ?? 'debit'));
+                $payMethod = strtolower((string) ($inv->payment_method ?? 'cash'));
+                $accId = (int) ($inv->account_id ?? 0);
+                $received = round((float) ($inv->total_receive ?? 0), 2);
+
+                if ($invType !== 'credit' && $received <= 0) {
+                    $received = $invTotal;
+                }
+                $effectivePaid = min($invTotal, max(0.0, $received));
+                $unpaidCredit = $invType === 'credit' ? max(0.0, round($invTotal - $effectivePaid, 2)) : 0.0;
+
+                $isCashMethod = in_array($payMethod, ['cash', ''], true)
+                    && ($accId <= 0 || in_array($accId, $cashAccountIds, true));
+
+                if ($isCashMethod) {
+                    $cashTenderSales += $effectivePaid;
+                } else {
+                    $cardBankOnlineSales += $effectivePaid;
+                }
+
+                $creditUdharSales += $unpaidCredit;
+            }
+        }
+
+        $saleReturnsCount = 0;
+        $saleReturnsTotal = 0.0;
+        $cashRefundReturns = 0.0;
+        $creditAdjReturns = 0.0;
+
+        if (SchemaCache::hasTable('sale_returns')) {
+            $returns = \App\Models\SaleReturn::query()
+                ->where(function ($q) use ($start, $end, $linkedReturnIds) {
+                    $q->whereBetween('created_at', [$start, $end]);
+                    if (!empty($linkedReturnIds)) {
+                        $q->orWhereIn('id', $linkedReturnIds);
+                    }
+                })
+                ->get(['id', 'total', 'settlement_mode', 'payment_method', 'credited_amount']);
+
+            foreach ($returns as $ret) {
+                $saleReturnsCount++;
+                $retTotal = round((float) ($ret->total ?? 0), 2);
+                $saleReturnsTotal += $retTotal;
+
+                $mode = strtolower((string) ($ret->settlement_mode ?? ''));
+                $pm = strtolower((string) ($ret->payment_method ?? 'cash'));
+                if ($mode === 'credit_ledger' || $mode === 'ledger') {
+                    $creditAdjReturns += $retTotal;
+                } elseif (in_array($ret->id, $linkedReturnIds, true) || ($mode === 'refund' && $pm === 'cash') || $mode === '') {
+                    $cashRefundReturns += $retTotal;
+                } else {
+                    $creditAdjReturns += $retTotal;
+                }
+            }
+        }
+
+        return [
+            'total_invoices_count'     => $totalInvoicesCount,
+            'retail_invoices_count'    => $retailCount,
+            'wholesale_invoices_count' => $wholesaleCount,
+            'gross_sales'              => round($grossSales, 2),
+            'discount_total'           => round($discountTotal, 2),
+            'tax_total'                => round($taxTotal, 2),
+            'net_sales'                => round($netSales, 2),
+            'cash_tender_sales'        => round($cashTenderSales, 2),
+            'card_bank_online_sales'   => round($cardBankOnlineSales, 2),
+            'credit_udhar_sales'       => round($creditUdharSales, 2),
+            'sale_returns_count'       => $saleReturnsCount,
+            'sale_returns_total'       => round($saleReturnsTotal, 2),
+            'cash_refund_returns'      => round($cashRefundReturns, 2),
+            'credit_adj_returns'       => round($creditAdjReturns, 2),
         ];
     }
 

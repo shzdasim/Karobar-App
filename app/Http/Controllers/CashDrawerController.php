@@ -183,6 +183,7 @@ class CashDrawerController extends Controller
         $data = $request->validate([
             'session_id'             => 'nullable|integer|exists:cash_drawer_sessions,id',
             'closing_balance_actual' => 'required|numeric|min:0',
+            'closing_denominations'  => 'nullable|array',
             'notes'                  => 'nullable|string|max:500',
         ]);
 
@@ -204,7 +205,8 @@ class CashDrawerController extends Controller
         $closed = $this->cashDrawerService->closeSession(
             $session,
             (float) $data['closing_balance_actual'],
-            $data['notes'] ?? null
+            $data['notes'] ?? null,
+            $data['closing_denominations'] ?? null
         );
 
         return response()->json([
@@ -257,6 +259,79 @@ class CashDrawerController extends Controller
             'session'      => $session,
             'summary'      => $this->cashDrawerService->getSessionSummary($session),
             'transactions' => $session->transactions,
+        ]);
+    }
+
+    /**
+     * Return a signed URL and rendered HTML for printing an 80mm / 58mm Thermal Z-Report (or mid-shift X-Report) slip.
+     */
+    public function thermalSlipUrl(Request $request, $id)
+    {
+        $this->authorizeDrawerAction([
+            'cash-drawer.view',
+            'cash-drawer.open',
+            'cash-drawer.close',
+            'cash-drawer.transaction',
+            'sale-invoice.create',
+            'barcode-pos.view',
+            'barcode-pos.create',
+        ]);
+
+        $session = CashDrawerSession::with([
+            'user',
+            'transactions' => fn($q) => $q->reorder('created_at', 'asc')->orderBy('id', 'asc')->with('user'),
+        ])->findOrFail($id);
+
+        $url = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'cash-drawer.print-thermal',
+            now()->addMinutes(5),
+            [
+                'session'      => $session->id,
+                'silent_print' => 1,
+            ]
+        );
+
+        $html = null;
+        try {
+            $html = $this->printThermal($request, $session)->render();
+        } catch (\Throwable) {
+            // Fallback to signed URL if inline render fails
+        }
+
+        return response()->json([
+            'url'         => $url,
+            'html'        => $html,
+            'report_type' => $session->status === 'closed' ? 'Z-REPORT' : 'X-REPORT',
+        ]);
+    }
+
+    /**
+     * Render the standalone 80mm/58mm POS Thermal Z-Report / X-Report Slip Blade template.
+     */
+    public function printThermal(Request $request, CashDrawerSession $session)
+    {
+        $session->loadMissing([
+            'user',
+            'transactions' => fn($q) => $q->reorder('created_at', 'asc')->orderBy('id', 'asc')->with('user'),
+        ]);
+
+        $setting = (\App\Support\SchemaCache::hasTable('settings') ? \App\Models\Setting::first() : null)
+            ?? new \App\Models\Setting([
+                'store_name' => 'KAROBAR PHARMACY & STORE',
+            ]);
+        if (method_exists($setting, 'resolveLogoDataUri')) {
+            $dataUri = $setting->resolveLogoDataUri();
+            if ($dataUri) {
+                $setting->setAttribute('logo_url', $dataUri);
+            }
+        }
+
+        $summary = $this->cashDrawerService->getSessionSummary($session);
+
+        return view('printer.cash_drawer_thermal_zreport', [
+            'session' => $session,
+            'summary' => $summary,
+            'setting' => $setting,
         ]);
     }
 }

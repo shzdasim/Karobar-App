@@ -32,6 +32,7 @@ import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { GlassCard, GlassSectionHeader, GlassInput } from "@/components";
 import { usePermissions } from "@/api/usePermissions.js";
 import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
+import { printSlipUrl } from "@/utils/printHelper.js";
 import { Link } from "react-router-dom";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1064,7 +1065,7 @@ function DenominationCalculator({ onApplyTotal, formatCurrency, isDark }) {
       const qty = Math.max(parseFloat(next[d.key]) || 0, 0);
       return sum + qty * d.multiplier;
     }, 0);
-    onApplyTotal(String(nextTotal));
+    onApplyTotal(String(nextTotal), next);
   }
 
   return (
@@ -1124,7 +1125,7 @@ function DenominationCalculator({ onApplyTotal, formatCurrency, isDark }) {
                   type="button"
                   onClick={() => {
                     setCounts({});
-                    onApplyTotal("0");
+                    onApplyTotal("0", {});
                   }}
                   className="text-[11px] font-medium text-red-500 hover:underline"
                 >
@@ -1364,9 +1365,11 @@ function TransactionModal({ onClose, onSuccess, isDark, btnSecondary, btnDanger,
 
 // ─── Modal: Close Drawer ───────────────────────────────────────────────────────
 
-function CloseDrawerModal({ expectedBalance, onClose, onSuccess, isDark, btnPrimary, btnSecondary, btnDanger, formatCurrency }) {
+function CloseDrawerModal({ expectedBalance, onClose, onSuccess, onPrintThermal, isDark, btnPrimary, btnSecondary, btnDanger, formatCurrency }) {
   const [actualBalance, setActualBalance] = useState("");
+  const [denominations, setDenominations] = useState({});
   const [notes, setNotes] = useState("");
+  const [autoPrintZReport, setAutoPrintZReport] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const diff = actualBalance !== ""
@@ -1377,12 +1380,17 @@ function CloseDrawerModal({ expectedBalance, onClose, onSuccess, isDark, btnPrim
     e.preventDefault();
     setSaving(true);
     try {
-      await axios.post("/api/cash-drawer/close", {
+      const { data } = await axios.post("/api/cash-drawer/close", {
         closing_balance_actual: parseFloat(actualBalance) || 0,
+        closing_denominations: denominations,
         notes,
       });
       toast.success("Drawer closed and reconciled.");
+      const closedId = data?.session?.id;
       onSuccess();
+      if (autoPrintZReport && closedId && onPrintThermal) {
+        onPrintThermal(closedId);
+      }
     } catch (err) {
       toast.error(err?.response?.data?.message || "Failed to close drawer.");
     } finally {
@@ -1434,7 +1442,10 @@ function CloseDrawerModal({ expectedBalance, onClose, onSuccess, isDark, btnPrim
         </div>
 
         <DenominationCalculator
-          onApplyTotal={(val) => setActualBalance(val)}
+          onApplyTotal={(val, countsMap) => {
+            setActualBalance(val);
+            if (countsMap) setDenominations(countsMap);
+          }}
           formatCurrency={formatCurrency}
           isDark={isDark}
         />
@@ -1475,6 +1486,19 @@ function CloseDrawerModal({ expectedBalance, onClose, onSuccess, isDark, btnPrim
           />
         </div>
 
+        <label className={`flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer text-xs font-semibold ${
+          isDark ? "border-slate-700 bg-slate-800/60 text-slate-200" : "border-blue-100 bg-blue-50/60 text-slate-700"
+        }`}>
+          <input
+            type="checkbox"
+            checked={autoPrintZReport}
+            onChange={(e) => setAutoPrintZReport(e.target.checked)}
+            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+          />
+          <PrinterIcon className="w-4 h-4 text-blue-500 shrink-0" />
+          <span>Automatically print 80mm/58mm Thermal Z-Report Slip upon closing</span>
+        </label>
+
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className={`px-4 py-2.5 text-sm font-medium ${btnSecondary.className}`} style={btnSecondary.style}>
             Cancel
@@ -1486,7 +1510,7 @@ function CloseDrawerModal({ expectedBalance, onClose, onSuccess, isDark, btnPrim
             style={btnDanger.style}
           >
             <LockClosedIcon className="w-4 h-4" />
-            {saving ? "Closing…" : "Close Drawer"}
+            {saving ? "Closing…" : autoPrintZReport ? "Close & Print Z-Report" : "Close Drawer"}
           </button>
         </div>
       </form>
@@ -1518,7 +1542,7 @@ function ModalBackdrop({ onClose, children }) {
 
 // ─── History Row (expandable) ─────────────────────────────────────────────────
 
-function HistoryRow({ session, formatCurrency, isDark, selectStyles, onOpenZReport }) {
+function HistoryRow({ session, formatCurrency, isDark, selectStyles, onOpenZReport, onPrintThermal }) {
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -1582,7 +1606,21 @@ function HistoryRow({ session, formatCurrency, isDark, selectStyles, onOpenZRepo
           </span>
         </td>
         <td className="px-4 py-3 text-center">
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex items-center justify-center gap-1.5">
+            {onPrintThermal && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPrintThermal(session.id);
+                }}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50 transition-colors"
+                title={`Print 80mm/58mm Thermal ${isClosed ? "Z-Report" : "X-Report"} Slip`}
+              >
+                <PrinterIcon className="w-3.5 h-3.5" />
+                {isClosed ? "Thermal Z-Slip" : "Thermal X-Slip"}
+              </button>
+            )}
             {onOpenZReport && (
               <button
                 type="button"
@@ -1591,10 +1629,10 @@ function HistoryRow({ session, formatCurrency, isDark, selectStyles, onOpenZRepo
                   onOpenZReport(session.id);
                 }}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50 transition-colors"
-                title="View / Print Shift Z-Report PDF"
+                title="View / Share Shift Z-Report PDF"
               >
-                <PrinterIcon className="w-3.5 h-3.5" />
-                Z-Report
+                <ShareIcon className="w-3.5 h-3.5" />
+                PDF / Share
               </button>
             )}
             {expanded ? <ChevronUpIcon className="w-4 h-4 text-blue-500" /> : <ChevronDownIcon className="w-4 h-4 text-slate-400" />}
@@ -1688,8 +1726,23 @@ export default function CashDrawerPage() {
   const [showTxnModal, setShowTxnModal] = useState(null); // null | "cash_in" | "cash_out"
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [zReportSessionId, setZReportSessionId] = useState(null);
+  const [printingThermalId, setPrintingThermalId] = useState(null);
   const [activeCategoryFilter, setActiveCategoryFilter] = useState(null);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
+
+  const handlePrintThermalSlip = useCallback(async (targetSessionId) => {
+    if (!targetSessionId) return;
+    setPrintingThermalId(targetSessionId);
+    try {
+      const { data } = await axios.get(`/api/cash-drawer/session/${targetSessionId}/thermal-slip`);
+      await printSlipUrl(data.url, data.html);
+      toast.success(`${data.report_type || "Z-REPORT"} thermal slip sent to printer.`);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to print thermal shift slip.");
+    } finally {
+      setPrintingThermalId(null);
+    }
+  }, []);
 
   // ── Data fetching ──────────────────────────────────────────────────────────
   const fetchCurrent = useCallback(async () => {
@@ -1944,12 +1997,21 @@ export default function CashDrawerPage() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                disabled={printingThermalId === lastClosedSession.id}
+                onClick={() => handlePrintThermalSlip(lastClosedSession.id)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-60 transition-colors shadow-xs"
+              >
+                <PrinterIcon className="w-4 h-4" />
+                {printingThermalId === lastClosedSession.id ? "Printing…" : "Print Thermal Z-Slip"}
+              </button>
+              <button
+                type="button"
                 onClick={() => setZReportSessionId(lastClosedSession.id)}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold ${btnSecondary.className}`}
                 style={btnSecondary.style}
               >
-                <PrinterIcon className="w-4 h-4" />
-                Last Shift Z-Report
+                <ShareIcon className="w-4 h-4" />
+                Z-Report PDF / Share
               </button>
               {canOpenShift && (
                 <button
@@ -2117,6 +2179,19 @@ export default function CashDrawerPage() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                disabled={printingThermalId === session.id}
+                onClick={() => handlePrintThermalSlip(session.id)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-60 transition-colors shadow-xs"
+              >
+                <PrinterIcon className="w-4 h-4" />
+                {printingThermalId === session.id
+                  ? "Printing…"
+                  : isOpen
+                    ? "Print X-Report (Thermal)"
+                    : "Print Z-Report (Thermal)"}
+              </button>
+              <button
+                type="button"
                 onClick={() => setZReportSessionId(session.id)}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold ${btnSecondary.className}`}
                 style={btnSecondary.style}
@@ -2187,6 +2262,7 @@ export default function CashDrawerPage() {
                       isDark={isDark}
                       selectStyles={selectStyles}
                       onOpenZReport={(id) => setZReportSessionId(id)}
+                      onPrintThermal={handlePrintThermalSlip}
                     />
                   ))}
                 </tbody>
@@ -2257,6 +2333,7 @@ export default function CashDrawerPage() {
           expectedBalance={summary?.expected_balance ?? summary?.expected_closing_balance ?? 0}
           onClose={() => setShowCloseModal(false)}
           onSuccess={handleActionSuccess}
+          onPrintThermal={handlePrintThermalSlip}
         />
       )}
       <ShareDocumentModal

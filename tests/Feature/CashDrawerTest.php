@@ -60,6 +60,7 @@ class CashDrawerTest extends TestCase
             '2026_10_23_000004_create_payments_and_allocations_tables.php',
             '2026_10_23_000005_add_payment_method_to_invoices_table.php',
             '2026_10_23_000006_create_cash_drawer_tables.php',
+            '2026_11_15_000001_add_closing_denominations_to_cash_drawer_sessions_table.php',
         ] as $file) {
             (require database_path('migrations/' . $file))->up();
         }
@@ -1479,5 +1480,121 @@ class CashDrawerTest extends TestCase
         $this->assertNotNull($closedRes->json('last_closed_session'));
         $this->assertEquals(6200, (float) $closedRes->json('last_closed_session.closing_balance_actual'));
         $this->assertEquals(1200, (float) $closedRes->json('last_closed_summary.cash_sales'));
+    }
+
+    public function test_day_end_thermal_z_report_and_x_report_slip_generation_with_denominations_and_tender_breakdown(): void
+    {
+        $user = User::forceCreate([
+            'name'     => 'ZReport Cashier',
+            'email'    => 'zreportcashier@example.com',
+            'password' => bcrypt('secret123'),
+        ]);
+        $this->actingAs($user);
+
+        // 1. Open Cash Drawer Session with Rs. 10,000 float
+        $session = app(CashDrawerService::class)->openSession($user, 10000, 'Morning Shift Float');
+
+        $customer = Customer::create(['name' => 'Al-Shifa Clinic']);
+
+        // Retail Cash Sale (Rs. 2,500)
+        $cashInv = SaleInvoice::forceCreate([
+            'user_id'            => $user->id,
+            'customer_id'        => $customer->id,
+            'posted_number'      => 'SI-Z-001',
+            'date'               => now()->toDateString(),
+            'gross_amount'       => 2600,
+            'discount_amount'    => 100,
+            'tax_amount'         => 0,
+            'total'              => 2500,
+            'total_receive'      => 2500,
+            'status'             => 'posted',
+            'invoice_type'       => 'debit',
+            'sale_type'          => 'retail',
+            'payment_method'     => 'cash',
+        ]);
+        app(CashDrawerService::class)->recordTransaction(
+            $session,
+            'cash_sale',
+            2500,
+            SaleInvoice::class,
+            $cashInv->id,
+            'Cash Sale SI-Z-001'
+        );
+
+        // Wholesale Credit + Online/Bank Sale (Total Rs. 8,000: Rs. 3,000 Bank Transfer, Rs. 5,000 Credit Udhar)
+        SaleInvoice::forceCreate([
+            'user_id'            => $user->id,
+            'customer_id'        => $customer->id,
+            'posted_number'      => 'WSI-Z-002',
+            'date'               => now()->toDateString(),
+            'gross_amount'       => 8000,
+            'discount_amount'    => 0,
+            'tax_amount'         => 0,
+            'total'              => 8000,
+            'total_receive'      => 3000,
+            'status'             => 'posted',
+            'invoice_type'       => 'credit',
+            'sale_type'          => 'wholesale',
+            'payment_method'     => 'bank_transfer',
+        ]);
+
+        // Expense paid from drawer (Rs. 400)
+        app(CashDrawerService::class)->recordTransaction(
+            $session,
+            'expense',
+            400,
+            null,
+            null,
+            'Courier & Tea Expense'
+        );
+
+        // 2. Fetch Mid-Shift X-Report Thermal Slip while session is open
+        $xSlipRes = $this->getJson("/api/cash-drawer/session/{$session->id}/thermal-slip")->assertOk();
+        $this->assertEquals('X-REPORT', $xSlipRes->json('report_type'));
+        $this->assertNotEmpty($xSlipRes->json('url'));
+        $this->assertStringContainsString('MID-SHIFT X-REPORT SLIP', $xSlipRes->json('html'));
+        $this->assertStringContainsString('1. Shift Sales &amp; Tender Summary', $xSlipRes->json('html'));
+
+        // 3. Close Session with PKR Denominations totaling Rs. 12,100 (Expected = 10,000 + 2,500 - 400 = 12,100)
+        $closeRes = $this->postJson('/api/cash-drawer/close', [
+            'closing_balance_actual' => 12100,
+            'notes'                  => 'Verified physical cash count',
+            'closing_denominations'  => [
+                '5000'  => 2, // 10,000
+                '1000'  => 2, // 2,000
+                '100'   => 1, // 100
+                '50'    => 0,
+            ],
+        ])->assertOk();
+
+        // Assert denominations saved (zero counts stripped)
+        $this->assertEquals(
+            ['5000' => 2, '1000' => 2, '100' => 1],
+            $closeRes->json('session.closing_denominations')
+        );
+
+        // Assert shift_sales metrics in summary
+        $shiftSales = $closeRes->json('summary.shift_sales');
+        $this->assertEquals(2, $shiftSales['total_invoices_count']);
+        $this->assertEquals(1, $shiftSales['retail_invoices_count']);
+        $this->assertEquals(1, $shiftSales['wholesale_invoices_count']);
+        $this->assertEquals(10500, (float) $shiftSales['net_sales']);
+        $this->assertEquals(2500, (float) $shiftSales['cash_tender_sales']);
+        $this->assertEquals(3000, (float) $shiftSales['card_bank_online_sales']);
+        $this->assertEquals(5000, (float) $shiftSales['credit_udhar_sales']);
+
+        // 4. Fetch Day-End Z-Report Thermal Slip after closing
+        $zSlipRes = $this->getJson("/api/cash-drawer/session/{$session->id}/thermal-slip")->assertOk();
+        $this->assertEquals('Z-REPORT', $zSlipRes->json('report_type'));
+        $zHtml = $zSlipRes->json('html');
+        $this->assertStringContainsString('DAY-END Z-REPORT SLIP', $zHtml);
+        $this->assertStringContainsString('VARIANCE (BALANCED):', $zHtml);
+        $this->assertStringContainsString('5. Cash Note Denominations', $zHtml);
+        $this->assertStringContainsString('Rs. 5,000', $zHtml);
+        $this->assertStringContainsString('Verified physical cash count', $zHtml);
+
+        // 5. Verify signed route renders directly
+        $signedUrl = $zSlipRes->json('url');
+        $this->get($signedUrl)->assertOk()->assertSee('DAY-END Z-REPORT SLIP');
     }
 }

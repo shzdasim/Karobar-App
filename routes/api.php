@@ -231,12 +231,13 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::apiResource('payments',                PaymentController::class)->only(['index', 'show', 'store']);
 
     // Cash Drawer Register Management
-    Route::get('cash-drawer/current',             [CashDrawerController::class, 'current']);
-    Route::get('cash-drawer/session/{id}',        [CashDrawerController::class, 'show']);
-    Route::post('cash-drawer/open',               [CashDrawerController::class, 'open']);
-    Route::post('cash-drawer/transaction',        [CashDrawerController::class, 'recordTransaction']);
-    Route::post('cash-drawer/close',              [CashDrawerController::class, 'close']);
-    Route::get('cash-drawer/history',             [CashDrawerController::class, 'history']);
+    Route::get('cash-drawer/current',                   [CashDrawerController::class, 'current']);
+    Route::get('cash-drawer/session/{id}/thermal-slip', [CashDrawerController::class, 'thermalSlipUrl']);
+    Route::get('cash-drawer/session/{id}',              [CashDrawerController::class, 'show']);
+    Route::post('cash-drawer/open',                     [CashDrawerController::class, 'open']);
+    Route::post('cash-drawer/transaction',              [CashDrawerController::class, 'recordTransaction']);
+    Route::post('cash-drawer/close',                    [CashDrawerController::class, 'close']);
+    Route::get('cash-drawer/history',                   [CashDrawerController::class, 'history']);
 
     // Financial Accounts & Balances
     Route::get('accounts',                        [AccountController::class, 'index']);

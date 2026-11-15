@@ -15,6 +15,7 @@ class CashDrawerSession extends Model
         'closing_balance_expected',
         'closing_balance_actual',
         'difference',
+        'closing_denominations',
         'notes',
     ];
 
@@ -25,6 +26,7 @@ class CashDrawerSession extends Model
         'closing_balance_expected' => 'float',
         'closing_balance_actual'   => 'float',
         'difference'               => 'float',
+        'closing_denominations'    => 'array',
     ];
 
     public function user()
