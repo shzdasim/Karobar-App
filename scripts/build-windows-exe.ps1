@@ -323,14 +323,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Timestamp and verify the final compiled Inno Setup .exe installer
-$FinalInstallerExe = Join-Path $InstallerOutDir "Karobar-App-Setup.exe"
-Invoke-KarobarAuthenticodeSign $FinalInstallerExe
-$VerifySig = Get-AuthenticodeSignature -FilePath $FinalInstallerExe
-Write-Host "    Authenticode Signature Status: $($VerifySig.Status) | Signer: $($VerifySig.SignerCertificate.Subject)" -ForegroundColor Green
-
-# Also create named POS Terminal Installer (Karobar-POS-Terminal-Setup.exe)
 $TerminalInstallerExe = Join-Path $InstallerOutDir "Karobar-POS-Terminal-Setup.exe"
-Copy-Item -Path $FinalInstallerExe -Destination $TerminalInstallerExe -Force
+Invoke-KarobarAuthenticodeSign $TerminalInstallerExe
+$VerifySig = Get-AuthenticodeSignature -FilePath $TerminalInstallerExe
+Write-Host "    Authenticode Signature Status: $($VerifySig.Status) | Signer: $($VerifySig.SignerCertificate.Subject)" -ForegroundColor Green
 
 # Package Single-File Linux Store Server Installer (.run & .sh) + Interactive HTML Guide into dist\installer
 Write-Host "==> Packaging Single-File Linux Store Server Installer (karobar-linux-server-installer.run & karobar-server-setup.sh)..." -ForegroundColor Cyan
@@ -423,11 +419,11 @@ $OutStream.Write($TarBytes, 0, $TarBytes.Length)
 $OutStream.Close()
 Write-Host "    Created Single-File Linux Server Installer: karobar-linux-server-installer.run ($([math]::Round((Get-Item $LinuxRunDest).Length / 1MB, 2)) MB)" -ForegroundColor Green
 
-# Generate 1-Click Certificate Trust & Installer Launcher (Install-Karobar-App.bat)
-$HelperBatPath = Join-Path $InstallerOutDir "Install-Karobar-App.bat"
+# Generate 1-Click Certificate Trust & Installer Launcher (Install-Karobar-POS-Terminal.bat)
+$HelperBatPath = Join-Path $InstallerOutDir "Install-Karobar-POS-Terminal.bat"
 $HelperBatContent = @"
 @echo off
-title Karobar-App v$AppVersion - Verified Publisher Installer
+title Karobar-POS-Terminal v$AppVersion - Verified Publisher Installer
 :: Request Administrator elevation if not already elevated
 net session >nul 2>&1
 if %errorlevel% neq 0 (
@@ -441,93 +437,40 @@ certutil.exe -addstore -f "Root" "%~dp0MalikAsimShahzad-KarobarERP.cer" >nul 2>&
 certutil.exe -addstore -f "TrustedPublisher" "%~dp0MalikAsimShahzad-KarobarERP.cer" >nul 2>&1
 echo [2/3] Clearing browser download security zone mark...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -Path '%~dp0' | Unblock-File -ErrorAction SilentlyContinue"
-echo [3/3] Launching Signed Karobar-App Setup Wizard...
-start "" "%~dp0Karobar-App-Setup.exe"
+echo [3/3] Launching Signed Karobar-POS-Terminal Setup Wizard...
+start "" "%~dp0Karobar-POS-Terminal-Setup.exe"
 "@
 Set-Content -Path $HelperBatPath -Value $HelperBatContent -Encoding ASCII
 
-# Generate lightweight differential OTA update patch (Karobar-App-Patch.zip) containing only updated app code & assets
-Write-Host "==> Packaging Lightweight Differential OTA Update Patch (Karobar-App-Patch.zip)..." -ForegroundColor Cyan
-$PatchStaging = Join-Path $DistDir "patch-stage"
-if (Test-Path $PatchStaging) { Remove-Item -Recurse -Force $PatchStaging }
-New-Item -ItemType Directory -Force -Path $PatchStaging | Out-Null
-
-$PatchDirs = @("app", "bootstrap", "config", "database", "public", "resources", "routes", "scripts")
-foreach ($pDir in $PatchDirs) {
-    $src = Join-Path $AppStage $pDir
-    if (Test-Path $src) {
-        $dest = Join-Path $PatchStaging $pDir
-        Copy-Item -Path $src -Destination $dest -Recurse -Force
-    }
-}
-
-# Clean unwanted / user / data artifacts from patch staging (strictly zero data loss)
-Remove-Item -Path (Join-Path $PatchStaging "database\*.sqlite*") -Force -ErrorAction SilentlyContinue
-Remove-Item -Path (Join-Path $PatchStaging "public\hot") -Force -ErrorAction SilentlyContinue
-Remove-Item -Path (Join-Path $PatchStaging "public\storage") -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path (Join-Path $PatchStaging ".env*") -Force -ErrorAction SilentlyContinue
-
-# Stage desktop scripts (excluding node_modules and binaries)
-$DesktopPatchStage = Join-Path $PatchStaging "desktop"
-New-Item -ItemType Directory -Force -Path $DesktopPatchStage | Out-Null
-foreach ($dFile in @("router.php", "main.cjs", "preload.cjs", "splash.html", "terminal-offline.html", "package.json", "icon.ico", "icon.png")) {
-    $dSrc = Join-Path $AppStage "desktop\$dFile"
-    if (Test-Path $dSrc) {
-        Copy-Item -Path $dSrc -Destination (Join-Path $DesktopPatchStage $dFile) -Force
-    }
-}
-
-$PatchFiles = @("artisan", "composer.json", "composer.lock", "package.json", ".env.example")
-foreach ($pFile in $PatchFiles) {
-    $src = Join-Path $AppStage $pFile
-    if (Test-Path $src) {
-        Copy-Item -Path $src -Destination (Join-Path $PatchStaging $pFile) -Force
-    }
-}
-
-$PatchZipPath = Join-Path $InstallerOutDir "Karobar-App-Patch.zip"
-if (Test-Path $PatchZipPath) { Remove-Item -Force $PatchZipPath }
-Compress-Archive -Path "$PatchStaging\*" -DestinationPath $PatchZipPath -CompressionLevel Optimal -Force
-
-$PatchSize = (Get-Item $PatchZipPath).Length
-$PatchSha256 = (Get-FileHash -Path $PatchZipPath -Algorithm SHA256).Hash.ToLower()
-$PatchSizeMb = [math]::Round($PatchSize / 1MB, 2)
-Write-Host "    Differential Patch created: $PatchSizeMb MB ($PatchSize bytes) | SHA-256: $PatchSha256" -ForegroundColor Green
-
-# Generate latest-release.json manifest for in-app Over-The-Air (OTA) update checks
+# Generate separate build metadata file (latest-terminal-release.json) — NEVER latest-release.json so standalone v2.0 softwares are never prompted to update!
 $RecentCommits = ""
 try {
     $RecentCommits = (git log -n 5 --pretty=format:"• %s (%h)" 2>$null) -join "`n"
 } catch {
-    $RecentCommits = "• Performance improvements, bug fixes, and new features."
+    $RecentCommits = "• Multi-PC Linux Server & Windows POS Terminal Edition."
 }
 if (-not $RecentCommits) {
-    $RecentCommits = "• Performance improvements, bug fixes, and new features."
+    $RecentCommits = "• Multi-PC Linux Server & Windows POS Terminal Edition."
 }
 
-$LatestReleaseManifest = [ordered]@{
-    app_name          = "Karobar-App"
+$TerminalReleaseManifest = [ordered]@{
+    app_name          = "Karobar-POS-Terminal"
     version           = $AppVersion
     build_number      = $BuildNumber
     commit_sha        = $CommitSha
-    release_name      = "Karobar-App v$AppVersion (Build #$BuildNumber)"
+    release_name      = "Karobar Multi-PC Server & POS Terminal v$AppVersion (Build #$BuildNumber)"
     released_at       = $ReleasedAt
     notes             = $RecentCommits
-    download_url      = "https://github.com/$RepoSlug/releases/latest/download/Karobar-App-Setup.exe"
-    bundle_url        = "https://github.com/$RepoSlug/releases/latest/download/Karobar-App-Setup-Bundle.zip"
-    patch_url         = "https://github.com/$RepoSlug/releases/latest/download/Karobar-App-Patch.zip"
-    patch_size        = [int64]$PatchSize
-    patch_sha256      = $PatchSha256
-    min_patch_version = "2.0.0"
-    release_url       = "https://github.com/$RepoSlug/releases/latest"
+    download_url      = "https://github.com/$RepoSlug/releases/download/multi-pc-v$AppVersion/Karobar-POS-Terminal-Setup.exe"
+    bundle_url        = "https://github.com/$RepoSlug/releases/download/multi-pc-v$AppVersion/Karobar-MultiPC-Server-And-Terminal-Bundle.zip"
     zero_data_loss    = $true
 }
-Set-Content -Path (Join-Path $InstallerOutDir "latest-release.json") -Value ($LatestReleaseManifest | ConvertTo-Json -Depth 4) -Encoding UTF8
+Set-Content -Path (Join-Path $InstallerOutDir "latest-terminal-release.json") -Value ($TerminalReleaseManifest | ConvertTo-Json -Depth 4) -Encoding UTF8
 
 Write-Host "================================================================================" -ForegroundColor Green
-Write-Host "SUCCESS! Signed Windows .exe Installer & OTA Update Manifest generated at:" -ForegroundColor Green
-Write-Host "  dist\installer\Karobar-App-Setup.exe (v$AppVersion, Build #$BuildNumber)" -ForegroundColor Yellow
-Write-Host "  dist\installer\Karobar-App-Patch.zip ($PatchSizeMb MB)" -ForegroundColor Yellow
-Write-Host "  dist\installer\latest-release.json" -ForegroundColor Yellow
+Write-Host "SUCCESS! Signed POS Terminal .exe & Single-File Linux Server Installer generated at:" -ForegroundColor Green
+Write-Host "  dist\installer\Karobar-POS-Terminal-Setup.exe (v$AppVersion, Build #$BuildNumber)" -ForegroundColor Yellow
+Write-Host "  dist\installer\karobar-linux-server-installer.run" -ForegroundColor Yellow
+Write-Host "  dist\installer\karobar-server-setup.sh" -ForegroundColor Yellow
 Write-Host "  Publisher: Malik Asim Shahzad (https://github.com/shzdasim)" -ForegroundColor Yellow
 Write-Host "================================================================================" -ForegroundColor Green

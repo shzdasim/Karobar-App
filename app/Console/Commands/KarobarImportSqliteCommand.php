@@ -37,7 +37,7 @@ class KarobarImportSqliteCommand extends Command
         if (!$this->option('no-backup')) {
             $this->info('Creating pre-import safety backup...');
             try {
-                $backupService->createBackup('database', 'CLI Pre-Import Safety Snapshot');
+                $backupService->createBackup('database', null, true);
             } catch (Throwable $e) {
                 $this->warn('Pre-import backup skipped: ' . $e->getMessage());
             }
@@ -85,12 +85,12 @@ class KarobarImportSqliteCommand extends Command
                 'tables'            => $tablesConfig,
             ]);
 
-            $summary = $result['summary'] ?? [];
+            $totals = $result['totals'] ?? ($result['summary'] ?? []);
             $this->info(sprintf(
                 'Import completed! Inserted: %d | Updated: %d | Skipped: %d',
-                $summary['rows_inserted'] ?? ($result['total_inserted'] ?? 0),
-                $summary['rows_updated'] ?? ($result['total_updated'] ?? 0),
-                $summary['rows_skipped'] ?? ($result['total_skipped'] ?? 0)
+                $totals['inserted'] ?? ($totals['rows_inserted'] ?? 0),
+                $totals['updated'] ?? ($totals['rows_updated'] ?? 0),
+                $totals['skipped'] ?? ($totals['rows_skipped'] ?? 0)
             ));
 
             return self::SUCCESS;

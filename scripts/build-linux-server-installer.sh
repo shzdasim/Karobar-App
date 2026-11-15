@@ -33,9 +33,11 @@ echo "[1/3] Building production frontend assets (npm run build)..."
 npm run build
 
 echo "[2/3] Creating compressed application payload..."
+export COPYFILE_DISABLE=1
 tar -czf "${TMP_PAYLOAD}" \
   --exclude='.git' \
   --exclude='.env' \
+  --exclude='public/hot' \
   --exclude='node_modules' \
   --exclude='desktop/node_modules' \
   --exclude='dist' \

@@ -62,21 +62,21 @@ export DEBIAN_FRONTEND=noninteractive
 # ------------------------------------------------------------------------------
 # STEP 1: Install System Packages
 # ------------------------------------------------------------------------------
-echo "[1/8] Installing system packages (Nginx, MariaDB, Redis, PHP 8.3, Node 20, Avahi mDNS)..."
+echo "[1/8] Installing system packages (Nginx, MariaDB, Redis, PHP 8.4, Node 20, Avahi mDNS)..."
 apt-get update -y
 apt-get install -y software-properties-common curl ca-certificates gnupg2 lsb-release \
   ufw git unzip zip rsync sqlite3 mariadb-server mariadb-client redis-server nginx \
   avahi-daemon avahi-utils xdg-utils
 
-if ! apt-cache show php8.3-fpm >/dev/null 2>&1; then
+if ! apt-cache show php8.4-fpm >/dev/null 2>&1; then
   add-apt-repository -y ppa:ondrej/php || true
   apt-get update -y
 fi
 
 apt-get install -y \
-  php8.3-fpm php8.3-cli php8.3-common php8.3-mysql php8.3-sqlite3 \
-  php8.3-mbstring php8.3-xml php8.3-zip php8.3-gd php8.3-curl \
-  php8.3-bcmath php8.3-intl php8.3-redis php8.3-opcache
+  php8.4-fpm php8.4-cli php8.4-common php8.4-mysql php8.4-sqlite3 \
+  php8.4-mbstring php8.4-xml php8.4-zip php8.4-gd php8.4-curl \
+  php8.4-bcmath php8.4-intl php8.4-redis php8.4-opcache
 
 if ! command -v composer >/dev/null 2>&1; then
   curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
@@ -166,6 +166,7 @@ mkdir -p storage/app/public storage/app/backups storage/app/imports/sqlite stora
 # STEP 4: Install Dependencies & Build Production Assets (if not pre-bundled)
 # ------------------------------------------------------------------------------
 echo "[4/8] Preparing Composer & Frontend production bundle..."
+rm -f "${APP_DIR}/public/hot"
 if [[ ! -f "${APP_DIR}/vendor/autoload.php" ]]; then
   COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-interaction
 else
@@ -202,7 +203,7 @@ sed -i "s|^CACHE_STORE=.*|CACHE_STORE=redis|g" "${APP_DIR}/.env"
 sed -i "s|^SESSION_DRIVER=.*|SESSION_DRIVER=redis|g" "${APP_DIR}/.env"
 
 php artisan migrate --force
-php artisan db:seed --class=PermissionSeeder --force || true
+php artisan db:seed --class=RolesAndPermissionsSeeder --force || true
 
 # Ensure an Administrator user exists and has Admin role
 php artisan tinker --execute="
@@ -247,11 +248,11 @@ fi
 # ------------------------------------------------------------------------------
 echo "[6/8] Writing embedded PHP-FPM, Nginx, Systemd, and karobar-ctl configurations..."
 
-cat >/etc/php/8.3/fpm/pool.d/karobar.conf <<'EOF'
+cat >/etc/php/8.4/fpm/pool.d/karobar.conf <<'EOF'
 [karobar]
 user = www-data
 group = www-data
-listen = /run/php/php8.3-fpm-karobar.sock
+listen = /run/php/php8.4-fpm-karobar.sock
 listen.owner = www-data
 listen.group = www-data
 listen.mode = 0660
@@ -295,7 +296,7 @@ server {
     error_page 404 /index.php;
 
     location ~ \.php\$ {
-        fastcgi_pass unix:/run/php/php8.3-fpm-karobar.sock;
+        fastcgi_pass unix:/run/php/php8.4-fpm-karobar.sock;
         fastcgi_param SCRIPT_FILENAME \$realpath_root\$fastcgi_script_name;
         include fastcgi_params;
         fastcgi_read_timeout 600;
@@ -376,7 +377,7 @@ case "\${CMD}" in
     echo "Server Dashboard  : http://\${LAN_IP:-127.0.0.1}:\${SERVER_PORT}/server-dashboard"
     echo "mDNS URL          : http://\$(hostname).local:\${SERVER_PORT}"
     echo ""
-    systemctl --no-pager status mariadb redis-server php8.3-fpm nginx karobar-scheduler --lines=0 || true
+    systemctl --no-pager status mariadb redis-server php8.4-fpm nginx karobar-scheduler --lines=0 || true
     ;;
 
   terminals)
@@ -412,7 +413,7 @@ case "\${CMD}" in
     ;;
 
   restart)
-    systemctl restart mariadb redis-server php8.3-fpm nginx karobar-scheduler karobar-whatsapp
+    systemctl restart mariadb redis-server php8.4-fpm nginx karobar-scheduler karobar-whatsapp
     echo "All Karobar Server services restarted."
     ;;
 
@@ -445,7 +446,7 @@ chmod +x /usr/local/bin/karobar-ctl
 chown -R www-data:www-data "${APP_DIR}/storage" "${APP_DIR}/bootstrap/cache"
 
 systemctl daemon-reload
-systemctl restart php8.3-fpm
+systemctl restart php8.4-fpm
 systemctl restart nginx
 systemctl enable --now karobar-scheduler.service
 systemctl enable --now karobar-whatsapp.service || true
