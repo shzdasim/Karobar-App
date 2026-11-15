@@ -549,6 +549,19 @@ export function useAvailablePages() {
         icon: ArrowsRightLeftIcon,
         perm: "report.stock-adjustment.view",
       },
+      {
+        name: "Narcotics & Controlled Drugs Register",
+        path: "/reports/narcotics",
+        section: "Reports",
+        keywords: "narcotics controlled drugs schedule g h register doctor patient prescription drug inspector report",
+        icon: ShieldExclamationIcon,
+        permAny: [
+          "report.sale-detail.view",
+          "report.current-stock.view",
+          "report.product-comprehensive.view",
+          "product.view",
+        ],
+      },
 
       // System & Settings
       {

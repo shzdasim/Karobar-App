@@ -608,6 +608,18 @@ export default function ClassicSidebar({
             icon: <ArrowsRightLeftIcon className="w-5 h-5" />,
             perm: "report.stock-adjustment.view",
           },
+          {
+            name: "Narcotics & Controlled Drugs",
+            path: "/reports/narcotics",
+            subGroup: "Inventory & Stock",
+            icon: <ShieldExclamationIcon className="w-5 h-5" />,
+            permAny: [
+              "report.sale-detail.view",
+              "report.current-stock.view",
+              "report.product-comprehensive.view",
+              "product.view",
+            ],
+          },
         ],
       },
       {

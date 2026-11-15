@@ -54,6 +54,12 @@ const ROUTE_PERMISSION_MAP = {
   "/reports/stock-adjustment": ["report.stock-adjustment.view"],
   "/reports/product-comprehensive": ["report.product-comprehensive.view"],
   "/reports/near-expiry-product": ["report.near-expiry-product.view"],
+  "/reports/narcotics": [
+    "report.sale-detail.view",
+    "report.current-stock.view",
+    "report.product-comprehensive.view",
+    "product.view",
+  ],
   "/reports/outstanding-aging": ["report.outstanding-aging.view"],
   "/reports/reorder": ["report.reorder.view"],
   "/settings": ["settings.view"],

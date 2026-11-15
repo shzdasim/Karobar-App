@@ -152,6 +152,7 @@ class CustomerLedgerController extends Controller
                 'invoice_no',
                 'posted_number',
                 'date',
+                'created_at',
                 'invoice_total', 'total', 'grand_total', 'net_total', 'gross_amount', 'sub_total',
                 'total_receive', 'total_recieve', 'received', 'amount_received',
             ]);
@@ -188,25 +189,28 @@ class CustomerLedgerController extends Controller
 
             // Use 'date' column from sale_invoices (not invoice_date which doesn't exist)
             $entryDate = $inv->date ? Carbon::parse($inv->date)->format('Y-m-d') : null;
+            $sortTs = $inv->created_at ? Carbon::parse($inv->created_at)->getTimestamp() : 0;
 
             return [
                 'id'                => $inv->id,
+                'row_key'           => 'invoice-' . $inv->id,
                 'customer_id'       => $customerId,
                 'sale_invoice_id'   => $inv->id,
                 'entry_type'        => 'invoice',
+                'type_order'        => 1,
                 'is_manual'         => false,
                 'entry_date'        => $entryDate,
-                'posted_number'     => $this->str($inv->posted_number),
+                'created_at'        => $inv->created_at ? Carbon::parse($inv->created_at)->toIso8601String() : null,
+                'sort_ts'           => $sortTs,
+                'posted_number'     => $this->str($inv->posted_number, $inv->invoice_no),
                 'invoice_total'     => $invoiceTotal,
                 'total_received'    => round($receivedOnInv, 2),
-                // Payment (Credit) shows the remaining balance for this invoice
-                'credited_amount'   => $balanceRemaining,
+                'credited_amount'   => 0.0,
                 'payment_ref'       => '',
-                // Balance Remaining is the same as credited_amount for invoice rows
                 'balance_remaining' => round($balanceRemaining, 2),
                 'invoice_settled'   => round($invoiceSettled, 2),
                 'invoice_due'       => round($invoiceDue, 2),
-                'description'       => 'Sale Invoice ' . $this->str($inv->posted_number),
+                'description'       => 'Sale Invoice ' . $this->str($inv->posted_number, $inv->invoice_no, '#' . $inv->id),
             ];
         });
 
@@ -217,21 +221,25 @@ class CustomerLedgerController extends Controller
             $invRecv   = $isInvoiceLike ? (float)($r->total_received ?? 0) : 0.0;
             // Allow negative balance_remaining on manual rows (e.g., store-credit reversal entries)
             $balRemain = $isInvoiceLike ? ($invTotal < 0 ? ($invTotal - $invRecv) : max($invTotal - $invRecv, 0)) : 0.0;
+            $sortTs    = $r->created_at ? Carbon::parse($r->created_at)->getTimestamp() : 0;
+            $typeOrder = $isInvoiceLike ? 2 : 3;
 
             return [
                 'id'                => $r->id,
+                'row_key'           => 'ledger-' . $r->id,
                 'customer_id'       => $r->customer_id,
                 'sale_invoice_id'   => $r->sale_invoice_id,
                 'sale_return_id'    => $r->sale_return_id,
                 'payment_id'        => $r->payment_id,
                 'entry_type'        => $r->entry_type, // payment | manual
+                'type_order'        => $typeOrder,
                 'is_manual'         => (bool)$r->is_manual,
                 'entry_date'        => optional($r->entry_date)->format('Y-m-d'),
+                'created_at'        => $r->created_at ? Carbon::parse($r->created_at)->toIso8601String() : null,
+                'sort_ts'           => $sortTs,
                 'posted_number'     => $r->posted_number,
-                // invoice_number not used in UI anymore
                 'invoice_total'     => $invTotal,
                 'total_received'    => $invRecv,
-                // (5) Received Payment
                 'credited_amount'   => (float)($r->credited_amount ?? 0),
                 'payment_ref'       => $r->payment_ref,
                 'balance_remaining' => round($balRemain, 2),
@@ -239,9 +247,26 @@ class CustomerLedgerController extends Controller
             ];
         });
 
-        // ---- Merge & sort by date, then by id ----
+        // ---- Merge & sort chronologically as transactions happen ----
         $all = collect()->merge($invoiceRows)->merge($mp)
-            ->sortBy([['entry_date','asc'], ['id','asc']], SORT_STRING, [false, false])
+            ->sort(function (array $a, array $b) {
+                $da = (string) ($a['entry_date'] ?? '');
+                $db = (string) ($b['entry_date'] ?? '');
+                if ($da !== $db) {
+                    return $da <=> $db;
+                }
+                $ta = (int) ($a['sort_ts'] ?? 0);
+                $tb = (int) ($b['sort_ts'] ?? 0);
+                if ($ta !== $tb && $ta > 0 && $tb > 0) {
+                    return $ta <=> $tb;
+                }
+                $oa = (int) ($a['type_order'] ?? 9);
+                $ob = (int) ($b['type_order'] ?? 9);
+                if ($oa !== $ob) {
+                    return $oa <=> $ob;
+                }
+                return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+            })
             ->values()
             ->all();
 
@@ -249,7 +274,7 @@ class CustomerLedgerController extends Controller
         // Running balance = Opening balance + Previous balance + Invoice remaining - Payments
         $openingBalance = $this->calculateOpeningBalance($customerId, $from);
         $runningBalance = $openingBalance;
-        foreach ($all as &$row) {
+        foreach ($all as $idx => &$row) {
             $type = $row['entry_type'];
             
             if ($type === 'invoice' || $type === 'manual') {
@@ -260,6 +285,7 @@ class CustomerLedgerController extends Controller
                 $runningBalance -= (float)$row['credited_amount'];
             }
             
+            $row['seq']             = $idx + 1;
             $row['running_balance'] = round($runningBalance, 2);
         }
         unset($row); // Break reference
@@ -810,7 +836,7 @@ class CustomerLedgerController extends Controller
 
     // Build select list (only include columns that exist)
     $selectCols = [
-        'id', 'posted_number', 'date',
+        'id', 'posted_number', 'date', 'created_at',
         'invoice_total','total','grand_total','net_total','gross_amount','sub_total',
         'total_receive','total_recieve','received','amount_received',
     ];
@@ -842,6 +868,7 @@ class CustomerLedgerController extends Controller
             // entry date
             $rawDate   = $hasInvoiceDate ? ($inv->invoice_date ?? $inv->date) : $inv->date;
             $entryDate = $rawDate ? \Carbon\Carbon::parse($rawDate)->format('Y-m-d') : null;
+            $sortTs    = $inv->created_at ? \Carbon\Carbon::parse($inv->created_at)->getTimestamp() : 0;
 
             // invoice number (fallback to posted_number if you want it visible)
             $invoiceNumber = $hasInvoiceNo ? ($inv->invoice_no ?? null) : null;
@@ -849,6 +876,8 @@ class CustomerLedgerController extends Controller
             return (object) [
                 'id'                 => $inv->id,
                 'entry_type'         => 'invoice',
+                'type_order'         => 1,
+                'sort_ts'            => $sortTs,
                 'is_manual'          => false,
                 'entry_date'         => $entryDate,
                 'posted_number'      => $inv->posted_number,
@@ -857,7 +886,7 @@ class CustomerLedgerController extends Controller
                 'total_received'     => $r,
                 'credited_amount'    => 0.0,
                 'payment_ref'        => null,
-                'description'        => $invoiceNumber ? ('Invoice #'.$invoiceNumber) : null,
+                'description'        => $invoiceNumber ? ('Invoice #'.$invoiceNumber) : ('Sale Invoice ' . ($inv->posted_number ?? ('#'.$inv->id))),
                 'sale_invoice_id'    => $inv->id,
             ];
         });
@@ -873,9 +902,12 @@ class CustomerLedgerController extends Controller
         ->get()
         ->map(function (\App\Models\CustomerLedger $r) {
             $isInvoiceLike = strtolower($r->entry_type) === 'manual'; // manual behaves like invoice row
+            $sortTs        = $r->created_at ? \Carbon\Carbon::parse($r->created_at)->getTimestamp() : 0;
             return (object) [
                 'id'                 => $r->id,
                 'entry_type'         => strtolower($r->entry_type), // 'payment' | 'manual'
+                'type_order'         => $isInvoiceLike ? 2 : 3,
+                'sort_ts'            => $sortTs,
                 'is_manual'          => (bool) $r->is_manual,
                 'entry_date'         => optional($r->entry_date)->format('Y-m-d'),
                 'posted_number'      => $r->posted_number,
@@ -889,9 +921,26 @@ class CustomerLedgerController extends Controller
             ];
         });
 
-    // -------- 3) Merge + sort --------
+    // -------- 3) Merge + sort chronologically --------
     $all = $invoices->merge($manualAndPayments)
-        ->sortBy(fn($r) => [$r->entry_date, $r->id ?? 0])
+        ->sort(function ($a, $b) {
+            $da = (string) ($a->entry_date ?? '');
+            $db = (string) ($b->entry_date ?? '');
+            if ($da !== $db) {
+                return $da <=> $db;
+            }
+            $ta = (int) ($a->sort_ts ?? 0);
+            $tb = (int) ($b->sort_ts ?? 0);
+            if ($ta !== $tb && $ta > 0 && $tb > 0) {
+                return $ta <=> $tb;
+            }
+            $oa = (int) ($a->type_order ?? 9);
+            $ob = (int) ($b->type_order ?? 9);
+            if ($oa !== $ob) {
+                return $oa <=> $ob;
+            }
+            return ((int) ($a->id ?? 0)) <=> ((int) ($b->id ?? 0));
+        })
         ->values();
 
     // -------- 4) Running balance + per-row "credit remaining" --------

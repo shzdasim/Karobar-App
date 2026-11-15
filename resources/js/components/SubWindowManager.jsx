@@ -83,6 +83,7 @@ export const ERP_ROUTE_TITLES = [
   { label: "Product Comprehensive", path: "/reports/product-comprehensive" },
   { label: "Near Expiry Product", path: "/reports/near-expiry-product" },
   { label: "Stock Adjustment Report", path: "/reports/stock-adjustment" },
+  { label: "Narcotics & Controlled Drugs Register", path: "/reports/narcotics" },
   { label: "Settings", path: "/settings" },
   { label: "SQLite Data Import", path: "/settings/sqlite-import" },
   { label: "SQLite Data Import", path: "/sqlite-import" },

@@ -34,6 +34,7 @@ import { printCurrentView } from "@/utils/printHelper.js";
 import PageSearchModal from "@/components/PageSearchModal.jsx";
 const ProductSearchModal = lazy(() => import("@/components/ProductSearchModal.jsx"));
 const KeyboardShortcutsModal = lazy(() => import("@/components/KeyboardShortcutsModal.jsx"));
+const LicenseViewerModal = lazy(() => import("@/components/LicenseViewerModal.jsx"));
 const FeatureGuideBot = lazy(() => import("@/components/FeatureGuideBot.jsx"));
 const NotificationCenter = lazy(() => import("./NotificationCenter.jsx"));
 const CashDrawerModal = lazy(() => import("./CashDrawerModal.jsx"));
@@ -100,8 +101,11 @@ export default function Topbar({
   // Page Navigation Search Modal state (opens anywhere with Ctrl+K)
   const [pageSearchModalOpen, setPageSearchModalOpen] = useState(false);
 
-  // Keyboard Shortcuts Modal state (opens anywhere with ?)
+  // Keyboard Shortcuts Modal state (opens anywhere with ? or from Windows native topbar)
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
+
+  // License Viewer Modal state (opens from Windows native topbar or User menu)
+  const [licenseViewerOpen, setLicenseViewerOpen] = useState(false);
 
   // Screen-Aware Bilingual Feature Guide Bot state (opens anywhere with Ctrl+G and stays open across pages)
   const [guideBotOpen, setGuideBotOpen] = useGuideBotOpenState();
@@ -810,18 +814,29 @@ export default function Topbar({
     const onOpenPageSearch = () => setPageSearchModalOpen(true);
     const onOpenShortcuts = () => setShortcutsModalOpen(true);
     const onOpenGuideBot = () => setGuideBotOpen(true);
+    const onOpenAccountsRegister = () => setAccountsModalOpen(true);
+    const onOpenCashDrawer = () => {
+      if (canOpenDrawerPopup) setDrawerModalOpen(true);
+    };
+    const onOpenLicenseViewer = () => setLicenseViewerOpen(true);
 
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("open-product-search", onOpenSearch);
     window.addEventListener("open-page-search", onOpenPageSearch);
     window.addEventListener("open-shortcuts-modal", onOpenShortcuts);
     window.addEventListener("open-guide-bot", onOpenGuideBot);
+    window.addEventListener("open-accounts-register", onOpenAccountsRegister);
+    window.addEventListener("open-cash-drawer", onOpenCashDrawer);
+    window.addEventListener("open-license-viewer", onOpenLicenseViewer);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("open-product-search", onOpenSearch);
       window.removeEventListener("open-page-search", onOpenPageSearch);
       window.removeEventListener("open-shortcuts-modal", onOpenShortcuts);
       window.removeEventListener("open-guide-bot", onOpenGuideBot);
+      window.removeEventListener("open-accounts-register", onOpenAccountsRegister);
+      window.removeEventListener("open-cash-drawer", onOpenCashDrawer);
+      window.removeEventListener("open-license-viewer", onOpenLicenseViewer);
     };
   }, [canOpenDrawerPopup]);
 
@@ -855,7 +870,7 @@ export default function Topbar({
         className="workspace-topbar"
       >
         <div className="workspace-topbar-row">
-          {/* Left: Navigation Toggle + Quick Search (Ctrl+K) + Product Lookup (Ctrl+P) */}
+          {/* Left: Navigation Toggle + Quick Search (Ctrl+K) + Product Lookup (Ctrl+P) + Guide Bot (Ctrl+G) */}
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 shrink-0">
             {/* Mobile menu button — visible on < lg */}
             <div className="lg:hidden shrink-0">
@@ -891,11 +906,11 @@ export default function Topbar({
               title="Quick Navigation — Go to any page or report (Ctrl+K)"
               aria-label="Open page search"
               aria-keyshortcuts="Ctrl+K"
-              className="inline-flex items-center justify-center gap-2 h-9 w-9 md:w-auto md:px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/70 hover:bg-slate-200/70 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-600 dark:text-slate-300 transition-all duration-150 cursor-pointer shrink-0 whitespace-nowrap"
+              className="inline-flex items-center justify-center gap-2 h-9 w-9 sm:w-auto sm:px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/70 hover:bg-slate-200/70 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-600 dark:text-slate-300 transition-all duration-150 cursor-pointer shrink-0 whitespace-nowrap"
             >
               <MagnifyingGlassIcon className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
-              <span className="hidden md:inline font-medium">Search Pages</span>
-              <kbd className="hidden xl:inline-block px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
+              <span className="hidden sm:inline font-medium">Search</span>
+              <kbd className="hidden lg:inline-block px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
                 Ctrl+K
               </kbd>
             </button>
@@ -907,23 +922,26 @@ export default function Topbar({
               title="Global Product & Batch Lookup (Ctrl+P)"
               aria-label="Open product lookup"
               aria-keyshortcuts="Ctrl+P"
-              className="inline-flex items-center justify-center gap-2 h-9 w-9 xl:w-auto xl:px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/70 hover:bg-slate-200/70 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-700 dark:text-slate-200 transition-all duration-150 cursor-pointer shrink-0 whitespace-nowrap"
+              className="inline-flex items-center justify-center gap-2 h-9 w-9 md:w-auto md:px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/70 hover:bg-slate-200/70 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-700 dark:text-slate-200 transition-all duration-150 cursor-pointer shrink-0 whitespace-nowrap"
             >
               <CubeIcon className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
-              <span className="hidden xl:inline">Products</span>
-              <kbd className="hidden 2xl:inline-block px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
+              <span className="hidden md:inline">Products</span>
+              <kbd className="hidden xl:inline-block px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
                 Ctrl+P
               </kbd>
             </button>
 
-            {/* Screen-Aware Bilingual Guide Bot (English + اردو) (Ctrl+G) */}
+            {/* Screen-Aware Bilingual Guide Bot (Ctrl+G) */}
             <GuideBotTopbarButton
               onClick={() => setGuideBotOpen((v) => !v)}
               isOpen={guideBotOpen}
               pageTitle={pageTitle}
             />
+          </div>
 
-            {/* Server & Attached Terminals Dashboard Quick Button */}
+          {/* Right: 1) Server Status & Cash Drawer | 2) Notifications & Theme | 3) User & Tools Menu */}
+          <div className="workspace-topbar-actions">
+            {/* Server & Attached Terminals Status */}
             <button
               type="button"
               onClick={() => navigate("/server-dashboard")}
@@ -932,7 +950,7 @@ export default function Topbar({
                   ? `Server & Attached Terminals (${syncPulse.onlineTerminalsCount || 1} Online)`
                   : "Server Connection Offline — Click to open Server & Terminals Dashboard"
               }
-              className="inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/70 hover:bg-slate-200/70 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-700 dark:text-slate-200 transition-all duration-150 cursor-pointer shrink-0 whitespace-nowrap"
+              className="inline-flex items-center justify-center gap-1.5 h-9 px-2 sm:px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/70 hover:bg-slate-200/70 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-700 dark:text-slate-200 transition-all duration-150 cursor-pointer shrink-0 whitespace-nowrap"
             >
               <ServerStackIcon className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
               <span
@@ -940,123 +958,72 @@ export default function Topbar({
                   syncPulse.online ? "bg-emerald-500" : "bg-red-500 animate-ping"
                 }`}
               />
-              <span className="hidden 2xl:inline">
+              <span className="hidden xl:inline">
                 {syncPulse.onlineTerminalsCount > 1
                   ? `${syncPulse.onlineTerminalsCount} Terminals`
                   : "Server"}
               </span>
             </button>
 
-            {/* Open Current View in a New Window */}
-            {(onOpenCurrentInNewWindow || onOpenCurrentInSubWindow) && (
-              <button
-                type="button"
-                onClick={onOpenCurrentInNewWindow || onOpenCurrentInSubWindow}
-                title={`Open "${pageTitle || "Current View"}" in a New Window`}
-                className="inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/70 hover:bg-slate-200/70 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-700 dark:text-slate-200 transition-all duration-150 cursor-pointer shrink-0 whitespace-nowrap"
-              >
-                <span aria-hidden="true">⧉</span>
-                <span className="hidden xl:inline">New Window</span>
-              </button>
-            )}
-          </div>
-
-          {/* Right: 1) Financial Registers | 2) System Utilities | 3) License & User */}
-          <div className="workspace-topbar-actions">
-            {/* Group 1: Financial Registers (Cash Drawer + Accounts) */}
+            {/* Cash Drawer Register (Ctrl+D) — Financial Accounts moved to Windows Native Topbar & User Menu */}
             {permsLoading ? (
-              <>
-                <div
-                  aria-hidden="true"
-                  className="inline-flex items-center gap-1.5 h-9 px-2 sm:px-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-100/70 dark:bg-slate-800/60 shrink-0"
-                >
-                  <span className="kd-skeleton-bone w-4 h-4 rounded shrink-0" />
-                  <span className="kd-skeleton-bone-accent w-2 h-2 rounded-full shrink-0" />
-                  <span className="hidden xl:inline-block kd-skeleton-bone h-3 w-16 rounded-full" />
-                </div>
-                <div
-                  aria-hidden="true"
-                  className="inline-flex items-center gap-1.5 h-9 px-2 sm:px-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-100/70 dark:bg-slate-800/60 shrink-0"
-                >
-                  <span className="kd-skeleton-bone w-4 h-4 rounded shrink-0" />
-                  <span className="kd-skeleton-bone-accent w-2 h-2 rounded-full shrink-0" />
-                  <span className="hidden xl:inline-block kd-skeleton-bone h-3 w-20 rounded-full" />
-                </div>
-                <div className="hidden sm:block mx-0.5 h-5 w-px bg-slate-300/60 dark:bg-slate-700/60 shrink-0" />
-              </>
+              <div
+                aria-hidden="true"
+                className="inline-flex items-center gap-1.5 h-9 px-2 sm:px-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-100/70 dark:bg-slate-800/60 shrink-0"
+              >
+                <span className="kd-skeleton-bone w-4 h-4 rounded shrink-0" />
+                <span className="kd-skeleton-bone-accent w-2 h-2 rounded-full shrink-0" />
+                <span className="hidden lg:inline-block kd-skeleton-bone h-3 w-16 rounded-full" />
+              </div>
             ) : (
-              <>
-                {canViewDrawer && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (canOpenDrawerPopup) {
-                        setDrawerModalOpen(true);
-                      }
-                    }}
-                    aria-label="Cash Drawer register"
-                    title={
-                      drawerStatus.isOpen
-                        ? `Cash Drawer Open: ${formatCurrency(drawerStatus.expected)} (Ctrl+D)`
-                        : canOpenDrawerPopup
-                        ? "Cash Drawer is Closed — Click to Open Shift (Ctrl+D)"
-                        : "Cash Drawer is Closed"
+              canViewDrawer && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (canOpenDrawerPopup) {
+                      setDrawerModalOpen(true);
                     }
-                    className={`inline-flex items-center gap-1 sm:gap-1.5 h-9 px-2 sm:px-2.5 text-xs font-semibold rounded-xl transition-all duration-150 relative z-20 shrink-0 whitespace-nowrap border ${
-                      canOpenDrawerPopup ? "cursor-pointer" : "cursor-default"
-                    } ${
-                      drawerStatus.isOpen
-                        ? `bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400${
-                            canOpenDrawerPopup ? " hover:bg-emerald-500/20" : ""
-                          }`
-                        : `bg-slate-500/10 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300${
-                            canOpenDrawerPopup ? " hover:bg-slate-500/20" : ""
-                          }`
+                  }}
+                  aria-label="Cash Drawer register"
+                  title={
+                    drawerStatus.isOpen
+                      ? `Cash Drawer Open: ${formatCurrency(drawerStatus.expected)} (Ctrl+D)`
+                      : canOpenDrawerPopup
+                      ? "Cash Drawer is Closed — Click to Open Shift (Ctrl+D)"
+                      : "Cash Drawer is Closed"
+                  }
+                  className={`inline-flex items-center gap-1 sm:gap-1.5 h-9 px-2 sm:px-2.5 text-xs font-semibold rounded-xl transition-all duration-150 relative z-20 shrink-0 whitespace-nowrap border ${
+                    canOpenDrawerPopup ? "cursor-pointer" : "cursor-default"
+                  } ${
+                    drawerStatus.isOpen
+                      ? `bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400${
+                          canOpenDrawerPopup ? " hover:bg-emerald-500/20" : ""
+                        }`
+                      : `bg-slate-500/10 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300${
+                          canOpenDrawerPopup ? " hover:bg-slate-500/20" : ""
+                        }`
+                  }`}
+                >
+                  <BanknotesIcon className="w-4 h-4 shrink-0" />
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${
+                      drawerStatus.isOpen ? "bg-emerald-500 animate-pulse" : "bg-amber-400"
                     }`}
-                  >
-                    <BanknotesIcon className="w-4 h-4 shrink-0" />
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${
-                        drawerStatus.isOpen ? "bg-emerald-500 animate-pulse" : "bg-amber-400"
-                      }`}
-                    />
-                    {drawerStatus.loading ? (
-                      <span className="hidden xl:inline-block kd-skeleton-bone h-3 w-16 rounded-full" />
-                    ) : (
-                      <span className="hidden xl:inline font-bold">
-                        {drawerStatus.isOpen ? formatCurrency(drawerStatus.expected) : "Drawer"}
-                      </span>
-                    )}
-                  </button>
-                )}
-
-                {has("account.view") && (
-                  <button
-                    type="button"
-                    onClick={() => setAccountsModalOpen(true)}
-                    aria-label="Financial Accounts register"
-                    title={`Financial Accounts Register: ${formatCurrency(accountsStatus.total_balance)} across all accounts (Ctrl+A)`}
-                    className="inline-flex items-center gap-1 sm:gap-1.5 h-9 px-2 sm:px-2.5 text-xs font-semibold rounded-xl transition-all duration-150 relative z-20 shrink-0 whitespace-nowrap border bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 cursor-pointer"
-                  >
-                    <BuildingLibraryIcon className="w-4 h-4 shrink-0" />
-                    <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                    {accountsStatus.loading ? (
-                      <span className="hidden xl:inline-block kd-skeleton-bone h-3 w-20 rounded-full" />
-                    ) : (
-                      <span className="hidden xl:inline font-bold">
-                        {formatCurrency(accountsStatus.total_balance)}
-                      </span>
-                    )}
-                  </button>
-                )}
-
-                {(canViewDrawer || has("account.view")) && (
-                  <div className="hidden sm:block mx-0.5 h-5 w-px bg-slate-300/60 dark:bg-slate-700/60 shrink-0" />
-                )}
-              </>
+                  />
+                  {drawerStatus.loading ? (
+                    <span className="hidden lg:inline-block kd-skeleton-bone h-3 w-16 rounded-full" />
+                  ) : (
+                    <span className="hidden lg:inline font-bold">
+                      {drawerStatus.isOpen ? formatCurrency(drawerStatus.expected) : "Drawer"}
+                    </span>
+                  )}
+                </button>
+              )
             )}
 
-            {/* Group 2: System Utilities (Notification Bell, Shortcuts, Theme) */}
+            <div className="hidden sm:block mx-0.5 h-5 w-px bg-slate-300/60 dark:bg-slate-700/60 shrink-0" />
+
+            {/* Notification Bell */}
             <button
               type="button"
               onClick={() => setNotifOpen(true)}
@@ -1084,41 +1051,12 @@ export default function Topbar({
               )}
             </button>
 
-            <button
-              type="button"
-              onClick={() => setShortcutsModalOpen(true)}
-              title="Keyboard Shortcuts (?)"
-              aria-label="Open keyboard shortcuts guide"
-              aria-keyshortcuts="?"
-              className={`relative hidden md:inline-flex items-center justify-center h-9 w-9 ${buttonStyleClass} transition-colors focus:outline-hidden focus:ring-2 focus:ring-blue-500/50 shrink-0 cursor-pointer ${isOutlined ? 'border-2' : 'shadow-xs'}`}
-              style={{
-                background: getButtonBg(themeColors.primary),
-                border: getButtonBorder(themeColors.primary),
-                color: getButtonTextColor(themeColors.primary),
-                borderRadius: 'var(--btn-radius, 0.75rem)',
-              }}
-            >
-              <CommandLineIcon className="w-4 h-4 shrink-0" />
-            </button>
-
+            {/* Theme Toggle */}
             <div className="shrink-0 flex items-center">
               <ThemeToggle />
             </div>
 
-            <div className="hidden sm:block mx-0.5 h-5 w-px bg-slate-300/60 dark:bg-slate-700/60 shrink-0" />
-
-            {/* Group 3: License & User Account */}
-            <button
-              type="button"
-              onClick={() => navigate("/settings#license")}
-              className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 text-xs font-semibold rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-100/80 dark:bg-slate-800/70 hover:bg-slate-200/70 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 transition-all duration-150 relative z-20 shrink-0 whitespace-nowrap cursor-pointer"
-              title={licLoading ? "Checking license…" : licValid ? `License active (${leftTxt} left)` : "License required – click to activate"}
-            >
-              <ClockIcon className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden 2xl:inline">{licLoading ? "Checking…" : licValid ? `${leftTxt} left` : "Activate"}</span>
-            </button>
-
-            {/* User menu */}
+            {/* User & Tools Menu (holds Profile, Financial Accounts, New Window, License Viewer, Shortcuts, Updates, Logout) */}
             <div className="relative shrink-0">
               <button
                 ref={btnRef}
@@ -1132,7 +1070,7 @@ export default function Topbar({
                 <span className="inline-grid h-5 w-5 place-items-center rounded-full border border-current/30 text-xs font-bold shrink-0">
                   {(user?.name || "U").slice(0, 1).toUpperCase()}
                 </span>
-                <span className="hidden xl:inline text-xs font-semibold workspace-user-name">
+                <span className="hidden lg:inline text-xs font-semibold workspace-user-name">
                   {user?.name || "User"}
                 </span>
                 <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1146,7 +1084,7 @@ export default function Topbar({
                   ref={menuRef}
                   role="menu"
                   className={[
-                    "absolute right-0 mt-2 w-48 rounded-xl overflow-hidden shadow-xl border border-slate-200 dark:border-slate-700",
+                    "absolute right-0 mt-2 w-60 rounded-xl overflow-hidden shadow-xl border border-slate-200 dark:border-slate-700",
                     "workspace-user-menu",
                     navigationStyle === 'topbar' ? 'z-1000000' : 'z-50',
                   ].join(" ")}
@@ -1157,40 +1095,90 @@ export default function Topbar({
                       setOpen(false);
                       navigate("/profile");
                     }}
-                    className="workspace-user-menu-item"
+                    className="workspace-user-menu-item flex items-center justify-between gap-2"
                   >
-                    Profile
+                    <span>Profile ({user?.name || "User"})</span>
                   </button>
+
+                  {has("account.view") && (
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setOpen(false);
+                        setAccountsModalOpen(true);
+                      }}
+                      className="workspace-user-menu-item flex items-center justify-between gap-2"
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <BuildingLibraryIcon className="w-4 h-4 text-blue-500 shrink-0" />
+                        <span>Financial Accounts</span>
+                      </span>
+                      <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400">
+                        {accountsStatus.loading ? "…" : formatCurrency(accountsStatus.total_balance)}
+                      </span>
+                    </button>
+                  )}
+
+                  {(onOpenCurrentInNewWindow || onOpenCurrentInSubWindow) && (
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setOpen(false);
+                        (onOpenCurrentInNewWindow || onOpenCurrentInSubWindow)?.();
+                      }}
+                      className="workspace-user-menu-item flex items-center justify-between gap-2"
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <span aria-hidden="true" className="text-sm leading-none">⧉</span>
+                        <span>Open in New Window</span>
+                      </span>
+                      <kbd className="text-[10px] font-mono opacity-65">Ctrl+Shift+N</kbd>
+                    </button>
+                  )}
+
                   <button
                     role="menuitem"
                     onClick={() => {
                       setOpen(false);
-                      navigate("/settings#license");
+                      setLicenseViewerOpen(true);
                     }}
-                    className="workspace-user-menu-item sm:hidden"
+                    className="workspace-user-menu-item flex items-center justify-between gap-2"
                   >
-                    {licLoading ? "License Status" : licValid ? `License (${leftTxt} left)` : "Activate License"}
+                    <span className="inline-flex items-center gap-2">
+                      <ClockIcon className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <span>License Viewer</span>
+                    </span>
+                    <span className="text-[11px] font-semibold opacity-75">
+                      {licLoading ? "…" : licValid ? leftTxt : "Activate"}
+                    </span>
                   </button>
-                   <button
-                    role="menuitem"
-                    onClick={() => {
-                      setOpen(false);
-                      window.dispatchEvent(new CustomEvent("karobar:check-updates"));
-                    }}
-                    className="workspace-user-menu-item"
-                  >
-                    Check for Updates
-                  </button>
+
                   <button
                     role="menuitem"
                     onClick={() => {
                       setOpen(false);
                       setShortcutsModalOpen(true);
                     }}
-                    className="workspace-user-menu-item md:hidden"
+                    className="workspace-user-menu-item flex items-center justify-between gap-2"
                   >
-                    Keyboard Shortcuts
+                    <span className="inline-flex items-center gap-2">
+                      <CommandLineIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                      <span>Keyboard Shortcuts</span>
+                    </span>
+                    <kbd className="text-[10px] font-mono opacity-65">?</kbd>
                   </button>
+
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setOpen(false);
+                      window.dispatchEvent(new CustomEvent("karobar:check-updates"));
+                    }}
+                    className="workspace-user-menu-item flex items-center justify-between gap-2"
+                  >
+                    <span>Check for Updates</span>
+                  </button>
+
                   <button
                     role="menuitem"
                     onClick={() => {
@@ -1203,7 +1191,7 @@ export default function Topbar({
                         navigate("/");
                       });
                     }}
-                    className="workspace-user-menu-item"
+                    className="workspace-user-menu-item text-rose-600 dark:text-rose-400 font-semibold border-t border-slate-200/70 dark:border-slate-700/70"
                   >
                     Logout
                   </button>
@@ -1266,6 +1254,13 @@ export default function Topbar({
           <KeyboardShortcutsModal
             isOpen={shortcutsModalOpen}
             onClose={() => setShortcutsModalOpen(false)}
+          />
+        )}
+
+        {licenseViewerOpen && (
+          <LicenseViewerModal
+            isOpen={licenseViewerOpen}
+            onClose={() => setLicenseViewerOpen(false)}
           />
         )}
       </Suspense>

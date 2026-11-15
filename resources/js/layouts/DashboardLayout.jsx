@@ -203,6 +203,7 @@ export default function DashboardLayout({ children }) {
       "/product-batches": "Product Batches",
       "/reports/net-profit": "Profit & Loss Statement",
       "/reports/tax-return": "Statutory Tax & GST Return",
+      "/reports/narcotics": "Narcotics & Controlled Drugs Register",
       "/stock-adjustments": "Stock Adjustments",
       "/stock-adjustments/create": "Add Stock Adjustment",
       "/stocktake-sessions": "Stocktake Sessions",
@@ -257,7 +258,7 @@ export default function DashboardLayout({ children }) {
     document.title = `${pageTitle} - ${appName || "Karobar-App"}`;
   }, [pageTitle, appName]);
 
-  // Global event listeners to open native windows from anywhere in the app
+  // Global event listeners to open native windows & handle Windows Native Menu Bar commands
   useEffect(() => {
     const handleCustomOpen = (e) => {
       const p = e.detail?.path;
@@ -268,11 +269,52 @@ export default function DashboardLayout({ children }) {
     };
     window.addEventListener("karobar:open-window", handleCustomOpen);
     window.addEventListener("karobar:open-subwindow", handleCustomOpen);
+
+    const desktop = typeof window !== "undefined" ? window.karobarDesktop : null;
+    const unsubNav = desktop?.onNavigate?.((payload) => {
+      if (payload?.path) {
+        navigate(payload.path);
+      }
+    });
+    const unsubOpenSub = desktop?.onOpenSubWindow?.((payload) => {
+      if (payload?.path) {
+        openInNewWindow(payload.path, payload.title || resolvePageTitle(payload.path));
+      }
+    });
+    const unsubCmd = desktop?.onWindowCommand?.((payload) => {
+      const cmd = payload?.command;
+      if (
+        cmd === "open-current-in-new-window" ||
+        cmd === "new-tab" ||
+        cmd === "duplicate-tab"
+      ) {
+        const currentUrl = window.location.pathname + window.location.search;
+        openInNewWindow(currentUrl, resolvePageTitle(window.location.pathname));
+      } else if (cmd === "open-accounts-register") {
+        window.dispatchEvent(new CustomEvent("open-accounts-register"));
+      } else if (cmd === "open-cash-drawer") {
+        window.dispatchEvent(new CustomEvent("open-cash-drawer"));
+      } else if (cmd === "open-license-viewer") {
+        window.dispatchEvent(new CustomEvent("open-license-viewer"));
+      } else if (cmd === "open-shortcuts-modal") {
+        window.dispatchEvent(new CustomEvent("open-shortcuts-modal"));
+      } else if (cmd === "open-page-search") {
+        window.dispatchEvent(new CustomEvent("open-page-search"));
+      } else if (cmd === "open-product-search") {
+        window.dispatchEvent(new CustomEvent("open-product-search"));
+      } else if (cmd === "open-guide-bot") {
+        window.dispatchEvent(new CustomEvent("open-guide-bot"));
+      }
+    });
+
     return () => {
       window.removeEventListener("karobar:open-window", handleCustomOpen);
       window.removeEventListener("karobar:open-subwindow", handleCustomOpen);
+      if (typeof unsubNav === "function") unsubNav();
+      if (typeof unsubOpenSub === "function") unsubOpenSub();
+      if (typeof unsubCmd === "function") unsubCmd();
     };
-  }, [resolvePageTitle]);
+  }, [resolvePageTitle, navigate]);
 
   // Prevent body scroll when mobile sidebar is open
   useEffect(() => {

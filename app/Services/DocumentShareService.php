@@ -1825,7 +1825,7 @@ class DocumentShareService
         $hasInvoiceNo   = Schema::hasColumn('sale_invoices', 'invoice_no');
 
         $selectCols = [
-            'id', 'posted_number', 'date',
+            'id', 'posted_number', 'date', 'created_at',
             'invoice_total', 'total', 'grand_total', 'net_total', 'gross_amount', 'sub_total',
             'total_receive', 'total_recieve', 'received', 'amount_received',
         ];
@@ -1853,11 +1853,14 @@ class DocumentShareService
             $r = min($directR, $t);
             $rawDate = $hasInvoiceDate ? ($inv->invoice_date ?? $inv->date) : $inv->date;
             $entryDate = $rawDate ? Carbon::parse($rawDate)->format('Y-m-d') : null;
+            $sortTs = $inv->created_at ? Carbon::parse($inv->created_at)->getTimestamp() : 0;
             $invoiceNumber = $hasInvoiceNo ? ($inv->invoice_no ?? null) : null;
 
             return (object) [
                 'id'              => $inv->id,
                 'entry_type'      => 'invoice',
+                'type_order'      => 1,
+                'sort_ts'         => $sortTs,
                 'is_manual'       => false,
                 'entry_date'      => $entryDate,
                 'posted_number'   => $inv->posted_number,
@@ -1882,9 +1885,12 @@ class DocumentShareService
             ->map(function (CustomerLedger $r) {
                 $isInvoiceLike = strtolower($r->entry_type) === 'manual';
                 $credited = (float) ($r->credited_amount ?? 0);
+                $sortTs = $r->created_at ? Carbon::parse($r->created_at)->getTimestamp() : 0;
                 return (object) [
                     'id'              => $r->id,
                     'entry_type'      => strtolower($r->entry_type),
+                    'type_order'      => $isInvoiceLike ? 2 : 3,
+                    'sort_ts'         => $sortTs,
                     'is_manual'       => (bool) $r->is_manual,
                     'entry_date'      => optional($r->entry_date)->format('Y-m-d'),
                     'posted_number'   => $r->posted_number,
@@ -1899,7 +1905,24 @@ class DocumentShareService
             });
 
         $all = $invoices->toBase()->concat($manualAndPayments->toBase())
-            ->sortBy(fn ($r) => [$r->entry_date, $r->id ?? 0])
+            ->sort(function ($a, $b) {
+                $da = (string) ($a->entry_date ?? '');
+                $db = (string) ($b->entry_date ?? '');
+                if ($da !== $db) {
+                    return $da <=> $db;
+                }
+                $ta = (int) ($a->sort_ts ?? 0);
+                $tb = (int) ($b->sort_ts ?? 0);
+                if ($ta !== $tb && $ta > 0 && $tb > 0) {
+                    return $ta <=> $tb;
+                }
+                $oa = (int) ($a->type_order ?? 9);
+                $ob = (int) ($b->type_order ?? 9);
+                if ($oa !== $ob) {
+                    return $oa <=> $ob;
+                }
+                return ((int) ($a->id ?? 0)) <=> ((int) ($b->id ?? 0));
+            })
             ->values();
 
         // Compute opening brought-forward balance prior to $from

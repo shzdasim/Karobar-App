@@ -364,6 +364,8 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/reports/net-profit/pdf',          [ReportsController::class, 'netProfitPdf']);
     Route::get('/reports/tax-return',              [ReportsController::class, 'taxReturn']);
     Route::get('/reports/tax-return/pdf',          [ReportsController::class, 'taxReturnPdf']);
+    Route::get('/reports/narcotics',               [ReportsController::class, 'narcoticsReport']);
+    Route::get('/reports/narcotics/pdf',           [ReportsController::class, 'narcoticsReportPdf']);
     Route::get('/reports/financial-statements/pdf',[ReportsController::class, 'financialStatementsPdf']);
     Route::put('/sale-invoices/{saleInvoice}/meta',[SaleInvoiceController::class, 'updateMeta']);
 

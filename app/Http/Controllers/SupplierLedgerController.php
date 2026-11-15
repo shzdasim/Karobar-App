@@ -63,13 +63,15 @@ class SupplierLedgerController extends Controller
             'to'          => ['nullable','date'],
         ]);
 
-        $q = SupplierLedger::with(['purchaseInvoice:id,invoice_number,posted_number,total_amount,total_paid'])
+        $q = SupplierLedger::with(['purchaseInvoice:id,invoice_number,posted_number,total_amount,total_paid,status,created_at'])
             ->where('supplier_id', $validated['supplier_id']);
 
         if ($request->filled('from')) $q->whereDate('entry_date', '>=', $request->get('from'));
         if ($request->filled('to'))   $q->whereDate('entry_date', '<=', $request->get('to'));
 
-        $rows = $q->orderBy('entry_date')->orderBy('id')->get();
+        $rows = $q->orderBy('entry_date')->orderBy('id')->get()
+            ->reject(fn ($r) => $r->entry_type === 'invoice' && $r->purchaseInvoice && $r->purchaseInvoice->status === 'reversed')
+            ->values();
 
         $invIds = $rows->pluck('purchase_invoice_id')->filter()->unique()->values()->all();
         $allocatedByInvoice = \App\Models\PaymentAllocation::sumAllocatedByInvoiceIds('purchase_invoice', $invIds);
@@ -91,9 +93,45 @@ class SupplierLedgerController extends Controller
                 $row->invoice_settled  = round($invSettled, 2);
                 $row->invoice_due      = $invDue;
             }
+            $tsSource = ($row->entry_type === 'invoice' && $row->purchaseInvoice && $row->purchaseInvoice->created_at)
+                ? $row->purchaseInvoice->created_at
+                : $row->created_at;
+            $row->sort_ts    = $tsSource ? \Carbon\Carbon::parse($tsSource)->getTimestamp() : 0;
+            $row->type_order = $row->entry_type === 'invoice' ? 1 : ($row->entry_type === 'manual' ? 2 : 3);
+            $row->row_key    = 'ledger-' . $row->id;
         }
 
+        $rows = $rows->sort(function ($a, $b) {
+            $da = optional($a->entry_date)->format('Y-m-d') ?? (string) $a->entry_date;
+            $db = optional($b->entry_date)->format('Y-m-d') ?? (string) $b->entry_date;
+            if ($da !== $db) {
+                return $da <=> $db;
+            }
+            $ta = (int) ($a->sort_ts ?? 0);
+            $tb = (int) ($b->sort_ts ?? 0);
+            if ($ta !== $tb && $ta > 0 && $tb > 0) {
+                return $ta <=> $tb;
+            }
+            $oa = (int) ($a->type_order ?? 9);
+            $ob = (int) ($b->type_order ?? 9);
+            if ($oa !== $ob) {
+                return $oa <=> $ob;
+            }
+            return ((int) ($a->id ?? 0)) <=> ((int) ($b->id ?? 0));
+        })->values();
+
         $openingBalance = $this->calculateOpeningBalance((int) $validated['supplier_id'], $request->get('from'));
+        $runningBalance = $openingBalance;
+        foreach ($rows as $idx => $row) {
+            if (in_array($row->entry_type, ['invoice', 'manual'], true)) {
+                $runningBalance += ((float) ($row->invoice_total ?? 0) - (float) ($row->total_paid ?? 0));
+            } elseif ($row->entry_type === 'payment') {
+                $runningBalance -= (float) ($row->debited_amount ?? 0);
+            }
+            $row->seq             = $idx + 1;
+            $row->running_balance = round($runningBalance, 2);
+        }
+
         $invoiceRows = $rows->whereIn('entry_type', ['invoice', 'manual']);
         $paymentRows = $rows->where('entry_type', 'payment');
 
@@ -584,13 +622,39 @@ class SupplierLedgerController extends Controller
         $from = $request->query('from');
         $to   = $request->query('to');
 
-        $rows = SupplierLedger::with(['purchaseInvoice:id,invoice_number,posted_number,total_amount,total_paid'])
+        $rows = SupplierLedger::with(['purchaseInvoice:id,invoice_number,posted_number,total_amount,total_paid,status,created_at'])
             ->where('supplier_id', $supplier->id)
             ->when($from, fn($q) => $q->whereDate('entry_date', '>=', $from))
             ->when($to,   fn($q) => $q->whereDate('entry_date', '<=', $to))
             ->orderBy('entry_date')
             ->orderBy('id')
-            ->get();
+            ->get()
+            ->reject(fn ($r) => $r->entry_type === 'invoice' && $r->purchaseInvoice && $r->purchaseInvoice->status === 'reversed')
+            ->sort(function ($a, $b) {
+                $da = optional($a->entry_date)->format('Y-m-d') ?? (string) $a->entry_date;
+                $db = optional($b->entry_date)->format('Y-m-d') ?? (string) $b->entry_date;
+                if ($da !== $db) {
+                    return $da <=> $db;
+                }
+                $tsa = ($a->entry_type === 'invoice' && $a->purchaseInvoice && $a->purchaseInvoice->created_at)
+                    ? $a->purchaseInvoice->created_at
+                    : $a->created_at;
+                $tsb = ($b->entry_type === 'invoice' && $b->purchaseInvoice && $b->purchaseInvoice->created_at)
+                    ? $b->purchaseInvoice->created_at
+                    : $b->created_at;
+                $ta = $tsa ? \Carbon\Carbon::parse($tsa)->getTimestamp() : 0;
+                $tb = $tsb ? \Carbon\Carbon::parse($tsb)->getTimestamp() : 0;
+                if ($ta !== $tb && $ta > 0 && $tb > 0) {
+                    return $ta <=> $tb;
+                }
+                $oa = $a->entry_type === 'invoice' ? 1 : ($a->entry_type === 'manual' ? 2 : 3);
+                $ob = $b->entry_type === 'invoice' ? 1 : ($b->entry_type === 'manual' ? 2 : 3);
+                if ($oa !== $ob) {
+                    return $oa <=> $ob;
+                }
+                return ((int) ($a->id ?? 0)) <=> ((int) ($b->id ?? 0));
+            })
+            ->values();
 
         $invIds = $rows->pluck('purchase_invoice_id')->filter()->unique()->values()->all();
         $allocatedByInvoice = \App\Models\PaymentAllocation::sumAllocatedByInvoiceIds('purchase_invoice', $invIds);

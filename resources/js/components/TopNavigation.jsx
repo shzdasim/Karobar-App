@@ -34,6 +34,7 @@ import {
   CircleStackIcon,
   LockClosedIcon,
   LockOpenIcon,
+  ShieldExclamationIcon,
 } from "@heroicons/react/24/outline";
 import { usePermissions } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
@@ -211,6 +212,7 @@ export default function TopNavigation() {
         { name: "Product Comprehensive", path: "/reports/product-comprehensive", icon: <ReportIcon className="w-5 h-5" />, perm: "report.product-comprehensive.view" },
         { name: "Near Expiry Product", path: "/reports/near-expiry-product", icon: <ClockIcon className="w-5 h-5" />, perm: "report.near-expiry-product.view" },
         { name: "Stock Adjustment Report", path: "/reports/stock-adjustment", icon: <ArrowsRightLeftIcon className="w-5 h-5" />, perm: "report.stock-adjustment.view" },
+        { name: "Narcotics & Controlled Drugs", path: "/reports/narcotics", icon: <ShieldExclamationIcon className="w-5 h-5" />, permAny: ["report.sale-detail.view", "report.current-stock.view", "report.product-comprehensive.view", "product.view"] },
       ]
     },
     {

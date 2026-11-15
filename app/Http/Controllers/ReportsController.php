@@ -10,14 +10,24 @@ use App\Authorizables\PurchaseDetailReport;
 use App\Authorizables\SaleDetailReport;
 use App\Authorizables\StockAdjustmentReport;
 use App\Models\Product;
+use App\Models\Batch;
+use App\Models\Setting;
 use App\Models\PurchaseReturn;
+use App\Models\PurchaseReturnItem;
 use App\Models\SaleReturn;
+use App\Models\SaleReturnItem;
+use App\Models\Customer;
 use App\Models\CustomerLedger;
+use App\Models\Supplier;
 use App\Models\SupplierLedger;
 use App\Models\PurchaseInvoice;
+use App\Models\PurchaseInvoiceItem;
 use App\Models\SaleInvoice;
+use App\Models\SaleInvoiceItem;
 use App\Models\StockAdjustment;
 use App\Models\StockAdjustmentItem;
+use App\Models\StockDisposal;
+use App\Models\StockDisposalItem;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -2708,5 +2718,1101 @@ class ReportsController extends Controller
         return $req->boolean('download')
             ? $pdf->download("financial-statements-{$from}-to-{$to}.pdf")
             : $pdf->stream("financial-statements-{$from}-to-{$to}.pdf");
+    }
+
+    /**
+     * Format physical units into Packs + Loose Units for Pakistani Drug Inspector registers.
+     */
+    private function formatNarcoticPackBreakdown(int $units, int $packSize): string
+    {
+        $packSize = max(1, $packSize);
+        if ($units === 0) {
+            return '0 Units';
+        }
+        if ($packSize <= 1) {
+            return number_format($units) . ' Units';
+        }
+        $sign = $units < 0 ? '-' : '';
+        $abs  = abs($units);
+        $packs = intdiv($abs, $packSize);
+        $loose = $abs % $packSize;
+        if ($packs > 0 && $loose > 0) {
+            return "{$sign}{$packs} Pk + {$loose} U (1×{$packSize})";
+        }
+        if ($packs > 0) {
+            return "{$sign}{$packs} " . ($packs === 1 ? 'Pack' : 'Packs') . " (1×{$packSize})";
+        }
+        return "{$sign}{$loose} Loose U (1×{$packSize})";
+    }
+
+    /**
+     * GET /api/reports/narcotics
+     * Pakistani Statutory Narcotics & Controlled Substances Register
+     * Compliant with:
+     * - The Drugs Act, 1976 & DRAP Controlled Substance Guidelines
+     * - Provincial Drugs Rules (Punjab Drugs Rules 2007 Form 9 / Schedule B, Schedule D & Schedule G)
+     * - Control of Narcotic Substances Act (CNSA), 1997
+     *
+     * Strictly records physical quantities, batch & expiry, authorized supplier source,
+     * patient identity (Name, CNIC/Contact, Address), prescribing RMP (Doctor Name, PM&DC Reg #, Hospital),
+     * running physical balance in hand after every transaction, supervising pharmacist, and witness sign-offs.
+     * Does NOT record purchase or sale monetary values.
+     */
+    public function narcoticsReport(Request $req)
+    {
+        $this->authorizeReportAction([
+            'report.sale-detail.view',
+            'report.current-stock.view',
+            'report.product-comprehensive.view',
+            'product.view',
+        ]);
+
+        try {
+            $fromDate = $req->query('from')
+                ? Carbon::parse($req->query('from'))->startOfDay()
+                : Carbon::now()->startOfMonth()->startOfDay();
+        } catch (\Throwable $e) {
+            $fromDate = Carbon::now()->startOfMonth()->startOfDay();
+        }
+
+        try {
+            $toDate = $req->query('to')
+                ? Carbon::parse($req->query('to'))->endOfDay()
+                : Carbon::now()->endOfDay();
+        } catch (\Throwable $e) {
+            $toDate = Carbon::now()->endOfDay();
+        }
+
+        if ($fromDate->gt($toDate)) {
+            [$fromDate, $toDate] = [$toDate->copy()->startOfDay(), $fromDate->copy()->endOfDay()];
+        }
+
+        $fromStr   = $fromDate->toDateString();
+        $toStr     = $toDate->toDateString();
+        $productId = $req->query('product_id') ? (int) $req->query('product_id') : null;
+
+        $setting = Setting::first();
+        $storeLicense = [
+            'store_name'     => $setting->store_name ?? 'Karobar Pharmacy',
+            'license_number' => $setting->license_number ?? null,
+            'address'        => $setting->address ?? null,
+            'phone_number'   => $setting->phone_number ?? null,
+            'retention_rule' => 'Mandatory 3-Year Statutory Retention (Drugs Act 1976 / Rule 13 & Schedule G)',
+        ];
+
+        // 1. All narcotic products for dropdown + filtered list for ledger
+        $allNarcoticProducts = Product::with(['brand:id,name', 'category:id,name', 'supplier:id,name'])
+            ->where('narcotic', 'yes')
+            ->orderBy('name')
+            ->get();
+
+        $narcoticProductOptions = $allNarcoticProducts->map(fn ($p) => [
+            'id'           => $p->id,
+            'name'         => $p->name,
+            'product_code' => $p->product_code,
+            'formulation'  => $p->formulation,
+            'brand_name'   => $p->brand->name ?? null,
+            'pack_size'    => (int) ($p->pack_size ?: 1),
+        ])->values();
+
+        $targetProducts = $productId
+            ? $allNarcoticProducts->where('id', $productId)->values()
+            : $allNarcoticProducts;
+
+        $targetIds = $targetProducts->pluck('id')->all();
+
+        if (empty($targetIds)) {
+            return response()->json([
+                'period'         => ['from' => $fromStr, 'to' => $toStr],
+                'store_license'  => $storeLicense,
+                'summary' => [
+                    'total_narcotic_products'       => $allNarcoticProducts->count(),
+                    'active_batches_count'          => 0,
+                    'opening_units_total'           => 0,
+                    'total_units_on_hand'           => 0,
+                    'units_purchased'               => 0,
+                    'purchase_invoices_count'       => 0,
+                    'units_dispensed'               => 0,
+                    'dispensing_invoices_count'     => 0,
+                    'compliant_sales_count'         => 0,
+                    'full_cnsa_compliant_count'     => 0,
+                    'missing_rx_sales_count'        => 0,
+                    'compliance_rate'               => 100.0,
+                    'units_returned_by_customers'   => 0,
+                    'units_returned_to_suppliers'   => 0,
+                    'units_disposed'                => 0,
+                    'disposal_vouchers_count'       => 0,
+                    'witnessed_disposals_count'     => 0,
+                ],
+                'chronological_register'  => [],
+                'stock_ledger'            => [],
+                'dispensing_register'     => [],
+                'procurement_register'    => [],
+                'destruction_and_returns' => [],
+                'batch_inventory'         => [],
+                'narcotic_products'       => $narcoticProductOptions,
+            ]);
+        }
+
+        // Check if extended/optional columns exist on sale_invoices
+        $saleInvCols = ['id', 'posted_number', 'date', 'doctor_name', 'patient_name', 'customer_id', 'user_id', 'remarks'];
+        foreach (['sale_type', 'invoice_type', 'status', 'doctor_pmdc', 'doctor_hospital', 'patient_cnic', 'patient_address', 'prescription_no', 'pharmacist_name'] as $extCol) {
+            if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', $extCol)) {
+                $saleInvCols[] = $extCol;
+            }
+        }
+
+        // 2. Dispensing Register (SaleInvoiceItem for narcotic products in period)
+        $saleItems = SaleInvoiceItem::with([
+                'product:id,name,product_code,formulation,pack_size,brand_id',
+                'product.brand:id,name',
+                'saleInvoice:' . implode(',', $saleInvCols),
+                'saleInvoice.customer',
+                'saleInvoice.user:id,name',
+            ])
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('saleInvoice', function ($q) use ($fromStr, $toStr) {
+                $q->whereBetween('date', [$fromStr, $toStr])
+                  ->where(fn ($sq) => $sq->whereNull('status')->orWhere('status', '!=', 'reversed'));
+            })
+            ->orderBy('id', 'asc')
+            ->get();
+
+        $dispensingRegister = $saleItems->map(function ($it) {
+            $inv = $it->saleInvoice;
+            $prod = $it->product;
+            $packSize = max(1, (int) ($it->pack_size ?: ($prod->pack_size ?? 1)));
+
+            $doctorName     = trim((string) ($inv->doctor_name ?? ''));
+            $doctorPmdc     = trim((string) ($inv->doctor_pmdc ?? ''));
+            $doctorHospital = trim((string) ($inv->doctor_hospital ?? ''));
+            $patientName    = trim((string) ($inv->patient_name ?? ''));
+            $patientCnic    = trim((string) ($inv->patient_cnic ?? ''));
+            $patientAddress = trim((string) ($inv->patient_address ?? ''));
+            $prescriptionNo = trim((string) ($inv->prescription_no ?? ''));
+            $pharmacistName = trim((string) ($inv->pharmacist_name ?? ''));
+
+            $customerName    = trim((string) ($inv->customer->name ?? ''));
+            $customerPhone   = trim((string) ($inv->customer->phone ?? ''));
+            $customerAddress = trim((string) ($inv->customer->address ?? ''));
+            $customerLicense = trim((string) ($inv->customer->tax_number ?? ''));
+            $saleType        = $inv->sale_type ?? 'retail';
+
+            $isWalkIn = $customerName === '' || Customer::isWalkInName($customerName);
+            $effectivePatient = $patientName !== ''
+                ? $patientName
+                : (!$isWalkIn ? $customerName : '');
+            $effectiveCnicOrPhone = $patientCnic !== ''
+                ? $patientCnic
+                : ($customerPhone !== '' ? $customerPhone : '');
+            $effectiveAddress = $patientAddress !== ''
+                ? $patientAddress
+                : ($customerAddress !== '' ? $customerAddress : '');
+            $effectivePharmacist = $pharmacistName !== ''
+                ? $pharmacistName
+                : ($inv->user->name ?? 'Qualified Pharmacist');
+
+            // Pakistani Drug Rules Compliance:
+            // - Wholesale supply requires a named licensed buyer
+            // - Retail supply requires Prescribing Doctor (RMP) + Patient Name
+            $isRxCompliant = $saleType === 'wholesale'
+                ? (!$isWalkIn)
+                : ($doctorName !== '' && $effectivePatient !== '');
+
+            $hasFullCnsaParticulars = $saleType === 'wholesale'
+                ? (!$isWalkIn && ($effectiveAddress !== '' || $customerLicense !== ''))
+                : ($isRxCompliant && $doctorPmdc !== '' && $effectiveCnicOrPhone !== '');
+
+            $dateStr = $inv && $inv->date
+                ? ($inv->date instanceof \Carbon\CarbonInterface ? $inv->date->format('Y-m-d') : substr((string) $inv->date, 0, 10))
+                : null;
+
+            $qty   = (int) ($it->quantity ?? 0);
+            $bonus = (int) ($it->bonus ?? 0);
+            $totalOut = $qty + $bonus;
+
+            return [
+                'id'                        => $it->id,
+                'sale_invoice_id'           => $inv->id ?? null,
+                'posted_number'             => $inv->posted_number ?? '-',
+                'prescription_no'           => $prescriptionNo !== '' ? $prescriptionNo : ($inv->posted_number ?? '-'),
+                'raw_prescription_no'       => $prescriptionNo !== '' ? $prescriptionNo : null,
+                'date'                      => $dateStr,
+                'sale_type'                 => $saleType,
+                'doctor_name'               => $doctorName !== '' ? $doctorName : null,
+                'doctor_pmdc'               => $doctorPmdc !== '' ? $doctorPmdc : null,
+                'doctor_hospital'           => $doctorHospital !== '' ? $doctorHospital : null,
+                'patient_name'              => $effectivePatient !== '' ? $effectivePatient : null,
+                'raw_patient_name'          => $patientName !== '' ? $patientName : null,
+                'patient_cnic'              => $patientCnic !== '' ? $patientCnic : null,
+                'patient_contact'           => $effectiveCnicOrPhone !== '' ? $effectiveCnicOrPhone : null,
+                'patient_address'           => $effectiveAddress !== '' ? $effectiveAddress : null,
+                'raw_patient_address'       => $patientAddress !== '' ? $patientAddress : null,
+                'customer_name'             => $customerName !== '' ? $customerName : 'Walk-in Patient',
+                'customer_phone'            => $customerPhone !== '' ? $customerPhone : null,
+                'dispensed_by'              => $effectivePharmacist,
+                'raw_pharmacist_name'       => $pharmacistName !== '' ? $pharmacistName : null,
+                'is_rx_compliant'           => $isRxCompliant,
+                'has_full_cnsa_particulars' => $hasFullCnsaParticulars,
+                'product_id'                => $it->product_id,
+                'product_name'              => $prod->name ?? '-',
+                'product_code'              => $prod->product_code ?? '-',
+                'formulation'               => $prod->formulation ?? null,
+                'brand_name'                => $prod->brand->name ?? '-',
+                'batch_number'              => $it->batch_number ?: '-',
+                'expiry'                    => $it->expiry ?: null,
+                'pack_size'                 => $packSize,
+                'quantity'                  => $qty,
+                'bonus'                     => $bonus,
+                'total_units_out'           => $totalOut,
+                'pack_breakdown'            => $this->formatNarcoticPackBreakdown($totalOut, $packSize),
+            ];
+        })->sortBy([
+            ['date', 'desc'],
+            ['sale_invoice_id', 'desc'],
+        ])->values();
+
+        // 3. Inward Procurement Register (PurchaseInvoiceItem for narcotic products in period)
+        $purchaseItems = PurchaseInvoiceItem::with([
+                'product:id,name,product_code,formulation,pack_size,brand_id',
+                'product.brand:id,name',
+                'purchaseInvoice:id,posted_number,posted_date,invoice_number,supplier_id,status,remarks',
+                'purchaseInvoice.supplier',
+            ])
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('purchaseInvoice', function ($q) use ($fromDate, $toDate) {
+                $q->whereBetween('posted_date', [$fromDate, $toDate])
+                  ->where(fn ($sq) => $sq->whereNull('status')->orWhere('status', '!=', 'reversed'));
+            })
+            ->orderBy('id', 'asc')
+            ->get();
+
+        $procurementRegister = $purchaseItems->map(function ($it) {
+            $inv = $it->purchaseInvoice;
+            $prod = $it->product;
+            $sup = $inv->supplier ?? null;
+            $packSize = max(1, (int) ($it->pack_size ?: ($prod->pack_size ?? 1)));
+
+            $dateStr = $inv && $inv->posted_date
+                ? ($inv->posted_date instanceof \Carbon\CarbonInterface ? $inv->posted_date->format('Y-m-d') : substr((string) $inv->posted_date, 0, 10))
+                : null;
+
+            $qty = (int) ($it->quantity ?? 0);
+            $unitBonus = (int) ($it->unit_bonus ?? 0);
+
+            return [
+                'id'                      => $it->id,
+                'purchase_invoice_id'     => $inv->id ?? null,
+                'posted_number'           => $inv->posted_number ?? '-',
+                'invoice_number'          => $inv->invoice_number ?: '-',
+                'date'                    => $dateStr,
+                'supplier_name'           => $sup->name ?? '-',
+                'supplier_phone'          => $sup->phone ?? null,
+                'supplier_address'        => $sup->address ?? null,
+                'supplier_license_or_tax' => $sup->tax_number ?? null,
+                'product_id'              => $it->product_id,
+                'product_name'            => $prod->name ?? '-',
+                'product_code'            => $prod->product_code ?? '-',
+                'formulation'             => $prod->formulation ?? null,
+                'brand_name'              => $prod->brand->name ?? '-',
+                'batch_number'            => $it->batch ?: '-',
+                'expiry'                  => $it->expiry ?: null,
+                'pack_size'               => $packSize,
+                'pack_quantity'           => (int) ($it->pack_quantity ?? 0),
+                'quantity'                => $qty,
+                'unit_bonus'              => $unitBonus,
+                'total_units_in'          => $qty,
+                'pack_breakdown'          => $this->formatNarcoticPackBreakdown($qty, $packSize),
+            ];
+        })->sortBy([
+            ['date', 'desc'],
+            ['purchase_invoice_id', 'desc'],
+        ])->values();
+
+        // 4. Controlled Destruction (Form-Witness), Quarantine & Returns Log
+        $disposalItems = StockDisposalItem::with([
+                'product:id,name,product_code,formulation,pack_size,brand_id',
+                'product.brand:id,name',
+                'disposal:id,disposal_number,disposal_date,status,cause,disposal_method,reference_no,witness_name,witness_designation,created_by,disposed_by',
+                'disposal.creator:id,name',
+                'disposal.disposer:id,name',
+            ])
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('disposal', function ($q) use ($fromStr, $toStr) {
+                $q->whereBetween('disposal_date', [$fromStr, $toStr])
+                  ->whereIn('status', ['quarantined', 'disposed']);
+            })
+            ->orderBy('id', 'asc')
+            ->get();
+
+        $saleReturnItems = SaleReturnItem::with([
+                'product:id,name,product_code,formulation,pack_size,brand_id',
+                'product.brand:id,name',
+                'saleReturn:id,posted_number,date,customer_id,sale_invoice_id',
+                'saleReturn.customer:id,name,phone,address',
+                'saleReturn.saleInvoice:id,posted_number,doctor_name,patient_name',
+            ])
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('saleReturn', function ($q) use ($fromStr, $toStr) {
+                $q->whereBetween('date', [$fromStr, $toStr]);
+            })
+            ->orderBy('id', 'asc')
+            ->get();
+
+        $purchaseReturnItems = PurchaseReturnItem::with([
+                'product:id,name,product_code,formulation,pack_size,brand_id',
+                'product.brand:id,name',
+                'purchaseReturn:id,posted_number,date,supplier_id,purchase_invoice_id',
+                'purchaseReturn.supplier:id,name,phone,address',
+                'purchaseReturn.purchaseInvoice:id,posted_number,invoice_number',
+            ])
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('purchaseReturn', function ($q) use ($fromStr, $toStr) {
+                $q->whereBetween('date', [$fromStr, $toStr]);
+            })
+            ->orderBy('id', 'asc')
+            ->get();
+
+        // Standalone Stock Adjustments (excluding disposal-linked adjustments)
+        $disposalAdjustmentIds = StockDisposal::whereNotNull('stock_adjustment_id')
+            ->pluck('stock_adjustment_id')
+            ->all();
+
+        $adjustmentItems = StockAdjustmentItem::with([
+                'product:id,name,product_code,formulation,pack_size,brand_id',
+                'product.brand:id,name',
+                'adjustment:id,posted_number,posted_date,note',
+            ])
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('adjustment', function ($q) use ($fromStr, $toStr, $disposalAdjustmentIds) {
+                $q->whereBetween('posted_date', [$fromStr, $toStr]);
+                if (!empty($disposalAdjustmentIds)) {
+                    $q->whereNotIn('id', $disposalAdjustmentIds);
+                }
+            })
+            ->orderBy('id', 'asc')
+            ->get();
+
+        $destructionAndReturns = collect();
+
+        foreach ($disposalItems as $di) {
+            $disp = $di->disposal;
+            $prod = $di->product;
+            $packSize = max(1, (int) ($prod->pack_size ?? 1));
+            $witnessName = trim((string) ($disp->witness_name ?? ''));
+            $witnessDesignation = trim((string) ($disp->witness_designation ?? ''));
+            $dateStr = $disp && $disp->disposal_date
+                ? ($disp->disposal_date instanceof \Carbon\CarbonInterface ? $disp->disposal_date->format('Y-m-d') : substr((string) $disp->disposal_date, 0, 10))
+                : null;
+            $qty = (int) ($di->dispose_qty ?? 0);
+
+            $destructionAndReturns->push([
+                'row_key'              => 'DISP-' . $di->id,
+                'event_type'           => $disp->status === 'quarantined' ? 'QUARANTINE' : 'DESTRUCTION',
+                'direction'            => 'OUT',
+                'document_id'          => $disp->id ?? null,
+                'document_number'      => $disp->disposal_number ?? '-',
+                'date'                 => $dateStr,
+                'product_id'           => $di->product_id,
+                'product_name'         => $prod->name ?? '-',
+                'product_code'         => $prod->product_code ?? '-',
+                'formulation'          => $prod->formulation ?? '-',
+                'batch_number'         => $di->batch_number ?: '-',
+                'expiry'               => $di->expiry_date ? substr((string) $di->expiry_date, 0, 10) : null,
+                'quantity'             => $qty,
+                'pack_breakdown'       => $this->formatNarcoticPackBreakdown($qty, $packSize),
+                'party_or_authority'   => $disp ? $disp->cause_label . ($disp->disposal_method ? ' • ' . $disp->method_label : '') : 'Controlled Destruction',
+                'witness_name'         => $witnessName !== '' ? $witnessName : null,
+                'witness_designation'  => $witnessDesignation !== '' ? $witnessDesignation : null,
+                'reference_no'         => $disp->reference_no ?? null,
+                'status'               => $disp->status ?? 'disposed',
+                'is_witness_compliant' => $witnessName !== '',
+                'handled_by'           => $disp->disposer->name ?? ($disp->creator->name ?? 'Qualified Pharmacist'),
+            ]);
+        }
+
+        foreach ($saleReturnItems as $sri) {
+            $sr = $sri->saleReturn;
+            $prod = $sri->product;
+            $packSize = max(1, (int) ($prod->pack_size ?? 1));
+            $dateStr = $sr && $sr->date
+                ? ($sr->date instanceof \Carbon\CarbonInterface ? $sr->date->format('Y-m-d') : substr((string) $sr->date, 0, 10))
+                : null;
+            $qty = (int) ($sri->unit_return_quantity ?? 0);
+
+            $destructionAndReturns->push([
+                'row_key'              => 'SR-' . $sri->id,
+                'event_type'           => 'PATIENT_RETURN',
+                'direction'            => 'IN',
+                'document_id'          => $sr->id ?? null,
+                'document_number'      => $sr->posted_number ?? '-',
+                'date'                 => $dateStr,
+                'product_id'           => $sri->product_id,
+                'product_name'         => $prod->name ?? '-',
+                'product_code'         => $prod->product_code ?? '-',
+                'formulation'          => $prod->formulation ?? '-',
+                'batch_number'         => $sri->batch_number ?: '-',
+                'expiry'               => $sri->expiry ?: null,
+                'quantity'             => $qty,
+                'pack_breakdown'       => $this->formatNarcoticPackBreakdown($qty, $packSize),
+                'party_or_authority'   => ($sr->customer->name ?? 'Patient Return')
+                    . ($sr->saleInvoice?->posted_number ? " (Against Inv: {$sr->saleInvoice->posted_number})" : ''),
+                'witness_name'         => $sr->saleInvoice->doctor_name ?? null,
+                'witness_designation'  => $sr->saleInvoice->patient_name ? 'Patient: ' . $sr->saleInvoice->patient_name : null,
+                'reference_no'         => $sr->saleInvoice->posted_number ?? null,
+                'status'               => 'completed',
+                'is_witness_compliant' => true,
+                'handled_by'           => 'Pharmacy Counter',
+            ]);
+        }
+
+        foreach ($purchaseReturnItems as $pri) {
+            $pr = $pri->purchaseReturn;
+            $prod = $pri->product;
+            $packSize = max(1, (int) ($prod->pack_size ?? 1));
+            $dateStr = $pr && $pr->date
+                ? ($pr->date instanceof \Carbon\CarbonInterface ? $pr->date->format('Y-m-d') : substr((string) $pr->date, 0, 10))
+                : null;
+            $qty = (int) ($pri->return_unit_quantity ?? 0);
+
+            $destructionAndReturns->push([
+                'row_key'              => 'PR-' . $pri->id,
+                'event_type'           => 'SUPPLIER_RETURN',
+                'direction'            => 'OUT',
+                'document_id'          => $pr->id ?? null,
+                'document_number'      => $pr->posted_number ?? '-',
+                'date'                 => $dateStr,
+                'product_id'           => $pri->product_id,
+                'product_name'         => $prod->name ?? '-',
+                'product_code'         => $prod->product_code ?? '-',
+                'formulation'          => $prod->formulation ?? '-',
+                'batch_number'         => $pri->batch ?: '-',
+                'expiry'               => $pri->expiry ?: null,
+                'quantity'             => $qty,
+                'pack_breakdown'       => $this->formatNarcoticPackBreakdown($qty, $packSize),
+                'party_or_authority'   => ($pr->supplier->name ?? 'Authorized Distributor')
+                    . ($pr->purchaseInvoice?->posted_number ? " (Ref GRN: {$pr->purchaseInvoice->posted_number})" : ''),
+                'witness_name'         => null,
+                'witness_designation'  => null,
+                'reference_no'         => $pr->purchaseInvoice->posted_number ?? null,
+                'status'               => 'completed',
+                'is_witness_compliant' => true,
+                'handled_by'           => 'Procurement Pharmacist',
+            ]);
+        }
+
+        $destructionAndReturns = $destructionAndReturns->sortByDesc('date')->values();
+
+        // 5. Product-Wise Stock Balance & Movement Sheet (Opening → Inward → Outward → Closing)
+        $purchInPeriod = PurchaseInvoiceItem::selectRaw('product_id, COALESCE(SUM(quantity), 0) as qty')
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('purchaseInvoice', fn ($q) => $q
+                ->whereBetween('posted_date', [$fromDate, $toDate])
+                ->where(fn ($sq) => $sq->whereNull('status')->orWhere('status', '!=', 'reversed'))
+            )
+            ->groupBy('product_id')
+            ->pluck('qty', 'product_id');
+
+        $purchAfterPeriod = PurchaseInvoiceItem::selectRaw('product_id, COALESCE(SUM(quantity), 0) as qty')
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('purchaseInvoice', fn ($q) => $q
+                ->where('posted_date', '>', $toDate)
+                ->where(fn ($sq) => $sq->whereNull('status')->orWhere('status', '!=', 'reversed'))
+            )
+            ->groupBy('product_id')
+            ->pluck('qty', 'product_id');
+
+        $salesInPeriod = SaleInvoiceItem::selectRaw('product_id, COALESCE(SUM(quantity), 0) as qty')
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('saleInvoice', fn ($q) => $q
+                ->whereBetween('date', [$fromStr, $toStr])
+                ->where(fn ($sq) => $sq->whereNull('status')->orWhere('status', '!=', 'reversed'))
+            )
+            ->groupBy('product_id')
+            ->pluck('qty', 'product_id');
+
+        $salesAfterPeriod = SaleInvoiceItem::selectRaw('product_id, COALESCE(SUM(quantity), 0) as qty')
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('saleInvoice', fn ($q) => $q
+                ->where('date', '>', $toStr)
+                ->where(fn ($sq) => $sq->whereNull('status')->orWhere('status', '!=', 'reversed'))
+            )
+            ->groupBy('product_id')
+            ->pluck('qty', 'product_id');
+
+        $saleRetInPeriod = SaleReturnItem::selectRaw('product_id, COALESCE(SUM(unit_return_quantity), 0) as qty')
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('saleReturn', fn ($q) => $q->whereBetween('date', [$fromStr, $toStr]))
+            ->groupBy('product_id')
+            ->pluck('qty', 'product_id');
+
+        $saleRetAfterPeriod = SaleReturnItem::selectRaw('product_id, COALESCE(SUM(unit_return_quantity), 0) as qty')
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('saleReturn', fn ($q) => $q->where('date', '>', $toStr))
+            ->groupBy('product_id')
+            ->pluck('qty', 'product_id');
+
+        $purchRetInPeriod = PurchaseReturnItem::selectRaw('product_id, COALESCE(SUM(return_unit_quantity), 0) as qty')
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('purchaseReturn', fn ($q) => $q->whereBetween('date', [$fromStr, $toStr]))
+            ->groupBy('product_id')
+            ->pluck('qty', 'product_id');
+
+        $purchRetAfterPeriod = PurchaseReturnItem::selectRaw('product_id, COALESCE(SUM(return_unit_quantity), 0) as qty')
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('purchaseReturn', fn ($q) => $q->where('date', '>', $toStr))
+            ->groupBy('product_id')
+            ->pluck('qty', 'product_id');
+
+        $dispInPeriod = StockDisposalItem::selectRaw('product_id, COALESCE(SUM(dispose_qty), 0) as qty')
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('disposal', fn ($q) => $q
+                ->whereBetween('disposal_date', [$fromStr, $toStr])
+                ->whereIn('status', ['quarantined', 'disposed'])
+            )
+            ->groupBy('product_id')
+            ->pluck('qty', 'product_id');
+
+        $dispAfterPeriod = StockDisposalItem::selectRaw('product_id, COALESCE(SUM(dispose_qty), 0) as qty')
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('disposal', fn ($q) => $q
+                ->where('disposal_date', '>', $toStr)
+                ->whereIn('status', ['quarantined', 'disposed'])
+            )
+            ->groupBy('product_id')
+            ->pluck('qty', 'product_id');
+
+        $adjInPeriod = StockAdjustmentItem::selectRaw('product_id, COALESCE(SUM(diff_qty), 0) as qty')
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('adjustment', function ($q) use ($fromStr, $toStr, $disposalAdjustmentIds) {
+                $q->whereBetween('posted_date', [$fromStr, $toStr]);
+                if (!empty($disposalAdjustmentIds)) {
+                    $q->whereNotIn('id', $disposalAdjustmentIds);
+                }
+            })
+            ->groupBy('product_id')
+            ->pluck('qty', 'product_id');
+
+        $adjAfterPeriod = StockAdjustmentItem::selectRaw('product_id, COALESCE(SUM(diff_qty), 0) as qty')
+            ->whereIn('product_id', $targetIds)
+            ->whereHas('adjustment', function ($q) use ($toStr, $disposalAdjustmentIds) {
+                $q->where('posted_date', '>', $toStr);
+                if (!empty($disposalAdjustmentIds)) {
+                    $q->whereNotIn('id', $disposalAdjustmentIds);
+                }
+            })
+            ->groupBy('product_id')
+            ->pluck('qty', 'product_id');
+
+        $stockLedger = $targetProducts->map(function ($prod) use (
+            $purchInPeriod,
+            $purchAfterPeriod,
+            $salesInPeriod,
+            $salesAfterPeriod,
+            $saleRetInPeriod,
+            $saleRetAfterPeriod,
+            $purchRetInPeriod,
+            $purchRetAfterPeriod,
+            $dispInPeriod,
+            $dispAfterPeriod,
+            $adjInPeriod,
+            $adjAfterPeriod
+        ) {
+            $pid = $prod->id;
+            $packSize = max(1, (int) ($prod->pack_size ?: 1));
+            $currentQty = (int) ($prod->quantity ?? 0);
+
+            // Reverse movements after $toDate to get closing stock as of $toDate
+            $afterNet = (int) ($purchAfterPeriod[$pid] ?? 0)
+                + (int) ($saleRetAfterPeriod[$pid] ?? 0)
+                - (int) ($salesAfterPeriod[$pid] ?? 0)
+                - (int) ($purchRetAfterPeriod[$pid] ?? 0)
+                - (int) ($dispAfterPeriod[$pid] ?? 0)
+                + (int) ($adjAfterPeriod[$pid] ?? 0);
+
+            $closingQty = $currentQty - $afterNet;
+
+            $purchasedQty   = (int) ($purchInPeriod[$pid] ?? 0);
+            $saleReturnQty  = (int) ($saleRetInPeriod[$pid] ?? 0);
+            $dispensedQty   = (int) ($salesInPeriod[$pid] ?? 0);
+            $purchReturnQty = (int) ($purchRetInPeriod[$pid] ?? 0);
+            $disposedQty    = (int) ($dispInPeriod[$pid] ?? 0);
+            $adjustedQty    = (int) ($adjInPeriod[$pid] ?? 0);
+
+            $periodNet  = $purchasedQty + $saleReturnQty - $dispensedQty - $purchReturnQty - $disposedQty + $adjustedQty;
+            $openingQty = $closingQty - $periodNet;
+
+            return [
+                'product_id'             => $pid,
+                'product_code'           => $prod->product_code ?? '-',
+                'product_name'           => $prod->name,
+                'formulation'            => $prod->formulation ?? '-',
+                'brand_name'             => $prod->brand->name ?? '-',
+                'supplier_name'          => $prod->supplier->name ?? '-',
+                'rack'                   => $prod->rack ?: 'Double-Lock Vault',
+                'pack_size'              => $packSize,
+                'opening_qty'            => $openingQty,
+                'opening_pack_breakdown' => $this->formatNarcoticPackBreakdown($openingQty, $packSize),
+                'purchased_qty'          => $purchasedQty,
+                'sale_return_qty'        => $saleReturnQty,
+                'dispensed_qty'          => $dispensedQty,
+                'purchase_return_qty'    => $purchReturnQty,
+                'disposed_qty'           => $disposedQty,
+                'adjusted_qty'           => $adjustedQty,
+                'closing_qty'            => $closingQty,
+                'closing_pack_breakdown' => $this->formatNarcoticPackBreakdown($closingQty, $packSize),
+                'current_on_hand'        => $currentQty,
+            ];
+        })->values();
+
+        // 6. Official Pakistani Statutory Chronological Running Register (Form 9 / Schedule B, D, G & CNSA Format)
+        // Reconstructs exact running balance (Previous Balance + Qty In - Qty Out = Balance in Hand) per drug
+        $openingByProduct = $stockLedger->pluck('opening_qty', 'product_id');
+        $productMetaMap   = $stockLedger->keyBy('product_id');
+
+        $rawEventsByProduct = [];
+        foreach ($targetIds as $pid) {
+            $rawEventsByProduct[$pid] = [];
+        }
+
+        // 6a. Add Purchase Receipts (IN)
+        foreach ($procurementRegister as $prRow) {
+            $pid = $prRow['product_id'];
+            $rawEventsByProduct[$pid][] = [
+                'sort_date'           => $prRow['date'] ?? $fromStr,
+                'sort_order'          => 10, // Inward receipts first on the same date
+                'sort_id'             => (int) $prRow['id'],
+                'event_type'          => 'PURCHASE_IN',
+                'event_label'         => 'INWARD PURCHASE (GRN)',
+                'date'                => $prRow['date'],
+                'voucher_number'      => $prRow['posted_number'],
+                'reference_no'        => $prRow['invoice_number'] !== '-' ? "Bill: {$prRow['invoice_number']}" : null,
+                'document_path'       => $prRow['purchase_invoice_id'] ? "/purchase-invoices/{$prRow['purchase_invoice_id']}" : null,
+                'sale_invoice_id'     => null,
+                'party_type'          => 'SUPPLIER',
+                'party_name'          => $prRow['supplier_name'],
+                'party_cnic_or_phone' => $prRow['supplier_phone'],
+                'party_address'       => $prRow['supplier_address'],
+                'party_license'       => $prRow['supplier_license_or_tax'],
+                'doctor_name'         => 'Authorized Distributor Supply',
+                'doctor_pmdc'         => $prRow['supplier_license_or_tax'] ? "Lic/NTN: {$prRow['supplier_license_or_tax']}" : null,
+                'doctor_hospital'     => null,
+                'batch_number'        => $prRow['batch_number'],
+                'expiry'              => $prRow['expiry'],
+                'qty_in'              => (int) $prRow['total_units_in'],
+                'qty_out'             => 0,
+                'pharmacist_name'     => 'Store / Receiving Pharmacist',
+                'is_rx_compliant'     => true,
+                'remarks'             => $prRow['unit_bonus'] > 0 ? "Includes {$prRow['unit_bonus']} bonus units" : 'Verified against Supplier Invoice',
+            ];
+        }
+
+        // 6b. Add Patient / Customer Returns (IN)
+        foreach ($saleReturnItems as $sri) {
+            $sr = $sri->saleReturn;
+            $pid = $sri->product_id;
+            $dateStr = $sr && $sr->date
+                ? ($sr->date instanceof \Carbon\CarbonInterface ? $sr->date->format('Y-m-d') : substr((string) $sr->date, 0, 10))
+                : $fromStr;
+            $qty = (int) ($sri->unit_return_quantity ?? 0);
+
+            $rawEventsByProduct[$pid][] = [
+                'sort_date'           => $dateStr,
+                'sort_order'          => 20,
+                'sort_id'             => (int) $sri->id,
+                'event_type'          => 'PATIENT_RETURN_IN',
+                'event_label'         => 'PATIENT RETURN (IN)',
+                'date'                => $dateStr,
+                'voucher_number'      => $sr->posted_number ?? '-',
+                'reference_no'        => $sr->saleInvoice?->posted_number ? "Orig Inv: {$sr->saleInvoice->posted_number}" : null,
+                'document_path'       => $sr?->id ? "/sale-returns/{$sr->id}" : null,
+                'sale_invoice_id'     => null,
+                'party_type'          => 'PATIENT_RETURN',
+                'party_name'          => $sr->saleInvoice?->patient_name ?: ($sr->customer->name ?? 'Patient Return'),
+                'party_cnic_or_phone' => $sr->customer->phone ?? null,
+                'party_address'       => $sr->customer->address ?? null,
+                'party_license'       => null,
+                'doctor_name'         => $sr->saleInvoice?->doctor_name ?? 'Return against Rx',
+                'doctor_pmdc'         => null,
+                'doctor_hospital'     => null,
+                'batch_number'        => $sri->batch_number ?: '-',
+                'expiry'              => $sri->expiry ?: null,
+                'qty_in'              => $qty,
+                'qty_out'             => 0,
+                'pharmacist_name'     => 'Dispensing Pharmacist',
+                'is_rx_compliant'     => true,
+                'remarks'             => 'Returned to Narcotics Cabinet',
+            ];
+        }
+
+        // 6c. Add Patient Dispensing (OUT)
+        foreach ($dispensingRegister as $drRow) {
+            $pid = $drRow['product_id'];
+            $rawEventsByProduct[$pid][] = [
+                'sort_date'                 => $drRow['date'] ?? $fromStr,
+                'sort_order'                => 30,
+                'sort_id'                   => (int) $drRow['id'],
+                'event_type'                => 'DISPENSED_OUT',
+                'event_label'               => $drRow['sale_type'] === 'wholesale' ? 'WHOLESALE SUPPLY (OUT)' : 'PATIENT DISPENSING (OUT)',
+                'date'                      => $drRow['date'],
+                'voucher_number'            => $drRow['posted_number'],
+                'reference_no'              => $drRow['raw_prescription_no'] ? "Rx #: {$drRow['raw_prescription_no']}" : "Inv: {$drRow['posted_number']}",
+                'raw_prescription_no'       => $drRow['raw_prescription_no'],
+                'document_path'             => $drRow['sale_invoice_id'] ? "/sale-invoices/{$drRow['sale_invoice_id']}" : null,
+                'sale_invoice_id'           => $drRow['sale_invoice_id'],
+                'sale_type'                 => $drRow['sale_type'],
+                'party_type'                => 'PATIENT',
+                'party_name'                => $drRow['patient_name'] ?: $drRow['customer_name'],
+                'raw_patient_name'          => $drRow['raw_patient_name'],
+                'party_cnic_or_phone'       => $drRow['patient_contact'],
+                'raw_patient_cnic'          => $drRow['patient_cnic'],
+                'party_address'             => $drRow['patient_address'],
+                'raw_patient_address'       => $drRow['raw_patient_address'],
+                'party_license'             => null,
+                'doctor_name'               => $drRow['doctor_name'],
+                'doctor_pmdc'               => $drRow['doctor_pmdc'],
+                'doctor_hospital'           => $drRow['doctor_hospital'],
+                'batch_number'              => $drRow['batch_number'],
+                'expiry'                    => $drRow['expiry'],
+                'qty_in'                    => 0,
+                'qty_out'                   => (int) $drRow['total_units_out'],
+                'pharmacist_name'           => $drRow['dispensed_by'],
+                'raw_pharmacist_name'       => $drRow['raw_pharmacist_name'],
+                'is_rx_compliant'           => $drRow['is_rx_compliant'],
+                'has_full_cnsa_particulars' => $drRow['has_full_cnsa_particulars'],
+                'remarks'                   => $drRow['is_rx_compliant'] ? 'Dispensed on RMP Prescription' : 'MISSING DOCTOR / PATIENT RX DETAILS',
+            ];
+        }
+
+        // 6d. Add Supplier Returns (OUT)
+        foreach ($purchaseReturnItems as $pri) {
+            $pr = $pri->purchaseReturn;
+            $pid = $pri->product_id;
+            $dateStr = $pr && $pr->date
+                ? ($pr->date instanceof \Carbon\CarbonInterface ? $pr->date->format('Y-m-d') : substr((string) $pr->date, 0, 10))
+                : $fromStr;
+            $qty = (int) ($pri->return_unit_quantity ?? 0);
+
+            $rawEventsByProduct[$pid][] = [
+                'sort_date'           => $dateStr,
+                'sort_order'          => 40,
+                'sort_id'             => (int) $pri->id,
+                'event_type'          => 'SUPPLIER_RETURN_OUT',
+                'event_label'         => 'RETURN TO SUPPLIER (OUT)',
+                'date'                => $dateStr,
+                'voucher_number'      => $pr->posted_number ?? '-',
+                'reference_no'        => $pr->purchaseInvoice?->posted_number ? "GRN: {$pr->purchaseInvoice->posted_number}" : null,
+                'document_path'       => $pr?->id ? "/purchase-returns/{$pr->id}" : null,
+                'sale_invoice_id'     => null,
+                'party_type'          => 'SUPPLIER_RETURN',
+                'party_name'          => $pr->supplier->name ?? 'Authorized Supplier',
+                'party_cnic_or_phone' => $pr->supplier->phone ?? null,
+                'party_address'       => $pr->supplier->address ?? null,
+                'party_license'       => null,
+                'doctor_name'         => 'Returned to Distributor',
+                'doctor_pmdc'         => null,
+                'doctor_hospital'     => null,
+                'batch_number'        => $pri->batch ?: '-',
+                'expiry'              => $pri->expiry ?: null,
+                'qty_in'              => 0,
+                'qty_out'             => $qty,
+                'pharmacist_name'     => 'Procurement Pharmacist',
+                'is_rx_compliant'     => true,
+                'remarks'             => 'Returned to Authorized Distributor',
+            ];
+        }
+
+        // 6e. Add Controlled Destruction / Quarantine (OUT)
+        foreach ($disposalItems as $di) {
+            $disp = $di->disposal;
+            $pid = $di->product_id;
+            $dateStr = $disp && $disp->disposal_date
+                ? ($disp->disposal_date instanceof \Carbon\CarbonInterface ? $disp->disposal_date->format('Y-m-d') : substr((string) $disp->disposal_date, 0, 10))
+                : $fromStr;
+            $qty = (int) ($di->dispose_qty ?? 0);
+            $witnessName = trim((string) ($disp->witness_name ?? ''));
+            $witnessDesig = trim((string) ($disp->witness_designation ?? ''));
+
+            $rawEventsByProduct[$pid][] = [
+                'sort_date'           => $dateStr,
+                'sort_order'          => 50,
+                'sort_id'             => (int) $di->id,
+                'event_type'          => $disp->status === 'quarantined' ? 'QUARANTINE_OUT' : 'DESTRUCTION_OUT',
+                'event_label'         => $disp->status === 'quarantined' ? 'QUARANTINE LOCK (OUT)' : 'WITNESSED DESTRUCTION (OUT)',
+                'date'                => $dateStr,
+                'voucher_number'      => $disp->disposal_number ?? '-',
+                'reference_no'        => $disp->reference_no ? "Ref: {$disp->reference_no}" : null,
+                'document_path'       => $disp?->id ? "/stock-disposals/{$disp->id}" : null,
+                'sale_invoice_id'     => null,
+                'party_type'          => 'DESTRUCTION',
+                'party_name'          => $disp ? ($disp->cause_label . ($disp->disposal_method ? " ({$disp->method_label})" : '')) : 'Destruction',
+                'party_cnic_or_phone' => null,
+                'party_address'       => null,
+                'party_license'       => null,
+                'doctor_name'         => $witnessName !== '' ? "Witness: {$witnessName}" : 'Witness Pending',
+                'doctor_pmdc'         => $witnessDesig !== '' ? $witnessDesig : null,
+                'doctor_hospital'     => null,
+                'batch_number'        => $di->batch_number ?: '-',
+                'expiry'              => $di->expiry_date ? substr((string) $di->expiry_date, 0, 10) : null,
+                'qty_in'              => 0,
+                'qty_out'             => $qty,
+                'pharmacist_name'     => $disp->disposer->name ?? ($disp->creator->name ?? 'Qualified Pharmacist'),
+                'is_rx_compliant'     => $witnessName !== '',
+                'remarks'             => $witnessName !== '' ? "Witnessed by {$witnessName}" : 'Witness signature required',
+            ];
+        }
+
+        // 6f. Add Standalone Stock Adjustments (IN or OUT)
+        foreach ($adjustmentItems as $ai) {
+            $adj = $ai->adjustment;
+            $pid = $ai->product_id;
+            $diff = (int) ($ai->diff_qty ?? 0);
+            if ($diff === 0) {
+                continue;
+            }
+            $dateStr = $adj && $adj->posted_date
+                ? ($adj->posted_date instanceof \Carbon\CarbonInterface ? $adj->posted_date->format('Y-m-d') : substr((string) $adj->posted_date, 0, 10))
+                : $fromStr;
+
+            $rawEventsByProduct[$pid][] = [
+                'sort_date'           => $dateStr,
+                'sort_order'          => $diff > 0 ? 25 : 55,
+                'sort_id'             => (int) $ai->id,
+                'event_type'          => 'ADJUSTMENT',
+                'event_label'         => $diff > 0 ? 'AUDIT GAIN (IN)' : 'AUDIT SHORTAGE (OUT)',
+                'date'                => $dateStr,
+                'voucher_number'      => $adj->posted_number ?? '-',
+                'reference_no'        => null,
+                'document_path'       => $adj?->id ? "/stock-adjustments/{$adj->id}" : null,
+                'sale_invoice_id'     => null,
+                'party_type'          => 'ADJUSTMENT',
+                'party_name'          => 'Physical Stock Verification',
+                'party_cnic_or_phone' => null,
+                'party_address'       => $adj->note ?? null,
+                'party_license'       => null,
+                'doctor_name'         => 'Internal Pharmacy Audit',
+                'doctor_pmdc'         => null,
+                'doctor_hospital'     => null,
+                'batch_number'        => '-',
+                'expiry'              => null,
+                'qty_in'              => $diff > 0 ? $diff : 0,
+                'qty_out'             => $diff < 0 ? abs($diff) : 0,
+                'pharmacist_name'     => 'Supervising Pharmacist',
+                'is_rx_compliant'     => true,
+                'remarks'             => $adj->note ?: 'Physical stock adjustment',
+            ];
+        }
+
+        // Build chronological running balance rows
+        $chronologicalRegister = collect();
+        $serialNo = 1;
+
+        foreach ($targetProducts as $prod) {
+            $pid = $prod->id;
+            $meta = $productMetaMap[$pid] ?? null;
+            $packSize = max(1, (int) ($prod->pack_size ?: 1));
+            $openingQty = (int) ($openingByProduct[$pid] ?? 0);
+            $events = $rawEventsByProduct[$pid] ?? [];
+
+            // Sort chronologically: date ASC, sort_order ASC, sort_id ASC
+            usort($events, function ($a, $b) {
+                $cmpDate = strcmp((string) $a['sort_date'], (string) $b['sort_date']);
+                if ($cmpDate !== 0) {
+                    return $cmpDate;
+                }
+                if ($a['sort_order'] !== $b['sort_order']) {
+                    return $a['sort_order'] <=> $b['sort_order'];
+                }
+                return $a['sort_id'] <=> $b['sort_id'];
+            });
+
+            $runningBalance = $openingQty;
+
+            // Include Opening B/F row if product has non-zero opening stock, movements in period, or is specifically selected
+            if ($openingQty !== 0 || !empty($events) || $productId !== null) {
+                $chronologicalRegister->push([
+                    'row_key'                => "OPEN-{$pid}",
+                    'serial_no'              => $serialNo++,
+                    'is_opening_row'         => true,
+                    'date'                   => $fromStr,
+                    'event_type'             => 'OPENING_BF',
+                    'event_label'            => 'OPENING BALANCE B/F',
+                    'voucher_number'         => 'B/F',
+                    'reference_no'           => 'Opening Stock in Vault',
+                    'document_path'          => null,
+                    'sale_invoice_id'        => null,
+                    'product_id'             => $pid,
+                    'product_name'           => $prod->name,
+                    'product_code'           => $prod->product_code ?? '-',
+                    'formulation'            => $prod->formulation ?? '-',
+                    'brand_name'             => $prod->brand->name ?? '-',
+                    'pack_size'              => $packSize,
+                    'party_type'             => 'OPENING',
+                    'party_name'             => 'Brought Forward Physical Balance',
+                    'party_cnic_or_phone'    => null,
+                    'party_address'          => $meta['rack'] ?? 'Double-Lock Vault',
+                    'doctor_name'            => '—',
+                    'doctor_pmdc'            => null,
+                    'doctor_hospital'        => null,
+                    'batch_number'           => 'ALL ACTIVE LOTS',
+                    'expiry'                 => null,
+                    'qty_in'                 => 0,
+                    'qty_out'                => 0,
+                    'running_balance'        => $runningBalance,
+                    'running_pack_breakdown' => $this->formatNarcoticPackBreakdown($runningBalance, $packSize),
+                    'pharmacist_name'        => 'Verified B/F',
+                    'is_rx_compliant'        => true,
+                    'remarks'                => 'Opening Balance Brought Forward',
+                ]);
+            }
+
+            foreach ($events as $ev) {
+                $runningBalance = $runningBalance + (int) $ev['qty_in'] - (int) $ev['qty_out'];
+                $chronologicalRegister->push(array_merge($ev, [
+                    'row_key'                => "{$ev['event_type']}-{$pid}-{$ev['sort_id']}",
+                    'serial_no'              => $serialNo++,
+                    'is_opening_row'         => false,
+                    'product_id'             => $pid,
+                    'product_name'           => $prod->name,
+                    'product_code'           => $prod->product_code ?? '-',
+                    'formulation'            => $prod->formulation ?? '-',
+                    'brand_name'             => $prod->brand->name ?? '-',
+                    'pack_size'              => $packSize,
+                    'qty_in_breakdown'       => $ev['qty_in'] > 0 ? $this->formatNarcoticPackBreakdown((int) $ev['qty_in'], $packSize) : null,
+                    'qty_out_breakdown'      => $ev['qty_out'] > 0 ? $this->formatNarcoticPackBreakdown((int) $ev['qty_out'], $packSize) : null,
+                    'running_balance'        => $runningBalance,
+                    'running_pack_breakdown' => $this->formatNarcoticPackBreakdown($runningBalance, $packSize),
+                ]));
+            }
+        }
+
+        // 7. Active Batch & FEFO Traceability (Physical quantities only — no monetary values)
+        $batches = Batch::with([
+                'product:id,name,product_code,formulation,pack_size,rack,brand_id',
+                'product.brand:id,name',
+            ])
+            ->whereIn('product_id', $targetIds)
+            ->where('quantity', '>', 0)
+            ->orderByRaw('CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END ASC')
+            ->orderBy('expiry_date', 'asc')
+            ->get();
+
+        $batchInventory = $batches->map(function ($b) {
+            $prod = $b->product;
+            $packSize = max(1, (int) ($prod->pack_size ?: 1));
+            $daysRem = $b->days_remaining;
+            $status = 'healthy';
+            if ($daysRem !== null) {
+                if ($daysRem < 0) {
+                    $status = 'expired';
+                } elseif ($daysRem <= 90) {
+                    $status = 'critical';
+                } elseif ($daysRem <= 180) {
+                    $status = 'near_expiry';
+                }
+            }
+            $qty = (int) ($b->quantity ?? 0);
+
+            return [
+                'id'             => $b->id,
+                'product_id'     => $b->product_id,
+                'product_name'   => $prod->name ?? '-',
+                'product_code'   => $prod->product_code ?? '-',
+                'formulation'    => $prod->formulation ?? '-',
+                'brand_name'     => $prod->brand->name ?? '-',
+                'pack_size'      => $packSize,
+                'batch_number'   => $b->batch_number ?: '-',
+                'expiry_date'    => $b->expiry_date ? substr((string) $b->expiry_date, 0, 10) : null,
+                'days_remaining' => $daysRem,
+                'expiry_status'  => $status,
+                'quantity'       => $qty,
+                'pack_breakdown' => $this->formatNarcoticPackBreakdown($qty, $packSize),
+                'rack'           => $b->rack ?: ($prod->rack ?: 'Double-Lock Vault'),
+            ];
+        })->values();
+
+        // 8. Executive Summary & Pakistani Regulatory Compliance Metrics (Physical Units & Audit Counts Only)
+        $totalDispensingRows   = $dispensingRegister->count();
+        $compliantRows         = $dispensingRegister->where('is_rx_compliant', true)->count();
+        $fullCnsaCompliantRows = $dispensingRegister->where('has_full_cnsa_particulars', true)->count();
+        $missingRxRows         = $totalDispensingRows - $compliantRows;
+        $complianceRate        = $totalDispensingRows > 0
+            ? round(($compliantRows / $totalDispensingRows) * 100, 1)
+            : 100.0;
+
+        $uniqueDisposalVouchers = $disposalItems->pluck('disposal.id')->filter()->unique()->count();
+        $witnessedDisposalVouchers = $disposalItems
+            ->filter(fn ($di) => trim((string) ($di->disposal->witness_name ?? '')) !== '')
+            ->pluck('disposal.id')
+            ->filter()
+            ->unique()
+            ->count();
+
+        $summary = [
+            'total_narcotic_products'     => $targetProducts->count(),
+            'active_batches_count'        => $batchInventory->count(),
+            'opening_units_total'         => (int) $stockLedger->sum('opening_qty'),
+            'total_units_on_hand'         => (int) $stockLedger->sum('closing_qty'),
+            'units_purchased'             => (int) $procurementRegister->sum('total_units_in'),
+            'purchase_invoices_count'     => $procurementRegister->pluck('purchase_invoice_id')->filter()->unique()->count(),
+            'units_dispensed'             => (int) $dispensingRegister->sum('total_units_out'),
+            'dispensing_invoices_count'   => $dispensingRegister->pluck('sale_invoice_id')->filter()->unique()->count(),
+            'compliant_sales_count'       => $compliantRows,
+            'full_cnsa_compliant_count'   => $fullCnsaCompliantRows,
+            'missing_rx_sales_count'      => $missingRxRows,
+            'compliance_rate'             => $complianceRate,
+            'units_returned_by_customers' => (int) $saleReturnItems->sum('unit_return_quantity'),
+            'units_returned_to_suppliers' => (int) $purchaseReturnItems->sum('return_unit_quantity'),
+            'units_disposed'              => (int) $disposalItems->sum('dispose_qty'),
+            'disposal_vouchers_count'     => $uniqueDisposalVouchers,
+            'witnessed_disposals_count'   => $witnessedDisposalVouchers,
+        ];
+
+        return response()->json([
+            'period'                  => ['from' => $fromStr, 'to' => $toStr],
+            'store_license'           => $storeLicense,
+            'summary'                 => $summary,
+            'chronological_register'  => $chronologicalRegister,
+            'stock_ledger'            => $stockLedger,
+            'dispensing_register'     => $dispensingRegister,
+            'procurement_register'    => $procurementRegister,
+            'destruction_and_returns' => $destructionAndReturns,
+            'batch_inventory'         => $batchInventory,
+            'narcotic_products'       => $narcoticProductOptions,
+        ]);
+    }
+
+    /**
+     * GET /api/reports/narcotics/pdf
+     */
+    public function narcoticsReportPdf(Request $req)
+    {
+        $this->authorizeReportAction([
+            'report.sale-detail.view',
+            'report.current-stock.view',
+            'report.product-comprehensive.view',
+            'product.view',
+        ]);
+
+        $data = $this->narcoticsReport($req)->getData(true);
+        $setting = Setting::first();
+        $meta = [
+            'from'           => $data['period']['from'] ?? Carbon::now()->startOfMonth()->toDateString(),
+            'to'             => $data['period']['to'] ?? Carbon::now()->toDateString(),
+            'generatedAt'    => now()->format('Y-m-d H:i'),
+            'store_name'     => $setting->store_name ?? 'Karobar Pharmacy & Medical Store',
+            'license_number' => $setting->license_number ?? null,
+            'phone'          => $setting->phone_number ?? null,
+            'address'        => $setting->address ?? null,
+        ];
+
+        $pdf = Pdf::loadView('reports.narcotics_pdf', [
+            'data' => $data,
+            'meta' => $meta,
+        ])->setPaper('a4', 'landscape');
+
+        return $req->boolean('download')
+            ? $pdf->download("pakistani-statutory-narcotics-register-{$meta['from']}-to-{$meta['to']}.pdf")
+            : $pdf->stream("pakistani-statutory-narcotics-register-{$meta['from']}-to-{$meta['to']}.pdf");
     }
 }

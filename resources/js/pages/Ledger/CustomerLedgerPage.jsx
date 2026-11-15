@@ -1,5 +1,5 @@
 // resources/js/pages/Ledger/CustomerLedgerPage.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import CustomerSearch from "../../components/CustomerSearch.jsx";
@@ -40,12 +40,12 @@ import {
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
-  hexColor = hexColor.replace('#', '');
+  hexColor = hexColor.replace("#", "");
   const r = parseInt(hexColor.substring(0, 2), 16);
   const g = parseInt(hexColor.substring(2, 4), 16);
   const b = parseInt(hexColor.substring(4, 6), 16);
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+  return luminance > 0.5 ? "#1f2937" : "#ffffff";
 };
 
 const getButtonTextColor = (primaryColor, primaryHoverColor) => {
@@ -59,7 +59,7 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 const isPendingRow = (r) => r.id === undefined || r.id === null;
 
 /* =========================
-   Customer Ledger Page (Modernized)
+   Customer Ledger Page (Excel Sheet Layout)
    ========================= */
 export default function CustomerLedgerPage() {
   const [customers, setCustomers] = useState([]);
@@ -77,11 +77,14 @@ export default function CustomerLedgerPage() {
   const [rows, setRows] = useState([]);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [newestFirst, setNewestFirst] = useState(true);
+  // Default to chronological order (oldest -> newest, top-to-bottom as transactions happen)
+  const [newestFirst, setNewestFirst] = useState(false);
   const [sortField, setSortField] = useState("entry_date");
+  const [sortDirection, setSortDirection] = useState("ascending");
+  const [sortAnnouncement, setSortAnnouncement] = useState("");
   // table paging
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(25);
+  const [perPage, setPerPage] = useState(50);
   // "mark invoice as paid" flow
   const [settleTarget, setSettleTarget] = useState(null);
   const [settling, setSettling] = useState(false);
@@ -99,6 +102,8 @@ export default function CustomerLedgerPage() {
   const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
 
+  const tableScrollRef = useRef(null);
+
   const selectedCustomer = useMemo(
     () => customers.find((c) => String(c.id) === String(customerId)),
     [customers, customerId]
@@ -108,9 +113,16 @@ export default function CustomerLedgerPage() {
   const { loading: permsLoading, canFor } = usePermissions();
   const can = useMemo(
     () =>
-      (typeof canFor === "function" ? canFor("customer-ledger") : {
-        view:false, create:false, update:false, delete:false, import:false, export:false
-      }),
+      typeof canFor === "function"
+        ? canFor("customer-ledger")
+        : {
+            view: false,
+            create: false,
+            update: false,
+            delete: false,
+            import: false,
+            export: false,
+          },
     [canFor]
   );
 
@@ -118,59 +130,65 @@ export default function CustomerLedgerPage() {
   const { isDark, theme } = useTheme();
 
   // Icon button styling used by the modals
-  const tintIconBtn = useMemo(() => `
+  const tintIconBtn = useMemo(
+    () =>
+      `
     bg-white/60 dark:bg-slate-700/60 backdrop-blur-xs ring-1 ring-gray-200/60 dark:ring-white/10
     hover:bg-white dark:hover:bg-slate-600/80 hover:shadow-md hover:scale-[1.05] active:scale-[0.95] transition-all duration-200
-  `.trim().replace(/\s+/g, ' '), []);
+  `
+        .trim()
+        .replace(/\s+/g, " "),
+    []
+  );
 
   // Memoize theme colors for performance
   const themeColors = useMemo(() => {
     if (!theme) {
       return {
-        primary: '#3b82f6',
-        primaryHover: '#2563eb',
-        primaryLight: '#dbeafe',
-        secondary: '#8b5cf6',
-        secondaryHover: '#7c3aed',
-        secondaryLight: '#ede9fe',
-        tertiary: '#06b6d4',
-        tertiaryHover: '#0891b2',
-        tertiaryLight: '#cffafe',
-        danger: '#ef4444',
-        dangerHover: '#dc2626',
-        dangerLight: '#fee2e2',
-        emerald: '#10b981',
-        emeraldHover: '#059669',
-        emeraldLight: '#d1fae5',
+        primary: "#3b82f6",
+        primaryHover: "#2563eb",
+        primaryLight: "#dbeafe",
+        secondary: "#8b5cf6",
+        secondaryHover: "#7c3aed",
+        secondaryLight: "#ede9fe",
+        tertiary: "#06b6d4",
+        tertiaryHover: "#0891b2",
+        tertiaryLight: "#cffafe",
+        danger: "#ef4444",
+        dangerHover: "#dc2626",
+        dangerLight: "#fee2e2",
+        emerald: "#10b981",
+        emeraldHover: "#059669",
+        emeraldLight: "#d1fae5",
       };
     }
     return {
-      primary: theme.primary_color || '#3b82f6',
-      primaryHover: theme.primary_hover || '#2563eb',
-      primaryLight: theme.primary_light || '#dbeafe',
-      secondary: theme.secondary_color || '#8b5cf6',
-      secondaryHover: theme.secondary_hover || '#7c3aed',
-      secondaryLight: theme.secondary_light || '#ede9fe',
-      tertiary: theme.tertiary_color || '#06b6d4',
-      tertiaryHover: theme.tertiary_hover || '#0891b2',
-      tertiaryLight: theme.tertiary_light || '#cffafe',
-      danger: theme.danger_color || '#ef4444',
-      dangerHover: '#dc2626',
-      dangerLight: '#fee2e2',
-      emerald: theme.success_color || '#10b981',
-      emeraldHover: '#059669',
-      emeraldLight: '#d1fae5',
+      primary: theme.primary_color || "#3b82f6",
+      primaryHover: theme.primary_hover || "#2563eb",
+      primaryLight: theme.primary_light || "#dbeafe",
+      secondary: theme.secondary_color || "#8b5cf6",
+      secondaryHover: theme.secondary_hover || "#7c3aed",
+      secondaryLight: theme.secondary_light || "#ede9fe",
+      tertiary: theme.tertiary_color || "#06b6d4",
+      tertiaryHover: theme.tertiary_hover || "#0891b2",
+      tertiaryLight: theme.tertiary_light || "#cffafe",
+      danger: theme.danger_color || "#ef4444",
+      dangerHover: "#dc2626",
+      dangerLight: "#fee2e2",
+      emerald: theme.success_color || "#10b981",
+      emeraldHover: "#059669",
+      emeraldLight: "#d1fae5",
     };
   }, [theme]);
 
   // Calculate text colors based on background brightness
-  const primaryTextColor = useMemo(() => 
-    getButtonTextColor(themeColors.primary, themeColors.primaryHover), 
+  const primaryTextColor = useMemo(
+    () => getButtonTextColor(themeColors.primary, themeColors.primaryHover),
     [themeColors.primary, themeColors.primaryHover]
   );
 
   // Get button style from theme
-  const buttonStyle = theme?.button_style || 'modern';
+  const buttonStyle = theme?.button_style || "modern";
 
   const getButtonClasses = useMemo(
     () => getThemeButtonClasses(buttonStyle, themeColors, isDark, primaryTextColor),
@@ -178,8 +196,6 @@ export default function CustomerLedgerPage() {
   );
 
   const btnPrimary = getButtonClasses.primary;
-  const btnSecondary = getButtonClasses.secondary;
-  const btnTertiary = getButtonClasses.tertiary;
   const btnEmerald = getButtonClasses.emerald || getButtonClasses.success;
   const btnDanger = getButtonClasses.danger;
   const btnOutlined = getButtonClasses.outlined || getButtonClasses.glass || getButtonClasses.secondary;
@@ -197,7 +213,7 @@ export default function CustomerLedgerPage() {
     return nf.format(n);
   };
 
-  // Compact, human date shown in the table (no date pickers anymore)
+  // Compact, human date shown in the table
   const fmtDate = (d) => {
     if (!d) return "—";
     const dt = new Date(`${String(d).slice(0, 10)}T00:00:00`);
@@ -312,7 +328,8 @@ export default function CustomerLedgerPage() {
   };
 
   // ---------- number editing helpers ----------
-  const getInput = (row, field) => (row[`${field}_input`] !== undefined ? row[`${field}_input`] : (row[field] ?? "") + "");
+  const getInput = (row, field) =>
+    row[`${field}_input`] !== undefined ? row[`${field}_input`] : (row[field] ?? "") + "";
   const setInput = (idx, field, raw) => {
     setRows((prev) => {
       const next = [...prev];
@@ -327,7 +344,10 @@ export default function CustomerLedgerPage() {
       const next = [...prev];
       const r = { ...next[idx] };
       const raw = r[`${field}_input`];
-      const parsed = raw === undefined || String(raw).trim() === "" ? 0 : parseFloat(String(raw).replace(/,/g, ""));
+      const parsed =
+        raw === undefined || String(raw).trim() === ""
+          ? 0
+          : parseFloat(String(raw).replace(/,/g, ""));
       r[field] = Number.isFinite(parsed) ? Number(parsed) : 0;
       delete r[`${field}_input`];
 
@@ -335,9 +355,7 @@ export default function CustomerLedgerPage() {
         const bal = Number(((r.invoice_total || 0) - (r.total_received || 0)).toFixed(2));
         r.balance_remaining = bal < 0 ? 0 : bal;
       }
-      // For payment rows, calculate the remaining balance based on credited_amount
       if (r.entry_type === "payment") {
-        // For payment rows, the balance_remaining shows 0 (it's a payment, not an invoice)
         r.balance_remaining = 0;
       }
       next[idx] = r;
@@ -348,11 +366,13 @@ export default function CustomerLedgerPage() {
     setRows((prev) => {
       const next = [...prev];
       const r = { ...next[idx], [field]: value };
-      if (["invoice", "manual"].includes(r.entry_type) && (field === "invoice_total" || field === "total_received")) {
+      if (
+        ["invoice", "manual"].includes(r.entry_type) &&
+        (field === "invoice_total" || field === "total_received")
+      ) {
         const bal = Number(((r.invoice_total || 0) - (r.total_received || 0)).toFixed(2));
         r.balance_remaining = bal < 0 ? 0 : bal;
       }
-      // For payment rows, update balance_remaining to 0
       if (r.entry_type === "payment") {
         r.balance_remaining = 0;
       }
@@ -362,35 +382,39 @@ export default function CustomerLedgerPage() {
   };
 
   // ---------- add row ----------
-  // New rows are stamped with today's date and pushed to the TOP of the list.
+  // New rows are stamped with today's date and appended chronologically at the end of the sheet
   const addPaymentNow = () => {
     if (!can.create) return toast.error("You don't have permission to add payments.");
     if (!customerId) return toast.error("Select a customer first");
     setRows((prev) => [
+      ...prev,
       {
         id: undefined,
         customer_id: customerId,
         entry_type: "payment",
+        type_order: 3,
         entry_date: todayISO(),
         credited_amount: 0,
         posted_number: "",
+        payment_ref: "",
         description: "Cash payment received",
         invoice_total: 0,
         total_received: 0,
         balance_remaining: 0,
         is_manual: true,
       },
-      ...prev,
     ]);
   };
   const addManualNow = () => {
     if (!can.create) return toast.error("You don't have permission to add manual rows.");
     if (!customerId) return toast.error("Select a customer first");
     setRows((prev) => [
+      ...prev,
       {
         id: undefined,
         customer_id: customerId,
         entry_type: "manual",
+        type_order: 2,
         entry_date: todayISO(),
         posted_number: "",
         invoice_total: 0,
@@ -401,7 +425,6 @@ export default function CustomerLedgerPage() {
         description: "",
         is_manual: true,
       },
-      ...prev,
     ]);
   };
 
@@ -411,8 +434,10 @@ export default function CustomerLedgerPage() {
     const updates = rows.filter(
       (r) => r.id && (r.entry_type === "payment" || r.entry_type === "manual" || r.is_manual)
     );
-    if (news.length && !can.create) return toast.error("You don't have permission to create ledger rows.");
-    if (updates.length && !can.update) return toast.error("You don't have permission to update ledger rows.");
+    if (news.length && !can.create)
+      return toast.error("You don't have permission to create ledger rows.");
+    if (updates.length && !can.update)
+      return toast.error("You don't have permission to update ledger rows.");
 
     try {
       for (const n of news) {
@@ -426,7 +451,7 @@ export default function CustomerLedgerPage() {
           invoice_total: n.invoice_total || 0,
           total_received: n.total_received || 0,
           credited_amount: n.credited_amount || 0,
-          payment_ref: n.payment_ref,
+          payment_ref: n.payment_ref || n.posted_number || null,
           sale_invoice_id: n.sale_invoice_id || null,
         };
         await axios.post("/api/customer-ledger", payload);
@@ -452,7 +477,7 @@ export default function CustomerLedgerPage() {
     }
   };
 
-  // ---------- delete (secure) ----------
+  // ---------- delete (secure for saved rows, instant for unsaved rows) ----------
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteStep, setDeleteStep] = useState(1);
   const [deletingIdx, setDeletingIdx] = useState(null);
@@ -460,9 +485,15 @@ export default function CustomerLedgerPage() {
   const [deleting, setDeleting] = useState(false);
 
   const openDeleteModal = (originalIdx) => {
-    if (!can.delete) return toast.error("You don't have permission to delete ledger rows.");
     const target = rows[originalIdx];
-    if (target && target.entry_type === "invoice" && !target.is_manual) {
+    if (!target) return;
+    if (!target.id) {
+      setRows((prev) => prev.filter((_, i) => i !== originalIdx));
+      toast.success("Unsaved row removed");
+      return;
+    }
+    if (!can.delete) return toast.error("You don't have permission to delete ledger rows.");
+    if (target.entry_type === "invoice" && !target.is_manual) {
       return toast.error("Invoice rows are locked — they come from sales.");
     }
     setDeletingIdx(originalIdx);
@@ -493,8 +524,12 @@ export default function CustomerLedgerPage() {
         await axios.delete(`/api/customer-ledger/${r.id}`);
         window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
         window.dispatchEvent(new CustomEvent("accounts-changed"));
-        try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
-        try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
+        try {
+          localStorage.setItem("cash_drawer_sync", String(Date.now()));
+        } catch {}
+        try {
+          localStorage.setItem("accounts_sync", String(Date.now()));
+        } catch {}
         toast.success("Row deleted");
         await fetchData();
       } else {
@@ -515,11 +550,11 @@ export default function CustomerLedgerPage() {
   // ---------- confirm add modals ----------
   const [addModal, setAddModal] = useState({ open: false, type: null }); // 'payment' | 'manual'
   const openAddPayment = () => setAddModal({ open: true, type: "payment" });
-  const openAddManual  = () => setAddModal({ open: true, type: "manual" });
-  const closeAddModal  = () => setAddModal({ open: false, type: null });
+  const openAddManual = () => setAddModal({ open: true, type: "manual" });
+  const closeAddModal = () => setAddModal({ open: false, type: null });
   const confirmAdd = () => {
     if (addModal.type === "payment") addPaymentNow();
-    if (addModal.type === "manual")  addManualNow();
+    if (addModal.type === "manual") addManualNow();
     closeAddModal();
   };
 
@@ -532,44 +567,61 @@ export default function CustomerLedgerPage() {
     await doBulkSave();
   };
 
-  // ---------- derived rows: running balance + ordering ----------
-  // 1) Running balance is always computed chronologically (oldest -> newest).
-  // 2) Rows are then displayed newest-first by default so fresh entries land on top.
+  // ---------- derived rows: chronological "as-it-happens" running balance ----------
   const derivedRows = useMemo(() => {
-    const indexed = rows.map((r, i) => ({ ...r, __i: i }));
+    const indexed = rows.map((r, i) => ({
+      ...r,
+      __i: i,
+      __typeOrder:
+        r.type_order ?? (r.entry_type === "invoice" ? 1 : r.entry_type === "manual" ? 2 : 3),
+    }));
 
-    const sorted = indexed.sort((a, b) => {
+    // Sort chronologically (Oldest -> Newest, exact sequence of transactions as they happen)
+    const chronological = [...indexed].sort((a, b) => {
       const ad = (a.entry_date || "").slice(0, 10);
       const bd = (b.entry_date || "").slice(0, 10);
-      if (ad === bd) {
-        const ai = a.id ?? Number.MAX_SAFE_INTEGER;
-        const bi = b.id ?? Number.MAX_SAFE_INTEGER;
-        return ai - bi;
-      }
-      return ad < bd ? -1 : 1;
+      if (ad !== bd) return ad < bd ? -1 : 1;
+
+      // Pending unsaved rows come after saved rows on the same date
+      const ap = isPendingRow(a);
+      const bp = isPendingRow(b);
+      if (ap !== bp) return ap ? 1 : -1;
+      if (ap && bp) return a.__i - b.__i;
+
+      // Compare creation timestamps when available
+      const ats = Number(a.sort_ts || 0);
+      const bts = Number(b.sort_ts || 0);
+      if (ats > 0 && bts > 0 && ats !== bts) return ats - bts;
+
+      // On the exact same timestamp/date, invoices come before manual rows, which come before payments
+      if (a.__typeOrder !== b.__typeOrder) return a.__typeOrder - b.__typeOrder;
+
+      // Fallback to server sequence or original index
+      const aSeq = a.seq ?? a.__i;
+      const bSeq = b.seq ?? b.__i;
+      return aSeq - bSeq;
     });
 
-    // Running balance over the chronological order (starting from brought-forward opening balance)
+    // Running balance computed strictly in chronological order from opening balance
     let runningBalance = Number(summary?.opening_balance || 0);
-    const withBalance = sorted.map((r) => {
+    const withBalance = chronological.map((r, idx) => {
       if (r.entry_type === "invoice" || r.entry_type === "manual") {
         runningBalance += Number(r.balance_remaining || 0);
       } else if (r.entry_type === "payment") {
         runningBalance -= Number(r.credited_amount || 0);
       }
-      return { ...r, running_balance: Number(runningBalance.toFixed(2)) };
+      return {
+        ...r,
+        __seq: idx + 1,
+        running_balance: Number(runningBalance.toFixed(2)),
+      };
     });
 
-    // Unsaved rows always sit at the very top (newest added first),
-    // the toggle only flips the ordering of the stored history.
-    const pending = withBalance.filter(isPendingRow).reverse();
-    const saved = withBalance.filter((r) => !isPendingRow(r));
-    const ordered = [...pending, ...(newestFirst ? saved.reverse() : saved)];
-
+    const ordered = newestFirst ? [...withBalance].reverse() : withBalance;
     return ordered.map((r, i) => ({ ...r, __top: i + 1 }));
   }, [rows, newestFirst, summary?.opening_balance]);
 
-  // Column totals + how many rows are waiting to be saved
+  // Column totals
   const totals = useMemo(
     () =>
       derivedRows.reduce(
@@ -588,36 +640,78 @@ export default function CustomerLedgerPage() {
     [derivedRows]
   );
 
-  // Latest running balance (newest chronological row) = overall due for this customer
-  const overallRunning = useMemo(() => {
-    let last = Number(summary?.opening_balance || 0);
-    for (const r of derivedRows) {
-      if (r.entry_type === "invoice" || r.entry_type === "manual") last += Number(r.balance_remaining || 0);
-      else if (r.entry_type === "payment") last -= Number(r.credited_amount || 0);
+  // Real-time summary computed from rows so header strip & footer always match
+  const computedSummary = useMemo(() => {
+    const openingBal = Number(summary?.opening_balance || 0);
+    const totalInvoiced = Number(totals.bill.toFixed(2));
+    const receivedOnInv = Number(totals.received.toFixed(2));
+    const paymentsCred = Number(totals.payment.toFixed(2));
+    const netBalance = Number(
+      (openingBal + (totalInvoiced - receivedOnInv) - paymentsCred).toFixed(2)
+    );
+    return {
+      opening_balance: openingBal,
+      total_invoiced: totalInvoiced,
+      received_on_invoice: receivedOnInv,
+      payments_credited: paymentsCred,
+      net_balance: netBalance,
+    };
+  }, [totals, summary?.opening_balance]);
+
+  const overallRunning = computedSummary.net_balance;
+
+  // Sortable columns handler (follows modern-web-guidance sortable-table)
+  const handleColumnSort = (field, label) => {
+    if (field === "entry_date") {
+      if (sortField === "entry_date") {
+        const nextNewest = !newestFirst;
+        const nextDir = nextNewest ? "descending" : "ascending";
+        setNewestFirst(nextNewest);
+        setSortDirection(nextDir);
+        setSortAnnouncement(`Sorted by ${label}, ${nextDir}, ${derivedRows.length} rows`);
+      } else {
+        setSortField("entry_date");
+        setNewestFirst(false);
+        setSortDirection("ascending");
+        setSortAnnouncement(`Sorted by ${label}, ascending, ${derivedRows.length} rows`);
+      }
+      return;
     }
-    return Number(last.toFixed(2));
-  }, [derivedRows, summary?.opening_balance]);
+
+    const nextDir =
+      sortField === field && sortDirection === "descending" ? "ascending" : "descending";
+    setSortField(field);
+    setSortDirection(nextDir);
+    setSortAnnouncement(`Sorted by ${label}, ${nextDir}, ${derivedRows.length} rows`);
+  };
 
   // Optional: let users sort by amount instead of date
   const sortedRows = useMemo(() => {
     if (sortField === "entry_date") return derivedRows;
     const key = sortField === "invoice_total" ? "invoice_total" : "credited_amount";
+    const factor = sortDirection === "ascending" ? 1 : -1;
     return [...derivedRows]
-      .sort((a, b) => Number(b[key] || 0) - Number(a[key] || 0))
+      .sort((a, b) => factor * (Number(a[key] || 0) - Number(b[key] || 0)))
       .map((r, i) => ({ ...r, __top: i + 1 }));
-  }, [derivedRows, sortField]);
+  }, [derivedRows, sortField, sortDirection]);
 
   const pendingCount = useMemo(() => rows.filter(isPendingRow).length, [rows]);
 
   // ---------- pagination ----------
   const pageCount = Math.max(1, Math.ceil(sortedRows.length / perPage));
-  // Jump back to page 1 whenever the dataset or ordering changes
   useEffect(() => {
     setPage(1);
   }, [customerId, sortField, newestFirst, perPage]);
   useEffect(() => {
     if (page > pageCount) setPage(pageCount);
   }, [page, pageCount]);
+
+  // When a new row is added in chronological mode, jump to last page so user sees it at the bottom
+  useEffect(() => {
+    if (pendingCount > 0 && !newestFirst && sortField === "entry_date") {
+      setPage(pageCount);
+    }
+  }, [pendingCount, newestFirst, sortField, pageCount]);
 
   const pagedRows = useMemo(() => {
     const startIdx = (page - 1) * perPage;
@@ -655,8 +749,12 @@ export default function CustomerLedgerPage() {
         toast.success(`Invoice ${ref} marked as paid (${fmt(amount)})`);
         window.dispatchEvent(new CustomEvent("cash-drawer-changed"));
         window.dispatchEvent(new CustomEvent("accounts-changed"));
-        try { localStorage.setItem("cash_drawer_sync", String(Date.now())); } catch {}
-        try { localStorage.setItem("accounts_sync", String(Date.now())); } catch {}
+        try {
+          localStorage.setItem("cash_drawer_sync", String(Date.now()));
+        } catch {}
+        try {
+          localStorage.setItem("accounts_sync", String(Date.now()));
+        } catch {}
       } else {
         toast.success("Invoice was already fully paid");
       }
@@ -699,77 +797,66 @@ export default function CustomerLedgerPage() {
     }
   };
 
+  const showOpeningRow = Boolean(
+    customerId && (fromDate || Number(computedSummary.opening_balance) !== 0)
+  );
+
   // ---------- UI ----------
   if (permsLoading) return <div className="p-6">Loading…</div>;
-  if (!can.view) return <div className="p-6 text-sm text-gray-700">You don’t have permission to view customer ledger.</div>;
+  if (!can.view)
+    return (
+      <div className="p-6 text-sm text-gray-700">
+        You don’t have permission to view customer ledger.
+      </div>
+    );
 
-return (
-    <div className="ledger-page customer-ledger-page space-y-4">
-      {/* ===== Premium Gradient Hero Header ===== */}
-      <div
-        className="ledger-header products-panel"
-      >
-        {/* Decorative blurred blobs */}
-
-        {/* Hero Top */}
-        <div className="ledger-heading px-5 py-5">
+  return (
+    <div className="ledger-page customer-ledger-page space-y-3">
+      {/* ===== Unified Excel Workbook Header & Action Ribbon ===== */}
+      <div className="ledger-header products-panel">
+        <div className="ledger-heading px-4 py-3.5">
+          {/* Top Ribbon: Title + Party Selector on Left, Organized Action Groups on Right */}
+          {/* Row 1: Title on Left — Utility, Sync, Print & Share Opposite on Right */}
           <div className="ledger-heading-top">
-            <div className="flex items-center gap-3">
-              <div
-                className="products-identity-icon"
-              >
-                <UserIcon className="w-6 h-6 text-white" />
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="products-identity-icon">
+                <UserIcon className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h1 className="products-title">Customer Ledger</h1>
-                <p className="products-subtitle">
-                  {customerId ? "Managing ledger for selected customer" : "Select a customer to view ledger"}
+                <h1 className="products-title text-lg font-bold leading-tight">Customer Ledger</h1>
+                <p className="products-subtitle text-xs">
+                  Chronological account statement &amp; payment sheet
                 </p>
               </div>
             </div>
 
-            {/* Top Action Buttons Opposite Heading: Save, Share, Load entries, Print */}
-            <div className="ledger-top-actions" role="group" aria-label="Statement and save actions">
-              <Guard when={can.update}>
-                <button
-                  onClick={openSaveModal}
-                  disabled={!customerId || (newCount === 0 && updCount === 0)}
-                  title="Save changes (Ctrl+S)"
-                  className="products-action products-action-primary theme-btn-primary"
-                >
-                  <ArrowDownOnSquareIcon className="w-4 h-4" />
-                  <span>Save changes</span>
-                  {(newCount > 0 || updCount > 0) && customerId && (
-                    <span className="ml-0.5 px-1.5 py-0.5 rounded-sm bg-white/30 text-[10px]">
-                      {newCount + updCount}
-                    </span>
-                  )}
-                </button>
-              </Guard>
-
+            <div className="ledger-top-actions" role="group" aria-label="Statement utility and export actions">
               <button
-                onClick={() => setShareModalOpen(true)}
+                type="button"
+                onClick={() => fetchData()}
                 disabled={!customerId}
-                title="Share statement via WhatsApp or Email PDF"
-                className="products-action theme-btn-secondary"
+                title="Reload ledger entries from server"
+                className="products-action theme-btn-tertiary"
               >
-                <ShareIcon className="w-4 h-4" />
-                <span>Share / PDF</span>
+                <ArrowPathIcon className="w-4 h-4" />
+                <span>Refresh</span>
               </button>
 
               <Guard when={can.update}>
                 <button
-                  onClick={() => fetchData()}
+                  type="button"
+                  onClick={rebuild}
                   disabled={!customerId}
-                  title="Reload ledger entries"
+                  title="Sync and rebuild ledger rows from credit sale invoices"
                   className="products-action theme-btn-tertiary"
                 >
-                  <ArrowPathIcon className="w-4 h-4" />
-                  <span>Load entries</span>
+                  <WrenchScrewdriverIcon className="w-4 h-4" />
+                  <span>Sync Invoices</span>
                 </button>
               </Guard>
 
               <button
+                type="button"
                 onClick={() => handlePrint()}
                 disabled={!customerId}
                 title="Print statement (Ctrl+P)"
@@ -778,29 +865,46 @@ return (
                 <PrinterIcon className="w-4 h-4" />
                 <span>Print</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setShareModalOpen(true)}
+                disabled={!customerId}
+                title="Share statement via WhatsApp or Email PDF"
+                className="products-action theme-btn-secondary"
+              >
+                <ShareIcon className="w-4 h-4" />
+                <span>Share / PDF</span>
+              </button>
             </div>
           </div>
 
-          {/* Customer Selector & Ledger Entry Workflow Actions */}
+          {/* Row 2: Customer Selector on Left — Payment & Sheet Entry Actions on Right */}
           <div className="ledger-actions">
-            {/* Customer Select (new modal search) */}
-            <div
-              className="ledger-party-selector"
-            >
+            <div className="ledger-party-selector">
               <button
                 type="button"
                 onClick={() => setCustomerSearchOpen(true)}
                 aria-label="Select customer"
                 className="flex-1 h-full px-3 text-left text-xs flex items-center gap-2 min-w-0"
-                title={customerId ? (customers.find(c => String(c.id) === String(customerId))?.name || "Selected customer") : "Click to search customer..."}
+                title={
+                  selectedCustomer
+                    ? `${selectedCustomer.name} (Click to switch customer — Ctrl+C)`
+                    : "Click to search customer (Ctrl+C)"
+                }
               >
-                <UserIcon className="w-4 h-4 shrink-0" />
+                <UserIcon className="w-4 h-4 shrink-0 text-blue-500" />
                 {customerId ? (
-                  <span className="truncate font-medium">
-                    {customers.find(c => String(c.id) === String(customerId))?.name || "Selected customer"}
+                  <span className="truncate font-semibold">
+                    {selectedCustomer?.name || "Selected customer"}
+                    {selectedCustomer?.phone ? (
+                      <span className="ml-1.5 font-normal opacity-70">
+                        ({selectedCustomer.phone})
+                      </span>
+                    ) : null}
                   </span>
                 ) : (
-                  <span className="truncate">Search customer...</span>
+                  <span className="truncate opacity-75">Select customer (Ctrl+C)...</span>
                 )}
               </button>
               {customerId && (
@@ -810,105 +914,150 @@ return (
                     setCustomerId("");
                     setCustomerSearchOpen(true);
                   }}
-                  className="h-full px-2 flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 transition-colors shrink-0"
+                  className="h-full px-2.5 flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 transition-colors shrink-0 border-l border-gray-200/60 dark:border-slate-700"
                   title="Clear and select another customer"
                   aria-label="Clear customer"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <XMarkIcon className="w-4 h-4" />
                 </button>
               )}
             </div>
 
-            {/* Ledger Entry Workflow Actions */}
-            <div
-              className="ledger-workflow-actions" role="group" aria-label="Ledger entry actions"
-            >
-              <Guard when={can.create}>
-                <button
-                  onClick={() => setRecordPaymentOpen(true)}
-                  disabled={!customerId}
-                  title="Record an allocated customer payment with multi-tender receipt"
-                  className="products-action bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
-                >
-                  <BanknotesIcon className="w-4 h-4" />
-                  <span>Record Payment</span>
-                </button>
-              </Guard>
+            <div className="ledger-workflow-actions">
+              {/* Group 1: Official Payment Voucher & History */}
+              <div className="ledger-action-group" role="group" aria-label="Payment voucher actions">
+                <Guard when={can.create}>
+                  <button
+                    type="button"
+                    onClick={() => setRecordPaymentOpen(true)}
+                    disabled={!customerId}
+                    title="Record an allocated customer payment voucher"
+                    className="products-action bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-xs"
+                  >
+                    <BanknotesIcon className="w-4 h-4" />
+                    <span>Record Payment</span>
+                  </button>
+                </Guard>
 
-              <button
-                onClick={() => setPaymentHistoryOpen(true)}
-                disabled={!customerId}
-                title="View customer payment vouchers and receipts"
-                className="products-action theme-btn-secondary"
-              >
-                <DocumentTextIcon className="w-4 h-4" />
-                <span>Payment Vouchers</span>
-              </button>
-
-              <Guard when={can.create}>
                 <button
-                  onClick={openAddManual}
+                  type="button"
+                  onClick={() => setPaymentHistoryOpen(true)}
                   disabled={!customerId}
-                  title="Add a manual ledger row (new entries are added at the top)"
+                  title="View customer payment vouchers and receipts"
                   className="products-action theme-btn-secondary"
                 >
-                  <WrenchScrewdriverIcon className="w-4 h-4" />
-                  <span>Add manual row</span>
+                  <DocumentTextIcon className="w-4 h-4" />
+                  <span>Vouchers</span>
                 </button>
-              </Guard>
+              </div>
 
-              <Guard when={can.update}>
-                <button
-                  onClick={rebuild}
-                  disabled={!customerId}
-                  title="Rebuild ledger from sale invoices"
-                  className="products-action theme-btn-tertiary"
-                >
-                  <ArrowPathIcon className="w-4 h-4" />
-                  <span>Rebuild</span>
-                </button>
-              </Guard>
+              {/* Group 2: Direct Sheet Row Entry & Save */}
+              <div className="ledger-action-group" role="group" aria-label="Sheet row actions">
+                <Guard when={can.create}>
+                  <button
+                    type="button"
+                    onClick={openAddManual}
+                    disabled={!customerId}
+                    title="Append a manual debit/bill row at the bottom of the sheet"
+                    className="products-action theme-btn-secondary"
+                  >
+                    <PlusCircleIcon className="w-4 h-4" />
+                    <span>+ Manual Row</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={openAddPayment}
+                    disabled={!customerId}
+                    title="Append a manual payment row at the bottom of the sheet"
+                    className="products-action theme-btn-secondary"
+                  >
+                    <BanknotesIcon className="w-4 h-4" />
+                    <span>+ Payment Row</span>
+                  </button>
+                </Guard>
+
+                <Guard when={can.update || can.create}>
+                  <button
+                    type="button"
+                    onClick={openSaveModal}
+                    disabled={!customerId || (newCount === 0 && updCount === 0)}
+                    title="Save manual edits and new rows (Ctrl+S)"
+                    className="products-action products-action-primary theme-btn-primary"
+                  >
+                    <ArrowDownOnSquareIcon className="w-4 h-4" />
+                    <span>Save Sheet</span>
+                    {(newCount > 0 || updCount > 0) && customerId && (
+                      <span className="ml-0.5 px-1.5 py-0.5 rounded-sm bg-white/30 text-[10px] font-bold">
+                        {newCount + updCount}
+                      </span>
+                    )}
+                  </button>
+                </Guard>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Ledger totals strip */}
-        {customerId && (
-          <div className="relative px-5 pb-4">
-            <div className={`grid grid-cols-2 ${fromDate || Number(summary.opening_balance) !== 0 ? "md:grid-cols-5" : "md:grid-cols-4"} gap-2`}>
-              {(fromDate || Number(summary.opening_balance) !== 0) && (
-                <HeroStat label="Opening Balance (B/F)" value={fmt(summary.opening_balance)} />
-              )}
-              <HeroStat label="Total Bills" value={fmt(summary.total_invoiced)} />
-              <HeroStat label="Received on Invoice" value={fmt(summary.received_on_invoice)} />
-              <HeroStat label="Payments" value={fmt(summary.payments_credited)} />
+          {/* Excel Formula Summary Bar */}
+          {customerId && (
+            <div className="ledger-summary-ribbon" role="region" aria-label="Account summary formula">
               <HeroStat
-                label="Total Due"
-                value={fmt(summary.net_balance)}
-                tone={Number(summary.net_balance) > 0 ? "warn" : "ok"}
+                label="Opening Balance (B/F)"
+                value={fmt(computedSummary.opening_balance)}
+                operator=""
+              />
+              <HeroStat
+                label="Total Bills (Invoiced)"
+                value={fmt(computedSummary.total_invoiced)}
+                operator="+"
+              />
+              <HeroStat
+                label="Received on Bills"
+                value={fmt(computedSummary.received_on_invoice)}
+                operator="−"
+              />
+              <HeroStat
+                label="Payments Received"
+                value={fmt(computedSummary.payments_credited)}
+                operator="−"
+                tone="ok"
+              />
+              <HeroStat
+                label={
+                  Number(computedSummary.net_balance) < 0
+                    ? "Advance / Credit Balance"
+                    : "Net Remaining Due"
+                }
+                value={fmt(computedSummary.net_balance)}
+                operator="="
+                tone={Number(computedSummary.net_balance) > 0 ? "warn" : "ok"}
+                highlight
               />
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-{/* ===== Ledger table ===== */}
+      {/* ===== Excel Spreadsheet Panel ===== */}
       <div className="ledger-table-panel products-panel overflow-hidden">
-        {/* Toolbar */}
-        <div className="ledger-table-toolbar flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+        {/* Sheet Filter & Order Bar */}
+        <div className="ledger-table-toolbar flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
           <div className="flex items-center gap-2">
             <div className="p-1 rounded-md" style={{ backgroundColor: `${themeColors.primary}1a` }}>
               <Squares2X2Icon className="w-4 h-4" style={{ color: themeColors.primary }} />
             </div>
-            <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">Ledger Entries</span>
-            <span className="text-xs text-gray-400">
-              {rows.length} {rows.length === 1 ? "entry" : "entries"}
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-200">
+              Transactions Sheet
+            </span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              ({rows.length} {rows.length === 1 ? "row" : "rows"})
+            </span>
+            <span className="hidden md:inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+              {newestFirst ? "Order: Newest → Oldest" : "Order: Chronological (As It Happens)"}
             </span>
             {pendingCount > 0 && (
-              <span className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                {pendingCount} unsaved
+              <span className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-500/20 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                {pendingCount} unsaved — click Save Sheet
               </span>
             )}
           </div>
@@ -916,7 +1065,7 @@ return (
           <div className="flex flex-wrap items-center gap-2">
             {/* Date range statement filter */}
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
-              <span className="text-gray-500 dark:text-gray-400 font-medium">Statement Range:</span>
+              <span className="text-gray-500 dark:text-gray-400 font-medium">Period:</span>
               <ModernDatePicker
                 value={fromDate}
                 onChange={(val) => setFromDate(val)}
@@ -927,7 +1076,7 @@ return (
                 ariaLabel="Statement from date"
                 placeholder="From date"
                 size="sm"
-                className="w-40"
+                className="w-36"
               />
               <span className="text-gray-400">to</span>
               <ModernDatePicker
@@ -940,7 +1089,7 @@ return (
                 ariaLabel="Statement to date"
                 placeholder="To date"
                 size="sm"
-                className="w-40"
+                className="w-36"
               />
               <button
                 type="button"
@@ -971,310 +1120,570 @@ return (
             <div className="relative">
               <select
                 value={sortField}
-                onChange={(e) => setSortField(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSortField(val);
+                  if (val === "entry_date") {
+                    setSortDirection(newestFirst ? "descending" : "ascending");
+                  } else {
+                    setSortDirection("descending");
+                  }
+                }}
                 title="Sort ledger rows"
                 aria-label="Sort ledger rows"
-                className={`appearance-none h-8 pl-2 pr-6 text-xs rounded-lg border focus:outline-hidden focus:ring-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200 focus:ring-slate-500" : "border-gray-200 bg-white text-gray-700 focus:ring-gray-300"}`}
+                className={`appearance-none h-8 pl-2.5 pr-7 text-xs rounded-lg border focus:outline-hidden focus:ring-1 ${
+                  isDark
+                    ? "border-slate-600 bg-slate-700 text-slate-200 focus:ring-slate-500"
+                    : "border-gray-200 bg-white text-gray-700 focus:ring-gray-300"
+                }`}
               >
-                <option value="entry_date">Sort: Date</option>
-                <option value="invoice_total">Sort: Bill</option>
-                <option value="credited_amount">Sort: Payment</option>
+                <option value="entry_date">Sort: Date (As It Happens)</option>
+                <option value="invoice_total">Sort: Bill Amount</option>
+                <option value="credited_amount">Sort: Payment Amount</option>
               </select>
-              <ChevronDownIcon className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             </div>
 
-            {/* Newest / oldest toggle — new entries always land on top */}
+            {/* Chronological / Reverse toggle */}
             <button
-              onClick={() => setNewestFirst((v) => !v)}
-              title="Toggle newest / oldest first"
-              className="theme-btn-tertiary inline-flex items-center gap-1.5 h-8 px-2.5 text-xs font-medium"
+              type="button"
+              onClick={() => {
+                setSortField("entry_date");
+                setNewestFirst((v) => {
+                  const next = !v;
+                  setSortDirection(next ? "descending" : "ascending");
+                  return next;
+                });
+              }}
+              title="Switch between Chronological (Oldest → Newest, like Excel) and Newest First"
+              className="theme-btn-tertiary inline-flex items-center gap-1.5 h-8 px-2.5 text-xs font-medium rounded-lg"
             >
               <ChevronUpDownIcon className="w-3.5 h-3.5" />
-              <span>{newestFirst ? "Newest first" : "Oldest first"}</span>
+              <span>{newestFirst ? "Newest → Oldest" : "Oldest → Newest"}</span>
             </button>
           </div>
         </div>
 
-        <div className="ledger-table-scroll" role="region" aria-label="Customer ledger entries" tabIndex={0}>
-          <table className="w-full text-xs tabular-nums border-collapse">
-            <thead className={`sticky top-0 z-10 border-b ${isDark ? "bg-slate-700" : "bg-gray-100"}`}>
-              <tr className="text-left text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                <th className="px-2 py-2 w-20 text-center font-semibold">Paid</th>
-                <th className="px-2 py-2 w-9 text-center font-semibold">#</th>
-                <th className="px-2 py-2 w-24 font-semibold">Type</th>
-                <th className="px-2 py-2 w-24 font-semibold">Ref</th>
-                <th className="px-2 py-2 font-semibold">Description</th>
-                <th className="px-2 py-2 w-24 text-right font-semibold">Bill</th>
-                <th className="px-2 py-2 w-24 text-right font-semibold">Received</th>
-                <th className="px-2 py-2 w-24 text-right font-semibold">Payment</th>
-                <th className="px-2 py-2 w-24 text-right font-semibold">Balance</th>
-                <th className="px-2 py-2 w-28 text-right font-semibold">Running</th>
-                <th className="px-2 py-2 w-12 text-center font-semibold">Del</th>
-              </tr>
+        {/* Visually hidden sort status region for screen readers */}
+        <div role="status" aria-live="polite" className="ledger-sr-status">
+          {sortAnnouncement}
+        </div>
 
-              {/* Totals row — lives in the sticky head so it never overlaps */}
-              {customerId && rows.length > 0 && (
-                <tr className={`border-b font-semibold ${isDark ? "border-slate-600 bg-slate-700 text-slate-100" : "border-gray-200 bg-gray-50 text-gray-800"}`}>
-                  <td className="px-2 py-2 text-center font-normal text-gray-400" title="Invoice rows are billed / paid here">Σ</td>
-                  <td className="px-2 py-2" />
-                  <td className="px-2 py-2 text-[10px] uppercase tracking-wider" colSpan={3}>Totals</td>
-                  <td className="px-2 py-2 text-right">{fmt(totals.bill)}</td>
-                  <td className="px-2 py-2 text-right">{fmt(totals.received)}</td>
-                  <td className="px-2 py-2 text-right" style={{ color: themeColors.emerald }}>{fmt(totals.payment)}</td>
-                  <td className="px-2 py-2 text-right" style={{ color: totals.balance > 0 ? themeColors.danger : themeColors.emerald }}>
-                    {fmt(totals.balance)}
-                  </td>
-                  <td className="px-2 py-2 text-right" style={{ color: overallRunning > 0 ? themeColors.danger : themeColors.emerald }}>
-                    Due {fmt(overallRunning)}
-                  </td>
-                  <td className="px-2 py-2" />
-                </tr>
-              )}
+        {/* Excel Grid Container */}
+        <div
+          ref={tableScrollRef}
+          className="ledger-table-scroll"
+          role="region"
+          aria-labelledby="customer-ledger-table-caption"
+          tabIndex={0}
+        >
+          <table className="ledger-excel-table w-full text-xs tabular-nums">
+            <caption id="customer-ledger-table-caption" className="ledger-sr-status">
+              Customer ledger transactions recorded chronologically with running balance
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col" className="ledger-col-index text-center">
+                  #
+                </th>
+                <th
+                  scope="col"
+                  className="ledger-col-date text-left"
+                  aria-sort={
+                    sortField === "entry_date"
+                      ? newestFirst
+                        ? "descending"
+                        : "ascending"
+                      : undefined
+                  }
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleColumnSort("entry_date", "Date")}
+                    className="ledger-th-sort-btn"
+                  >
+                    <span>Date</span>
+                    <ChevronUpDownIcon aria-hidden="true" className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                  </button>
+                </th>
+                <th scope="col" className="ledger-col-type text-left">
+                  Type
+                </th>
+                <th scope="col" className="ledger-col-ref text-left">
+                  Ref / Voucher #
+                </th>
+                <th scope="col" className="ledger-col-desc text-left">
+                  Description / Particulars
+                </th>
+                <th
+                  scope="col"
+                  className="ledger-col-num text-right"
+                  aria-sort={sortField === "invoice_total" ? sortDirection : undefined}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleColumnSort("invoice_total", "Bill Amount")}
+                    className="ledger-th-sort-btn justify-end"
+                  >
+                    <span>Bill Amount</span>
+                    <ChevronUpDownIcon aria-hidden="true" className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                  </button>
+                </th>
+                <th scope="col" className="ledger-col-num text-right">
+                  Paid on Bill
+                </th>
+                <th
+                  scope="col"
+                  className="ledger-col-num text-right"
+                  aria-sort={sortField === "credited_amount" ? sortDirection : undefined}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleColumnSort("credited_amount", "Payment Received")}
+                    className="ledger-th-sort-btn justify-end"
+                  >
+                    <span>Payment</span>
+                    <ChevronUpDownIcon aria-hidden="true" className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                  </button>
+                </th>
+                <th scope="col" className="ledger-col-num text-right">
+                  Bill Balance
+                </th>
+                <th scope="col" className="ledger-col-running text-right">
+                  Running Balance
+                </th>
+                <th scope="col" className="ledger-col-actions text-center">
+                  Actions
+                </th>
+              </tr>
             </thead>
             <tbody>
               {!customerId && (
                 <tr>
-                  <td colSpan={11} className={`px-2 py-14 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+                  <td
+                    colSpan={11}
+                    className={`px-4 py-14 text-center ${
+                      isDark ? "text-slate-400" : "text-gray-500"
+                    }`}
+                  >
                     <div className="flex flex-col items-center gap-2">
                       <UserIcon className="w-8 h-8 text-gray-400" />
-                      <p className="text-sm">Select a customer to view the ledger</p>
+                      <p className="text-sm font-medium">
+                        Select a customer above to open their ledger sheet
+                      </p>
                     </div>
                   </td>
                 </tr>
               )}
 
-              {customerId && rows.length > 0 && (
-                <>
-                  {pagedRows.map((r) => {
-                    const isInvoice = r.entry_type === "invoice";
-                    const isPayment = r.entry_type === "payment";
-                    const isManual = r.entry_type === "manual";
-                    const pending = isPendingRow(r);
-                    const editable = !isInvoice && !isPayment;
-                    // Invoice rows are generated from sales and payment rows come from Payment Vouchers
-                    const locked = (isInvoice && !r.is_manual) || Boolean(r.payment_id);
-                    const invoiceDue = Number(r.invoice_due ?? r.balance_remaining ?? 0);
+              {/* Opening Balance Brought Forward Row at the top of the sheet */}
+              {showOpeningRow && !newestFirst && page === 1 && (
+                <tr className="ledger-row-bf">
+                  <th scope="row" className="ledger-cell-index text-center font-bold">
+                    B/F
+                  </th>
+                  <td data-label="Date" className="font-medium">
+                    {fromDate ? fmtDate(fromDate) : "Opening"}
+                  </td>
+                  <td data-label="Type">
+                    <span className="ledger-type-badge" style={{ "--ledger-type-accent": "#64748b" }}>
+                      B/F
+                    </span>
+                  </td>
+                  <td data-label="Ref / Voucher #" className="text-gray-400">
+                    —
+                  </td>
+                  <td data-label="Description" className="font-semibold">
+                    Opening Balance Brought Forward {fromDate ? `(prior to ${fmtDate(fromDate)})` : ""}
+                  </td>
+                  <td data-label="Bill Amount" className="text-right text-gray-400">
+                    —
+                  </td>
+                  <td data-label="Paid on Bill" className="text-right text-gray-400">
+                    —
+                  </td>
+                  <td data-label="Payment" className="text-right text-gray-400">
+                    —
+                  </td>
+                  <td data-label="Bill Balance" className="text-right text-gray-400">
+                    —
+                  </td>
+                  <td
+                    data-label="Running Balance"
+                    className="ledger-cell-running text-right font-bold"
+                    style={{
+                      color:
+                        Number(computedSummary.opening_balance) > 0
+                          ? themeColors.danger
+                          : themeColors.emerald,
+                    }}
+                  >
+                    {fmt(computedSummary.opening_balance)}
+                  </td>
+                  <td data-label="Actions" className="text-center text-gray-400">
+                    —
+                  </td>
+                </tr>
+              )}
 
-                    const accent = isInvoice ? themeColors.primary : isPayment ? themeColors.emerald : themeColors.tertiary;
-                    const accentHover = isInvoice ? themeColors.primaryHover : isPayment ? themeColors.emeraldHover : themeColors.tertiaryHover;
+              {customerId &&
+                rows.length > 0 &&
+                pagedRows.map((r) => {
+                  const isInvoice = r.entry_type === "invoice";
+                  const isPayment = r.entry_type === "payment";
+                  const isManual = r.entry_type === "manual";
+                  const pending = isPendingRow(r);
+                  // Invoice rows come from sales; payment rows linked to a Payment Voucher are locked
+                  const locked =
+                    (isInvoice && !r.is_manual) ||
+                    Boolean(r.payment_id) ||
+                    Boolean(r.sale_return_id);
+                  const editableManual = isManual && !locked;
+                  const editablePayment = isPayment && !locked;
+                  const invoiceDue = Number(r.invoice_due ?? r.balance_remaining ?? 0);
+                  const refValue = r.posted_number || r.payment_ref || "";
 
-                    const cellInput = `w-full text-xs tabular-nums rounded-md border px-1.5 py-1 transition-colors focus:outline-hidden focus:ring-1 ${
-                      isDark
-                        ? "border-slate-600 bg-slate-700 text-slate-100 focus:ring-slate-500 disabled:border-transparent disabled:bg-transparent disabled:text-slate-300"
-                        : "border-gray-200 bg-white text-gray-800 focus:ring-gray-300 disabled:border-transparent disabled:bg-transparent disabled:text-gray-600"
-                    }`;
+                  const accent = isInvoice
+                    ? themeColors.primary
+                    : isPayment
+                    ? themeColors.emerald
+                    : themeColors.tertiary;
 
-                    return (
-                      <tr
-                        key={r.id ?? `new-${r.__i}`}
-                        data-pending={pending}
-                        className={`border-b transition-colors ${
-                          isDark ? "border-slate-700/50 hover:bg-slate-700/40" : "border-gray-100 hover:bg-blue-50/70"
-                        } ${pending ? (isDark ? "bg-amber-500/10" : "bg-amber-50/70") : ""}`}
+                  return (
+                    <tr
+                      key={r.row_key ?? (r.id ? `${r.entry_type}-${r.id}` : `new-${r.__i}`)}
+                      data-pending={pending}
+                      data-entry-type={r.entry_type}
+                      className="ledger-excel-row"
+                    >
+                      {/* 1. Row # (Sticky row header) */}
+                      <th scope="row" className="ledger-cell-index text-center">
+                        {r.__seq ?? r.__top}
+                      </th>
+
+                      {/* 2. Date */}
+                      <td data-label="Date" className="ledger-cell-date">
+                        {!locked ? (
+                          <input
+                            type="date"
+                            value={(r.entry_date || "").slice(0, 10)}
+                            onChange={(e) => handleField(r.__i, "entry_date", e.target.value)}
+                            aria-label="Entry date"
+                            className="ledger-cell-input text-left"
+                          />
+                        ) : (
+                          <span className="font-medium whitespace-nowrap">
+                            {fmtDate(r.entry_date)}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* 3. Type */}
+                      <td data-label="Type">
+                        <div className="inline-flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className="ledger-type-badge"
+                            style={{ "--ledger-type-accent": accent }}
+                          >
+                            {isPayment && <BanknotesIcon className="w-3 h-3" />}
+                            {isInvoice && <DocumentTextIcon className="w-3 h-3" />}
+                            {isManual && <WrenchScrewdriverIcon className="w-3 h-3" />}
+                            {isInvoice ? "Invoice" : isPayment ? "Payment" : "Manual"}
+                          </span>
+                          {pending && (
+                            <span className="px-1.5 py-0.5 rounded-sm bg-amber-500/15 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                              NEW
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* 4. Ref / Voucher # */}
+                      <td data-label="Ref / Voucher #">
+                        {editableManual || editablePayment ? (
+                          <input
+                            type="text"
+                            value={
+                              editablePayment
+                                ? r.payment_ref ?? r.posted_number ?? ""
+                                : r.posted_number ?? ""
+                            }
+                            onChange={(e) =>
+                              handleField(
+                                r.__i,
+                                editablePayment ? "payment_ref" : "posted_number",
+                                e.target.value
+                              )
+                            }
+                            placeholder={editablePayment ? "Voucher / Ref #" : "Ref #"}
+                            aria-label="Reference number"
+                            className="ledger-cell-input text-left"
+                          />
+                        ) : (
+                          <span className="font-medium" title={refValue || undefined}>
+                            {refValue || "—"}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* 5. Description */}
+                      <td data-label="Description">
+                        {locked ? (
+                          <span className="block truncate" title={r.description || ""}>
+                            {r.description || "—"}
+                          </span>
+                        ) : (
+                          <input
+                            type="text"
+                            value={r.description ?? ""}
+                            onChange={(e) => handleField(r.__i, "description", e.target.value)}
+                            placeholder="Enter description..."
+                            aria-label="Description"
+                            className="ledger-cell-input text-left"
+                          />
+                        )}
+                      </td>
+
+                      {/* 6. Bill Amount */}
+                      <td data-label="Bill Amount" className="text-right">
+                        {editableManual ? (
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={getInput(r, "invoice_total")}
+                            onChange={(e) => setInput(r.__i, "invoice_total", e.target.value)}
+                            onBlur={() => commitNumber(r.__i, "invoice_total")}
+                            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                            aria-label="Bill amount"
+                            className="ledger-cell-input text-right font-medium"
+                          />
+                        ) : isInvoice || isManual ? (
+                          <span className="font-semibold">{fmt(r.invoice_total ?? 0)}</span>
+                        ) : (
+                          <span className="text-gray-300 dark:text-slate-600">—</span>
+                        )}
+                      </td>
+
+                      {/* 7. Paid on Bill (Received on Invoice) */}
+                      <td data-label="Paid on Bill" className="text-right">
+                        {editableManual ? (
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={getInput(r, "total_received")}
+                            onChange={(e) => setInput(r.__i, "total_received", e.target.value)}
+                            onBlur={() => commitNumber(r.__i, "total_received")}
+                            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                            aria-label="Received on bill"
+                            className="ledger-cell-input text-right"
+                          />
+                        ) : isInvoice || isManual ? (
+                          <span
+                            className={
+                              Number(r.total_received || 0) > 0
+                                ? "font-medium text-emerald-600 dark:text-emerald-400"
+                                : "text-gray-400 dark:text-slate-500"
+                            }
+                          >
+                            {fmt(r.total_received ?? 0)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 dark:text-slate-600">—</span>
+                        )}
+                      </td>
+
+                      {/* 8. Payment (Received via Payment Voucher or Manual Payment Row) */}
+                      <td data-label="Payment" className="text-right">
+                        {editablePayment ? (
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={getInput(r, "credited_amount")}
+                            onChange={(e) => setInput(r.__i, "credited_amount", e.target.value)}
+                            onBlur={() => commitNumber(r.__i, "credited_amount")}
+                            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                            aria-label="Payment amount"
+                            className="ledger-cell-input text-right font-semibold"
+                            style={{ color: themeColors.emerald }}
+                          />
+                        ) : isPayment ? (
+                          <span className="font-bold" style={{ color: themeColors.emerald }}>
+                            {fmt(r.credited_amount ?? 0)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 dark:text-slate-600">—</span>
+                        )}
+                      </td>
+
+                      {/* 9. Bill Balance (Unpaid from that bill: Bill - Paid on Bill) */}
+                      <td data-label="Bill Balance" className="text-right">
+                        {isPayment ? (
+                          <span className="text-gray-300 dark:text-slate-600">—</span>
+                        ) : (
+                          <div className="inline-flex flex-col items-end leading-tight">
+                            <span className="font-semibold">
+                              {fmt(r.balance_remaining ?? 0)}
+                            </span>
+                            {isInvoice &&
+                              Number(r.balance_remaining || 0) > 0 &&
+                              invoiceDue < Number(r.balance_remaining || 0) && (
+                                <span
+                                  className={`text-[10px] font-medium ${
+                                    invoiceDue <= 0
+                                      ? "text-emerald-600 dark:text-emerald-400"
+                                      : "text-amber-600 dark:text-amber-400"
+                                  }`}
+                                >
+                                  {invoiceDue <= 0 ? "Settled" : `Due: ${fmt(invoiceDue)}`}
+                                </span>
+                              )}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* 10. Running Balance (Cumulative balance after this transaction) */}
+                      <td
+                        data-label="Running Balance"
+                        className="ledger-cell-running text-right font-bold"
                       >
-                        {/* Mark as paid (invoice-backed rows only) */}
-                        <td className="px-2 py-1.5 text-center">
-                          {r.sale_invoice_id ? (
+                        <span
+                          style={{
+                            color:
+                              Number(r.running_balance || 0) > 0
+                                ? themeColors.danger
+                                : themeColors.emerald,
+                          }}
+                        >
+                          {fmt(r.running_balance ?? 0)}
+                        </span>
+                      </td>
+
+                      {/* 11. Actions (Settle Invoice / Delete Row) */}
+                      <td data-label="Actions" className="text-center">
+                        <div className="inline-flex items-center justify-center gap-1">
+                          {r.sale_invoice_id && (
                             <button
+                              type="button"
                               onClick={() => openSettle(r)}
                               disabled={settling || invoiceDue <= 0}
                               title={
                                 invoiceDue <= 0
-                                  ? `${r.posted_number || "Invoice"} is fully paid`
-                                  : `Mark ${r.posted_number || "invoice"} as fully paid`
+                                  ? `${r.posted_number || "Invoice"} is settled`
+                                  : `Mark ${r.posted_number || "invoice"} as paid (${fmt(invoiceDue)})`
                               }
-                              className={`products-row-action ledger-row-action inline-flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-200 ${
+                              className={`ledger-row-btn ${
                                 invoiceDue <= 0
-                                  ? "text-green-500 dark:text-green-400 bg-green-500/10 cursor-default"
-                                  : isDark
-                                  ? "text-slate-200 bg-slate-700 hover:bg-emerald-600 hover:text-white"
-                                  : "text-gray-600 bg-gray-100 hover:bg-emerald-500 hover:text-white"
+                                  ? "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 cursor-default"
+                                  : "text-gray-700 dark:text-slate-200 bg-gray-100 dark:bg-slate-700 hover:bg-emerald-600 hover:text-white"
                               }`}
                             >
                               {settleBusyId === r.sale_invoice_id ? (
                                 <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
                               ) : (
-                                <CheckCircleIcon className="w-4 h-4" />
+                                <CheckCircleIcon className="w-3.5 h-3.5" />
                               )}
+                              <span>{invoiceDue <= 0 ? "Paid" : "Pay"}</span>
                             </button>
-                          ) : (
-                            <span className="text-gray-300 dark:text-slate-600">—</span>
                           )}
-                        </td>
 
-                        {/* # */}
-                        <td className="px-2 py-1.5 text-center text-[10px] text-gray-400">{r.__top ?? r.__i + 1}</td>
-
-                        {/* Type + auto date */}
-                        <td className="px-2 py-1.5">
-                          <div className="flex flex-col gap-0.5">
-                            <span
-                              className="ledger-type-badge"
-                              style={{
-                                "--ledger-type-accent": accent,
-                              }}
+                          {(!locked || pending) && (
+                            <button
+                              type="button"
+                              onClick={() => openDeleteModal(r.__i)}
+                              title={pending ? "Remove unsaved row" : "Delete this row"}
+                              aria-label={pending ? "Remove unsaved row" : "Delete this row"}
+                              className="ledger-row-icon-btn text-rose-500 hover:bg-rose-500/15"
                             >
-                              {isPayment && <BanknotesIcon className="w-3 h-3" />}
-                              {isInvoice && <DocumentTextIcon className="w-3 h-3" />}
-                              {isManual && <WrenchScrewdriverIcon className="w-3 h-3" />}
-                              {r.entry_type}
-                            </span>
-                            <span className="text-[10px] text-gray-400">{fmtDate(r.entry_date)}</span>
-                            {pending && (
-                              <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">unsaved</span>
-                            )}
-                          </div>
-                        </td>
+                              <TrashIcon className="w-3.5 h-3.5" />
+                            </button>
+                          )}
 
-                        {/* Ref */}
-                        <td className="px-2 py-1.5">
-                          {editable ? (
-                            <input
-                              type="text"
-                              value={r.posted_number ?? ""}
-                              onChange={(e) => handleField(r.__i, "posted_number", e.target.value)}
-                              placeholder="Ref"
-                              className={`w-full text-xs rounded-md border px-1.5 py-1 focus:outline-hidden focus:ring-1 ${
-                                isDark
-                                  ? "border-slate-600 bg-slate-700 text-slate-100 focus:ring-slate-500"
-                                  : "border-gray-200 bg-white text-gray-800 focus:ring-gray-300"
-                              }`}
-                            />
-                          ) : (
-                            <span className="font-medium text-gray-600 dark:text-gray-300">{r.posted_number || "—"}</span>
-                          )}
-                        </td>
-{/* Description */}
-                        <td className="px-2 py-1.5">
-                          {locked ? (
-                            <span className="text-gray-600 dark:text-gray-300">{r.description || "—"}</span>
-                          ) : (
-                            <input
-                              type="text"
-                              value={r.description ?? ""}
-                              onChange={(e) => handleField(r.__i, "description", e.target.value)}
-                              placeholder="—"
-                              className={`w-full text-xs rounded-md border px-1.5 py-1 focus:outline-hidden focus:ring-1 ${
-                                isDark
-                                  ? "border-slate-600 bg-slate-700 text-slate-100 focus:ring-slate-500"
-                                  : "border-gray-200 bg-white text-gray-800 focus:ring-gray-300"
-                              }`}
-                            />
-                          )}
-                        </td>
-
-                        {/* Bill */}
-                        <td className="px-2 py-1.5 text-right">
-                          {isInvoice || isManual ? (
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={getInput(r, "invoice_total")}
-                              onChange={(e) => setInput(r.__i, "invoice_total", e.target.value)}
-                              onBlur={() => commitNumber(r.__i, "invoice_total")}
-                              onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-                              disabled={isInvoice}
-                              className={cellInput}
-                            />
-                          ) : (
-                            <span className="text-gray-300 dark:text-slate-600">—</span>
-                          )}
-                        </td>
-
-                        {/* Received */}
-                        <td className="px-2 py-1.5 text-right">
-                          {isInvoice || isManual ? (
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={getInput(r, "total_received")}
-                              onChange={(e) => setInput(r.__i, "total_received", e.target.value)}
-                              onBlur={() => commitNumber(r.__i, "total_received")}
-                              onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-                              disabled={isInvoice}
-                              className={cellInput}
-                            />
-                          ) : (
-                            <span className="text-gray-300 dark:text-slate-600">—</span>
-                          )}
-                        </td>
-
-                        {/* Payment */}
-                        <td className="px-2 py-1.5 text-right">
-                          {isPayment ? (
-                            <span className="font-semibold px-1.5 py-1 inline-block" style={{ color: themeColors.emerald }}>
-                              {fmt(r.credited_amount ?? 0)}
-                            </span>
-                          ) : (
-                            <span className="text-gray-300 dark:text-slate-600">—</span>
-                          )}
-                        </td>
-                        {/* Balance remaining */}
-                        <td className="px-2 py-1.5 text-right font-semibold">
-                          {isPayment ? (
-                            <span className="text-gray-300 dark:text-slate-600">—</span>
-                          ) : (
-                            <span style={{ color: Number(r.balance_remaining || 0) > 0 ? themeColors.danger : themeColors.emerald }}>
-                              {fmt(r.balance_remaining ?? 0)}
+                          {locked && !r.sale_invoice_id && (
+                            <span
+                              className="text-[10px] text-gray-400 dark:text-slate-500"
+                              title="Created via Payment Voucher — manage in Vouchers"
+                            >
+                              Voucher
                             </span>
                           )}
-                        </td>
-
-                        {/* Running balance */}
-                        <td className="px-2 py-1.5 text-right font-bold">
-                          <span style={{ color: Number(r.running_balance || 0) > 0 ? themeColors.danger : themeColors.emerald }}>
-                            {fmt(r.running_balance ?? 0)}
-                          </span>
-                        </td>
-
-                        {/* Delete (invoice rows are locked) */}
-                        <td className="px-2 py-1.5 text-center">
-                          <button
-                            onClick={() => openDeleteModal(r.__i)}
-                            disabled={locked}
-                            title={locked ? "Locked — invoice rows come from sales" : "Delete this row"}
-                            className={`products-row-action ledger-row-action inline-flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-200 ${
-                              locked
-                                ? "text-gray-300 dark:text-slate-600 cursor-not-allowed"
-                                : isDark
-                                ? "text-red-300 hover:bg-red-500/20"
-                                : "text-red-500 hover:bg-red-50"
-                            }`}
-                          >
-                            <TrashIcon className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </>
-              )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
 
               {customerId && rows.length === 0 && (
                 <tr>
-                  <td colSpan={11} className={`px-2 py-14 text-center ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+                  <td
+                    colSpan={11}
+                    className={`px-4 py-14 text-center ${
+                      isDark ? "text-slate-400" : "text-gray-500"
+                    }`}
+                  >
                     <div className="flex flex-col items-center gap-2">
                       <UserIcon className="w-8 h-8 text-gray-400" />
                       <p className="text-sm">
-                        No entries yet. Use <b className={isDark ? "text-slate-300" : "text-gray-700"}>Load entries</b> to pull
-                        invoices, or use <b className={isDark ? "text-slate-300" : "text-gray-700"}>Record Payment</b> / add a Manual row.
+                        No transactions recorded yet. Use{" "}
+                        <b className={isDark ? "text-slate-200" : "text-gray-800"}>
+                          Record Payment
+                        </b>
+                        ,{" "}
+                        <b className={isDark ? "text-slate-200" : "text-gray-800"}>
+                          + Manual Row
+                        </b>
+                        , or{" "}
+                        <b className={isDark ? "text-slate-200" : "text-gray-800"}>
+                          Sync Invoices
+                        </b>
+                        .
                       </p>
                     </div>
                   </td>
                 </tr>
               )}
             </tbody>
+
+            {/* Sticky Excel Totals & Closing Balance Footer Row */}
+            {customerId && rows.length > 0 && (
+              <tfoot>
+                <tr className="ledger-excel-tfoot">
+                  <td className="ledger-cell-index text-center font-bold">Σ</td>
+                  <td colSpan={4} className="font-bold uppercase tracking-wider text-[11px]">
+                    Sheet Totals &amp; Closing Balance
+                  </td>
+                  <td className="text-right font-bold">{fmt(totals.bill)}</td>
+                  <td className="text-right font-bold">{fmt(totals.received)}</td>
+                  <td className="text-right font-bold" style={{ color: themeColors.emerald }}>
+                    {fmt(totals.payment)}
+                  </td>
+                  <td className="text-right font-bold">{fmt(totals.balance)}</td>
+                  <td
+                    className="ledger-cell-running text-right font-extrabold"
+                    style={{
+                      color: overallRunning > 0 ? themeColors.danger : themeColors.emerald,
+                    }}
+                  >
+                    Due {fmt(overallRunning)}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
 
         {/* ===== Pagination footer ===== */}
         {customerId && sortedRows.length > 0 && (
-          <div className={`flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-t ${isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-gray-50"}`}>
+          <div
+            className={`flex flex-wrap items-center justify-between gap-3 px-4 py-2 border-t ${
+              isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-gray-50"
+            }`}
+          >
             <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
               <span>
                 Showing <b className="text-gray-700 dark:text-gray-200">{rangeStart}</b>–
                 <b className="text-gray-700 dark:text-gray-200">{rangeEnd}</b> of{" "}
-                <b className="text-gray-700 dark:text-gray-200">{sortedRows.length}</b>
+                <b className="text-gray-700 dark:text-gray-200">{sortedRows.length}</b> rows
               </span>
               <label className="inline-flex items-center gap-1.5">
                 <span className="hidden sm:inline">Rows per page</span>
@@ -1282,10 +1691,16 @@ return (
                   <select
                     value={perPage}
                     onChange={(e) => setPerPage(Number(e.target.value))}
-                    className={`appearance-none h-7 pl-2 pr-6 text-xs rounded-md border focus:outline-hidden focus:ring-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200 focus:ring-slate-500" : "border-gray-200 bg-white text-gray-700 focus:ring-gray-300"}`}
+                    className={`appearance-none h-7 pl-2 pr-6 text-xs rounded-md border focus:outline-hidden focus:ring-1 ${
+                      isDark
+                        ? "border-slate-600 bg-slate-700 text-slate-200 focus:ring-slate-500"
+                        : "border-gray-200 bg-white text-gray-700 focus:ring-gray-300"
+                    }`}
                   >
-                    {[10, 25, 50, 100, 250].map((n) => (
-                      <option key={n} value={n}>{n}</option>
+                    {[25, 50, 100, 250, 500].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
                     ))}
                   </select>
                   <ChevronDownIcon className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
@@ -1294,19 +1709,45 @@ return (
             </div>
 
             <div className="flex items-center gap-1">
-              <PageBtn isDark={isDark} onClick={() => setPage(1)} disabled={page === 1} title="First page">
+              <PageBtn
+                isDark={isDark}
+                onClick={() => setPage(1)}
+                disabled={page === 1}
+                title="First page"
+              >
                 <ChevronDoubleLeftIcon className="w-3.5 h-3.5" />
               </PageBtn>
-              <PageBtn isDark={isDark} onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} title="Previous page">
+              <PageBtn
+                isDark={isDark}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                title="Previous page"
+              >
                 <ChevronLeftIcon className="w-3.5 h-3.5" />
               </PageBtn>
-              <span className={`mx-1 px-2.5 py-1 rounded-md text-xs font-semibold ${isDark ? "bg-slate-700 text-slate-200" : "bg-white text-gray-700 ring-1 ring-gray-200"}`}>
+              <span
+                className={`mx-1 px-2.5 py-1 rounded-md text-xs font-semibold ${
+                  isDark
+                    ? "bg-slate-700 text-slate-200"
+                    : "bg-white text-gray-700 ring-1 ring-gray-200"
+                }`}
+              >
                 {page} / {pageCount}
               </span>
-              <PageBtn isDark={isDark} onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={page === pageCount} title="Next page">
+              <PageBtn
+                isDark={isDark}
+                onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                disabled={page === pageCount}
+                title="Next page"
+              >
                 <ChevronRightIcon className="w-3.5 h-3.5" />
               </PageBtn>
-              <PageBtn isDark={isDark} onClick={() => setPage(pageCount)} disabled={page === pageCount} title="Last page">
+              <PageBtn
+                isDark={isDark}
+                onClick={() => setPage(pageCount)}
+                disabled={page === pageCount}
+                title="Last page"
+              >
                 <ChevronDoubleRightIcon className="w-3.5 h-3.5" />
               </PageBtn>
             </div>
@@ -1316,36 +1757,69 @@ return (
 
       {/* ===== Mark invoice as paid (settle) modal ===== */}
       {settleTarget && (
-        <div className="ledger-modal fixed inset-0 z-50 flex items-center justify-center" onClick={(e) => { if (e.target === e.currentTarget) closeSettle(); }}>
+        <div
+          className="ledger-modal fixed inset-0 z-50 flex items-center justify-center"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeSettle();
+          }}
+        >
           <div className="absolute inset-0 bg-black/40 backdrop-blur-xs" />
           <div className="relative w-full max-w-md">
             <GlassCard>
               <GlassSectionHeader
-                title={<span className="inline-flex items-center gap-2">
-                  <CheckCircleIcon className="w-5 h-5" style={{ color: themeColors.emerald }} />
-                  <span>Mark invoice as paid?</span>
-                </span>}
-                right={<button aria-label="Close dialog" className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeSettle}><XMarkIcon className="w-5 h-5" /></button>}
+                title={
+                  <span className="inline-flex items-center gap-2">
+                    <CheckCircleIcon className="w-5 h-5" style={{ color: themeColors.emerald }} />
+                    <span>Mark invoice as paid?</span>
+                  </span>
+                }
+                right={
+                  <button
+                    aria-label="Close dialog"
+                    className={`p-1.5 rounded-lg ${tintIconBtn}`}
+                    onClick={closeSettle}
+                  >
+                    <XMarkIcon className="w-5 h-5" />
+                  </button>
+                }
               />
               <div className="px-4 py-4 space-y-3">
                 <p className={`text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>
-                  The outstanding balance of invoice <b>{settleTarget.posted_number || "—"}</b> will be
-                  recorded as received, making it <b>fully paid</b>. The sale invoice and this ledger row
-                  are updated together.
+                  The outstanding balance of invoice <b>{settleTarget.posted_number || "—"}</b>{" "}
+                  will be recorded as received, making it <b>fully paid</b>. A payment entry will
+                  be recorded in the ledger automatically.
                 </p>
 
-                <div className={`rounded-lg px-3 py-2.5 space-y-1.5 text-sm ${isDark ? "bg-slate-700/60" : "bg-gray-50 ring-1 ring-gray-200"}`}>
+                <div
+                  className={`rounded-lg px-3 py-2.5 space-y-1.5 text-sm ${
+                    isDark ? "bg-slate-700/60" : "bg-gray-50 ring-1 ring-gray-200"
+                  }`}
+                >
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-gray-500 dark:text-gray-400">Bill total</span>
-                    <span className="font-semibold text-gray-800 dark:text-gray-100">{fmt(settleTarget.invoice_total || 0)}</span>
+                    <span className="font-semibold text-gray-800 dark:text-gray-100">
+                      {fmt(settleTarget.invoice_total || 0)}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-gray-400">Already received</span>
-                    <span className="font-semibold text-gray-800 dark:text-gray-100">{fmt(settleTarget.invoice_settled ?? settleTarget.total_received ?? 0)}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      Already received
+                    </span>
+                    <span className="font-semibold text-gray-800 dark:text-gray-100">
+                      {fmt(settleTarget.invoice_settled ?? settleTarget.total_received ?? 0)}
+                    </span>
                   </div>
-                  <div className={`flex items-center justify-between border-t pt-1.5 ${isDark ? "border-slate-600" : "border-gray-200"}`}>
-                    <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Amount to settle</span>
-                    <span className="font-bold" style={{ color: themeColors.emerald }}>{fmt(settleTarget.invoice_due ?? settleTarget.balance_remaining ?? 0)}</span>
+                  <div
+                    className={`flex items-center justify-between border-t pt-1.5 ${
+                      isDark ? "border-slate-600" : "border-gray-200"
+                    }`}
+                  >
+                    <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                      Amount to settle
+                    </span>
+                    <span className="font-bold" style={{ color: themeColors.emerald }}>
+                      {fmt(settleTarget.invoice_due ?? settleTarget.balance_remaining ?? 0)}
+                    </span>
                   </div>
                 </div>
 
@@ -1364,7 +1838,11 @@ return (
                     onClick={confirmSettle}
                     disabled={settling}
                   >
-                    {settling ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <CheckCircleIcon className="w-4 h-4" />}
+                    {settling ? (
+                      <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <CheckCircleIcon className="w-4 h-4" />
+                    )}
                     <span>{settling ? "Marking…" : "Yes, mark as paid"}</span>
                   </button>
                 </div>
@@ -1376,21 +1854,45 @@ return (
 
       {/* ===== Add Row modal ===== */}
       {addModal.open && (
-        <div className="ledger-modal fixed inset-0 z-50 flex items-center justify-center" onClick={(e)=>{ if(e.target===e.currentTarget) closeAddModal(); }}>
+        <div
+          className="ledger-modal fixed inset-0 z-50 flex items-center justify-center"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeAddModal();
+          }}
+        >
           <div className="absolute inset-0 bg-black/40 backdrop-blur-xs" />
           <div className="relative w-full max-w-sm">
             <GlassCard>
               <GlassSectionHeader
-                title={<span className="font-semibold text-lg">{addModal.type === "payment" ? "Add Payment row?" : "Add Manual row?"}</span>}
-                right={<button aria-label="Close dialog" className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeAddModal}><XMarkIcon className="w-5 h-5" /></button>}
+                title={
+                  <span className="font-semibold text-lg">
+                    {addModal.type === "payment" ? "Add Payment Row?" : "Add Manual Row?"}
+                  </span>
+                }
+                right={
+                  <button
+                    aria-label="Close dialog"
+                    className={`p-1.5 rounded-lg ${tintIconBtn}`}
+                    onClick={closeAddModal}
+                  >
+                    <XMarkIcon className="w-5 h-5" />
+                  </button>
+                }
               />
               <div className="px-4 py-4">
                 <p className={`text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>
-                  A new <b>{addModal.type}</b> row will be added at the <b>top</b> of the ledger for the selected customer.
+                  A new <b>{addModal.type}</b> row will be appended to the ledger sheet for the
+                  selected customer. Remember to click <b>Save Sheet</b> after entering the details.
                 </p>
                 <div className="mt-4 flex justify-end gap-2">
-                  <button className={`min-w-[100px] px-4 py-2 text-sm font-medium ${btnOutlined.className}`} style={btnOutlined.style} onClick={closeAddModal}>Cancel</button>
-                  <button 
+                  <button
+                    className={`min-w-[100px] px-4 py-2 text-sm font-medium ${btnOutlined.className}`}
+                    style={btnOutlined.style}
+                    onClick={closeAddModal}
+                  >
+                    Cancel
+                  </button>
+                  <button
                     className={`min-w-[120px] px-4 py-2 text-sm font-semibold transition-all duration-200 ${btnPrimary.className}`}
                     style={btnPrimary.style}
                     onClick={confirmAdd}
@@ -1406,28 +1908,50 @@ return (
 
       {/* ===== Save confirm modal ===== */}
       {saveModalOpen && (
-        <div className="ledger-modal fixed inset-0 z-50 flex items-center justify-center" onClick={(e)=>{ if(e.target===e.currentTarget) closeSaveModal(); }}>
+        <div
+          className="ledger-modal fixed inset-0 z-50 flex items-center justify-center"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeSaveModal();
+          }}
+        >
           <div className="absolute inset-0 bg-black/40" />
           <div className="relative w-full max-w-md">
             <GlassCard>
               <GlassSectionHeader
-                title={<span className="inline-flex items-center gap-2">
-                  <ArrowDownOnSquareIcon 
-                    className="w-5 h-5" 
-                    style={{ color: themeColors.emerald }}
-                  />
-                  <span>Save changes?</span>
-                </span>}
-                right={<button aria-label="Close dialog" className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeSaveModal}><XMarkIcon className="w-5 h-5" /></button>}
+                title={
+                  <span className="inline-flex items-center gap-2">
+                    <ArrowDownOnSquareIcon
+                      className="w-5 h-5"
+                      style={{ color: themeColors.emerald }}
+                    />
+                    <span>Save ledger sheet?</span>
+                  </span>
+                }
+                right={
+                  <button
+                    aria-label="Close dialog"
+                    className={`p-1.5 rounded-lg ${tintIconBtn}`}
+                    onClick={closeSaveModal}
+                  >
+                    <XMarkIcon className="w-5 h-5" />
+                  </button>
+                }
               />
               <div className="px-4 py-4">
                 <p className="text-sm text-gray-700">
-                  You’re about to save <b>{newCount}</b> new {newCount === 1 ? "row" : "rows"} and update{" "}
-                  <b>{updCount}</b> existing {updCount === 1 ? "row" : "rows"} for this customer.
+                  You’re about to save <b>{newCount}</b> new {newCount === 1 ? "row" : "rows"} and
+                  update <b>{updCount}</b> existing {updCount === 1 ? "row" : "rows"} for this
+                  customer.
                 </p>
                 <div className="mt-4 flex justify-end gap-2">
-                  <button className={`min-w-[100px] px-4 py-2 text-sm font-medium ${btnOutlined.className}`} style={btnOutlined.style} onClick={closeSaveModal}>Cancel</button>
-                  <button 
+                  <button
+                    className={`min-w-[100px] px-4 py-2 text-sm font-medium ${btnOutlined.className}`}
+                    style={btnOutlined.style}
+                    onClick={closeSaveModal}
+                  >
+                    Cancel
+                  </button>
+                  <button
                     className={`min-w-[120px] px-4 py-2 text-sm font-semibold transition-all duration-200 ${btnEmerald.className}`}
                     style={btnEmerald.style}
                     onClick={confirmSave}
@@ -1443,29 +1967,50 @@ return (
 
       {/* ===== Delete (2-step) modal ===== */}
       {deleteModalOpen && (
-        <div className="ledger-modal fixed inset-0 z-50 flex items-center justify-center" onClick={(e)=>{ if(e.target===e.currentTarget) closeDeleteModal(); }}>
+        <div
+          className="ledger-modal fixed inset-0 z-50 flex items-center justify-center"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeDeleteModal();
+          }}
+        >
           <div className="absolute inset-0 bg-black/40" />
           <div className="relative w-full max-w-md">
             <GlassCard>
               <GlassSectionHeader
-                title={<span className="inline-flex items-center gap-2">
-                  <ShieldExclamationIcon 
-                    className="w-5 h-5" 
-                    style={{ color: themeColors.danger }}
-                  />
-                  <span>Delete ledger row</span>
-                </span>}
-                right={<button aria-label="Close dialog" className={`p-1.5 rounded-lg ${tintIconBtn}`} onClick={closeDeleteModal}><XMarkIcon className="w-5 h-5" /></button>}
+                title={
+                  <span className="inline-flex items-center gap-2">
+                    <ShieldExclamationIcon
+                      className="w-5 h-5"
+                      style={{ color: themeColors.danger }}
+                    />
+                    <span>Delete ledger row</span>
+                  </span>
+                }
+                right={
+                  <button
+                    aria-label="Close dialog"
+                    className={`p-1.5 rounded-lg ${tintIconBtn}`}
+                    onClick={closeDeleteModal}
+                  >
+                    <XMarkIcon className="w-5 h-5" />
+                  </button>
+                }
               />
-                <div className="px-4 py-4 space-y-4">
+              <div className="px-4 py-4 space-y-4">
                 {deleteStep === 1 ? (
                   <>
                     <p className={`text-sm ${isDark ? "text-slate-300" : "text-gray-700"}`}>
                       Are you sure you want to delete this row? This action cannot be undone.
                     </p>
                     <div className="flex justify-end gap-2">
-                      <button className={`min-w-[100px] px-4 py-2 text-sm font-medium ${btnOutlined.className}`} style={btnOutlined.style} onClick={closeDeleteModal}>Cancel</button>
-                      <button 
+                      <button
+                        className={`min-w-[100px] px-4 py-2 text-sm font-medium ${btnOutlined.className}`}
+                        style={btnOutlined.style}
+                        onClick={closeDeleteModal}
+                      >
+                        Cancel
+                      </button>
+                      <button
                         className={`min-w-[140px] px-4 py-2 text-sm font-semibold transition-all duration-200 ${btnDanger.className}`}
                         style={btnDanger.style}
                         onClick={proceedDeletePassword}
@@ -1492,11 +2037,21 @@ return (
                       className="w-full"
                     />
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <button className={`px-4 py-2 text-sm font-medium ${btnOutlined.className}`} style={btnOutlined.style} onClick={() => setDeleteStep(1)} disabled={deleting}>
+                      <button
+                        className={`px-4 py-2 text-sm font-medium ${btnOutlined.className}`}
+                        style={btnOutlined.style}
+                        onClick={() => setDeleteStep(1)}
+                        disabled={deleting}
+                      >
                         ← Back
                       </button>
                       <div className="flex flex-wrap gap-2 flex-1 sm:flex-initial justify-end">
-                        <button className={`px-4 py-2 text-sm font-medium ${btnOutlined.className}`} style={btnOutlined.style} onClick={closeDeleteModal} disabled={deleting}>
+                        <button
+                          className={`px-4 py-2 text-sm font-medium ${btnOutlined.className}`}
+                          style={btnOutlined.style}
+                          onClick={closeDeleteModal}
+                          disabled={deleting}
+                        >
                           Cancel
                         </button>
                         <button
@@ -1517,7 +2072,7 @@ return (
         </div>
       )}
 
-{/* ===== Customer Search Modal (new select) ===== */}
+      {/* ===== Customer Search Modal ===== */}
       <CustomerSearch
         isOpen={customerSearchOpen}
         onClose={() => setCustomerSearchOpen(false)}
@@ -1575,19 +2130,24 @@ return (
   );
 }
 
-/* Compact, glassy metric tile used in the hero header strip */
-function HeroStat({ label, value, tone = "neutral" }) {
+/* Compact Excel-style formula summary cell */
+function HeroStat({ label, value, operator = "", tone = "neutral", highlight = false }) {
   return (
-    <div className={`ledger-stat ledger-stat-${tone}`}>
-      <div className="ledger-stat-label">{label}</div>
+    <div className={`ledger-stat ledger-stat-${tone} ${highlight ? "ledger-stat-highlight" : ""}`}>
+      <div className="ledger-stat-label">
+        {operator && <span className="ledger-stat-op">{operator}</span>}
+        <span>{label}</span>
+      </div>
       <div className="ledger-stat-value">{value}</div>
     </div>
   );
 }
+
 /* Compact square button used by the ledger pagination footer */
 function PageBtn({ isDark, onClick, disabled, title, children }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
       title={title}

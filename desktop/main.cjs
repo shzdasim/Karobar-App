@@ -765,16 +765,22 @@ function sendOpenNewWindow(routePath, title) {
   createAppWindow(routePath, { title });
 }
 
+function sendOpenSubWindow(routePath, title) {
+  createAppWindow(routePath, { title });
+}
+
 function sendWindowCommand(command, payload = {}) {
   const targetWin = getActiveWindow();
   if (!targetWin || targetWin.isDestroyed()) return;
   targetWin.webContents.send("karobar:window-command", { command, ...payload });
 }
 
-function buildSectionMenu(sectionLabel, items) {
+function buildSectionMenu(sectionLabel, items, leadingItems = []) {
   return {
     label: sectionLabel,
     submenu: [
+      ...leadingItems,
+      ...(leadingItems.length > 0 ? [{ type: "separator" }] : []),
       ...items.map((item) => ({
         label: item.label,
         accelerator: item.accelerator || undefined,
@@ -803,39 +809,58 @@ function createApplicationMenu() {
           click: () => sendNavigate("/dashboard", "Dashboard"),
         },
         {
-          label: "Open New Browser Tab",
+          label: "Open Current View in New Window",
           accelerator: "CmdOrCtrl+Shift+N",
-          click: () => sendWindowCommand("new-tab"),
+          click: () => sendWindowCommand("open-current-in-new-window"),
         },
         {
-          label: "Duplicate Active Tab",
-          accelerator: "CmdOrCtrl+Shift+D",
-          click: () => sendWindowCommand("duplicate-tab"),
+          label: "Open New Window (Dashboard)",
+          click: () => createAppWindow("/dashboard", { title: "Dashboard" }),
         },
         { type: "separator" },
         {
-          label: "Quick Tab: Barcode POS",
+          label: "Financial Accounts Register (Popup)…",
+          accelerator: "CmdOrCtrl+A",
+          click: () => sendWindowCommand("open-accounts-register"),
+        },
+        {
+          label: "Cash Drawer Register (Popup)…",
+          accelerator: "CmdOrCtrl+D",
+          click: () => sendWindowCommand("open-cash-drawer"),
+        },
+        {
+          label: "License Viewer & Status…",
+          accelerator: "CmdOrCtrl+Shift+L",
+          click: () => sendWindowCommand("open-license-viewer"),
+        },
+        {
+          label: "Keyboard Shortcuts Guide…",
+          accelerator: "CmdOrCtrl+/",
+          click: () => sendWindowCommand("open-shortcuts-modal"),
+        },
+        { type: "separator" },
+        {
+          label: "Quick Window: Barcode POS",
           accelerator: "CmdOrCtrl+Shift+P",
           click: () => sendOpenSubWindow("/sale-invoices/pos", "POS Terminal"),
         },
         {
-          label: "Quick Tab: Retail Sale Invoice",
+          label: "Quick Window: Retail Sale Invoice",
           accelerator: "CmdOrCtrl+Shift+S",
           click: () => sendOpenSubWindow("/sale-invoices/create/retail", "Retail Sale Invoice"),
         },
         {
-          label: "Quick Tab: Wholesale Invoice",
+          label: "Quick Window: Wholesale Invoice",
           accelerator: "CmdOrCtrl+Shift+W",
           click: () => sendOpenSubWindow("/sale-invoices/create/wholesale", "Wholesale Sale Invoice"),
         },
         {
-          label: "Quick Tab: Purchase Invoice",
+          label: "Quick Window: Purchase Invoice",
           accelerator: "CmdOrCtrl+Shift+U",
           click: () => sendOpenSubWindow("/purchase-invoices/create", "Purchase Invoice"),
         },
         {
-          label: "Quick Tab: Customer Ledger",
-          accelerator: "CmdOrCtrl+Shift+L",
+          label: "Quick Window: Customer Ledger",
           click: () => sendOpenSubWindow("/customer-ledger", "Customer Ledger"),
         },
         { type: "separator" },
@@ -865,8 +890,9 @@ function createApplicationMenu() {
           label: "Reload Application",
           accelerator: "CmdOrCtrl+Shift+R",
           click: () => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.reload();
+            const target = getActiveWindow();
+            if (target && !target.isDestroyed()) {
+              target.webContents.reload();
             }
           },
         },
@@ -923,16 +949,31 @@ function createApplicationMenu() {
       { label: "Quarantine & Disposal", path: "/stock-disposals" },
       { label: "New Disposal", path: "/stock-disposals/create" },
     ]),
-    buildSectionMenu("Finance & Ledgers", [
-      { label: "Customer Ledger", path: "/customer-ledger" },
-      { label: "Supplier Ledger", path: "/supplier-ledger" },
-      { label: "Payment Vouchers", path: "/payments" },
-      { label: "Cash Drawer", path: "/cash-drawer" },
-      { label: "Financial Accounts", path: "/accounts" },
-      { label: "Operating Expenses", path: "/expenses" },
-      { label: "Double-Entry & GL", path: "/accounting" },
-      { label: "HR, Payroll & Commissions", path: "/hr-payroll" },
-    ]),
+    buildSectionMenu(
+      "Finance & Ledgers",
+      [
+        { label: "Customer Ledger", path: "/customer-ledger" },
+        { label: "Supplier Ledger", path: "/supplier-ledger" },
+        { label: "Payment Vouchers", path: "/payments" },
+        { label: "Cash Drawer", path: "/cash-drawer" },
+        { label: "Financial Accounts", path: "/accounts" },
+        { label: "Operating Expenses", path: "/expenses" },
+        { label: "Double-Entry & GL", path: "/accounting" },
+        { label: "HR, Payroll & Commissions", path: "/hr-payroll" },
+      ],
+      [
+        {
+          label: "Financial Accounts Register (Popup)…",
+          accelerator: "CmdOrCtrl+A",
+          click: () => sendWindowCommand("open-accounts-register"),
+        },
+        {
+          label: "Cash Drawer Register (Popup)…",
+          accelerator: "CmdOrCtrl+D",
+          click: () => sendWindowCommand("open-cash-drawer"),
+        },
+      ]
+    ),
     buildSectionMenu("Reports", [
       { label: "Net Profit (P&L)", path: "/reports/net-profit" },
       { label: "Statutory Tax Return", path: "/reports/tax-return" },
@@ -949,17 +990,81 @@ function createApplicationMenu() {
       { label: "Product Comprehensive", path: "/reports/product-comprehensive" },
       { label: "Near Expiry Product", path: "/reports/near-expiry-product" },
       { label: "Stock Adjustment Report", path: "/reports/stock-adjustment" },
+      { label: "Narcotics & Controlled Drugs Register", path: "/reports/narcotics" },
     ]),
-    buildSectionMenu("System & Settings", [
-      { label: "Settings", path: "/settings" },
-      { label: "Users", path: "/users" },
-      { label: "Add User", path: "/users/create" },
-      { label: "Roles", path: "/roles" },
-      { label: "Create Role", path: "/roles/create" },
-      { label: "Backups & Storage", path: "/backups" },
-      { label: "Setup Genie Wizard", path: "/setup" },
-      { label: "License Activation", path: "/license-activation" },
-    ]),
+    buildSectionMenu(
+      "System & Settings",
+      [
+        { label: "Settings", path: "/settings" },
+        { label: "Server & Attached Terminals", path: "/server-dashboard" },
+        { label: "Users", path: "/users" },
+        { label: "Add User", path: "/users/create" },
+        { label: "Roles", path: "/roles" },
+        { label: "Create Role", path: "/roles/create" },
+        { label: "Backups & Storage", path: "/backups" },
+        { label: "Setup Genie Wizard", path: "/setup" },
+        { label: "License Activation", path: "/settings#license" },
+      ],
+      [
+        {
+          label: "License Viewer & Status…",
+          accelerator: "CmdOrCtrl+Shift+L",
+          click: () => sendWindowCommand("open-license-viewer"),
+        },
+        {
+          label: "Keyboard Shortcuts Guide…",
+          accelerator: "CmdOrCtrl+/",
+          click: () => sendWindowCommand("open-shortcuts-modal"),
+        },
+      ]
+    ),
+    {
+      label: "Tools & Shortcuts",
+      submenu: [
+        {
+          label: "Financial Accounts Register (Popup)…",
+          accelerator: "CmdOrCtrl+A",
+          click: () => sendWindowCommand("open-accounts-register"),
+        },
+        {
+          label: "Cash Drawer Register (Popup)…",
+          accelerator: "CmdOrCtrl+D",
+          click: () => sendWindowCommand("open-cash-drawer"),
+        },
+        { type: "separator" },
+        {
+          label: "License Viewer & Status…",
+          accelerator: "CmdOrCtrl+Shift+L",
+          click: () => sendWindowCommand("open-license-viewer"),
+        },
+        {
+          label: "Keyboard Shortcuts Guide…",
+          accelerator: "CmdOrCtrl+/",
+          click: () => sendWindowCommand("open-shortcuts-modal"),
+        },
+        { type: "separator" },
+        {
+          label: "Open Current View in New Window",
+          accelerator: "CmdOrCtrl+Shift+N",
+          click: () => sendWindowCommand("open-current-in-new-window"),
+        },
+        {
+          label: "Quick Page Search…",
+          accelerator: "CmdOrCtrl+K",
+          click: () => sendWindowCommand("open-page-search"),
+        },
+        {
+          label: "Global Product & Batch Lookup…",
+          accelerator: "CmdOrCtrl+P",
+          click: () => sendWindowCommand("open-product-search"),
+        },
+        {
+          label: "Guide Bot Assistant (Cube AI)…",
+          accelerator: "CmdOrCtrl+G",
+          click: () => sendWindowCommand("open-guide-bot"),
+        },
+      ],
+    },
     buildWindowMenu(),
   ];
 
@@ -993,8 +1098,13 @@ function buildWindowMenu() {
     label: "Window",
     submenu: [
       {
-        label: "New Window",
-        click: () => createAppWindow("/"),
+        label: "Open Current View in New Window",
+        accelerator: "CmdOrCtrl+Shift+N",
+        click: () => sendWindowCommand("open-current-in-new-window"),
+      },
+      {
+        label: "New Window (Dashboard)",
+        click: () => createAppWindow("/dashboard", { title: "Dashboard" }),
       },
       {
         label: "Close Window",

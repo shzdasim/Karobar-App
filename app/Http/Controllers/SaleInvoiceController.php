@@ -417,8 +417,14 @@ class SaleInvoiceController extends Controller
             'supervisor_email'    => 'nullable|string',
             'supervisor_password' => 'nullable|string',
             'remarks'             => 'nullable|string',
-            'doctor_name'         => 'nullable|string',
-            'patient_name'        => 'nullable|string',
+            'doctor_name'         => 'nullable|string|max:255',
+            'doctor_pmdc'         => 'nullable|string|max:120',
+            'doctor_hospital'     => 'nullable|string|max:255',
+            'patient_name'        => 'nullable|string|max:255',
+            'patient_cnic'        => 'nullable|string|max:50',
+            'patient_address'     => 'nullable|string|max:500',
+            'prescription_no'     => 'nullable|string|max:120',
+            'pharmacist_name'     => 'nullable|string|max:180',
             'discount_percentage' => 'nullable|numeric',
             'discount_amount'     => 'nullable|numeric',
             'tax_percentage'      => 'nullable|numeric',
@@ -578,6 +584,12 @@ class SaleInvoiceController extends Controller
 
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'payment_method')) {
                 $invoiceData['payment_method'] = $data['payment_method'] ?? 'cash';
+            }
+
+            foreach (['doctor_pmdc', 'doctor_hospital', 'patient_cnic', 'patient_address', 'prescription_no', 'pharmacist_name'] as $regCol) {
+                if (array_key_exists($regCol, $data) && \Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', $regCol)) {
+                    $invoiceData[$regCol] = $data[$regCol];
+                }
             }
 
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'salesman_id')) {
@@ -810,8 +822,14 @@ class SaleInvoiceController extends Controller
             'supervisor_email'    => 'nullable|string',
             'supervisor_password' => 'nullable|string',
             'remarks'             => 'nullable|string',
-            'doctor_name'         => 'nullable|string',
-            'patient_name'        => 'nullable|string',
+            'doctor_name'         => 'nullable|string|max:255',
+            'doctor_pmdc'         => 'nullable|string|max:120',
+            'doctor_hospital'     => 'nullable|string|max:255',
+            'patient_name'        => 'nullable|string|max:255',
+            'patient_cnic'        => 'nullable|string|max:50',
+            'patient_address'     => 'nullable|string|max:500',
+            'prescription_no'     => 'nullable|string|max:120',
+            'pharmacist_name'     => 'nullable|string|max:180',
             'discount_percentage' => 'nullable|numeric',
             'discount_amount'     => 'nullable|numeric',
             'tax_percentage'      => 'nullable|numeric',
@@ -1004,6 +1022,12 @@ class SaleInvoiceController extends Controller
 
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'payment_method')) {
                 $updateData['payment_method'] = $data['payment_method'] ?? $invoice->payment_method ?? 'cash';
+            }
+
+            foreach (['doctor_pmdc', 'doctor_hospital', 'patient_cnic', 'patient_address', 'prescription_no', 'pharmacist_name'] as $regCol) {
+                if (array_key_exists($regCol, $data) && \Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', $regCol)) {
+                    $updateData[$regCol] = $data[$regCol];
+                }
             }
 
             $invoice->update($updateData);
@@ -1443,31 +1467,52 @@ class SaleInvoiceController extends Controller
 
 
     public function updateMeta(Request $request, SaleInvoice $saleInvoice)
-{
-    // Permission
-    if (! $request->user()->can('report.sale-detail.edit')) {
-        abort(403, 'Unauthorized');
+    {
+        $user = $request->user();
+        if (
+            !$user
+            || (
+                !$user->hasRole(['Admin', 'admin', 'super-admin', 'Super Admin'])
+                && !$user->can('report.sale-detail.edit')
+                && !$user->can('report.sale-detail.view')
+                && !$user->can('sale-invoice.update')
+                && !$user->can('sale-invoice.create')
+            )
+        ) {
+            abort(403, 'Unauthorized');
+        }
+
+        if ($saleInvoice->status === 'cancelled' || $saleInvoice->status === 'reversed') {
+            abort(403, 'Cancelled or reversed invoice cannot be edited');
+        }
+
+        $data = $request->validate([
+            'doctor_name'     => 'nullable|string|max:255',
+            'doctor_pmdc'     => 'nullable|string|max:120',
+            'doctor_hospital' => 'nullable|string|max:255',
+            'patient_name'    => 'nullable|string|max:255',
+            'patient_cnic'    => 'nullable|string|max:50',
+            'patient_address' => 'nullable|string|max:500',
+            'prescription_no' => 'nullable|string|max:120',
+            'pharmacist_name' => 'nullable|string|max:180',
+        ]);
+
+        $cols = array_flip(\Illuminate\Support\Facades\Schema::getColumnListing('sale_invoices'));
+        $filtered = array_intersect_key($data, $cols);
+        $saleInvoice->update($filtered);
+
+        return response()->json([
+            'success'         => true,
+            'doctor_name'     => $saleInvoice->doctor_name,
+            'doctor_pmdc'     => $saleInvoice->doctor_pmdc ?? null,
+            'doctor_hospital' => $saleInvoice->doctor_hospital ?? null,
+            'patient_name'    => $saleInvoice->patient_name,
+            'patient_cnic'    => $saleInvoice->patient_cnic ?? null,
+            'patient_address' => $saleInvoice->patient_address ?? null,
+            'prescription_no' => $saleInvoice->prescription_no ?? null,
+            'pharmacist_name' => $saleInvoice->pharmacist_name ?? null,
+        ]);
     }
-
-    // Safety: allow only doctor/patient
-    $data = $request->validate([
-        'doctor_name'  => 'nullable|string|max:255',
-        'patient_name' => 'nullable|string|max:255',
-    ]);
-
-    // Optional: prevent editing cancelled invoices
-    if ($saleInvoice->status === 'cancelled') {
-        abort(403, 'Cancelled invoice cannot be edited');
-    }
-
-    $saleInvoice->update($data);
-
-    return response()->json([
-        'success' => true,
-        'doctor_name'  => $saleInvoice->doctor_name,
-        'patient_name' => $saleInvoice->patient_name,
-    ]);
-}
 
     public function makeRegularCustomer(Request $request, $id)
     {

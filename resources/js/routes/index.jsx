@@ -113,6 +113,7 @@ const PaymentsPage = registerLazy(() => import("../pages/Payments/index.jsx"), [
 const PartyCreditsPage = registerLazy(() => import("../pages/Payments/PartyCredits.jsx"), ["/party-credits"]);
 const AccountingPage = registerLazy(() => import("../pages/Accounting/index.jsx"), ["/accounting"]);
 const TaxReturnReport = registerLazy(() => import("../pages/Reports/TaxReturnReport.jsx"), ["/reports/tax-return"]);
+const NarcoticsReport = registerLazy(() => import("../pages/Reports/NarcoticsReport.jsx"), ["/reports/narcotics"]);
 const ProductBatchWorkbench = registerLazy(() => import("../pages/Batches/ProductBatchWorkbench.jsx"), ["/product-batches"]);
 const HrPayrollCenter = registerLazy(() => import("../pages/HrPayroll/HrPayrollCenter.jsx"), ["/hr-payroll"]);
 // Cash Drawer
@@ -336,6 +337,7 @@ export default function AppRoutes() {
           <Route path="/reports/reorder" element={<MissingReports type="reorder" />} />
           <Route path="/reports/net-profit" element={<NetProfitReport />} />
           <Route path="/reports/tax-return" element={<TaxReturnReport />} />
+          <Route path="/reports/narcotics" element={<NarcoticsReport />} />
 
           {/* Operating Expenses */}
           <Route path="/expenses" element={<ExpensesIndex />} />
