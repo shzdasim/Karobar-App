@@ -1,0 +1,19 @@
+[Unit]
+Description=Karobar-App ERP Local WhatsApp Agent (Baileys)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/karobar-server
+Environment="WHATSAPP_AGENT_PORT=18955"
+Environment="WHATSAPP_AUTH_DIR=/opt/karobar-server/storage/app/whatsapp-auth"
+ExecStart=/usr/bin/node /opt/karobar-server/scripts/whatsapp-agent.mjs
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/karobar-server/storage/logs/whatsapp-agent.log
+StandardError=append:/opt/karobar-server/storage/logs/whatsapp-agent.log
+
+[Install]
+WantedBy=multi-user.target

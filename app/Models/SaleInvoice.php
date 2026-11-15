@@ -8,6 +8,7 @@ class SaleInvoice extends Model
 {
     protected $fillable = [
         'user_id',
+        'terminal_id',
         'salesman_id',
         'customer_id',
         'invoice_type',

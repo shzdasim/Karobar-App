@@ -907,34 +907,66 @@ class SqliteImportService
             }
         }
 
-        $rows = DB::select("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
         $catalog = [];
+        $driver = DB::getDriverName();
 
-        foreach ($rows as $r) {
-            $tableName = (string) ($r->name ?? '');
-            if ($tableName === '' || in_array(strtolower($tableName), self::PROTECTED_TABLES, true)) {
-                continue;
-            }
+        if ($driver === 'sqlite') {
+            $rows = DB::select("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
+            foreach ($rows as $r) {
+                $tableName = (string) ($r->name ?? '');
+                if ($tableName === '' || in_array(strtolower($tableName), self::PROTECTED_TABLES, true)) {
+                    continue;
+                }
 
-            $cols = [];
-            $pragmaCols = DB::select("PRAGMA table_info(`{$tableName}`)");
-            foreach ($pragmaCols as $c) {
-                $cols[] = [
-                    'name'       => (string) $c->name,
-                    'type'       => (string) ($c->type ?: 'TEXT'),
-                    'notnull'    => (bool) $c->notnull,
-                    'dflt_value' => $c->dflt_value,
-                    'pk'         => (bool) $c->pk,
+                $cols = [];
+                $pragmaCols = DB::select("PRAGMA table_info(`{$tableName}`)");
+                foreach ($pragmaCols as $c) {
+                    $cols[] = [
+                        'name'       => (string) $c->name,
+                        'type'       => (string) ($c->type ?: 'TEXT'),
+                        'notnull'    => (bool) $c->notnull,
+                        'dflt_value' => $c->dflt_value,
+                        'pk'         => (bool) $c->pk,
+                    ];
+                }
+
+                $catalog[$tableName] = [
+                    'table'           => $tableName,
+                    'label'           => Str::headline($tableName),
+                    'stage'           => $stageLookup[$tableName] ?? 6,
+                    'is_optional_cfg' => in_array($tableName, self::OPTIONAL_CONFIG_TABLES, true),
+                    'columns'         => $cols,
                 ];
             }
+        } else {
+            $tables = Schema::getTables();
+            foreach ($tables as $tblInfo) {
+                $tableName = (string) ($tblInfo['name'] ?? '');
+                if ($tableName === '' || in_array(strtolower($tableName), self::PROTECTED_TABLES, true)) {
+                    continue;
+                }
 
-            $catalog[$tableName] = [
-                'table'           => $tableName,
-                'label'           => Str::headline($tableName),
-                'stage'           => $stageLookup[$tableName] ?? 6,
-                'is_optional_cfg' => in_array($tableName, self::OPTIONAL_CONFIG_TABLES, true),
-                'columns'         => $cols,
-            ];
+                $cols = [];
+                foreach (Schema::getColumns($tableName) as $c) {
+                    $colName = (string) ($c['name'] ?? '');
+                    $cols[] = [
+                        'name'       => $colName,
+                        'type'       => strtoupper((string) ($c['type_name'] ?? $c['type'] ?? 'TEXT')),
+                        'notnull'    => !((bool) ($c['nullable'] ?? true)),
+                        'dflt_value' => $c['default'] ?? null,
+                        'pk'         => $colName === 'id' || (bool) ($c['auto_increment'] ?? false),
+                    ];
+                }
+
+                $catalog[$tableName] = [
+                    'table'           => $tableName,
+                    'label'           => Str::headline($tableName),
+                    'stage'           => $stageLookup[$tableName] ?? 6,
+                    'is_optional_cfg' => in_array($tableName, self::OPTIONAL_CONFIG_TABLES, true),
+                    'columns'         => $cols,
+                ];
+            }
+            ksort($catalog);
         }
 
         return $catalog;
@@ -1379,7 +1411,7 @@ class SqliteImportService
             $idMap = [];
             $fallbackEntityCache = [];
 
-            DB::statement('PRAGMA foreign_keys = OFF;');
+            Schema::disableForeignKeyConstraints();
 
             DB::beginTransaction();
 
@@ -1395,9 +1427,11 @@ class SqliteImportService
                             continue; // settings row 1 is updated in-place
                         }
                         DB::table($tblToClear)->delete();
-                        try {
-                            DB::statement("DELETE FROM sqlite_sequence WHERE name = ?", [$tblToClear]);
-                        } catch (Throwable) {
+                        if (DB::getDriverName() === 'sqlite') {
+                            try {
+                                DB::statement("DELETE FROM sqlite_sequence WHERE name = ?", [$tblToClear]);
+                            } catch (Throwable) {
+                            }
                         }
                     }
                 }
@@ -1437,7 +1471,7 @@ class SqliteImportService
                 throw $txErr;
             } finally {
                 try {
-                    DB::statement('PRAGMA foreign_keys = ON;');
+                    Schema::enableForeignKeyConstraints();
                 } catch (Throwable) {
                 }
             }

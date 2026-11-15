@@ -153,8 +153,11 @@ var
   KeepExistingDbRadio: TNewRadioButton;
   FreshDbRadio: TNewRadioButton;
   ImportDbRadio: TNewRadioButton;
+  TerminalModeRadio: TNewRadioButton;
   SqliteFileEdit: TNewEdit;
   BrowseSqliteBtn: TNewButton;
+  ServerUrlEdit: TNewEdit;
+  TerminalNameEdit: TNewEdit;
 
   LicenseKeyPage: TWizardPage;
   MachineIdEdit: TNewEdit;
@@ -312,6 +315,10 @@ procedure OnDbModeChange(Sender: TObject);
 begin
   SqliteFileEdit.Enabled := ImportDbRadio.Checked;
   BrowseSqliteBtn.Enabled := ImportDbRadio.Checked;
+  if Assigned(ServerUrlEdit) then
+    ServerUrlEdit.Enabled := TerminalModeRadio.Checked;
+  if Assigned(TerminalNameEdit) then
+    TerminalNameEdit.Enabled := TerminalModeRadio.Checked;
 end;
 
 procedure OnBrowseSqliteClick(Sender: TObject);
@@ -335,12 +342,12 @@ end;
 
 procedure CreateDatabaseImportPage();
 var
-  InfoLabel, FileLabel: TNewStaticText;
+  FileLabel, ServerUrlLabel, TerminalNameLabel: TNewStaticText;
 begin
   DatabaseImportPage := CreateCustomPage(
     wpSelectDir,
-    'Database Setup, Software Update & Herd SQLite Import',
-    'Choose whether to update an existing Karobar-App installation, start fresh, or import a Herd SQLite database.'
+    'Deployment Mode, Database Setup & Multi-PC Terminal',
+    'Choose Standalone 1-PC setup (Fresh, Update, or Herd Import) or connect this PC as a Multi-PC POS Terminal.'
   );
 
   KeepExistingDbRadio := TNewRadioButton.Create(DatabaseImportPage);
@@ -355,54 +362,80 @@ begin
   FreshDbRadio := TNewRadioButton.Create(DatabaseImportPage);
   FreshDbRadio.Parent := DatabaseImportPage.Surface;
   FreshDbRadio.Left := 0;
-  FreshDbRadio.Top := KeepExistingDbRadio.Top + ScaleY(26);
+  FreshDbRadio.Top := KeepExistingDbRadio.Top + ScaleY(22);
   FreshDbRadio.Width := DatabaseImportPage.SurfaceWidth;
-  FreshDbRadio.Caption := 'Start with a Fresh Database (New Store Installation)';
+  FreshDbRadio.Caption := 'Standalone 1-PC: Start with a Fresh Database (New Store Installation)';
   FreshDbRadio.Checked := True;
   FreshDbRadio.OnClick := @OnDbModeChange;
 
   ImportDbRadio := TNewRadioButton.Create(DatabaseImportPage);
   ImportDbRadio.Parent := DatabaseImportPage.Surface;
   ImportDbRadio.Left := 0;
-  ImportDbRadio.Top := FreshDbRadio.Top + ScaleY(26);
+  ImportDbRadio.Top := FreshDbRadio.Top + ScaleY(22);
   ImportDbRadio.Width := DatabaseImportPage.SurfaceWidth;
-  ImportDbRadio.Caption := 'Import Existing SQLite Database (From Herd / Existing Karobar Deployment)';
+  ImportDbRadio.Caption := 'Standalone 1-PC: Import Existing SQLite Database (From Herd / Existing Deployment)';
   ImportDbRadio.Checked := False;
   ImportDbRadio.OnClick := @OnDbModeChange;
 
-  InfoLabel := TNewStaticText.Create(DatabaseImportPage);
-  InfoLabel.Parent := DatabaseImportPage.Surface;
-  InfoLabel.Left := ScaleX(18);
-  InfoLabel.Top := ImportDbRadio.Top + ScaleY(22);
-  InfoLabel.Width := DatabaseImportPage.SurfaceWidth - ScaleX(18);
-  InfoLabel.AutoSize := False;
-  InfoLabel.WordWrap := True;
-  InfoLabel.Height := ScaleY(48);
-  InfoLabel.Caption :=
-    'If importing from Herd: All Products, Batches, Categories, Brands, Suppliers, Customers, Invoices, Returns, Ledgers, and Accounts are kept 100% intact, while only old Users and old License records are cleared.';
-
   FileLabel := TNewStaticText.Create(DatabaseImportPage);
   FileLabel.Parent := DatabaseImportPage.Surface;
-  FileLabel.Left := 0;
-  FileLabel.Top := InfoLabel.Top + ScaleY(52);
-  FileLabel.Caption := 'Select Existing Herd SQLite Database File (e.g. database.sqlite):';
+  FileLabel.Left := ScaleX(18);
+  FileLabel.Top := ImportDbRadio.Top + ScaleY(20);
+  FileLabel.Caption := 'Existing SQLite Database File (.sqlite / .db):';
 
   SqliteFileEdit := TNewEdit.Create(DatabaseImportPage);
   SqliteFileEdit.Parent := DatabaseImportPage.Surface;
-  SqliteFileEdit.Left := 0;
-  SqliteFileEdit.Top := FileLabel.Top + ScaleY(18);
-  SqliteFileEdit.Width := DatabaseImportPage.SurfaceWidth - ScaleX(100);
+  SqliteFileEdit.Left := ScaleX(18);
+  SqliteFileEdit.Top := FileLabel.Top + ScaleY(16);
+  SqliteFileEdit.Width := DatabaseImportPage.SurfaceWidth - ScaleX(118);
   SqliteFileEdit.Enabled := False;
 
   BrowseSqliteBtn := TNewButton.Create(DatabaseImportPage);
   BrowseSqliteBtn.Parent := DatabaseImportPage.Surface;
-  BrowseSqliteBtn.Left := SqliteFileEdit.Width + ScaleX(8);
+  BrowseSqliteBtn.Left := SqliteFileEdit.Left + SqliteFileEdit.Width + ScaleX(8);
   BrowseSqliteBtn.Top := SqliteFileEdit.Top - ScaleY(1);
   BrowseSqliteBtn.Width := ScaleX(92);
   BrowseSqliteBtn.Height := SqliteFileEdit.Height + ScaleY(2);
   BrowseSqliteBtn.Caption := 'Browse...';
   BrowseSqliteBtn.Enabled := False;
   BrowseSqliteBtn.OnClick := @OnBrowseSqliteClick;
+
+  TerminalModeRadio := TNewRadioButton.Create(DatabaseImportPage);
+  TerminalModeRadio.Parent := DatabaseImportPage.Surface;
+  TerminalModeRadio.Left := 0;
+  TerminalModeRadio.Top := SqliteFileEdit.Top + ScaleY(30);
+  TerminalModeRadio.Width := DatabaseImportPage.SurfaceWidth;
+  TerminalModeRadio.Caption := 'Multi-PC POS Terminal: Connect to Central Linux Store Server over LAN';
+  TerminalModeRadio.Checked := False;
+  TerminalModeRadio.OnClick := @OnDbModeChange;
+
+  ServerUrlLabel := TNewStaticText.Create(DatabaseImportPage);
+  ServerUrlLabel.Parent := DatabaseImportPage.Surface;
+  ServerUrlLabel.Left := ScaleX(18);
+  ServerUrlLabel.Top := TerminalModeRadio.Top + ScaleY(20);
+  ServerUrlLabel.Caption := 'Store Server LAN URL (e.g. http://192.168.1.10:8000):';
+
+  ServerUrlEdit := TNewEdit.Create(DatabaseImportPage);
+  ServerUrlEdit.Parent := DatabaseImportPage.Surface;
+  ServerUrlEdit.Left := ScaleX(18);
+  ServerUrlEdit.Top := ServerUrlLabel.Top + ScaleY(16);
+  ServerUrlEdit.Width := (DatabaseImportPage.SurfaceWidth - ScaleX(30)) div 2;
+  ServerUrlEdit.Text := 'http://192.168.1.10:8000';
+  ServerUrlEdit.Enabled := False;
+
+  TerminalNameLabel := TNewStaticText.Create(DatabaseImportPage);
+  TerminalNameLabel.Parent := DatabaseImportPage.Surface;
+  TerminalNameLabel.Left := ServerUrlEdit.Left + ServerUrlEdit.Width + ScaleX(12);
+  TerminalNameLabel.Top := ServerUrlLabel.Top;
+  TerminalNameLabel.Caption := 'Terminal / Counter Name:';
+
+  TerminalNameEdit := TNewEdit.Create(DatabaseImportPage);
+  TerminalNameEdit.Parent := DatabaseImportPage.Surface;
+  TerminalNameEdit.Left := TerminalNameLabel.Left;
+  TerminalNameEdit.Top := ServerUrlEdit.Top;
+  TerminalNameEdit.Width := DatabaseImportPage.SurfaceWidth - TerminalNameEdit.Left;
+  TerminalNameEdit.Text := 'Counter 1';
+  TerminalNameEdit.Enabled := False;
 end;
 
 procedure CreateLicenseBindingPage();
@@ -599,8 +632,9 @@ begin
     end;
   end;
 
-  { When updating an existing installation (Keep Existing Database & License), skip License & Admin creation pages }
-  if Assigned(KeepExistingDbRadio) and KeepExistingDbRadio.Checked then
+  { When updating an existing installation or installing in Multi-PC Terminal Mode, skip License & Admin creation pages }
+  if (Assigned(KeepExistingDbRadio) and KeepExistingDbRadio.Checked) or
+     (Assigned(TerminalModeRadio) and TerminalModeRadio.Checked) then
   begin
     if (PageID = LicenseKeyPage.ID) or (PageID = AdminAccountPage.ID) then
     begin
@@ -699,7 +733,7 @@ begin
       end;
     end;
 
-    if KeepExistingDbRadio.Checked then
+    if KeepExistingDbRadio.Checked or (Assigned(TerminalModeRadio) and TerminalModeRadio.Checked) then
     begin
       WriteAdminInitJson();
     end;
@@ -772,6 +806,8 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  NetCfgJson: String;
 begin
   if CurStep = ssInstall then
   begin
@@ -779,6 +815,13 @@ begin
   end;
   if CurStep = ssPostInstall then
   begin
+    if Assigned(TerminalModeRadio) and TerminalModeRadio.Checked then
+    begin
+      NetCfgJson :=
+        '{"mode":"terminal","serverUrl":"' + EscapeJsonString(Trim(ServerUrlEdit.Text)) +
+        '","terminalName":"' + EscapeJsonString(Trim(TerminalNameEdit.Text)) + '"}';
+      SaveStringToFile(ExpandConstant('{app}\app\storage\app\network-mode.json'), NetCfgJson, False);
+    end;
     if FileExists(OtaUpgradeFlagPath()) then
       DeleteFile(OtaUpgradeFlagPath());
   end;

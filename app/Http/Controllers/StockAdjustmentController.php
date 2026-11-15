@@ -119,16 +119,14 @@ class StockAdjustmentController extends Controller
         // require create (same pattern as SaleInvoice::generateNewCode)
         $this->authorize('create', StockAdjustment::class);
 
-        $prefix = 'STADJ-';
-        $last = StockAdjustment::where('posted_number','like',$prefix.'%')
-            ->orderByDesc('id')
-            ->value('posted_number');
-
-        $next = 1;
-        if ($last && preg_match('/^'.preg_quote($prefix,'/').'([0-9]+)$/',$last,$m)) {
-            $next = ((int)$m[1]) + 1;
-        }
-        return response()->json(['posted_number' => sprintf($prefix.'%05d', $next)]);
+        $code = \App\Services\DocumentSequenceService::preview(
+            'stock_adjustment',
+            'STADJ-',
+            5,
+            'stock_adjustments',
+            'posted_number'
+        );
+        return response()->json(['posted_number' => $code]);
     }
 
     public function store(Request $request)
@@ -139,8 +137,22 @@ class StockAdjustmentController extends Controller
         $data = $this->validatePayload($request);
 
         return DB::transaction(function () use ($data, $request) {
+            $postedNumber = trim((string) ($data['posted_number'] ?? ''));
+            if (
+                $postedNumber === '' ||
+                (str_starts_with($postedNumber, 'STADJ-') && StockAdjustment::where('posted_number', $postedNumber)->exists())
+            ) {
+                $postedNumber = \App\Services\DocumentSequenceService::next(
+                    'stock_adjustment',
+                    'STADJ-',
+                    5,
+                    'stock_adjustments',
+                    'posted_number'
+                );
+            }
+
             $adj = StockAdjustment::create([
-                'posted_number' => $data['posted_number'],
+                'posted_number' => $postedNumber,
                 'posted_date'   => $data['posted_date'],
                 'note'          => $data['note'],
                 'total_worth'   => 0,
@@ -292,8 +304,14 @@ class StockAdjustmentController extends Controller
 
     protected function validatePayload(Request $request, $id = null): array
     {
+        $postedInput = trim((string) $request->input('posted_number', ''));
+        $postedRules = ['nullable', 'string'];
+        if ($id !== null || ($postedInput !== '' && !str_starts_with($postedInput, 'STADJ-'))) {
+            $postedRules[] = Rule::unique('stock_adjustments', 'posted_number')->ignore($id);
+        }
+
         return $request->validate([
-            'posted_number' => ['required', 'string', Rule::unique('stock_adjustments','posted_number')->ignore($id)],
+            'posted_number' => $postedRules,
             'posted_date'   => ['required', 'date'],
             'note'          => ['required', 'string', 'max:2000'],
 

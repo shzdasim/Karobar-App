@@ -174,7 +174,7 @@ class HrPayrollService
                 if (Schema::hasTable('sale_returns')) {
                     $retRow = DB::table('sale_returns as sr')
                         ->whereIn('sr.sale_invoice_id', $chunkIds)
-                        ->selectRaw('COALESCE(SUM(COALESCE(sr.gross_total, sr.total, 0)), 0) as gross_ret, COALESCE(SUM(MAX(0, COALESCE(sr.total, 0) - COALESCE(sr.tax_amount, 0))), 0) as net_ret')
+                        ->selectRaw('COALESCE(SUM(COALESCE(sr.gross_total, sr.total, 0)), 0) as gross_ret, COALESCE(SUM(CASE WHEN (COALESCE(sr.total, 0) - COALESCE(sr.tax_amount, 0)) > 0 THEN (COALESCE(sr.total, 0) - COALESCE(sr.tax_amount, 0)) ELSE 0 END), 0) as net_ret')
                         ->first();
                     $returnedGrossAccum += (float) ($retRow->gross_ret ?? 0);
                     $returnedNetAccum += (float) ($retRow->net_ret ?? 0);

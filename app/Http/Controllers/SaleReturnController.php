@@ -230,10 +230,15 @@ class SaleReturnController extends Controller
 
         return DB::transaction(function () use ($data, $userId, $request) {
             app(\App\Services\ReturnEntitlement::class)->validate('sale', $data);
-            // Generate posted_number server-side (concurrency-safe)
-            $last = SaleReturn::lockForUpdate()->orderByDesc('id')->first();
-            $next = $last ? ($last->id + 1) : 1;
-            $posted = 'SLRET-' . str_pad((string)$next, 4, '0', STR_PAD_LEFT);
+            // Generate posted_number server-side (concurrency-safe across multi-PC terminals)
+            $posted = \App\Services\DocumentSequenceService::next(
+                'sale_return',
+                'SLRET-',
+                4,
+                'sale_returns',
+                'posted_number',
+                true
+            );
 
             $createPayload = [
                 'user_id'            => $userId,
@@ -403,15 +408,14 @@ class SaleReturnController extends Controller
         // usually tied to create permission
         $this->authorize('create', SaleReturn::class);
 
-        $last = SaleReturn::orderBy('id', 'desc')->first();
-        $next = 1;
-        if ($last && !empty($last->posted_number)) {
-            if (preg_match('/SLRET-(\d+)/', $last->posted_number, $m)) {
-                $next = ((int)$m[1]) + 1;
-            } elseif (preg_match('/SL-(\d+)/', $last->posted_number, $m)) {
-                $next = ((int)$m[1]) + 1;
-            }
-        }
-        return response()->json(['posted_number' => 'SLRET-'.str_pad($next, 4, '0', STR_PAD_LEFT)]);
+        $code = \App\Services\DocumentSequenceService::preview(
+            'sale_return',
+            'SLRET-',
+            4,
+            'sale_returns',
+            'posted_number',
+            true
+        );
+        return response()->json(['posted_number' => $code]);
     }
 }

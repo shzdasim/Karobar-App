@@ -98,25 +98,21 @@ class Expense extends Model
     }
 
     /**
-     * Generate sequential unique expense number for the given date.
+     * Generate sequential unique expense number for the given date (concurrency-safe across multi-PC terminals).
      */
     public static function generateExpenseNumber(?string $dateStr = null): string
     {
         $d = $dateStr ? Carbon::parse($dateStr) : Carbon::today();
-        $datePrefix = 'EXP-' . $d->format('Ymd') . '-';
+        $ymd = $d->format('Ymd');
+        $datePrefix = 'EXP-' . $ymd . '-';
 
-        $last = self::withTrashed()
-            ->where('expense_number', 'like', $datePrefix . '%')
-            ->orderByDesc('id')
-            ->value('expense_number');
-
-        if ($last) {
-            $seq = (int) substr($last, strlen($datePrefix)) + 1;
-        } else {
-            $seq = 1;
-        }
-
-        return $datePrefix . str_pad($seq, 4, '0', STR_PAD_LEFT);
+        return \App\Services\DocumentSequenceService::next(
+            "expense:{$ymd}",
+            $datePrefix,
+            4,
+            'expenses',
+            'expense_number'
+        );
     }
 }
 

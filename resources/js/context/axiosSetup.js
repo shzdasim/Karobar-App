@@ -312,6 +312,27 @@ export function initAxiosAuth() {
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
+      try {
+        let termUid = localStorage.getItem("karobar_terminal_uid");
+        if (!termUid) {
+          const rand = Math.random().toString(36).slice(2, 10).toUpperCase();
+          termUid = window.karobarDesktop?.isDesktop ? `TERM-DESK-${rand}` : `TERM-WEB-${rand}`;
+          localStorage.setItem("karobar_terminal_uid", termUid);
+        }
+        const termName = localStorage.getItem("karobar_terminal_name") || "";
+        const termMode = localStorage.getItem("karobar_terminal_mode") || (window.karobarDesktop?.isDesktop ? "standalone" : "browser");
+        if (!config.headers["X-Terminal-Id"]) {
+          config.headers["X-Terminal-Id"] = termUid;
+        }
+        if (termName && !config.headers["X-Terminal-Name"]) {
+          config.headers["X-Terminal-Name"] = termName;
+        }
+        if (!config.headers["X-Terminal-Mode"]) {
+          config.headers["X-Terminal-Mode"] = termMode;
+        }
+      } catch {
+        // ignore storage access errors
+      }
       const method = (config?.method || "get").toLowerCase();
       const reqUrl = config?.url || "";
       if (

@@ -128,7 +128,7 @@ class StockDisposalController extends Controller
 
         $date = $request->query('date');
         return response()->json([
-            'disposal_number' => $this->disposalService->generateDisposalNumber($date),
+            'disposal_number' => $this->disposalService->generateDisposalNumber($date, true),
             'causes'          => StockDisposal::CAUSES,
             'methods'         => StockDisposal::METHODS,
         ]);

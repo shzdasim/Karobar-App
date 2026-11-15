@@ -24,16 +24,13 @@ class PurchaseInvoiceController extends Controller
     public function generateNewCode()
     {
         $this->authorize('create', PurchaseInvoice::class);
-        $lastInvoice = PurchaseInvoice::orderBy('id', 'desc')->first();
-
-        if ($lastInvoice && $lastInvoice->posted_number && preg_match('/PRINV-(\d+)/', $lastInvoice->posted_number, $matches)) {
-            $lastCodeNum = (int) $matches[1];
-            $newCodeNum = $lastCodeNum + 1;
-        } else {
-            $newCodeNum = 1;
-        }
-
-        $formattedCode = 'PRINV-' . str_pad($newCodeNum, 4, '0', STR_PAD_LEFT);
+        $formattedCode = \App\Services\DocumentSequenceService::preview(
+            'purchase_invoice',
+            'PRINV-',
+            4,
+            'purchase_invoices',
+            'posted_number'
+        );
         return response()->json(['posted_number' => $formattedCode]);
     }
 
@@ -184,21 +181,14 @@ class PurchaseInvoiceController extends Controller
                     foreach ($data['items'] as &$row) unset($row['purchase_order_item_id']);
                     unset($row);
                 }
-                // Lock the sequence by selecting last row FOR UPDATE to avoid two requests
-                // generating the same posted_number when saving concurrently.
-                $prefix = 'PRINV-';
-                $lastPosted = DB::table('purchase_invoices')
-                    ->whereNotNull('posted_number')
-                    ->where('posted_number', 'like', $prefix . '%')
-                    ->lockForUpdate()
-                    ->orderByDesc('id')
-                    ->value('posted_number');
-
-                $nextNum = 1;
-                if ($lastPosted && preg_match('/^' . preg_quote($prefix, '/') . '(\d+)$/', $lastPosted, $m)) {
-                    $nextNum = (int) $m[1] + 1;
-                }
-                $nextCode = $prefix . str_pad($nextNum, 4, '0', STR_PAD_LEFT);
+                // Atomically allocate next posted_number across multi-PC terminals
+                $nextCode = \App\Services\DocumentSequenceService::next(
+                    'purchase_invoice',
+                    'PRINV-',
+                    4,
+                    'purchase_invoices',
+                    'posted_number'
+                );
                 $dueDate = $this->resolveDueDate($data);
 
                 $createPayload = array_merge($data, [

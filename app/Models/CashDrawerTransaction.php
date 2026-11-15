@@ -9,6 +9,7 @@ class CashDrawerTransaction extends Model
     protected $fillable = [
         'session_id',
         'user_id',
+        'terminal_id',
         'type',
         'amount',
         'reference_type',
@@ -17,7 +18,8 @@ class CashDrawerTransaction extends Model
     ];
 
     protected $casts = [
-        'amount' => 'float',
+        'terminal_id' => 'integer',
+        'amount'      => 'float',
     ];
 
     public function session()

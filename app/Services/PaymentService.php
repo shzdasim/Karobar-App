@@ -29,26 +29,21 @@ class PaymentService
     }
 
     /**
-     * Generate sequential payment number.
+     * Generate sequential payment number (concurrency-safe across multi-PC terminals).
      */
     public function generatePaymentNumber(string $partyType): string
     {
         $prefix = $partyType === 'customer' ? 'CR' : 'SD';
         $year = Carbon::now()->format('Y');
+        $fullPrefix = "{$prefix}-{$year}-";
 
-        $last = Payment::where('party_type', $partyType)
-            ->where('payment_number', 'LIKE', "{$prefix}-{$year}-%")
-            ->orderBy('id', 'desc')
-            ->first();
-
-        if ($last) {
-            $parts = explode('-', $last->payment_number);
-            $seq = intval(end($parts)) + 1;
-        } else {
-            $seq = 1;
-        }
-
-        return sprintf('%s-%s-%05d', $prefix, $year, $seq);
+        return DocumentSequenceService::next(
+            "payment:{$prefix}:{$year}",
+            $fullPrefix,
+            5,
+            'payments',
+            'payment_number'
+        );
     }
 
     /**

@@ -30,12 +30,12 @@ class InvoiceDraftController extends Controller
         $this->authorize('viewAny', InvoiceDraft::class);
 
         $user = $request->user();
-        $query = InvoiceDraft::query();
+        $query = InvoiceDraft::query()->with('user:id,name');
 
-        // Unless Admin requests another user's drafts, scope to current user
+        // Support store-wide held bill recall across POS terminals ("Park at Counter 1, Recall at Counter 2")
         if ($request->has('user_id') && $user->hasRole('Admin')) {
             $query->where('user_id', $request->query('user_id'));
-        } else {
+        } elseif ($request->boolean('mine_only') || $request->query('scope') === 'user') {
             $query->where('user_id', $user->id);
         }
 
@@ -48,11 +48,19 @@ class InvoiceDraftController extends Controller
             $query->where('status', $status);
         }
 
-        $drafts = $query->orderByDesc('updated_at')->get([
+        $selectCols = [
             'id', 'uuid', 'user_id', 'type', 'title', 'party_name',
             'total_amount', 'items_count', 'version', 'status',
-            'payload', 'posted_invoice_id', 'posted_invoice_type', 'created_at', 'updated_at'
-        ]);
+            'payload', 'posted_invoice_id', 'posted_invoice_type', 'created_at', 'updated_at',
+        ];
+        if (\App\Support\SchemaCache::hasColumn('invoice_drafts', 'terminal_id')) {
+            $selectCols[] = 'terminal_id';
+        }
+        if (\App\Support\SchemaCache::hasColumn('invoice_drafts', 'terminal_name')) {
+            $selectCols[] = 'terminal_name';
+        }
+
+        $drafts = $query->orderByDesc('updated_at')->get($selectCols);
 
         $allProductIds = $drafts->flatMap(function ($d) {
             return collect($d->payload['items'] ?? [])->pluck('product_id')->filter();
@@ -77,10 +85,11 @@ class InvoiceDraftController extends Controller
             }
 
             $arr = $d->only([
-                'id', 'uuid', 'user_id', 'type', 'title', 'party_name',
+                'id', 'uuid', 'user_id', 'terminal_id', 'terminal_name', 'type', 'title', 'party_name',
                 'total_amount', 'items_count', 'version', 'status',
                 'posted_invoice_id', 'posted_invoice_type', 'created_at', 'updated_at'
             ]);
+            $arr['user_name'] = $d->user?->name;
             $arr['items_summary'] = $itemsSummary;
             return $arr;
         });
@@ -215,12 +224,10 @@ class InvoiceDraftController extends Controller
             ]);
         }
 
-        // If draft with this UUID already exists for this user in draft status, redirect to update
+        // If draft with this UUID already exists in draft status, redirect to update
         $existing = InvoiceDraft::where('uuid', $uuid)->first();
         if ($existing) {
-            if ($existing->user_id !== $user->id && !$user->hasRole('Admin')) {
-                abort(403, 'Unauthorized draft access');
-            }
+            $this->authorize('update', $existing);
             return $this->update($request, $existing->id);
         }
 
@@ -233,7 +240,10 @@ class InvoiceDraftController extends Controller
             $title = $this->generateDefaultTitle($validated['type'], $partyName, $itemsCount);
         }
 
-        $draft = InvoiceDraft::create([
+        $terminal = \App\Models\Terminal::current($request);
+        $terminalName = $terminal?->name ?: trim((string) $request->header('X-Terminal-Name', ''));
+
+        $createAttrs = [
             'uuid'         => $uuid,
             'user_id'      => $user->id,
             'type'         => $validated['type'],
@@ -244,7 +254,15 @@ class InvoiceDraftController extends Controller
             'version'      => 1,
             'payload'      => $payload,
             'status'       => 'draft',
-        ]);
+        ];
+        if (\App\Support\SchemaCache::hasColumn('invoice_drafts', 'terminal_id')) {
+            $createAttrs['terminal_id'] = $terminal?->id;
+        }
+        if (\App\Support\SchemaCache::hasColumn('invoice_drafts', 'terminal_name')) {
+            $createAttrs['terminal_name'] = $terminalName !== '' ? $terminalName : null;
+        }
+
+        $draft = InvoiceDraft::create($createAttrs);
 
         return response()->json($draft, 201);
     }

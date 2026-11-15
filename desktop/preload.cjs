@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld("karobarDesktop", {
   isOffscreenPrintWorker,
   platform: process.platform,
   getAppInfo: () => ipcRenderer.invoke("karobar:app-info"),
+  getNetworkConfig: () => ipcRenderer.invoke("karobar:get-network-config"),
+  saveNetworkConfig: (payload = {}) => ipcRenderer.invoke("karobar:save-network-config", payload),
+  testServerConnection: (payload = {}) => ipcRenderer.invoke("karobar:test-server-connection", payload),
   getPrinters: () => ipcRenderer.invoke("karobar:get-printers"),
   getPreferredPrinter: () => ipcRenderer.invoke("karobar:get-preferred-printer"),
   setPreferredPrinter: (deviceName) =>

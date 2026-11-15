@@ -53,18 +53,16 @@ class JournalEntry extends Model
 
     public static function generateEntryNumber(?string $date = null): string
     {
-        $prefix = 'JV-' . str_replace('-', '', $date ?: now()->toDateString()) . '-';
-        $last = static::where('entry_number', 'like', $prefix . '%')
-            ->orderByDesc('id')
-            ->value('entry_number');
+        $ymd = str_replace('-', '', $date ?: now()->toDateString());
+        $prefix = 'JV-' . $ymd . '-';
 
-        if ($last && preg_match('/-(\d+)$/', $last, $m)) {
-            $next = ((int) $m[1]) + 1;
-        } else {
-            $next = (static::count() + 1);
-        }
-
-        return $prefix . str_pad((string) $next, 4, '0', STR_PAD_LEFT);
+        return \App\Services\DocumentSequenceService::next(
+            "journal_entry:{$ymd}",
+            $prefix,
+            4,
+            'journal_entries',
+            'entry_number'
+        );
     }
 }
 

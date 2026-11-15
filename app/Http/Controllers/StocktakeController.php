@@ -89,7 +89,7 @@ class StocktakeController extends Controller
     {
         $this->authorize('create', StocktakeSession::class);
 
-        return response()->json(['reference_no' => $this->service->generateReferenceNo()]);
+        return response()->json(['reference_no' => $this->service->generateReferenceNo(true)]);
     }
 
     // ===== Create a new session (stays in draft) =====

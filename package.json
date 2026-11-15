@@ -5,6 +5,7 @@
     "scripts": {
         "build:cube-knowledge": "node scripts/build-cube-knowledge.mjs",
         "build": "node scripts/build-cube-knowledge.mjs && vite build",
+        "build:linux-server": "bash scripts/build-linux-server-installer.sh",
         "dev": "vite",
         "whatsapp:agent": "node scripts/whatsapp-agent.mjs"
     },

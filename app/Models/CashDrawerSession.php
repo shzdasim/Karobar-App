@@ -8,6 +8,7 @@ class CashDrawerSession extends Model
 {
     protected $fillable = [
         'user_id',
+        'terminal_id',
         'opened_at',
         'closed_at',
         'status',
@@ -20,6 +21,7 @@ class CashDrawerSession extends Model
     ];
 
     protected $casts = [
+        'terminal_id'              => 'integer',
         'opened_at'                => 'datetime',
         'closed_at'                => 'datetime',
         'opening_balance'          => 'float',
@@ -32,6 +34,11 @@ class CashDrawerSession extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function terminal()
+    {
+        return $this->belongsTo(Terminal::class, 'terminal_id');
     }
 
     public function transactions()

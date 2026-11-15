@@ -253,11 +253,15 @@ class LicenseService
                 $hwToken = 'win:' . implode(':', $winParts);
             }
         } elseif (PHP_OS_FAMILY === 'Linux') {
-            foreach (['/etc/machine-id', '/var/lib/dbus/machine-id', '/sys/class/dmi/id/product_uuid'] as $file) {
+            foreach (['/etc/host-machine-id', '/etc/machine-id', '/var/lib/dbus/machine-id', '/sys/class/dmi/id/product_uuid'] as $file) {
                 if (is_readable($file)) {
                     $val = trim((string) @file_get_contents($file));
                     if ($val !== '') {
                         $hwToken .= "linux:{$val}|";
+                        // If /etc/host-machine-id is mounted (Docker), use it as primary machine-id basis
+                        if ($file === '/etc/host-machine-id') {
+                            break;
+                        }
                     }
                 }
             }
@@ -518,6 +522,7 @@ class LicenseService
             'reason' => $reason,
             'payload' => $cleanPayload,
             'expires_at' => $cleanPayload['exp'] ?? null,
+            'seats' => (int) ($cleanPayload['seats'] ?? 0),
         ];
 
         if ($ok) {
@@ -527,6 +532,18 @@ class LicenseService
         }
 
         return $result;
+    }
+
+    /**
+     * Alias for currentStatus() with normalized top-level seats metadata.
+     */
+    public function status(bool $force = false): array
+    {
+        $res = $this->currentStatus($force);
+        if (!array_key_exists('seats', $res)) {
+            $res['seats'] = (int) ($res['payload']['seats'] ?? 0);
+        }
+        return $res;
     }
 
     /**

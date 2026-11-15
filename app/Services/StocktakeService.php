@@ -21,20 +21,28 @@ class StocktakeService
     /**
      * Generate next reference number like "ST-202610-001".
      */
-    public function generateReferenceNo(): string
+    public function generateReferenceNo(bool $preview = false): string
     {
-        $prefix = 'ST-' . now()->format('Ym') . '-';
+        $ym = now()->format('Ym');
+        $prefix = 'ST-' . $ym . '-';
 
-        $last = StocktakeSession::where('reference_no', 'like', $prefix . '%')
-            ->orderByDesc('id')
-            ->value('reference_no');
-
-        $next = 1;
-        if ($last && preg_match('/^' . preg_quote($prefix, '/') . '(\d+)$/', $last, $m)) {
-            $next = ((int) $m[1]) + 1;
+        if ($preview) {
+            return DocumentSequenceService::preview(
+                "stocktake:{$ym}",
+                $prefix,
+                3,
+                'stocktake_sessions',
+                'reference_no'
+            );
         }
 
-        return $prefix . sprintf('%03d', $next);
+        return DocumentSequenceService::next(
+            "stocktake:{$ym}",
+            $prefix,
+            3,
+            'stocktake_sessions',
+            'reference_no'
+        );
     }
 
     // ===== Session Lifecycle =====
@@ -44,16 +52,26 @@ class StocktakeService
      */
     public function createSession(array $data, User $user): StocktakeSession
     {
-        return StocktakeSession::create([
-            'reference_no' => $data['reference_no'] ?? $this->generateReferenceNo(),
-            'session_type' => $data['session_type'],
-            'is_blind'     => $data['is_blind'] ?? true,
-            'status'       => 'draft',
-            'scope_type'   => $data['scope_type'] ?? null,
-            'scope_id'     => $data['scope_id'] ?? null,
-            'notes'        => $data['notes'] ?? null,
-            'user_id'      => $user->id,
-        ]);
+        return DB::transaction(function () use ($data, $user) {
+            $refNo = !empty($data['reference_no'])
+                ? trim((string) $data['reference_no'])
+                : $this->generateReferenceNo();
+
+            if (StocktakeSession::where('reference_no', $refNo)->exists()) {
+                $refNo = $this->generateReferenceNo();
+            }
+
+            return StocktakeSession::create([
+                'reference_no' => $refNo,
+                'session_type' => $data['session_type'],
+                'is_blind'     => $data['is_blind'] ?? true,
+                'status'       => 'draft',
+                'scope_type'   => $data['scope_type'] ?? null,
+                'scope_id'     => $data['scope_id'] ?? null,
+                'notes'        => $data['notes'] ?? null,
+                'user_id'      => $user->id,
+            ]);
+        });
     }
 
     /**

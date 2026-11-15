@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureLicensed;
 use App\Http\Middleware\CheckTokenExpiry;
+use App\Http\Middleware\TrackTerminalMiddleware;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -24,12 +25,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'roles_or_permissions' => RoleOrPermissionMiddleware::class,
             'licensed'             => EnsureLicensed::class,
             'token.expiry'        => CheckTokenExpiry::class,
+            'track.terminal'       => TrackTerminalMiddleware::class,
         ]);
 
-        // DO NOT append 'licensed' globally to the 'api' group.
-        // We'll apply it only to protected route groups in routes/api.php.
-        // Example (leave disabled):
-        // $middleware->appendToGroup('api', [EnsureLicensed::class]);
+        // Automatically track multi-PC terminal heartbeats, IP, active user, and authorization across API requests
+        $middleware->appendToGroup('api', [TrackTerminalMiddleware::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

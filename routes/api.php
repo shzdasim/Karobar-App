@@ -50,6 +50,8 @@ use App\Http\Controllers\UserPreferenceController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\UserDemandController;
 use App\Http\Controllers\CubeAssistantController;
+use App\Http\Controllers\TerminalController;
+use App\Http\Controllers\Api\SyncPulseController;
 use App\Http\Controllers\Api\SystemUpdateController;
 
 /*
@@ -61,6 +63,9 @@ Route::get('/system/version', [SystemUpdateController::class, 'version']);
 Route::get('/system/check-update', [SystemUpdateController::class, 'checkUpdate']);
 Route::get('/system/update-progress', [SystemUpdateController::class, 'updateProgress']);
 Route::post('/system/install-update', [SystemUpdateController::class, 'installUpdate']);
+
+// Multi-PC Terminal LAN Discovery & Handshake Ping (accessible prior to login for "Test Connection")
+Route::match(['get', 'post'], '/terminals/ping', [TerminalController::class, 'ping']);
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 Route::post('/session/extend', [AuthController::class, 'extendSession'])->middleware('throttle:30,1');
@@ -557,4 +562,20 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     // -------------------------------------------------------------------------
     Route::post('/cube/ask', [CubeAssistantController::class, 'ask'])->middleware('throttle:30,1');
     Route::post('/cube/execute-task', [CubeAssistantController::class, 'executeTask'])->middleware('throttle:60,1');
+
+    // -------------------------------------------------------------------------
+    // Multi-PC LAN Sync Pulse, Attached Terminals Registry & Server DB Hub
+    // -------------------------------------------------------------------------
+    Route::get('/sync/pulse', [SyncPulseController::class, 'pulse']);
+    Route::post('/sync/bump', [SyncPulseController::class, 'bump']);
+    Route::get('/terminals', [TerminalController::class, 'index']);
+    Route::put('/terminals/settings/network', [TerminalController::class, 'updateNetworkSettings']);
+    Route::put('/terminals/{id}', [TerminalController::class, 'update'])->whereNumber('id');
+    Route::delete('/terminals/{id}', [TerminalController::class, 'destroy'])->whereNumber('id');
+    Route::match(['get', 'post'], '/server/export-database', [TerminalController::class, 'exportDatabase']);
+    Route::post('/server/quick-import-database', [TerminalController::class, 'quickImportDatabase']);
+    Route::post('/server/import-database', [TerminalController::class, 'quickImportDatabase']);
+    Route::get('/server/diagnostics', [TerminalController::class, 'diagnostics']);
+    Route::post('/server/troubleshoot', [TerminalController::class, 'troubleshoot']);
+    Route::get('/server/terminal-config', [TerminalController::class, 'downloadTerminalConfig']);
 });

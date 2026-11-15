@@ -168,6 +168,8 @@ export default function DashboardLayout({ children }) {
       "/user-demands": "User Demands",
       "/user-demands/create": "Request Product",
       "/settings": "Settings",
+      "/server-dashboard": "Linux Server & Attached Terminals Dashboard",
+      "/terminals": "Linux Server & Attached Terminals Dashboard",
       "/settings/sqlite-import": "SQLite Data Import & Migration Studio",
       "/sqlite-import": "SQLite Data Import & Migration Studio",
       "/reports": "Reports",

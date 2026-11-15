@@ -369,6 +369,67 @@ Route::get('/privacy-policy', function () {
     ]);
 })->name('legal.privacy');
 
+// Local Server Control Center Quick-Launch Route (used by Single-File Server Installer & Desktop Shortcut)
+Route::get('/server-launch', function (\Illuminate\Http\Request $request) {
+    $providedKey = trim((string) $request->query('key', ''));
+    $keyFile = storage_path('app/server-launch.key');
+    $storedKey = is_file($keyFile) ? trim((string) @file_get_contents($keyFile)) : '';
+
+    $isLocalhost = in_array($request->ip(), ['127.0.0.1', '::1'], true);
+    $keyValid = ($storedKey !== '' && $providedKey !== '' && hash_equals($storedKey, $providedKey));
+
+    if (!$keyValid && !$isLocalhost) {
+        return redirect('/server-dashboard');
+    }
+
+    // Only allow localhost without explicit key if the key file exists on this server
+    if (!$keyValid && $storedKey === '') {
+        return redirect('/server-dashboard');
+    }
+
+    $admin = \App\Models\User::query()->orderBy('id')->first();
+    if (!$admin) {
+        return redirect('/login');
+    }
+
+    $token = $admin->createToken('server-control-center')->plainTextToken;
+    $userJson = json_encode([
+        'id'    => $admin->id,
+        'name'  => $admin->name,
+        'email' => $admin->email,
+        'roles' => method_exists($admin, 'getRoleNames') ? $admin->getRoleNames() : ['Admin'],
+    ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
+    $tokenJson = json_encode($token, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
+
+    $html = <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Launching Karobar Server Control Center...</title>
+</head>
+<body style="background:#0f172a;color:#f8fafc;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+  <div style="text-align:center;">
+    <h2 style="margin-bottom:8px;">Opening Karobar Server &amp; Terminals Dashboard…</h2>
+    <p style="color:#94a3b8;font-size:13px;">Initializing LAN Sync Hub &amp; Troubleshooter…</p>
+  </div>
+  <script>
+    try {
+      localStorage.setItem('token', {$tokenJson});
+      localStorage.setItem('user', JSON.stringify({$userJson}));
+      localStorage.setItem('karobar_terminal_mode', 'server');
+      localStorage.setItem('karobar_terminal_name', 'Linux Store Server');
+      sessionStorage.setItem('karobar_just_logged_in', '1');
+    } catch (e) {}
+    window.location.replace('/server-dashboard');
+  </script>
+</body>
+</html>
+HTML;
+
+    return response($html)->header('Content-Type', 'text/html; charset=UTF-8');
+})->name('server.launch');
+
 // --- React SPA catch-all LAST and excluding /print/* and /privacy-policy etc ---
 Route::view('/{path?}', 'index')
-    ->where('path', '^(?!print/|privacy-policy|terms-of-service).*$');
+    ->where('path', '^(?!print/|privacy-policy|terms-of-service|server-launch).*$');

@@ -15,12 +15,14 @@ import {
   HandRaisedIcon,
   XMarkIcon,
   ArrowPathIcon,
+  ServerStackIcon,
 } from "@heroicons/react/24/solid";
 import toast from "react-hot-toast";
 import { useLicense } from "@/context/LicenseContext.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { usePermissions } from "@/api/usePermissions.js";
+import { useSyncPulse } from "@/hooks/useSyncPulse.js";
 import ThemeToggle from "./ThemeToggle.jsx";
 import {
   GuideBotTopbarButton,
@@ -103,6 +105,9 @@ export default function Topbar({
 
   // Screen-Aware Bilingual Feature Guide Bot state (opens anywhere with Ctrl+G and stays open across pages)
   const [guideBotOpen, setGuideBotOpen] = useGuideBotOpenState();
+
+  // Real-time Multi-PC LAN Sync Pulse & Terminal Presence
+  const syncPulse = useSyncPulse({ enabled: Boolean(user?.id), intervalMs: 4000 });
 
   const canViewAccounts = has("account.view");
 
@@ -917,6 +922,30 @@ export default function Topbar({
               isOpen={guideBotOpen}
               pageTitle={pageTitle}
             />
+
+            {/* Server & Attached Terminals Dashboard Quick Button */}
+            <button
+              type="button"
+              onClick={() => navigate("/server-dashboard")}
+              title={
+                syncPulse.online
+                  ? `Server & Attached Terminals (${syncPulse.onlineTerminalsCount || 1} Online)`
+                  : "Server Connection Offline — Click to open Server & Terminals Dashboard"
+              }
+              className="inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/70 hover:bg-slate-200/70 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-700 dark:text-slate-200 transition-all duration-150 cursor-pointer shrink-0 whitespace-nowrap"
+            >
+              <ServerStackIcon className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  syncPulse.online ? "bg-emerald-500" : "bg-red-500 animate-ping"
+                }`}
+              />
+              <span className="hidden 2xl:inline">
+                {syncPulse.onlineTerminalsCount > 1
+                  ? `${syncPulse.onlineTerminalsCount} Terminals`
+                  : "Server"}
+              </span>
+            </button>
 
             {/* Open Current View in a New Window */}
             {(onOpenCurrentInNewWindow || onOpenCurrentInSubWindow) && (

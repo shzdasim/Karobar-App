@@ -283,10 +283,15 @@ public function index(Request $request)
         return DB::transaction(function () use ($data, $request) {
             $this->validateStockAvailability($data['items']);
             app(\App\Services\ReturnEntitlement::class)->validate('purchase', $data);
-            // Generate posted_number server-side (concurrency-safe)
-            $last = PurchaseReturn::lockForUpdate()->orderByDesc('id')->first();
-            $next = $last ? ($last->id + 1) : 1;
-            $posted = 'PRRET-' . str_pad((string)$next, 4, '0', STR_PAD_LEFT);
+            // Generate posted_number server-side (concurrency-safe across multi-PC terminals)
+            $posted = \App\Services\DocumentSequenceService::next(
+                'purchase_return',
+                'PRRET-',
+                4,
+                'purchase_returns',
+                'posted_number',
+                true
+            );
 
             $pr = PurchaseReturn::create([
                 'supplier_id'         => $data['supplier_id'],
@@ -446,15 +451,14 @@ public function index(Request $request)
     public function generateNewCode()
     {
         $this->authorize('create', PurchaseReturn::class);
-        $last = PurchaseReturn::orderBy('id', 'desc')->first();
-        $next = 1;
-        if ($last && !empty($last->posted_number)) {
-            if (preg_match('/PRRET-(\d+)/', $last->posted_number, $m)) {
-                $next = ((int)$m[1]) + 1;
-            } elseif (preg_match('/PR-(\d+)/', $last->posted_number, $m)) {
-                $next = ((int)$m[1]) + 1;
-            }
-        }
-        return response()->json(['posted_number' => 'PRRET-'.str_pad($next, 4, '0', STR_PAD_LEFT)]);
+        $code = \App\Services\DocumentSequenceService::preview(
+            'purchase_return',
+            'PRRET-',
+            4,
+            'purchase_returns',
+            'posted_number',
+            true
+        );
+        return response()->json(['posted_number' => $code]);
     }
 }

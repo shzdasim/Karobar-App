@@ -13,6 +13,8 @@ class InvoiceDraft extends Model
     protected $fillable = [
         'uuid',
         'user_id',
+        'terminal_id',
+        'terminal_name',
         'type',
         'title',
         'party_name',
@@ -26,6 +28,7 @@ class InvoiceDraft extends Model
     ];
 
     protected $casts = [
+        'terminal_id'  => 'integer',
         'payload'      => 'array',
         'total_amount' => 'decimal:2',
         'items_count'  => 'integer',

@@ -92,6 +92,7 @@ const MissingReports = registerLazy(() => import("../pages/Reports/MissingReport
   "/reports/reorder",
 ]);
 const Setting = registerLazy(() => import("../pages/Setting.jsx"), ["/settings"]);
+const ServerDashboard = registerLazy(() => import("../pages/ServerDashboard.jsx"), ["/server-dashboard", "/terminals"]);
 const SqliteImportPage = registerLazy(() => import("../pages/SqliteImportPage.jsx"), ["/settings/sqlite-import", "/sqlite-import"]);
 const BackupsIndex = registerLazy(() => import("../pages/Backups/Index.jsx"), ["/backups"]);
 const BarcodeIndex = registerLazy(() => import("../pages/Barcodes/Index.jsx"), ["/barcode-labels"]);
@@ -345,6 +346,8 @@ export default function AppRoutes() {
 
           {/* Settings & Backups */}
           <Route path="/settings" element={<Setting />} />
+          <Route path="/server-dashboard" element={<ServerDashboard />} />
+          <Route path="/terminals" element={<ServerDashboard />} />
           <Route path="/settings/sqlite-import" element={<SqliteImportPage />} />
           <Route path="/sqlite-import" element={<SqliteImportPage />} />
           <Route path="/backups" element={<BackupsIndex />} />

@@ -20,21 +20,29 @@ class StockDisposalService
     /**
      * Generate sequential disposal voucher number (e.g. DSP-202610-0001).
      */
-    public function generateDisposalNumber(?string $dateStr = null): string
+    public function generateDisposalNumber(?string $dateStr = null, bool $preview = false): string
     {
         $d = $dateStr ? Carbon::parse($dateStr) : now();
-        $prefix = 'DSP-' . $d->format('Ym') . '-';
+        $ym = $d->format('Ym');
+        $prefix = 'DSP-' . $ym . '-';
 
-        $last = StockDisposal::where('disposal_number', 'like', $prefix . '%')
-            ->orderByDesc('id')
-            ->value('disposal_number');
-
-        $next = 1;
-        if ($last && preg_match('/^' . preg_quote($prefix, '/') . '(\d+)$/', $last, $m)) {
-            $next = ((int) $m[1]) + 1;
+        if ($preview) {
+            return DocumentSequenceService::preview(
+                "stock_disposal:{$ym}",
+                $prefix,
+                4,
+                'stock_disposals',
+                'disposal_number'
+            );
         }
 
-        return $prefix . sprintf('%04d', $next);
+        return DocumentSequenceService::next(
+            "stock_disposal:{$ym}",
+            $prefix,
+            4,
+            'stock_disposals',
+            'disposal_number'
+        );
     }
 
     /**

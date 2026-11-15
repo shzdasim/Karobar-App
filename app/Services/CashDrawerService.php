@@ -35,16 +35,39 @@ class CashDrawerService
     ];
 
     /**
-     * Get currently active open session for a user (or system when $strictUser is false / $user is null).
+     * Get currently active open session for a terminal/user (or system when $strictUser is false / $user is null).
      */
-    public function getCurrentSession(?User $user = null, bool $strictUser = true): ?CashDrawerSession
+    public function getCurrentSession(?User $user = null, bool $strictUser = true, ?int $terminalId = null): ?CashDrawerSession
     {
         if (!SchemaCache::hasTable('cash_drawer_sessions')) {
             return null;
         }
 
+        $resolvedTerminalId = $terminalId ?? \App\Models\Terminal::currentId();
+        $hasTerminalCol = SchemaCache::hasColumn('cash_drawer_sessions', 'terminal_id');
+
         $query = CashDrawerSession::with(['user'])
             ->where('status', 'open');
+
+        if ($hasTerminalCol && $resolvedTerminalId !== null) {
+            $terminalSession = (clone $query)->where('terminal_id', $resolvedTerminalId)->latest('opened_at')->first();
+            if ($terminalSession) {
+                return $terminalSession;
+            }
+            if ($user) {
+                $unassignedUserSession = (clone $query)
+                    ->where('user_id', $user->id)
+                    ->whereNull('terminal_id')
+                    ->latest('opened_at')
+                    ->first();
+                if ($unassignedUserSession) {
+                    return $unassignedUserSession;
+                }
+            }
+            if ($strictUser) {
+                return null;
+            }
+        }
 
         if ($user) {
             $userSession = (clone $query)->where('user_id', $user->id)->latest('opened_at')->first();
@@ -63,14 +86,24 @@ class CashDrawerService
     /**
      * Get the most recently closed cash drawer session for float carryover & closed-state summary.
      */
-    public function getLastClosedSession(?User $user = null): ?CashDrawerSession
+    public function getLastClosedSession(?User $user = null, ?int $terminalId = null): ?CashDrawerSession
     {
         if (!SchemaCache::hasTable('cash_drawer_sessions')) {
             return null;
         }
 
+        $resolvedTerminalId = $terminalId ?? \App\Models\Terminal::currentId();
+        $hasTerminalCol = SchemaCache::hasColumn('cash_drawer_sessions', 'terminal_id');
+
         $query = CashDrawerSession::with(['user'])
             ->where('status', 'closed');
+
+        if ($hasTerminalCol && $resolvedTerminalId !== null) {
+            $terminalClosed = (clone $query)->where('terminal_id', $resolvedTerminalId)->latest('closed_at')->latest('id')->first();
+            if ($terminalClosed) {
+                return $terminalClosed;
+            }
+        }
 
         if ($user) {
             $userClosed = (clone $query)->where('user_id', $user->id)->latest('closed_at')->latest('id')->first();
@@ -87,19 +120,31 @@ class CashDrawerService
     }
 
     /**
-     * Open a new cash drawer session.
+     * Open a new cash drawer session (per-terminal isolated when a terminal context is present).
      */
-    public function openSession(User $user, float $openingBalance, ?string $notes = null): CashDrawerSession
+    public function openSession(User $user, float $openingBalance, ?string $notes = null, ?int $terminalId = null): CashDrawerSession
     {
-        return DB::transaction(function () use ($user, $openingBalance, $notes) {
-            $existing = CashDrawerSession::where('user_id', $user->id)
-                ->where('status', 'open')
-                ->lockForUpdate()
-                ->first();
+        return DB::transaction(function () use ($user, $openingBalance, $notes, $terminalId) {
+            $resolvedTerminalId = $terminalId ?? \App\Models\Terminal::currentId();
+            $hasTerminalCol = SchemaCache::hasColumn('cash_drawer_sessions', 'terminal_id');
+
+            $existingQuery = CashDrawerSession::where('status', 'open')->lockForUpdate();
+            if ($hasTerminalCol && $resolvedTerminalId !== null) {
+                $existingQuery->where('terminal_id', $resolvedTerminalId);
+            } else {
+                $existingQuery->where('user_id', $user->id);
+                if ($hasTerminalCol) {
+                    $existingQuery->whereNull('terminal_id');
+                }
+            }
+
+            $existing = $existingQuery->first();
 
             if ($existing) {
                 throw ValidationException::withMessages([
-                    'session' => 'A cash drawer session is already open for this user. Please close it first.',
+                    'session' => $resolvedTerminalId !== null
+                        ? 'A cash drawer session is already open on this terminal. Please close it first.'
+                        : 'A cash drawer session is already open for this user. Please close it first.',
                 ]);
             }
 
@@ -112,7 +157,7 @@ class CashDrawerService
                     return $this->recalculateExpectedBalance($openSess);
                 });
 
-            $session = CashDrawerSession::create([
+            $createData = [
                 'user_id'                  => $user->id,
                 'opened_at'                => Carbon::now(),
                 'status'                   => 'open',
@@ -121,7 +166,12 @@ class CashDrawerService
                 'closing_balance_actual'   => null,
                 'difference'               => 0,
                 'notes'                    => $notes,
-            ]);
+            ];
+            if ($hasTerminalCol) {
+                $createData['terminal_id'] = $resolvedTerminalId;
+            }
+
+            $session = CashDrawerSession::create($createData);
 
             if (Schema::hasTable('accounts')) {
                 $accountService = app(AccountService::class);
@@ -191,7 +241,7 @@ class CashDrawerService
                 return null;
             }
 
-            $txn = CashDrawerTransaction::create([
+            $txnPayload = [
                 'session_id'     => $lockedSession->id,
                 'user_id'        => $user?->id ?? $lockedSession->user_id,
                 'type'           => $type,
@@ -199,7 +249,11 @@ class CashDrawerService
                 'reference_type' => $refType,
                 'reference_id'   => $refId,
                 'notes'          => $notes,
-            ]);
+            ];
+            if (SchemaCache::hasColumn('cash_drawer_transactions', 'terminal_id')) {
+                $txnPayload['terminal_id'] = \App\Models\Terminal::currentId() ?? $lockedSession->terminal_id;
+            }
+            $txn = CashDrawerTransaction::create($txnPayload);
 
             $this->recalculateExpectedBalance($lockedSession);
 

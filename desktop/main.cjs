@@ -1,10 +1,11 @@
-const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, shell, session } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const net = require("net");
 const http = require("http");
 const https = require("https");
+const crypto = require("crypto");
 const { spawn, execFile, execFileSync } = require("child_process");
 
 let mainWindow = null;
@@ -18,6 +19,7 @@ let schedulerProcess = null;
 let activePort = 18942;
 let isQuitting = false;
 let rrWorkerIdx = 0;
+let networkConfigCache = null;
 
 /**
  * Resolve the root Laravel application directory whether running unpacked in an
@@ -40,6 +42,114 @@ function resolveAppRoot() {
 }
 
 const APP_ROOT = resolveAppRoot();
+
+/**
+ * Multi-PC Network / Terminal Mode configuration helpers.
+ * Persists in %APPDATA%/Karobar-App/network-mode.json (with fallback to storage/app/network-mode.json written by installer).
+ */
+function getNetworkConfigPaths() {
+  const paths = [];
+  try {
+    paths.push(path.join(app.getPath("userData"), "network-mode.json"));
+  } catch {
+    // before app ready
+  }
+  paths.push(path.join(APP_ROOT, "storage", "app", "network-mode.json"));
+  return paths;
+}
+
+function normalizeServerUrl(rawUrl) {
+  let u = String(rawUrl || "").trim();
+  if (!u) return "";
+  if (!/^https?:\/\//i.test(u)) {
+    u = "http://" + u;
+  }
+  return u.replace(/\/+$/, "");
+}
+
+function loadNetworkConfig() {
+  if (networkConfigCache) return networkConfigCache;
+
+  const defaultHostname = (os.hostname() || "PC").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 20) || "PC";
+  const defaultUid = `TERM-${defaultHostname.toUpperCase()}-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+  let loaded = null;
+
+  for (const cfgPath of getNetworkConfigPaths()) {
+    try {
+      if (fs.existsSync(cfgPath)) {
+        const parsed = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+        if (parsed && typeof parsed === "object") {
+          loaded = parsed;
+          break;
+        }
+      }
+    } catch {
+      // ignore malformed config
+    }
+  }
+
+  networkConfigCache = {
+    mode: loaded?.mode === "terminal" ? "terminal" : "standalone",
+    serverUrl: normalizeServerUrl(loaded?.serverUrl || ""),
+    terminalId: String(loaded?.terminalId || defaultUid).trim(),
+    terminalName: String(loaded?.terminalName || `Counter (${defaultHostname})`).trim(),
+    pairingToken: String(loaded?.pairingToken || "").trim(),
+  };
+
+  // Persist if first run
+  if (!loaded || !loaded.terminalId) {
+    saveNetworkConfig(networkConfigCache);
+  }
+
+  return networkConfigCache;
+}
+
+function saveNetworkConfig(partial = {}) {
+  const current = networkConfigCache || {
+    mode: "standalone",
+    serverUrl: "",
+    terminalId: `TERM-${crypto.randomBytes(4).toString("hex").toUpperCase()}`,
+    terminalName: `Counter (${os.hostname() || "POS"})`,
+    pairingToken: "",
+  };
+
+  const next = {
+    mode: partial.mode === "terminal" ? "terminal" : partial.mode === "standalone" ? "standalone" : current.mode,
+    serverUrl: partial.serverUrl !== undefined ? normalizeServerUrl(partial.serverUrl) : current.serverUrl,
+    terminalId: String(partial.terminalId || current.terminalId).trim(),
+    terminalName: String(partial.terminalName || current.terminalName).trim(),
+    pairingToken: partial.pairingToken !== undefined ? String(partial.pairingToken || "").trim() : current.pairingToken,
+  };
+
+  networkConfigCache = next;
+
+  for (const cfgPath of getNetworkConfigPaths()) {
+    try {
+      const dir = path.dirname(cfgPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(cfgPath, JSON.stringify(next, null, 2), "utf8");
+    } catch {
+      // ignore if one of the candidate paths is read-only
+    }
+  }
+
+  return next;
+}
+
+function isTerminalMode() {
+  const cfg = loadNetworkConfig();
+  return cfg.mode === "terminal" && Boolean(cfg.serverUrl);
+}
+
+function getAppBaseUrl() {
+  const cfg = loadNetworkConfig();
+  if (cfg.mode === "terminal" && cfg.serverUrl) {
+    return cfg.serverUrl;
+  }
+  return `http://127.0.0.1:${activePort}`;
+}
 
 /**
  * Resolve bundled portable PHP binary (runtime/php/php.exe) or system fallback.
@@ -347,6 +457,12 @@ function selectLeastBusyWorker() {
  * (bypasses Windows single-threaded `php -S` bottleneck and Keep-Alive socket stalls).
  */
 async function startBackendServices() {
+  if (isTerminalMode()) {
+    // In Multi-PC Terminal Mode, connect directly to the remote Linux Store Server over LAN
+    // without spawning local PHP workers or local database schedulers.
+    return;
+  }
+
   activePort = await findFreePort(18942);
   const phpBin = resolvePhpBinary();
   const routerScript = path.join(APP_ROOT, "desktop", "router.php");
@@ -984,10 +1100,11 @@ function configurePopupAndPrintHandler(contents) {
 
     // Never allow print popup windows: intercept print routes and spool silently in background
     if (isLocalPrintRouteUrl(rawUrl)) {
+      const baseUrl = getAppBaseUrl();
       let resolvedUrl =
         rawUrl.startsWith("http://") || rawUrl.startsWith("https://")
           ? rawUrl
-          : `http://127.0.0.1:${activePort}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}`;
+          : `${baseUrl}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}`;
       if (!/[?&]silent_print=/i.test(resolvedUrl)) {
         resolvedUrl += (resolvedUrl.includes("?") ? "&" : "?") + "silent_print=1";
       }
@@ -1025,7 +1142,9 @@ function configurePopupAndPrintHandler(contents) {
     }
 
     // Intercept internal application URLs and spawn a native app window
+    const baseUrl = getAppBaseUrl();
     const isInternalAppUrl =
+      rawUrl.startsWith(baseUrl) ||
       rawUrl.startsWith(`http://127.0.0.1:${activePort}`) ||
       rawUrl.startsWith(`http://localhost:${activePort}`) ||
       (rawUrl.startsWith("/") && !rawUrl.startsWith("//"));
@@ -1033,7 +1152,9 @@ function configurePopupAndPrintHandler(contents) {
     if (isInternalAppUrl) {
       setImmediate(() => {
         let route = rawUrl;
-        if (route.startsWith(`http://127.0.0.1:${activePort}`)) {
+        if (route.startsWith(baseUrl)) {
+          route = route.slice(baseUrl.length);
+        } else if (route.startsWith(`http://127.0.0.1:${activePort}`)) {
           route = route.slice(`http://127.0.0.1:${activePort}`.length);
         } else if (route.startsWith(`http://localhost:${activePort}`)) {
           route = route.slice(`http://localhost:${activePort}`.length);
@@ -1076,10 +1197,22 @@ function createAppWindow(routePath = "/", options = {}) {
 
   configurePopupAndPrintHandler(win.webContents);
 
+  const baseUrl = getAppBaseUrl();
   const fullUrl =
     routePath.startsWith("http://") || routePath.startsWith("https://")
       ? routePath
-      : `http://127.0.0.1:${activePort}${routePath.startsWith("/") ? "" : "/"}${routePath}`;
+      : `${baseUrl}${routePath.startsWith("/") ? "" : "/"}${routePath}`;
+
+  win.webContents.on("did-fail-load", (_event, errorCode, _errorDescription, validatedURL, isMainFrame) => {
+    // Ignore aborted navigations (-3)
+    if (!isMainFrame || errorCode === -3) return;
+    if (isTerminalMode() && validatedURL && !validatedURL.startsWith("file://")) {
+      const offlineFile = path.join(__dirname, "terminal-offline.html");
+      if (fs.existsSync(offlineFile)) {
+        win.loadFile(offlineFile).catch(() => {});
+      }
+    }
+  });
 
   win.loadURL(fullUrl);
 
@@ -1227,6 +1360,29 @@ if (!gotSingleLock) {
 
   app.whenReady().then(async () => {
     createSplashWindow();
+
+    // Inject terminal identity headers into outgoing requests from Electron windows
+    try {
+      session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+        const cfg = loadNetworkConfig();
+        const requestHeaders = {
+          ...details.requestHeaders,
+          "X-Terminal-Id": cfg.terminalId,
+          "X-Terminal-Name": cfg.terminalName,
+          "X-Terminal-Mode": cfg.mode,
+          "X-Terminal-Hostname": os.hostname() || "PC",
+          "X-Terminal-OS": `${process.platform}-${os.release()}`,
+          "X-Terminal-Version": app.getVersion(),
+        };
+        if (cfg.pairingToken) {
+          requestHeaders["X-Terminal-Token"] = cfg.pairingToken;
+        }
+        callback({ requestHeaders });
+      });
+    } catch {
+      // ignore if session not ready
+    }
+
     if (process.platform === "win32") {
       refreshWindowsWmiPrinters().catch(() => {});
     }
@@ -1236,13 +1392,159 @@ if (!gotSingleLock) {
   });
 }
 
+function testRemoteServerConnection(rawServerUrl, customTerminalName = "") {
+  return new Promise((resolve) => {
+    const normalized = normalizeServerUrl(rawServerUrl);
+    if (!normalized) {
+      return resolve({ ok: false, error: "Please enter a valid Server URL (e.g. http://192.168.1.10:8000)." });
+    }
+
+    let parsed;
+    try {
+      parsed = new URL(`${normalized}/api/terminals/ping`);
+    } catch {
+      return resolve({ ok: false, error: "Invalid URL format." });
+    }
+
+    const cfg = loadNetworkConfig();
+    const startTs = Date.now();
+    const client = parsed.protocol === "https:" ? https : http;
+    const body = JSON.stringify({
+      terminal_uid: cfg.terminalId,
+      terminal_name: customTerminalName || cfg.terminalName,
+      hostname: os.hostname() || "PC",
+      os_platform: `${process.platform}-${os.release()}`,
+      app_version: app.getVersion(),
+      mode: "terminal",
+    });
+
+    const req = client.request(
+      parsed,
+      {
+        method: "POST",
+        timeout: 5000,
+        rejectUnauthorized: false,
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+          Accept: "application/json",
+          "X-Terminal-Id": cfg.terminalId,
+          "X-Terminal-Name": customTerminalName || cfg.terminalName,
+          "X-Terminal-Mode": "terminal",
+          "X-Terminal-Hostname": os.hostname() || "PC",
+          "X-Terminal-OS": `${process.platform}-${os.release()}`,
+          "X-Terminal-Version": app.getVersion(),
+        },
+      },
+      (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          const latencyMs = Math.max(1, Date.now() - startTs);
+          const rawText = Buffer.concat(chunks).toString("utf8");
+          try {
+            const json = JSON.parse(rawText);
+            if (res.statusCode >= 200 && res.statusCode < 300 && json?.ok) {
+              return resolve({
+                ok: true,
+                serverUrl: normalized,
+                storeName: json.store_name || "Karobar Server",
+                dbDriver: json.db_driver || "mariadb",
+                osFamily: json.os_family || "Linux",
+                terminal: json.terminal || null,
+                latencyMs,
+              });
+            }
+            return resolve({
+              ok: false,
+              error: json?.message || `Server responded with status ${res.statusCode}`,
+            });
+          } catch {
+            if (res.statusCode >= 200 && res.statusCode < 400) {
+              return resolve({
+                ok: true,
+                serverUrl: normalized,
+                storeName: "Karobar Server",
+                latencyMs,
+              });
+            }
+            return resolve({
+              ok: false,
+              error: `Unexpected response from ${normalized} (HTTP ${res.statusCode})`,
+            });
+          }
+        });
+      }
+    );
+
+    req.on("timeout", () => {
+      req.destroy();
+      resolve({ ok: false, error: `Connection timed out reaching ${normalized}` });
+    });
+
+    req.on("error", (err) => {
+      resolve({ ok: false, error: `Cannot reach ${normalized}: ${err.message}` });
+    });
+
+    req.write(body);
+    req.end();
+  });
+}
+
 // Native Desktop IPC Handlers
-ipcMain.handle("karobar:app-info", () => ({
-  version: app.getVersion(),
-  appRoot: APP_ROOT,
-  port: activePort,
-  platform: process.platform,
-}));
+ipcMain.handle("karobar:app-info", () => {
+  const cfg = loadNetworkConfig();
+  return {
+    version: app.getVersion(),
+    appRoot: APP_ROOT,
+    port: activePort,
+    platform: process.platform,
+    hostname: os.hostname(),
+    networkMode: cfg.mode,
+    serverUrl: cfg.serverUrl,
+    terminalId: cfg.terminalId,
+    terminalName: cfg.terminalName,
+    baseUrl: getAppBaseUrl(),
+  };
+});
+
+ipcMain.handle("karobar:get-network-config", () => {
+  const cfg = loadNetworkConfig();
+  return {
+    ...cfg,
+    hostname: os.hostname(),
+    baseUrl: getAppBaseUrl(),
+  };
+});
+
+ipcMain.handle("karobar:test-server-connection", async (_event, payload = {}) => {
+  return await testRemoteServerConnection(payload?.serverUrl || "", payload?.terminalName || "");
+});
+
+ipcMain.handle("karobar:save-network-config", async (_event, payload = {}) => {
+  const prevMode = loadNetworkConfig().mode;
+  const updated = saveNetworkConfig(payload || {});
+
+  if (payload?.relaunch) {
+    if (updated.mode === "standalone" && prevMode === "terminal") {
+      await startBackendServices();
+    } else if (updated.mode === "terminal" && prevMode === "standalone") {
+      stopBackendServices();
+    }
+    const targetUrl = getAppBaseUrl();
+    for (const win of activeAppWindows) {
+      if (win && !win.isDestroyed()) {
+        win.loadURL(`${targetUrl}/`).catch(() => {});
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    config: updated,
+    baseUrl: getAppBaseUrl(),
+  };
+});
 
 ipcMain.handle("karobar:open-window", async (_event, payload = {}) => {
   const routePath = payload.path || "/";
@@ -2111,7 +2413,7 @@ ipcMain.handle("karobar:print-url", async (_event, payload = {}) => {
   let resolvedUrl =
     rawUrl.startsWith("http://") || rawUrl.startsWith("https://")
       ? rawUrl
-      : `http://127.0.0.1:${activePort}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}`;
+      : `${getAppBaseUrl()}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}`;
   if (!/[?&]silent_print=/i.test(resolvedUrl)) {
     resolvedUrl += (resolvedUrl.includes("?") ? "&" : "?") + "silent_print=1";
   }

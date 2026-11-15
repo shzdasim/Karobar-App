@@ -310,7 +310,7 @@ class PurchaseOrderController extends Controller
             ->groupBy('sii.product_id', 'srx.units_returned')
             ->select(
                 'sii.product_id',
-                DB::raw('MAX(0, SUM(sii.quantity + COALESCE(sii.bonus, 0)) - COALESCE(srx.units_returned, 0)) as units_sold'),
+                DB::raw('CASE WHEN (SUM(sii.quantity + COALESCE(sii.bonus, 0)) - COALESCE(srx.units_returned, 0)) > 0 THEN (SUM(sii.quantity + COALESCE(sii.bonus, 0)) - COALESCE(srx.units_returned, 0)) ELSE 0 END as units_sold'),
                 DB::raw('MAX(si.date) as last_sold_date_in_range')
             );
 

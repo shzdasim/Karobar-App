@@ -322,9 +322,14 @@ class SaleInvoiceController extends Controller
     {
         // kept for compatibility but frontend no longer uses this on load
         $this->authorize('create', SaleInvoice::class);
-        $last = SaleInvoice::orderBy('id', 'desc')->first();
-        $next = $last ? ($last->id + 1) : 1;
-        $code = 'SI-' . str_pad((string)$next, 6, '0', STR_PAD_LEFT);
+        $code = \App\Services\DocumentSequenceService::preview(
+            'sale_invoice',
+            'SI-',
+            6,
+            'sale_invoices',
+            'posted_number',
+            true
+        );
         return response()->json(['posted_number' => $code]);
     }
 
@@ -532,10 +537,15 @@ class SaleInvoiceController extends Controller
                 $request->boolean('expired_override'),
                 $request->only(['supervisor_email', 'supervisor_password'])
             );
-            // Concurrency-safe numbering: lock last row, compute next
-            $last = SaleInvoice::lockForUpdate()->orderByDesc('id')->first();
-            $next = $last ? ($last->id + 1) : 1;
-            $posted = 'SI-' . str_pad((string)$next, 6, '0', STR_PAD_LEFT);
+            // Concurrency-safe atomic sequence numbering across multi-PC terminals
+            $posted = \App\Services\DocumentSequenceService::next(
+                'sale_invoice',
+                'SI-',
+                6,
+                'sale_invoices',
+                'posted_number',
+                true
+            );
 
             $invoiceData = [
                 'user_id'            => $request->user()->id,
@@ -560,6 +570,10 @@ class SaleInvoiceController extends Controller
 
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'due_date')) {
                 $invoiceData['due_date'] = $dueDate;
+            }
+
+            if (\App\Support\SchemaCache::hasColumn('sale_invoices', 'terminal_id')) {
+                $invoiceData['terminal_id'] = \App\Models\Terminal::currentId($request);
             }
 
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'payment_method')) {

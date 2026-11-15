@@ -25,6 +25,7 @@ import {
   SparklesIcon,
   ShareIcon,
   CircleStackIcon,
+  ServerStackIcon,
 } from "@heroicons/react/24/solid";
 
 // Setting Components
@@ -40,6 +41,7 @@ import DocumentSharingSetting, {
 } from "@/components/settings/DocumentSharingSetting.jsx";
 import CubeAiSetting from "@/components/settings/CubeAiSetting.jsx";
 import LicenseSetting from "@/components/settings/LicenseSetting.jsx";
+import NetworkTerminalSettings from "@/components/settings/NetworkTerminalSettings.jsx";
 
 registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);
 
@@ -97,6 +99,12 @@ const SETTING_GROUPS = [
   {
     groupLabel: "Intelligence & System",
     items: [
+      {
+        id: "network",
+        label: "Server & Terminals",
+        subtitle: "Multi-PC LAN sync, terminals & DB import/export",
+        icon: ServerStackIcon,
+      },
       {
         id: "cube",
         label: "Cube AI Assistant",
@@ -954,6 +962,8 @@ export default function Setting() {
             />
           )}
 
+          {activeTab === "network" && <NetworkTerminalSettings />}
+
           {activeTab === "cube" && (
             <CubeAiSetting
               form={form}
@@ -975,7 +985,7 @@ export default function Setting() {
           )}
 
           {/* Bottom Save Bar */}
-          {activeTab !== "license" && activeTab !== "sqlite_import" && (
+          {activeTab !== "license" && activeTab !== "sqlite_import" && activeTab !== "network" && (
             <div className="settings-panel">
               <div className="settings-body">
                 <div className="settings-actions settings-actions-between">
