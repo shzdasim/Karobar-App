@@ -35,8 +35,12 @@ npm run build
 echo "[2/3] Creating compressed application payload..."
 tar -czf "${TMP_PAYLOAD}" \
   --exclude='.git' \
+  --exclude='.env' \
   --exclude='node_modules' \
+  --exclude='desktop/node_modules' \
   --exclude='dist' \
+  --exclude='database/*.bak*' \
+  --exclude='storage/app/backups/*' \
   --exclude='storage/logs/*.log' \
   --exclude='storage/framework/cache/data/*' \
   --exclude='storage/framework/sessions/*' \

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Automated Windows .exe Build, Code Signing & Zero-Data-Loss OTA Release Pipeline for Karobar-App.
 .DESCRIPTION
@@ -14,7 +14,7 @@ $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $RepoRoot
 
 $BuildNumber = if ($env:GITHUB_RUN_NUMBER) { [int]$env:GITHUB_RUN_NUMBER } else { 1 }
-$AppVersion  = if ($env:KAROBAR_APP_VERSION -and $env:KAROBAR_APP_VERSION -ne "" -and $env:KAROBAR_APP_VERSION -ne "auto") { $env:KAROBAR_APP_VERSION } else { "2.0.$BuildNumber" }
+$AppVersion  = if ($env:KAROBAR_APP_VERSION -and $env:KAROBAR_APP_VERSION -ne "" -and $env:KAROBAR_APP_VERSION -ne "auto") { $env:KAROBAR_APP_VERSION } else { "3.0.$BuildNumber" }
 $CommitSha   = if ($env:GITHUB_SHA) { $env:GITHUB_SHA.Substring(0, 7) } else { "local" }
 $ReleasedAt  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 $RepoSlug    = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { "shzdasim/Karobar-App" }
@@ -73,7 +73,7 @@ foreach ($dir in $CopyDirs) {
 # Stage desktop runtime scripts (excluding desktop/node_modules)
 $DesktopStage = Join-Path $AppStage "desktop"
 New-Item -ItemType Directory -Force -Path $DesktopStage | Out-Null
-foreach ($dFile in @("router.php", "main.cjs", "preload.cjs", "splash.html", "package.json", "icon.ico", "icon.png")) {
+foreach ($dFile in @("router.php", "main.cjs", "preload.cjs", "splash.html", "terminal-offline.html", "package.json", "icon.ico", "icon.png")) {
     $dSrc = Join-Path $RepoRoot "desktop\$dFile"
     if (Test-Path $dSrc) {
         Copy-Item -Path $dSrc -Destination (Join-Path $DesktopStage $dFile) -Force
@@ -328,6 +328,101 @@ Invoke-KarobarAuthenticodeSign $FinalInstallerExe
 $VerifySig = Get-AuthenticodeSignature -FilePath $FinalInstallerExe
 Write-Host "    Authenticode Signature Status: $($VerifySig.Status) | Signer: $($VerifySig.SignerCertificate.Subject)" -ForegroundColor Green
 
+# Also create named POS Terminal Installer (Karobar-POS-Terminal-Setup.exe)
+$TerminalInstallerExe = Join-Path $InstallerOutDir "Karobar-POS-Terminal-Setup.exe"
+Copy-Item -Path $FinalInstallerExe -Destination $TerminalInstallerExe -Force
+
+# Package Single-File Linux Store Server Installer (.run & .sh) + Interactive HTML Guide into dist\installer
+Write-Host "==> Packaging Single-File Linux Store Server Installer (karobar-linux-server-installer.run & karobar-server-setup.sh)..." -ForegroundColor Cyan
+$LinuxSetupSrc = Join-Path $RepoRoot "karobar-server-setup.sh"
+$LinuxSetupDest = Join-Path $InstallerOutDir "karobar-server-setup.sh"
+if (Test-Path $LinuxSetupSrc) {
+    $SetupScriptText = [IO.File]::ReadAllText($LinuxSetupSrc) -replace "`r`n", "`n"
+    $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($LinuxSetupDest, $SetupScriptText, $Utf8NoBom)
+    # Also ensure staged copy in AppStage has Unix LF line endings
+    [IO.File]::WriteAllText((Join-Path $AppStage "karobar-server-setup.sh"), $SetupScriptText, $Utf8NoBom)
+}
+
+$GuideSrc = Join-Path $RepoRoot "doc\multi-pc-server-guide.html"
+if (Test-Path $GuideSrc) {
+    Copy-Item -Path $GuideSrc -Destination (Join-Path $InstallerOutDir "Multi-PC-Server-Guide.html") -Force
+}
+
+# Build self-extracting karobar-linux-server-installer.run from staged Laravel + Vite + vendor payload
+$ServerStaging = Join-Path $DistDir "linux-server-stage"
+if (Test-Path $ServerStaging) { Remove-Item -Recurse -Force $ServerStaging }
+New-Item -ItemType Directory -Force -Path $ServerStaging | Out-Null
+foreach ($sDir in @("app", "bootstrap", "config", "database", "public", "resources", "routes", "scripts", "vendor", "deploy")) {
+    $src = Join-Path $RepoRoot $sDir
+    if (Test-Path $src) {
+        Copy-Item -Path $src -Destination (Join-Path $ServerStaging $sDir) -Recurse -Force
+    }
+}
+foreach ($sFile in @("artisan", "composer.json", "composer.lock", "package.json", ".env.example", "karobar-server-setup.sh")) {
+    $src = Join-Path $RepoRoot $sFile
+    if (Test-Path $src) {
+        Copy-Item -Path $src -Destination (Join-Path $ServerStaging $sFile) -Force
+    }
+}
+New-Item -ItemType Directory -Force -Path (Join-Path $ServerStaging "desktop\whatsapp-agent") | Out-Null
+if (Test-Path (Join-Path $RepoRoot "desktop\whatsapp-agent")) {
+    Copy-Item -Path (Join-Path $RepoRoot "desktop\whatsapp-agent\*") -Destination (Join-Path $ServerStaging "desktop\whatsapp-agent") -Recurse -Force
+}
+# Normalize all .sh scripts inside ServerStaging to Unix LF
+Get-ChildItem -Path $ServerStaging -Filter "*.sh" -Recurse | ForEach-Object {
+    $lfText = [IO.File]::ReadAllText($_.FullName) -replace "`r`n", "`n"
+    [IO.File]::WriteAllText($_.FullName, $lfText, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+$ServerPayloadTarGz = Join-Path $CacheDir "karobar-server-payload.tar.gz"
+if (Test-Path $ServerPayloadTarGz) { Remove-Item -Force $ServerPayloadTarGz }
+Push-Location $ServerStaging
+tar.exe -czf $ServerPayloadTarGz .
+Pop-Location
+
+$RunHeader = @"
+#!/usr/bin/env bash
+# ==============================================================================
+# KAROBAR-APP ERP v$AppVersion — SELF-EXTRACTING SINGLE-FILE LINUX SERVER INSTALLER
+# ==============================================================================
+# Run this single file on Ubuntu 22.04 / 24.04 or Debian 12:
+#   sudo bash karobar-linux-server-installer.run
+# ==============================================================================
+set -euo pipefail
+
+if [[ `$EUID -ne 0 ]]; then
+  echo "=================================================================="
+  echo " ERROR: Please run this installer as root:"
+  echo "   sudo bash `$0"
+  echo "=================================================================="
+  exit 1
+fi
+
+TARGET_DIR="`${KAROBAR_APP_DIR:-/opt/karobar-server}"
+echo "=================================================================="
+echo " Extracting Karobar-App v$AppVersion Linux Server to `${TARGET_DIR} ..."
+echo "=================================================================="
+mkdir -p "`${TARGET_DIR}"
+
+ARCHIVE_START_LINE="`$(awk '/^__KAROBAR_ARCHIVE_BELOW__/ {print NR + 1; exit 0; }' "`$0")"
+tail -n +"`${ARCHIVE_START_LINE}" "`$0" | tar -xz -C "`${TARGET_DIR}"
+
+chmod +x "`${TARGET_DIR}/karobar-server-setup.sh"
+exec bash "`${TARGET_DIR}/karobar-server-setup.sh" "`$@"
+
+__KAROBAR_ARCHIVE_BELOW__
+"@ -replace "`r`n", "`n"
+
+$LinuxRunDest = Join-Path $InstallerOutDir "karobar-linux-server-installer.run"
+$HeaderBytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($RunHeader + "`n")
+$TarBytes = [IO.File]::ReadAllBytes($ServerPayloadTarGz)
+$OutStream = [IO.File]::Create($LinuxRunDest)
+$OutStream.Write($HeaderBytes, 0, $HeaderBytes.Length)
+$OutStream.Write($TarBytes, 0, $TarBytes.Length)
+$OutStream.Close()
+Write-Host "    Created Single-File Linux Server Installer: karobar-linux-server-installer.run ($([math]::Round((Get-Item $LinuxRunDest).Length / 1MB, 2)) MB)" -ForegroundColor Green
+
 # Generate 1-Click Certificate Trust & Installer Launcher (Install-Karobar-App.bat)
 $HelperBatPath = Join-Path $InstallerOutDir "Install-Karobar-App.bat"
 $HelperBatContent = @"
@@ -375,7 +470,7 @@ Remove-Item -Path (Join-Path $PatchStaging ".env*") -Force -ErrorAction Silently
 # Stage desktop scripts (excluding node_modules and binaries)
 $DesktopPatchStage = Join-Path $PatchStaging "desktop"
 New-Item -ItemType Directory -Force -Path $DesktopPatchStage | Out-Null
-foreach ($dFile in @("router.php", "main.cjs", "preload.cjs", "splash.html", "package.json", "icon.ico", "icon.png")) {
+foreach ($dFile in @("router.php", "main.cjs", "preload.cjs", "splash.html", "terminal-offline.html", "package.json", "icon.ico", "icon.png")) {
     $dSrc = Join-Path $AppStage "desktop\$dFile"
     if (Test-Path $dSrc) {
         Copy-Item -Path $dSrc -Destination (Join-Path $DesktopPatchStage $dFile) -Force

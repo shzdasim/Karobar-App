@@ -1,12 +1,12 @@
-name: Build & Release Karobar-App (.exe)
+name: Build & Release Karobar-App (.exe & Linux Server Bundle)
 
 on:
   push:
-    branches: [desktop]
+    branches: [desktop, multi-pc-lan-server]
   workflow_dispatch:
     inputs:
       app_version:
-        description: "Optional Custom Version (leave 'auto' for 2.0.<build_number>)"
+        description: "Optional Custom Version (leave 'auto' for 3.0.<build_number>)"
         required: false
         default: "auto"
 
@@ -57,12 +57,15 @@ jobs:
         with:
           subject-path: "dist/installer/*.exe"
 
-      - name: Upload Karobar-App-Setup.exe Artifact
+      - name: Upload Karobar-App-Setup.exe & Linux Server Bundle Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Karobar-App-Setup-Windows-x64
+          name: Karobar-MultiPC-Server-And-Terminal-Bundle
           path: |
             dist/installer/*.exe
+            dist/installer/*.run
+            dist/installer/*.sh
+            dist/installer/*.html
             dist/installer/*.zip
             dist/installer/*.cer
             dist/installer/*.bat
@@ -78,34 +81,46 @@ jobs:
           $AppVersion = $Manifest.version
           $BuildNumber = $Manifest.build_number
           $ReleaseTag = "v$AppVersion"
-          $ReleaseTitle = "Karobar-App v$AppVersion (Build #$BuildNumber) — Windows 64-Bit Desktop Edition"
+          $ReleaseTitle = "Karobar-App v$AppVersion (Build #$BuildNumber) — Multi-PC Linux Server & Windows POS Terminal Edition"
           $BundleZip = "dist/installer/Karobar-App-Setup-Bundle.zip"
+          $MultiPcBundleZip = "dist/installer/Karobar-MultiPC-Server-And-Terminal-Bundle.zip"
           if (Test-Path $BundleZip) { Remove-Item -Force $BundleZip }
+          if (Test-Path $MultiPcBundleZip) { Remove-Item -Force $MultiPcBundleZip }
 
-          Compress-Archive -Path `
-              "dist/installer/Karobar-App-Setup.exe", `
-              "dist/installer/MalikAsimShahzad-KarobarERP.cer", `
-              "dist/installer/Install-Karobar-App.bat" `
-              -DestinationPath $BundleZip -Force
+          $BundleItems = @(
+              "dist/installer/Karobar-POS-Terminal-Setup.exe",
+              "dist/installer/Karobar-App-Setup.exe",
+              "dist/installer/karobar-linux-server-installer.run",
+              "dist/installer/karobar-server-setup.sh",
+              "dist/installer/Multi-PC-Server-Guide.html",
+              "dist/installer/MalikAsimShahzad-KarobarERP.cer",
+              "dist/installer/Install-Karobar-App.bat"
+          ) | Where-Object { Test-Path $_ }
+
+          Compress-Archive -Path $BundleItems -DestinationPath $BundleZip -Force
+          Copy-Item -Path $BundleZip -Destination $MultiPcBundleZip -Force
 
           $RecentChanges = $Manifest.notes
           $ReleaseNotes = @"
-          ## Karobar-App v$AppVersion (Build #$BuildNumber — Windows 64-Bit Standalone `.exe`)
+          ## Karobar-App v$AppVersion (Build #$BuildNumber — Multi-PC Linux Server & Windows POS Terminal Edition)
           **Author & Developer:** Malik Asim Shahzad ([@shzdasim](https://github.com/shzdasim))
+
+          ### Single-Download Package (`Karobar-MultiPC-Server-And-Terminal-Bundle.zip`)
+          Download **`Karobar-MultiPC-Server-And-Terminal-Bundle.zip`** to get **BOTH** the Linux Store Server installer and the Windows POS Terminal `.exe` installer in one single download:
+          1. **`karobar-linux-server-installer.run` & `karobar-server-setup.sh` (For the Linux Store Server PC)**:
+             - Single-file turnkey installer that sets up **MariaDB 10.11 LTS (InnoDB)** + **Redis 7** + **PHP 8.3-FPM** + **Nginx** + **Avahi `.local` mDNS**, creates a Linux Desktop shortcut, and automatically opens the full-featured **Server & Terminals Dashboard (`/server-dashboard`)**.
+             - Run on Ubuntu 22.04/24.04 or Debian 12:
+               ```bash
+               sudo bash karobar-linux-server-installer.run
+               ```
+          2. **`Karobar-POS-Terminal-Setup.exe` (For Windows Counter / Terminal PCs)**:
+             - Pre-selected for **Multi-PC POS Terminal Mode** — enter your Linux Server LAN URL (`http://192.168.1.10:8000`) and Counter Name (`Counter 1`, `Counter 2`, etc.) to connect over LAN with independent Cash Drawers, Shared Held Bills, and local thermal/A4 receipt printing.
+             - Can also be installed in **Standalone 1-PC Mode** (local SQLite).
+          3. **`Multi-PC-Server-Guide.html`**:
+             - Interactive React-powered visual documentation guide explaining the architecture, setup steps, 1-click database import/export, and troubleshooting tools.
 
           ### What's New in Build #$BuildNumber
           $RecentChanges
-
-          ### Key Capabilities
-          - **Differential Fast In-Place OTA Updates (~2-5 MB)**: Karobar-App now downloads only updated application code and compiled assets instead of the entire ~275 MB installer, updating in 1–2 seconds with 100% Zero Data Loss.
-          - **In-App Over-The-Air (OTA) Updates with 100% Zero Data Loss**: Installed copies of `Karobar-App` automatically detect this release when connected to the internet and offer a 1-click **"Update & Restart Now"** upgrade that backs up and preserves 100% of your SQLite database, invoices, products, ledgers, users, WhatsApp session, and license.
-          - **Existing Herd SQLite Database Import**: Import an existing Laravel Herd `database.sqlite` file during installation (clears only old users & old license records while keeping 100% of business data intact).
-          - **Hardware-Bound Ed25519 Licensing (`KRB-XXXX-XXXX-XXXX-XXXX`)**: Single-machine cryptographic binding with 1-click Machine ID copy.
-          - **Windows Native Top Menu Bar + Chrome-Style Top Browser Tabs**: Open multiple live workspace tabs (Sales, Purchases, POS, Ledgers) simultaneously with `Ctrl+Tab` / `Ctrl+Shift+Tab` switching and `Ctrl+Shift+A` tab search.
-
-          ### Installation / Manual Update Instructions
-          - **Existing Users**: Simply open `Karobar-App` while connected to the internet and click **"Update & Restart Now"** on the update notification!
-          - **New Installations**: Download **`Karobar-App-Setup-Bundle.zip`**, extract it, and run **`Install-Karobar-App.bat`** (or run **`Karobar-App-Setup.exe`** directly).
           "@
 
           $NotesFile = "dist/installer/release-notes.md"
@@ -114,27 +129,28 @@ jobs:
           git tag -f $ReleaseTag $env:GITHUB_SHA
           git push origin "refs/tags/$ReleaseTag" --force
 
+          $ReleaseAssets = @(
+              "dist/installer/Karobar-MultiPC-Server-And-Terminal-Bundle.zip",
+              "dist/installer/Karobar-POS-Terminal-Setup.exe",
+              "dist/installer/karobar-linux-server-installer.run",
+              "dist/installer/karobar-server-setup.sh",
+              "dist/installer/Multi-PC-Server-Guide.html",
+              "dist/installer/Karobar-App-Setup.exe",
+              "dist/installer/Karobar-App-Patch.zip",
+              "dist/installer/Karobar-App-Setup-Bundle.zip",
+              "dist/installer/latest-release.json",
+              "dist/installer/MalikAsimShahzad-KarobarERP.cer",
+              "dist/installer/Install-Karobar-App.bat"
+          ) | Where-Object { Test-Path $_ }
+
           gh release view $ReleaseTag >$null 2>&1
           if ($LASTEXITCODE -eq 0) {
               Write-Host "Updating existing GitHub Release $ReleaseTag..." -ForegroundColor Cyan
               gh release edit $ReleaseTag --title $ReleaseTitle --notes-file $NotesFile --latest
-              gh release upload $ReleaseTag `
-                  "dist/installer/Karobar-App-Setup.exe" `
-                  "dist/installer/Karobar-App-Patch.zip" `
-                  "dist/installer/Karobar-App-Setup-Bundle.zip" `
-                  "dist/installer/latest-release.json" `
-                  "dist/installer/MalikAsimShahzad-KarobarERP.cer" `
-                  "dist/installer/Install-Karobar-App.bat" `
-                  --clobber
+              gh release upload $ReleaseTag $ReleaseAssets --clobber
           } else {
               Write-Host "Creating new GitHub Release $ReleaseTag..." -ForegroundColor Cyan
-              gh release create $ReleaseTag `
-                  "dist/installer/Karobar-App-Setup.exe" `
-                  "dist/installer/Karobar-App-Patch.zip" `
-                  "dist/installer/Karobar-App-Setup-Bundle.zip" `
-                  "dist/installer/latest-release.json" `
-                  "dist/installer/MalikAsimShahzad-KarobarERP.cer" `
-                  "dist/installer/Install-Karobar-App.bat" `
+              gh release create $ReleaseTag $ReleaseAssets `
                   --title $ReleaseTitle `
                   --notes-file $NotesFile `
                   --latest

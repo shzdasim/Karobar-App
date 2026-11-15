@@ -126,11 +126,13 @@ Filename: "{sys}\certutil.exe"; \
 ; Post-Install / Upgrade Bootstrapper:
 ; - In upgrade mode (--upgrade-only via admin-init.json): backs up SQLite DB, runs new migrations & permissions, preserves 100% of users, license, settings & store data.
 ; - In fresh/import mode: migrates SQLite DB, creates Admin account, seals hardware-bound license.
+; - Skipped in Multi-PC POS Terminal Mode (which connects directly to the Linux Store Server over LAN).
 Filename: "{app}\app\runtime\php\php.exe"; \
   Parameters: "artisan karobar:install --seal-file=""{tmp}\install-license.seal"" --admin-config=""{tmp}\admin-init.json"" --accept-legal --cleanup-temp"; \
   WorkingDir: "{app}\app"; \
   StatusMsg: "Updating Karobar-App database schema and runtime configuration..."; \
-  Flags: runhidden waituntilterminated
+  Flags: runhidden waituntilterminated; \
+  Check: not IsTerminalModeSelected
 
 ; Launch the Desktop Application after interactive installation completes
 Filename: "{app}\{#MyAppExeName}"; \
@@ -202,6 +204,11 @@ end;
 function IsUpgradeDatabaseModeSelected(): Boolean;
 begin
   Result := IsCliUpgradeMode() or ( Assigned(KeepExistingDbRadio) and KeepExistingDbRadio.Checked );
+end;
+
+function IsTerminalModeSelected(): Boolean;
+begin
+  Result := Assigned(TerminalModeRadio) and TerminalModeRadio.Checked;
 end;
 
 { Compute deterministic hardware Machine ID using bundled portable PHP + precheck.php }
@@ -675,7 +682,7 @@ begin
     if HasExistingInstalledDatabase() then
     begin
       KeepExistingDbRadio.Enabled := True;
-      if (not ImportDbRadio.Checked) then
+      if (not ImportDbRadio.Checked) and (not TerminalModeRadio.Checked) then
       begin
         KeepExistingDbRadio.Checked := True;
         FreshDbRadio.Checked := False;
@@ -687,7 +694,12 @@ begin
       if KeepExistingDbRadio.Checked then
       begin
         KeepExistingDbRadio.Checked := False;
-        FreshDbRadio.Checked := True;
+        TerminalModeRadio.Checked := True;
+        FreshDbRadio.Checked := False;
+      end
+      else if (not ImportDbRadio.Checked) and (not FreshDbRadio.Checked) then
+      begin
+        TerminalModeRadio.Checked := True;
       end;
     end;
     OnDbModeChange(nil);
@@ -821,6 +833,8 @@ begin
         '{"mode":"terminal","serverUrl":"' + EscapeJsonString(Trim(ServerUrlEdit.Text)) +
         '","terminalName":"' + EscapeJsonString(Trim(TerminalNameEdit.Text)) + '"}';
       SaveStringToFile(ExpandConstant('{app}\app\storage\app\network-mode.json'), NetCfgJson, False);
+      ForceDirectories(ExpandConstant('{userappdata}\Karobar-App'));
+      SaveStringToFile(ExpandConstant('{userappdata}\Karobar-App\network-config.json'), NetCfgJson, False);
     end;
     if FileExists(OtaUpgradeFlagPath()) then
       DeleteFile(OtaUpgradeFlagPath());

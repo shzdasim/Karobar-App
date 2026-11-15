@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Karobar-App ERP v2 — Linux Store Server &amp; Multi-PC Terminal Guide</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    :root {
+      --accent: #2563eb;
+      --surface: #0f172a;
+    }
+    body {
+      background-color: #f8fafc;
+      color: #0f172a;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    /* Modern Web Guidance: style selected tab from aria-selected with a border pseudo-element underline (not color alone) */
+    [role="tab"] {
+      position: relative;
+      flex: none;
+      scroll-snap-align: start;
+    }
+    [role="tab"][aria-selected="true"] {
+      color: var(--accent);
+    }
+    [role="tab"][aria-selected="true"]::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0;
+      border-block-end: 3px solid var(--accent);
+    }
+    .tablist-scroller {
+      display: flex;
+      overflow-x: auto;
+      scroll-snap-type: inline proximity;
+      scrollbar-width: none;
+    }
+    .tablist-scroller::-webkit-scrollbar {
+      display: none;
+    }
+    details[open] summary {
+      margin-bottom: 0.5rem;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+  <div id="root" class="flex-1 flex flex-col"></div>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    /* --------------------------------------------------------------------------
+     * 1. Interactive Architecture & Topology Component
+     * -------------------------------------------------------------------------- */
+    function TopologyExplorer() {
+      const [selectedNode, setSelectedNode] = useState("server");
+      const [simEvent, setSimEvent] = useState("idle");
+
+      const nodes = {
+        server: {
+          title: "Linux Store Server (Central Hub)",
+          badge: "Ubuntu 22.04/24.04 or Debian 12",
+          ip: "http://192.168.1.10:8000 (or http://karobar-server.local:8000)",
+          db: "MariaDB 10.11 LTS (InnoDB Row-Level Locking) + Redis 7",
+          points: [
+            "Runs Nginx + 32 PHP 8.3-FPM workers for zero-lag concurrent billing across 2 to 20+ counters.",
+            "Uses Atomic DocumentSequenceService (SELECT ... FOR UPDATE) so two cashiers never get duplicate SI / SLRET / PRINV numbers.",
+            "Broadcasts a lightweight 3-second SyncPulse (/api/sync/pulse) from Redis so all counters see real-time stock, held bills, and cash drawer shifts.",
+            "Includes a built-in GUI Server & Terminals Dashboard (/server-dashboard) for 1-click .sqlite/.sql.gz/.zip Import & Export and Self-Healing Troubleshooting."
+          ]
+        },
+        counter1: {
+          title: "Counter 1 — Windows POS Terminal (.exe)",
+          badge: "Multi-PC Terminal Mode",
+          ip: "192.168.1.21 (LAN Client)",
+          db: "Connects to Linux Server over LAN (No local SQLite/PHP needed)",
+          points: [
+            "Installed using the same Karobar-App Windows .exe installer by selecting 'Multi-PC POS Terminal'.",
+            "Automatically sends X-Terminal-Id & X-Terminal-Name headers on every request for live status tracking.",
+            "Opens its own independent physical Cash Drawer Session (#1) without conflicting with Counter 2.",
+            "Can park ('Hold Bill') an invoice at Counter 1 and have Counter 2 recall and finalize payment immediately."
+          ]
+        },
+        counter2: {
+          title: "Counter 2 — Windows POS Terminal (.exe)",
+          badge: "Multi-PC Terminal Mode",
+          ip: "192.168.1.22 (LAN Client)",
+          db: "Connects to Linux Server over LAN",
+          points: [
+            "Shares live inventory & batch stock with Counter 1 via MariaDB InnoDB row locks and 3-second SyncPulse.",
+            "Opens its own independent Cash Drawer Session (#2) while reconciling into the store's central Cash in Hand treasury.",
+            "Prints thermal (80mm/58mm) and A4 receipts locally on Counter 2's attached USB/LAN printer."
+          ]
+        },
+        standalone: {
+          title: "Single-PC Standalone Windows Mode (.exe)",
+          badge: "1-PC Standalone Mode",
+          ip: "127.0.0.1 (Localhost)",
+          db: "Embedded SQLite (WAL Mode)",
+          points: [
+            "Zero external setup required for single-PC shops — runs embedded PHP + SQLite locally inside the Windows .exe.",
+            "Can be upgraded to a Multi-PC Linux Server at any time: click 'Export .SQLITE' on the Standalone PC and '1-Click Import Database' on the Linux Server Dashboard!"
+          ]
+        }
+      };
+
+      const active = nodes[selectedNode];
+
+      return (
+        <section aria-labelledby="topology-heading" className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <h2 id="topology-heading" className="text-lg font-extrabold text-slate-900">
+                Interactive System Architecture &amp; Data Flow
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Click any node below to inspect how the Linux Store Server, Windows POS Terminals, and Standalone PCs work together.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setSimEvent("sale")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                  simEvent === "sale"
+                    ? "bg-emerald-600 text-white border-emerald-600"
+                    : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                }`}
+              >
+                Simulate Concurrent Sale
+              </button>
+              <button
+                type="button"
+                onClick={() => setSimEvent("hold")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                  simEvent === "hold"
+                    ? "bg-indigo-600 text-white border-indigo-600"
+                    : "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
+                }`}
+              >
+                Simulate Park at Counter 1 → Pay at Counter 2
+              </button>
+            </div>
+          </div>
+
+          {simEvent !== "idle" && (
+            <div className="p-4 rounded-xl bg-slate-900 text-slate-100 text-xs flex flex-wrap items-center justify-between gap-3">
+              {simEvent === "sale" ? (
+                <div>
+                  <span className="inline-block px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold mr-2">
+                    CONCURRENT SALE FLOW
+                  </span>
+                  Counter 1 &amp; Counter 2 click <strong>Save Invoice</strong> at the exact same millisecond →{" "}
+                  <code className="text-amber-300">DocumentSequenceService</code> locks row in MariaDB → allocates{" "}
+                  <code className="text-emerald-300">SI-000105</code> to Counter 1 &amp;{" "}
+                  <code className="text-emerald-300">SI-000106</code> to Counter 2 →{" "}
+                  <code className="text-blue-300">SyncPulse</code> bumps <code className="text-blue-300">stock_version</code> in Redis → all counters update stock within 3s!
+                </div>
+              ) : (
+                <div>
+                  <span className="inline-block px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-bold mr-2">
+                    SHARED HELD BILL FLOW
+                  </span>
+                  Pharmacist at <strong>Counter 1</strong> parks bill (<code className="text-indigo-300">POST /api/invoice-drafts</code> with{" "}
+                  <code className="text-amber-300">terminal_name="Counter 1"</code>) →{" "}
+                  <code className="text-blue-300">SyncPulse</code> bumps <code className="text-blue-300">drafts_version</code> → Cashier at{" "}
+                  <strong>Counter 2</strong> clicks Held Bills, recalls Counter 1&apos;s bill, and collects cash into Counter 2&apos;s Cash Drawer!
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setSimEvent("idle")}
+                className="text-slate-400 hover:text-white underline text-xs"
+              >
+                Clear Simulation
+              </button>
+            </div>
+          )}
+
+          {/* Topology Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {[
+              { id: "server", label: "Linux Store Server", sub: "MariaDB 10.11 + Redis 7", tag: "CENTRAL HUB" },
+              { id: "counter1", label: "Counter 1 POS (.exe)", sub: "Drawer #1 • Thermal Printer", tag: "LAN TERMINAL" },
+              { id: "counter2", label: "Counter 2 POS (.exe)", sub: "Drawer #2 • Barcode Scanner", tag: "LAN TERMINAL" },
+              { id: "standalone", label: "Standalone 1-PC (.exe)", sub: "Local SQLite (Single Shop)", tag: "OPTIONAL 1-PC" },
+            ].map((item) => {
+              const isSelected = selectedNode === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSelectedNode(item.id)}
+                  className={`text-left p-4 rounded-xl border-2 transition ${
+                    isSelected
+                      ? "border-blue-600 bg-blue-50/60 shadow-sm"
+                      : "border-slate-200 bg-slate-50/60 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-100 text-blue-800">
+                      {item.tag}
+                    </span>
+                    {isSelected && <span className="text-xs font-bold text-blue-600">Selected ●</span>}
+                  </div>
+                  <div className="mt-2 font-extrabold text-sm text-slate-900">{item.label}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">{item.sub}</div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Detail Panel for Selected Node */}
+          <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900">{active.title}</h3>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Endpoint: <code className="font-mono font-bold text-blue-700">{active.ip}</code> • Database:{" "}
+                  <strong className="text-slate-800">{active.db}</strong>
+                </p>
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
+                {active.badge}
+              </span>
+            </div>
+            <ul className="space-y-1.5 text-xs text-slate-700 list-disc pl-5">
+              {active.points.map((pt, idx) => (
+                <li key={idx}>{pt}</li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      );
+    }
+
+    /* --------------------------------------------------------------------------
+     * 2. Single-File Installer Walkthrough Component
+     * -------------------------------------------------------------------------- */
+    function InstallerGuide() {
+      const [installMethod, setInstallMethod] = useState("script");
+      const [copiedCmd, setCopiedCmd] = useState("");
+
+      const copyCommand = (cmd) => {
+        navigator.clipboard?.writeText(cmd);
+        setCopiedCmd(cmd);
+        setTimeout(() => setCopiedCmd(""), 2000);
+      };
+
+      const steps = [
+        {
+          step: "Step 1",
+          title: "Run the Single-File Turnkey Installer on Ubuntu / Debian",
+          desc: "Everything (Nginx, PHP 8.3-FPM, MariaDB 10.11 InnoDB, Redis 7, Avahi .local mDNS, UFW firewall, systemd services, and karobar-ctl) is embedded inside a single file.",
+          code:
+            installMethod === "script"
+              ? "sudo bash karobar-server-setup.sh"
+              : "# 1. On your build machine, generate the single-file .run bundle:\nnpm run build:linux-server\n\n# 2. Copy dist/karobar-linux-server-installer.run to the Linux Server PC and run:\nsudo bash karobar-linux-server-installer.run"
+        },
+        {
+          step: "Step 2",
+          title: "Server Dashboard Opens Automatically in Browser",
+          desc: "As soon as Step [8/8] finishes, the installer creates a 'Karobar Server & Terminals Dashboard' icon on the Linux Desktop and automatically opens the browser signed in as Admin at /server-dashboard.",
+          code: "# Re-open the Server & Terminals Dashboard anytime from terminal:\nsudo karobar-ctl dashboard"
+        },
+        {
+          step: "Step 3",
+          title: "Import Existing Standalone / Herd Database (Optional 1-Click)",
+          desc: "In the Server Dashboard under 'Database Import & Portable Export Hub', select your existing .sqlite, .sql.gz, or .zip file and click '1-Click Import Database'. It automatically converts SQLite tables into MariaDB InnoDB!",
+          code: "# Or import via CLI at any time:\nsudo karobar-ctl import-sqlite /path/to/database.sqlite --mode=replace"
+        },
+        {
+          step: "Step 4",
+          title: "Connect Windows POS Terminal PCs (Counter 1, Counter 2, ...)",
+          desc: "Run the Karobar-App Windows .exe installer on each Counter PC, choose 'Multi-PC POS Terminal', and paste the Server LAN URL shown on your Server Dashboard (e.g. http://192.168.1.10:8000).",
+          code: "# Or download network-config.json from the Server Dashboard and place it at:\n%APPDATA%\\Karobar App\\network-config.json"
+        }
+      ];
+
+      return (
+        <section aria-labelledby="installer-heading" className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <h2 id="installer-heading" className="text-lg font-extrabold text-slate-900">
+                Single-File Linux Server Installation Guide
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Choose between running <code className="font-mono">karobar-server-setup.sh</code> directly or packaging a single offline-ready <code className="font-mono">.run</code> bundle.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setInstallMethod("script")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition ${
+                  installMethod === "script"
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-slate-50 text-slate-700 border-slate-200"
+                }`}
+              >
+                Method A: Single Script (karobar-server-setup.sh)
+              </button>
+              <button
+                type="button"
+                onClick={() => setInstallMethod("bundle")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition ${
+                  installMethod === "bundle"
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-slate-50 text-slate-700 border-slate-200"
+                }`}
+              >
+                Method B: Self-Extracting Bundle (.run)
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {steps.map((s, idx) => (
+              <article key={idx} className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between space-y-3">
+                <div>
+                  <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-blue-100 text-blue-800">
+                    {s.step}
+                  </span>
+                  <h3 className="text-sm font-extrabold text-slate-900 mt-2">{s.title}</h3>
+                  <p className="text-xs text-slate-600 mt-1 leading-relaxed">{s.desc}</p>
+                </div>
+                <figure className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <figcaption className="text-xs font-semibold text-slate-500">Command / Path</figcaption>
+                    <button
+                      type="button"
+                      onClick={() => copyCommand(s.code)}
+                      className="text-xs font-bold text-blue-600 hover:underline"
+                    >
+                      {copiedCmd === s.code ? "Copied ✓" : "Copy"}
+                    </button>
+                  </div>
+                  <pre
+                    role="region"
+                    aria-label={`${s.step} command snippet`}
+                    tabIndex="0"
+                    className="p-3 rounded-lg bg-slate-900 text-emerald-300 text-xs font-mono overflow-x-auto"
+                  >
+                    <code>{s.code}</code>
+                  </pre>
+                </figure>
+              </article>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    /* --------------------------------------------------------------------------
+     * 3. Interactive Server Dashboard & Troubleshooter Simulator Component
+     * -------------------------------------------------------------------------- */
+    function DashboardSimulator() {
+      const [simTerminals, setSimTerminals] = useState([
+        {
+          id: 1,
+          name: "Linux Store Server",
+          uid: "TERM-SERVER-01",
+          mode: "SERVER",
+          ip: "192.168.1.10",
+          online: true,
+          authorized: true,
+          cashier: "Store Administrator",
+          drawer: "Rs. 18,500 (Session #1)",
+          invoices: 14
+        },
+        {
+          id: 2,
+          name: "Counter 1 — Main Pharmacy",
+          uid: "TERM-CNT-01",
+          mode: "TERMINAL",
+          ip: "192.168.1.21",
+          online: true,
+          authorized: true,
+          cashier: "Ali Raza (Cashier 1)",
+          drawer: "Rs. 42,300 (Session #2)",
+          invoices: 68
+        },
+        {
+          id: 3,
+          name: "Counter 2 — Express POS",
+          uid: "TERM-CNT-02",
+          mode: "TERMINAL",
+          ip: "192.168.1.22",
+          online: true,
+          authorized: true,
+          cashier: "Usman Khan (Cashier 2)",
+          drawer: "Rs. 27,950 (Session #3)",
+          invoices: 41
+        }
+      ]);
+      const [simToast, setSimToast] = useState("Click any action below to preview how the live Server Dashboard behaves.");
+
+      const toggleBlock = (id) => {
+        setSimTerminals((prev) =>
+          prev.map((t) => {
+            if (t.id !== id) return t;
+            const next = !t.authorized;
+            setSimToast(
+              next
+                ? `Authorized ${t.name} (${t.ip}) — Terminal can now access POS APIs.`
+                : `Blocked ${t.name} (${t.ip}) — TrackTerminalMiddleware will immediately return 403 TERMINAL_UNAUTHORIZED.`
+            );
+            return { ...t, authorized: next };
+          })
+        );
+      };
+
+      return (
+        <section aria-labelledby="dashboard-sim-heading" className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <h2 id="dashboard-sim-heading" className="text-lg font-extrabold text-slate-900">
+                Interactive Server &amp; Terminals Dashboard Preview (<code className="text-blue-600">/server-dashboard</code>)
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Test the controls below to see how terminal authorization, 1-click database export/import, and self-healing troubleshooting work.
+              </p>
+            </div>
+            <span className="px-3 py-1.5 rounded-xl bg-blue-50 border border-blue-200 text-xs font-bold text-blue-800">
+              {simToast}
+            </span>
+          </div>
+
+          {/* Simulated Attached Terminals Table */}
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase">
+                  <th className="py-2.5 px-3">Terminal / Counter</th>
+                  <th className="py-2.5 px-3">LAN IP</th>
+                  <th className="py-2.5 px-3">Status</th>
+                  <th className="py-2.5 px-3">Active Cashier</th>
+                  <th className="py-2.5 px-3">Open Cash Drawer</th>
+                  <th className="py-2.5 px-3">Today&apos;s Invoices</th>
+                  <th className="py-2.5 px-3 text-right">Interactive Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {simTerminals.map((t) => (
+                  <tr key={t.id} className="hover:bg-slate-50">
+                    <td className="py-3 px-3">
+                      <div className="font-bold text-slate-900">{t.name}</div>
+                      <div className="font-mono text-slate-500">{t.uid} • {t.mode}</div>
+                    </td>
+                    <td className="py-3 px-3 font-mono font-semibold text-slate-800">{t.ip}</td>
+                    <td className="py-3 px-3">
+                      {!t.authorized ? (
+                        <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-800 font-bold">
+                          Blocked (403)
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">
+                          ● Online
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-3 font-semibold text-slate-800">{t.cashier}</td>
+                    <td className="py-3 px-3 text-emerald-700 font-bold">{t.drawer}</td>
+                    <td className="py-3 px-3 font-bold text-slate-900">{t.invoices} Invoices</td>
+                    <td className="py-3 px-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => toggleBlock(t.id)}
+                        className={`px-3 py-1 rounded-lg font-bold transition ${
+                          t.authorized
+                            ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                            : "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                        }`}
+                      >
+                        {t.authorized ? "Simulate Block" : "Simulate Authorize"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 5 Self-Healing Troubleshooter Buttons Explanation */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+            {[
+              {
+                name: "Re-Sync Invoice Sequences",
+                action: "Scans sale_invoices, sale_returns, purchase_invoices, etc., and aligns document_sequences to prevent duplicate numbers."
+              },
+              {
+                name: "Force-Sync All Counters",
+                action: "Bumps stock, drafts, drawer, and settings versions in SyncPulse so all connected PCs refresh within 3 seconds."
+              },
+              {
+                name: "Clear Caches & Optimize",
+                action: "Runs php artisan optimize:clear and flushes SchemaCache across the Linux Store Server."
+              },
+              {
+                name: "Run DB Migrations",
+                action: "Executes php artisan migrate --force safely from the web UI after software updates."
+              },
+              {
+                name: "Export Portable .SQLITE",
+                action: "Converts live MariaDB/MySQL tables into a single portable .sqlite file that can run on any Standalone Windows PC."
+              }
+            ].map((tool, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setSimToast(`${tool.name}: ${tool.action}`)}
+                className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 hover:border-blue-500 hover:bg-blue-50/40 text-left transition"
+              >
+                <div className="text-xs font-extrabold text-blue-700">{tool.name}</div>
+                <div className="text-xs text-slate-600 mt-1 leading-relaxed">{tool.action}</div>
+              </button>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    /* --------------------------------------------------------------------------
+     * 4. CLI Reference & Troubleshooting FAQ Component
+     * -------------------------------------------------------------------------- */
+    function CliAndFaqReference() {
+      const cliList = [
+        { cmd: "sudo karobar-ctl dashboard", desc: "Launches the browser directly into /server-dashboard signed in as Admin." },
+        { cmd: "sudo karobar-ctl status", desc: "Displays Server LAN IP, mDNS .local address, and systemd status for MariaDB, Redis, PHP-FPM, and Nginx." },
+        { cmd: "sudo karobar-ctl terminals", desc: "Lists all attached POS terminals, their LAN IP, authorization state, and last seen timestamp." },
+        { cmd: "sudo karobar-ctl import-sqlite /path/file.sqlite", desc: "Imports an existing Standalone/Herd .sqlite database directly into MariaDB InnoDB." },
+        { cmd: "sudo karobar-ctl export-sqlite /tmp/backup.sqlite", desc: "Exports the live MariaDB database into a portable single-file .sqlite database." },
+        { cmd: "sudo karobar-ctl restart", desc: "Restarts MariaDB, Redis, PHP 8.3-FPM, Nginx, Scheduler, and WhatsApp services." },
+        { cmd: "sudo karobar-ctl logs", desc: "Streams storage/logs/laravel.log in real time." }
+      ];
+
+      return (
+        <section aria-labelledby="cli-faq-heading" className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-6">
+          <div>
+            <h2 id="cli-faq-heading" className="text-lg font-extrabold text-slate-900">
+              Linux Server CLI (<code className="text-blue-600">karobar-ctl</code>) &amp; Troubleshooting FAQs
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Quick command reference and answers to common multi-PC LAN questions.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-2.5">
+              <h3 className="text-sm font-extrabold text-slate-800">CLI Commands Reference</h3>
+              {cliList.map((item, idx) => (
+                <div key={idx} className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <code className="text-xs font-mono font-bold text-blue-700">{item.cmd}</code>
+                  <p className="text-xs text-slate-600 mt-1">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Native HTML <details name="faq"> exclusive accordion per modern-web-guidance */}
+            <section aria-label="Troubleshooting Frequently Asked Questions" className="space-y-2.5">
+              <h3 className="text-sm font-extrabold text-slate-800">Common Questions &amp; Troubleshooting</h3>
+
+              <details name="faq" open className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                <summary className="font-extrabold text-slate-900 cursor-pointer">
+                  What happens if the LAN cable is unplugged on a Windows POS Terminal?
+                </summary>
+                <p className="text-slate-600 leading-relaxed">
+                  The Windows Terminal PC automatically displays the built-in <strong>Offline Reconnection Screen</strong> (<code className="font-mono">desktop/terminal-offline.html</code>), pings the Linux Store Server every 3 seconds, and lets the cashier test the connection, edit the Server IP if the router changed it, or switch to Standalone Mode.
+                </p>
+              </details>
+
+              <details name="faq" className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                <summary className="font-extrabold text-slate-900 cursor-pointer">
+                  Can we move our database from a Single-PC Windows SQLite install to the Linux Server and back?
+                </summary>
+                <p className="text-slate-600 leading-relaxed">
+                  Yes! Both directions work in 1 click from <code className="font-mono">/server-dashboard</code>:
+                  uploading a <code className="font-mono">.sqlite</code> file imports all tables into MariaDB InnoDB, and clicking <strong>Export .SQLITE</strong> on the Linux Server converts the live MariaDB database back into a portable <code className="font-mono">.sqlite</code> file.
+                </p>
+              </details>
+
+              <details name="faq" className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                <summary className="font-extrabold text-slate-900 cursor-pointer">
+                  How do printers work when using a Linux Server and Windows Terminal PCs?
+                </summary>
+                <p className="text-slate-600 leading-relaxed">
+                  Each Windows Terminal PC runs inside the Karobar Electron shell (<code className="font-mono">desktop/main.cjs</code>), which fetches the rendered receipt HTML from the Linux Server and prints silently on the <strong>local USB/LAN thermal or A4 printer attached to that specific counter PC</strong>.
+                </p>
+              </details>
+
+              <details name="faq" className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                <summary className="font-extrabold text-slate-900 cursor-pointer">
+                  How do we block an unauthorized PC on the store Wi-Fi/LAN?
+                </summary>
+                <p className="text-slate-600 leading-relaxed">
+                  Open <code className="font-mono">/server-dashboard</code>, uncheck <strong>Auto-authorize new LAN terminals</strong> (or click <strong>Block</strong> next to any terminal row). Blocked terminals receive an immediate <code className="font-mono">403 TERMINAL_UNAUTHORIZED</code> response.
+                </p>
+              </details>
+            </section>
+          </div>
+        </section>
+      );
+    }
+
+    /* --------------------------------------------------------------------------
+     * Main Application Shell with Accessible WAI-ARIA Tablist
+     * -------------------------------------------------------------------------- */
+    function App() {
+      const [activeTab, setActiveTab] = useState("overview");
+
+      const tabs = [
+        { id: "overview", label: "1. Complete Overview (All-in-One)" },
+        { id: "topology", label: "2. Architecture & Data Flow" },
+        { id: "installer", label: "3. Single-File Server Installer" },
+        { id: "dashboard", label: "4. Server Dashboard & Troubleshooter" },
+        { id: "cli", label: "5. CLI & FAQs" }
+      ];
+
+      return (
+        <div className="min-h-screen flex flex-col">
+          <header className="bg-slate-900 text-white border-b border-slate-800">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500/20 text-blue-300 border border-blue-400/30 mb-1.5">
+                  Karobar-App ERP v2 • Branch: multi-pc-lan-server
+                </div>
+                <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight">
+                  Multi-PC Linux Store Server &amp; Attached Terminals Guide
+                </h1>
+                <p className="text-xs text-slate-300 mt-1">
+                  Interactive documentation for Single-File Linux Server Setup, MariaDB 10.11 + Redis 7 Concurrency, 1-Click DB Import/Export, and POS Terminal Synchronization.
+                </p>
+              </div>
+              <div className="flex flex-col items-end text-xs text-slate-300 font-mono">
+                <span>Single-File Setup: sudo bash karobar-server-setup.sh</span>
+                <span className="text-emerald-400">Dashboard Route: /server-dashboard</span>
+              </div>
+            </div>
+
+            {/* Accessible Single-Row Scrolling Tablist */}
+            <div className="bg-white text-slate-700 border-t border-slate-200">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6">
+                <div
+                  role="tablist"
+                  aria-label="Server documentation sections"
+                  className="tablist-scroller gap-2"
+                >
+                  {tabs.map((t) => (
+                    <button
+                      key={t.id}
+                      id={`tab-${t.id}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={activeTab === t.id ? "true" : "false"}
+                      onClick={(e) => {
+                        setActiveTab(t.id);
+                        e.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
+                      }}
+                      className="px-4 py-3 text-xs font-bold text-slate-700 hover:text-blue-600 transition"
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
+            <div role="tabpanel" aria-labelledby={`tab-${activeTab}`} tabIndex="0">
+              <div className="space-y-6">
+                {(activeTab === "overview" || activeTab === "topology") && <TopologyExplorer />}
+                {(activeTab === "overview" || activeTab === "installer") && <InstallerGuide />}
+                {(activeTab === "overview" || activeTab === "dashboard") && <DashboardSimulator />}
+                {(activeTab === "overview" || activeTab === "cli") && <CliAndFaqReference />}
+              </div>
+            </div>
+          </main>
+
+          <footer className="bg-white border-t border-slate-200 py-4 mt-8">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+              <span>Karobar-App ERP v2 — Multi-PC LAN Server &amp; POS Terminals Documentation</span>
+              <span>Database: MariaDB 10.11 LTS (InnoDB) + Redis 7 (Server) / SQLite WAL (1-PC Standalone)</span>
+            </div>
+          </footer>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
