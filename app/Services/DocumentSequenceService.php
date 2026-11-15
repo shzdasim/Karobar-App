@@ -11,17 +11,12 @@ use Throwable;
 
 class DocumentSequenceService
 {
-    protected static bool $tableVerified = false;
-
     /**
-     * Self-healing table check so sequence generation works even if migrations haven't been run yet.
+     * Self-healing table check so sequence generation works even if migrations haven't been run yet
+     * or when in-memory test databases are recreated between test methods.
      */
     public static function ensureTableExists(): void
     {
-        if (self::$tableVerified) {
-            return;
-        }
-
         try {
             if (!Schema::hasTable('document_sequences')) {
                 Schema::create('document_sequences', function (Blueprint $table) {
@@ -33,10 +28,8 @@ class DocumentSequenceService
                     $table->timestamps();
                 });
             }
-            self::$tableVerified = true;
         } catch (Throwable) {
             // Ignore race if another concurrent worker created the table simultaneously
-            self::$tableVerified = true;
         }
     }
 

@@ -33,9 +33,15 @@ class InvoiceDraftController extends Controller
         $query = InvoiceDraft::query()->with('user:id,name');
 
         // Support store-wide held bill recall across POS terminals ("Park at Counter 1, Recall at Counter 2")
+        // while keeping user-scoped isolation by default in 1-PC standalone mode when no terminal is active.
+        $isTerminalContext = \App\Models\Terminal::currentId() !== null
+            || $request->hasHeader('X-Terminal-Id')
+            || $request->boolean('shared')
+            || $request->query('scope') === 'store';
+
         if ($request->has('user_id') && $user->hasRole('Admin')) {
             $query->where('user_id', $request->query('user_id'));
-        } elseif ($request->boolean('mine_only') || $request->query('scope') === 'user') {
+        } elseif ($request->boolean('mine_only') || $request->query('scope') === 'user' || !$isTerminalContext) {
             $query->where('user_id', $user->id);
         }
 

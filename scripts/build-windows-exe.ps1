@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Automated Windows .exe Build, Code Signing & Zero-Data-Loss OTA Release Pipeline for Karobar-App.
 .DESCRIPTION
