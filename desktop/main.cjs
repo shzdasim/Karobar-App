@@ -2615,18 +2615,125 @@ function compareSemverNewer(remoteVer, localVer) {
 
 ipcMain.handle("karobar:check-for-updates", async () => {
   const local = readLocalVersionMeta();
+  const repo = local.repository || "shzdasim/Karobar-App";
+
+  try {
+    // 1. Fetch latest-release.json directly via Node/Electron HTTPS (uses built-in Root CA bundle)
+    const manifestUrl = `https://github.com/${repo}/releases/latest/download/latest-release.json`;
+    const remote = await fetchJsonUrl(manifestUrl);
+    if (remote && remote.version) {
+      const remoteVer = String(remote.version).replace(/^[vV]/, "");
+      const remoteBuild = Number(remote.build_number || 0);
+      const isNewer =
+        remoteBuild > 0 && local.build_number > 0 && remoteBuild !== local.build_number
+          ? remoteBuild > local.build_number
+          : compareSemverNewer(remoteVer, local.version);
+
+      const minPatchVer = String(remote.min_patch_version || "2.0.0").replace(/^[vV]/, "");
+      const canPatch = Boolean(
+        remote.patch_url && !compareSemverNewer(minPatchVer, local.version)
+      );
+
+      return {
+        ok: true,
+        update_available: isNewer,
+        is_patch: canPatch,
+        app_name: "Karobar-App",
+        current_version: local.version,
+        current_build: local.build_number,
+        latest_version: remoteVer,
+        latest_build: remoteBuild,
+        release_name: remote.release_name || `Karobar-App v${remoteVer}`,
+        released_at: remote.released_at || "",
+        notes: remote.notes || "Performance improvements, bug fixes, and new features.",
+        download_url:
+          remote.download_url ||
+          `https://github.com/${repo}/releases/latest/download/Karobar-App-Setup.exe`,
+        bundle_url:
+          remote.bundle_url ||
+          `https://github.com/${repo}/releases/latest/download/Karobar-App-Setup-Bundle.zip`,
+        patch_url: remote.patch_url || null,
+        patch_size: remote.patch_size ? Number(remote.patch_size) : null,
+        patch_sha256: remote.patch_sha256 || null,
+        min_patch_version: minPatchVer,
+        release_url: remote.release_url || `https://github.com/${repo}/releases/latest`,
+        zero_data_loss: true,
+      };
+    }
+  } catch {
+    // Fall through to GitHub REST API
+  }
+
+  try {
+    // 2. Fallback to GitHub Releases REST API
+    const apiData = await fetchJsonUrl(`https://api.github.com/repos/${repo}/releases/latest`);
+    if (apiData && apiData.tag_name) {
+      const remoteVer = String(apiData.tag_name).replace(/^[vV]/, "");
+      const m = remoteVer.match(/^2\.0\.(\d+)$/);
+      const remoteBuild = m ? parseInt(m[1], 10) : 0;
+      const isNewer =
+        remoteBuild > 0 && local.build_number > 0 && remoteBuild !== local.build_number
+          ? remoteBuild > local.build_number
+          : compareSemverNewer(remoteVer, local.version);
+
+      let downloadUrl = `https://github.com/${repo}/releases/latest/download/Karobar-App-Setup.exe`;
+      let bundleUrl = `https://github.com/${repo}/releases/latest/download/Karobar-App-Setup-Bundle.zip`;
+      let patchUrl = `https://github.com/${repo}/releases/latest/download/Karobar-App-Patch.zip`;
+      let patchSize = null;
+
+      for (const asset of apiData.assets || []) {
+        const name = asset.name || "";
+        const url = asset.browser_download_url || "";
+        if (url && (name === "Karobar-App-Setup.exe" || name === "Karobar-App-ERP-Setup.exe")) {
+          downloadUrl = url;
+        }
+        if (url && (name === "Karobar-App-Setup-Bundle.zip" || name === "Karobar-App-ERP-Setup-Bundle.zip")) {
+          bundleUrl = url;
+        }
+        if (url && (name === "Karobar-App-Patch.zip" || name === "Karobar-App-ERP-Patch.zip")) {
+          patchUrl = url;
+          patchSize = asset.size ? Number(asset.size) : null;
+        }
+      }
+
+      return {
+        ok: true,
+        update_available: isNewer,
+        is_patch: Boolean(patchUrl),
+        app_name: "Karobar-App",
+        current_version: local.version,
+        current_build: local.build_number,
+        latest_version: remoteVer,
+        latest_build: remoteBuild,
+        release_name: apiData.name || `Karobar-App v${remoteVer}`,
+        released_at: apiData.published_at || "",
+        notes: apiData.body || "New Karobar-App release available.",
+        download_url: downloadUrl,
+        bundle_url: bundleUrl,
+        patch_url: patchUrl,
+        patch_size: patchSize,
+        patch_sha256: null,
+        min_patch_version: "2.0.0",
+        release_url: apiData.html_url || `https://github.com/${repo}/releases/latest`,
+        zero_data_loss: true,
+      };
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      update_available: false,
+      current_version: local.version,
+      current_build: local.build_number,
+      message: err?.message || "Unable to reach GitHub Releases right now.",
+    };
+  }
+
   return {
-    ok: true,
+    ok: false,
     update_available: false,
-    is_patch: false,
-    app_name: "Karobar-POS-Terminal",
     current_version: local.version,
     current_build: local.build_number,
-    latest_version: local.version,
-    latest_build: local.build_number,
-    release_name: `Karobar-POS-Terminal v${local.version}`,
-    notes: "Multi-PC POS Terminal Edition (updates are managed centrally on your Linux Store Server).",
-    zero_data_loss: true,
+    message: "Unable to reach GitHub Releases right now.",
   };
 });
 

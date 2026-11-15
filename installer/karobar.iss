@@ -14,9 +14,9 @@
 ;   7. Supports silent OTA updates (/VERYSILENT /UPGRADE=1) triggered from inside Karobar-App
 ; ==============================================================================
 
-#define MyAppName "Karobar-POS-Terminal"
+#define MyAppName "Karobar-App"
 #ifndef MyAppVersion
-  #define MyAppVersion "3.0.1"
+  #define MyAppVersion "2.0.1"
 #endif
 #define MyAppPublisher "Malik Asim Shahzad (shzdasim)"
 #define MyAppURL "https://github.com/shzdasim/Karobar-App"
@@ -25,7 +25,7 @@
 #define BuildStageDir "..\dist\stage"
 
 [Setup]
-AppId={{D9F4A8B2-7E31-4C5A-9B18-6F2E8A4C1030}
+AppId={{8F4C92B1-5A1E-4D79-9E3B-7C21A90D4E12}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} v{#MyAppVersion}
@@ -41,7 +41,7 @@ VersionInfoTextVersion={#MyAppVersion}
 VersionInfoCopyright=Copyright (C) 2026 Malik Asim Shahzad (https://github.com/shzdasim)
 VersionInfoProductName={#MyAppName}
 VersionInfoProductVersion={#MyAppVersion}.0
-DefaultDirName={autopf}\Karobar-POS-Terminal
+DefaultDirName={autopf}\Karobar-App
 DefaultGroupName={#MyAppName}
 DisableDirPage=no
 AllowNoIcons=yes
@@ -49,7 +49,7 @@ CloseApplications=force
 RestartApplications=no
 LicenseFile=legal\TermsAndConditions.txt
 OutputDir=..\dist\installer
-OutputBaseFilename=Karobar-POS-Terminal-Setup
+OutputBaseFilename=Karobar-App-Setup
 SetupIconFile=..\desktop\icon.ico
 Compression=lzma2/fast
 SolidCompression=no
@@ -694,12 +694,7 @@ begin
       if KeepExistingDbRadio.Checked then
       begin
         KeepExistingDbRadio.Checked := False;
-        TerminalModeRadio.Checked := True;
-        FreshDbRadio.Checked := False;
-      end
-      else if (not ImportDbRadio.Checked) and (not FreshDbRadio.Checked) then
-      begin
-        TerminalModeRadio.Checked := True;
+        FreshDbRadio.Checked := True;
       end;
     end;
     OnDbModeChange(nil);

@@ -2,11 +2,11 @@ name: Build & Release Karobar-App (.exe & Linux Server Bundle)
 
 on:
   push:
-    branches: [desktop, multi-pc-lan-server]
+    branches: [desktop]
   workflow_dispatch:
     inputs:
       app_version:
-        description: "Optional Custom Version (leave 'auto' for 3.0.<build_number>)"
+        description: "Optional Custom Version (leave 'auto' for 2.0.<build_number>)"
         required: false
         default: "auto"
 
@@ -57,10 +57,10 @@ jobs:
         with:
           subject-path: "dist/installer/*.exe"
 
-      - name: Upload Karobar-POS-Terminal-Setup.exe & Linux Server Bundle Artifact
+      - name: Upload Karobar-App-Setup.exe & Linux Server Bundle Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Karobar-MultiPC-Server-And-Terminal-Bundle
+          name: Karobar-App-Setup-Installer
           path: |
             dist/installer/*.exe
             dist/installer/*.run
@@ -69,52 +69,45 @@ jobs:
             dist/installer/*.zip
             dist/installer/*.cer
             dist/installer/*.bat
-            dist/installer/latest-terminal-release.json
+            dist/installer/latest-release.json
           retention-days: 30
 
-      - name: Publish Separate Multi-PC GitHub Release (Do NOT Trigger OTA Update on Running v2.0 Softwares)
+      - name: Publish Official GitHub Release & OTA Update Manifest
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $Manifest = Get-Content "dist/installer/latest-terminal-release.json" -Raw | ConvertFrom-Json
+          $Manifest = Get-Content "dist/installer/latest-release.json" -Raw | ConvertFrom-Json
           $AppVersion = $Manifest.version
           $BuildNumber = $Manifest.build_number
-          $ReleaseTag = "multi-pc-v$AppVersion"
-          $ReleaseTitle = "Karobar Multi-PC Linux Server & Windows POS Terminal v$AppVersion (Build #$BuildNumber — Separate Edition)"
-          $MultiPcBundleZip = "dist/installer/Karobar-MultiPC-Server-And-Terminal-Bundle.zip"
-          if (Test-Path $MultiPcBundleZip) { Remove-Item -Force $MultiPcBundleZip }
+          $ReleaseTag = "v$AppVersion"
+          $ReleaseTitle = "Karobar-App v$AppVersion (Build #$BuildNumber)"
+          $BundleZip = "dist/installer/Karobar-App-Setup-Bundle.zip"
+          if (Test-Path $BundleZip) { Remove-Item -Force $BundleZip }
 
           $BundleItems = @(
-              "dist/installer/Karobar-POS-Terminal-Setup.exe",
+              "dist/installer/Karobar-App-Setup.exe",
               "dist/installer/karobar-linux-server-installer.run",
               "dist/installer/karobar-server-setup.sh",
               "dist/installer/Multi-PC-Server-Guide.html",
               "dist/installer/MalikAsimShahzad-KarobarERP.cer",
-              "dist/installer/Install-Karobar-POS-Terminal.bat"
+              "dist/installer/Install-Karobar-App.bat"
           ) | Where-Object { Test-Path $_ }
 
-          Compress-Archive -Path $BundleItems -DestinationPath $MultiPcBundleZip -Force
+          Compress-Archive -Path $BundleItems -DestinationPath $BundleZip -Force
 
           $RecentChanges = $Manifest.notes
           $ReleaseNotes = @"
-          ## Karobar Multi-PC Linux Server & Windows POS Terminal v$AppVersion (Build #$BuildNumber — Separate Edition)
+          ## Karobar-App v$AppVersion (Build #$BuildNumber)
           **Author & Developer:** Malik Asim Shahzad ([@shzdasim](https://github.com/shzdasim))
 
-          > **Note:** This is a **separate installation bundle** for Multi-PC Stores (Linux Server + Windows POS Counter Terminals). It does **not** push OTA updates to existing standalone `Karobar-App` (`v2.0.x`) desktop installations.
-
-          ### Single-Download Package (`Karobar-MultiPC-Server-And-Terminal-Bundle.zip`)
-          Download **`Karobar-MultiPC-Server-And-Terminal-Bundle.zip`** to get **BOTH** the Linux Store Server installer and the Windows POS Terminal `.exe` installer in one single download:
-          1. **`karobar-linux-server-installer.run` & `karobar-server-setup.sh` (For the Linux Store Server PC)**:
-             - Single-file turnkey installer that sets up **MariaDB 10.11 LTS (InnoDB)** + **Redis 7** + **PHP 8.3-FPM** + **Nginx** + **Avahi `.local` mDNS**, creates a Linux Desktop shortcut, and automatically opens the full-featured **Server & Terminals Dashboard (`/server-dashboard`)**.
-             - Run on Ubuntu 22.04/24.04 or Debian 12:
-               ```bash
-               sudo bash karobar-linux-server-installer.run
-               ```
-          2. **`Karobar-POS-Terminal-Setup.exe` (For Windows Counter / Terminal PCs)**:
-             - Separate application (`Karobar-POS-Terminal`) pre-selected for **Multi-PC POS Terminal Mode** — enter your Linux Server LAN URL (`http://192.168.1.10:8000`) and Counter Name (`Counter 1`, `Counter 2`, etc.) to connect over LAN with independent Cash Drawers, Shared Held Bills, and local thermal/A4 receipt printing.
-          3. **`Multi-PC-Server-Guide.html`**:
-             - Interactive React-powered visual documentation guide explaining the architecture, setup steps, 1-click database import/export, and troubleshooting tools.
+          ### Unified Single-PC & Multi-PC Release (`Karobar-App-Setup-Bundle.zip`)
+          - **For Existing 1-PC Standalone Customers:** Click **Update** inside Karobar-App (`Karobar-App-Patch.zip`) or run `Karobar-App-Setup.exe` for a **100% Zero-Data-Loss In-Place Update** (preserves all local SQLite data, users, license, invoice numbers, and settings).
+          - **For New 1-PC Standalone Stores:** Run **`Karobar-App-Setup.exe`** (Standalone 1-PC SQLite mode is selected by default).
+          - **For Multi-PC Stores (Linux Server + Windows POS Counter Terminals):**
+            1. **Linux Store Server PC:** Run `sudo bash karobar-linux-server-installer.run` (sets up MariaDB 10.11 LTS InnoDB + Redis + PHP-FPM + Nginx + Avahi `.local` and launches `/server-dashboard`).
+            2. **Windows Counter PCs:** Run `Karobar-App-Setup.exe` and select **Multi-PC POS Terminal Mode** (or switch anytime in **Settings → Server & Terminals**).
+            3. **Documentation:** Open `Multi-PC-Server-Guide.html` in any browser for the visual guide.
 
           ### What's New in Build #$BuildNumber
           $RecentChanges
@@ -123,45 +116,39 @@ jobs:
           $NotesFile = "dist/installer/release-notes.md"
           Set-Content -Path $NotesFile -Value $ReleaseNotes -Encoding UTF8
 
-          # 1. Remove any accidental v3.0.* release that was previously marked as latest so running v2.0 softwares never see it
+          # Clean up any temporary v3.0.* or multi-pc-v3.0.* test releases so only the unified v2.0.x release stream exists
           $AllTags = gh release list --limit 30 --json tagName --jq '.[].tagName'
           foreach ($t in $AllTags) {
-              if ($t -match '^v3\.0\.') {
-                  Write-Host "Cleaning up old v3.0 release $t..." -ForegroundColor Yellow
+              if ($t -match '^(multi-pc-)?v3\.0\.') {
+                  Write-Host "Cleaning up temporary test release $t..." -ForegroundColor Yellow
                   gh release delete $t --yes --cleanup-tag
               }
           }
 
-          # 2. Create/Update the separate multi-pc-v3.0.* release with --latest=false
           git tag -f $ReleaseTag $env:GITHUB_SHA
           git push origin "refs/tags/$ReleaseTag" --force
 
           $ReleaseAssets = @(
-              "dist/installer/Karobar-MultiPC-Server-And-Terminal-Bundle.zip",
-              "dist/installer/Karobar-POS-Terminal-Setup.exe",
+              "dist/installer/Karobar-App-Setup.exe",
+              "dist/installer/Karobar-App-Patch.zip",
+              "dist/installer/Karobar-App-Setup-Bundle.zip",
               "dist/installer/karobar-linux-server-installer.run",
               "dist/installer/karobar-server-setup.sh",
               "dist/installer/Multi-PC-Server-Guide.html",
+              "dist/installer/latest-release.json",
               "dist/installer/MalikAsimShahzad-KarobarERP.cer",
-              "dist/installer/Install-Karobar-POS-Terminal.bat"
+              "dist/installer/Install-Karobar-App.bat"
           ) | Where-Object { Test-Path $_ }
 
           gh release view $ReleaseTag >$null 2>&1
           if ($LASTEXITCODE -eq 0) {
-              Write-Host "Updating existing Separate Multi-PC Release $ReleaseTag (--latest=false)..." -ForegroundColor Cyan
-              gh release edit $ReleaseTag --title $ReleaseTitle --notes-file $NotesFile --latest=false
+              Write-Host "Updating existing GitHub Release $ReleaseTag..." -ForegroundColor Cyan
+              gh release edit $ReleaseTag --title $ReleaseTitle --notes-file $NotesFile --latest
               gh release upload $ReleaseTag $ReleaseAssets --clobber
           } else {
-              Write-Host "Creating new Separate Multi-PC Release $ReleaseTag (--latest=false)..." -ForegroundColor Cyan
+              Write-Host "Creating new GitHub Release $ReleaseTag..." -ForegroundColor Cyan
               gh release create $ReleaseTag $ReleaseAssets `
                   --title $ReleaseTitle `
                   --notes-file $NotesFile `
-                  --latest=false
-          }
-
-          # 3. Ensure the highest v2.0.* release (from desktop branch) remains the official --latest release for running standalone softwares
-          $LatestV2Tag = $AllTags | Where-Object { $_ -match '^v2\.0\.' } | Select-Object -First 1
-          if ($LatestV2Tag) {
-              Write-Host "Restoring $LatestV2Tag as the official Latest Release for running v2.0 standalone softwares..." -ForegroundColor Green
-              gh release edit $LatestV2Tag --latest
+                  --latest
           }
