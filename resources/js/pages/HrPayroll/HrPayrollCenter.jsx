@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { getThemeButtonClasses } from "@/utils/buttonStyles.js";
 import { printCurrentView } from "@/utils/printHelper.js";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 import {
   UserGroupIcon,
   ClockIcon,
@@ -1075,15 +1076,17 @@ export default function HrPayrollCenter() {
         <div className="bg-white dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl p-4 shadow-xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3 flex-wrap">
-              <div>
+              <div className="w-44">
                 <label className="block text-[10px] font-bold uppercase text-slate-400 mb-0.5">
                   Attendance Date
                 </label>
-                <input
-                  type="date"
+                <ModernDatePicker
                   value={attendanceDate}
-                  onChange={(e) => setAttendanceDate(e.target.value)}
-                  className="h-9 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-xs font-mono font-bold"
+                  onChange={(val) => setAttendanceDate(val)}
+                  isClearable={false}
+                  size="sm"
+                  ariaLabel="Attendance date"
+                  placeholder="Select date"
                 />
               </div>
 
@@ -1403,15 +1406,18 @@ export default function HrPayrollCenter() {
           <div className="bg-white dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl p-4 shadow-xs space-y-4">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-700">
               <div className="flex flex-wrap items-center gap-3">
-                <div>
+                <div className="w-48">
                   <label className="block text-[10px] font-bold uppercase text-slate-400 mb-0.5">
                     Payroll Period (Month)
                   </label>
-                  <input
-                    type="month"
+                  <ModernDatePicker
                     value={selectedPayrollMonth}
-                    onChange={(e) => setSelectedPayrollMonth(e.target.value)}
-                    className="h-9 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-xs font-mono font-bold"
+                    onChange={(val) => setSelectedPayrollMonth(val)}
+                    showMonthYearPicker
+                    isClearable={false}
+                    size="sm"
+                    ariaLabel="Payroll period month"
+                    placeholder="Select month"
                   />
                 </div>
 
@@ -1781,26 +1787,38 @@ export default function HrPayrollCenter() {
         <div className="bg-white dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl p-4 shadow-xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3">
-              <div>
+              <div className="w-44">
                 <label className="block text-[10px] font-bold uppercase text-slate-400 mb-0.5">
                   From Date
                 </label>
-                <input
-                  type="date"
+                <ModernDatePicker
                   value={commFrom}
-                  onChange={(e) => setCommFrom(e.target.value)}
-                  className="h-9 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-xs font-mono"
+                  onChange={(val) => setCommFrom(val)}
+                  selectsStart
+                  startDate={commFrom}
+                  endDate={commTo}
+                  maxDate={commTo || undefined}
+                  isClearable={false}
+                  size="sm"
+                  ariaLabel="Commissions from date"
+                  placeholder="From date"
                 />
               </div>
-              <div>
+              <div className="w-44">
                 <label className="block text-[10px] font-bold uppercase text-slate-400 mb-0.5">
                   To Date
                 </label>
-                <input
-                  type="date"
+                <ModernDatePicker
                   value={commTo}
-                  onChange={(e) => setCommTo(e.target.value)}
-                  className="h-9 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-xs font-mono"
+                  onChange={(val) => setCommTo(val)}
+                  selectsEnd
+                  startDate={commFrom}
+                  endDate={commTo}
+                  minDate={commFrom || undefined}
+                  isClearable={false}
+                  size="sm"
+                  ariaLabel="Commissions to date"
+                  placeholder="To date"
                 />
               </div>
               <button
@@ -2319,11 +2337,13 @@ export default function HrPayrollCenter() {
                 </div>
                 <div>
                   <label className="block font-semibold mb-1">Date</label>
-                  <input
-                    type="date"
+                  <ModernDatePicker
                     value={advanceForm.date}
-                    onChange={(e) => setAdvanceForm((p) => ({ ...p, date: e.target.value }))}
-                    className="w-full h-9 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 font-mono"
+                    onChange={(val) => setAdvanceForm((p) => ({ ...p, date: val }))}
+                    isClearable={false}
+                    size="sm"
+                    ariaLabel="Advance date"
+                    placeholder="Select date"
                   />
                 </div>
               </div>
@@ -2634,11 +2654,13 @@ export default function HrPayrollCenter() {
 
               <div>
                 <label className="block font-semibold mb-1">Payment Date</label>
-                <input
-                  type="date"
+                <ModernDatePicker
                   value={payForm.date}
-                  onChange={(e) => setPayForm((p) => ({ ...p, date: e.target.value }))}
-                  className="w-full h-9 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 font-mono"
+                  onChange={(val) => setPayForm((p) => ({ ...p, date: val }))}
+                  isClearable={false}
+                  size="sm"
+                  ariaLabel="Payment date"
+                  placeholder="Select payment date"
                 />
               </div>
 

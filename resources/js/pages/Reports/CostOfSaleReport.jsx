@@ -4,6 +4,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import { usePermissions, Guard } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 import {
   ArrowPathIcon,
   ArrowTrendingDownIcon,
@@ -283,25 +284,33 @@ export default function CostOfSaleReport() {
 
         <div className="products-filter-panel">
           <div className="report-filters">
-            <label className="products-filter">
+            <div className="products-filter">
               <span className="products-filter-label">From Date</span>
-              <input
-                type="date"
+              <ModernDatePicker
                 value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="report-input"
+                onChange={(val) => setFromDate(val)}
+                selectsStart
+                startDate={fromDate}
+                endDate={toDate}
+                maxDate={toDate || undefined}
+                ariaLabel="From date"
+                placeholder="Select from date"
               />
-            </label>
+            </div>
 
-            <label className="products-filter">
+            <div className="products-filter">
               <span className="products-filter-label">To Date</span>
-              <input
-                type="date"
+              <ModernDatePicker
                 value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="report-input"
+                onChange={(val) => setToDate(val)}
+                selectsEnd
+                startDate={fromDate}
+                endDate={toDate}
+                minDate={fromDate || undefined}
+                ariaLabel="To date"
+                placeholder="Select to date"
               />
-            </label>
+            </div>
 
             <label className="products-filter">
               <span className="products-filter-label">Sale Type</span>

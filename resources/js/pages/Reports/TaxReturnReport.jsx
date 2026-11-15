@@ -18,6 +18,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { useCurrency } from "@/context/CurrencyContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { printCurrentView } from "@/utils/printHelper.js";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const monthStart = () => `${today().slice(0, 7)}-01`;
@@ -404,22 +405,34 @@ export default function TaxReturnReport() {
         </div>
 
         <div className="flex flex-wrap items-end gap-2">
-          <div>
+          <div className="w-40">
             <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">From</label>
-            <input
-              type="date"
+            <ModernDatePicker
               value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              className="h-9 px-2.5 text-xs rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white"
+              onChange={(val) => setFrom(val)}
+              selectsStart
+              startDate={from}
+              endDate={to}
+              maxDate={to || undefined}
+              isClearable={false}
+              size="sm"
+              ariaLabel="Tax period from date"
+              placeholder="From date"
             />
           </div>
-          <div>
+          <div className="w-40">
             <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">To</label>
-            <input
-              type="date"
+            <ModernDatePicker
               value={to}
-              onChange={(e) => setTo(e.target.value)}
-              className="h-9 px-2.5 text-xs rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white"
+              onChange={(val) => setTo(val)}
+              selectsEnd
+              startDate={from}
+              endDate={to}
+              minDate={from || undefined}
+              isClearable={false}
+              size="sm"
+              ariaLabel="Tax period to date"
+              placeholder="To date"
             />
           </div>
           <div className="flex flex-wrap items-center gap-1">

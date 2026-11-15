@@ -7,6 +7,7 @@ import { useTheme } from "@/context/ThemeContext.jsx";
 import { getThemeButtonClasses } from "@/utils/buttonStyles.js";
 import { usePermissions } from "@/api/usePermissions.js";
 import ProductSearchInput from "@/components/ProductSearchInput.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 import {
   MoveBatchLocationModal,
   ManageStorageLocationsModal,
@@ -1269,13 +1270,13 @@ export default function ProductBatchWorkbench() {
                     ))}
                   </div>
                 </div>
-                <input
+                <ModernDatePicker
                   ref={expiryDateRef}
                   id="wb-expiry-date"
-                  type="date"
+                  isExpiry
                   value={batchForm.expiry_date}
-                  onChange={(e) =>
-                    setBatchForm((prev) => ({ ...prev, expiry_date: e.target.value }))
+                  onChange={(val) =>
+                    setBatchForm((prev) => ({ ...prev, expiry_date: val }))
                   }
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -1284,7 +1285,9 @@ export default function ProductBatchWorkbench() {
                       quantityRef.current?.select?.();
                     }
                   }}
-                  className="w-full h-[38px] px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900/80 text-sm font-mono text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  size="sm"
+                  ariaLabel="Batch expiry date"
+                  placeholder="Select expiry date"
                 />
               </div>
 

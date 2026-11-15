@@ -10,6 +10,7 @@ import { usePermissions, Guard } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { printUrlViaIframe } from "@/utils/printHelper.js";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 
 // glass primitives
 import { GlassCard, GlassSectionHeader, GlassInput } from "@/components/Glass.jsx";
@@ -936,20 +937,30 @@ return (
             {/* Date range statement filter */}
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
               <span className="text-gray-500 dark:text-gray-400 font-medium">Statement Range:</span>
-              <input
-                type="date"
+              <ModernDatePicker
                 value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                aria-label="Statement from date"
-                className={`h-8 px-2 text-xs rounded-lg border focus:outline-hidden focus:ring-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 bg-white text-gray-700"}`}
+                onChange={(val) => setFromDate(val)}
+                selectsStart
+                startDate={fromDate}
+                endDate={toDate}
+                maxDate={toDate || undefined}
+                ariaLabel="Statement from date"
+                placeholder="From date"
+                size="sm"
+                className="w-40"
               />
               <span className="text-gray-400">to</span>
-              <input
-                type="date"
+              <ModernDatePicker
                 value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                aria-label="Statement to date"
-                className={`h-8 px-2 text-xs rounded-lg border focus:outline-hidden focus:ring-1 ${isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 bg-white text-gray-700"}`}
+                onChange={(val) => setToDate(val)}
+                selectsEnd
+                startDate={fromDate}
+                endDate={toDate}
+                minDate={fromDate || undefined}
+                ariaLabel="Statement to date"
+                placeholder="To date"
+                size="sm"
+                className="w-40"
               />
               <button
                 type="button"

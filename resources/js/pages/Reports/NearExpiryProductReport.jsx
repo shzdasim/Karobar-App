@@ -18,6 +18,7 @@ import {
 import SupplierSearch from "@/components/SupplierSearch.jsx";
 import BrandSearch from "@/components/BrandSearch.jsx";
 import ProductSearchInput from "@/components/ProductSearchInput.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -279,29 +280,39 @@ export default function NearExpiryProductReport() {
 
         <div className="products-filter-panel">
           <div className="report-filters">
-            <label className="products-filter">
+            <div className="products-filter">
               <span className="products-filter-label">
                 <CalendarIcon className="w-3.5 h-3.5 inline mr-1" /> From (Expiry)
               </span>
-              <input
-                type="date"
+              <ModernDatePicker
+                isExpiry
                 value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="report-input"
+                onChange={(val) => setFromDate(val)}
+                selectsStart
+                startDate={fromDate}
+                endDate={toDate}
+                maxDate={toDate || undefined}
+                ariaLabel="From expiry date"
+                placeholder="Select from date"
               />
-            </label>
+            </div>
 
-            <label className="products-filter">
+            <div className="products-filter">
               <span className="products-filter-label">
                 <CalendarIcon className="w-3.5 h-3.5 inline mr-1" /> To (Expiry)
               </span>
-              <input
-                type="date"
+              <ModernDatePicker
+                isExpiry
                 value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="report-input"
+                onChange={(val) => setToDate(val)}
+                selectsEnd
+                startDate={fromDate}
+                endDate={toDate}
+                minDate={fromDate || undefined}
+                ariaLabel="To expiry date"
+                placeholder="Select to date"
               />
-            </label>
+            </div>
 
             <div className="products-filter">
               <span className="products-filter-label">Supplier</span>

@@ -4,6 +4,7 @@ import { PlusIcon, XMarkIcon, ClipboardDocumentListIcon } from "@heroicons/react
 import toast from "react-hot-toast";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 
@@ -622,16 +623,12 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
               </td>
               <td className={`border p-1 w-1/6 ${isDark ? "border-slate-700" : "border-gray-200"}`}>
                 <label className={`block text-[10px] ${isDark ? "text-slate-400" : "text-gray-600"}`}>Posted Date</label>
-                <input 
-                  type="date" 
-                  aria-label="Posted date"
-                  value={form.posted_date} 
-                  onChange={e=>setForm(prev=>({ ...prev, posted_date: e.target.value }))} 
-                  className={`border rounded w-full p-1 h-7 text-xs ${
-                    isDark 
-                      ? "border-slate-600 bg-slate-700 text-slate-200" 
-                      : "border-gray-300 text-gray-800"
-                  }`} 
+                <ModernDatePicker
+                  ariaLabel="Posted date"
+                  value={form.posted_date}
+                  onChange={(val) => setForm((prev) => ({ ...prev, posted_date: val }))}
+                  isClearable={false}
+                  size="xs"
                 />
               </td>
               <td className={`border p-1 ${isDark ? "border-slate-700" : "border-gray-200"}`}>
@@ -664,7 +661,7 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
               <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"} w-6`}>#</th>
               <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"} w-[220px] text-left`}>Product</th>
               <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"} w-28`}>Batch</th>
-              <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"} w-24`}>Expiry</th>
+              <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"} w-28 min-w-[112px]`}>Expiry</th>
               <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"} w-24`}>Pack Size</th>
               <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"} w-24`}>Available Qty</th>
               <th className={`border ${isDark ? "border-slate-600" : "border-gray-200"} w-24`}>Actual Qty *</th>
@@ -723,16 +720,20 @@ export default function StockAdjustmentForm({ adjustmentId, onSuccess }){
                 </td>
 
                 <td data-label="Expiry" className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>
-                  <input
-                    type="date"
-                    aria-label={`Expiry for item ${i + 1}`}
-                    value={it.expiry ?? ''}
-                    onChange={e=>onItemChange(i,'expiry',e.target.value)}
-                    className={`border w-full h-6 text-[11px] px-1 ${
-                      isDark 
-                        ? "border-slate-600 bg-slate-700 text-slate-200" 
-                        : "border-gray-300 bg-white text-gray-800"
-                    }`}
+                  <ModernDatePicker
+                    isExpiry
+                    ariaLabel={`Expiry for item ${i + 1}`}
+                    value={it.expiry ?? ""}
+                    onChange={(val) => onItemChange(i, "expiry", val)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        actualRefs.current[i]?.focus?.();
+                        actualRefs.current[i]?.select?.();
+                      }
+                    }}
+                    size="xs"
+                    placeholder="Expiry"
                   />
                 </td>
                 <td data-label="Pack size" className={`border ${isDark ? "border-slate-600" : "border-gray-200"}`}>

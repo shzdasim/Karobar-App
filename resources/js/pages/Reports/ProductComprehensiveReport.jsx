@@ -17,6 +17,7 @@ import {
   XMarkIcon,
 } from "@heroicons/react/24/solid";
 import ProductSearchInput from "@/components/ProductSearchInput.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -314,25 +315,33 @@ export default function ProductComprehensiveReport() {
 
         <div className="products-filter-panel">
           <div className="report-filters">
-            <label className="products-filter">
+            <div className="products-filter">
               <span className="products-filter-label">From Date</span>
-              <input
-                type="date"
+              <ModernDatePicker
                 value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="report-input"
+                onChange={(val) => setFromDate(val)}
+                selectsStart
+                startDate={fromDate}
+                endDate={toDate}
+                maxDate={toDate || undefined}
+                ariaLabel="From date"
+                placeholder="Select from date"
               />
-            </label>
+            </div>
 
-            <label className="products-filter">
+            <div className="products-filter">
               <span className="products-filter-label">To Date</span>
-              <input
-                type="date"
+              <ModernDatePicker
                 value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="report-input"
+                onChange={(val) => setToDate(val)}
+                selectsEnd
+                startDate={fromDate}
+                endDate={toDate}
+                minDate={fromDate || undefined}
+                ariaLabel="To date"
+                placeholder="Select to date"
               />
-            </label>
+            </div>
 
             <div className="products-filter">
               <span className="products-filter-label">Product</span>

@@ -13,6 +13,7 @@ import {
 import { GlassCard, GlassInput, GlassBtn } from "@/components/Glass.jsx";
 import { getReactSelectStyles } from "@/components/ExpiryReturnPolicyFields.jsx";
 import ProductSearchInput from "@/components/ProductSearchInput.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 import { useTheme } from "@/context/ThemeContext";
 
 const TAX_STATUS_OPTIONS = [
@@ -941,18 +942,19 @@ export default function CustomerForm({
                   >
                     Next Collection / Refill Date *
                   </label>
-                  <GlassInput
+                  <ModernDatePicker
                     id="customer-next-refill-date"
                     name="next_refill_date"
-                    type="date"
                     value={form.next_refill_date || ""}
-                    onChange={(e) =>
+                    onChange={(val) =>
                       setForm((p) => ({
                         ...p,
-                        next_refill_date: e.target.value,
+                        next_refill_date: val,
                       }))
                     }
-                    className="w-full h-[38px]"
+                    size="sm"
+                    ariaLabel="Next collection or refill date"
+                    placeholder="Select refill date"
                   />
                 </div>
 

@@ -18,6 +18,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { useCurrency } from "@/context/CurrencyContext";
 import { printCurrentView } from "@/utils/printHelper.js";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const monthStart = () => `${today().slice(0, 7)}-01`;
@@ -243,20 +244,33 @@ export default function NetProfitReport() {
       {/* Date Filter Bar */}
       <div className="p-3.5 sm:p-4 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-gray-100 dark:border-slate-800 shadow-sm backdrop-blur-xl flex flex-wrap items-center justify-between gap-3 sm:gap-4 no-print">
         <div className="flex flex-wrap items-center gap-2">
-          <CalendarDaysIcon className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 shrink-0" />
           <span className="text-xs font-semibold text-gray-700 dark:text-slate-300">Period:</span>
-          <input
-            type="date"
+          <ModernDatePicker
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="px-2.5 py-1.5 text-xs rounded-xl border border-gray-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onChange={(val) => setFrom(val)}
+            selectsStart
+            startDate={from}
+            endDate={to}
+            maxDate={to || undefined}
+            isClearable={false}
+            size="sm"
+            ariaLabel="Period from date"
+            placeholder="From date"
+            className="w-40"
           />
           <span className="text-xs text-gray-400">to</span>
-          <input
-            type="date"
+          <ModernDatePicker
             value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="px-2.5 py-1.5 text-xs rounded-xl border border-gray-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onChange={(val) => setTo(val)}
+            selectsEnd
+            startDate={from}
+            endDate={to}
+            minDate={from || undefined}
+            isClearable={false}
+            size="sm"
+            ariaLabel="Period to date"
+            placeholder="To date"
+            className="w-40"
           />
           <button
             onClick={fetchReport}

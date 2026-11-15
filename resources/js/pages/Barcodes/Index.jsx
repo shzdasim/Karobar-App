@@ -10,6 +10,7 @@ import { usePermissions } from "@/api/usePermissions";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { BarcodeSvg, generateBarcodeSvgString } from "@/utils/barcode";
 import ProductSearchInput from "@/components/ProductSearchInput.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 import { printHtmlViaIframe } from "@/utils/printHelper.js";
 import {
   QrCodeIcon,
@@ -2166,12 +2167,16 @@ export default function BarcodeIndex() {
                                     onChange={(e) => handleCustomBatchChange(item.uid, e.target.value)}
                                     className="w-1/2 px-2 py-1 text-[11px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                   />
-                                  <input
-                                    type="date"
-                                    value={item.custom_expiry_date || ""}
-                                    onChange={(e) => handleCustomExpiryChange(item.uid, e.target.value)}
-                                    className="w-1/2 px-2 py-1 text-[11px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                  />
+                                  <div className="w-1/2">
+                                    <ModernDatePicker
+                                      isExpiry
+                                      value={item.custom_expiry_date || ""}
+                                      onChange={(val) => handleCustomExpiryChange(item.uid, val)}
+                                      size="xs"
+                                      ariaLabel="Custom expiry date"
+                                      placeholder="Expiry date"
+                                    />
+                                  </div>
                                 </div>
                               )}
 

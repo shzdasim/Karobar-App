@@ -27,6 +27,7 @@ import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { GlassCard, GlassSectionHeader, GlassInput } from "@/components";
 import { usePermissions } from "@/api/usePermissions.js";
 import DisposalCertificateModal from "@/components/DisposalCertificateModal.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 
 const CAUSE_OPTIONS = [
   { value: "all", label: "All Causes" },
@@ -472,25 +473,36 @@ export default function StockDisposalsIndex() {
           </div>
 
           <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
-            <CalendarDaysIcon className="w-4 h-4 text-slate-400 shrink-0" />
-            <input
-              type="date"
+            <ModernDatePicker
               value={fromDate}
-              onChange={(e) => {
-                setFromDate(e.target.value);
+              onChange={(val) => {
+                setFromDate(val);
                 setPage(1);
               }}
-              className={`${inputCls} flex-1 h-[38px]`}
+              selectsStart
+              startDate={fromDate}
+              endDate={toDate}
+              maxDate={toDate || undefined}
+              size="sm"
+              ariaLabel="Disposals from date"
+              placeholder="From date"
+              className="flex-1"
             />
             <span className="text-xs text-slate-400">to</span>
-            <input
-              type="date"
+            <ModernDatePicker
               value={toDate}
-              onChange={(e) => {
-                setToDate(e.target.value);
+              onChange={(val) => {
+                setToDate(val);
                 setPage(1);
               }}
-              className={`${inputCls} flex-1 h-[38px]`}
+              selectsEnd
+              startDate={fromDate}
+              endDate={toDate}
+              minDate={fromDate || undefined}
+              size="sm"
+              ariaLabel="Disposals to date"
+              placeholder="To date"
+              className="flex-1"
             />
             {(fromDate || toDate) && (
               <button

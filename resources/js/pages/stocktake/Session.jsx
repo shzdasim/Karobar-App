@@ -24,6 +24,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { GlassCard } from "@/components";
 import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 
 const getContrastText = (hex) => {
   hex = (hex || "#3b82f6").replace("#", "");
@@ -1082,13 +1083,13 @@ export default function StocktakeSession() {
                   <label className={`block text-xs font-semibold mb-1 ${isDark ? "text-slate-300" : "text-slate-700"}`}>
                     Expiry Date (Optional)
                   </label>
-                  <input
-                    type="date"
+                  <ModernDatePicker
+                    isExpiry
                     value={addExpiryDate}
-                    onChange={(e) => setAddExpiryDate(e.target.value)}
-                    className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
-                      isDark ? "bg-slate-800 border-slate-600 text-slate-100" : "bg-white border-slate-300 text-slate-900"
-                    }`}
+                    onChange={(val) => setAddExpiryDate(val)}
+                    size="sm"
+                    ariaLabel="Expiry date"
+                    placeholder="Select expiry date"
                   />
                 </div>
               </div>

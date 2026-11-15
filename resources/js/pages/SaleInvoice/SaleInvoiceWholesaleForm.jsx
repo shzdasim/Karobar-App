@@ -17,6 +17,7 @@ import { useInvoiceDraft } from "@/hooks/useInvoiceDraft.js";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import InvoiceDraftIndicator from "@/components/InvoiceDraftIndicator.jsx";
 import PaymentAccountSelector from "../../components/PaymentAccountSelector.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 import { printSlipUrl } from "@/utils/printHelper.js";
 
 const InvoiceDraftsModal = lazy(() => import("@/components/InvoiceDraftsModal.jsx"));
@@ -2639,13 +2640,13 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
                   <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">
                     Date
                   </label>
-                  <input
-                    type="date"
+                  <ModernDatePicker
                     name="date"
                     value={form.date ?? ""}
-                    onChange={handleHeaderChange}
-                    autoComplete="off"
-                    className="w-full h-7 border border-gray-300 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100"
+                    onChange={(val) => setForm((p) => ({ ...p, date: val }))}
+                    isClearable={false}
+                    size="xs"
+                    ariaLabel="Invoice date"
                   />
                 </div>
 
@@ -2803,13 +2804,16 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
                         <label className="text-[10px] font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">
                           Due Date:
                         </label>
-                        <input
-                          type="date"
-                          name="due_date"
-                          value={form.due_date || ""}
-                          onChange={handleHeaderChange}
-                          className="h-6 px-1.5 text-xs rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 font-mono"
-                        />
+                        <div className="w-36">
+                          <ModernDatePicker
+                            name="due_date"
+                            value={form.due_date || ""}
+                            onChange={(val) => setForm((p) => ({ ...p, due_date: val }))}
+                            size="xs"
+                            ariaLabel="Due date"
+                            placeholder="Due date"
+                          />
+                        </div>
                       </div>
                     )}
                   </div>

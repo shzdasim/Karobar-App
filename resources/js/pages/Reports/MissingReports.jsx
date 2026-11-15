@@ -13,6 +13,7 @@ import {
 import { usePermissions } from "@/api/usePermissions";
 import SupplierSearch from "@/components/SupplierSearch.jsx";
 import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 import { printCurrentView } from "@/utils/printHelper.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -509,20 +510,45 @@ export default function MissingReports({ type }) {
         <div className="products-filter-panel">
           <div className="report-filters">
             {report.dated && <>
-              <label className="products-filter">
+              <div className="products-filter">
                 <span className="products-filter-label">From Date</span>
-                <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="report-input" />
-              </label>
-              <label className="products-filter">
+                <ModernDatePicker
+                  value={from}
+                  onChange={(val) => setFrom(val)}
+                  selectsStart
+                  startDate={from}
+                  endDate={to}
+                  maxDate={to || undefined}
+                  ariaLabel="From date"
+                  placeholder="Select from date"
+                />
+              </div>
+              <div className="products-filter">
                 <span className="products-filter-label">To Date</span>
-                <input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="report-input" />
-              </label>
+                <ModernDatePicker
+                  value={to}
+                  onChange={(val) => setTo(val)}
+                  selectsEnd
+                  startDate={from}
+                  endDate={to}
+                  minDate={from || undefined}
+                  ariaLabel="To date"
+                  placeholder="Select to date"
+                />
+              </div>
             </>}
             {type === "outstanding-aging" && (
-              <label className="products-filter">
+              <div className="products-filter">
                 <span className="products-filter-label">As of Date</span>
-                <input type="date" value={asOf} max={today()} onChange={(event) => setAsOf(event.target.value)} className="report-input" />
-              </label>
+                <ModernDatePicker
+                  value={asOf}
+                  maxDate={today()}
+                  onChange={(val) => setAsOf(val)}
+                  isClearable={false}
+                  ariaLabel="As of date"
+                  placeholder="Select as of date"
+                />
+              </div>
             )}
             {type === "outstanding-aging" && (
               <label className="products-filter">

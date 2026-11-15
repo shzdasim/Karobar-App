@@ -22,6 +22,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { useCurrency } from "@/context/CurrencyContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { printCurrentView } from "@/utils/printHelper.js";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const monthStart = () => `${today().slice(0, 7)}-01`;
@@ -580,18 +581,32 @@ export default function AccountingPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-gray-500 dark:text-slate-400">Period:</span>
-          <input
-            type="date"
+          <ModernDatePicker
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="h-9 px-2.5 text-xs rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white"
+            onChange={(val) => setFrom(val)}
+            selectsStart
+            startDate={from}
+            endDate={to}
+            maxDate={to || undefined}
+            isClearable={false}
+            size="sm"
+            ariaLabel="Period from date"
+            placeholder="From date"
+            className="w-40"
           />
           <span className="text-xs text-gray-400">to</span>
-          <input
-            type="date"
+          <ModernDatePicker
             value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="h-9 px-2.5 text-xs rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white"
+            onChange={(val) => setTo(val)}
+            selectsEnd
+            startDate={from}
+            endDate={to}
+            minDate={from || undefined}
+            isClearable={false}
+            size="sm"
+            ariaLabel="Period to date"
+            placeholder="To date"
+            className="w-40"
           />
           <button
             type="button"
@@ -1254,11 +1269,13 @@ export default function AccountingPage() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-medium mb-1">Voucher Date *</label>
-                  <input
-                    type="date"
+                  <ModernDatePicker
                     value={jvDate}
-                    onChange={(e) => setJvDate(e.target.value)}
-                    className="w-full h-9 px-3 text-xs rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    onChange={(val) => setJvDate(val)}
+                    isClearable={false}
+                    size="sm"
+                    ariaLabel="Voucher date"
+                    placeholder="Select voucher date"
                   />
                 </div>
                 <div>

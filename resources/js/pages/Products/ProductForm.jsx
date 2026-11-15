@@ -23,6 +23,7 @@ import {
   ManageStorageLocationsModal,
   getLocationTypeMeta,
 } from "@/components/StorageLocationsModal.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 
 // FilePond
 import { FilePond, registerPlugin } from "react-filepond";
@@ -1702,6 +1703,12 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                       spellCheck={false}
                       value={newBatch.batch_number}
                       onChange={(e) => setNewBatch((p) => ({ ...p, batch_number: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          document.getElementById("batch-expiry-input")?.focus();
+                        }
+                      }}
                       className="w-full text-sm font-medium bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                     />
                   </div>
@@ -1712,12 +1719,22 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
                     >
                       Expiry Date *
                     </label>
-                    <GlassInput
+                    <ModernDatePicker
                       id="batch-expiry-input"
-                      type="date"
+                      isExpiry
                       value={newBatch.expiry_date}
-                      onChange={(e) => setNewBatch((p) => ({ ...p, expiry_date: e.target.value }))}
-                      className="w-full text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                      onChange={(val) => setNewBatch((p) => ({ ...p, expiry_date: val }))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const qtyEl = document.getElementById("batch-qty-input");
+                          qtyEl?.focus();
+                          qtyEl?.select?.();
+                        }
+                      }}
+                      size="sm"
+                      ariaLabel="Batch expiry date"
+                      placeholder="Select expiry date"
                     />
                   </div>
                   <div>

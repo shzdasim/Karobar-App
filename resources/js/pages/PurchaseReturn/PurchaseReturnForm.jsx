@@ -15,6 +15,7 @@ import PreShiftDrawerPromptModal from "@/components/PreShiftDrawerPromptModal.js
 import { recalcItem, recalcFooter } from "../../Formula/PurchaseReturn.js";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -1783,12 +1784,13 @@ const handleSelectChange = async (field, value) => {
               {/* Date */}
               <div className="col-span-6 sm:col-span-3 lg:col-span-2">
                 <label className="block text-[9px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Date</label>
-                <input
+                <ModernDatePicker
                   name="date"
-                  type="date"
                   value={form.date}
-                  onChange={handleChange}
-                  className="w-full h-8 border border-gray-200 dark:border-slate-600 rounded-md px-2 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200"
+                  onChange={(val) => setForm((p) => ({ ...p, date: val }))}
+                  isClearable={false}
+                  size="xs"
+                  ariaLabel="Return date"
                 />
               </div>
 

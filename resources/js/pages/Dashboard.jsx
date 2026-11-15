@@ -599,23 +599,59 @@ const loadBrands = useMemo(
     []
   );
 
-  const quickPresets = [
-    { label: "Today", fn: () => { setFrom(todayStr()); setTo(todayStr()); } },
-    { label: "This Month", fn: () => { setFrom(firstDayOfMonthStr()); setTo(todayStr()); } },
-    { label: "7 Days", fn: () => {
-      const d = new Date();
-      const fromDate = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate() - 6));
-      setFrom(fromDate.toISOString().substring(0, 10));
+  const applyDateRange = (nextFrom, nextTo) => {
+    setFrom(nextFrom);
+    setTo(nextTo);
+  };
+
+  const handleFromChange = (nextFrom) => {
+    if (!nextFrom) {
+      setFrom(todayStr());
+      return;
+    }
+    setFrom(nextFrom);
+    if (to && nextFrom > to) {
+      setTo(nextFrom);
+    }
+  };
+
+  const handleToChange = (nextTo) => {
+    if (!nextTo) {
       setTo(todayStr());
-    } },
-    { label: "30 Days", fn: () => {
-      const d = new Date();
-      const fromDate = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate() - 29));
-      setFrom(fromDate.toISOString().substring(0, 10));
-      setTo(todayStr());
-    } },
-    { label: "This Year", fn: () => { setFrom(firstDayOfYearStr()); setTo(todayStr()); } },
-  ];
+      return;
+    }
+    setTo(nextTo);
+    if (from && nextTo < from) {
+      setFrom(nextTo);
+    }
+  };
+
+  const quickPresets = useMemo(() => {
+    const today = todayStr();
+    const yesterday = addDays(today, -1);
+    const sevenDaysAgo = addDays(today, -6);
+    const thirtyDaysAgo = addDays(today, -29);
+    const monthStart = firstDayOfMonthStr();
+    const yearStart = firstDayOfYearStr();
+
+    return [
+      { label: "Today", from: today, to: today, fn: () => applyDateRange(today, today) },
+      { label: "Yesterday", from: yesterday, to: yesterday, fn: () => applyDateRange(yesterday, yesterday) },
+      { label: "7 Days", from: sevenDaysAgo, to: today, fn: () => applyDateRange(sevenDaysAgo, today) },
+      { label: "30 Days", from: thirtyDaysAgo, to: today, fn: () => applyDateRange(thirtyDaysAgo, today) },
+      { label: "This Month", from: monthStart, to: today, fn: () => applyDateRange(monthStart, today) },
+      { label: "This Year", from: yearStart, to: today, fn: () => applyDateRange(yearStart, today) },
+    ];
+  }, []);
+
+  const calendarFooterPresets = useMemo(
+    () =>
+      quickPresets.slice(0, 4).map((p) => ({
+        label: p.label,
+        onSelect: p.fn,
+      })),
+    [quickPresets]
+  );
 
   const kpiCards = [
     {
@@ -874,25 +910,72 @@ const heroStats = [
 
       {/* ===== Filters ===== */}
       <SectionCard className="dashboard-filter-panel p-4 sm:p-5">
-        <div className="grid grid-cols-1 gap-2.5 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2 min-w-0">
-            <label className="text-xs font-semibold dashboard-muted sm:whitespace-nowrap">From</label>
-            <ModernDatePicker value={from} onChange={setFrom} placeholder="Start date" className="w-full min-w-0 sm:w-48" portalId="dashboard-calendar-portal" popperProps={{ strategy: "fixed" }} />
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          {/* Date Pickers */}
+          <div className="grid grid-cols-1 gap-2.5 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2 min-w-0">
+              <label className="text-xs font-semibold dashboard-muted sm:whitespace-nowrap">
+                From
+              </label>
+              <ModernDatePicker
+                value={from}
+                onChange={handleFromChange}
+                placeholder="Start date"
+                label="Start date"
+                isClearable={false}
+                selectsStart
+                startDate={from}
+                endDate={to}
+                maxDate={to || todayStr()}
+                presets={calendarFooterPresets}
+                className="w-full min-w-0 sm:w-52"
+                portalId="dashboard-calendar-portal"
+                popperProps={{ strategy: "fixed" }}
+              />
+            </div>
+
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2 min-w-0">
+              <label className="text-xs font-semibold dashboard-muted sm:whitespace-nowrap">
+                To
+              </label>
+              <ModernDatePicker
+                value={to}
+                onChange={handleToChange}
+                placeholder="End date"
+                label="End date"
+                isClearable={false}
+                selectsEnd
+                startDate={from}
+                endDate={to}
+                minDate={from}
+                maxDate={todayStr()}
+                presets={calendarFooterPresets}
+                className="w-full min-w-0 sm:w-52"
+                portalId="dashboard-calendar-portal"
+                popperProps={{ strategy: "fixed" }}
+              />
+            </div>
           </div>
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2 min-w-0">
-            <label className="text-xs font-semibold dashboard-muted sm:whitespace-nowrap">To</label>
-            <ModernDatePicker value={to} onChange={setTo} placeholder="End date" className="w-full min-w-0 sm:w-48" portalId="dashboard-calendar-portal" popperProps={{ strategy: "fixed" }} />
-          </div>
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 sm:pb-0 sm:flex-wrap sm:gap-2 sm:ml-auto">
-            {quickPresets.map((p) => (
-              <button
-                key={p.label}
-                onClick={p.fn}
-                className="theme-btn-secondary shrink-0 whitespace-nowrap inline-flex items-center justify-center min-h-10 px-3.5 py-2 text-xs font-semibold"
-              >
-                <span>{p.label}</span>
-              </button>
-            ))}
+
+          {/* Quick Period Presets */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 sm:pb-0 sm:flex-wrap sm:gap-2">
+            {quickPresets.map((p) => {
+              const isActive = from === p.from && to === p.to;
+              return (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={p.fn}
+                  aria-pressed={isActive}
+                  className={[
+                    isActive ? "theme-btn-primary" : "theme-btn-secondary",
+                    "shrink-0 whitespace-nowrap inline-flex items-center justify-center min-h-10 px-3.5 py-2 text-xs font-semibold transition-all",
+                  ].join(" ")}
+                >
+                  <span>{p.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </SectionCard>

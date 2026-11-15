@@ -15,6 +15,7 @@ import {
   UserPlusIcon,
 } from "@heroicons/react/24/outline";
 import { useTheme } from "@/context/ThemeContext";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 
 const DOSAGE_SHORTCUTS = [
   "1+0+1",
@@ -677,12 +678,14 @@ export default function MakeRegularCustomerModal({
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   Next Refill Due Date *
                 </label>
-                <input
-                  type="date"
+                <ModernDatePicker
                   required
+                  isClearable={false}
                   value={nextRefillDate}
-                  onChange={(e) => setNextRefillDate(e.target.value)}
-                  className="w-full h-[38px] px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  onChange={(val) => setNextRefillDate(val)}
+                  size="sm"
+                  ariaLabel="Next refill due date"
+                  placeholder="Select refill date"
                 />
               </div>
 

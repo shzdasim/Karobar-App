@@ -17,6 +17,7 @@ import { GlassCard, GlassInput } from "@/components/Glass.jsx";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
 import { useTheme } from "@/context/ThemeContext.jsx";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 import PaymentAccountSelector from "./PaymentAccountSelector.jsx";
 
 const PAYMENT_METHODS = [
@@ -435,13 +436,15 @@ export default function RecordPaymentModal({
                 >
                   Payment Date *
                 </label>
-                <GlassInput
-                  type="date"
+                <ModernDatePicker
                   value={paymentDate}
-                  onChange={(e) => setPaymentDate(e.target.value)}
+                  onChange={(val) => setPaymentDate(val)}
                   required
+                  isClearable={false}
                   disabled={submitting}
-                  className="w-full text-sm h-10"
+                  size="sm"
+                  ariaLabel="Payment date"
+                  placeholder="Select payment date"
                 />
               </div>
 
@@ -524,12 +527,13 @@ export default function RecordPaymentModal({
                   <label className={`block text-xs font-semibold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>
                     Maturity / Cheque Date
                   </label>
-                  <GlassInput
-                    type="date"
+                  <ModernDatePicker
                     value={chequeDate}
-                    onChange={(e) => setChequeDate(e.target.value)}
+                    onChange={(val) => setChequeDate(val)}
                     disabled={submitting}
-                    className="w-full text-xs h-9"
+                    size="sm"
+                    ariaLabel="Maturity or cheque date"
+                    placeholder="Select cheque date"
                   />
                 </div>
                 <div>

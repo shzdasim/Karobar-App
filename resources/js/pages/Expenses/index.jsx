@@ -23,6 +23,7 @@ import {
 import { useCurrency } from "@/context/CurrencyContext";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 import CategoriesModal from "./CategoriesModal.jsx";
 
 const PAYMENT_METHODS = [
@@ -602,19 +603,27 @@ export default function ExpensesIndex() {
 
           {/* Date Range Inputs */}
           <div className="lg:col-span-3 grid grid-cols-2 gap-1.5">
-            <input
-              type="date"
+            <ModernDatePicker
               value={filters.from}
-              onChange={(e) => setFilters({ ...filters, from: e.target.value })}
-              aria-label="From date"
-              className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-gray-200/80 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(val) => setFilters({ ...filters, from: val })}
+              selectsStart
+              startDate={filters.from}
+              endDate={filters.to}
+              maxDate={filters.to || undefined}
+              ariaLabel="From date"
+              placeholder="From date"
+              size="sm"
             />
-            <input
-              type="date"
+            <ModernDatePicker
               value={filters.to}
-              onChange={(e) => setFilters({ ...filters, to: e.target.value })}
-              aria-label="To date"
-              className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-gray-200/80 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(val) => setFilters({ ...filters, to: val })}
+              selectsEnd
+              startDate={filters.from}
+              endDate={filters.to}
+              minDate={filters.from || undefined}
+              ariaLabel="To date"
+              placeholder="To date"
+              size="sm"
             />
           </div>
         </div>
@@ -952,12 +961,14 @@ export default function ExpensesIndex() {
                   <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">
                     Date *
                   </label>
-                  <input
-                    type="date"
+                  <ModernDatePicker
                     required
+                    isClearable={false}
                     value={form.date}
-                    onChange={(e) => setForm({ ...form, date: e.target.value })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/70 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 h-9"
+                    onChange={(val) => setForm({ ...form, date: val })}
+                    size="sm"
+                    ariaLabel="Expense date"
+                    placeholder="Select date"
                   />
                 </div>
 

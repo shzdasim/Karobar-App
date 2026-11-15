@@ -28,6 +28,7 @@ import {
 import { useTheme } from "@/context/ThemeContext";
 import { useCurrency } from "@/context/CurrencyContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 import { printCurrentView } from "@/utils/printHelper.js";
 import { GlassCard, GlassSectionHeader, GlassInput, GlassToolbar } from "@/components";
 import { usePermissions } from "@/api/usePermissions.js";
@@ -545,19 +546,30 @@ export default function PaymentsPage() {
 
         {/* Date range */}
         <div className="flex flex-wrap items-center gap-2">
-          <CalendarDaysIcon className={`w-4 h-4 ${isDark ? "text-slate-400" : "text-slate-400"}`} />
-          <input
-            type="date"
+          <ModernDatePicker
             value={fromDate}
-            onChange={e => setFromDate(e.target.value)}
-            className={`${inputCls} text-xs`}
+            onChange={(val) => setFromDate(val)}
+            selectsStart
+            startDate={fromDate}
+            endDate={toDate}
+            maxDate={toDate || undefined}
+            size="sm"
+            ariaLabel="From date"
+            placeholder="From date"
+            className="w-40"
           />
           <span className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>to</span>
-          <input
-            type="date"
+          <ModernDatePicker
             value={toDate}
-            onChange={e => setToDate(e.target.value)}
-            className={`${inputCls} text-xs`}
+            onChange={(val) => setToDate(val)}
+            selectsEnd
+            startDate={fromDate}
+            endDate={toDate}
+            minDate={fromDate || undefined}
+            size="sm"
+            ariaLabel="To date"
+            placeholder="To date"
+            className="w-40"
           />
           {(fromDate || toDate) && (
             <button

@@ -16,6 +16,7 @@ import useRowDragAndDrop from "./useRowDragAndDrop.jsx";
 import { useInvoiceDraft } from "@/hooks/useInvoiceDraft.js";
 import InvoiceDraftIndicator from "@/components/InvoiceDraftIndicator.jsx";
 import PaymentAccountSelector from "../../components/PaymentAccountSelector.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 
 const ProductFormModal = lazy(() => import("../../components/ProductFormModal.jsx"));
 const InvoiceDraftsModal = lazy(() => import("@/components/InvoiceDraftsModal.jsx"));
@@ -1719,13 +1720,13 @@ const contRect = container.getBoundingClientRect();
             {/* Date - col 2 */}
             <div className="col-span-6 sm:col-span-3 lg:col-span-2">
               <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-0.5">Date</label>
-              <input
-                type="date"
+              <ModernDatePicker
                 name="posted_date"
                 value={form.posted_date}
-                onChange={handleChange}
-                className="border border-gray-300 dark:border-slate-600 rounded-md w-full px-1.5 h-7 text-[11px] bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                {...antiFill}
+                onChange={(val) => setForm((prev) => ({ ...prev, posted_date: val }))}
+                isClearable={false}
+                size="xs"
+                ariaLabel="Invoice date"
               />
             </div>
 
@@ -1872,13 +1873,16 @@ const contRect = container.getBoundingClientRect();
               {form.invoice_type === "credit" && (
                 <div className="flex items-center gap-1.5">
                   <label className="text-[9px] font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Due Date:</label>
-                  <input
-                    type="date"
-                    name="due_date"
-                    value={form.due_date || ""}
-                    onChange={handleChange}
-                    className="h-5 px-1 text-[11px] rounded border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 font-mono"
-                  />
+                  <div className="w-36">
+                    <ModernDatePicker
+                      name="due_date"
+                      value={form.due_date || ""}
+                      onChange={(val) => setForm((prev) => ({ ...prev, due_date: val }))}
+                      size="xs"
+                      ariaLabel="Due date"
+                      placeholder="Due date"
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -1984,7 +1988,7 @@ const contRect = container.getBoundingClientRect();
             <tr>
               <th className="border w-10 purchase-th-readonly" title="Pack Size (Auto)">PSize</th>
               <th className="border w-[74px] purchase-th-editable">Batch</th>
-              <th className="border w-[98px] min-w-[98px] purchase-th-editable">Exp</th>
+              <th className="border w-[118px] min-w-[118px] purchase-th-editable">Exp</th>
               <th className="border w-11 purchase-th-editable">Pack.Q</th>
               <th className="border w-11 purchase-th-editable">Unit.Q</th>
               <th className="border w-13 purchase-th-editable">Pack.P</th>
@@ -2203,16 +2207,17 @@ const contRect = container.getBoundingClientRect();
                 </td>
 
                 {/* Expiry */}
-                <td data-label="Expiry" className="border w-[98px] min-w-[98px]">
-                  <input
+                <td data-label="Expiry" className="border w-[118px] min-w-[118px]">
+                  <ModernDatePicker
                     ref={(el) => (expiryRefs.current[i] = el)}
-                    type="date"
+                    isExpiry
                     value={item.expiry ?? ""}
                     title={item.expiry || undefined}
-                    onChange={(e) => handleItemChange(i, "expiry", e.target.value)}
+                    onChange={(val) => handleItemChange(i, "expiry", val)}
                     onKeyDown={(e) => handleKeyDown(e, "expiry", i)}
-                    className="border w-full min-w-0 h-7 text-[10.5px] px-0.5 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 font-mono"
-                    {...antiFill}
+                    size="xs"
+                    ariaLabel={`Expiry for item ${i + 1}`}
+                    placeholder="Expiry"
                   />
                 </td>
 

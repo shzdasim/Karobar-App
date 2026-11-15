@@ -22,6 +22,7 @@ import { useTheme } from "@/context/ThemeContext.jsx";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import BrandSearch from "../components/BrandSearch.jsx";
 import SupplierSearch from "../components/SupplierSearch.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 import { printHtmlViaIframe } from "@/utils/printHelper.js";
 
 import { arrangePurchaseOrderRows, purchaseOrderArrangements } from "@/utils/purchaseOrderArrangement";
@@ -784,22 +785,30 @@ ${isA4 ? `
           >
             <div className="col-span-1 md:col-span-2 flex flex-col gap-1">
               <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">From</label>
-              <input
-                type="date"
-                aria-label="Forecast from date"
+              <ModernDatePicker
+                ariaLabel="Forecast from date"
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/40 scheme-dark"
+                onChange={(val) => setDateFrom(val)}
+                selectsStart
+                startDate={dateFrom}
+                endDate={dateTo}
+                maxDate={dateTo || undefined}
+                isClearable={false}
+                size="sm"
               />
             </div>
             <div className="col-span-1 md:col-span-2 flex flex-col gap-1">
               <label className="text-[10px] font-medium uppercase tracking-wide text-white/80">To</label>
-              <input
-                type="date"
-                aria-label="Forecast to date"
+              <ModernDatePicker
+                ariaLabel="Forecast to date"
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="w-full h-9 px-2 rounded-lg text-xs text-white placeholder-white/60 bg-white/15 border border-white/20 backdrop-blur-xs focus:outline-hidden focus:ring-2 focus:ring-white/40 scheme-dark"
+                onChange={(val) => setDateTo(val)}
+                selectsEnd
+                startDate={dateFrom}
+                endDate={dateTo}
+                minDate={dateFrom || undefined}
+                isClearable={false}
+                size="sm"
               />
             </div>
             <div className="col-span-1 md:col-span-1 flex flex-col gap-1">

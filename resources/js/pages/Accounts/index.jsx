@@ -32,6 +32,7 @@ import { useCurrency } from "@/context/CurrencyContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { GlassCard, GlassSectionHeader, GlassInput, GlassToolbar, GlassBtn } from "@/components";
 import AccountIcon from "@/components/AccountIcon.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 
 // ─── Transaction type labels ──────────────────────────────────────────────────
 const TXN_TYPE_LABELS = {
@@ -694,18 +695,30 @@ export default function AccountsPage() {
                   placeholder="All Types"
                 />
               </div>
-              <input
-                type="date"
+              <ModernDatePicker
                 value={txnFrom}
-                onChange={e => setTxnFrom(e.target.value)}
-                className={`text-xs rounded-lg border px-2 py-1.5 focus:outline-none ${isDark ? "bg-slate-800 border-slate-600 text-slate-200" : "bg-white border-slate-300 text-slate-800"}`}
+                onChange={(val) => setTxnFrom(val)}
+                selectsStart
+                startDate={txnFrom}
+                endDate={txnTo}
+                maxDate={txnTo || undefined}
+                size="sm"
+                ariaLabel="Transactions from date"
+                placeholder="From date"
+                className="w-40"
               />
               <span className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>to</span>
-              <input
-                type="date"
+              <ModernDatePicker
                 value={txnTo}
-                onChange={e => setTxnTo(e.target.value)}
-                className={`text-xs rounded-lg border px-2 py-1.5 focus:outline-none ${isDark ? "bg-slate-800 border-slate-600 text-slate-200" : "bg-white border-slate-300 text-slate-800"}`}
+                onChange={(val) => setTxnTo(val)}
+                selectsEnd
+                startDate={txnFrom}
+                endDate={txnTo}
+                minDate={txnFrom || undefined}
+                size="sm"
+                ariaLabel="Transactions to date"
+                placeholder="To date"
+                className="w-40"
               />
               <button
                 onClick={fetchTransactions}

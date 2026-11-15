@@ -18,6 +18,7 @@ import { useCurrency } from "@/context/CurrencyContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import { GlassCard, GlassSectionHeader, GlassInput } from "@/components";
 import ProductSearchInput from "@/components/ProductSearchInput.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 
 const CAUSE_OPTIONS = [
   { value: "shelf_expiry", label: "Shelf Expiry (Expired Batch)" },
@@ -573,12 +574,14 @@ export default function CreateStockDisposal() {
               <label className={`block text-xs font-semibold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>
                 Date *
               </label>
-              <GlassInput
-                type="date"
+              <ModernDatePicker
                 value={form.disposal_date}
-                onChange={(e) => setForm((prev) => ({ ...prev, disposal_date: e.target.value }))}
+                onChange={(val) => setForm((prev) => ({ ...prev, disposal_date: val }))}
                 required
-                className="w-full text-xs h-[38px]"
+                isClearable={false}
+                size="sm"
+                ariaLabel="Disposal date"
+                placeholder="Select date"
               />
             </div>
 

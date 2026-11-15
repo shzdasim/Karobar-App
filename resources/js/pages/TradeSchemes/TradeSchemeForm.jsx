@@ -23,6 +23,7 @@ import {
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import ProductSearchInput from "@/components/ProductSearchInput.jsx";
+import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 
 const SCHEME_TYPE_OPTIONS = [
   { value: "ratio", label: "Every X Get Y (Ratio / Multiplier e.g. 10 + 1)" },
@@ -948,13 +949,19 @@ export default function TradeSchemeForm({
               <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1">
                 Valid From Date <span className="text-gray-400 font-normal">(Optional)</span>
               </label>
-              <input
+              <ModernDatePicker
                 ref={startDateRef}
-                type="date"
+                editable
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(val) => setStartDate(val)}
+                selectsStart
+                startDate={startDate}
+                endDate={endDate}
+                maxDate={endDate || undefined}
                 onKeyDown={(e) => handleKeyDown(e, endDateRef)}
-                className="w-full h-9.5 px-3 rounded-xl border text-xs font-medium bg-white dark:bg-slate-700/80 border-gray-300 dark:border-slate-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                size="sm"
+                ariaLabel="Valid from date"
+                placeholder="Valid from date"
               />
             </div>
 
@@ -962,13 +969,19 @@ export default function TradeSchemeForm({
               <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1">
                 Valid Until Date <span className="text-gray-400 font-normal">(Optional)</span>
               </label>
-              <input
+              <ModernDatePicker
                 ref={endDateRef}
-                type="date"
+                editable
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(val) => setEndDate(val)}
+                selectsEnd
+                startDate={startDate}
+                endDate={endDate}
+                minDate={startDate || undefined}
                 onKeyDown={(e) => handleKeyDown(e, slabMinRefs.current[0])}
-                className="w-full h-9.5 px-3 rounded-xl border text-xs font-medium bg-white dark:bg-slate-700/80 border-gray-300 dark:border-slate-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                size="sm"
+                ariaLabel="Valid until date"
+                placeholder="Valid until date"
               />
             </div>
           </div>
