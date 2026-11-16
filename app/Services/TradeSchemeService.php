@@ -25,7 +25,7 @@ class TradeSchemeService
             ->forSaleType($saleType)
             ->forCustomer($customerId)
             ->with([
-                'slabs',
+                'slabs.bonusProduct:id,name,product_code,pack_size,unit_sale_price,pack_sale_price,whole_sale_unit_price,whole_sale_pack_price,quantity',
                 'product:id,name,brand_id,category_id,pack_size',
                 'brand:id,name',
                 'category:id,name',

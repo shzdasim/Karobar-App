@@ -236,5 +236,6 @@ export function evaluateTradeScheme(item, activeSchemes = [], productObj = null,
     unit_bonus: unitBonus > 0 ? String(unitBonus) : "",
     bonus: bonusUnits > 0 ? String(bonusUnits) : "",
     bonus_product_id: matchedSlab.bonus_product_id || productId,
+    bonus_product: matchedSlab.bonus_product || matchedSlab.bonusProduct || null,
   };
 }

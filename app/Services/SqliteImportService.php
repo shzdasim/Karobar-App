@@ -371,7 +371,6 @@ class SqliteImportService
         ],
         'payments' => [
             'account_id'          => ['parent' => 'accounts', 'nullable' => true, 'fallback' => null],
-            'wht_tax_rate_id'     => ['parent' => 'tax_rates', 'nullable' => true, 'fallback' => null],
         ],
         'payment_allocations' => [
             'payment_id'          => ['parent' => 'payments', 'nullable' => false, 'fallback' => 'skip_row'],

@@ -123,6 +123,16 @@ return new class extends Migration
                 'description'    => 'Receivable balances due from credit customers',
             ],
             [
+                'code'           => '1250',
+                'name'           => 'Staff Advances & Employee Loans Receivable',
+                'account_type'   => 'asset',
+                'sub_type'       => 'current_asset',
+                'normal_balance' => 'debit',
+                'system_key'     => 'staff_advances_receivable',
+                'is_system'      => true,
+                'description'    => 'Salary advances and short-term loans receivable from store employees',
+            ],
+            [
                 'code'           => '1300',
                 'name'           => 'Merchandise Inventory (Stock-on-Hand)',
                 'account_type'   => 'asset',

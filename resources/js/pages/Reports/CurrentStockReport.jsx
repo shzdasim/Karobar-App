@@ -110,6 +110,8 @@ export default function CurrentStockReport() {
   const [brandId, setBrandId] = useState("");
   const [supplierValue, setSupplierValue] = useState(null);
   const [supplierId, setSupplierId] = useState("");
+  const [locationValue, setLocationValue] = useState(null);
+  const [storageLocationId, setStorageLocationId] = useState("");
 
   // Data + States
   const [data, setData] = useState({ rows: [], summary: {} });
@@ -232,6 +234,30 @@ export default function CurrentStockReport() {
     []
   );
 
+  const loadStorageLocations = useMemo(
+    () => async (input) => {
+      const q = String(input || "").trim().toLowerCase();
+      try {
+        const res = await axios.get("/api/storage-locations", { params: { active_only: 1 } });
+        const rows = Array.isArray(res.data?.data)
+          ? res.data.data
+          : Array.isArray(res.data)
+          ? res.data
+          : [];
+        const opts = rows
+          .filter((r) => !q || String(r.name || "").toLowerCase().includes(q))
+          .map((r) => ({
+            value: r.id,
+            label: r.name ?? `#${r.id}`,
+          }));
+        return [{ value: "", label: "All Storage Locations" }, ...opts];
+      } catch {
+        return [{ value: "", label: "All Storage Locations" }];
+      }
+    },
+    []
+  );
+
   /* ============ Fetch report ============ */
   const fetchReport = async () => {
     if (!can.view) return toast.error("You don't have permission to view this report.");
@@ -243,6 +269,7 @@ export default function CurrentStockReport() {
           category_id: categoryId || undefined,
           brand_id: brandId || undefined,
           supplier_id: supplierId || undefined,
+          storage_location_id: storageLocationId || undefined,
         },
       });
 
@@ -280,6 +307,7 @@ export default function CurrentStockReport() {
           category_id: categoryId || undefined,
           brand_id: brandId || undefined,
           supplier_id: supplierId || undefined,
+          storage_location_id: storageLocationId || undefined,
         },
         responseType: "blob",
       });
@@ -303,6 +331,52 @@ export default function CurrentStockReport() {
     }
   };
 
+  /* ============ Export CSV ============ */
+  const exportCsv = () => {
+    if (!rows.length) return;
+    const headers = [
+      "Product Code",
+      "Product Name",
+      "Category",
+      "Brand",
+      "Supplier",
+      "Qty (Units)",
+      "Pack Size",
+      "Unit Purchase Price",
+      "Unit Sale Price",
+      "Total Purchase Value",
+      "Total Sale Value",
+    ];
+    const csvRows = [
+      headers,
+      ...rows.map((r) => [
+        r.product_code || "",
+        r.product_name || r.name || "",
+        r.category_name || "",
+        r.brand_name || "",
+        r.supplier_name || "",
+        n(r.quantity),
+        n(r.pack_size || 1),
+        n(r.unit_purchase_price),
+        n(r.unit_sale_price),
+        n(r.total_purchase_value),
+        n(r.total_sale_value),
+      ]),
+    ];
+    const csv = csvRows
+      .map((row) => row.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "current-stock-report.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   /* ============ Reset filters ============ */
   const resetFilters = () => {
     setCategoryValue(null);
@@ -311,6 +385,8 @@ export default function CurrentStockReport() {
     setBrandId("");
     setSupplierValue(null);
     setSupplierId("");
+    setLocationValue(null);
+    setStorageLocationId("");
     setData({ rows: [], summary: {} });
   };
 
@@ -340,6 +416,25 @@ export default function CurrentStockReport() {
 
           <div className="flex flex-wrap items-center gap-2">
             <Guard when={can.export}>
+              <button
+                type="button"
+                onClick={exportCsv}
+                disabled={rows.length === 0}
+                title="Export loaded report as CSV"
+                className="products-action theme-btn-secondary"
+              >
+                <ArrowDownOnSquareIcon className="w-4 h-4" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                disabled={rows.length === 0}
+                title="Print current view"
+                className="products-action theme-btn-secondary"
+              >
+                <span>Print</span>
+              </button>
               <button
                 type="button"
                 onClick={exportPdf}
@@ -449,6 +544,23 @@ export default function CurrentStockReport() {
                   matchFrom: "start",
                   trim: true,
                 })}
+              />
+            </label>
+
+            <label className="products-filter">
+              <span className="products-filter-label">Storage Location</span>
+              <AsyncSelect
+                cacheOptions
+                defaultOptions
+                loadOptions={loadStorageLocations}
+                isClearable
+                value={locationValue}
+                onChange={(opt) => {
+                  setLocationValue(opt);
+                  setStorageLocationId(opt?.value || "");
+                }}
+                styles={selectStyles}
+                menuPortalTarget={document.body}
               />
             </label>
           </div>

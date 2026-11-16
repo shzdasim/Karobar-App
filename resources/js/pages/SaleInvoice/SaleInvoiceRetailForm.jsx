@@ -59,6 +59,7 @@ const normalizeFormLoaded = (f) => {
   safe.invoice_type = safe.invoice_type ?? "debit";
   safe.sale_type = "retail"; // Always retail for this form
   safe.wholesale_type = safe.wholesale_type ?? "unit";
+  safe.salesman_id = safe.salesman_id ?? "";
   safe.remarks = safe.remarks ?? "";
   safe.doctor_id = safe.doctor_id ?? safe.doctor?.id ?? null;
   safe.doctor_name = safe.doctor_name ?? safe.doctor?.name ?? "";
@@ -151,6 +152,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     sale_type: "retail", // Hardcoded to retail
     wholesale_type: "unit",
     customer_id: "",
+    salesman_id: "",
     posted_number: "",
     date: new Date().toISOString().split("T")[0],
     due_date: "",
@@ -206,6 +208,8 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   // Automated Trade Schemes state
   const [activeSchemes, setActiveSchemes] = useState([]);
   const [enableTradeSchemes, setEnableTradeSchemes] = useState(true);
+  const [salesmen, setSalesmen] = useState([]);
+  const [taxRatePresets, setTaxRatePresets] = useState([]);
   const activeSchemesRef = useRef([]);
   activeSchemesRef.current = activeSchemes;
   const enableTradeSchemesRef = useRef(enableTradeSchemes);
@@ -213,6 +217,24 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   const productDataCacheRef = useRef(productDataCache);
   productDataCacheRef.current = productDataCache;
   const productsListRef = useRef([]);
+
+  useEffect(() => {
+    axios
+      .get("/api/hr/employees", { params: { status: "active" } })
+      .then((res) => {
+        const list = Array.isArray(res.data) ? res.data : res.data?.data || [];
+        setSalesmen(list);
+      })
+      .catch(() => setSalesmen([]));
+
+    axios
+      .get("/api/accounting/tax-rates", { params: { active_only: 1 } })
+      .then((res) => {
+        const list = Array.isArray(res.data) ? res.data : res.data?.data || [];
+        setTaxRatePresets(list.filter((t) => t.type === "both" || t.type === "sales"));
+      })
+      .catch(() => setTaxRatePresets([]));
+  }, []);
 
   const fetchActiveSchemes = useCallback(async (custId, dateVal) => {
     try {
@@ -1458,7 +1480,57 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
           products.find((p) => eqId(p.id, row.product_id)) ||
           row.product;
         const schemeRes = evaluateTradeScheme(row, activeSchemesRef.current, productObj, { sale_type: "retail" });
-        if (schemeRes.matched && Number(schemeRes.bonus || 0) > 0) {
+        const bonusProdId = schemeRes.bonus_product_id || row.product_id;
+        const isCrossProductBonus =
+          schemeRes.matched &&
+          Number(schemeRes.bonus || 0) > 0 &&
+          String(bonusProdId) !== String(row.product_id);
+
+        if (isCrossProductBonus) {
+          row = recalcItem(
+            {
+              ...row,
+              bonus: "",
+              applied_scheme_id: schemeRes.scheme_id,
+              applied_scheme_name: `${schemeRes.scheme_name} (+${schemeRes.bonus} Free Item)`,
+            },
+            field
+          );
+          const bonusProd =
+            schemeRes.bonus_product ||
+            products.find((p) => eqId(p.id, bonusProdId)) ||
+            productDataCache[bonusProdId] ||
+            { id: bonusProdId, name: `Bonus Product #${bonusProdId}`, pack_size: 1 };
+          if (bonusProd?.id) upsertProducts([bonusProd]);
+          const existingBonusIdx = items.findIndex(
+            (r, idx) => idx !== index && r.cross_bonus_parent_id === row.id
+          );
+          const bonusRowPayload = recalcItem({
+            id: existingBonusIdx > -1 ? items[existingBonusIdx].id : generateRowId(),
+            product_id: bonusProdId,
+            product_name: bonusProd.name || `Bonus Product #${bonusProdId}`,
+            product: bonusProd,
+            pack_size: String(bonusProd.pack_size || 1),
+            batch_number: existingBonusIdx > -1 ? items[existingBonusIdx].batch_number : "",
+            is_unbatched: existingBonusIdx > -1 ? items[existingBonusIdx].is_unbatched : true,
+            expiry: existingBonusIdx > -1 ? items[existingBonusIdx].expiry : "",
+            current_quantity: String(bonusProd.quantity ?? items[existingBonusIdx]?.current_quantity ?? 999),
+            quantity: "0",
+            bonus: String(schemeRes.bonus),
+            applied_scheme_id: schemeRes.scheme_id,
+            applied_scheme_name: `${schemeRes.scheme_name} (Cross Bonus)`,
+            is_custom_bonus: true,
+            cross_bonus_parent_id: row.id,
+            price: "0",
+            item_discount_percentage: "0",
+            sub_total: "0.00",
+          });
+          if (existingBonusIdx > -1) {
+            items[existingBonusIdx] = bonusRowPayload;
+          } else {
+            items.splice(index + 1, 0, bonusRowPayload);
+          }
+        } else if (schemeRes.matched && Number(schemeRes.bonus || 0) > 0) {
           row = recalcItem(
             {
               ...row,
@@ -1478,6 +1550,8 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
             },
             field
           );
+          const linkedIdx = items.findIndex((r) => r.cross_bonus_parent_id === row.id);
+          if (linkedIdx > -1) items.splice(linkedIdx, 1);
         }
       }
 
@@ -2107,7 +2181,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       const list = batchesByProduct[String(it.product_id)];
       const hasBatches = Array.isArray(list) && list.some((b) => !b.is_unbatched && b.batch_number);
       if (hasBatches && !it.batch_number && !it.is_unbatched) return invoiceErrors.showMessage(`Row ${i + 1}: select a batch or unbatched stock`);
-      if (it.quantity === "" || it.quantity == null || Number(it.quantity) <= 0)
+      if ((it.quantity === "" || it.quantity == null || Number(it.quantity) <= 0) && Number(it.bonus || 0) <= 0)
         return invoiceErrors.showMessage(`Row ${i + 1}: enter quantity`);
       const available = Number(it.current_quantity || 0);
       const totalStockNeeded = Number(it.quantity || 0) + Math.max(0, Number(it.bonus || 0));
@@ -2752,8 +2826,27 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                 </div>
               )}
 
-              {/* Row 2: Remarks + Items */}
-              <div className="col-span-2 sm:col-span-5 lg:col-span-10">
+              {/* Row 2: Salesman + Remarks + Items */}
+              <div className="col-span-1 sm:col-span-2 lg:col-span-3">
+                <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">
+                  Salesman
+                </label>
+                <select
+                  name="salesman_id"
+                  value={form.salesman_id ?? ""}
+                  onChange={handleHeaderChange}
+                  className="w-full h-7 border border-gray-300 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100"
+                >
+                  <option value="">Auto (Current Cashier)</option>
+                  {salesmen.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} {emp.employee_code ? `(${emp.employee_code})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="col-span-2 sm:col-span-3 lg:col-span-7">
                 <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">Remarks</label>
                 <input
                   type="text"
@@ -3152,18 +3245,41 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                 {/* Tax % */}
                 <div className="flex items-center justify-between gap-1.5">
                   <label className={`font-semibold text-xs shrink-0 ${isDark ? "text-slate-400" : "text-gray-500"}`}>Tax %</label>
-                  <input
-                    type="text"
-                    name="tax_percentage"
-                    value={form.tax_percentage ?? ""}
-                    onChange={handleHeaderChange}
-                    autoComplete="off"
-                    className={`w-24 h-6.5 border rounded-md px-2 text-center text-xs ${
-                      isDark 
-                        ? "border-slate-600 bg-slate-700 text-slate-200" 
-                        : "border-gray-200 text-gray-800"
-                    }`}
-                  />
+                  <div className="flex items-center gap-1">
+                    {taxRatePresets.length > 0 && (
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value !== "") {
+                            handleHeaderChange({ target: { name: "tax_percentage", value: e.target.value } });
+                          }
+                        }}
+                        title="Select Statutory Tax Preset"
+                        className={`w-12 h-6.5 border rounded-md px-1 text-[10px] ${
+                          isDark ? "border-slate-600 bg-slate-700 text-slate-200" : "border-gray-200 bg-gray-50 text-gray-700"
+                        }`}
+                      >
+                        <option value="">Rate</option>
+                        {taxRatePresets.map((tr) => (
+                          <option key={tr.id} value={Number(tr.rate)}>
+                            {tr.code} ({Number(tr.rate)}%)
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <input
+                      type="text"
+                      name="tax_percentage"
+                      value={form.tax_percentage ?? ""}
+                      onChange={handleHeaderChange}
+                      autoComplete="off"
+                      className={`w-16 h-6.5 border rounded-md px-2 text-center text-xs ${
+                        isDark 
+                          ? "border-slate-600 bg-slate-700 text-slate-200" 
+                          : "border-gray-200 text-gray-800"
+                      }`}
+                    />
+                  </div>
                 </div>
 
                 {/* Tax Amt */}

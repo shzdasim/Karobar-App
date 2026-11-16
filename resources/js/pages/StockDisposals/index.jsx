@@ -64,6 +64,7 @@ export default function StockDisposalsIndex() {
   const canCreateDisposal = has("stock-disposal.create");
   const canDispose = has("stock-disposal.dispose");
   const canRestore = has("stock-disposal.restore");
+  const canDeleteDisposal = has("stock-disposal.delete");
   const canViewExpiry = has("batch-expiry.view");
 
   const buttonStyle = theme?.button_style || "modern";
@@ -271,6 +272,22 @@ export default function StockDisposalsIndex() {
       toast.error(err?.response?.data?.message || "Failed to restore stock");
     } finally {
       setSubmittingRestore(false);
+    }
+  };
+
+  const handleDeleteDisposal = async (row) => {
+    const reason = window.prompt(
+      `Reverse and delete voucher ${row.disposal_number}? (Stock and linked P&L write-offs will be restored if not already restored)\n\nEnter reason:`
+    );
+    if (reason === null) return;
+    try {
+      const { data } = await axios.delete(`/api/stock-disposals/${row.id}`, {
+        data: { reason: reason.trim() || "Reversed & deleted by user" },
+      });
+      toast.success(data?.message || "Stock disposal voucher reversed and deleted");
+      fetchDisposals();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to delete disposal voucher");
     }
   };
 
@@ -734,6 +751,28 @@ export default function StockDisposalsIndex() {
                                 </button>
                               )}
                             </>
+                          )}
+
+                          {isDisposed && canRestore && (
+                            <button
+                              type="button"
+                              onClick={() => openRestoreModal(row)}
+                              className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+                              title="Reverse disposal and restore stock & P&L write-off"
+                            >
+                              Reverse
+                            </button>
+                          )}
+
+                          {canDeleteDisposal && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteDisposal(row)}
+                              className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 transition-colors"
+                              title="Reverse & Delete Disposal Voucher"
+                            >
+                              <TrashIcon className="w-4 h-4" />
+                            </button>
                           )}
                         </div>
                       </td>

@@ -38,8 +38,26 @@ class DoctorController extends Controller
         }
     }
 
+    private function authorizeDoctorView(Request $request): void
+    {
+        $user = $request->user();
+        if (!$user) {
+            abort(401);
+        }
+        if ($user->hasRole(['Admin', 'admin', 'super-admin'])) {
+            return;
+        }
+        foreach (['doctor.view', 'customer.view', 'sale-invoice.view', 'sale-invoice.create', 'sale-invoice.update', 'barcode-pos.view', 'barcode-pos.create'] as $perm) {
+            if ($user->can($perm)) {
+                return;
+            }
+        }
+        abort(403, 'You do not have permission to view doctors.');
+    }
+
     public function search(Request $request)
     {
+        $this->authorizeDoctorView($request);
         self::ensureDoctorsSchema();
 
         $q     = trim((string) $request->query('q', ''));
@@ -71,6 +89,7 @@ class DoctorController extends Controller
 
     public function index(Request $request)
     {
+        $this->authorizeDoctorView($request);
         self::ensureDoctorsSchema();
 
         $q = trim((string) $request->query('q', ''));
@@ -118,7 +137,7 @@ class DoctorController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorizeDoctorMutation($request, ['customer.create', 'sale-invoice.create', 'sale-invoice.update']);
+        $this->authorizeDoctorMutation($request, ['doctor.create', 'customer.create', 'sale-invoice.create', 'sale-invoice.update', 'barcode-pos.create']);
         self::ensureDoctorsSchema();
 
         $validated = $request->validate([
@@ -139,15 +158,16 @@ class DoctorController extends Controller
         return response()->json($doctor, 201);
     }
 
-    public function show(Doctor $doctor)
+    public function show(Request $request, Doctor $doctor)
     {
+        $this->authorizeDoctorView($request);
         self::ensureDoctorsSchema();
         return response()->json($doctor);
     }
 
     public function update(Request $request, Doctor $doctor)
     {
-        $this->authorizeDoctorMutation($request, ['customer.update', 'sale-invoice.create', 'sale-invoice.update']);
+        $this->authorizeDoctorMutation($request, ['doctor.update', 'customer.update', 'sale-invoice.create', 'sale-invoice.update']);
         self::ensureDoctorsSchema();
 
         $validated = $request->validate([
@@ -180,7 +200,7 @@ class DoctorController extends Controller
 
     public function destroy(Request $request, Doctor $doctor)
     {
-        $this->authorizeDoctorMutation($request, ['customer.delete', 'sale-invoice.delete']);
+        $this->authorizeDoctorMutation($request, ['doctor.delete', 'customer.delete', 'sale-invoice.delete']);
         self::ensureDoctorsSchema();
 
         if (Schema::hasTable('sale_invoices') && Schema::hasColumn('sale_invoices', 'doctor_id')) {

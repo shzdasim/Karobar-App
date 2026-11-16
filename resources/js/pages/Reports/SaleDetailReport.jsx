@@ -231,6 +231,55 @@ export default function SaleDetailReport() {
     }
   };
 
+  const exportCsv = () => {
+    if (!data.length) return;
+    const headers = [
+      "Invoice #",
+      "Date",
+      "Customer",
+      "Doctor",
+      "Patient",
+      "Product",
+      "Batch",
+      "Qty",
+      "Bonus",
+      "Price",
+      "Discount %",
+      "Line Total",
+    ];
+    const csvRows = [headers];
+    data.forEach((inv) => {
+      (inv.items || []).forEach((it) => {
+        csvRows.push([
+          inv.posted_number || "",
+          inv.date || "",
+          inv.customer_name || "Walk-in",
+          inv.doctor_name || "",
+          inv.patient_name || "",
+          it.product_name || "",
+          it.batch_number || "",
+          n(it.quantity),
+          n(it.bonus),
+          n(it.price),
+          n(it.item_discount_percentage),
+          n(it.sub_total),
+        ]);
+      });
+    });
+    const csv = csvRows
+      .map((row) => row.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `sale-detail-${fromDate || "report"}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const resetFilters = () => {
     setFromDate(yesterdayStr());
     setToDate(todayStr());
@@ -278,6 +327,25 @@ export default function SaleDetailReport() {
 
           <div className="flex flex-wrap items-center gap-2">
             <Guard when={can.export}>
+              <button
+                type="button"
+                onClick={exportCsv}
+                disabled={data.length === 0}
+                title="Export loaded report as CSV"
+                className="products-action theme-btn-secondary"
+              >
+                <ArrowDownOnSquareIcon className="w-4 h-4" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                disabled={data.length === 0}
+                title="Print current view"
+                className="products-action theme-btn-secondary"
+              >
+                <span>Print</span>
+              </button>
               <button
                 type="button"
                 onClick={exportPdf}

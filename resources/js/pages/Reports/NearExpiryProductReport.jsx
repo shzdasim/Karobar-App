@@ -1,5 +1,5 @@
 // resources/js/pages/Reports/NearExpiryProductReport.jsx
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { usePermissions, Guard } from "@/api/usePermissions";
@@ -59,9 +59,21 @@ export default function NearExpiryProductReport() {
   const [brandId, setBrandId] = useState("");
   const [productValue, setProductValue] = useState(null);
   const [productId, setProductId] = useState("");
+  const [storageLocationId, setStorageLocationId] = useState("");
+  const [storageLocations, setStorageLocations] = useState([]);
   const [supplierSearchOpen, setSupplierSearchOpen] = useState(false);
   const [brandSearchOpen, setBrandSearchOpen] = useState(false);
   const [products, setProducts] = useState([]);
+
+  useEffect(() => {
+    axios
+      .get("/api/storage-locations", { params: { active_only: 1 } })
+      .then(({ data }) => {
+        const list = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+        setStorageLocations(list);
+      })
+      .catch(() => setStorageLocations([]));
+  }, []);
 
   // Data + States
   const [data, setData] = useState({ rows: [], summary: {} });
@@ -142,6 +154,7 @@ export default function NearExpiryProductReport() {
           supplier_id: supplierId || undefined,
           brand_id: brandId || undefined,
           product_id: productId || undefined,
+          storage_location_id: storageLocationId || undefined,
         },
       });
 
@@ -172,6 +185,7 @@ export default function NearExpiryProductReport() {
           supplier_id: supplierId || undefined,
           brand_id: brandId || undefined,
           product_id: productId || undefined,
+          storage_location_id: storageLocationId || undefined,
         },
         responseType: "blob",
       });
@@ -205,11 +219,53 @@ export default function NearExpiryProductReport() {
     setBrandId("");
     setProductValue(null);
     setProductId("");
+    setStorageLocationId("");
     setData({ rows: [], summary: {} });
   };
 
   // Computed values
   const { rows, summary } = data;
+
+  const exportCsv = () => {
+    if (!rows.length) return;
+    const headers = [
+      "Product Name",
+      "Batch Number",
+      "Expiry Date",
+      "Days Remaining",
+      "Brand",
+      "Supplier",
+      "Qty (Units)",
+      "Unit Purchase Price",
+      "Purchase Value",
+    ];
+    const csvRows = [
+      headers,
+      ...rows.map((r) => [
+        r.product_name || "",
+        r.batch_number || "",
+        r.expiry_date || "",
+        r.days_remaining ?? "",
+        r.brand_name || "",
+        r.supplier_name || "",
+        n(r.quantity),
+        n(r.unit_purchase_price),
+        n(r.purchase_value || n(r.quantity) * n(r.unit_purchase_price)),
+      ]),
+    ];
+    const csv = csvRows
+      .map((row) => row.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "near-expiry-report.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="report-page">
@@ -231,6 +287,25 @@ export default function NearExpiryProductReport() {
 
           <div className="flex flex-wrap items-center gap-2">
             <Guard when={can.export}>
+              <button
+                type="button"
+                onClick={exportCsv}
+                disabled={rows.length === 0}
+                title="Export loaded report as CSV"
+                className="products-action theme-btn-secondary"
+              >
+                <ArrowDownOnSquareIcon className="w-4 h-4" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                disabled={rows.length === 0}
+                title="Print current view"
+                className="products-action theme-btn-secondary"
+              >
+                <span>Print</span>
+              </button>
               <button
                 type="button"
                 onClick={exportPdf}
@@ -408,6 +483,24 @@ export default function NearExpiryProductReport() {
                 )}
               </div>
             </div>
+
+            {storageLocations.length > 0 && (
+              <div className="products-filter">
+                <span className="products-filter-label">Storage Location</span>
+                <select
+                  value={storageLocationId}
+                  onChange={(e) => setStorageLocationId(e.target.value)}
+                  className="report-input"
+                >
+                  <option value="">All Storage Locations</option>
+                  {storageLocations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
       </section>

@@ -167,4 +167,84 @@ class FormulationController extends Controller
             'is_existing' => $alreadyExisted,
         ], $alreadyExisted ? 200 : 201);
     }
+
+    /**
+     * PUT /api/formulations/{formulation}
+     * Renames a canonical formulation and cascades the rename across products.
+     */
+    public function update(Request $request, $id)
+    {
+        $this->authorizeSave($request);
+
+        $formulation = Formulation::findOrFail($id);
+        $oldName = $formulation->name;
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $clean = Formulation::normalizeName($validated['name']);
+        if ($clean === '') {
+            return response()->json([
+                'message' => 'Formulation name cannot be empty.',
+                'errors'  => ['name' => ['Formulation name cannot be empty.']],
+            ], 422);
+        }
+
+        $key = mb_strtolower($clean);
+        $duplicate = Formulation::where('id', '!=', $formulation->id)
+            ->where(function ($q) use ($key) {
+                $q->where('normalized_name', $key)->orWhereRaw('LOWER(name) = ?', [$key]);
+            })
+            ->first();
+
+        if ($duplicate) {
+            return response()->json([
+                'message' => "A formulation named '{$duplicate->name}' already exists.",
+                'errors'  => ['name' => ["A formulation named '{$duplicate->name}' already exists."]],
+            ], 422);
+        }
+
+        $formulation->update([
+            'name'            => $clean,
+            'normalized_name' => $key,
+        ]);
+
+        if (Schema::hasTable('products') && Schema::hasColumn('products', 'formulation')) {
+            Product::whereRaw('LOWER(formulation) = ?', [mb_strtolower($oldName)])
+                ->update(['formulation' => $clean]);
+        }
+
+        return response()->json([
+            'id'      => $formulation->id,
+            'name'    => $formulation->name,
+            'message' => 'Formulation updated successfully.',
+        ]);
+    }
+
+    /**
+     * DELETE /api/formulations/{formulation}
+     * Deletes a formulation if not in use by any product.
+     */
+    public function destroy(Request $request, $id)
+    {
+        $this->authorizeSave($request);
+
+        $formulation = Formulation::findOrFail($id);
+
+        if (Schema::hasTable('products') && Schema::hasColumn('products', 'formulation')) {
+            $inUseCount = Product::whereRaw('LOWER(formulation) = ?', [mb_strtolower($formulation->name)])->count();
+            if ($inUseCount > 0) {
+                return response()->json([
+                    'message' => "Cannot delete '{$formulation->name}' because it is assigned to {$inUseCount} product(s).",
+                ], 422);
+            }
+        }
+
+        $formulation->delete();
+
+        return response()->json([
+            'message' => 'Formulation deleted successfully.',
+        ]);
+    }
 }

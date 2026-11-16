@@ -18,11 +18,47 @@ class TradeSchemeController extends Controller
     {
     }
 
+    private function authorizeView(Request $request): void
+    {
+        $user = $request->user();
+        if (!$user) {
+            abort(401, 'Unauthenticated.');
+        }
+        if ($user->hasRole(['Admin', 'admin', 'super-admin'])) {
+            return;
+        }
+        foreach (['trade-scheme.view', 'sale-invoice.view', 'sale-invoice.create', 'product.view', 'barcode-pos.view', 'barcode-pos.create'] as $perm) {
+            if ($user->can($perm)) {
+                return;
+            }
+        }
+        abort(403, 'You do not have permission to view trade schemes.');
+    }
+
+    private function authorizeManage(Request $request): void
+    {
+        $user = $request->user();
+        if (!$user) {
+            abort(401, 'Unauthenticated.');
+        }
+        if ($user->hasRole(['Admin', 'admin', 'super-admin'])) {
+            return;
+        }
+        foreach (['trade-scheme.manage', 'trade-scheme.create', 'trade-scheme.update', 'product.create', 'product.update', 'sale-invoice.create', 'sale-invoice.update', 'sale-invoice.discount-override'] as $perm) {
+            if ($user->can($perm)) {
+                return;
+            }
+        }
+        abort(403, 'You do not have permission to manage trade schemes.');
+    }
+
     /**
      * List all trade schemes.
      */
     public function index(Request $request): JsonResponse
     {
+        $this->authorizeView($request);
+
         $query = TradeScheme::with([
             'slabs.bonusProduct:id,name,product_code,pack_size',
             'product:id,name,product_code',
@@ -72,6 +108,8 @@ class TradeSchemeController extends Controller
      */
     public function activeLookup(Request $request): JsonResponse
     {
+        $this->authorizeView($request);
+
         $saleType = $request->get('sale_type');
         $customerId = $request->filled('customer_id') ? (int) $request->customer_id : null;
         $date = $request->get('date', now()->toDateString());
@@ -88,6 +126,8 @@ class TradeSchemeController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $this->authorizeManage($request);
+
         $validated = $request->validate([
             'name'                     => 'required|string|max:255',
             'scheme_type'              => 'required|string|in:ratio,slab',
@@ -147,8 +187,10 @@ class TradeSchemeController extends Controller
     /**
      * Show a trade scheme.
      */
-    public function show($id): JsonResponse
+    public function show(Request $request, $id): JsonResponse
     {
+        $this->authorizeView($request);
+
         $scheme = TradeScheme::with([
             'slabs.bonusProduct:id,name,product_code,pack_size',
             'product:id,name,product_code,pack_size',
@@ -165,6 +207,8 @@ class TradeSchemeController extends Controller
      */
     public function update(Request $request, $id): JsonResponse
     {
+        $this->authorizeManage($request);
+
         $scheme = TradeScheme::findOrFail($id);
 
         $validated = $request->validate([
@@ -228,8 +272,10 @@ class TradeSchemeController extends Controller
     /**
      * Delete a trade scheme.
      */
-    public function destroy($id): JsonResponse
+    public function destroy(Request $request, $id): JsonResponse
     {
+        $this->authorizeManage($request);
+
         $scheme = TradeScheme::findOrFail($id);
         $scheme->delete();
 
@@ -241,8 +287,10 @@ class TradeSchemeController extends Controller
     /**
      * Toggle scheme active status.
      */
-    public function toggleActive($id): JsonResponse
+    public function toggleActive(Request $request, $id): JsonResponse
     {
+        $this->authorizeManage($request);
+
         $scheme = TradeScheme::findOrFail($id);
         $scheme->is_active = !$scheme->is_active;
         $scheme->save();

@@ -201,6 +201,45 @@ export default function CostOfSaleReport() {
     }
   };
 
+  const exportCsv = () => {
+    if (!computed.withDerived.length) return;
+    const headers = [
+      "Date",
+      "Invoice #",
+      "Type",
+      "Customer",
+      "Sale Revenue",
+      "Cost of Goods Sold",
+      "Gross Profit",
+      "Margin %",
+    ];
+    const csvRows = [
+      headers,
+      ...computed.withDerived.map((r) => [
+        r.date || r.created_at || "",
+        r.posted_number || r.invoice_number || "",
+        r.invoice_type || "",
+        r.customer_name || "Walk-in",
+        n(r.sale_amount ?? r.total_sale),
+        n(r.cost_amount ?? r.total_cost),
+        n(r.profit),
+        n(r.margin_pct).toFixed(2),
+      ]),
+    ];
+    const csv = csvRows
+      .map((row) => row.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `cost-of-sale-${fromDate || "report"}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   // Permission gating
   if (permsLoading) {
     return (
@@ -242,6 +281,25 @@ export default function CostOfSaleReport() {
 
           <div className="flex flex-wrap items-center gap-2">
             <Guard when={can.export}>
+              <button
+                type="button"
+                onClick={exportCsv}
+                disabled={!computed.withDerived.length}
+                title="Export loaded report as CSV"
+                className="products-action theme-btn-secondary"
+              >
+                <ArrowDownOnSquareIcon className="w-4 h-4" />
+                <span>CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                disabled={!computed.withDerived.length}
+                title="Print current view"
+                className="products-action theme-btn-secondary"
+              >
+                <span>Print</span>
+              </button>
               <button
                 type="button"
                 onClick={exportPdf}

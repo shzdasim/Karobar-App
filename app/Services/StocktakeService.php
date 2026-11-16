@@ -86,10 +86,18 @@ class StocktakeService
         $products = $this->resolveProducts($session);
         $productIds = $products->pluck('id')->all();
         $batchesCollection = collect();
+        $filterLocationId = ($session->session_type !== 'full' && $session->scope_type === 'storage_location' && $session->scope_id)
+            ? (int) $session->scope_id
+            : null;
         foreach (array_chunk($productIds, 500) as $chunkIds) {
-            $batchesCollection = $batchesCollection->concat(
-                Batch::whereIn('product_id', $chunkIds)->get()
-            );
+            $batchQuery = Batch::whereIn('product_id', $chunkIds);
+            if ($filterLocationId) {
+                $batchQuery->where(function ($bq) use ($filterLocationId) {
+                    $bq->where('storage_location_id', $filterLocationId)
+                       ->orWhereNull('storage_location_id');
+                });
+            }
+            $batchesCollection = $batchesCollection->concat($batchQuery->get());
         }
         $batchesByProduct = $batchesCollection->groupBy('product_id');
 
@@ -531,6 +539,13 @@ class StocktakeService
                     break;
                 case 'supplier':
                     $query->where('supplier_id', $session->scope_id);
+                    break;
+                case 'storage_location':
+                    $locId = (int) $session->scope_id;
+                    $query->where(function ($q) use ($locId) {
+                        $q->where('storage_location_id', $locId)
+                          ->orWhereHas('batches', fn ($bq) => $bq->where('storage_location_id', $locId));
+                    });
                     break;
             }
         }

@@ -68,17 +68,19 @@ class SupplierLedger extends Model
      * Calculate net payable balances for multiple suppliers in bulk (eliminates N+1 loops).
      *
      * @param  array<int, int>  $supplierIds
+     * @param  string|null      $asOfDate
      * @return array<int, float>
      */
-    public static function getBulkSupplierNetBalances(array $supplierIds): array
+    public static function getBulkSupplierNetBalances(array $supplierIds, ?string $asOfDate = null): array
     {
         $supplierIds = array_values(array_unique(array_filter(array_map('intval', $supplierIds))));
         if (empty($supplierIds)) {
             return [];
         }
 
-        $rowsBySupplier = self::with(['purchaseInvoice:id,invoice_number,posted_number,total_amount,total_paid,status'])
+        $rowsBySupplier = self::with(['purchaseInvoice:id,invoice_number,posted_number,total_amount,total_paid,status,posted_date'])
             ->whereIn('supplier_id', $supplierIds)
+            ->when($asOfDate !== null, fn ($q) => $q->whereDate('entry_date', '<=', $asOfDate))
             ->get()
             ->groupBy('supplier_id');
 
@@ -94,6 +96,7 @@ class SupplierLedger extends Model
         $unlinkedBySupplier = PurchaseInvoice::query()
             ->whereIn('supplier_id', $supplierIds)
             ->where('invoice_type', 'credit')
+            ->when($asOfDate !== null, fn ($q) => $q->whereDate('posted_date', '<=', $asOfDate))
             ->where(function ($q) {
                 $q->whereNull('status')->orWhere('status', '!=', 'reversed');
             })

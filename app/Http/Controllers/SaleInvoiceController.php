@@ -452,6 +452,7 @@ class SaleInvoiceController extends Controller
             'draft_id'            => 'nullable|integer|exists:invoice_drafts,id',
             'customer_id'         => 'required|exists:customers,id',
             'doctor_id'           => 'nullable|integer',
+            'salesman_id'         => 'nullable|integer',
             'invoice_type'        => 'nullable|string|in:credit,debit',
             'payment_method'      => 'nullable|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
             'account_id'          => 'nullable|integer|exists:accounts,id',
@@ -862,6 +863,7 @@ class SaleInvoiceController extends Controller
             'update_drawer_if_pre_shift' => 'nullable|boolean',
             'customer_id'         => 'required|exists:customers,id',
             'doctor_id'           => 'nullable|integer',
+            'salesman_id'         => 'nullable|integer',
             'invoice_type'        => 'nullable|string|in:credit,debit',
             'payment_method'      => 'nullable|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
             'account_id'          => 'nullable|integer|exists:accounts,id',
@@ -1081,6 +1083,10 @@ class SaleInvoiceController extends Controller
 
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'doctor_id')) {
                 $updateData['doctor_id'] = !empty($data['doctor_id']) ? (int) $data['doctor_id'] : null;
+            }
+
+            if (array_key_exists('salesman_id', $data) && \Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'salesman_id')) {
+                $updateData['salesman_id'] = !empty($data['salesman_id']) ? (int) $data['salesman_id'] : null;
             }
 
             foreach (['doctor_pmdc', 'doctor_hospital', 'patient_cnic', 'patient_address', 'prescription_no', 'pharmacist_name'] as $regCol) {

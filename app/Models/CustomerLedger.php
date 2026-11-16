@@ -85,9 +85,10 @@ class CustomerLedger extends Model
      * Compute positive customer receivables per customer in 2 grouped SQL queries.
      *
      * @param  array<int, int>|null  $customerIds
+     * @param  string|null           $asOfDate
      * @return array<int, float>
      */
-    public static function getBulkCustomerNetBalances(?array $customerIds = null): array
+    public static function getBulkCustomerNetBalances(?array $customerIds = null, ?string $asOfDate = null): array
     {
         $walkInIds = Customer::walkInIds();
         $filterIds = $customerIds !== null
@@ -103,6 +104,7 @@ class CustomerLedger extends Model
             ->whereNotNull('cl.customer_id')
             ->when($filterIds !== null, fn ($q) => $q->whereIn('cl.customer_id', $filterIds))
             ->when(!empty($walkInIds), fn ($q) => $q->whereNotIn('cl.customer_id', $walkInIds))
+            ->when($asOfDate !== null, fn ($q) => $q->whereDate('cl.entry_date', '<=', $asOfDate))
             ->whereIn('cl.entry_type', ['invoice', 'manual'])
             ->where(function ($q) {
                 $q->whereNull('cl.sale_invoice_id')
@@ -122,6 +124,7 @@ class CustomerLedger extends Model
             ->whereNotNull('customer_id')
             ->when($filterIds !== null, fn ($q) => $q->whereIn('customer_id', $filterIds))
             ->when(!empty($walkInIds), fn ($q) => $q->whereNotIn('customer_id', $walkInIds))
+            ->when($asOfDate !== null, fn ($q) => $q->whereDate('entry_date', '<=', $asOfDate))
             ->where('entry_type', 'payment')
             ->selectRaw('customer_id, SUM(COALESCE(credited_amount, 0)) as total_credited')
             ->groupBy('customer_id')
@@ -148,9 +151,9 @@ class CustomerLedger extends Model
     /**
      * Compute total positive customer receivables across all customers in 2 grouped SQL queries.
      */
-    public static function getTotalReceivablesBalance(): float
+    public static function getTotalReceivablesBalance(?string $asOfDate = null): float
     {
-        return round(array_sum(self::getBulkCustomerNetBalances()), 2);
+        return round(array_sum(self::getBulkCustomerNetBalances(null, $asOfDate)), 2);
     }
 
     public function customer(): BelongsTo

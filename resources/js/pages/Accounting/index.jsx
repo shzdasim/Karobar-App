@@ -17,6 +17,8 @@ import {
   ArrowUturnLeftIcon,
   ReceiptPercentIcon,
   Squares2X2Icon,
+  PencilSquareIcon,
+  TrashIcon,
 } from "@heroicons/react/24/outline";
 import { useTheme } from "@/context/ThemeContext";
 import { useCurrency } from "@/context/CurrencyContext";
@@ -47,9 +49,10 @@ const NEW_COA_TYPE_OPTIONS = [
 const GL_SOURCE_OPTIONS = [
   { value: "all", label: "All Double-Entry Vouchers" },
   { value: "manual", label: "Manual Journal Vouchers (JV) Only" },
-  { value: "sale", label: "Sales Auto-Postings" },
-  { value: "purchase", label: "Purchase Auto-Postings" },
-  { value: "expense", label: "Expense Auto-Postings" },
+  { value: "sale", label: "Sales & Sale Returns Auto-Postings" },
+  { value: "purchase", label: "Purchase & Purchase Returns Auto-Postings" },
+  { value: "payment", label: "Payment Vouchers & Staff Advances" },
+  { value: "expense", label: "Expense & Disposal Write-Off Postings" },
 ];
 
 const JV_TYPE_OPTIONS = [
@@ -167,20 +170,22 @@ export default function AccountingPage() {
     { chart_of_account_id: "", description: "", debit: "", credit: "" },
   ]);
 
-  // New Chart of Account Form
+  // New Chart of Account Form & Editing State
   const [coaCode, setCoaCode] = useState("");
   const [coaName, setCoaName] = useState("");
   const [coaType, setCoaType] = useState(NEW_COA_TYPE_OPTIONS[0]);
   const [coaOpening, setCoaOpening] = useState("");
   const [coaDesc, setCoaDesc] = useState("");
   const [savingCoa, setSavingCoa] = useState(false);
+  const [editingCoa, setEditingCoa] = useState(null);
 
-  // New Tax Rate Form
+  // New Tax Rate Form & Editing State
   const [taxName, setTaxName] = useState("");
   const [taxCode, setTaxCode] = useState("");
   const [taxRateVal, setTaxRateVal] = useState("");
   const [taxTypeOpt, setTaxTypeOpt] = useState(TAX_TYPE_OPTIONS[0]);
   const [savingTax, setSavingTax] = useState(false);
+  const [editingTax, setEditingTax] = useState(null);
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedGlSearch(glSearch), 300);
@@ -359,23 +364,60 @@ export default function AccountingPage() {
     }
     setSavingCoa(true);
     try {
-      await axios.post("/api/accounting/chart-of-accounts", {
-        code: coaCode.trim(),
-        name: coaName.trim(),
-        account_type: coaType.value,
-        opening_balance: parseFloat(coaOpening) || 0,
-        description: coaDesc.trim() || null,
-      });
-      toast.success("Account added to Chart of Accounts!");
+      if (editingCoa?.id) {
+        await axios.put(`/api/accounting/chart-of-accounts/${editingCoa.id}`, {
+          code: coaCode.trim(),
+          name: coaName.trim(),
+          opening_balance: parseFloat(coaOpening) || 0,
+          is_active: editingCoa.is_active,
+          description: coaDesc.trim() || null,
+        });
+        toast.success("Chart of Account updated!");
+        setEditingCoa(null);
+      } else {
+        await axios.post("/api/accounting/chart-of-accounts", {
+          code: coaCode.trim(),
+          name: coaName.trim(),
+          account_type: coaType.value,
+          opening_balance: parseFloat(coaOpening) || 0,
+          description: coaDesc.trim() || null,
+        });
+        toast.success("Account added to Chart of Accounts!");
+      }
       setCoaCode("");
       setCoaName("");
       setCoaOpening("");
       setCoaDesc("");
       fetchOverview();
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Failed to create account.");
+      toast.error(err?.response?.data?.message || "Failed to save account.");
     } finally {
       setSavingCoa(false);
+    }
+  };
+
+  const handleEditCoaClick = (acc) => {
+    setEditingCoa(acc);
+    setCoaCode(acc.code || "");
+    setCoaName(acc.name || "");
+    setCoaType(NEW_COA_TYPE_OPTIONS.find((o) => o.value === acc.account_type) || NEW_COA_TYPE_OPTIONS[0]);
+    setCoaOpening(String(acc.opening_balance ?? 0));
+    setCoaDesc(acc.description || "");
+  };
+
+  const handleToggleCoaActive = async (acc) => {
+    try {
+      await axios.put(`/api/accounting/chart-of-accounts/${acc.id}`, {
+        code: acc.code,
+        name: acc.name,
+        opening_balance: acc.opening_balance,
+        is_active: !acc.is_active,
+        description: acc.description,
+      });
+      toast.success(`Account ${acc.code} ${!acc.is_active ? "activated" : "deactivated"}`);
+      fetchOverview();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to update account status.");
     }
   };
 
@@ -387,13 +429,26 @@ export default function AccountingPage() {
     }
     setSavingTax(true);
     try {
-      await axios.post("/api/accounting/tax-rates", {
-        name: taxName.trim(),
-        code: taxCode.trim(),
-        rate: parseFloat(taxRateVal) || 0,
-        type: taxTypeOpt.value,
-      });
-      toast.success("Statutory Tax Rate saved!");
+      if (editingTax?.id) {
+        await axios.put(`/api/accounting/tax-rates/${editingTax.id}`, {
+          name: taxName.trim(),
+          code: taxCode.trim(),
+          rate: parseFloat(taxRateVal) || 0,
+          type: taxTypeOpt.value,
+          is_default: editingTax.is_default,
+          is_active: editingTax.is_active,
+        });
+        toast.success("Statutory Tax Rate updated!");
+        setEditingTax(null);
+      } else {
+        await axios.post("/api/accounting/tax-rates", {
+          name: taxName.trim(),
+          code: taxCode.trim(),
+          rate: parseFloat(taxRateVal) || 0,
+          type: taxTypeOpt.value,
+        });
+        toast.success("Statutory Tax Rate saved!");
+      }
       setTaxName("");
       setTaxCode("");
       setTaxRateVal("");
@@ -402,6 +457,31 @@ export default function AccountingPage() {
       toast.error(err?.response?.data?.message || "Failed to save tax rate.");
     } finally {
       setSavingTax(false);
+    }
+  };
+
+  const handleEditTaxClick = (tr) => {
+    setEditingTax(tr);
+    setTaxName(tr.name || "");
+    setTaxCode(tr.code || "");
+    setTaxRateVal(String(tr.rate ?? 0));
+    setTaxTypeOpt(TAX_TYPE_OPTIONS.find((o) => o.value === tr.type) || TAX_TYPE_OPTIONS[0]);
+  };
+
+  const handleDeleteTaxRate = async (tr) => {
+    if (!window.confirm(`Delete statutory tax rate "${tr.code} — ${tr.name}"?`)) return;
+    try {
+      await axios.delete(`/api/accounting/tax-rates/${tr.id}`);
+      toast.success("Tax rate deleted.");
+      if (editingTax?.id === tr.id) {
+        setEditingTax(null);
+        setTaxName("");
+        setTaxCode("");
+        setTaxRateVal("");
+      }
+      fetchOverview();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to delete tax rate.");
     }
   };
 
@@ -998,6 +1078,14 @@ export default function AccountingPage() {
                   +{formatCurrency(cf.operating.purchase_return_refunds)}
                 </span>
               </div>
+              {Number(cf.operating.staff_advance_repayments || 0) > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span>Staff Advance Repayments</span>
+                  <span className="font-mono font-semibold text-emerald-600">
+                    +{formatCurrency(cf.operating.staff_advance_repayments)}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between text-xs">
                 <span>Cash Paid on Purchases</span>
                 <span className="font-mono font-semibold text-rose-600">
@@ -1010,12 +1098,28 @@ export default function AccountingPage() {
                   -{formatCurrency(cf.operating.supplier_payment_vouchers)}
                 </span>
               </div>
+              {Number(cf.operating.sale_return_refunds || 0) > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span>Sale Return Cash Refunds</span>
+                  <span className="font-mono font-semibold text-rose-600">
+                    -{formatCurrency(cf.operating.sale_return_refunds)}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between text-xs">
                 <span>Operating Expenses Paid</span>
                 <span className="font-mono font-semibold text-rose-600">
                   -{formatCurrency(cf.operating.operating_expenses_paid)}
                 </span>
               </div>
+              {Number(cf.operating.staff_advances_disbursed || 0) > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span>Staff Advances Disbursed</span>
+                  <span className="font-mono font-semibold text-rose-600">
+                    -{formatCurrency(cf.operating.staff_advances_disbursed)}
+                  </span>
+                </div>
+              )}
               <div className="pt-2 border-t border-gray-200 dark:border-slate-700 flex justify-between text-xs font-bold">
                 <span>Net Operating Cash Flow</span>
                 <span className="font-mono">{formatCurrency(cf.operating.net_operating_cash_flow)}</span>
@@ -1070,15 +1174,32 @@ export default function AccountingPage() {
       {/* TAB 5: CHART OF ACCOUNTS & TAX RATES */}
       {activeTab === "coa_tax" && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Add Chart of Account Card */}
+          {/* Add / Edit Chart of Account Card */}
           <div className="rounded-2xl bg-white/85 dark:bg-slate-900/85 border border-gray-200/80 dark:border-slate-800 p-5 space-y-4">
-            <div>
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white">
-                Add Custom Account to Chart of Accounts
-              </h3>
-              <p className="text-xs text-gray-500 dark:text-slate-400">
-                Create custom Asset, Liability, Equity, Revenue, or Expense ledger accounts
-              </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                  {editingCoa ? `Edit Account: ${editingCoa.code}` : "Chart of Accounts & Opening Balances"}
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-slate-400">
+                  Create or edit Asset, Liability, Equity, Revenue, or Expense ledger accounts
+                </p>
+              </div>
+              {editingCoa && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingCoa(null);
+                    setCoaCode("");
+                    setCoaName("");
+                    setCoaOpening("");
+                    setCoaDesc("");
+                  }}
+                  className="text-xs font-semibold text-rose-600 hover:underline"
+                >
+                  Cancel Edit
+                </button>
+              )}
             </div>
 
             <form onSubmit={handleCreateCoa} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1088,8 +1209,9 @@ export default function AccountingPage() {
                   type="text"
                   value={coaCode}
                   onChange={(e) => setCoaCode(e.target.value)}
+                  disabled={Boolean(editingCoa?.is_system)}
                   placeholder="e.g. 1650 or 5350"
-                  className="w-full h-9 px-3 text-xs rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                  className="w-full h-9 px-3 text-xs rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 disabled:opacity-60"
                 />
               </div>
               <div>
@@ -1103,11 +1225,12 @@ export default function AccountingPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1">Account Class (react-select)</label>
+                <label className="block text-xs font-medium mb-1">Account Class</label>
                 <Select
                   options={NEW_COA_TYPE_OPTIONS}
                   value={coaType}
                   onChange={(opt) => opt && setCoaType(opt)}
+                  isDisabled={Boolean(editingCoa)}
                   styles={selectStyles}
                   isSearchable={false}
                   menuPortalTarget={typeof document !== "undefined" ? document.body : null}
@@ -1131,21 +1254,85 @@ export default function AccountingPage() {
                   className={`px-4 py-2 text-xs font-semibold ${buttonClasses.primary.className}`}
                   style={buttonClasses.primary.style}
                 >
-                  {savingCoa ? "Saving…" : "+ Add Account"}
+                  {savingCoa ? "Saving…" : editingCoa ? "Update Account" : "+ Add Account"}
                 </button>
               </div>
             </form>
+
+            <div className="pt-2 border-t border-gray-200/70 dark:border-slate-800 max-h-80 overflow-y-auto divide-y divide-gray-100 dark:divide-slate-800 text-xs">
+              {(overview?.chart_of_accounts || []).map((acc) => (
+                <div key={acc.id} className="py-2 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                        {acc.code}
+                      </span>
+                      <span className={`font-medium truncate ${acc.is_active ? "text-gray-900 dark:text-white" : "line-through text-gray-400"}`}>
+                        {acc.name}
+                      </span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${CLASS_BADGES[acc.account_type] || ""}`}>
+                        {acc.account_type}
+                      </span>
+                    </div>
+                    {Number(acc.opening_balance || 0) !== 0 && (
+                      <div className="text-[11px] text-gray-500 dark:text-slate-400 font-mono">
+                        Opening Bal: {formatCurrency(acc.opening_balance)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleEditCoaClick(acc)}
+                      className="p-1.5 rounded-lg border border-gray-200 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-600 dark:text-slate-300"
+                      title="Edit Account & Opening Balance"
+                    >
+                      <PencilSquareIcon className="w-3.5 h-3.5" />
+                    </button>
+                    {!acc.is_system && (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleCoaActive(acc)}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${
+                          acc.is_active
+                            ? "border-emerald-300 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300"
+                            : "border-gray-300 text-gray-500"
+                        }`}
+                      >
+                        {acc.is_active ? "Active" : "Inactive"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Statutory Tax Rates Card */}
           <div className="rounded-2xl bg-white/85 dark:bg-slate-900/85 border border-gray-200/80 dark:border-slate-800 p-5 space-y-4">
-            <div>
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white">
-                Statutory Tax Rate Presets (GST / VAT / WHT)
-              </h3>
-              <p className="text-xs text-gray-500 dark:text-slate-400">
-                Standard tax tiers for Sales, Purchases, Further Tax, and Withholding Tax
-              </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                  {editingTax ? `Edit Tax Rate: ${editingTax.code}` : "Statutory Tax Rate Presets (GST / VAT / WHT)"}
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-slate-400">
+                  Standard tax tiers for Sales, Purchases, Further Tax, and Withholding Tax
+                </p>
+              </div>
+              {editingTax && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingTax(null);
+                    setTaxName("");
+                    setTaxCode("");
+                    setTaxRateVal("");
+                  }}
+                  className="text-xs font-semibold text-rose-600 hover:underline"
+                >
+                  Cancel Edit
+                </button>
+              )}
             </div>
 
             <form onSubmit={handleCreateTaxRate} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1198,23 +1385,44 @@ export default function AccountingPage() {
                   className={`px-4 py-2 text-xs font-semibold ${buttonClasses.primary.className}`}
                   style={buttonClasses.primary.style}
                 >
-                  {savingTax ? "Saving…" : "+ Add Tax Rate"}
+                  {savingTax ? "Saving…" : editingTax ? "Update Tax Rate" : "+ Add Tax Rate"}
                 </button>
               </div>
             </form>
 
-            <div className="divide-y divide-gray-100 dark:divide-slate-800 text-xs pt-2">
+            <div className="divide-y divide-gray-100 dark:divide-slate-800 text-xs pt-2 max-h-80 overflow-y-auto">
               {(overview?.tax_rates || []).map((tr) => (
-                <div key={tr.id} className="py-2 flex items-center justify-between">
-                  <div>
+                <div key={tr.id} className="py-2 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
                     <span className="font-mono font-bold text-blue-600 dark:text-blue-400 mr-2">
                       {tr.code}
                     </span>
                     <span className="font-medium text-gray-900 dark:text-white">{tr.name}</span>
+                    <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] uppercase bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300">
+                      {tr.type}
+                    </span>
                   </div>
-                  <span className="font-mono font-bold text-gray-800 dark:text-slate-200">
-                    {Number(tr.rate).toFixed(2)}%
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="font-mono font-bold text-gray-800 dark:text-slate-200">
+                      {Number(tr.rate).toFixed(2)}%
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleEditTaxClick(tr)}
+                      className="p-1.5 rounded-lg border border-gray-200 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-600 dark:text-slate-300"
+                      title="Edit Tax Rate"
+                    >
+                      <PencilSquareIcon className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTaxRate(tr)}
+                      className="p-1.5 rounded-lg border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400"
+                      title="Delete Tax Rate"
+                    >
+                      <TrashIcon className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

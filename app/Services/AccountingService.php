@@ -37,6 +37,21 @@ class AccountingService
             if (is_object($migration) && method_exists($migration, 'up')) {
                 $migration->up();
             }
+        } elseif (!ChartOfAccount::where('system_key', 'staff_advances_receivable')->exists()) {
+            ChartOfAccount::firstOrCreate(
+                ['code' => '1250'],
+                [
+                    'name'            => 'Staff Advances & Employee Loans Receivable',
+                    'account_type'    => 'asset',
+                    'sub_type'        => 'current_asset',
+                    'normal_balance'  => 'debit',
+                    'system_key'      => 'staff_advances_receivable',
+                    'opening_balance' => 0,
+                    'is_system'       => true,
+                    'is_active'       => true,
+                    'description'     => 'Salary advances and short-term loans receivable from store employees',
+                ]
+            );
         }
     }
 
@@ -300,20 +315,54 @@ class AccountingService
     {
         $from = Carbon::parse($fromDate)->toDateString();
         $to = Carbon::parse($toDate)->toDateString();
+        $today = Carbon::today()->toDateString();
+        $isHistorical = $to < $today;
 
-        // 1. Treasury Cash & Bank Balances
+        // 1. Treasury Cash & Bank Balances (with historical roll-back if $to < today)
         $this->accountService->reconcileWithOpenCashDrawers();
         $treasuryAccounts = Schema::hasTable('accounts')
             ? Account::where('is_active', true)->orderBy('type')->orderBy('name')->get()
             : collect();
+
+        if ($isHistorical && Schema::hasTable('account_transactions') && $treasuryAccounts->isNotEmpty()) {
+            $postPeriodDeltas = DB::table('account_transactions')
+                ->whereDate('transaction_date', '>', $to)
+                ->selectRaw("
+                    account_id,
+                    SUM(CASE WHEN type IN ('deposit', 'transfer_in') THEN amount WHEN type IN ('withdrawal', 'transfer_out') THEN -amount ELSE 0 END) as net_after
+                ")
+                ->groupBy('account_id')
+                ->pluck('net_after', 'account_id');
+
+            foreach ($treasuryAccounts as $tAcc) {
+                $deltaAfter = (float) ($postPeriodDeltas[$tAcc->id] ?? 0.0);
+                $tAcc->current_balance = round((float) $tAcc->current_balance - $deltaAfter, 2);
+            }
+        }
         $totalCashAndBanks = round((float) $treasuryAccounts->sum('current_balance'), 2);
 
-        // 2. Accounts Receivable (Customer Net Balances)
+        // 2. Accounts Receivable (Customer Net Balances as of $to)
         $totalReceivables = \App\Support\SchemaCache::hasTable('customer_ledgers')
-            ? \App\Models\CustomerLedger::getTotalReceivablesBalance()
+            ? \App\Models\CustomerLedger::getTotalReceivablesBalance($isHistorical ? $to : null)
             : 0.0;
 
-        // 3. Accounts Payable (Supplier Net Balances)
+        // 2b. Staff Advances Receivable (as of $to)
+        $staffAdvancesReceivable = 0.0;
+        if (Schema::hasTable('employees')) {
+            if ($isHistorical && Schema::hasTable('employee_advances')) {
+                $advRow = DB::table('employee_advances')
+                    ->whereDate('date', '<=', $to)
+                    ->selectRaw("
+                        COALESCE(SUM(CASE WHEN type = 'advance' THEN amount WHEN type IN ('repayment', 'payroll_deduction') THEN -amount ELSE 0 END), 0) as net_adv
+                    ")
+                    ->first();
+                $staffAdvancesReceivable = round(max(0.0, (float) ($advRow->net_adv ?? 0)), 2);
+            } else {
+                $staffAdvancesReceivable = round(max(0.0, (float) DB::table('employees')->sum(DB::raw('COALESCE(advance_balance, 0)'))), 2);
+            }
+        }
+
+        // 3. Accounts Payable (Supplier Net Balances as of $to)
         $totalPayables = 0.0;
         if (Schema::hasTable('supplier_ledgers')) {
             $ledgerSupIds = DB::table('supplier_ledgers')
@@ -332,7 +381,7 @@ class AccountingService
                 : [];
             $allSupIds = array_values(array_unique(array_merge($ledgerSupIds, $creditInvSupIds)));
             if (!empty($allSupIds)) {
-                $netBalances = \App\Models\SupplierLedger::getBulkSupplierNetBalances($allSupIds);
+                $netBalances = \App\Models\SupplierLedger::getBulkSupplierNetBalances($allSupIds, $isHistorical ? $to : null);
                 foreach ($netBalances as $net) {
                     if ($net > 0) {
                         $totalPayables += $net;
@@ -342,10 +391,48 @@ class AccountingService
         }
         $totalPayables = round($totalPayables, 2);
 
-        // 4. Merchandise Inventory Valuation (On-Hand Stock at Weighted Average / Unit Purchase Cost)
+        // 4. Merchandise Inventory Valuation (On-Hand Stock at Weighted Average / Unit Purchase Cost, rolled back if $to < today)
         $inventoryValuation = (float) DB::table('products')
             ->where('quantity', '>', 0)
             ->sum(DB::raw('COALESCE(quantity, 0) * CASE WHEN avg_price IS NULL OR avg_price <= 0 THEN COALESCE(unit_purchase_price, 0) ELSE avg_price END'));
+
+        if ($isHistorical) {
+            // Roll back post-$to stock movements: subtract net additions after $to, add back net deductions after $to
+            $purchasesAfter = (float) DB::table('purchase_invoice_items as pii')
+                ->join('purchase_invoices as pi', 'pi.id', '=', 'pii.purchase_invoice_id')
+                ->whereDate('pi.posted_date', '>', $to)
+                ->where(fn ($q) => $q->whereNull('pi.status')->orWhere('pi.status', '!=', 'reversed'))
+                ->sum(DB::raw('COALESCE(pii.sub_total, 0)'));
+
+            $purchaseReturnsAfter = (float) DB::table('purchase_return_items as pri')
+                ->join('purchase_returns as pr', 'pr.id', '=', 'pri.purchase_return_id')
+                ->whereDate('pr.date', '>', $to)
+                ->sum(DB::raw('COALESCE(pri.sub_total, 0)'));
+
+            $hasBonusColForInv = Schema::hasColumn('sale_invoice_items', 'bonus');
+            $saleUnitsExprInv = $hasBonusColForInv
+                ? '(COALESCE(sii.quantity, 0) + COALESCE(sii.bonus, 0))'
+                : 'COALESCE(sii.quantity, 0)';
+            $salesCogsAfter = (float) DB::table('sale_invoice_items as sii')
+                ->join('sale_invoices as si', 'si.id', '=', 'sii.sale_invoice_id')
+                ->join('products as p', 'p.id', '=', 'sii.product_id')
+                ->whereDate('si.date', '>', $to)
+                ->where(fn ($q) => $q->whereNull('si.status')->orWhere('si.status', '!=', 'reversed'))
+                ->sum(DB::raw("{$saleUnitsExprInv} * COALESCE(sii.cost_price_snapshot, CASE WHEN p.avg_price IS NULL OR p.avg_price <= 0 THEN COALESCE(p.unit_purchase_price, 0) ELSE p.avg_price END)"));
+
+            $saleReturnsCogsAfter = (float) DB::table('sale_return_items as sri')
+                ->join('sale_returns as sr', 'sr.id', '=', 'sri.sale_return_id')
+                ->join('products as p', 'p.id', '=', 'sri.product_id')
+                ->whereDate('sr.date', '>', $to)
+                ->sum(DB::raw('COALESCE(sri.unit_return_quantity, 0) * COALESCE(sri.cost_price_snapshot, CASE WHEN p.avg_price IS NULL OR p.avg_price <= 0 THEN COALESCE(p.unit_purchase_price, 0) ELSE p.avg_price END)'));
+
+            $adjSignedAfter = (float) DB::table('stock_adjustment_items as sai')
+                ->join('stock_adjustments as sa', 'sa.id', '=', 'sai.stock_adjustment_id')
+                ->whereDate('sa.posted_date', '>', $to)
+                ->sum(DB::raw('COALESCE(sai.diff_qty, 0) * COALESCE(sai.unit_purchase_price, 0)'));
+
+            $inventoryValuation = $inventoryValuation - $purchasesAfter + $purchaseReturnsAfter + $salesCogsAfter - $saleReturnsCogsAfter - $adjSignedAfter;
+        }
         $inventoryValuation = round(max(0.0, $inventoryValuation), 2);
 
         // 5. Period & Cumulative Sales / Output Tax / Discounts
@@ -467,11 +554,12 @@ class AccountingService
         }
 
         return [
-            'treasury_accounts'   => $treasuryAccounts,
-            'cash_and_banks'      => $totalCashAndBanks,
-            'accounts_receivable' => $totalReceivables,
-            'accounts_payable'    => $totalPayables,
-            'inventory_valuation' => $inventoryValuation,
+            'treasury_accounts'        => $treasuryAccounts,
+            'cash_and_banks'           => $totalCashAndBanks,
+            'accounts_receivable'      => $totalReceivables,
+            'staff_advances_receivable'=> $staffAdvancesReceivable,
+            'accounts_payable'         => $totalPayables,
+            'inventory_valuation'      => $inventoryValuation,
             'output_tax_payable'  => round(max(0.0, $cumulativeSalesTax - $cumulativeSaleReturnTax), 2),
             'input_tax_receivable'=> round(max(0.0, $cumulativePurchaseTax - $cumulativePurchaseReturnTax), 2),
             'gross_sales'         => round((float) ($periodSales->gross_sales ?? 0), 2),
@@ -544,6 +632,10 @@ class AccountingService
 
                 case 'accounts_receivable':
                     $baseDebit = round($ops['accounts_receivable'] + $opening, 2);
+                    break;
+
+                case 'staff_advances_receivable':
+                    $baseDebit = round(($ops['staff_advances_receivable'] ?? 0) + $opening, 2);
                     break;
 
                 case 'merchandise_inventory':
@@ -854,6 +946,19 @@ class AccountingService
                 ->sum('e.amount');
         }
 
+        $staffAdvancesDisbursed = 0.0;
+        $staffAdvancesRepaid = 0.0;
+        if (Schema::hasTable('employee_advances')) {
+            $staffAdvancesDisbursed = (float) DB::table('employee_advances')
+                ->where('type', 'advance')
+                ->whereBetween('date', [$from, $to])
+                ->sum('amount');
+            $staffAdvancesRepaid = (float) DB::table('employee_advances')
+                ->where('type', 'repayment')
+                ->whereBetween('date', [$from, $to])
+                ->sum('amount');
+        }
+
         // 3. Investing & Financing from Journal Entries
         $investingOutflows = (float) DB::table('journal_entry_lines as jel')
             ->join('journal_entries as je', 'je.id', '=', 'jel.journal_entry_id')
@@ -879,8 +984,8 @@ class AccountingService
             ->where('coa.system_key', 'owners_drawings')
             ->sum(DB::raw('jel.debit - jel.credit'));
 
-        $totalOperatingIn = round($cashOnSales + $customerPaymentReceipts + $purchaseReturnCashRefunds, 2);
-        $totalOperatingOut = round($cashOnPurchases + $supplierPayments + $saleReturnCashRefunds + $operatingExpensesPaid, 2);
+        $totalOperatingIn = round($cashOnSales + $customerPaymentReceipts + $purchaseReturnCashRefunds + $staffAdvancesRepaid, 2);
+        $totalOperatingOut = round($cashOnPurchases + $supplierPayments + $saleReturnCashRefunds + $operatingExpensesPaid + $staffAdvancesDisbursed, 2);
         $netOperatingCashFlow = round($totalOperatingIn - $totalOperatingOut, 2);
         $netInvestingCashFlow = round(-$investingOutflows, 2);
         $netFinancingCashFlow = round($capitalInjected - $ownerDrawings, 2);
@@ -897,10 +1002,12 @@ class AccountingService
                 'cash_from_sales'            => round($cashOnSales, 2),
                 'customer_payment_vouchers'  => round($customerPaymentReceipts, 2),
                 'purchase_return_refunds'    => round($purchaseReturnCashRefunds, 2),
+                'staff_advance_repayments'   => round($staffAdvancesRepaid, 2),
                 'cash_paid_for_purchases'    => round($cashOnPurchases, 2),
                 'supplier_payment_vouchers'  => round($supplierPayments, 2),
                 'sale_return_refunds'        => round($saleReturnCashRefunds, 2),
                 'operating_expenses_paid'    => round($operatingExpensesPaid, 2),
+                'staff_advances_disbursed'   => round($staffAdvancesDisbursed, 2),
                 'net_operating_cash_flow'    => $netOperatingCashFlow,
             ],
             'investing' => [
@@ -1170,6 +1277,138 @@ class AccountingService
                         : [
                             ['account_code' => '2100', 'account_name' => 'Accounts Payable', 'description' => $partyName, 'debit' => $amt, 'credit' => 0.0],
                             ['account_code' => '1010', 'account_name' => 'Cash & Bank Equivalents', 'description' => ucfirst(str_replace('_', ' ', $pay->payment_method ?: 'cash')), 'debit' => 0.0, 'credit' => $amt],
+                        ],
+                ];
+            }
+        }
+
+        // 6. System Auto-Generated Double-Entry Postings from Sale Returns
+        if (in_array($sourceFilter, ['all', 'sale', 'return'], true) && Schema::hasTable('sale_returns')) {
+            $saleReturns = DB::table('sale_returns as sr')
+                ->leftJoin('customers as c', 'c.id', '=', 'sr.customer_id')
+                ->whereBetween('sr.date', [$from, $to])
+                ->select('sr.*', 'c.name as customer_name')
+                ->orderByDesc('sr.date')
+                ->orderByDesc('sr.id')
+                ->limit(150)
+                ->get();
+
+            foreach ($saleReturns as $sr) {
+                $total = round((float) ($sr->total ?? 0), 2);
+                $tax = round((float) ($sr->tax_amount ?? 0), 2);
+                $netRet = round(max(0.0, $total - $tax), 2);
+                $isCashRefund = ($sr->settlement_mode ?? 'cash_refund') === 'cash_refund';
+                $lines = [
+                    ['account_code' => '4200', 'account_name' => 'Sales Returns & Allowances', 'description' => 'Merchandise returned by customer', 'debit' => $netRet, 'credit' => 0.0],
+                ];
+                if ($tax > 0) {
+                    $lines[] = ['account_code' => '2200', 'account_name' => 'Output Tax Payable (GST/VAT)', 'description' => 'Output tax reversed on return', 'debit' => $tax, 'credit' => 0.0];
+                }
+                $lines[] = $isCashRefund
+                    ? ['account_code' => '1010', 'account_name' => 'Cash & Bank Equivalents', 'description' => 'Cash refund on sale return', 'debit' => 0.0, 'credit' => $total]
+                    : ['account_code' => '1200', 'account_name' => 'Accounts Receivable', 'description' => ($sr->customer_name ?: 'Customer') . ' ledger credit', 'debit' => 0.0, 'credit' => $total];
+
+                $entries[] = [
+                    'id'               => 'SR-' . $sr->id,
+                    'raw_id'           => $sr->id,
+                    'is_manual'        => false,
+                    'entry_number'     => $sr->posted_number ?: ('SR-' . $sr->id),
+                    'entry_date'       => substr((string) $sr->date, 0, 10),
+                    'source_type'      => 'sale_return',
+                    'source_label'     => 'SALE RETURN',
+                    'reference_number' => $sr->posted_number,
+                    'description'      => 'Sale Return from ' . ($sr->customer_name ?: 'Walk-in Customer'),
+                    'total_debit'      => $total,
+                    'total_credit'     => $total,
+                    'status'           => 'posted',
+                    'created_by_name'  => 'Auto-Posted',
+                    'lines'            => $lines,
+                ];
+            }
+        }
+
+        // 7. System Auto-Generated Double-Entry Postings from Purchase Returns
+        if (in_array($sourceFilter, ['all', 'purchase', 'return'], true) && Schema::hasTable('purchase_returns')) {
+            $purchaseReturns = DB::table('purchase_returns as pr')
+                ->leftJoin('suppliers as s', 's.id', '=', 'pr.supplier_id')
+                ->whereBetween(DB::raw('DATE(pr.date)'), [$from, $to])
+                ->select('pr.*', 's.name as supplier_name')
+                ->orderByDesc('pr.date')
+                ->orderByDesc('pr.id')
+                ->limit(150)
+                ->get();
+
+            foreach ($purchaseReturns as $pr) {
+                $total = round((float) ($pr->total ?? 0), 2);
+                $tax = round((float) ($pr->tax_amount ?? 0), 2);
+                $netRet = round(max(0.0, $total - $tax), 2);
+                $isCashRefund = ($pr->settlement_mode ?? 'ledger_credit') === 'cash_refund';
+                $lines = [
+                    $isCashRefund
+                        ? ['account_code' => '1010', 'account_name' => 'Cash & Bank Equivalents', 'description' => 'Cash refund from supplier', 'debit' => $total, 'credit' => 0.0]
+                        : ['account_code' => '2100', 'account_name' => 'Accounts Payable', 'description' => ($pr->supplier_name ?: 'Supplier') . ' debit note', 'debit' => $total, 'credit' => 0.0],
+                    ['account_code' => '1300', 'account_name' => 'Merchandise Inventory', 'description' => 'Stock returned to supplier', 'debit' => 0.0, 'credit' => $netRet],
+                ];
+                if ($tax > 0) {
+                    $lines[] = ['account_code' => '1400', 'account_name' => 'Input Tax Receivable (GST/VAT)', 'description' => 'Input tax reversed on return', 'debit' => 0.0, 'credit' => $tax];
+                }
+
+                $entries[] = [
+                    'id'               => 'PR-' . $pr->id,
+                    'raw_id'           => $pr->id,
+                    'is_manual'        => false,
+                    'entry_number'     => $pr->posted_number ?: ('PR-' . $pr->id),
+                    'entry_date'       => substr((string) $pr->date, 0, 10),
+                    'source_type'      => 'purchase_return',
+                    'source_label'     => 'PURCHASE RETURN',
+                    'reference_number' => $pr->posted_number,
+                    'description'      => 'Purchase Return to ' . ($pr->supplier_name ?: 'Supplier'),
+                    'total_debit'      => $total,
+                    'total_credit'     => $total,
+                    'status'           => 'posted',
+                    'created_by_name'  => 'Auto-Posted',
+                    'lines'            => $lines,
+                ];
+            }
+        }
+
+        // 8. System Auto-Generated Double-Entry Postings from Staff Advances & Repayments
+        if (in_array($sourceFilter, ['all', 'payment', 'hr'], true) && Schema::hasTable('employee_advances')) {
+            $advances = DB::table('employee_advances as ea')
+                ->leftJoin('employees as emp', 'emp.id', '=', 'ea.employee_id')
+                ->whereBetween('ea.date', [$from, $to])
+                ->select('ea.*', 'emp.name as employee_name')
+                ->orderByDesc('ea.date')
+                ->orderByDesc('ea.id')
+                ->limit(100)
+                ->get();
+
+            foreach ($advances as $adv) {
+                $amt = round((float) $adv->amount, 2);
+                $isAdvance = $adv->type === 'advance';
+                $empName = $adv->employee_name ?: 'Employee';
+                $entries[] = [
+                    'id'               => 'ADV-' . $adv->id,
+                    'raw_id'           => $adv->id,
+                    'is_manual'        => false,
+                    'entry_number'     => $adv->advance_number ?: ('ADV-' . $adv->id),
+                    'entry_date'       => substr((string) $adv->date, 0, 10),
+                    'source_type'      => 'employee_advance',
+                    'source_label'     => $isAdvance ? 'STAFF ADVANCE' : 'ADVANCE RECOVERY',
+                    'reference_number' => $adv->reference_number,
+                    'description'      => ($isAdvance ? "Staff Advance to {$empName}" : "Advance Recovery from {$empName}") . ($adv->description ? " — {$adv->description}" : ''),
+                    'total_debit'      => $amt,
+                    'total_credit'     => $amt,
+                    'status'           => 'posted',
+                    'created_by_name'  => 'Auto-Posted',
+                    'lines'            => $isAdvance
+                        ? [
+                            ['account_code' => '1250', 'account_name' => 'Staff Advances & Employee Loans Receivable', 'description' => $empName, 'debit' => $amt, 'credit' => 0.0],
+                            ['account_code' => '1010', 'account_name' => 'Cash & Bank Equivalents', 'description' => ucfirst($adv->payment_method ?: 'cash'), 'debit' => 0.0, 'credit' => $amt],
+                        ]
+                        : [
+                            ['account_code' => '1010', 'account_name' => 'Cash & Bank Equivalents', 'description' => ucfirst($adv->payment_method ?: 'payroll'), 'debit' => $amt, 'credit' => 0.0],
+                            ['account_code' => '1250', 'account_name' => 'Staff Advances & Employee Loans Receivable', 'description' => $empName, 'debit' => 0.0, 'credit' => $amt],
                         ],
                 ];
             }

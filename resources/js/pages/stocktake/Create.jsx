@@ -30,6 +30,7 @@ const SCOPE_TYPE_OPTIONS = [
   { value: "category", label: "By Category" },
   { value: "brand", label: "By Brand" },
   { value: "supplier", label: "By Supplier" },
+  { value: "storage_location", label: "By Storage Location (Shop / Godown / Cold Fridge)" },
 ];
 
 export default function CreateStocktake() {
@@ -70,6 +71,7 @@ export default function CreateStocktake() {
   const [categories, setCategories] = useState([]);
   const [brands, setBrands] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [storageLocations, setStorageLocations] = useState([]);
   const [selectedScopeOption, setSelectedScopeOption] = useState(null);
   const [scopeSearchLoading, setScopeSearchLoading] = useState(false);
 
@@ -120,6 +122,12 @@ export default function CreateStocktake() {
         const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
         setSuppliers(list.map((s) => ({ value: s.id, label: s.name })));
       }).catch(() => {});
+
+    axios.get("/api/storage-locations", { params: { active_only: 1 } })
+      .then(({ data }) => {
+        const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+        setStorageLocations(list.map((l) => ({ value: l.id, label: `${l.name} (${l.code || l.type || "Location"})` })));
+      }).catch(() => {});
   }, []);
 
   // Reset scope when session type or scope type changes
@@ -164,8 +172,9 @@ export default function CreateStocktake() {
     if (scopeType === "category") return categories;
     if (scopeType === "brand") return brands;
     if (scopeType === "supplier") return suppliers;
+    if (scopeType === "storage_location") return storageLocations;
     return [];
-  }, [scopeType, categories, brands, suppliers]);
+  }, [scopeType, categories, brands, suppliers, storageLocations]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

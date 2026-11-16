@@ -239,5 +239,29 @@ class StockDisposalController extends Controller
             'disposal' => $updated,
         ]);
     }
+
+    /**
+     * DELETE /api/stock-disposals/{id}
+     */
+    public function destroy(Request $request, $id): JsonResponse
+    {
+        $disposal = StockDisposal::findOrFail($id);
+        $this->authorize('delete', $disposal);
+
+        $validated = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $num = $disposal->disposal_number;
+        $this->disposalService->deleteDisposal(
+            $disposal,
+            $validated['reason'] ?? null,
+            $request->user()
+        );
+
+        return response()->json([
+            'message' => "Stock disposal voucher {$num} reversed and deleted.",
+        ]);
+    }
 }
 

@@ -352,9 +352,9 @@ class StockDisposalService
      */
     public function restoreFromQuarantine(StockDisposal $disposal, ?string $reason, User $user): StockDisposal
     {
-        if ($disposal->status !== StockDisposal::STATUS_QUARANTINED) {
+        if (!in_array($disposal->status, [StockDisposal::STATUS_QUARANTINED, StockDisposal::STATUS_DISPOSED], true)) {
             throw ValidationException::withMessages([
-                'status' => "Only quarantined vouchers can be restored to stock. Current status: {$disposal->status}.",
+                'status' => "Only quarantined or disposed vouchers can be restored to stock. Current status: {$disposal->status}.",
             ]);
         }
 
@@ -396,6 +396,14 @@ class StockDisposalService
                 }
             }
 
+            // Remove the linked non-cash P&L Expense if it was created on disposal
+            if ($disposal->expense_id) {
+                $exp = Expense::find($disposal->expense_id);
+                if ($exp) {
+                    $exp->delete();
+                }
+            }
+
             $updatedNotes = $disposal->notes;
             if (!empty($reason)) {
                 $updatedNotes = trim(($updatedNotes ? $updatedNotes . "\n" : '') . "[Restored to Shelf: {$reason}]");
@@ -404,6 +412,7 @@ class StockDisposalService
             $disposal->update([
                 'status'              => StockDisposal::STATUS_RESTORED,
                 'stock_adjustment_id' => null,
+                'expense_id'          => null,
                 'restored_by'         => $user->id,
                 'restored_at'         => now(),
                 'notes'               => $updatedNotes,
@@ -417,6 +426,20 @@ class StockDisposalService
                 'expense',
                 'stockAdjustment',
             ]);
+        });
+    }
+
+    /**
+     * Reverse and delete a StockDisposal voucher, restoring stock if it was not already restored.
+     */
+    public function deleteDisposal(StockDisposal $disposal, ?string $reason, User $user): void
+    {
+        DB::transaction(function () use ($disposal, $reason, $user) {
+            if (in_array($disposal->status, [StockDisposal::STATUS_QUARANTINED, StockDisposal::STATUS_DISPOSED], true)) {
+                $this->restoreFromQuarantine($disposal, $reason ?: 'Voucher deleted & reversed', $user);
+            }
+            $disposal->items()->delete();
+            $disposal->delete();
         });
     }
 

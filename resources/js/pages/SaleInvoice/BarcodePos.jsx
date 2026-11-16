@@ -30,11 +30,14 @@ import {
 import { useTheme } from "@/context/ThemeContext";
 import { useCurrency } from "@/context/CurrencyContext";
 import { usePermissions } from "@/api/usePermissions";
+import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 import { posSound, useBarcodeScanner } from "@/utils/posScanner";
 import CustomerSearch from "@/components/CustomerSearch";
+import DoctorSearch from "@/components/DoctorSearch";
 import ProductSearchInput from "@/components/ProductSearchInput";
 import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 import SubstituteProductsModal from "@/components/SubstituteProductsModal.jsx";
+import { evaluateTradeScheme } from "@/Formula/TradeScheme.js";
 import { printSlipUrl } from "@/utils/printHelper.js";
 import {
   GuideBotTopbarButton,
@@ -42,10 +45,14 @@ import {
 } from "@/components/GuideBotTrigger.jsx";
 
 const FeatureGuideBot = lazy(() => import("@/components/FeatureGuideBot.jsx"));
+const CreditOverrideModal = lazy(() => import("@/components/CreditOverrideModal.jsx"));
+const DiscountOverrideModal = lazy(() => import("@/components/DiscountOverrideModal.jsx"));
+const ExpiredStockOverrideModal = lazy(() => import("@/components/ExpiredStockOverrideModal.jsx"));
 
 export default function BarcodePos() {
   const navigate = useNavigate();
   const { theme, isDark } = useTheme();
+  const { isPharmacy } = useSaleSystem();
   const { formatCurrency, currencySymbol } = useCurrency();
   const { loading: permsLoading, has } = usePermissions();
   const canCreatePosSale = !permsLoading && has("barcode-pos.create");
@@ -80,6 +87,64 @@ export default function BarcodePos() {
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
+
+  // Pharmacy Narcotics / Prescription & Doctor state
+  const [selectedDoctor, setSelectedDoctor] = useState(null);
+  const [doctorName, setDoctorName] = useState("");
+  const [doctorPmdc, setDoctorPmdc] = useState("");
+  const [doctorHospital, setDoctorHospital] = useState("");
+  const [patientName, setPatientName] = useState("");
+  const [patientCnic, setPatientCnic] = useState("");
+  const [patientAddress, setPatientAddress] = useState("");
+  const [prescriptionNo, setPrescriptionNo] = useState("");
+  const [doctorSearchOpen, setDoctorSearchOpen] = useState(false);
+  const [doctorSearchCreateMode, setDoctorSearchCreateMode] = useState(false);
+
+  const isWalkInCustomer = (cust) =>
+    Boolean(cust && /walk[\s\-_]*in/i.test(String(cust.name || "").trim()));
+
+  const handleCustomerSelect = (customer) => {
+    if (!customer?.id) return;
+    const isWalkIn = isWalkInCustomer(customer);
+    setSelectedCustomer(customer);
+    setSelectedCustomerId(customer.id);
+    // Customer IS our Patient: auto-fill patient_name, patient_cnic, and patient_address from Customer
+    setPatientName(!isWalkIn ? customer.name || "" : "");
+    setPatientCnic(!isWalkIn ? customer.cnic || "" : "");
+    setPatientAddress(!isWalkIn ? customer.address || "" : "");
+    setCustomerSearchOpen(false);
+  };
+
+  const handleDoctorSelect = (doctor) => {
+    if (!doctor) return;
+    setSelectedDoctor(doctor);
+    setDoctorName(doctor.name || "");
+    setDoctorPmdc(doctor.pmdc_number || "");
+    setDoctorHospital(doctor.hospital_clinic || "");
+    setDoctorSearchOpen(false);
+    setDoctorSearchCreateMode(false);
+  };
+
+  const handleClearDoctor = () => {
+    setSelectedDoctor(null);
+    setDoctorName("");
+    setDoctorPmdc("");
+    setDoctorHospital("");
+  };
+
+  // Salesman, Trade Schemes & Tax Presets state
+  const [salesmen, setSalesmen] = useState([]);
+  const [selectedSalesmanId, setSelectedSalesmanId] = useState("");
+  const [activeSchemes, setActiveSchemes] = useState([]);
+  const activeSchemesRef = useRef([]);
+  activeSchemesRef.current = activeSchemes;
+  const [taxRatePresets, setTaxRatePresets] = useState([]);
+  const [taxPercentage, setTaxPercentage] = useState(0);
+
+  // Supervisor Override Modals state
+  const [creditOverridePrompt, setCreditOverridePrompt] = useState(null);
+  const [discountOverridePrompt, setDiscountOverridePrompt] = useState(null);
+  const [expiredOverridePrompt, setExpiredOverridePrompt] = useState(null);
 
   // Payment method & Accounts state (using react-select)
   const [accounts, setAccounts] = useState([]);
@@ -141,7 +206,38 @@ export default function BarcodePos() {
 
   useEffect(() => {
     fetchAccounts();
+    axios
+      .get("/api/hr/employees", { params: { status: "active" } })
+      .then((res) => setSalesmen(Array.isArray(res.data) ? res.data : res.data?.data || []))
+      .catch(() => setSalesmen([]));
+
+    axios
+      .get("/api/accounting/tax-rates", { params: { active_only: 1 } })
+      .then((res) => {
+        const list = Array.isArray(res.data) ? res.data : res.data?.data || [];
+        setTaxRatePresets(list.filter((t) => t.type === "both" || t.type === "sales"));
+      })
+      .catch(() => setTaxRatePresets([]));
   }, [fetchAccounts]);
+
+  useEffect(() => {
+    const params = new URLSearchParams({
+      sale_type: "retail",
+      date: new Date().toISOString().split("T")[0],
+    });
+    if (selectedCustomerId) params.set("customer_id", String(selectedCustomerId));
+    axios
+      .get(`/api/trade-schemes/active-lookup?${params.toString()}`)
+      .then((res) => {
+        const schemes = Array.isArray(res.data?.schemes) ? res.data.schemes : [];
+        activeSchemesRef.current = schemes;
+        setActiveSchemes(schemes);
+      })
+      .catch(() => {
+        activeSchemesRef.current = [];
+        setActiveSchemes([]);
+      });
+  }, [selectedCustomerId]);
 
   // Load products using dedicated /api/products/search for ProductSearchInput
   const fetchProducts = useCallback(async (q = "") => {
@@ -241,6 +337,13 @@ export default function BarcodePos() {
           time: d.updated_at ? new Date(d.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Saved",
           customer: d.payload?.customer || { id: d.party_id, name: d.party_name || "Walk-in Customer" },
           customerId: d.party_id || d.payload?.customer_id,
+          doctor: d.payload?.doctor || null,
+          doctorName: d.payload?.doctor_name || "",
+          doctorPmdc: d.payload?.doctor_pmdc || "",
+          doctorHospital: d.payload?.doctor_hospital || "",
+          patientName: d.payload?.patient_name || "",
+          patientCnic: d.payload?.patient_cnic || "",
+          patientAddress: d.payload?.patient_address || "",
           items: d.payload.items,
           discountAmount: Number(d.payload?.discount_amount || 0),
           totals: {
@@ -289,8 +392,11 @@ export default function BarcodePos() {
     }, 0);
 
     const overallDiscount = Math.min(gross, Number(discountAmount) || 0);
-    const grandTotal = Math.max(0, Math.round(gross - itemDiscount - overallDiscount));
-    const totalUnits = items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+    const netBeforeTax = Math.max(0, gross - itemDiscount - overallDiscount);
+    const taxAmt = Math.round(((netBeforeTax * (Number(taxPercentage) || 0)) / 100) * 100) / 100;
+    const grandTotal = Math.max(0, Math.round(netBeforeTax + taxAmt));
+    const totalUnits = items.reduce((sum, it) => sum + (Number(it.quantity) || 0) + (Number(it.bonus) || 0), 0);
+    const hasNarcotic = items.some((it) => Boolean(it.is_narcotic));
 
     const creditApplied = Math.min(grandTotal, availableCreditTotal, Math.max(0, Number(applyCreditAmount) || 0));
     const netPayableAfterCredit = Math.max(0, grandTotal - creditApplied);
@@ -302,14 +408,16 @@ export default function BarcodePos() {
       gross,
       itemDiscount,
       overallDiscount,
+      taxAmt,
       grandTotal,
       creditApplied,
       netPayableAfterCredit,
       totalUnits,
       totalItems: items.length,
       changeDue,
+      hasNarcotic,
     };
-  }, [items, discountAmount, cashGiven, availableCreditTotal, applyCreditAmount]);
+  }, [items, discountAmount, taxPercentage, cashGiven, availableCreditTotal, applyCreditAmount]);
 
   // Trigger visual scan pulse
   const triggerPulse = (item, action) => {
@@ -393,10 +501,19 @@ export default function BarcodePos() {
           const current = updated[idx];
           const newQty = Math.round(((Number(current.quantity) || 0) + addQty) * 1000) / 1000;
           const subTotal = (Number(current.price) || 0) * newQty * (1 - (Number(current.item_discount_percentage) || 0) / 100);
+          const schemeEval = evaluateTradeScheme(
+            { ...current, quantity: newQty },
+            activeSchemesRef.current,
+            product,
+            { sale_type: "retail" }
+          );
 
           updated[idx] = {
             ...current,
             quantity: newQty,
+            bonus: schemeEval.matched && Number(schemeEval.bonus || 0) > 0 ? Number(schemeEval.bonus) : 0,
+            applied_scheme_id: schemeEval.matched ? schemeEval.scheme_id : null,
+            applied_scheme_name: schemeEval.matched ? schemeEval.scheme_name : null,
             is_weight_barcode: Boolean(current.is_weight_barcode || product.is_weight_barcode),
             sub_total: Math.round(subTotal * 100) / 100,
           };
@@ -418,6 +535,19 @@ export default function BarcodePos() {
           : Number(product.unit_sale_price) || 0;
       const rowUid = targetUid;
 
+      const isNarcoticProd =
+        product.narcotic === "yes" ||
+        product.narcotic === true ||
+        product.narcotic === 1 ||
+        product.is_narcotic === true;
+
+      const schemeEval = evaluateTradeScheme(
+        { product_id: product.id, quantity: addQty, pack_size: Number(product.pack_size) || 1 },
+        activeSchemesRef.current,
+        product,
+        { sale_type: "retail" }
+      );
+
       const newItem = {
         uid: rowUid,
         product_id: product.id,
@@ -427,11 +557,17 @@ export default function BarcodePos() {
         total_stock: Number(product.quantity ?? 0),
         barcode: product.barcode || product.product_code || "",
         product_code: product.product_code || "",
+        brand_id: product.brand_id || product.brand?.id || null,
+        category_id: product.category_id || product.category?.id || null,
         brand_name: product.brand?.name || "—",
         pack_size: Number(product.pack_size) || 1,
         price: unitPrice,
         product_unit_sale_price: baseUnitPrice,
         quantity: addQty,
+        bonus: schemeEval.matched && Number(schemeEval.bonus || 0) > 0 ? Number(schemeEval.bonus) : 0,
+        applied_scheme_id: schemeEval.matched ? schemeEval.scheme_id : null,
+        applied_scheme_name: schemeEval.matched ? schemeEval.scheme_name : null,
+        is_narcotic: isNarcoticProd,
         is_weight_barcode: Boolean(product.is_weight_barcode),
         weight_grams: product.weight_grams || null,
         item_discount_percentage: 0,
@@ -542,7 +678,20 @@ export default function BarcodePos() {
       prev.map((it) => {
         if (it.uid !== uid) return it;
         const subTotal = (Number(it.price) || 0) * qty * (1 - (Number(it.item_discount_percentage) || 0) / 100);
-        return { ...it, quantity: newQty, sub_total: Math.round(subTotal * 100) / 100 };
+        const schemeEval = evaluateTradeScheme(
+          { ...it, quantity: qty },
+          activeSchemesRef.current,
+          it,
+          { sale_type: "retail" }
+        );
+        return {
+          ...it,
+          quantity: newQty,
+          bonus: schemeEval.matched && Number(schemeEval.bonus || 0) > 0 ? Number(schemeEval.bonus) : 0,
+          applied_scheme_id: schemeEval.matched ? schemeEval.scheme_id : null,
+          applied_scheme_name: schemeEval.matched ? schemeEval.scheme_name : null,
+          sub_total: Math.round(subTotal * 100) / 100,
+        };
       })
     );
   };
@@ -584,6 +733,13 @@ export default function BarcodePos() {
       setApplyCreditAmount("");
       setDiscountAmount(0);
       setRemarks("");
+      setSelectedDoctor(null);
+      setDoctorName("");
+      setDoctorPmdc("");
+      setDoctorHospital("");
+      setPatientName("");
+      setPatientCnic("");
+      setPatientAddress("");
       setLastScanned(null);
       toast("Cart cleared");
     }
@@ -684,6 +840,14 @@ export default function BarcodePos() {
         payload: {
           customer_id: selectedCustomerId,
           customer: selectedCustomer,
+          doctor: selectedDoctor,
+          doctor_id: selectedDoctor?.id || null,
+          doctor_name: doctorName,
+          doctor_pmdc: doctorPmdc,
+          doctor_hospital: doctorHospital,
+          patient_name: patientName,
+          patient_cnic: patientCnic,
+          patient_address: patientAddress,
           discount_amount: discountAmount,
           gross_amount: totals.gross,
           total: totals.grandTotal,
@@ -701,6 +865,13 @@ export default function BarcodePos() {
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       customer: selectedCustomer,
       customerId: selectedCustomerId,
+      doctor: selectedDoctor,
+      doctorName,
+      doctorPmdc,
+      doctorHospital,
+      patientName,
+      patientCnic,
+      patientAddress,
       items: [...items],
       discountAmount,
       totals,
@@ -713,6 +884,13 @@ export default function BarcodePos() {
     setApplyCreditAmount("");
     setDiscountAmount(0);
     setRemarks("");
+    setSelectedDoctor(null);
+    setDoctorName("");
+    setDoctorPmdc("");
+    setDoctorHospital("");
+    setPatientName("");
+    setPatientCnic("");
+    setPatientAddress("");
     setLastScanned(null);
     toast.success("Cart parked & synced to server drafts! Waiting for next customer.");
   };
@@ -737,6 +915,13 @@ export default function BarcodePos() {
     setItems(found.items);
     setSelectedCustomer(found.customer);
     setSelectedCustomerId(found.customerId);
+    setSelectedDoctor(found.doctor || null);
+    setDoctorName(found.doctorName || "");
+    setDoctorPmdc(found.doctorPmdc || "");
+    setDoctorHospital(found.doctorHospital || "");
+    setPatientName(found.patientName || "");
+    setPatientCnic(found.patientCnic || "");
+    setPatientAddress(found.patientAddress || "");
     setDiscountAmount(found.discountAmount || 0);
     setParkedCarts((prev) => prev.filter((p) => p.id !== parkId));
     setShowParkedModal(false);
@@ -769,7 +954,7 @@ export default function BarcodePos() {
   };
 
   // Final Checkout & Sale Submission
-  const handleCompleteSale = async ({ autoPrint = false } = {}) => {
+  const handleCompleteSale = async ({ autoPrint = false, overrideParams = {} } = {}) => {
     if (items.length === 0) {
       toast.error("Cart is empty. Scan products first.");
       posSound.playError();
@@ -781,7 +966,22 @@ export default function BarcodePos() {
       return;
     }
 
-    const isWalkIn = /walk[\s\-_]*in/i.test(String(selectedCustomer?.name || ""));
+    const isWalkIn = isWalkInCustomer(selectedCustomer);
+    const effectivePatientName = patientName.trim() || (!isWalkIn ? selectedCustomer?.name || "" : "");
+
+    if (isPharmacy && totals.hasNarcotic) {
+      if (!doctorName.trim()) {
+        toast.error("Doctor name is required for narcotic products");
+        posSound.playError();
+        return;
+      }
+      if (!effectivePatientName) {
+        toast.error("Patient name is required for narcotic products");
+        posSound.playError();
+        return;
+      }
+    }
+
     const creditToApply = totals.creditApplied;
     const netAfterCredit = totals.netPayableAfterCredit;
     const walkInCreditError =
@@ -843,12 +1043,23 @@ export default function BarcodePos() {
         sale_type: "retail",
         invoice_type: invoiceType,
         customer_id: selectedCustomerId,
+        salesman_id: selectedSalesmanId ? Number(selectedSalesmanId) : undefined,
+        doctor_id: selectedDoctor?.id || undefined,
+        doctor_name: doctorName.trim() || undefined,
+        doctor_pmdc: doctorPmdc.trim() || undefined,
+        doctor_hospital: doctorHospital.trim() || undefined,
+        patient_name: effectivePatientName || undefined,
+        patient_cnic: patientCnic.trim() || selectedCustomer?.cnic || undefined,
+        patient_address: patientAddress.trim() || selectedCustomer?.address || undefined,
+        prescription_no: prescriptionNo.trim() || undefined,
         date: new Date().toISOString().split("T")[0],
         payment_method: paymentMethod === "split" ? "cash" : paymentMethod,
         account_id: selectedAccountId || undefined,
         split_payments: splitPaymentsPayload,
         apply_credit_amount: creditToApply > 0 ? creditToApply : undefined,
         discount_amount: totals.overallDiscount,
+        tax_percentage: Number(taxPercentage) || 0,
+        tax_amount: totals.taxAmt || 0,
         gross_amount: totals.gross,
         total: totals.grandTotal,
         total_receive: totalReceive,
@@ -858,9 +1069,14 @@ export default function BarcodePos() {
           ? `[${paymentMethod === "card" ? "CARD" : "WALLET"}: ${paymentRef}] ${remarks || ""}`.trim()
           : (remarks || "High-Speed Barcode POS Checkout"),
         card_number: paymentMethod === "card" ? paymentRef : undefined,
+        ...overrideParams,
         items: items.map((it) => ({
           product_id: it.product_id,
           quantity: Number(it.quantity) > 0 ? Number(it.quantity) : 1,
+          bonus: Number(it.bonus || 0),
+          unit_bonus: Number(it.bonus || 0),
+          applied_scheme_id: it.applied_scheme_id || null,
+          applied_scheme_name: it.applied_scheme_name || null,
           price: it.price,
           pack_size: it.pack_size || 1,
           batch_number: it.batch_number || "",
@@ -899,12 +1115,55 @@ export default function BarcodePos() {
       setPaymentRef("");
       setDiscountAmount(0);
       setRemarks("");
+      setDoctorName("");
+      setDoctorPmdc("");
+      setDoctorHospital("");
+      setSelectedDoctor(null);
+      setPatientName("");
+      setPatientCnic("");
+      setPatientAddress("");
+      setPrescriptionNo("");
       setLastScanned(null);
       if (creditToApply > 0) {
         setAvailableCreditTotal((prev) => Math.max(0, prev - creditToApply));
       }
     } catch (err) {
       posSound.playError();
+      if (err?.response?.status === 422 && err?.response?.data?.requires_override) {
+        setCreditOverridePrompt({
+          isOpen: true,
+          message: err.response.data.message,
+          excessAmount: err.response.data.excess_amount,
+          creditLimit: err.response.data.credit_limit,
+          currentBalance: err.response.data.current_balance,
+          projectedBalance: err.response.data.projected_balance,
+          isHold: err.response.data.credit_status === "on_hold",
+          execute: (creds = {}) =>
+            handleCompleteSale({ autoPrint, overrideParams: { ...overrideParams, ...creds, credit_override: true } }),
+        });
+        return;
+      }
+      if (err?.response?.status === 422 && err?.response?.data?.requires_discount_override) {
+        setDiscountOverridePrompt({
+          isOpen: true,
+          message: err.response.data.message,
+          productName: err.response.data.product_name,
+          maxDiscount: err.response.data.max_discount,
+          requestedDiscount: err.response.data.requested_discount,
+          execute: (creds = {}) =>
+            handleCompleteSale({ autoPrint, overrideParams: { ...overrideParams, ...creds, discount_override: true } }),
+        });
+        return;
+      }
+      if (err?.response?.status === 422 && err?.response?.data?.requires_expired_override) {
+        setExpiredOverridePrompt({
+          isOpen: true,
+          data: err.response.data,
+          execute: (creds = {}) =>
+            handleCompleteSale({ autoPrint, overrideParams: { ...overrideParams, ...creds, expired_override: true } }),
+        });
+        return;
+      }
       const msg = err?.response?.data?.message || "Failed to complete sale";
       toast.error(msg);
     } finally {
@@ -1380,6 +1639,16 @@ export default function BarcodePos() {
                                   FEFO
                                 </span>
                               )}
+                              {it.is_narcotic && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-purple-500/20 text-purple-600 dark:text-purple-400 tracking-wide uppercase">
+                                  Narcotic Rx
+                                </span>
+                              )}
+                              {Number(it.bonus || 0) > 0 && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 tracking-wide">
+                                  +{it.bonus} Free ({it.applied_scheme_name || "Scheme"})
+                                </span>
+                              )}
                               {it.is_weight_barcode && (
                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-500/20 text-amber-600 dark:text-amber-400 tracking-wide">
                                   <ScaleIcon className="w-3 h-3 shrink-0" />
@@ -1652,6 +1921,123 @@ export default function BarcodePos() {
                 </button>
               </div>
 
+              {/* Doctor & Patient Fields (Same functionality as SaleInvoiceRetailForm) */}
+              {isPharmacy && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label
+                      className={`block text-[10px] font-bold uppercase tracking-wider ${
+                        totals.hasNarcotic && !doctorName
+                          ? "text-purple-600 dark:text-purple-400"
+                          : isDark
+                          ? "text-slate-400"
+                          : "text-slate-500"
+                      }`}
+                    >
+                      Doctor {totals.hasNarcotic ? "*" : ""}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDoctorSearchCreateMode(false);
+                        setDoctorSearchOpen(true);
+                      }}
+                      className={`w-full h-8 px-2.5 rounded-xl border text-left text-xs flex items-center justify-between transition-all cursor-pointer ${
+                        doctorName
+                          ? "border-emerald-500 bg-emerald-50/80 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200"
+                          : totals.hasNarcotic
+                          ? "border-purple-400 dark:border-purple-600 bg-purple-50/40 dark:bg-purple-950/30 text-slate-700 dark:text-slate-200 hover:border-purple-500"
+                          : isDark
+                          ? "border-slate-700 bg-slate-800 text-slate-300 hover:border-emerald-500"
+                          : "border-slate-300 bg-slate-50 text-slate-700 hover:border-emerald-400"
+                      }`}
+                      title={
+                        doctorName
+                          ? `${doctorName}${doctorPmdc ? ` (PM&DC: ${doctorPmdc})` : ""}${doctorHospital ? ` — ${doctorHospital}` : ""}`
+                          : "Select or add prescribing doctor..."
+                      }
+                    >
+                      <span className="truncate font-medium">
+                        {doctorName
+                          ? `${doctorName}${doctorPmdc ? ` (${doctorPmdc})` : ""}`
+                          : "Select doctor..."}
+                      </span>
+                      <span className={`text-[10px] shrink-0 font-normal ml-1 ${isDark ? "text-slate-400" : "text-slate-400"}`}>
+                        Search
+                      </span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label
+                        className={`block text-[10px] font-bold uppercase tracking-wider ${
+                          totals.hasNarcotic && !patientName && isWalkInCustomer(selectedCustomer)
+                            ? "text-purple-600 dark:text-purple-400"
+                            : isDark
+                            ? "text-slate-400"
+                            : "text-slate-500"
+                        }`}
+                      >
+                        Patient {totals.hasNarcotic ? "*" : ""}
+                      </label>
+                      {(patientCnic || selectedCustomer?.cnic) && (
+                        <span
+                          className="text-[9px] font-mono text-emerald-600 dark:text-emerald-400 truncate max-w-[95px]"
+                          title={`CNIC: ${patientCnic || selectedCustomer?.cnic}`}
+                        >
+                          CNIC: {patientCnic || selectedCustomer?.cnic}
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      name="patient_name"
+                      value={patientName}
+                      placeholder={
+                        selectedCustomer && !isWalkInCustomer(selectedCustomer)
+                          ? selectedCustomer.name
+                          : "Patient Name (Auto from Customer)"
+                      }
+                      onChange={(e) => setPatientName(e.target.value)}
+                      autoComplete="off"
+                      className={`w-full h-8 px-2.5 rounded-xl border text-xs transition-colors focus:outline-hidden focus:ring-2 focus:ring-blue-500 ${
+                        totals.hasNarcotic && !patientName && isWalkInCustomer(selectedCustomer)
+                          ? "border-purple-400 dark:border-purple-600 bg-purple-50/40 dark:bg-purple-950/30 text-slate-900 dark:text-white"
+                          : isDark
+                          ? "border-slate-700 bg-slate-800 text-slate-100 placeholder-slate-500"
+                          : "border-slate-300 bg-slate-50 text-slate-900 placeholder-slate-400"
+                      }`}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Salesman Selector */}
+              {salesmen.length > 0 && (
+                <div className="space-y-1">
+                  <label className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                    Salesman / Counter Staff
+                  </label>
+                  <select
+                    value={selectedSalesmanId}
+                    onChange={(e) => setSelectedSalesmanId(e.target.value)}
+                    className={`w-full h-8 px-2.5 rounded-xl border text-xs font-semibold ${
+                      isDark
+                        ? "border-slate-700 bg-slate-800 text-slate-200"
+                        : "border-slate-300 bg-slate-50 text-slate-800"
+                    }`}
+                  >
+                    <option value="">Auto (Current Cashier)</option>
+                    {salesmen.map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.name} {emp.employee_code ? `(${emp.employee_code})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Giant Numeric Total Display */}
               <div
                 className={`p-4 rounded-2xl border bg-gradient-to-br transition-all duration-150 ${
@@ -1697,6 +2083,40 @@ export default function BarcodePos() {
                         onChange={(e) => setDiscountAmount(Number(e.target.value) || 0)}
                         placeholder="0"
                         className={`w-16 text-right px-1.5 py-0.5 text-xs font-mono font-bold rounded border focus:outline-hidden ${
+                          isDark ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-300 text-slate-900"
+                        }`}
+                      />
+                    </div>
+                  </div>
+                  <div className={`flex items-center justify-between ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                    <span>Sales Tax (GST %):</span>
+                    <div className="flex items-center gap-1">
+                      {taxRatePresets.length > 0 && (
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value !== "") setTaxPercentage(Number(e.target.value) || 0);
+                          }}
+                          className={`text-[10px] px-1 py-0.5 rounded border ${
+                            isDark ? "bg-slate-800 border-slate-700 text-slate-200" : "bg-slate-50 border-slate-300 text-slate-800"
+                          }`}
+                        >
+                          <option value="">Preset</option>
+                          {taxRatePresets.map((tr) => (
+                            <option key={tr.id} value={Number(tr.rate)}>
+                              {tr.code} ({Number(tr.rate)}%)
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={taxPercentage || ""}
+                        onChange={(e) => setTaxPercentage(Number(e.target.value) || 0)}
+                        placeholder="0%"
+                        className={`w-14 text-right px-1.5 py-0.5 text-xs font-mono font-bold rounded border focus:outline-hidden ${
                           isDark ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-300 text-slate-900"
                         }`}
                       />
@@ -2330,16 +2750,8 @@ export default function BarcodePos() {
       <CustomerSearch
         isOpen={customerSearchOpen}
         onClose={() => setCustomerSearchOpen(false)}
-        onSelect={(cust) => {
-          setSelectedCustomer(cust);
-          setSelectedCustomerId(cust.id);
-          setCustomerSearchOpen(false);
-        }}
-        onCreate={(cust) => {
-          setSelectedCustomer(cust);
-          setSelectedCustomerId(cust.id);
-          setCustomerSearchOpen(false);
-        }}
+        onSelect={handleCustomerSelect}
+        onCreate={handleCustomerSelect}
       />
 
       <ShareDocumentModal
@@ -2364,7 +2776,66 @@ export default function BarcodePos() {
         allowSwap={true}
       />
 
+      <DoctorSearch
+        isOpen={doctorSearchOpen}
+        onClose={() => {
+          setDoctorSearchOpen(false);
+          setDoctorSearchCreateMode(false);
+        }}
+        onSelect={handleDoctorSelect}
+        onCreate={handleDoctorSelect}
+        onClear={handleClearDoctor}
+        hasSelectedDoctor={Boolean(doctorName)}
+        initialCreateMode={doctorSearchCreateMode}
+      />
+
       <Suspense fallback={null}>
+        {!!creditOverridePrompt?.isOpen && (
+          <CreditOverrideModal
+            isOpen={!!creditOverridePrompt?.isOpen}
+            onClose={() => setCreditOverridePrompt(null)}
+            onConfirm={(overrideCreds) => {
+              const fn = creditOverridePrompt?.execute;
+              setCreditOverridePrompt(null);
+              if (fn) fn(overrideCreds);
+            }}
+            message={creditOverridePrompt?.message}
+            creditLimit={creditOverridePrompt?.creditLimit}
+            currentBalance={creditOverridePrompt?.currentBalance}
+            excessAmount={creditOverridePrompt?.excessAmount}
+            isHold={creditOverridePrompt?.isHold}
+          />
+        )}
+
+        {!!discountOverridePrompt?.isOpen && (
+          <DiscountOverrideModal
+            isOpen={!!discountOverridePrompt?.isOpen}
+            onClose={() => setDiscountOverridePrompt(null)}
+            onConfirm={(overrideCreds) => {
+              const fn = discountOverridePrompt?.execute;
+              setDiscountOverridePrompt(null);
+              if (fn) fn(overrideCreds);
+            }}
+            message={discountOverridePrompt?.message}
+            productName={discountOverridePrompt?.productName}
+            maxDiscount={discountOverridePrompt?.maxDiscount}
+            requestedDiscount={discountOverridePrompt?.requestedDiscount}
+          />
+        )}
+
+        {!!expiredOverridePrompt?.isOpen && (
+          <ExpiredStockOverrideModal
+            open={!!expiredOverridePrompt?.isOpen}
+            onClose={() => setExpiredOverridePrompt(null)}
+            data={expiredOverridePrompt?.data}
+            onConfirmOverride={(overrideCreds) => {
+              const fn = expiredOverridePrompt?.execute;
+              setExpiredOverridePrompt(null);
+              if (fn) fn(overrideCreds);
+            }}
+          />
+        )}
+
         <FeatureGuideBot
           isOpen={guideBotOpen}
           onClose={() => setGuideBotOpen(false)}

@@ -75,10 +75,11 @@ class StocktakeSession extends Model
         }
 
         return match ($this->scope_type) {
-            'category' => Category::find($this->scope_id)?->name,
-            'brand'    => Brand::find($this->scope_id)?->name,
-            'supplier' => Supplier::find($this->scope_id)?->name,
-            default    => null,
+            'category'         => Category::find($this->scope_id)?->name,
+            'brand'            => Brand::find($this->scope_id)?->name,
+            'supplier'         => Supplier::find($this->scope_id)?->name,
+            'storage_location' => StorageLocation::find($this->scope_id)?->name,
+            default            => null,
         };
     }
 

@@ -516,11 +516,26 @@ class ReportsController extends Controller
             'brand_id' => 'sometimes|integer|exists:brands,id',
         ]);
 
+        $hasProdSuppliersTable = \Illuminate\Support\Facades\Schema::hasTable('product_suppliers');
         $rows = Product::with(['brand:id,name', 'supplier:id,name', 'category:id,name'])
             ->whereNotNull('quantity')
             ->where('pack_size', '>', 0)
             ->whereColumn('quantity', '<', 'pack_size')
-            ->when($filters['supplier_id'] ?? null, fn($q, $id) => $q->where('supplier_id', $id))
+            ->when($filters['supplier_id'] ?? null, function ($q, $id) use ($hasProdSuppliersTable) {
+                if ($hasProdSuppliersTable) {
+                    $q->where(function ($sub) use ($id) {
+                        $sub->where('supplier_id', $id)
+                            ->orWhereExists(function ($ex) use ($id) {
+                                $ex->select(DB::raw(1))
+                                   ->from('product_suppliers as ps')
+                                   ->whereColumn('ps.product_id', 'products.id')
+                                   ->where('ps.supplier_id', $id);
+                            });
+                    });
+                } else {
+                    $q->where('supplier_id', $id);
+                }
+            })
             ->when($filters['brand_id'] ?? null, fn($q, $id) => $q->where('brand_id', $id))
             ->orderByRaw('quantity / NULLIF(pack_size, 0) ASC')
             ->orderBy('name')
@@ -1428,13 +1443,20 @@ class ReportsController extends Controller
         $categoryId = $req->query('category_id');
         $brandId = $req->query('brand_id');
         $supplierId = $req->query('supplier_id');
+        $storageLocationId = $req->query('storage_location_id');
 
         // Filter products with quantity > 0 directly in SQL using index
-        $products = Product::with(['category:id,name', 'brand:id,name', 'supplier:id,name'])
+        $products = Product::with(['category:id,name', 'brand:id,name', 'supplier:id,name', 'storageLocation:id,name'])
             ->where('quantity', '>', 0)
             ->when($categoryId, fn($q) => $q->where('category_id', $categoryId))
             ->when($brandId, fn($q) => $q->where('brand_id', $brandId))
             ->when($supplierId, fn($q) => $q->where('supplier_id', $supplierId))
+            ->when($storageLocationId, function ($q) use ($storageLocationId) {
+                $q->where(function ($sub) use ($storageLocationId) {
+                    $sub->where('storage_location_id', $storageLocationId)
+                        ->orWhereHas('batches', fn ($bq) => $bq->where('storage_location_id', $storageLocationId)->where('quantity', '>', 0));
+                });
+            })
             ->orderBy('name', 'asc')
             ->get();
 
@@ -1503,6 +1525,7 @@ class ReportsController extends Controller
         $categoryId = $req->query('category_id');
         $brandId = $req->query('brand_id');
         $supplierId = $req->query('supplier_id');
+        $storageLocationId = $req->query('storage_location_id');
 
         // Build query for products with quantity > 0 directly in SQL
         $query = Product::with(['category:id,name', 'brand:id,name', 'supplier:id,name'])
@@ -1510,6 +1533,12 @@ class ReportsController extends Controller
             ->when($categoryId, fn($q) => $q->where('category_id', $categoryId))
             ->when($brandId, fn($q) => $q->where('brand_id', $brandId))
             ->when($supplierId, fn($q) => $q->where('supplier_id', $supplierId))
+            ->when($storageLocationId, function ($q) use ($storageLocationId) {
+                $q->where(function ($sub) use ($storageLocationId) {
+                    $sub->where('storage_location_id', $storageLocationId)
+                        ->orWhereHas('batches', fn ($bq) => $bq->where('storage_location_id', $storageLocationId)->where('quantity', '>', 0));
+                });
+            })
             ->orderBy('name', 'asc');
 
         // Use chunking for large datasets to reduce memory usage
@@ -2304,6 +2333,7 @@ class ReportsController extends Controller
         $supplierId = $req->query('supplier_id');
         $brandId = $req->query('brand_id');
         $productId = $req->query('product_id');
+        $storageLocationId = $req->query('storage_location_id');
 
         // Defaults: today to 3 months ahead if not provided
         $today = now()->toDateString();
@@ -2323,6 +2353,7 @@ class ReportsController extends Controller
             ->join('products as p', 'p.id', '=', 'b.product_id')
             ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
             ->leftJoin('brands as br', 'br.id', '=', 'p.brand_id')
+            ->leftJoin('storage_locations as sl', 'sl.id', '=', 'b.storage_location_id')
             ->whereNotNull('b.expiry_date')
             ->whereBetween(DB::raw('DATE(b.expiry_date)'), [$fromDate, $toDate])
             ->where('b.quantity', '>', 0); // Only show products with available quantity > 0
@@ -2336,6 +2367,15 @@ class ReportsController extends Controller
         if (!empty($productId)) {
             $q->where('p.id', $productId);
         }
+        if (!empty($storageLocationId)) {
+            $q->where(function ($sub) use ($storageLocationId) {
+                $sub->where('b.storage_location_id', $storageLocationId)
+                    ->orWhere(function ($fb) use ($storageLocationId) {
+                        $fb->whereNull('b.storage_location_id')
+                           ->where('p.storage_location_id', $storageLocationId);
+                    });
+            });
+        }
 
         $rows = $q->orderBy('b.expiry_date')
             ->orderBy('p.name')
@@ -2344,13 +2384,15 @@ class ReportsController extends Controller
                 'b.batch_number',
                 'b.expiry_date',
                 'b.quantity',
+                'b.storage_location_id',
                 'p.id as product_id',
                 'p.product_code',
                 'p.name as product_name',
                 'p.supplier_id',
                 'p.brand_id',
                 DB::raw('COALESCE(s.name, "") as supplier_name'),
-                DB::raw('COALESCE(br.name, "") as brand_name')
+                DB::raw('COALESCE(br.name, "") as brand_name'),
+                DB::raw('COALESCE(sl.name, "") as storage_location_name')
             )
             ->limit(2000)
             ->get();
@@ -2387,6 +2429,7 @@ class ReportsController extends Controller
         $supplierId = $req->query('supplier_id');
         $brandId = $req->query('brand_id');
         $productId = $req->query('product_id');
+        $storageLocationId = $req->query('storage_location_id');
 
         $today = now()->toDateString();
         $fromDate = $from ? Carbon::parse($from)->toDateString() : $today;
@@ -2416,6 +2459,15 @@ class ReportsController extends Controller
         }
         if (!empty($productId)) {
             $q->where('p.id', $productId);
+        }
+        if (!empty($storageLocationId)) {
+            $q->where(function ($sub) use ($storageLocationId) {
+                $sub->where('b.storage_location_id', $storageLocationId)
+                    ->orWhere(function ($fb) use ($storageLocationId) {
+                        $fb->whereNull('b.storage_location_id')
+                           ->where('p.storage_location_id', $storageLocationId);
+                    });
+            });
         }
 
         $rows = $q->orderBy('b.expiry_date')

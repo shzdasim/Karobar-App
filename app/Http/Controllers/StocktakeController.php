@@ -42,6 +42,10 @@ class StocktakeController extends Controller
                         ->orWhere(function ($s) use ($q) {
                             $s->where('scope_type', 'supplier')
                               ->whereIn('scope_id', \App\Models\Supplier::where('name', 'like', "%{$q}%")->select('id'));
+                        })
+                        ->orWhere(function ($l) use ($q) {
+                            $l->where('scope_type', 'storage_location')
+                              ->whereIn('scope_id', \App\Models\StorageLocation::where('name', 'like', "%{$q}%")->select('id'));
                         });
                 });
             })
@@ -101,7 +105,7 @@ class StocktakeController extends Controller
         $data = $request->validate([
             'session_type' => ['required', 'in:full,cycle'],
             'is_blind'     => ['boolean'],
-            'scope_type'   => ['nullable', 'required_if:session_type,cycle', 'in:category,brand,supplier'],
+            'scope_type'   => ['nullable', 'required_if:session_type,cycle', 'in:category,brand,supplier,storage_location'],
             'scope_id'     => ['nullable', 'required_if:session_type,cycle', 'integer', 'min:1'],
             'notes'        => ['nullable', 'string', 'max:2000'],
         ]);

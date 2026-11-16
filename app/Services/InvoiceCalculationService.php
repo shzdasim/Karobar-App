@@ -109,6 +109,17 @@ class InvoiceCalculationService
         $itemDiscSum = 0.0;
         $invoiceSaleType = $data['sale_type'] ?? 'retail';
 
+        $activeSchemes = collect();
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('trade_schemes')) {
+                $customerId = !empty($data['customer_id']) ? (int) $data['customer_id'] : null;
+                $saleDate = !empty($data['date']) ? (string) $data['date'] : now()->toDateString();
+                $activeSchemes = app(\App\Services\TradeSchemeService::class)->getActiveSchemes($invoiceSaleType, $customerId, $saleDate);
+            }
+        } catch (\Throwable) {
+            $activeSchemes = collect();
+        }
+
         foreach ($items as $idx => $raw) {
             $productId = (int)($raw['product_id'] ?? 0);
             $product = $products->get($productId);
@@ -159,10 +170,43 @@ class InvoiceCalculationService
                 }
             }
 
-            if ($qty < 1) {
+            if ($qty < 1 && $bonusQty < 1) {
                 throw ValidationException::withMessages([
                     "items.{$idx}.quantity" => ["Quantity must be at least 1."],
                 ]);
+            }
+
+            // Server-side Trade Scheme fallback for same-product bonus when not explicitly set or waived
+            if (
+                $bonusQty === 0
+                && empty($raw['is_custom_bonus'])
+                && !array_key_exists('bonus', $raw)
+                && !array_key_exists('unit_bonus', $raw)
+                && !array_key_exists('pack_bonus', $raw)
+                && $activeSchemes->isNotEmpty()
+            ) {
+                $schemeEval = app(\App\Services\TradeSchemeService::class)->evaluateBonus([
+                    'product_id'    => $productId,
+                    'brand_id'      => $product->brand_id,
+                    'category_id'   => $product->category_id,
+                    'pack_size'     => $packSize,
+                    'pack_quantity' => $packQty,
+                    'unit_quantity' => $unitQty,
+                    'quantity'      => $qty,
+                    'sale_type'     => $itemSaleType,
+                ], $activeSchemes, $itemSaleType);
+
+                if (
+                    !empty($schemeEval['matched'])
+                    && (int) ($schemeEval['bonus_units'] ?? 0) > 0
+                    && (int) ($schemeEval['bonus_product_id'] ?? $productId) === $productId
+                ) {
+                    $bonusQty = (int) $schemeEval['bonus_units'];
+                    $unitBonus = (int) ($schemeEval['unit_bonus'] ?? $bonusQty);
+                    $packBonus = (float) ($schemeEval['pack_bonus'] ?? round($bonusQty / $packSize, 2));
+                    $raw['applied_scheme_id'] = $schemeEval['scheme_id'];
+                    $raw['applied_scheme_name'] = $schemeEval['scheme_name'];
+                }
             }
 
             $price = (float)($raw['price'] ?? 0);

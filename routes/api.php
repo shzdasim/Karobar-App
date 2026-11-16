@@ -144,8 +144,10 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/formulations/search',  [FormulationController::class, 'search']);
 
     // Formulations (canonical generic/salt dictionary)
-    Route::get('/formulations',         [FormulationController::class, 'index']);
-    Route::post('/formulations',        [FormulationController::class, 'store']);
+    Route::get('/formulations',                 [FormulationController::class, 'index']);
+    Route::post('/formulations',                [FormulationController::class, 'store']);
+    Route::put('/formulations/{id}',            [FormulationController::class, 'update']);
+    Route::delete('/formulations/{id}',         [FormulationController::class, 'destroy']);
 
     // Master data
     Route::get('/categories/export', [CategoryController::class, 'export'])->name('categories.export');
@@ -559,6 +561,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/stock-disposals/{id}',             [\App\Http\Controllers\StockDisposalController::class, 'show']);
     Route::post('/stock-disposals/{id}/dispose',    [\App\Http\Controllers\StockDisposalController::class, 'dispose']);
     Route::post('/stock-disposals/{id}/restore',    [\App\Http\Controllers\StockDisposalController::class, 'restore']);
+    Route::delete('/stock-disposals/{id}',          [\App\Http\Controllers\StockDisposalController::class, 'destroy']);
 
     // -------------------------------------------------------------------------
     // Cube Hybrid AI Assistant (Free-Quota Only) & Non-Destructive Task Runner

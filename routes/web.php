@@ -351,9 +351,6 @@ Route::get('/print/share-preview/{size}/{template}', function (string $size, str
     return response($html)->header('Content-Type', 'text/html; charset=UTF-8');
 })->name('share.preview');
 
-// (add any other Blade/PDF routes here)
-// Route::get('/reports/sale-detail/pdf', ...);
-
 // Legal pages (Terms of Service & Privacy Policy)
 Route::get('/terms-of-service', function () {
     return view('legal.document', [

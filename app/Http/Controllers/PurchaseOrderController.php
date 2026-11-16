@@ -315,13 +315,28 @@ class PurchaseOrderController extends Controller
             );
 
 // ---- Products that SOLD in the selected period (STRICT filter) ----
+        $hasProdSuppliersTable = \Illuminate\Support\Facades\Schema::hasTable('product_suppliers');
         $soldRows = DB::table('products as p')
             ->joinSub($salesInRange, 'sx', function ($j) {
                 $j->on('p.id', '=', 'sx.product_id');
             })
             ->leftJoin('brands as b', 'b.id', '=', 'p.brand_id')
             ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
-            ->when($data['supplier_id'] ?? null, fn($q, $sid) => $q->where('p.supplier_id', $sid))
+            ->when($data['supplier_id'] ?? null, function ($q, $sid) use ($hasProdSuppliersTable) {
+                if ($hasProdSuppliersTable) {
+                    $q->where(function ($sub) use ($sid) {
+                        $sub->where('p.supplier_id', $sid)
+                            ->orWhereExists(function ($ex) use ($sid) {
+                                $ex->select(DB::raw(1))
+                                   ->from('product_suppliers as ps')
+                                   ->whereColumn('ps.product_id', 'p.id')
+                                   ->where('ps.supplier_id', $sid);
+                            });
+                    });
+                } else {
+                    $q->where('p.supplier_id', $sid);
+                }
+            })
             ->when(!empty($brandIds), fn($q) => $q->whereIn('p.brand_id', $brandIds))
             ->where('sx.units_sold', '>', 0)
             ->select(
@@ -350,7 +365,21 @@ DB::raw('sx.units_sold as units_sold'),
             ->leftJoin('brands as b', 'b.id', '=', 'p.brand_id')
             ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
             ->where('ud.status', 'pending')
-            ->when($data['supplier_id'] ?? null, fn($q, $sid) => $q->where('p.supplier_id', $sid))
+            ->when($data['supplier_id'] ?? null, function ($q, $sid) use ($hasProdSuppliersTable) {
+                if ($hasProdSuppliersTable) {
+                    $q->where(function ($sub) use ($sid) {
+                        $sub->where('p.supplier_id', $sid)
+                            ->orWhereExists(function ($ex) use ($sid) {
+                                $ex->select(DB::raw(1))
+                                   ->from('product_suppliers as ps')
+                                   ->whereColumn('ps.product_id', 'p.id')
+                                   ->where('ps.supplier_id', $sid);
+                            });
+                    });
+                } else {
+                    $q->where('p.supplier_id', $sid);
+                }
+            })
             ->when(!empty($brandIds), fn($q) => $q->whereIn('p.brand_id', $brandIds))
             ->groupBy(
                 'p.id', 'p.product_code', 'p.name', 'p.pack_size', 'p.quantity',
