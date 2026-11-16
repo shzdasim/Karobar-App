@@ -57,6 +57,7 @@ class NarcoticsReportTest extends TestCase
             '2026_10_23_000003_create_document_histories_and_invoice_reversals.php',
             '2026_10_25_000004_create_stock_disposals_tables.php',
             '2026_11_15_220001_add_narcotics_regulatory_fields_to_sale_invoices_table.php',
+            '2026_11_16_080001_add_cnic_to_customers_and_create_doctors_table.php',
         ] as $file) {
             (require database_path('migrations/' . $file))->up();
         }
@@ -337,5 +338,107 @@ class NarcoticsReportTest extends TestCase
         // Verify PDF endpoint generates valid PDF
         $pdfRes = $this->get('/api/reports/narcotics/pdf?from=2026-11-01&to=2026-11-30');
         $pdfRes->assertOk();
+    }
+
+    public function test_doctor_catalog_and_customer_cnic_auto_populate_sale_invoice_and_narcotics_register(): void
+    {
+        // 1. Create a Doctor via POST /api/doctors
+        $docRes = $this->postJson('/api/doctors', [
+            'name'            => 'Dr. Ayesha Siddiqui',
+            'pmdc_number'     => 'PMDC-88120-P',
+            'hospital_clinic' => 'Services Hospital, Lahore',
+            'specialization'  => 'Consultant Anesthetist',
+            'phone'           => '0321-4455667',
+        ]);
+        $docRes->assertCreated();
+        $doctorId = $docRes->json('id');
+
+        // Verify /api/doctors/search finds the doctor by PM&DC number
+        $searchRes = $this->getJson('/api/doctors/search?q=PMDC-88120-P');
+        $searchRes->assertOk();
+        $this->assertCount(1, $searchRes->json('data'));
+        $this->assertSame('Dr. Ayesha Siddiqui', $searchRes->json('data.0.name'));
+
+        // 2. Create a Customer (Patient) with optional CNIC via POST /api/customers
+        $custRes = $this->postJson('/api/customers', [
+            'name'    => 'Zainab Bibi',
+            'phone'   => '0333-9988776',
+            'cnic'    => '35201-9876543-2',
+            'address' => 'Street 7, Gulberg III, Lahore',
+        ]);
+        $custRes->assertCreated();
+        $customerId = $custRes->json('id');
+        $this->assertSame('35201-9876543-2', $custRes->json('cnic'));
+
+        // 3. Create Narcotic Product + Batch
+        $brand = Brand::create(['name' => 'Brookes Pharma']);
+        $category = Category::create(['name' => 'Controlled Analgesics']);
+        $supplier = Supplier::create(['name' => 'Premier Agencies']);
+
+        $narcotic = Product::create([
+            'product_code'        => 'NARC-002',
+            'name'                => 'Bupregesic 0.3mg Injection',
+            'formulation'         => 'Buprenorphine 0.3mg/ml',
+            'pack_size'           => 5,
+            'quantity'            => 50,
+            'pack_purchase_price' => 500,
+            'pack_sale_price'     => 650,
+            'unit_purchase_price' => 100,
+            'unit_sale_price'     => 130,
+            'avg_price'           => 100,
+            'narcotic'            => 'yes',
+            'brand_id'            => $brand->id,
+            'category_id'         => $category->id,
+            'supplier_id'         => $supplier->id,
+            'barcode'             => '8964009876543',
+        ]);
+
+        Batch::create([
+            'product_id'   => $narcotic->id,
+            'batch_number' => 'BUP-2611',
+            'expiry_date'  => '2028-12-31',
+            'quantity'     => 50,
+        ]);
+
+        // 4. Create SaleInvoice linked to doctor_id and customer_id
+        $si = SaleInvoice::create([
+            'user_id'       => $this->user->id,
+            'customer_id'   => $customerId,
+            'doctor_id'     => $doctorId,
+            'invoice_type'  => 'debit',
+            'posted_number' => 'SINV-701',
+            'date'          => '2026-11-15',
+            'gross_amount'  => 650,
+            'total'         => 650,
+            'total_receive' => 650,
+            'status'        => 'posted',
+        ]);
+        SaleInvoiceItem::create([
+            'sale_invoice_id'          => $si->id,
+            'product_id'               => $narcotic->id,
+            'pack_size'                => 5,
+            'batch_number'             => 'BUP-2611',
+            'expiry'                   => '2028-12-31',
+            'current_quantity'         => 55,
+            'quantity'                 => 5,
+            'price'                    => 130,
+            'item_discount_percentage' => 0,
+            'sub_total'                => 650,
+        ]);
+
+        // 5. Verify Narcotics Register automatically pulls Doctor details from Doctor relation
+        // and Patient Name + CNIC + Address from Customer relation!
+        $repRes = $this->getJson('/api/reports/narcotics?from=2026-11-01&to=2026-11-30');
+        $repRes->assertOk();
+        $disp = $repRes->json('dispensing_register.0');
+
+        $this->assertTrue($disp['is_rx_compliant']);
+        $this->assertTrue($disp['has_full_cnsa_particulars']);
+        $this->assertSame('Dr. Ayesha Siddiqui', $disp['doctor_name']);
+        $this->assertSame('PMDC-88120-P', $disp['doctor_pmdc']);
+        $this->assertSame('Services Hospital, Lahore', $disp['doctor_hospital']);
+        $this->assertSame('Zainab Bibi', $disp['patient_name']);
+        $this->assertSame('35201-9876543-2', $disp['patient_cnic']);
+        $this->assertSame('Street 7, Gulberg III, Lahore', $disp['patient_address']);
     }
 }

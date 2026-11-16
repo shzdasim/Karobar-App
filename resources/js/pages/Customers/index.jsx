@@ -393,7 +393,7 @@ export default function CustomersIndex() {
     return customers.filter((c) => {
       if (
         needle &&
-        ![c.name, c.email, c.phone, c.address].some((f) =>
+        ![c.name, c.email, c.phone, c.cnic, c.address].some((f) =>
           norm(f).includes(needle)
         )
       ) {
@@ -720,6 +720,11 @@ export default function CustomersIndex() {
 
                       <td className="px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300">
                         <div>{c.phone || "—"}</div>
+                        {c.cnic && (
+                          <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                            CNIC: {c.cnic}
+                          </div>
+                        )}
                         {c.email && (
                           <div className="text-[11px] text-slate-400">
                             {c.email}

@@ -279,6 +279,17 @@ export default function ClassicSidebar({
             path: "/customers",
             icon: <UserPlusIcon className="w-5 h-5" />,
             perm: "customer.view",
+            quickCreatePath: "/customers/create",
+            quickCreatePerm: "customer.create",
+            quickCreateLabel: "Add Customer",
+          },
+          {
+            name: "Doctors",
+            path: "/doctors",
+            icon: <UsersIcon className="w-5 h-5" />,
+            permAny: ["customer.view", "sale-invoice.view", "sale-invoice.create", "product.view"],
+            quickCreatePath: "/doctors/create",
+            quickCreateLabel: "Add Doctor",
           },
           {
             name: "Barcode Studio",

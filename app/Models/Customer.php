@@ -10,6 +10,7 @@ class Customer extends Model
         'name',
         'email',
         'phone',
+        'cnic',
         'tax_number',
         'tax_status',
         'address',

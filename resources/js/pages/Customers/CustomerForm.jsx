@@ -128,6 +128,7 @@ export default function CustomerForm({
   const [form, setForm] = useState({
     name: initialData?.name || "",
     phone: initialData?.phone || "",
+    cnic: initialData?.cnic || "",
     email: initialData?.email || "",
     address: initialData?.address || "",
     tax_status: initialData?.tax_status || "unregistered",
@@ -164,6 +165,7 @@ export default function CustomerForm({
 
   const nameRef = useRef(null);
   const phoneRef = useRef(null);
+  const cnicRef = useRef(null);
   const emailRef = useRef(null);
   const addressRef = useRef(null);
   const taxStatusSelectRef = useRef(null);
@@ -215,6 +217,7 @@ export default function CustomerForm({
       setForm({
         name: initialData.name || "",
         phone: initialData.phone || "",
+        cnic: initialData.cnic || "",
         email: initialData.email || "",
         address: initialData.address || "",
         tax_status: initialData.tax_status || "unregistered",
@@ -591,8 +594,33 @@ export default function CustomerForm({
                 onChange={(e) =>
                   setForm((p) => ({ ...p, phone: e.target.value }))
                 }
-                onKeyDown={(e) => focusNext(e, emailRef)}
+                onKeyDown={(e) => focusNext(e, cnicRef)}
                 className="w-full h-[38px]"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="customer-cnic"
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1"
+              >
+                CNIC (National ID — Optional)
+              </label>
+              <GlassInput
+                id="customer-cnic"
+                name="cnic"
+                ref={cnicRef}
+                type="text"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                placeholder="e.g. 35202-1234567-1"
+                value={form.cnic}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, cnic: e.target.value }))
+                }
+                onKeyDown={(e) => focusNext(e, emailRef)}
+                className="w-full h-[38px] font-mono"
               />
             </div>
 
@@ -622,7 +650,7 @@ export default function CustomerForm({
               />
             </div>
 
-            <div className="md:col-span-2 lg:col-span-3">
+            <div className="md:col-span-2">
               <label
                 htmlFor="customer-address"
                 className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1"

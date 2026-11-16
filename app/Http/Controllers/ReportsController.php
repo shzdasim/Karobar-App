@@ -2909,20 +2909,25 @@ class ReportsController extends Controller
 
         // Check if extended/optional columns exist on sale_invoices
         $saleInvCols = ['id', 'posted_number', 'date', 'doctor_name', 'patient_name', 'customer_id', 'user_id', 'remarks'];
-        foreach (['sale_type', 'invoice_type', 'status', 'doctor_pmdc', 'doctor_hospital', 'patient_cnic', 'patient_address', 'prescription_no', 'pharmacist_name'] as $extCol) {
+        foreach (['doctor_id', 'sale_type', 'invoice_type', 'status', 'doctor_pmdc', 'doctor_hospital', 'patient_cnic', 'patient_address', 'prescription_no', 'pharmacist_name'] as $extCol) {
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', $extCol)) {
                 $saleInvCols[] = $extCol;
             }
         }
 
         // 2. Dispensing Register (SaleInvoiceItem for narcotic products in period)
-        $saleItems = SaleInvoiceItem::with([
-                'product:id,name,product_code,formulation,pack_size,brand_id',
-                'product.brand:id,name',
-                'saleInvoice:' . implode(',', $saleInvCols),
-                'saleInvoice.customer',
-                'saleInvoice.user:id,name',
-            ])
+        $saleItemRelations = [
+            'product:id,name,product_code,formulation,pack_size,brand_id',
+            'product.brand:id,name',
+            'saleInvoice:' . implode(',', $saleInvCols),
+            'saleInvoice.customer',
+            'saleInvoice.user:id,name',
+        ];
+        if (\Illuminate\Support\Facades\Schema::hasTable('doctors') && in_array('doctor_id', $saleInvCols, true)) {
+            $saleItemRelations[] = 'saleInvoice.doctor';
+        }
+
+        $saleItems = SaleInvoiceItem::with($saleItemRelations)
             ->whereIn('product_id', $targetIds)
             ->whereHas('saleInvoice', function ($q) use ($fromStr, $toStr) {
                 $q->whereBetween('date', [$fromStr, $toStr])
@@ -2937,9 +2942,11 @@ class ReportsController extends Controller
             $pid = (int) $it->product_id;
             $packSize = max(1, (int) ($it->pack_size ?: ($prod->pack_size ?? 1)));
 
-            $doctorName     = trim((string) ($inv->doctor_name ?? ''));
-            $doctorPmdc     = trim((string) ($inv->doctor_pmdc ?? ''));
-            $doctorHospital = trim((string) ($inv->doctor_hospital ?? ''));
+            $docRel = $inv && $inv->relationLoaded('doctor') ? $inv->doctor : null;
+
+            $doctorName     = trim((string) ($inv->doctor_name ?: ($docRel->name ?? '')));
+            $doctorPmdc     = trim((string) ($inv->doctor_pmdc ?: ($docRel->pmdc_number ?? '')));
+            $doctorHospital = trim((string) ($inv->doctor_hospital ?: ($docRel->hospital_clinic ?? '')));
             $patientName    = trim((string) ($inv->patient_name ?? ''));
             $patientCnic    = trim((string) ($inv->patient_cnic ?? ''));
             $patientAddress = trim((string) ($inv->patient_address ?? ''));
@@ -2947,6 +2954,7 @@ class ReportsController extends Controller
             $pharmacistName = trim((string) ($inv->pharmacist_name ?? ''));
 
             $customerName    = trim((string) ($inv->customer->name ?? ''));
+            $customerCnic    = trim((string) ($inv->customer->cnic ?? ''));
             $customerPhone   = trim((string) ($inv->customer->phone ?? ''));
             $customerAddress = trim((string) ($inv->customer->address ?? ''));
             $customerLicense = trim((string) ($inv->customer->tax_number ?? ''));
@@ -2956,8 +2964,11 @@ class ReportsController extends Controller
             $effectivePatient = $patientName !== ''
                 ? $patientName
                 : (!$isWalkIn ? $customerName : '');
-            $effectiveCnicOrPhone = $patientCnic !== ''
+            $effectiveCnic = $patientCnic !== ''
                 ? $patientCnic
+                : ($customerCnic !== '' ? $customerCnic : '');
+            $effectiveCnicOrPhone = $effectiveCnic !== ''
+                ? ($customerPhone !== '' && $effectiveCnic !== $customerPhone ? "{$effectiveCnic} / {$customerPhone}" : $effectiveCnic)
                 : ($customerPhone !== '' ? $customerPhone : '');
             $effectiveAddress = $patientAddress !== ''
                 ? $patientAddress
@@ -3016,7 +3027,7 @@ class ReportsController extends Controller
                 'doctor_hospital'           => $doctorHospital !== '' ? $doctorHospital : null,
                 'patient_name'              => $effectivePatient !== '' ? $effectivePatient : null,
                 'raw_patient_name'          => $patientName !== '' ? $patientName : null,
-                'patient_cnic'              => $patientCnic !== '' ? $patientCnic : null,
+                'patient_cnic'              => $effectiveCnic !== '' ? $effectiveCnic : null,
                 'patient_contact'           => $effectiveCnicOrPhone !== '' ? $effectiveCnicOrPhone : null,
                 'patient_address'           => $effectiveAddress !== '' ? $effectiveAddress : null,
                 'raw_patient_address'       => $patientAddress !== '' ? $patientAddress : null,

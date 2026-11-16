@@ -138,6 +138,8 @@ export default function DashboardLayout({ children }) {
       "/suppliers/create": "Add Supplier",
       "/customers": "Customers",
       "/customers/create": "Add Customer",
+      "/doctors": "Doctors (RMP) Directory",
+      "/doctors/create": "Add Doctor",
       "/products": "Products",
       "/products/create": "Add Product",
       "/background-tasks": "Background Tasks & Formulation Report",
@@ -226,6 +228,7 @@ export default function DashboardLayout({ children }) {
       if (/^\/brands\/\d+\/edit$/.test(cleanPath)) return "Edit Brand";
       if (/^\/suppliers\/\d+\/edit$/.test(cleanPath)) return "Edit Supplier";
       if (/^\/customers\/\d+\/edit$/.test(cleanPath)) return "Edit Customer";
+      if (/^\/doctors\/\d+\/edit$/.test(cleanPath)) return "Edit Doctor";
       if (/^\/stock-adjustments\/\d+$/.test(cleanPath)) return "Stock Adjustment Details";
       if (/^\/stocktake-sessions\/\d+\/review$/.test(cleanPath)) return "Stocktake Variance Review";
       if (/^\/stocktake-sessions\/\d+$/.test(cleanPath)) return "Stocktake Session";

@@ -318,6 +318,49 @@ class SaleInvoiceController extends Controller
         return Carbon::parse($data['date'])->addDays($creditDays)->toDateString();
     }
 
+    private function resolveDoctorAndPatientData(array &$data): void
+    {
+        // 1. Resolve Doctor details if doctor_id is selected or doctor_name matches a stored Doctor
+        $doctor = null;
+        if (!empty($data['doctor_id']) && \Illuminate\Support\Facades\Schema::hasTable('doctors')) {
+            $doctor = \App\Models\Doctor::find((int) $data['doctor_id']);
+        } elseif (!empty($data['doctor_name']) && \Illuminate\Support\Facades\Schema::hasTable('doctors')) {
+            $doctor = \App\Models\Doctor::where('name', trim((string) $data['doctor_name']))->first();
+            if ($doctor) {
+                $data['doctor_id'] = $doctor->id;
+            }
+        }
+
+        if ($doctor) {
+            if (empty(trim((string) ($data['doctor_name'] ?? '')))) {
+                $data['doctor_name'] = $doctor->name;
+            }
+            if (empty(trim((string) ($data['doctor_pmdc'] ?? ''))) && !empty($doctor->pmdc_number)) {
+                $data['doctor_pmdc'] = $doctor->pmdc_number;
+            }
+            if (empty(trim((string) ($data['doctor_hospital'] ?? ''))) && !empty($doctor->hospital_clinic)) {
+                $data['doctor_hospital'] = $doctor->hospital_clinic;
+            }
+        }
+
+        // 2. Customer IS our Patient: auto-fill patient_name, patient_cnic, and patient_address from Customer
+        $customerId = (int) ($data['customer_id'] ?? 0);
+        if ($customerId > 0) {
+            $customer = Customer::find($customerId);
+            if ($customer && !$customer->isWalkIn()) {
+                if (empty(trim((string) ($data['patient_name'] ?? '')))) {
+                    $data['patient_name'] = $customer->name;
+                }
+                if (empty(trim((string) ($data['patient_cnic'] ?? ''))) && !empty($customer->cnic)) {
+                    $data['patient_cnic'] = $customer->cnic;
+                }
+                if (empty(trim((string) ($data['patient_address'] ?? ''))) && !empty($customer->address)) {
+                    $data['patient_address'] = $customer->address;
+                }
+            }
+        }
+    }
+
     public function generateNewCode()
     {
         // kept for compatibility but frontend no longer uses this on load
@@ -376,10 +419,14 @@ class SaleInvoiceController extends Controller
 
     public function show($id)
     {
-        $invoice = SaleInvoice::with([
+        $relations = [
             'customer.regularItems.product:id,name,product_code,quantity,pack_size,unit_sale_price,pack_sale_price',
             'items.product',
-        ])->findOrFail($id);
+        ];
+        if (\Illuminate\Support\Facades\Schema::hasTable('doctors') && \Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'doctor_id')) {
+            $relations[] = 'doctor';
+        }
+        $invoice = SaleInvoice::with($relations)->findOrFail($id);
         $this->authorize('view', $invoice);
         app(\App\Services\ReturnEntitlement::class)->annotate('sale', $invoice, request()->integer('exclude_return_id') ?: null);
         return response()->json($invoice);
@@ -404,6 +451,7 @@ class SaleInvoiceController extends Controller
         $data = $request->validate([
             'draft_id'            => 'nullable|integer|exists:invoice_drafts,id',
             'customer_id'         => 'required|exists:customers,id',
+            'doctor_id'           => 'nullable|integer',
             'invoice_type'        => 'nullable|string|in:credit,debit',
             'payment_method'      => 'nullable|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
             'account_id'          => 'nullable|integer|exists:accounts,id',
@@ -519,6 +567,7 @@ class SaleInvoiceController extends Controller
             }
         }
 
+        $this->resolveDoctorAndPatientData($data);
         $this->validateCreditLimits($data, $request);
         $dueDate = $this->resolveDueDate($data);
 
@@ -584,6 +633,10 @@ class SaleInvoiceController extends Controller
 
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'payment_method')) {
                 $invoiceData['payment_method'] = $data['payment_method'] ?? 'cash';
+            }
+
+            if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'doctor_id')) {
+                $invoiceData['doctor_id'] = !empty($data['doctor_id']) ? (int) $data['doctor_id'] : null;
             }
 
             foreach (['doctor_pmdc', 'doctor_hospital', 'patient_cnic', 'patient_address', 'prescription_no', 'pharmacist_name'] as $regCol) {
@@ -808,6 +861,7 @@ class SaleInvoiceController extends Controller
             'update_drawer'       => 'nullable|boolean',
             'update_drawer_if_pre_shift' => 'nullable|boolean',
             'customer_id'         => 'required|exists:customers,id',
+            'doctor_id'           => 'nullable|integer',
             'invoice_type'        => 'nullable|string|in:credit,debit',
             'payment_method'      => 'nullable|string|in:cash,card,bank_transfer,cheque,mobile_wallet,other',
             'account_id'          => 'nullable|integer|exists:accounts,id',
@@ -917,6 +971,7 @@ class SaleInvoiceController extends Controller
             }
         }
 
+        $this->resolveDoctorAndPatientData($data);
         $this->validateCreditLimits($data, $request, $invoice);
         $dueDate = $this->resolveDueDate($data);
 
@@ -1022,6 +1077,10 @@ class SaleInvoiceController extends Controller
 
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'payment_method')) {
                 $updateData['payment_method'] = $data['payment_method'] ?? $invoice->payment_method ?? 'cash';
+            }
+
+            if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'doctor_id')) {
+                $updateData['doctor_id'] = !empty($data['doctor_id']) ? (int) $data['doctor_id'] : null;
             }
 
             foreach (['doctor_pmdc', 'doctor_hospital', 'patient_cnic', 'patient_address', 'prescription_no', 'pharmacist_name'] as $regCol) {

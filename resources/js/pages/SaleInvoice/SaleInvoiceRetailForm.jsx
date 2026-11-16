@@ -9,6 +9,7 @@ import toast from "react-hot-toast";
 import ProductSearchInput from "../../components/ProductSearchInput.jsx";
 import BatchSearchInput from "../../components/BatchSearchInput.jsx";
 import CustomerSearch from "../../components/CustomerSearch.jsx";
+import DoctorSearch from "../../components/DoctorSearch.jsx";
 import { recalcItem, recalcFooter, calculateRowMargin } from "../../Formula/SaleInvoice.js";
 import { evaluateTradeScheme } from "../../Formula/TradeScheme.js";
 import { useTheme } from "@/context/ThemeContext";
@@ -59,8 +60,17 @@ const normalizeFormLoaded = (f) => {
   safe.sale_type = "retail"; // Always retail for this form
   safe.wholesale_type = safe.wholesale_type ?? "unit";
   safe.remarks = safe.remarks ?? "";
-  safe.doctor_name = safe.doctor_name ?? "";
-  safe.patient_name = safe.patient_name ?? "";
+  safe.doctor_id = safe.doctor_id ?? safe.doctor?.id ?? null;
+  safe.doctor_name = safe.doctor_name ?? safe.doctor?.name ?? "";
+  safe.doctor_pmdc = safe.doctor_pmdc ?? safe.doctor?.pmdc_number ?? "";
+  safe.doctor_hospital = safe.doctor_hospital ?? safe.doctor?.hospital_clinic ?? "";
+  safe.patient_name =
+    safe.patient_name ||
+    (safe.customer?.name && !/walk[\s\-_]*in/i.test(String(safe.customer.name))
+      ? safe.customer.name
+      : "");
+  safe.patient_cnic = safe.patient_cnic ?? safe.customer?.cnic ?? "";
+  safe.patient_address = safe.patient_address ?? safe.customer?.address ?? "";
   safe.date = safe.date ?? new Date().toISOString().split("T")[0];
   safe.due_date = safe.due_date ?? "";
   safe.discount_percentage = safe.discount_percentage ?? "";
@@ -145,8 +155,13 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     date: new Date().toISOString().split("T")[0],
     due_date: "",
     remarks: "",
+    doctor_id: null,
     doctor_name: "",
+    doctor_pmdc: "",
+    doctor_hospital: "",
     patient_name: "",
+    patient_cnic: "",
+    patient_address: "",
     discount_percentage: "",
     discount_amount: "",
     tax_percentage: "",
@@ -248,6 +263,8 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     fetchActiveSchemes(form.customer_id, form.date);
   }, [form.customer_id, form.date, fetchActiveSchemes]);
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
+  const [doctorSearchOpen, setDoctorSearchOpen] = useState(false);
+  const [doctorSearchCreateMode, setDoctorSearchCreateMode] = useState(false);
   const [drawerPrompt, setDrawerPrompt] = useState(null);
   const [customerCreditSummary, setCustomerCreditSummary] = useState(null);
   const [creditOverridePrompt, setCreditOverridePrompt] = useState(null);
@@ -272,8 +289,13 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       date: new Date().toISOString().split("T")[0],
       due_date: "",
       remarks: "",
+      doctor_id: null,
       doctor_name: "",
+      doctor_pmdc: "",
+      doctor_hospital: "",
       patient_name: "",
+      patient_cnic: "",
+      patient_address: "",
       discount_percentage: "",
       discount_amount: "",
       tax_percentage: "",
@@ -1281,7 +1303,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     }
     setCustomers((prev) => {
       const exists = prev.some((c) => String(c.id) === String(customer.id));
-      return exists ? prev : [customer, ...prev];
+      return exists ? prev.map((c) => (String(c.id) === String(customer.id) ? { ...c, ...customer } : c)) : [customer, ...prev];
     });
     const creditDays = Number(customer.credit_days ?? 0);
     let autoDueDate = undefined;
@@ -1292,12 +1314,40 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         autoDueDate = d.toISOString().split("T")[0];
       }
     }
+    const isWalkIn = isWalkInCustomer(customer);
     setForm((prev) => ({
       ...prev,
       customer_id: customer.id,
+      // Customer IS our Patient: auto-fill patient_name, patient_cnic, and patient_address from Customer
+      patient_name: !isWalkIn ? customer.name || "" : "",
+      patient_cnic: !isWalkIn ? customer.cnic || "" : "",
+      patient_address: !isWalkIn ? customer.address || "" : "",
       ...(autoDueDate ? { due_date: autoDueDate } : {}),
     }));
     setCustomerSearchOpen(false);
+  };
+
+  const handleDoctorSelect = (doctor) => {
+    if (!doctor) return;
+    setForm((prev) => ({
+      ...prev,
+      doctor_id: doctor.id || null,
+      doctor_name: doctor.name || "",
+      doctor_pmdc: doctor.pmdc_number || "",
+      doctor_hospital: doctor.hospital_clinic || "",
+    }));
+    setDoctorSearchOpen(false);
+    setDoctorSearchCreateMode(false);
+  };
+
+  const handleClearDoctor = () => {
+    setForm((prev) => ({
+      ...prev,
+      doctor_id: null,
+      doctor_name: "",
+      doctor_pmdc: "",
+      doctor_hospital: "",
+    }));
   };
 
   useEffect(() => {
@@ -2592,27 +2642,59 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
 
               {isPharmacy && (
                 <div className="col-span-1 sm:col-span-3 lg:col-span-2">
-                  <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">Doctor</label>
-                  <input
-                    type="text"
-                    name="doctor_name"
-                    value={form.doctor_name ?? ""}
-                    placeholder="Doctor"
-                    onChange={handleHeaderChange}
-                    autoComplete="off"
-                    className="w-full h-7 border border-gray-300 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100"
-                  />
+                  <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">
+                    Doctor
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDoctorSearchCreateMode(false);
+                      setDoctorSearchOpen(true);
+                    }}
+                    className={`w-full h-7 px-2 rounded-md border text-left text-xs flex items-center justify-between transition-all ${
+                      form.doctor_name
+                        ? "border-emerald-500 bg-emerald-50/80 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200"
+                        : "border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:border-emerald-400"
+                    }`}
+                    title={
+                      form.doctor_name
+                        ? `${form.doctor_name}${form.doctor_pmdc ? ` (PM&DC: ${form.doctor_pmdc})` : ""}${form.doctor_hospital ? ` — ${form.doctor_hospital}` : ""}`
+                        : "Select or add prescribing doctor..."
+                    }
+                  >
+                    <span className="truncate font-medium">
+                      {form.doctor_name
+                        ? `${form.doctor_name}${form.doctor_pmdc ? ` (${form.doctor_pmdc})` : ""}`
+                        : "Select doctor..."}
+                    </span>
+                    <span className="text-[10px] text-gray-400 dark:text-slate-400 shrink-0 font-normal ml-1">
+                      Search
+                    </span>
+                  </button>
                 </div>
               )}
 
               {isPharmacy && (
                 <div className="col-span-1 sm:col-span-3 lg:col-span-2">
-                  <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">Patient</label>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                      Patient
+                    </label>
+                    {(form.patient_cnic || selectedCustomer?.cnic) && (
+                      <span className="text-[8.5px] font-mono text-emerald-600 dark:text-emerald-400 truncate max-w-[95px]" title={`CNIC: ${form.patient_cnic || selectedCustomer?.cnic}`}>
+                        CNIC: {form.patient_cnic || selectedCustomer?.cnic}
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
                     name="patient_name"
                     value={form.patient_name ?? ""}
-                    placeholder="Patient"
+                    placeholder={
+                      selectedCustomer && !isWalkInCustomer(selectedCustomer)
+                        ? selectedCustomer.name
+                        : "Patient Name (Auto from Customer)"
+                    }
                     onChange={handleHeaderChange}
                     autoComplete="off"
                     className="w-full h-7 border border-gray-300 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100"
@@ -3337,6 +3419,20 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
         onClose={() => setCustomerSearchOpen(false)}
         onSelect={handleCustomerSelect}
         onCreate={handleCustomerSelect}
+      />
+
+      {/* Doctor Search & Quick-Create Modal */}
+      <DoctorSearch
+        isOpen={doctorSearchOpen}
+        onClose={() => {
+          setDoctorSearchOpen(false);
+          setDoctorSearchCreateMode(false);
+        }}
+        onSelect={handleDoctorSelect}
+        onCreate={handleDoctorSelect}
+        onClear={handleClearDoctor}
+        hasSelectedDoctor={Boolean(form.doctor_name)}
+        initialCreateMode={doctorSearchCreateMode}
       />
 
       <Suspense fallback={null}>

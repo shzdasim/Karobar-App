@@ -18,6 +18,7 @@ use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\CustomerImportController;
 use App\Http\Controllers\CustomerLedgerController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DoctorController;
 use App\Http\Controllers\DocumentHistoryController;
 use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\ExpenseController;
@@ -141,6 +142,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/categories/search',    [CategoryController::class, 'search']);
     Route::get('/suppliers/search',     [SupplierController::class, 'search']);
     Route::get('/customers/search',     [CustomerController::class, 'search']);
+    Route::get('/doctors/search',       [DoctorController::class, 'search']);
     Route::get('/formulations/search',  [FormulationController::class, 'search']);
 
     // Formulations (canonical generic/salt dictionary)
@@ -161,6 +163,7 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::post('/customers/{customer}/send-refill-reminder', [CustomerController::class, 'sendRefillReminder']);
     Route::post('/customers/{customer}/advance-refill-cycle', [CustomerController::class, 'advanceRefillCycle']);
     Route::apiResource('customers', CustomerController::class);
+    Route::apiResource('doctors', DoctorController::class);
 
     Route::get('/suppliers/export', [SupplierController::class, 'export']);
     Route::get('/suppliers/{supplier}/credit-summary', [SupplierController::class, 'creditSummary']);

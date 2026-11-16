@@ -11,6 +11,7 @@ class SaleInvoice extends Model
         'terminal_id',
         'salesman_id',
         'customer_id',
+        'doctor_id',
         'invoice_type',
         'payment_method',
         'sale_type',
@@ -50,6 +51,10 @@ class SaleInvoice extends Model
     public function customer()
     {
         return $this->belongsTo(Customer::class);
+    }
+    public function doctor()
+    {
+        return $this->belongsTo(Doctor::class);
     }
     public function account()
     {

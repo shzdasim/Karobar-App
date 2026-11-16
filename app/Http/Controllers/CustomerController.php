@@ -25,6 +25,7 @@ class CustomerController extends Controller
 
         if (
             \App\Support\SchemaCache::hasColumn('customers', 'regular_notes')
+            && \App\Support\SchemaCache::hasColumn('customers', 'cnic')
             && \App\Support\SchemaCache::hasColumn('customer_regular_items', 'dosage_notes')
         ) {
             self::$regularSchemaChecked = true;
@@ -34,6 +35,9 @@ class CustomerController extends Controller
         try {
             if (Schema::hasTable('customers')) {
                 Schema::table('customers', function (Blueprint $table) {
+                    if (!Schema::hasColumn('customers', 'cnic')) {
+                        $table->string('cnic', 30)->nullable()->index();
+                    }
                     if (!Schema::hasColumn('customers', 'is_regular')) {
                         $table->boolean('is_regular')->default(false)->index();
                     }
@@ -108,6 +112,7 @@ class CustomerController extends Controller
             $builder->where(function ($w) use ($q) {
                 $w->where('name', 'like', "%{$q}%")
                   ->orWhere('phone', 'like', "%{$q}%")
+                  ->orWhere('cnic', 'like', "%{$q}%")
                   ->orWhere('email', 'like', "%{$q}%");
             });
         } else {
@@ -162,6 +167,7 @@ class CustomerController extends Controller
             'name'                           => 'required|unique:customers,name',
             'email'                          => 'nullable|email|unique:customers,email',
             'phone'                          => 'nullable|string',
+            'cnic'                           => 'nullable|string|max:30',
             'tax_number'                     => 'nullable|string|max:60',
             'tax_status'                     => 'nullable|string|in:registered,unregistered,exempt',
             'address'                        => 'nullable|string',
@@ -284,6 +290,7 @@ class CustomerController extends Controller
             'name'                           => 'required|unique:customers,name,' . $customer->id,
             'email'                          => 'nullable|email|unique:customers,email,' . $customer->id,
             'phone'                          => 'nullable|string',
+            'cnic'                           => 'nullable|string|max:30',
             'tax_number'                     => 'nullable|string|max:60',
             'tax_status'                     => 'nullable|string|in:registered,unregistered,exempt',
             'address'                        => 'nullable|string',
@@ -580,7 +587,7 @@ class CustomerController extends Controller
         return response()->streamDownload(function () {
             $out = fopen('php://output', 'w');
             fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF));
-            fputcsv($out, ['name', 'email', 'phone', 'address', 'is_regular', 'refill_cycle', 'next_refill_date']);
+            fputcsv($out, ['name', 'email', 'phone', 'cnic', 'address', 'is_regular', 'refill_cycle', 'next_refill_date']);
 
             $sanitizeCsv = static function ($val) {
                 $str = (string) ($val ?? '');
@@ -590,7 +597,7 @@ class CustomerController extends Controller
                 return $str;
             };
 
-            Customer::select('name', 'email', 'phone', 'address', 'is_regular', 'refill_cycle', 'next_refill_date')
+            Customer::select('name', 'email', 'phone', 'cnic', 'address', 'is_regular', 'refill_cycle', 'next_refill_date')
                 ->orderBy('name')
                 ->chunk(1000, function ($chunk) use ($out, $sanitizeCsv) {
                     foreach ($chunk as $c) {
@@ -598,6 +605,7 @@ class CustomerController extends Controller
                             $sanitizeCsv($c->name ?? ''),
                             $sanitizeCsv($c->email ?? ''),
                             $sanitizeCsv($c->phone ?? ''),
+                            $sanitizeCsv($c->cnic ?? ''),
                             $sanitizeCsv($c->address ?? ''),
                             $c->is_regular ? 'Yes' : 'No',
                             $sanitizeCsv($c->refill_cycle ?? ''),

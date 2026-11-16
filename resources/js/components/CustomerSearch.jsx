@@ -41,6 +41,11 @@ function ResultRow({ customer, active, onHover, onOpen, rowRef }) {
               <span className="font-semibold text-slate-800 dark:text-slate-100 text-sm">
                 {customer.name || "—"}
               </span>
+              {customer.cnic && (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600">
+                  CNIC: {customer.cnic}
+                </span>
+              )}
             </div>
             {customer.address && (
               <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -73,7 +78,7 @@ export default function CustomerSearch({ isOpen, onClose, onSelect, onCreate }) 
   const [lastSearchTerm, setLastSearchTerm] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [newCustomer, setNewCustomer] = useState({ name: "", phone: "", email: "" });
+  const [newCustomer, setNewCustomer] = useState({ name: "", phone: "", cnic: "", address: "", email: "" });
 
   const inputRef = useRef(null);
   const boxRef = useRef(null);
@@ -284,7 +289,7 @@ const handleClose = () => {
     setHasMore(true);
     setLastSearchTerm("");
     setShowCreate(false);
-    setNewCustomer({ name: "", phone: "", email: "" });
+    setNewCustomer({ name: "", phone: "", cnic: "", address: "", email: "" });
     if (onClose) onClose();
   };
 
@@ -300,6 +305,8 @@ const handleClose = () => {
       const { data } = await axios.post("/api/customers", {
         name: newCustomer.name.trim(),
         phone: newCustomer.phone?.trim() || null,
+        cnic: newCustomer.cnic?.trim() || null,
+        address: newCustomer.address?.trim() || null,
         email: newCustomer.email?.trim() || null,
       });
       toast?.success?.("Customer added successfully");
@@ -429,9 +436,10 @@ const handleClose = () => {
                 <PlusCircleIcon className="w-4 h-4 text-blue-500" />
                 New Customer
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                 <input
                   type="text"
+                  name="name"
                   value={newCustomer.name}
                   onChange={(e) => setNewCustomer((s) => ({ ...s, name: e.target.value }))}
                   onKeyDown={(e) => {
@@ -441,12 +449,16 @@ const handleClose = () => {
                       handleCreateCustomer(e);
                     }
                   }}
-                  placeholder="Name *"
+                  placeholder="Customer / Patient Name *"
                   autoFocus
                   className="px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-500/50"
                 />
                 <input
-                  type="text"
+                  type="tel"
+                  name="phone"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                   value={newCustomer.phone}
                   onChange={(e) => setNewCustomer((s) => ({ ...s, phone: e.target.value }))}
                   onKeyDown={(e) => {
@@ -456,13 +468,17 @@ const handleClose = () => {
                       handleCreateCustomer(e);
                     }
                   }}
-                  placeholder="Phone"
+                  placeholder="Phone (Optional)"
                   className="px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-500/50"
                 />
                 <input
-                  type="email"
-                  value={newCustomer.email}
-                  onChange={(e) => setNewCustomer((s) => ({ ...s, email: e.target.value }))}
+                  type="text"
+                  name="cnic"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  value={newCustomer.cnic}
+                  onChange={(e) => setNewCustomer((s) => ({ ...s, cnic: e.target.value }))}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
@@ -470,7 +486,22 @@ const handleClose = () => {
                       handleCreateCustomer(e);
                     }
                   }}
-                  placeholder="Email"
+                  placeholder="CNIC (Optional, e.g. 35202-...)"
+                  className="px-3 py-2 text-sm font-mono rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-500/50"
+                />
+                <input
+                  type="text"
+                  name="address"
+                  value={newCustomer.address}
+                  onChange={(e) => setNewCustomer((s) => ({ ...s, address: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleCreateCustomer(e);
+                    }
+                  }}
+                  placeholder="Address (Optional)"
                   className="px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-500/50"
                 />
               </div>
