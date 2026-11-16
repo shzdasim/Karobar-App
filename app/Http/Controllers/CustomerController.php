@@ -19,6 +19,11 @@ class CustomerController extends Controller
 
     public static function ensureRegularCustomerSchema(): void
     {
+        if (!Schema::hasTable('customer_regular_items')) {
+            self::$regularSchemaChecked = false;
+            \App\Support\SchemaCache::flush();
+        }
+
         if (self::$regularSchemaChecked) {
             return;
         }

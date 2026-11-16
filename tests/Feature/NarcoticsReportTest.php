@@ -30,6 +30,7 @@ class NarcoticsReportTest extends TestCase
         parent::setUp();
 
         \Illuminate\Support\Facades\Schema::disableForeignKeyConstraints();
+        \App\Support\SchemaCache::flush();
 
         foreach ([
             '0001_01_01_000000_create_users_table.php',

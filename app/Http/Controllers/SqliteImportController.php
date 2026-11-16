@@ -56,7 +56,7 @@ class SqliteImportController extends Controller
             return false;
         }
 
-        $configuredHash = (string) env('SQLITE_IMPORT_ADMIN_HASH', '');
+        $configuredHash = (string) (config('app.sqlite_import_admin_hash') ?: env('SQLITE_IMPORT_ADMIN_HASH', ''));
         if ($configuredHash !== '') {
             return Hash::check($input, $configuredHash)
                 || Hash::check(trim($input), $configuredHash);

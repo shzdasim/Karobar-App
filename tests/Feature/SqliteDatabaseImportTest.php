@@ -31,6 +31,7 @@ class SqliteDatabaseImportTest extends TestCase
         parent::setUp();
 
         $this->withoutMiddleware(\App\Http\Middleware\EnsureLicensed::class);
+        config(['app.sqlite_import_admin_hash' => bcrypt('Malik9196.')]);
 
         $role = Role::firstOrCreate(['name' => 'Admin', 'guard_name' => 'sanctum']);
         $perms = ['settings.view', 'settings.update', 'backup.view', 'backup.create', 'backup.restore'];
@@ -54,6 +55,7 @@ class SqliteDatabaseImportTest extends TestCase
                 @unlink($file);
             }
         }
+        config(['app.sqlite_import_admin_hash' => null]);
         parent::tearDown();
     }
 

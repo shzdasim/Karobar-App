@@ -14,7 +14,7 @@ class DoctorController extends Controller
 
     public static function ensureDoctorsSchema(): void
     {
-        if (self::$schemaChecked) {
+        if (self::$schemaChecked && Schema::hasTable('doctors')) {
             return;
         }
 
