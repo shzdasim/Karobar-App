@@ -12,6 +12,7 @@ import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
 
 import { usePermissions } from "@/api/usePermissions.js";
 import { useTheme } from "@/context/ThemeContext.jsx";
+import { useLicense } from "@/context/LicenseContext.jsx";
 import PageSkeleton from "@/components/PageSkeleton.jsx";
 import { GlassCard } from "@/components/Glass.jsx";
 
@@ -26,6 +27,7 @@ import {
   ShareIcon,
   CircleStackIcon,
   ServerStackIcon,
+  ShieldCheckIcon,
 } from "@heroicons/react/24/solid";
 
 // Setting Components
@@ -42,6 +44,7 @@ import DocumentSharingSetting, {
 import CubeAiSetting from "@/components/settings/CubeAiSetting.jsx";
 import LicenseSetting from "@/components/settings/LicenseSetting.jsx";
 import NetworkTerminalSettings from "@/components/settings/NetworkTerminalSettings.jsx";
+import FbrSetting from "@/components/settings/FbrSetting.jsx";
 
 registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);
 
@@ -70,6 +73,13 @@ const SETTING_GROUPS = [
         label: "Sales & Currency",
         subtitle: "Sale mode, industry & currency",
         icon: ShoppingCartIcon,
+      },
+      {
+        id: "fbr",
+        label: "FBR Tax & Fiscalization",
+        subtitle: "FBR Bearer Key, POS ID & QR Fiscalization",
+        icon: ShieldCheckIcon,
+        licenseModule: "fbr",
       },
       {
         id: "navigation",
@@ -104,12 +114,14 @@ const SETTING_GROUPS = [
         label: "Server & Terminals",
         subtitle: "Multi-PC LAN sync, terminals & DB import/export",
         icon: ServerStackIcon,
+        licenseModule: "server_terminals",
       },
       {
         id: "cube",
         label: "Cube AI Assistant",
         subtitle: "AI Co-Pilot & provider configuration",
         icon: SparklesIcon,
+        licenseModule: "cube_ai",
       },
       {
         id: "license",
@@ -151,6 +163,21 @@ export default function Setting() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const { isDark, theme } = useTheme();
+  const { hasModule, refresh: refreshGlobalLicense } = useLicense();
+
+  const visibleSettingGroups = useMemo(() => {
+    return SETTING_GROUPS.map((group) => ({
+      ...group,
+      items: group.items.filter(
+        (item) => !item.licenseModule || hasModule(item.licenseModule)
+      ),
+    })).filter((g) => g.items.length > 0);
+  }, [hasModule]);
+
+  const visibleTabs = useMemo(
+    () => visibleSettingGroups.flatMap((g) => g.items),
+    [visibleSettingGroups]
+  );
 
   const initialDest = resolveHashDestination(
     typeof window !== "undefined" ? window.location.hash : ""
@@ -158,6 +185,14 @@ export default function Setting() {
 
   const [activeTab, setActiveTab] = useState(initialDest.tab);
   const [sharingSubTab, setSharingSubTab] = useState(initialDest.subTab);
+
+  // If the current activeTab is locked by the active license tier, redirect to the Software License tab
+  useEffect(() => {
+    const requestedMeta = ALL_TABS.find((t) => t.id === activeTab);
+    if (requestedMeta?.licenseModule && !hasModule(requestedMeta.licenseModule)) {
+      setActiveTab("license");
+    }
+  }, [activeTab, hasModule]);
 
   const [form, setForm] = useState({
     store_name: "",
@@ -220,6 +255,24 @@ export default function Setting() {
     cube_gemini_api_key: "",
     cube_gemini_model: "gemini-3.8-flash",
     cube_gemini_daily_limit: 250,
+    fbr_enabled: false,
+    fbr_environment: "sandbox",
+    fbr_mode: "digital_invoicing",
+    fbr_bearer_token: "",
+    has_fbr_bearer_token: false,
+    fbr_bearer_token_preview: "",
+    clear_fbr_bearer_token: false,
+    fbr_pos_id: "",
+    fbr_seller_ntn: "",
+    fbr_seller_strn: "",
+    fbr_seller_province: "Punjab",
+    fbr_sandbox_url: "",
+    fbr_production_url: "",
+    fbr_default_hs_code: "3004.9099",
+    fbr_scenario_id: "SN001",
+    fbr_pos_fee_enabled: false,
+    fbr_pos_fee_amount: 1,
+    fbr_auto_sync: true,
   });
 
   const [cubeUsageSummary, setCubeUsageSummary] = useState(null);
@@ -469,6 +522,30 @@ export default function Setting() {
           data.cube_gemini_daily_limit !== null
             ? Number(data.cube_gemini_daily_limit)
             : 250,
+        fbr_enabled: Boolean(data.fbr_enabled),
+        fbr_environment: data.fbr_environment || "sandbox",
+        fbr_mode: data.fbr_mode || "digital_invoicing",
+        fbr_bearer_token: "",
+        has_fbr_bearer_token: Boolean(data.has_fbr_bearer_token),
+        fbr_bearer_token_preview: data.fbr_bearer_token_preview || "",
+        clear_fbr_bearer_token: false,
+        fbr_pos_id: data.fbr_pos_id || "",
+        fbr_seller_ntn: data.fbr_seller_ntn || "",
+        fbr_seller_strn: data.fbr_seller_strn || "",
+        fbr_seller_province: data.fbr_seller_province || "Punjab",
+        fbr_sandbox_url: data.fbr_sandbox_url || "",
+        fbr_production_url: data.fbr_production_url || "",
+        fbr_default_hs_code: data.fbr_default_hs_code || "3004.9099",
+        fbr_scenario_id: data.fbr_scenario_id || "SN001",
+        fbr_pos_fee_enabled: Boolean(data.fbr_pos_fee_enabled),
+        fbr_pos_fee_amount:
+          data.fbr_pos_fee_amount !== undefined && data.fbr_pos_fee_amount !== null
+            ? Number(data.fbr_pos_fee_amount)
+            : 1,
+        fbr_auto_sync:
+          data.fbr_auto_sync !== undefined && data.fbr_auto_sync !== null
+            ? Boolean(data.fbr_auto_sync)
+            : true,
       });
 
       if (data.cube_usage_summary) {
@@ -583,6 +660,24 @@ export default function Setting() {
       fd.append("cube_gemini_api_key", form.cube_gemini_api_key || "");
       fd.append("cube_gemini_model", form.cube_gemini_model || "gemini-3.8-flash");
       fd.append("cube_gemini_daily_limit", String(form.cube_gemini_daily_limit ?? 250));
+      fd.append("fbr_enabled", form.fbr_enabled ? "1" : "0");
+      fd.append("fbr_environment", form.fbr_environment || "sandbox");
+      fd.append("fbr_mode", form.fbr_mode || "digital_invoicing");
+      fd.append("fbr_bearer_token", form.fbr_bearer_token || "");
+      if (form.clear_fbr_bearer_token) {
+        fd.append("clear_fbr_bearer_token", "1");
+      }
+      fd.append("fbr_pos_id", form.fbr_pos_id || "");
+      fd.append("fbr_seller_ntn", form.fbr_seller_ntn || "");
+      fd.append("fbr_seller_strn", form.fbr_seller_strn || "");
+      fd.append("fbr_seller_province", form.fbr_seller_province || "Punjab");
+      fd.append("fbr_sandbox_url", form.fbr_sandbox_url || "");
+      fd.append("fbr_production_url", form.fbr_production_url || "");
+      fd.append("fbr_default_hs_code", form.fbr_default_hs_code || "3004.9099");
+      fd.append("fbr_scenario_id", form.fbr_scenario_id || "SN001");
+      fd.append("fbr_pos_fee_enabled", form.fbr_pos_fee_enabled ? "1" : "0");
+      fd.append("fbr_pos_fee_amount", String(form.fbr_pos_fee_amount ?? 1));
+      fd.append("fbr_auto_sync", form.fbr_auto_sync !== false ? "1" : "0");
 
       if (files.length > 0 && files[0].file) {
         fd.append("logo", files[0].file);
@@ -622,6 +717,10 @@ export default function Setting() {
           data?.whatsapp_message_ur !== undefined
             ? data.whatsapp_message_ur
             : prev.whatsapp_message_ur,
+        fbr_bearer_token: "",
+        has_fbr_bearer_token: Boolean(data?.has_fbr_bearer_token),
+        fbr_bearer_token_preview: data?.fbr_bearer_token_preview || "",
+        clear_fbr_bearer_token: false,
       }));
 
       if (data?.cube_usage_summary) {
@@ -660,6 +759,7 @@ export default function Setting() {
       setLicenseLoading(true);
       const { data } = await axios.get("/api/license/status");
       setLicenseStatus(data);
+      await refreshGlobalLicense?.();
     } catch {
       toast.error("Failed to load license status");
       setLicenseStatus({ valid: false, reason: "Unable to fetch status" });
@@ -683,7 +783,9 @@ export default function Setting() {
 
   const disableInputs = !can.update || saving;
   const activeTabMeta =
-    ALL_TABS.find((t) => t.id === activeTab) || ALL_TABS[0];
+    visibleTabs.find((t) => t.id === activeTab) ||
+    ALL_TABS.find((t) => t.id === activeTab) ||
+    ALL_TABS[0];
   const ActiveSectionIcon = activeTabMeta.icon;
 
   return (
@@ -731,7 +833,7 @@ export default function Setting() {
           role="tablist"
           aria-label="Settings categories"
         >
-          {ALL_TABS.map((item) => {
+          {visibleTabs.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
@@ -786,7 +888,7 @@ export default function Setting() {
           aria-label="Settings categories"
         >
           <div className="settings-panel p-3 space-y-4">
-            {SETTING_GROUPS.map((group) => (
+            {visibleSettingGroups.map((group) => (
               <div key={group.groupLabel} className="space-y-1">
                 <div className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-gray-400 dark:text-slate-500">
                   {group.groupLabel}
@@ -923,6 +1025,15 @@ export default function Setting() {
               handleShopTypeChange={handleShopTypeChange}
               disableInputs={disableInputs}
               themeColors={themeColors}
+            />
+          )}
+
+          {activeTab === "fbr" && (
+            <FbrSetting
+              form={form}
+              setForm={setForm}
+              handleChange={handleChange}
+              disableInputs={disableInputs}
             />
           )}
 

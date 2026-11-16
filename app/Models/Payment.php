@@ -35,6 +35,9 @@ class Payment extends Model
         'reversed_at',
         'reversed_by_id',
         'reversal_reason',
+        'wht_tax_rate_id',
+        'wht_percentage',
+        'wht_amount',
     ];
 
     protected $casts = [
@@ -43,6 +46,8 @@ class Payment extends Model
         'amount'           => 'float',
         'allocated_amount' => 'float',
         'unapplied_amount' => 'float',
+        'wht_percentage'   => 'float',
+        'wht_amount'       => 'float',
         'cleared_at'       => 'datetime',
         'bounced_at'       => 'datetime',
         'reversed_at'      => 'datetime',

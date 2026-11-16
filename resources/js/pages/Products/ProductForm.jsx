@@ -622,6 +622,7 @@ const ProductFormFields = forwardRef(({
             { name: "whole_sale_margin", label: "Wholesale Margin (%)", disabled: false, value: form.whole_sale_margin ?? "" },
             { name: "avg_price", label: "Average Unit Cost", disabled: false, value: form.avg_price ?? "" },
             { name: "max_discount", label: "Max Discount (%)", disabled: false, value: form.max_discount ?? "" },
+            { name: "sales_tax_rate", label: "GST / Sales Tax (%)", disabled: false, value: form.sales_tax_rate ?? "" },
           ].map((cfg) => (
             <div key={cfg.name}>
               <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor={`product-${cfg.name}`}>
@@ -640,6 +641,68 @@ const ProductFormFields = forwardRef(({
               />
             </div>
           ))}
+          <div>
+            <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-hs_code">
+              FBR HS / PCT Code
+            </label>
+            <GlassInput
+              id="product-hs_code"
+              type="text"
+              name="hs_code"
+              value={form.hs_code ?? ""}
+              onChange={handleChange}
+              placeholder="3004.9099"
+              className="w-full text-sm font-mono bg-white/80 dark:bg-slate-700/80 dark:text-slate-200"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-tax_type">
+              FBR Tax Category
+            </label>
+            <Select
+              inputId="product-tax_type"
+              options={[
+                { value: "exempt", label: "Exempt (Medicines)" },
+                { value: "standard", label: "Standard GST Rate" },
+                { value: "reduced", label: "Reduced Rate (8th Sch.)" },
+                { value: "zero_rated", label: "Zero-Rated (5th Sch.)" },
+                { value: "third_schedule_mrp", label: "3rd Schedule (MRP Tax)" },
+              ]}
+              value={
+                [
+                  { value: "exempt", label: "Exempt (Medicines)" },
+                  { value: "standard", label: "Standard GST Rate" },
+                  { value: "reduced", label: "Reduced Rate (8th Sch.)" },
+                  { value: "zero_rated", label: "Zero-Rated (5th Sch.)" },
+                  { value: "third_schedule_mrp", label: "3rd Schedule (MRP Tax)" },
+                ].find((opt) => opt.value === (form.tax_type || "exempt")) || {
+                  value: "exempt",
+                  label: "Exempt (Medicines)",
+                }
+              }
+              onChange={(opt) =>
+                handleChange({ target: { name: "tax_type", value: opt?.value || "exempt" } })
+              }
+              classNamePrefix="rs"
+              isSearchable={false}
+              styles={getSmallSelectStyles(isDark)}
+              menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-sro_schedule_no">
+              SRO Schedule No.
+            </label>
+            <GlassInput
+              id="product-sro_schedule_no"
+              type="text"
+              name="sro_schedule_no"
+              value={form.sro_schedule_no ?? ""}
+              onChange={handleChange}
+              placeholder="e.g. 8th Schedule"
+              className="w-full text-sm bg-white/80 dark:bg-slate-700/80 dark:text-slate-200"
+            />
+          </div>
           <div>
             <label
               className="block text-xs font-medium mb-1 dark:text-slate-300"

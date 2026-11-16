@@ -41,6 +41,22 @@ class SaleInvoice extends Model
         'reversed_at',
         'reversed_by_id',
         'reversal_reason',
+        'fbr_invoice_number',
+        'fbr_usin',
+        'fbr_qr_data',
+        'fbr_sync_status',
+        'fbr_synced_at',
+        'fbr_error_message',
+        'fbr_response_payload',
+        'fbr_pos_fee',
+        'further_tax_amount',
+        'advance_wht_percentage',
+        'advance_wht_amount',
+    ];
+
+    protected $casts = [
+        'fbr_synced_at'        => 'datetime',
+        'fbr_response_payload' => 'array',
     ];
 
     public function reversedBy()

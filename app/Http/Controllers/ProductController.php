@@ -152,7 +152,7 @@ class ProductController extends Controller
         $desiredCols = [
             'id','product_code','barcode','name','formulation','rack','storage_location_id','image',
             'category_id','brand_id','supplier_id',
-            'quantity','pack_size',
+            'quantity','pack_size','hs_code','tax_type','sales_tax_rate',
         ];
         $selectCols = array_values(array_filter($desiredCols, fn(string $c) => isset($existingCols[$c])));
 
@@ -272,6 +272,12 @@ class ProductController extends Controller
             'rack' => 'nullable|string',
             'storage_location_id' => 'nullable|integer|exists:storage_locations,id',
             'barcode' => 'required|unique:products,barcode',
+            'hs_code' => 'nullable|string|max:30',
+            'tax_type' => 'nullable|string|in:exempt,standard,zero_rated,reduced,third_schedule_mrp',
+            'sales_tax_rate' => 'nullable|numeric|min:0|max:100',
+            'further_tax_rate' => 'nullable|numeric|min:0|max:100',
+            'sro_schedule_no' => 'nullable|string|max:80',
+            'sro_item_serial_no' => 'nullable|string|max:40',
         ]);
 
         if (array_key_exists('formulation', $validated)) {
@@ -348,6 +354,12 @@ class ProductController extends Controller
             'rack' => 'nullable|string',
             'storage_location_id' => 'nullable|integer|exists:storage_locations,id',
             'barcode' => ['required', Rule::unique('products', 'barcode')->ignore($product->id)],
+            'hs_code' => 'nullable|string|max:30',
+            'tax_type' => 'nullable|string|in:exempt,standard,zero_rated,reduced,third_schedule_mrp',
+            'sales_tax_rate' => 'nullable|numeric|min:0|max:100',
+            'further_tax_rate' => 'nullable|numeric|min:0|max:100',
+            'sro_schedule_no' => 'nullable|string|max:80',
+            'sro_item_serial_no' => 'nullable|string|max:40',
         ]);
 
         if (array_key_exists('formulation', $validated)) {

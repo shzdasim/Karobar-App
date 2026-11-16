@@ -2983,19 +2983,35 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
                   <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">
                     Salesman / Order Booker
                   </label>
-                  <select
-                    name="salesman_id"
-                    value={form.salesman_id ?? ""}
-                    onChange={handleHeaderChange}
-                    className="w-full h-7 border border-gray-300 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100"
-                  >
-                    <option value="">Auto (Current User)</option>
-                    {salesmen.map((emp) => (
-                      <option key={emp.id} value={emp.id}>
-                        {emp.name} {emp.employee_code ? `(${emp.employee_code})` : ""}
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    options={[
+                      { value: "", label: "Auto (Current User)" },
+                      ...salesmen.map((emp) => ({
+                        value: String(emp.id),
+                        label: `${emp.name}${emp.employee_code ? ` (${emp.employee_code})` : ""}`,
+                      })),
+                    ]}
+                    value={
+                      salesmen
+                        .map((emp) => ({
+                          value: String(emp.id),
+                          label: `${emp.name}${emp.employee_code ? ` (${emp.employee_code})` : ""}`,
+                        }))
+                        .find((o) => o.value === String(form.salesman_id ?? "")) || {
+                        value: "",
+                        label: "Auto (Current User)",
+                      }
+                    }
+                    onChange={(opt) =>
+                      handleHeaderChange({
+                        target: { name: "salesman_id", value: opt?.value ?? "" },
+                      })
+                    }
+                    styles={paymentSelectStyles}
+                    isSearchable
+                    classNamePrefix="rs"
+                    menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                  />
                 </div>
 
                 <div className="col-span-2 sm:col-span-2 lg:col-span-5">
@@ -3771,25 +3787,27 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
                             Tax %
                           </label>
                           {taxRatePresets.length > 0 && (
-                            <select
-                              value=""
-                              onChange={(e) => {
-                                if (e.target.value !== "") {
-                                  handleHeaderChange({
-                                    target: { name: "tax_percentage", value: e.target.value },
-                                  });
-                                }
-                              }}
-                              title="Select Statutory Tax Preset"
-                              className="text-[9px] bg-transparent border border-gray-300 dark:border-slate-600 rounded px-1"
-                            >
-                              <option value="">Preset</option>
-                              {taxRatePresets.map((tr) => (
-                                <option key={tr.id} value={Number(tr.rate)}>
-                                  {tr.code} ({Number(tr.rate)}%)
-                                </option>
-                              ))}
-                            </select>
+                            <div className="w-24">
+                              <Select
+                                options={taxRatePresets.map((tr) => ({
+                                  value: String(Number(tr.rate)),
+                                  label: `${tr.code} (${Number(tr.rate)}%)`,
+                                }))}
+                                value={null}
+                                placeholder="Preset"
+                                onChange={(opt) => {
+                                  if (opt?.value !== undefined) {
+                                    handleHeaderChange({
+                                      target: { name: "tax_percentage", value: opt.value },
+                                    });
+                                  }
+                                }}
+                                styles={paymentSelectStyles}
+                                isSearchable={false}
+                                classNamePrefix="rs"
+                                menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                              />
+                            </div>
                           )}
                         </div>
                         <input

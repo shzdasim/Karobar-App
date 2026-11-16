@@ -193,6 +193,26 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
   const [deleteStep, setDeleteStep] = useState(1);
   const [deleteMode, setDeleteMode] = useState("none"); // 'credit' | 'refund' | 'none'
   const [password, setPassword] = useState("");
+  const [syncingFbr, setSyncingFbr] = useState(false);
+
+  const handleSyncFbr = async () => {
+    if (!id || syncingFbr) return;
+    setSyncingFbr(true);
+    try {
+      const { data } = await axios.post(`/api/fbr/sale-invoices/${id}/sync`);
+      if (data?.invoice) {
+        setInv((prev) => ({ ...prev, ...data.invoice }));
+      }
+      toast.success(data?.message || "Invoice fiscalized with FBR!");
+    } catch (err) {
+      if (err?.response?.data?.invoice) {
+        setInv((prev) => ({ ...prev, ...err.response.data.invoice }));
+      }
+      toast.error(err?.response?.data?.message || "Failed to fiscalize invoice with FBR");
+    } finally {
+      setSyncingFbr(false);
+    }
+  };
 
   // New: items scroller ref (to mimic form table scroll)
   const itemsScrollRef = useRef(null);
@@ -516,6 +536,22 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
                     REVERSED
                   </span>
                 )}
+                {inv?.fbr_invoice_number && (
+                  <span
+                    className="px-2 py-0.5 rounded-md text-[9px] font-extrabold tracking-wider text-white bg-emerald-600 shadow-xs border border-emerald-300 font-mono"
+                    title={`Fiscalized with Pakistan FBR (#${inv.fbr_invoice_number})`}
+                  >
+                    FBR #{inv.fbr_invoice_number}
+                  </span>
+                )}
+                {!inv?.fbr_invoice_number && (inv?.fbr_sync_status === "pending" || inv?.fbr_sync_status === "failed") && (
+                  <span
+                    className="px-2 py-0.5 rounded-md text-[9px] font-extrabold tracking-wider text-amber-950 bg-amber-300 shadow-xs uppercase"
+                    title={inv?.fbr_error_message || "Pending FBR Fiscalization"}
+                  >
+                    FBR {inv.fbr_sync_status}
+                  </span>
+                )}
               </div>
               <p className="text-[10px] text-white/80 mt-0.5">
                 Ctrl+F search · Ctrl+E edit · Ctrl+P print · Ctrl+N new · Ctrl+B back
@@ -525,6 +561,17 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
 
           {/* Primary Quick Actions (Opposite the Heading) */}
           <div className="flex items-center gap-1.5 flex-wrap no-print">
+            {!inv?.fbr_invoice_number && inv?.status !== "reversed" && (
+              <button
+                type="button"
+                onClick={handleSyncFbr}
+                disabled={syncingFbr}
+                className="h-8 px-3 text-[11px] font-bold rounded-xl transition-all duration-200 bg-teal-600 hover:bg-teal-500 text-white shadow-sm flex items-center gap-1.5 active:scale-95 cursor-pointer disabled:opacity-50"
+                title="Transmit this invoice to Pakistan FBR & generate FBR QR Code"
+              >
+                <span>{syncingFbr ? "Syncing FBR…" : "Sync FBR"}</span>
+              </button>
+            )}
             {invoiceDue > 0.01 && inv?.status !== "reversed" && (
               <button
                 type="button"

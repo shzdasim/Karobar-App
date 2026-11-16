@@ -264,4 +264,100 @@ class IroncladLicenseSystemTest extends TestCase
             ->assertJsonPath('valid', true)
             ->assertJsonPath('expires_at', null);
     }
+
+    public function test_three_tier_license_access_basic_gold_and_platinum(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        // 1. Activate BASIC Tier License
+        $basicKey = $this->makeSignedKey([
+            'tier' => 'basic',
+            'Edition' => 'Basic',
+        ]);
+
+        $this->postJson('/api/license/activate', ['license_key' => $basicKey])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('tier', 'basic')
+            ->assertJsonPath('tier_label', 'Basic');
+
+        // Basic allows core operations
+        $this->getJson('/api/brands')->assertOk();
+        $this->getJson('/api/products')->assertOk();
+
+        // Basic blocks Gold features (FBR & Barcode System)
+        $this->getJson('/api/fbr/status-summary')
+            ->assertStatus(403)
+            ->assertJsonPath('code', 'license_module_locked')
+            ->assertJsonPath('current_tier', 'basic')
+            ->assertJsonPath('required_tier', 'gold');
+
+        $this->getJson('/api/barcodes/templates')
+            ->assertStatus(403)
+            ->assertJsonPath('code', 'license_module_locked')
+            ->assertJsonPath('required_tier', 'gold');
+
+        // Basic blocks Platinum features (Server & Terminals, Accounting GL, HR/Payroll)
+        $this->getJson('/api/terminals')
+            ->assertStatus(403)
+            ->assertJsonPath('code', 'license_module_locked')
+            ->assertJsonPath('required_tier', 'platinum');
+
+        $this->getJson('/api/accounting/overview')
+            ->assertStatus(403)
+            ->assertJsonPath('code', 'license_module_locked')
+            ->assertJsonPath('required_tier', 'platinum');
+
+        $this->getJson('/api/hr/overview')
+            ->assertStatus(403)
+            ->assertJsonPath('code', 'license_module_locked')
+            ->assertJsonPath('required_tier', 'platinum');
+
+        // 2. Upgrade to GOLD Tier License (Basic + FBR + Barcode System)
+        $goldKey = $this->makeSignedKey([
+            'tier' => 'gold',
+            'Edition' => 'Gold',
+        ]);
+
+        $this->postJson('/api/license/activate', ['license_key' => $goldKey])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('tier', 'gold')
+            ->assertJsonPath('tier_label', 'Gold');
+
+        // Gold unlocks FBR and Barcode System!
+        $this->getJson('/api/fbr/status-summary')->assertOk();
+        $this->getJson('/api/barcodes/templates')->assertOk();
+
+        // Gold still blocks Platinum-only modules (Server & Terminals, Accounting GL, HR/Payroll)
+        $this->getJson('/api/terminals')
+            ->assertStatus(403)
+            ->assertJsonPath('code', 'license_module_locked')
+            ->assertJsonPath('current_tier', 'gold')
+            ->assertJsonPath('required_tier', 'platinum');
+
+        $this->getJson('/api/accounting/overview')
+            ->assertStatus(403)
+            ->assertJsonPath('required_tier', 'platinum');
+
+        // 3. Upgrade to PLATINUM Tier License (Everything)
+        $platinumKey = $this->makeSignedKey([
+            'tier' => 'platinum',
+            'Edition' => 'Platinum',
+            'seats' => 0,
+        ]);
+
+        $this->postJson('/api/license/activate', ['license_key' => $platinumKey])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('tier', 'platinum')
+            ->assertJsonPath('tier_label', 'Platinum');
+
+        // Platinum unlocks everything!
+        $this->getJson('/api/fbr/status-summary')->assertOk();
+        $this->getJson('/api/barcodes/templates')->assertOk();
+        $this->getJson('/api/terminals')->assertOk();
+        $this->getJson('/api/accounting/overview')->assertOk();
+        $this->getJson('/api/hr/overview')->assertOk();
+    }
 }

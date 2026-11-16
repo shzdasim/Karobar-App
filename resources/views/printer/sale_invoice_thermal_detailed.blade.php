@@ -151,7 +151,7 @@
   @if($footerNote !== '')
     <div class="note">{{ $footerNote }}</div>
   @endif
-  
+  @include('printer.partials.fbr_fiscal_footer')
   <div class="foot">Software by Asim Shahzad<br/>PH:0304-7674787</div>
 </div>
 </body>

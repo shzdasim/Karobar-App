@@ -149,6 +149,8 @@
     @endif
   </div>
 
+  @include('printer.partials.fbr_fiscal_footer')
+
   <div class="footer">
     @if($footerNote !== '')
       <div style="margin-bottom:10px;">{{ $footerNote }}</div>

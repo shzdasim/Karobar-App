@@ -4,6 +4,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import { useLicense } from "@/context/LicenseContext.jsx";
+import { GlassInput } from "@/components/Glass.jsx";
 import {
   KeyIcon,
   ShieldCheckIcon,
@@ -44,6 +45,7 @@ export default function LicenseViewerModal({ isOpen, onClose }) {
     payload,
     machineId,
     reason,
+    tierLabel,
     refresh,
   } = useLicense();
 
@@ -212,7 +214,7 @@ export default function LicenseViewerModal({ isOpen, onClose }) {
                   {licLoading
                     ? "Checking License…"
                     : licValid
-                    ? "License Active & Verified"
+                    ? `${tierLabel || "Platinum"} License Active`
                     : "No Active License"}
                 </span>
               </div>
@@ -297,14 +299,14 @@ export default function LicenseViewerModal({ isOpen, onClose }) {
                 </button>
               </div>
               <div className="flex items-center gap-2">
-                <input
+                <GlassInput
                   id="license-viewer-password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your login password"
                   autoFocus
-                  className="flex-1 h-9 px-3 rounded-lg text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500/50"
+                  className="flex-1 h-9 text-xs"
                 />
                 <button
                   type="submit"

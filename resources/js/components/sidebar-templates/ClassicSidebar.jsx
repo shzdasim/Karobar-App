@@ -53,6 +53,7 @@ import { StarIcon as StarSolidIcon } from "@heroicons/react/24/solid";
 import { usePermissions } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
+import { useLicense } from "@/context/LicenseContext.jsx";
 import { preloadRoute } from "@/routes/index.jsx";
 import { SidebarNavSkeleton } from "@/components/PageSkeleton.jsx";
 
@@ -117,6 +118,7 @@ export default function ClassicSidebar({
   const navigate = useNavigate();
   const { theme } = useTheme();
   const { hasWholesale } = useSaleSystem();
+  const { hasModule } = useLicense();
   const { loading: permsLoading, has, roles } = usePermissions();
   const [expiryAlertCount, setExpiryAlertCount] = useState(
     () => Number(window.__karobarExpiryAlertCount || 0)
@@ -296,6 +298,7 @@ export default function ClassicSidebar({
             path: "/barcode-labels",
             icon: <QrCodeIcon className="w-5 h-5" />,
             permAny: ["barcode.view", "barcode.print"],
+            licenseModule: "barcode",
           },
         ],
       },
@@ -309,6 +312,7 @@ export default function ClassicSidebar({
             path: "/sale-invoices/pos",
             icon: <QrCodeIcon className="w-5 h-5" />,
             permAny: ["barcode-pos.view", "barcode-pos.create"],
+            licenseModule: "barcode",
           },
           {
             name: "Sale Invoices",
@@ -497,12 +501,14 @@ export default function ClassicSidebar({
             path: "/accounting",
             icon: <CalculatorIcon className="w-5 h-5" />,
             permAny: ["account.view", "report.net-profit.view"],
+            licenseModule: "accounting_gl",
           },
           {
             name: "HR, Payroll & Commissions",
             path: "/hr-payroll",
             icon: <UserGroupIcon className="w-5 h-5" />,
             permAny: ["expense.view", "account.view", "user.view"],
+            licenseModule: "hr_payroll",
           },
         ],
       },
@@ -525,6 +531,7 @@ export default function ClassicSidebar({
             subGroup: "Financial & Tax",
             icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />,
             permAny: ["report.net-profit.view", "report.sale-detail.view", "account.view"],
+            licenseModule: "fbr",
           },
           {
             name: "Cost of Sale",
@@ -652,6 +659,7 @@ export default function ClassicSidebar({
             icon: <CircleStackIcon className="w-5 h-5" />,
             adminOnly: true,
             swAdminLocked: true,
+            licenseModule: "cube_ai",
           },
           {
             name: "Users",
@@ -696,7 +704,7 @@ export default function ClassicSidebar({
     [pathname]
   );
 
-  // Filter sections by user permissions and search query
+  // Filter sections by user permissions, license tier modules, and search query
   const visibleSections = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
 
@@ -704,6 +712,9 @@ export default function ClassicSidebar({
       .map((section) => {
         const permittedItems = section.items
           .filter((it) => {
+            if (it.licenseModule && !hasModule(it.licenseModule)) {
+              return false;
+            }
             if (it.adminOnly) {
               return isApplicationAdmin;
             }
@@ -760,7 +771,7 @@ export default function ClassicSidebar({
     }
 
     return allowedSections;
-  }, [rawSections, permsLoading, has, isApplicationAdmin, searchQuery, favorites]);
+  }, [rawSections, permsLoading, has, hasModule, isApplicationAdmin, searchQuery, favorites]);
 
   // Automatically expand whichever section owns the currently active route
   useEffect(() => {

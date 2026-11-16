@@ -4,9 +4,132 @@ import { useAuth } from "./AuthContext.jsx";
 
 const LicenseCtx = createContext(null);
 
-const LICENSE_STORAGE_KEY = "karobar_license_cache_v2";
+const LICENSE_STORAGE_KEY = "karobar_license_cache_v3";
 // Periodic license check interval: 8 hours (3 times a day)
 const LICENSE_CHECK_INTERVAL_MS = 8 * 60 * 60 * 1000;
+
+export const LICENSE_TIERS_CATALOG = {
+  basic: {
+    key: "basic",
+    label: "Basic",
+    rank: 1,
+    default_seats: 1,
+    tagline: "All basic store, inventory, billing, ledger & reporting operations (1 PC)",
+    modules: ["basic_operations"],
+  },
+  gold: {
+    key: "gold",
+    label: "Gold",
+    rank: 2,
+    default_seats: 1,
+    tagline: "Everything in Basic + FBR Digital Invoicing & Barcode POS / Barcode Studio",
+    modules: ["basic_operations", "barcode", "fbr"],
+  },
+  platinum: {
+    key: "platinum",
+    label: "Platinum",
+    rank: 3,
+    default_seats: 0,
+    tagline: "Everything in Gold + Server & Multi-PC Terminals, GL Accounting, HR/Payroll & Cube AI",
+    modules: [
+      "basic_operations",
+      "barcode",
+      "fbr",
+      "server_terminals",
+      "accounting_gl",
+      "hr_payroll",
+      "cube_ai",
+    ],
+  },
+};
+
+export const LICENSE_MODULES_CATALOG = {
+  basic_operations: {
+    key: "basic_operations",
+    label: "Basic Store Operations",
+    description:
+      "Products, Batches, Sales, Purchases, Returns, Inventory, Ledgers, Accounts, Cash Drawer, Expenses & Standard Reports",
+    required_tier: "basic",
+  },
+  barcode: {
+    key: "barcode",
+    label: "Barcode POS & Barcode Studio",
+    description:
+      "Fast Fullscreen Barcode Scanner POS & Custom Barcode Label Designer / Printer",
+    required_tier: "gold",
+  },
+  fbr: {
+    key: "fbr",
+    label: "FBR Digital Invoicing & POS Tax",
+    description:
+      "Official FBR QR & Logo Receipt Stamp, PRAL Real-Time Sync, Offline Queue & Statutory Tax Return Report",
+    required_tier: "gold",
+  },
+  server_terminals: {
+    key: "server_terminals",
+    label: "Server & Multi-PC Terminals",
+    description:
+      "Multi-Counter LAN SyncPulse, Attached Terminals Dashboard & 1-Click Server DB Import/Export",
+    required_tier: "platinum",
+  },
+  accounting_gl: {
+    key: "accounting_gl",
+    label: "Double-Entry Accounting & GL",
+    description: "Chart of Accounts, Journal Vouchers & Financial Statements",
+    required_tier: "platinum",
+  },
+  hr_payroll: {
+    key: "hr_payroll",
+    label: "HR, Attendance & Payroll",
+    description:
+      "Employees, Attendance Tracking, Staff Advances, Sales Commissions & Monthly Payroll Runs",
+    required_tier: "platinum",
+  },
+  cube_ai: {
+    key: "cube_ai",
+    label: "Cube AI Assistant & SQLite Migration",
+    description:
+      "Hybrid AI Co-Pilot, Automated Task Runner & Intelligent SQLite Database Import",
+    required_tier: "platinum",
+  },
+};
+
+export function resolveClientTier(payload, explicitTier = null) {
+  const raw = String(
+    explicitTier ||
+      payload?.tier ||
+      payload?.license_type ||
+      payload?.Edition ||
+      payload?.edition ||
+      payload?.plan ||
+      ""
+  )
+    .trim()
+    .toLowerCase();
+
+  if (["basic", "basic_pos", "basic pos", "starter", "standard", "silver"].includes(raw) || raw.includes("basic")) {
+    return "basic";
+  }
+  if (["gold", "gold_edition", "gold edition", "fbr", "fbr_edition"].includes(raw) || raw.includes("gold")) {
+    return "gold";
+  }
+  return "platinum";
+}
+
+export function resolveClientModules(payload, tierKey = null) {
+  const resolvedTier = tierKey || resolveClientTier(payload);
+  const baseModules =
+    LICENSE_TIERS_CATALOG[resolvedTier]?.modules ||
+    LICENSE_TIERS_CATALOG.platinum.modules;
+
+  const extra = Array.isArray(payload?.modules)
+    ? payload.modules
+        .map((m) => String(m || "").trim().toLowerCase())
+        .filter((m) => Boolean(LICENSE_MODULES_CATALOG[m]))
+    : [];
+
+  return Array.from(new Set([...baseModules, ...extra]));
+}
 
 function isFreshValidCache(entry, token) {
   if (!entry || !entry.valid || entry.checkedToken !== token) return false;
@@ -135,6 +258,18 @@ export function LicenseProvider({ children }) {
         typeof expSec === "string" ? Date.parse(expSec) : null;
 
       const isValid = !!data?.valid;
+      const resolvedTier = isValid
+        ? resolveClientTier(data?.payload, data?.tier)
+        : null;
+      const resolvedModules = isValid
+        ? Array.isArray(data?.modules) && data.modules.length > 0
+          ? data.modules
+          : resolveClientModules(data?.payload, resolvedTier)
+        : [];
+      const resolvedSeats = isValid
+        ? Number(data?.seats ?? data?.payload?.seats ?? (resolvedTier === "platinum" ? 0 : 1))
+        : 0;
+
       const nextStatus = {
         loading: false,
         valid: isValid,
@@ -142,6 +277,14 @@ export function LicenseProvider({ children }) {
         payload: data?.payload ?? null,
         machineId: data?.machine_id ?? null,
         reason: data?.reason ?? null,
+        tier: resolvedTier,
+        tierLabel:
+          data?.tier_label ??
+          (resolvedTier ? LICENSE_TIERS_CATALOG[resolvedTier]?.label : null),
+        modules: resolvedModules,
+        seats: resolvedSeats,
+        tiersCatalog: data?.tiers_catalog ?? LICENSE_TIERS_CATALOG,
+        modulesCatalog: data?.modules_catalog ?? LICENSE_MODULES_CATALOG,
         checkedToken: activeToken,
         verifiedAt: Date.now(),
       };
@@ -239,9 +382,68 @@ export function LicenseProvider({ children }) {
     status.loading ||
     (!status.valid && status.checkedToken !== currentToken);
 
+  const effectiveTier = useMemo(() => {
+    if (!status.valid) return null;
+    return status.tier || resolveClientTier(status.payload);
+  }, [status.valid, status.tier, status.payload]);
+
+  const effectiveTierLabel = useMemo(() => {
+    if (!effectiveTier) return null;
+    return status.tierLabel || LICENSE_TIERS_CATALOG[effectiveTier]?.label || "Platinum";
+  }, [effectiveTier, status.tierLabel]);
+
+  const effectiveModules = useMemo(() => {
+    if (!status.valid) return [];
+    if (Array.isArray(status.modules) && status.modules.length > 0) {
+      return status.modules;
+    }
+    return resolveClientModules(status.payload, effectiveTier);
+  }, [status.valid, status.modules, status.payload, effectiveTier]);
+
+  const hasModule = useCallback(
+    (moduleKey) => {
+      if (!status.valid) return false;
+      if (!moduleKey) return true;
+      return effectiveModules.includes(String(moduleKey).trim().toLowerCase());
+    },
+    [status.valid, effectiveModules]
+  );
+
+  const hasTier = useCallback(
+    (minimumTier) => {
+      if (!status.valid || !effectiveTier) return false;
+      const currentRank = LICENSE_TIERS_CATALOG[effectiveTier]?.rank ?? 3;
+      const reqRank = LICENSE_TIERS_CATALOG[String(minimumTier || "").trim().toLowerCase()]?.rank ?? 3;
+      return currentRank >= reqRank;
+    },
+    [status.valid, effectiveTier]
+  );
+
   const contextValue = useMemo(
-    () => ({ ...status, loading: effectiveLoading, remainingMs, refresh }),
-    [status, effectiveLoading, remainingMs, refresh]
+    () => ({
+      ...status,
+      tier: effectiveTier,
+      tierLabel: effectiveTierLabel,
+      modules: effectiveModules,
+      tiersCatalog: status.tiersCatalog || LICENSE_TIERS_CATALOG,
+      modulesCatalog: status.modulesCatalog || LICENSE_MODULES_CATALOG,
+      hasModule,
+      hasTier,
+      loading: effectiveLoading,
+      remainingMs,
+      refresh,
+    }),
+    [
+      status,
+      effectiveTier,
+      effectiveTierLabel,
+      effectiveModules,
+      hasModule,
+      hasTier,
+      effectiveLoading,
+      remainingMs,
+      refresh,
+    ]
   );
 
   return (
@@ -252,5 +454,15 @@ export function LicenseProvider({ children }) {
 }
 
 export function useLicense() {
-  return useContext(LicenseCtx) ?? { loading: true, valid: false };
+  return (
+    useContext(LicenseCtx) ?? {
+      loading: true,
+      valid: false,
+      tier: null,
+      tierLabel: null,
+      modules: [],
+      hasModule: () => false,
+      hasTier: () => false,
+    }
+  );
 }

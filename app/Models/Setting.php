@@ -77,6 +77,21 @@ class Setting extends Model
         'terms_accepted_at',
         'privacy_accepted_at',
         'legal_accepted_version',
+        'fbr_enabled',
+        'fbr_environment',
+        'fbr_mode',
+        'fbr_bearer_token',
+        'fbr_pos_id',
+        'fbr_seller_ntn',
+        'fbr_seller_strn',
+        'fbr_seller_province',
+        'fbr_sandbox_url',
+        'fbr_production_url',
+        'fbr_default_hs_code',
+        'fbr_scenario_id',
+        'fbr_pos_fee_enabled',
+        'fbr_pos_fee_amount',
+        'fbr_auto_sync',
     ];
 
     protected $casts = [
@@ -104,6 +119,10 @@ class Setting extends Model
         'setup_completed_at'      => 'datetime',
         'terms_accepted_at'       => 'datetime',
         'privacy_accepted_at'     => 'datetime',
+        'fbr_enabled'             => 'boolean',
+        'fbr_pos_fee_enabled'     => 'boolean',
+        'fbr_pos_fee_amount'      => 'float',
+        'fbr_auto_sync'           => 'boolean',
     ];
 
     protected $hidden = [
@@ -112,6 +131,7 @@ class Setting extends Model
         'cube_groq_api_key',
         'cube_gemini_api_key',
         'network_server_token',
+        'fbr_bearer_token',
     ];
 
     protected $appends = ['logo_url'];

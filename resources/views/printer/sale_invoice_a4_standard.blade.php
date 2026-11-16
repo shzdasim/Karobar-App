@@ -222,6 +222,7 @@
   </div>
 
   {{-- Bottom --}}
+  @include('printer.partials.fbr_fiscal_footer')
   <div class="bottom">
     @if($footerNote !== '')
       <div class="footer-note">{{ $footerNote }}</div>

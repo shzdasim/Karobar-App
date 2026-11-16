@@ -208,10 +208,17 @@ class TrackTerminalMiddleware
     protected function hasAvailableLicenseSeat(string $incomingUid): bool
     {
         try {
-            $status = app(LicenseService::class)->status();
-            $seats = (int) ($status['seats'] ?? 0);
-            if ($seats <= 0) {
-                return true; // Unlimited or single-tier unseated license
+            $licenseSvc = app(LicenseService::class);
+            $status = $licenseSvc->status();
+
+            // Basic and Gold tiers do not include Server & Multi-PC Terminals (strictly 1 standalone PC)
+            if (!empty($status['valid']) && !$licenseSvc->hasModule('server_terminals')) {
+                $seats = 1;
+            } else {
+                $seats = (int) ($status['seats'] ?? 0);
+                if ($seats <= 0) {
+                    return true; // Unlimited Platinum license
+                }
             }
 
             $activeCount = Terminal::where('is_authorized', true)

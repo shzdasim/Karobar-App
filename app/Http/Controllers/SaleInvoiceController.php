@@ -129,9 +129,14 @@ class SaleInvoiceController extends Controller
         $costs ??= $snapshots->productCosts($items);
         $legacy = $originalItems !== null && $originalItems->every(fn ($item) => $item->cost_price_snapshot === null);
         $itemColumns = array_flip(\App\Support\SchemaCache::getColumnListing('sale_invoice_items'));
+        $productsMap = Product::whereIn('id', collect($items)->pluck('product_id')->filter()->unique())->get()->keyBy('id');
         foreach ($items as $raw) {
             $matches = $originalItems === null ? collect() : $originalItems->where('product_id', $raw['product_id']);
             $cost = $legacy ? null : ($matches->isNotEmpty() ? $snapshots->originalCost($originalItems, $raw) : $costs->get($raw['product_id'], 0));
+            $prod = $productsMap->get($raw['product_id']);
+            $subTotalVal = $this->f($raw['sub_total'] ?? 0);
+            $itemTaxPct = isset($raw['tax_percentage']) ? $this->f($raw['tax_percentage']) : (float) ($prod?->sales_tax_rate ?? 0);
+            $itemTaxAmt = isset($raw['tax_amount']) ? $this->f($raw['tax_amount']) : round($subTotalVal * ($itemTaxPct / 100), 2);
             $payload = [
                 'cost_price_snapshot' => $cost,
                 'product_id'               => $raw['product_id'],
@@ -148,11 +153,16 @@ class SaleInvoiceController extends Controller
                 'pack_price'               => $this->f($raw['pack_price'] ?? 0),
                 'price'                    => $this->f($raw['price'] ?? 0),
                 'item_discount_percentage' => $this->f($raw['item_discount_percentage'] ?? 0),
-                'sub_total'                => $this->f($raw['sub_total'] ?? 0),
+                'sub_total'                => $subTotalVal,
                 'sale_type'                => $raw['sale_type'] ?? ($invoice->sale_type ?? 'retail'),
                 'is_custom_price'          => $raw['is_custom_price'] ?? false,
                 'applied_scheme_id'        => !empty($raw['applied_scheme_id']) ? (int) $raw['applied_scheme_id'] : null,
                 'applied_scheme_name'      => !empty($raw['applied_scheme_name']) ? trim($raw['applied_scheme_name']) : null,
+                'hs_code'                  => $raw['hs_code'] ?? $prod?->hs_code ?? null,
+                'tax_percentage'           => $itemTaxPct,
+                'tax_amount'               => $itemTaxAmt,
+                'further_tax_amount'       => $this->f($raw['further_tax_amount'] ?? 0),
+                'retail_mrp'               => isset($raw['retail_mrp']) ? $this->f($raw['retail_mrp']) : null,
             ];
 
             $dbPayload = $itemColumns ? array_intersect_key($payload, $itemColumns) : $payload;
@@ -646,6 +656,12 @@ class SaleInvoiceController extends Controller
                 }
             }
 
+            foreach (['fbr_pos_fee', 'further_tax_amount', 'advance_wht_percentage', 'advance_wht_amount'] as $taxCol) {
+                if ($request->has($taxCol) && \Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', $taxCol)) {
+                    $invoiceData[$taxCol] = max(0, (float) $request->input($taxCol, 0));
+                }
+            }
+
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'salesman_id')) {
                 $invoiceData['salesman_id'] = !empty($request->input('salesman_id'))
                     ? (int) $request->input('salesman_id')
@@ -832,7 +848,33 @@ class SaleInvoiceController extends Controller
 
             app(\App\Services\DocumentAuditService::class)->recordCreate($invoice->load('items.product'), $request->user());
 
-            return response()->json(['message' => 'Sale Invoice created', 'id' => $invoice->id, 'posted_number' => $posted], 201);
+            // Automatic FBR Fiscalization (if enabled in Settings)
+            try {
+                $fbrService = app(\App\Services\FbrFiscalizationService::class);
+                $fbrSetting = $fbrService->getSetting();
+                if ($fbrService->isEnabled($fbrSetting)) {
+                    if ($fbrSetting->fbr_auto_sync ?? true) {
+                        $fbrService->fiscalizeSaleInvoice($invoice);
+                    } elseif (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'fbr_sync_status')) {
+                        $invoice->update([
+                            'fbr_usin'        => $posted,
+                            'fbr_sync_status' => 'pending',
+                        ]);
+                    }
+                    $invoice->refresh();
+                }
+            } catch (\Throwable) {
+                // Never block POS checkout if FBR sync throws
+            }
+
+            return response()->json([
+                'message'            => 'Sale Invoice created',
+                'id'                 => $invoice->id,
+                'posted_number'      => $posted,
+                'fbr_invoice_number' => $invoice->fbr_invoice_number ?? null,
+                'fbr_sync_status'    => $invoice->fbr_sync_status ?? 'not_applicable',
+                'fbr_qr_data'        => $invoice->fbr_qr_data ?? null,
+            ], 201);
         });
     }
 

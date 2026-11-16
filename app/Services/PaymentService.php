@@ -318,6 +318,13 @@ class PaymentService
                 }
             }
 
+            $whtPercentage = round(max(0.0, (float) ($data['wht_percentage'] ?? 0)), 2);
+            $whtAmount = isset($data['wht_amount']) && (float) $data['wht_amount'] > 0
+                ? round((float) $data['wht_amount'], 2)
+                : ($whtPercentage > 0 ? round($amount * ($whtPercentage / 100), 2) : 0.0);
+            $whtAmount = min($whtAmount, $amount);
+            $netCashDisbursed = max(0.0, round($amount - $whtAmount, 2));
+
             $createPayload = [
                 'payment_number'   => $paymentNumber,
                 'party_type'       => 'supplier',
@@ -333,6 +340,12 @@ class PaymentService
                 'idempotency_key'  => $data['idempotency_key'] ?? null,
                 'created_by_id'    => $user?->id,
             ];
+
+            if (Schema::hasColumn('payments', 'wht_amount')) {
+                $createPayload['wht_tax_rate_id'] = !empty($data['wht_tax_rate_id']) ? (int) $data['wht_tax_rate_id'] : null;
+                $createPayload['wht_percentage']  = $whtPercentage;
+                $createPayload['wht_amount']      = $whtAmount;
+            }
 
             if ($isCheque && Schema::hasColumn('payments', 'cheque_status')) {
                 $createPayload['cheque_number'] = $data['cheque_number'] ?? ($data['reference'] ?? null);
@@ -393,27 +406,27 @@ class PaymentService
                 $payment->account_id = $account->id;
                 $payment->saveQuietly();
 
-                if (!$isCheque || $chequeStatus === 'cleared') {
+                if ((!$isCheque || $chequeStatus === 'cleared') && $netCashDisbursed > 0) {
                     app(AccountService::class)->withdraw(
                         $account,
-                        $payment->amount,
+                        $netCashDisbursed,
                         'supplier_payment',
                         $payment->id,
-                        "Supplier payment {$payment->payment_number} ({$supplier->name})",
+                        "Supplier payment {$payment->payment_number} ({$supplier->name})" . ($whtAmount > 0 ? " [Net of WHT: {$whtAmount}]" : ""),
                         $user
                     );
                 }
             }
 
             // Record cash drawer transaction if payment hits the default Cash in Hand (Drawer) account
-            if (app(AccountService::class)->isDefaultCashDrawerAccount($account, $payment->payment_method) && !$isCheque) {
+            if (app(AccountService::class)->isDefaultCashDrawerAccount($account, $payment->payment_method) && !$isCheque && $netCashDisbursed > 0) {
                 app(CashDrawerService::class)->recordTransaction(
                     null,
                     'supplier_payment',
-                    $payment->amount,
+                    $netCashDisbursed,
                     'payment',
                     $payment->id,
-                    "Supplier payment {$payment->payment_number}",
+                    "Supplier payment {$payment->payment_number}" . ($whtAmount > 0 ? " [Net of WHT: {$whtAmount}]" : ""),
                     $user
                 );
             }

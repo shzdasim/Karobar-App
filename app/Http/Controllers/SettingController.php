@@ -72,6 +72,9 @@ class SettingController extends Controller
             'currency_decimal_places' => (int)($setting?->currency_decimal_places ?? 2),
             'is_setup_completed'      => $isSetupCompleted,
             'setup_completed_at'      => $setting?->setup_completed_at?->toIso8601String(),
+            'fbr_enabled'             => (bool) ($setting?->fbr_enabled ?? false),
+            'fbr_pos_fee_enabled'     => (bool) ($setting?->fbr_pos_fee_enabled ?? false),
+            'fbr_pos_fee_amount'      => (float) ($setting?->fbr_pos_fee_amount ?? 1.00),
         ]);
     }
 
@@ -157,6 +160,21 @@ class SettingController extends Controller
             'cube_gemini_api_key'     => ['nullable', 'string', 'max:1000'],
             'cube_gemini_model'       => ['nullable', 'string', 'max:120'],
             'cube_gemini_daily_limit' => ['nullable', 'integer', 'min:0', 'max:1000'],
+            'fbr_enabled'             => ['nullable', 'boolean'],
+            'fbr_environment'         => ['nullable', Rule::in(['sandbox', 'production'])],
+            'fbr_mode'                => ['nullable', Rule::in(['digital_invoicing', 'tier1_pos_cloud', 'tier1_pos_ims'])],
+            'fbr_bearer_token'        => ['nullable', 'string', 'max:2000'],
+            'fbr_pos_id'              => ['nullable', 'string', 'max:50'],
+            'fbr_seller_ntn'          => ['nullable', 'string', 'max:50'],
+            'fbr_seller_strn'         => ['nullable', 'string', 'max:50'],
+            'fbr_seller_province'     => ['nullable', 'string', 'max:60'],
+            'fbr_sandbox_url'         => ['nullable', 'string', 'max:500'],
+            'fbr_production_url'      => ['nullable', 'string', 'max:500'],
+            'fbr_default_hs_code'     => ['nullable', 'string', 'max:30'],
+            'fbr_scenario_id'         => ['nullable', 'string', 'max:30'],
+            'fbr_pos_fee_enabled'     => ['nullable', 'boolean'],
+            'fbr_pos_fee_amount'      => ['nullable', 'numeric', 'min:0', 'max:500'],
+            'fbr_auto_sync'           => ['nullable', 'boolean'],
             'logo'                    => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],
         ]);
 
@@ -229,6 +247,24 @@ class SettingController extends Controller
             'cube_gemini_daily_limit',
         ];
 
+        $fbrFields = [
+            'fbr_enabled',
+            'fbr_environment',
+            'fbr_mode',
+            'fbr_bearer_token',
+            'fbr_pos_id',
+            'fbr_seller_ntn',
+            'fbr_seller_strn',
+            'fbr_seller_province',
+            'fbr_sandbox_url',
+            'fbr_production_url',
+            'fbr_default_hs_code',
+            'fbr_scenario_id',
+            'fbr_pos_fee_enabled',
+            'fbr_pos_fee_amount',
+            'fbr_auto_sync',
+        ];
+
         $printCalibrationFields = [
             'print_paper_width_mm',
             'print_margin_top_mm',
@@ -241,8 +277,8 @@ class SettingController extends Controller
             'print_show_logo',
         ];
 
-        // Fill non-SMTP / non-WhatsApp / non-Cube fields first
-        $setting->fill(collect($validated)->except(array_merge(['logo', 'remove_logo', 'share_paper_size', 'share_show_logo'], $printCalibrationFields, $smtpFields, $whatsappFields, $cubeFields))->toArray());
+        // Fill non-SMTP / non-WhatsApp / non-Cube / non-FBR fields first
+        $setting->fill(collect($validated)->except(array_merge(['logo', 'remove_logo', 'share_paper_size', 'share_show_logo'], $printCalibrationFields, $smtpFields, $whatsappFields, $cubeFields, $fbrFields))->toArray());
 
         if (Schema::hasColumn('settings', 'print_paper_width_mm')) {
             if ($request->has('print_paper_width_mm')) {
@@ -407,6 +443,47 @@ class SettingController extends Controller
             if ($request->has('cube_gemini_daily_limit')) {
                 $limit = $request->input('cube_gemini_daily_limit');
                 $setting->cube_gemini_daily_limit = ($limit !== null && $limit !== '') ? max(0, min(1000, (int) $limit)) : 250;
+            }
+        }
+
+        // Fill FBR Fiscalization fields safely if columns exist on the settings table
+        if (Schema::hasColumn('settings', 'fbr_enabled')) {
+            if ($request->has('fbr_enabled')) {
+                $setting->fbr_enabled = $request->boolean('fbr_enabled');
+            }
+            if ($request->has('fbr_environment')) {
+                $setting->fbr_environment = in_array($request->input('fbr_environment'), ['sandbox', 'production'], true)
+                    ? $request->input('fbr_environment')
+                    : 'sandbox';
+            }
+            if ($request->has('fbr_mode')) {
+                $setting->fbr_mode = in_array($request->input('fbr_mode'), ['digital_invoicing', 'tier1_pos_cloud', 'tier1_pos_ims'], true)
+                    ? $request->input('fbr_mode')
+                    : 'digital_invoicing';
+            }
+            if ($request->has('fbr_bearer_token')) {
+                $rawFbrToken = trim((string) $request->input('fbr_bearer_token'));
+                if ($rawFbrToken !== '') {
+                    $setting->fbr_bearer_token = $rawFbrToken;
+                    $submittedSecrets[] = 'fbr_bearer_token';
+                } elseif ($request->boolean('clear_fbr_bearer_token')) {
+                    $setting->fbr_bearer_token = null;
+                }
+            }
+            foreach (['fbr_pos_id', 'fbr_seller_ntn', 'fbr_seller_strn', 'fbr_seller_province', 'fbr_sandbox_url', 'fbr_production_url', 'fbr_default_hs_code', 'fbr_scenario_id'] as $strCol) {
+                if ($request->has($strCol)) {
+                    $val = trim((string) $request->input($strCol));
+                    $setting->{$strCol} = $val !== '' ? $val : null;
+                }
+            }
+            if ($request->has('fbr_pos_fee_enabled')) {
+                $setting->fbr_pos_fee_enabled = $request->boolean('fbr_pos_fee_enabled');
+            }
+            if ($request->has('fbr_pos_fee_amount')) {
+                $setting->fbr_pos_fee_amount = max(0, (float) $request->input('fbr_pos_fee_amount', 1.00));
+            }
+            if ($request->has('fbr_auto_sync')) {
+                $setting->fbr_auto_sync = $request->boolean('fbr_auto_sync');
             }
         }
         
@@ -1122,6 +1199,13 @@ class SettingController extends Controller
         $payload['has_whatsapp_access_token']  = trim((string) ($setting->getRawOriginal('whatsapp_access_token') ?? $setting->whatsapp_access_token ?? '')) !== '';
         $payload['has_cube_groq_api_key']      = trim((string) ($setting->getRawOriginal('cube_groq_api_key') ?? $setting->cube_groq_api_key ?? '')) !== '';
         $payload['has_cube_gemini_api_key']    = trim((string) ($setting->getRawOriginal('cube_gemini_api_key') ?? $setting->cube_gemini_api_key ?? '')) !== '';
+        $rawFbrToken = trim((string) ($setting->getRawOriginal('fbr_bearer_token') ?? $setting->fbr_bearer_token ?? ''));
+        $payload['has_fbr_bearer_token']       = $rawFbrToken !== '';
+        $payload['fbr_bearer_token_preview']   = $rawFbrToken !== ''
+            ? (strlen($rawFbrToken) > 8
+                ? substr($rawFbrToken, 0, 4) . '••••••••' . substr($rawFbrToken, -4)
+                : '••••••••')
+            : '';
 
         $today = now()->toDateString();
         $groqUsage = null;

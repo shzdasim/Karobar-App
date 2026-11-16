@@ -39,6 +39,7 @@ import {
 import { usePermissions } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
+import { useLicense } from "@/context/LicenseContext.jsx";
 import {
   GuideBotTopbarButton,
   useGuideBotOpenState,
@@ -52,6 +53,7 @@ export default function TopNavigation() {
   const { loading: permsLoading, has, roles } = usePermissions();
   const { theme } = useTheme();
   const { hasWholesale } = useSaleSystem();
+  const { hasModule } = useLicense();
   const [openDropdown, setOpenDropdown] = useState(null);
   const [guideBotOpen, setGuideBotOpen] = useGuideBotOpenState();
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
@@ -139,7 +141,7 @@ export default function TopNavigation() {
         { name: "Brands", path: "/brands", icon: <TagIcon className="w-5 h-5" />, perm: "brand.view" },
         { name: "Suppliers", path: "/suppliers", icon: <TruckIcon className="w-5 h-5" />, perm: "supplier.view" },
         { name: "Customers", path: "/customers", icon: <UserPlusIcon className="w-5 h-5" />, perm: "customer.view" },
-        { name: "Barcode Studio", path: "/barcode-labels", icon: <QrCodeIcon className="w-5 h-5" />, permAny: ["barcode.view", "barcode.print"] },
+        { name: "Barcode Studio", path: "/barcode-labels", icon: <QrCodeIcon className="w-5 h-5" />, permAny: ["barcode.view", "barcode.print"], licenseModule: "barcode" },
       ]
     },
     {
@@ -147,7 +149,7 @@ export default function TopNavigation() {
       key: "invoices",
       icon: <DocumentTextIcon className="w-5 h-5" />,
       items: [
-        { name: "Barcode POS", path: "/sale-invoices/pos", icon: <QrCodeIcon className="w-5 h-5" />, permAny: ["barcode-pos.view", "barcode-pos.create"] },
+        { name: "Barcode POS", path: "/sale-invoices/pos", icon: <QrCodeIcon className="w-5 h-5" />, permAny: ["barcode-pos.view", "barcode-pos.create"], licenseModule: "barcode" },
         { name: "Sale Invoices", path: "/sale-invoices", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, perm: "sale-invoice.view" },
         ...(hasWholesale
           ? [{ name: "Wholesale Invoices", path: "/wholesale-invoices", icon: <BuildingStorefrontIcon className="w-5 h-5" />, perm: "sale-invoice.view" }]
@@ -188,8 +190,8 @@ export default function TopNavigation() {
         { name: "Cash Drawer", path: "/cash-drawer", icon: <BanknotesIcon className="w-5 h-5" />, perm: "cash-drawer.view" },
         { name: "Financial Accounts", path: "/accounts", icon: <BanknotesIcon className="w-5 h-5" />, perm: "account.view" },
         { name: "Operating Expenses", path: "/expenses", icon: <CurrencyDollarIcon className="w-5 h-5" />, perm: "expense.view" },
-        { name: "Double-Entry & GL", path: "/accounting", icon: <CalculatorIcon className="w-5 h-5" />, permAny: ["account.view", "report.net-profit.view"] },
-        { name: "HR, Payroll & Commissions", path: "/hr-payroll", icon: <UserGroupIcon className="w-5 h-5" />, permAny: ["expense.view", "account.view", "user.view"] },
+        { name: "Double-Entry & GL", path: "/accounting", icon: <CalculatorIcon className="w-5 h-5" />, permAny: ["account.view", "report.net-profit.view"], licenseModule: "accounting_gl" },
+        { name: "HR, Payroll & Commissions", path: "/hr-payroll", icon: <UserGroupIcon className="w-5 h-5" />, permAny: ["expense.view", "account.view", "user.view"], licenseModule: "hr_payroll" },
       ]
     },
     {
@@ -198,7 +200,7 @@ export default function TopNavigation() {
       icon: <ChartBarIcon className="w-5 h-5" />,
       items: [
         { name: "Net Profit (P&L)", path: "/reports/net-profit", icon: <CalculatorIcon className="w-5 h-5" />, perm: "report.net-profit.view" },
-        { name: "Statutory Tax Return", path: "/reports/tax-return", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, permAny: ["report.net-profit.view", "report.sale-detail.view", "account.view"] },
+        { name: "Statutory Tax Return", path: "/reports/tax-return", icon: <DocumentCurrencyDollarIcon className="w-5 h-5" />, permAny: ["report.net-profit.view", "report.sale-detail.view", "account.view"], licenseModule: "fbr" },
         { name: "Cost of Sale", path: "/reports/cost-of-sale", icon: <CalculatorIcon className="w-5 h-5" />, perm: "report.cost-of-sale.view" },
         { name: "Cost of Sale Detail", path: "/reports/cost-of-sale-detail", icon: <DocumentTextIcon className="w-5 h-5" />, perm: "report.cost-of-sale-detail.view" },
         { name: "Outstanding Aging", path: "/reports/outstanding-aging", icon: <BanknotesIcon className="w-5 h-5" />, perm: "report.outstanding-aging.view" },
@@ -221,7 +223,7 @@ export default function TopNavigation() {
       icon: <Cog6ToothIcon className="w-5 h-5" />,
       items: [
         { name: "Settings", path: "/settings", icon: <Cog6ToothIcon className="w-5 h-5" />, perm: "settings.view" },
-        { name: "SQLite Data Import", path: "/settings/sqlite-import", icon: <CircleStackIcon className="w-5 h-5" />, adminOnly: true, swAdminLocked: true },
+        { name: "SQLite Data Import", path: "/settings/sqlite-import", icon: <CircleStackIcon className="w-5 h-5" />, adminOnly: true, swAdminLocked: true, licenseModule: "cube_ai" },
         { name: "Users", path: "/users", icon: <UserGroupIcon className="w-5 h-5" />, permAny: ["user.view", "user.manage"] },
         { name: "Roles", path: "/roles", icon: <KeyIcon className="w-5 h-5" />, perm: "role.view" },
         { name: "Backups & Storage", path: "/backups", icon: <ServerIcon className="w-5 h-5" />, perm: "backup.view" },
@@ -234,9 +236,10 @@ export default function TopNavigation() {
     { name: "Dashboard", path: "/dashboard", icon: <HomeIcon className="w-5 h-5" />, perm: null },
   ], []);
 
-  // Filter items based on permissions
+  // Filter items based on permissions and license tier modules
   const getFilteredItems = (items) => {
     return items.filter((item) => {
+      if (item.licenseModule && !hasModule(item.licenseModule)) return false;
       if (item.adminOnly) return isApplicationAdmin;
       if (item.permAny) return !permsLoading && item.permAny.some((p) => has(p));
       if (item.perm) return !permsLoading && has(item.perm);

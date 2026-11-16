@@ -127,6 +127,19 @@ Route::get('/print/thermal-preview/{template}', function ($template) {
     $sampleSetting->print_contrast_mode = $dbSetting?->print_contrast_mode ?? 'standard';
     $sampleSetting->print_scale_mode = $dbSetting?->print_scale_mode ?? 'auto';
     $sampleSetting->print_show_logo = $showLogo;
+    $sampleSetting->fbr_enabled = request()->has('fbr_preview')
+        ? request()->boolean('fbr_preview')
+        : (bool) ($dbSetting?->fbr_enabled ?? false);
+    $sampleSetting->fbr_environment = $dbSetting?->fbr_environment ?? 'sandbox';
+    $sampleSetting->fbr_mode = $dbSetting?->fbr_mode ?? 'tier1_pos_cloud';
+    $sampleSetting->fbr_seller_ntn = $dbSetting?->fbr_seller_ntn ?: '1234567-8';
+    $sampleSetting->fbr_seller_strn = $dbSetting?->fbr_seller_strn ?: '32-77-8761-001-45';
+    $sampleSetting->fbr_pos_id = $dbSetting?->fbr_pos_id ?: '966130';
+    if ($sampleSetting->fbr_enabled) {
+        $sampleInvoice->fbr_invoice_number = ($sampleSetting->fbr_pos_id ?: '966130') . now()->format('ymdHis') . '01';
+        $sampleInvoice->fbr_qr_data = "https://ims.fbr.gov.pk/Lv1/Verification?inv={$sampleInvoice->fbr_invoice_number}";
+        $sampleInvoice->fbr_pos_fee = $dbSetting?->fbr_pos_fee_enabled ? (float) ($dbSetting?->fbr_pos_fee_amount ?? 1.00) : 1.00;
+    }
     
     return view("printer.sale_invoice_thermal_{$template}", [
         'invoice' => $sampleInvoice,
@@ -236,6 +249,19 @@ Route::get('/print/a4-preview/{template}', function ($template) {
     $sampleSetting->print_contrast_mode = $dbSetting?->print_contrast_mode ?? 'standard';
     $sampleSetting->print_scale_mode = $dbSetting?->print_scale_mode ?? 'auto';
     $sampleSetting->print_show_logo = $showLogo;
+    $sampleSetting->fbr_enabled = request()->has('fbr_preview')
+        ? request()->boolean('fbr_preview')
+        : (bool) ($dbSetting?->fbr_enabled ?? false);
+    $sampleSetting->fbr_environment = $dbSetting?->fbr_environment ?? 'sandbox';
+    $sampleSetting->fbr_mode = $dbSetting?->fbr_mode ?? 'tier1_pos_cloud';
+    $sampleSetting->fbr_seller_ntn = $dbSetting?->fbr_seller_ntn ?: '1234567-8';
+    $sampleSetting->fbr_seller_strn = $dbSetting?->fbr_seller_strn ?: '32-77-8761-001-45';
+    $sampleSetting->fbr_pos_id = $dbSetting?->fbr_pos_id ?: '966130';
+    if ($sampleSetting->fbr_enabled) {
+        $sampleInvoice->fbr_invoice_number = ($sampleSetting->fbr_pos_id ?: '966130') . now()->format('ymdHis') . '01';
+        $sampleInvoice->fbr_qr_data = "https://ims.fbr.gov.pk/Lv1/Verification?inv={$sampleInvoice->fbr_invoice_number}";
+        $sampleInvoice->fbr_pos_fee = $dbSetting?->fbr_pos_fee_enabled ? (float) ($dbSetting?->fbr_pos_fee_amount ?? 1.00) : 1.00;
+    }
     
     return view("printer.sale_invoice_a4_{$template}", [
         'invoice' => $sampleInvoice,
@@ -328,6 +354,11 @@ Route::get('/print/share-preview/{size}/{template}', function (string $size, str
     $sampleSetting->license_number = $dbSetting?->license_number ?: 'LIC-99482';
     $sampleSetting->share_paper_size = $size;
     $sampleSetting->share_show_logo = $showLogo;
+    if ($sampleSetting->fbr_enabled) {
+        $sampleInvoice->fbr_invoice_number = ($sampleSetting->fbr_pos_id ?: '110014') . now()->format('ymdHis') . '01';
+        $sampleInvoice->fbr_qr_data = $sampleInvoice->fbr_invoice_number;
+        $sampleInvoice->fbr_pos_fee = $sampleSetting->fbr_pos_fee_enabled ? (float) ($sampleSetting->fbr_pos_fee_amount ?? 1.00) : 0.00;
+    }
     $sampleSetting->note = request()->has('note')
         ? (string) request()->query('note', '')
         : ($dbSetting ? (string) ($dbSetting->note ?? '') : 'Thank you for your business!');

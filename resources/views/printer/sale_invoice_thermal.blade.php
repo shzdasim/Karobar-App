@@ -180,6 +180,7 @@
       <div class="hr"></div>
       <div class="note">{{ $footerNote }}</div>
     @endif
+    @include('printer.partials.fbr_fiscal_footer')
 
     <div class="foot">Software by Engr.Asim Shahzad<br/> PH:0304-7674787</div>
   </div>

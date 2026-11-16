@@ -77,6 +77,8 @@ export default function RecordPaymentModal({
   const [chequeDate, setChequeDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [chequeStatus, setChequeStatus] = useState("pending");
   const [notes, setNotes] = useState("");
+  const [whtPercentage, setWhtPercentage] = useState("");
+  const [whtAmount, setWhtAmount] = useState("");
   const [allocations, setAllocations] = useState({}); // { [invoiceId]: allocatedAmountString }
 
   const selectStyles = useMemo(() => ({
@@ -327,6 +329,8 @@ export default function RecordPaymentModal({
         cheque_date: paymentMethod.value === "cheque" ? (chequeDate || paymentDate) : undefined,
         cheque_status: paymentMethod.value === "cheque" ? chequeStatus : undefined,
         notes: notes.trim() || null,
+        wht_percentage: partyType === "supplier" && Number(whtPercentage) > 0 ? Number(whtPercentage) : undefined,
+        wht_amount: partyType === "supplier" && Number(whtAmount) > 0 ? Number(whtAmount) : undefined,
         idempotency_key: idempotencyKey,
         allocations: payloadAllocations,
       });
@@ -557,6 +561,59 @@ export default function RecordPaymentModal({
             )}
 
             {/* Middle Row: Reference, Notes */}
+            {partyType === "supplier" && (
+              <div
+                className={`p-3.5 rounded-xl border grid grid-cols-1 md:grid-cols-3 gap-3 ${
+                  isDark ? "bg-slate-800/60 border-slate-700" : "bg-amber-50/50 border-amber-200"
+                }`}
+              >
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>
+                    Withholding Tax (WHT %)
+                  </label>
+                  <GlassInput
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={whtPercentage}
+                    onChange={(e) => {
+                      const pct = e.target.value;
+                      setWhtPercentage(pct);
+                      const gross = parseFloat(amount || 0) || 0;
+                      const calcAmt = gross > 0 && Number(pct) > 0 ? round2((gross * Number(pct)) / 100) : 0;
+                      setWhtAmount(calcAmt > 0 ? String(calcAmt) : "");
+                    }}
+                    placeholder="e.g. 4.5 or 5"
+                    disabled={submitting}
+                    className="w-full text-xs h-9 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? "text-slate-300" : "text-gray-700"}`}>
+                    WHT Deducted at Source (Rs.)
+                  </label>
+                  <GlassInput
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={whtAmount}
+                    onChange={(e) => setWhtAmount(e.target.value)}
+                    placeholder="0.00"
+                    disabled={submitting}
+                    className="w-full text-xs h-9 font-mono"
+                  />
+                </div>
+                <div className="flex flex-col justify-center">
+                  <span className="text-[11px] uppercase tracking-wider font-semibold text-amber-600 dark:text-amber-400">
+                    Net Cash / Bank Outflow
+                  </span>
+                  <span className="text-sm font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                    {formatCurrency(Math.max(0, round2(numAmount - (parseFloat(whtAmount || 0) || 0))))}
+                  </span>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label

@@ -137,6 +137,8 @@
     @endif
   </div>
 
+  @include('printer.partials.fbr_fiscal_footer')
+
   <div class="footer">
     @if($footerNote){{ $footerNote }}@endif
     <br/>Thank you!

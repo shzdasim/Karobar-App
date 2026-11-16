@@ -1,10 +1,27 @@
 import React, { useEffect } from "react";
-import { Navigate, Outlet, useLocation } from "react-router-dom";
-import { useLicense } from "../context/LicenseContext.jsx";
+import { Link, Navigate, Outlet, useLocation } from "react-router-dom";
+import {
+   useLicense,
+  LICENSE_MODULES_CATALOG,
+  LICENSE_TIERS_CATALOG,
+} from "../context/LicenseContext.jsx";
 import { useSaleSystem } from "../context/SaleSystemContext.jsx";
 import { usePermissions } from "../api/usePermissions.js";
 import PageSkeleton from "./PageSkeleton.jsx";
 import { saveLastVisitedPath } from "../utils/lastVisitedPage.js";
+
+const ROUTE_LICENSE_MODULE_MAP = {
+  "/sale-invoices/pos": "barcode",
+  "/sale-invoices/barcode-pos": "barcode",
+  "/barcode-labels": "barcode",
+  "/reports/tax-return": "fbr",
+  "/server-dashboard": "server_terminals",
+  "/terminals": "server_terminals",
+  "/accounting": "accounting_gl",
+  "/hr-payroll": "hr_payroll",
+  "/settings/sqlite-import": "cube_ai",
+  "/sqlite-import": "cube_ai",
+};
 
 const ROUTE_PERMISSION_MAP = {
   "/products": ["product.view"],
@@ -103,7 +120,12 @@ export default function ProtectedRoute({
 }) {
   const token = localStorage.getItem("token");
   const location = useLocation();
-  const { loading: licenseLoading, valid: licenseValid } = useLicense();
+  const {
+    loading: licenseLoading,
+    valid: licenseValid,
+    tierLabel,
+    hasModule,
+  } = useLicense();
   const { isSetupCompleted, loading: saleSystemLoading } = useSaleSystem();
   const { loading: permsLoading, has } = usePermissions();
 
@@ -155,6 +177,52 @@ export default function ProtectedRoute({
   // If we have an explicit license check result and it's invalid, redirect
   if (!licenseValid) {
     return <Navigate to="/activate" replace />;
+  }
+
+  // Enforce license tier module access on route navigation (when !shellOnly so DashboardLayout shell stays mounted)
+  if (!shellOnly) {
+    const requiredLicenseModule = ROUTE_LICENSE_MODULE_MAP[location.pathname];
+    if (requiredLicenseModule && !hasModule(requiredLicenseModule)) {
+      const modMeta = LICENSE_MODULES_CATALOG[requiredLicenseModule];
+      const reqTierKey = modMeta?.required_tier || "platinum";
+      const reqTierLabel = LICENSE_TIERS_CATALOG[reqTierKey]?.label || "Platinum";
+
+      return (
+        <div className="p-6 max-w-2xl mx-auto mt-8">
+          <div className="rounded-2xl border border-amber-300/80 dark:border-amber-700/60 bg-amber-50/90 dark:bg-amber-950/30 p-6 shadow-lg">
+            <div className="flex items-center gap-3 mb-2">
+              <span className="px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-amber-500 text-white">
+                {reqTierLabel} Tier Required
+              </span>
+              <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+                Current License: {tierLabel || "Basic"}
+              </span>
+            </div>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+              {modMeta?.label || "Module Locked"} is not included in your {tierLabel || "Basic"} license
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mt-1.5">
+              {modMeta?.description ||
+                `Upgrade your license to the ${reqTierLabel} tier to unlock this module.`}
+            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Link
+                to="/settings#license"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white transition-colors"
+              >
+                Upgrade License in Settings
+              </Link>
+              <Link
+                to="/dashboard"
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200"
+              >
+                Back to Dashboard
+              </Link>
+            </div>
+          </div>
+        </div>
+      );
+    }
   }
 
   // Redirect to the First-Login Genie Setup Wizard (/setup) if store onboarding has not been completed yet

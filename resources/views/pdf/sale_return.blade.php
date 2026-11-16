@@ -109,6 +109,7 @@
       <td class="text-right">Rs. {{ number_format((float)($return->total ?? 0), 2) }}</td>
     </tr>
   </table>
+  @include('printer.partials.fbr_fiscal_footer')
 </body>
 </html>
 

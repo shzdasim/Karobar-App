@@ -37,6 +37,12 @@ class Product extends Model
         'rack',
         'storage_location_id',
         'barcode',
+        'hs_code',
+        'tax_type',
+        'sales_tax_rate',
+        'further_tax_rate',
+        'sro_schedule_no',
+        'sro_item_serial_no',
     ];
 
     public function storageLocation()

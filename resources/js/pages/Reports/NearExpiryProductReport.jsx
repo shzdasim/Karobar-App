@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
+import Select from "react-select";
 import { usePermissions, Guard } from "@/api/usePermissions";
 import { useTheme } from "@/context/ThemeContext.jsx";
 
@@ -487,18 +488,39 @@ export default function NearExpiryProductReport() {
             {storageLocations.length > 0 && (
               <div className="products-filter">
                 <span className="products-filter-label">Storage Location</span>
-                <select
-                  value={storageLocationId}
-                  onChange={(e) => setStorageLocationId(e.target.value)}
-                  className="report-input"
-                >
-                  <option value="">All Storage Locations</option>
-                  {storageLocations.map((loc) => (
-                    <option key={loc.id} value={loc.id}>
-                      {loc.name}
-                    </option>
-                  ))}
-                </select>
+                <Select
+                  options={[
+                    { value: "", label: "All Storage Locations" },
+                    ...storageLocations.map((loc) => ({
+                      value: String(loc.id),
+                      label: `${loc.name}${loc.code ? ` (${loc.code})` : ""}`,
+                    })),
+                  ]}
+                  value={
+                    storageLocations
+                      .map((loc) => ({
+                        value: String(loc.id),
+                        label: `${loc.name}${loc.code ? ` (${loc.code})` : ""}`,
+                      }))
+                      .find((o) => o.value === String(storageLocationId || "")) || {
+                      value: "",
+                      label: "All Storage Locations",
+                    }
+                  }
+                  onChange={(opt) => setStorageLocationId(opt?.value || "")}
+                  isClearable
+                  classNamePrefix="rs"
+                  menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                  styles={{
+                    control: (base) => ({
+                      ...base,
+                      minHeight: "36px",
+                      borderRadius: "0.5rem",
+                      fontSize: "12px",
+                    }),
+                    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                  }}
+                />
               </div>
             )}
           </div>

@@ -12,6 +12,8 @@ class LicenseController extends Controller
     {
         $st = $svc->currentStatus();
         $st['machine_id'] = $svc->computeMachineId();
+        $st['tiers_catalog'] = LicenseService::TIERS;
+        $st['modules_catalog'] = LicenseService::MODULES;
         return response()->json($st);
     }
 
@@ -29,11 +31,15 @@ class LicenseController extends Controller
         $key = trim($req->input('license_key'));
 
         [$ok, $payload, $reason] = $svc->activateLicenseKey($key);
+        $tier = $ok ? $svc->resolveTier($payload) : null;
 
         return response()->json([
             'ok' => $ok,
             'reason' => $reason,
             'payload' => $payload,
+            'tier' => $tier,
+            'tier_label' => $tier ? (LicenseService::TIERS[$tier]['label'] ?? 'Platinum') : null,
+            'modules' => $ok ? $svc->resolveModules($payload) : [],
         ], $ok ? 200 : 422);
     }
 

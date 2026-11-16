@@ -37,6 +37,101 @@ class LicenseService
      */
     public const PERIODIC_CHECK_INTERVAL = 28800;
 
+    /**
+     * Canonical Module Catalog for Karobar-App ERP.
+     */
+    public const MODULES = [
+        'basic_operations' => [
+            'key'           => 'basic_operations',
+            'label'         => 'Basic Store Operations',
+            'description'   => 'Products, Batches, Sales, Purchases, Returns, Inventory, Ledgers, Accounts, Cash Drawer, Expenses & Standard Reports',
+            'required_tier' => 'basic',
+        ],
+        'barcode' => [
+            'key'           => 'barcode',
+            'label'         => 'Barcode POS & Barcode Studio',
+            'description'   => 'Fast Fullscreen Barcode Scanner POS & Custom Barcode Label Designer / Printer',
+            'required_tier' => 'gold',
+        ],
+        'fbr' => [
+            'key'           => 'fbr',
+            'label'         => 'FBR Digital Invoicing & POS Tax',
+            'description'   => 'Official FBR QR & Logo Receipt Stamp, PRAL Real-Time Sync, Offline Queue & Statutory Tax Return Report',
+            'required_tier' => 'gold',
+        ],
+        'server_terminals' => [
+            'key'           => 'server_terminals',
+            'label'         => 'Server & Multi-PC Terminals',
+            'description'   => 'Multi-Counter LAN SyncPulse, Attached Terminals Dashboard & 1-Click Server DB Import/Export',
+            'required_tier' => 'platinum',
+        ],
+        'accounting_gl' => [
+            'key'           => 'accounting_gl',
+            'label'         => 'Double-Entry Accounting & GL',
+            'description'   => 'Chart of Accounts, Journal Vouchers & Financial Statements',
+            'required_tier' => 'platinum',
+        ],
+        'hr_payroll' => [
+            'key'           => 'hr_payroll',
+            'label'         => 'HR, Attendance & Payroll',
+            'description'   => 'Employees, Attendance Tracking, Staff Advances, Sales Commissions & Monthly Payroll Runs',
+            'required_tier' => 'platinum',
+        ],
+        'cube_ai' => [
+            'key'           => 'cube_ai',
+            'label'         => 'Cube AI Assistant & SQLite Migration',
+            'description'   => 'Hybrid AI Co-Pilot, Automated Task Runner & Intelligent SQLite Database Import',
+            'required_tier' => 'platinum',
+        ],
+    ];
+
+    /**
+     * Canonical 3-Tier License System (Basic -> Gold -> Platinum).
+     */
+    public const TIERS = [
+        'basic' => [
+            'key'           => 'basic',
+            'label'         => 'Basic',
+            'edition'       => 'Basic',
+            'rank'          => 1,
+            'default_seats' => 1,
+            'tagline'       => 'All basic store, inventory, billing, ledger & reporting operations (1 PC)',
+            'modules'       => [
+                'basic_operations',
+            ],
+        ],
+        'gold' => [
+            'key'           => 'gold',
+            'label'         => 'Gold',
+            'edition'       => 'Gold',
+            'rank'          => 2,
+            'default_seats' => 1,
+            'tagline'       => 'Everything in Basic + FBR Digital Invoicing & Barcode POS / Barcode Studio',
+            'modules'       => [
+                'basic_operations',
+                'barcode',
+                'fbr',
+            ],
+        ],
+        'platinum' => [
+            'key'           => 'platinum',
+            'label'         => 'Platinum',
+            'edition'       => 'Platinum',
+            'rank'          => 3,
+            'default_seats' => 0, // Unlimited / multi-PC server & terminals
+            'tagline'       => 'Everything in Gold + Server & Multi-PC Terminals, GL Accounting, HR/Payroll & Cube AI',
+            'modules'       => [
+                'basic_operations',
+                'barcode',
+                'fbr',
+                'server_terminals',
+                'accounting_gl',
+                'hr_payroll',
+                'cube_ai',
+            ],
+        ],
+    ];
+
     private static ?string $cachedMachineId = null;
     private static ?array $cachedVerifiedStatus = null;
     private static ?string $testPublicKey = null;
@@ -418,14 +513,120 @@ class LicenseService
         $this->recordMonotonicTimestamp($activatedTs, $rec, true);
 
         $cleanPayload = $this->sanitizePayload($payload);
+        $tier = $this->resolveTier($cleanPayload);
+        $tierMeta = self::TIERS[$tier] ?? self::TIERS['platinum'];
+        $modules = $this->resolveModules($cleanPayload);
+        $seats = array_key_exists('seats', $cleanPayload ?? [])
+            ? (int) $cleanPayload['seats']
+            : (int) ($tierMeta['default_seats'] ?? 1);
+
         $this->writePeriodicStatusCache([
             'valid' => true,
             'reason' => null,
             'payload' => $cleanPayload,
             'expires_at' => $cleanPayload['exp'] ?? null,
+            'tier' => $tier,
+            'tier_label' => $tierMeta['label'],
+            'modules' => $modules,
+            'seats' => $seats,
         ], $activatedTs);
 
         return [true, $cleanPayload, null, $rec];
+    }
+
+    /**
+     * Resolve the normalized tier key ('basic' | 'gold' | 'platinum') from a license payload.
+     * Legacy keys ('Professional', 'Enterprise', 'Enterprise Multi-PC', or omitted) map to 'platinum'
+     * for 100% backward compatibility with deployed stores.
+     */
+    public function resolveTier(?array $payload): string
+    {
+        if (!is_array($payload)) {
+            return 'basic';
+        }
+
+        $raw = strtolower(trim((string) (
+            $payload['tier']
+            ?? $payload['license_type']
+            ?? $payload['Edition']
+            ?? $payload['edition']
+            ?? $payload['plan']
+            ?? ''
+        )));
+
+        return match (true) {
+            in_array($raw, ['basic', 'basic_pos', 'basic pos', 'starter', 'standard', 'silver'], true) => 'basic',
+            in_array($raw, ['gold', 'gold_edition', 'gold edition', 'fbr', 'fbr_edition'], true) => 'gold',
+            in_array($raw, ['platinum', 'platinum_edition', 'platinum edition', 'enterprise', 'enterprise multi-pc', 'professional', 'pro'], true) => 'platinum',
+            str_contains($raw, 'basic') => 'basic',
+            str_contains($raw, 'gold') => 'gold',
+            default => 'platinum',
+        };
+    }
+
+    /**
+     * Resolve the active list of canonical module keys granted by the license payload.
+     */
+    public function resolveModules(?array $payload): array
+    {
+        if (!is_array($payload)) {
+            return [];
+        }
+
+        $tier = $this->resolveTier($payload);
+        $tierModules = self::TIERS[$tier]['modules'] ?? self::TIERS['platinum']['modules'];
+
+        // Allow explicit 'modules' array in payload to add extra modules if signed
+        $explicitModules = [];
+        if (!empty($payload['modules']) && is_array($payload['modules'])) {
+            foreach ($payload['modules'] as $mod) {
+                $modKey = strtolower(trim((string) $mod));
+                if (isset(self::MODULES[$modKey])) {
+                    $explicitModules[] = $modKey;
+                }
+            }
+        }
+
+        return array_values(array_unique(array_merge($tierModules, $explicitModules)));
+    }
+
+    /**
+     * Check whether the currently active license includes a given module key.
+     */
+    public function hasModule(string $moduleKey): bool
+    {
+        $st = $this->currentStatus();
+        if (empty($st['valid'])) {
+            return false;
+        }
+
+        $modules = $st['modules'] ?? $this->resolveModules($st['payload'] ?? null);
+        return in_array($moduleKey, $modules, true);
+    }
+
+    /**
+     * Check whether the currently active license meets or exceeds a minimum tier ('basic' | 'gold' | 'platinum').
+     */
+    public function hasTier(string $minimumTier): bool
+    {
+        $st = $this->currentStatus();
+        if (empty($st['valid'])) {
+            return false;
+        }
+
+        $currentTier = $st['tier'] ?? $this->resolveTier($st['payload'] ?? null);
+        $currentRank = self::TIERS[$currentTier]['rank'] ?? 1;
+        $requiredRank = self::TIERS[strtolower(trim($minimumTier))]['rank'] ?? 3;
+
+        return $currentRank >= $requiredRank;
+    }
+
+    /**
+     * Return the minimum tier key ('basic' | 'gold' | 'platinum') required for a given module.
+     */
+    public function requiredTierForModule(string $moduleKey): string
+    {
+        return self::MODULES[$moduleKey]['required_tier'] ?? 'platinum';
     }
 
     /**
@@ -491,6 +692,13 @@ class LicenseService
         if (!$force && !app()->runningUnitTests()) {
             $cached = $this->readPeriodicStatusCache($now);
             if ($cached !== null) {
+                if (!isset($cached['tier']) || !isset($cached['modules'])) {
+                    $p = $cached['payload'] ?? null;
+                    $tier = $this->resolveTier($p);
+                    $cached['tier'] = $tier;
+                    $cached['tier_label'] = self::TIERS[$tier]['label'] ?? 'Platinum';
+                    $cached['modules'] = $this->resolveModules($p);
+                }
                 return $cached;
             }
         }
@@ -498,7 +706,14 @@ class LicenseService
         $rec = License::latest('id')->first();
         if (!$rec) {
             $this->clearPeriodicStatusCache();
-            return ['valid' => false, 'reason' => 'No license installed'];
+            return [
+                'valid' => false,
+                'reason' => 'No license installed',
+                'tier' => null,
+                'tier_label' => null,
+                'modules' => [],
+                'seats' => 0,
+            ];
         }
 
         $currentMachineId = $this->computeMachineId();
@@ -516,13 +731,24 @@ class LicenseService
         }
 
         $cleanPayload = $this->sanitizePayload($payload);
+        $tier = $ok ? $this->resolveTier($cleanPayload) : null;
+        $tierMeta = $tier ? (self::TIERS[$tier] ?? self::TIERS['platinum']) : null;
+        $modules = $ok ? $this->resolveModules($cleanPayload) : [];
+        $seats = $ok
+            ? (array_key_exists('seats', $cleanPayload ?? [])
+                ? (int) $cleanPayload['seats']
+                : (int) ($tierMeta['default_seats'] ?? 1))
+            : 0;
 
         $result = [
             'valid' => $ok,
             'reason' => $reason,
             'payload' => $cleanPayload,
             'expires_at' => $cleanPayload['exp'] ?? null,
-            'seats' => (int) ($cleanPayload['seats'] ?? 0),
+            'tier' => $tier,
+            'tier_label' => $tierMeta['label'] ?? null,
+            'modules' => $modules,
+            'seats' => $seats,
         ];
 
         if ($ok) {

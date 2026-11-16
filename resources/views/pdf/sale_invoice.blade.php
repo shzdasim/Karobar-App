@@ -318,6 +318,8 @@
         </div>
     @endif
 
+    @include('printer.partials.fbr_fiscal_footer')
+
     <div class="footer-note">
         @foreach(preg_split('/\r\n|\r|\n/u', (string) $note) as $noteLine)
             @if(trim($noteLine) !== '')

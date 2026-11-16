@@ -2013,28 +2013,37 @@ export default function BarcodePos() {
                 </div>
               )}
 
-              {/* Salesman Selector */}
+              {/* Salesman Selector (React Select) */}
               {salesmen.length > 0 && (
                 <div className="space-y-1">
                   <label className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>
                     Salesman / Counter Staff
                   </label>
-                  <select
-                    value={selectedSalesmanId}
-                    onChange={(e) => setSelectedSalesmanId(e.target.value)}
-                    className={`w-full h-8 px-2.5 rounded-xl border text-xs font-semibold ${
-                      isDark
-                        ? "border-slate-700 bg-slate-800 text-slate-200"
-                        : "border-slate-300 bg-slate-50 text-slate-800"
-                    }`}
-                  >
-                    <option value="">Auto (Current Cashier)</option>
-                    {salesmen.map((emp) => (
-                      <option key={emp.id} value={emp.id}>
-                        {emp.name} {emp.employee_code ? `(${emp.employee_code})` : ""}
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    options={[
+                      { value: "", label: "Auto (Current Cashier)" },
+                      ...salesmen.map((emp) => ({
+                        value: String(emp.id),
+                        label: `${emp.name}${emp.employee_code ? ` (${emp.employee_code})` : ""}`,
+                      })),
+                    ]}
+                    value={
+                      salesmen
+                        .map((emp) => ({
+                          value: String(emp.id),
+                          label: `${emp.name}${emp.employee_code ? ` (${emp.employee_code})` : ""}`,
+                        }))
+                        .find((o) => o.value === String(selectedSalesmanId || "")) || {
+                        value: "",
+                        label: "Auto (Current Cashier)",
+                      }
+                    }
+                    onChange={(opt) => setSelectedSalesmanId(opt?.value || "")}
+                    styles={selectStyles}
+                    isSearchable
+                    classNamePrefix="rs"
+                    menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                  />
                 </div>
               )}
 
@@ -2092,22 +2101,23 @@ export default function BarcodePos() {
                     <span>Sales Tax (GST %):</span>
                     <div className="flex items-center gap-1">
                       {taxRatePresets.length > 0 && (
-                        <select
-                          value=""
-                          onChange={(e) => {
-                            if (e.target.value !== "") setTaxPercentage(Number(e.target.value) || 0);
-                          }}
-                          className={`text-[10px] px-1 py-0.5 rounded border ${
-                            isDark ? "bg-slate-800 border-slate-700 text-slate-200" : "bg-slate-50 border-slate-300 text-slate-800"
-                          }`}
-                        >
-                          <option value="">Preset</option>
-                          {taxRatePresets.map((tr) => (
-                            <option key={tr.id} value={Number(tr.rate)}>
-                              {tr.code} ({Number(tr.rate)}%)
-                            </option>
-                          ))}
-                        </select>
+                        <div className="w-24">
+                          <Select
+                            options={taxRatePresets.map((tr) => ({
+                              value: Number(tr.rate),
+                              label: `${tr.code} (${Number(tr.rate)}%)`,
+                            }))}
+                            value={null}
+                            placeholder="Preset"
+                            onChange={(opt) => {
+                              if (opt?.value !== undefined) setTaxPercentage(Number(opt.value) || 0);
+                            }}
+                            styles={selectStyles}
+                            isSearchable={false}
+                            classNamePrefix="rs"
+                            menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                          />
+                        </div>
                       )}
                       <input
                         type="number"

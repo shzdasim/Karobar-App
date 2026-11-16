@@ -28,6 +28,11 @@ class SaleInvoiceItem extends Model
         'is_custom_price',
         'applied_scheme_id',
         'applied_scheme_name',
+        'hs_code',
+        'tax_percentage',
+        'tax_amount',
+        'further_tax_amount',
+        'retail_mrp',
     ];
     public function saleInvoice()
     {

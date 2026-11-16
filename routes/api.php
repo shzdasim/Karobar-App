@@ -22,6 +22,7 @@ use App\Http\Controllers\DoctorController;
 use App\Http\Controllers\DocumentHistoryController;
 use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\ExpenseController;
+use App\Http\Controllers\FbrController;
 use App\Http\Controllers\FormulationController;
 use App\Http\Controllers\HrPayrollController;
 use App\Http\Controllers\InvoiceDraftController;
@@ -258,18 +259,20 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::post('accounts/transfer',              [AccountController::class, 'transfer']);
     Route::post('accounts/{id}/adjust',           [AccountController::class, 'adjust']);
 
-    // Double-Entry Accounting, Chart of Accounts, Journal Vouchers & Statutory Tax Rates
-    Route::get('accounting/overview',                               [AccountingController::class, 'overview']);
-    Route::get('accounting/chart-of-accounts',                      [AccountingController::class, 'chartOfAccounts']);
-    Route::post('accounting/chart-of-accounts',                     [AccountingController::class, 'storeAccount']);
-    Route::put('accounting/chart-of-accounts/{chartOfAccount}',     [AccountingController::class, 'updateAccount']);
-    Route::get('accounting/journal-entries',                        [AccountingController::class, 'journalEntries']);
-    Route::post('accounting/journal-entries',                       [AccountingController::class, 'storeJournalEntry']);
-    Route::post('accounting/journal-entries/{journalEntry}/reverse',[AccountingController::class, 'reverseJournalEntry']);
-    Route::get('accounting/tax-rates',                              [AccountingController::class, 'taxRates']);
-    Route::post('accounting/tax-rates',                             [AccountingController::class, 'storeTaxRate']);
-    Route::put('accounting/tax-rates/{taxRate}',                    [AccountingController::class, 'updateTaxRate']);
-    Route::delete('accounting/tax-rates/{taxRate}',                 [AccountingController::class, 'destroyTaxRate']);
+    // Double-Entry Accounting, Chart of Accounts, Journal Vouchers & Statutory Tax Rates (Requires Platinum Tier)
+    Route::middleware('licensed:accounting_gl')->group(function () {
+        Route::get('accounting/overview',                               [AccountingController::class, 'overview']);
+        Route::get('accounting/chart-of-accounts',                      [AccountingController::class, 'chartOfAccounts']);
+        Route::post('accounting/chart-of-accounts',                     [AccountingController::class, 'storeAccount']);
+        Route::put('accounting/chart-of-accounts/{chartOfAccount}',     [AccountingController::class, 'updateAccount']);
+        Route::get('accounting/journal-entries',                        [AccountingController::class, 'journalEntries']);
+        Route::post('accounting/journal-entries',                       [AccountingController::class, 'storeJournalEntry']);
+        Route::post('accounting/journal-entries/{journalEntry}/reverse',[AccountingController::class, 'reverseJournalEntry']);
+        Route::get('accounting/tax-rates',                              [AccountingController::class, 'taxRates']);
+        Route::post('accounting/tax-rates',                             [AccountingController::class, 'storeTaxRate']);
+        Route::put('accounting/tax-rates/{taxRate}',                    [AccountingController::class, 'updateTaxRate']);
+        Route::delete('accounting/tax-rates/{taxRate}',                 [AccountingController::class, 'destroyTaxRate']);
+    });
 
     // Operating Expenses & Categories
     Route::get('expenses/summary',                [ExpenseController::class, 'summary']);
@@ -278,24 +281,26 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::apiResource('expenses',                ExpenseController::class);
     Route::apiResource('expense-categories',      ExpenseCategoryController::class);
 
-    // Human Resources (HR), Attendance, Staff Advances, Payroll & Sales Commissions
-    Route::get('hr/overview',                           [HrPayrollController::class, 'overview']);
-    Route::get('hr/employees/new-code',                 [HrPayrollController::class, 'newEmployeeCode']);
-    Route::get('hr/employees',                          [HrPayrollController::class, 'employees']);
-    Route::post('hr/employees',                         [HrPayrollController::class, 'storeEmployee']);
-    Route::put('hr/employees/{employee}',               [HrPayrollController::class, 'updateEmployee']);
-    Route::delete('hr/employees/{employee}',            [HrPayrollController::class, 'destroyEmployee']);
-    Route::get('hr/attendance',                         [HrPayrollController::class, 'attendance']);
-    Route::post('hr/attendance',                        [HrPayrollController::class, 'saveAttendance']);
-    Route::post('hr/attendance/bulk',                   [HrPayrollController::class, 'saveBulkAttendance']);
-    Route::get('hr/advances',                           [HrPayrollController::class, 'advances']);
-    Route::post('hr/advances',                          [HrPayrollController::class, 'storeAdvance']);
-    Route::get('hr/commissions',                        [HrPayrollController::class, 'commissions']);
-    Route::get('hr/payroll-runs',                       [HrPayrollController::class, 'payrollRuns']);
-    Route::post('hr/payroll-runs/generate',             [HrPayrollController::class, 'generatePayrollRun']);
-    Route::put('hr/payroll-items/{payrollItem}',        [HrPayrollController::class, 'updatePayrollItem']);
-    Route::post('hr/payroll-items/{payrollItem}/pay',   [HrPayrollController::class, 'payPayrollItem']);
-    Route::post('hr/payroll-runs/{payrollRun}/pay-all', [HrPayrollController::class, 'payAllInRun']);
+    // Human Resources (HR), Attendance, Staff Advances, Payroll & Sales Commissions (Requires Platinum Tier)
+    Route::middleware('licensed:hr_payroll')->group(function () {
+        Route::get('hr/overview',                           [HrPayrollController::class, 'overview']);
+        Route::get('hr/employees/new-code',                 [HrPayrollController::class, 'newEmployeeCode']);
+        Route::get('hr/employees',                          [HrPayrollController::class, 'employees']);
+        Route::post('hr/employees',                         [HrPayrollController::class, 'storeEmployee']);
+        Route::put('hr/employees/{employee}',               [HrPayrollController::class, 'updateEmployee']);
+        Route::delete('hr/employees/{employee}',            [HrPayrollController::class, 'destroyEmployee']);
+        Route::get('hr/attendance',                         [HrPayrollController::class, 'attendance']);
+        Route::post('hr/attendance',                        [HrPayrollController::class, 'saveAttendance']);
+        Route::post('hr/attendance/bulk',                   [HrPayrollController::class, 'saveBulkAttendance']);
+        Route::get('hr/advances',                           [HrPayrollController::class, 'advances']);
+        Route::post('hr/advances',                          [HrPayrollController::class, 'storeAdvance']);
+        Route::get('hr/commissions',                        [HrPayrollController::class, 'commissions']);
+        Route::get('hr/payroll-runs',                       [HrPayrollController::class, 'payrollRuns']);
+        Route::post('hr/payroll-runs/generate',             [HrPayrollController::class, 'generatePayrollRun']);
+        Route::put('hr/payroll-items/{payrollItem}',        [HrPayrollController::class, 'updatePayrollItem']);
+        Route::post('hr/payroll-items/{payrollItem}/pay',   [HrPayrollController::class, 'payPayrollItem']);
+        Route::post('hr/payroll-runs/{payrollRun}/pay-all', [HrPayrollController::class, 'payAllInRun']);
+    });
 
     // Sale returns
     Route::get('sale-returns/new-code',           [SaleReturnController::class, 'generateNewCode']);
@@ -365,11 +370,11 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/reports/reorder/pdf',             [ReportsController::class, 'reorderReportPdf']);
     Route::get('/reports/net-profit',              [ReportsController::class, 'netProfit']);
     Route::get('/reports/net-profit/pdf',          [ReportsController::class, 'netProfitPdf']);
-    Route::get('/reports/tax-return',              [ReportsController::class, 'taxReturn']);
-    Route::get('/reports/tax-return/pdf',          [ReportsController::class, 'taxReturnPdf']);
+    Route::get('/reports/tax-return',              [ReportsController::class, 'taxReturn'])->middleware('licensed:fbr');
+    Route::get('/reports/tax-return/pdf',          [ReportsController::class, 'taxReturnPdf'])->middleware('licensed:fbr');
     Route::get('/reports/narcotics',               [ReportsController::class, 'narcoticsReport']);
     Route::get('/reports/narcotics/pdf',           [ReportsController::class, 'narcoticsReportPdf']);
-    Route::get('/reports/financial-statements/pdf',[ReportsController::class, 'financialStatementsPdf']);
+    Route::get('/reports/financial-statements/pdf',[ReportsController::class, 'financialStatementsPdf'])->middleware('licensed:accounting_gl');
     Route::put('/sale-invoices/{saleInvoice}/meta',[SaleInvoiceController::class, 'updateMeta']);
 
 
@@ -385,14 +390,25 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::post('/settings/whatsapp-agent/pair-code',    [SettingController::class, 'whatsappAgentPairCode']);
     Route::post('/settings/whatsapp-agent/logout',       [SettingController::class, 'whatsappAgentLogout']);
     Route::post('/settings/whatsapp-agent/stop',         [SettingController::class, 'whatsappAgentStop']);
-    Route::post('/settings/test-cube-ai',                [SettingController::class, 'testCubeAi']);
+    Route::post('/settings/test-cube-ai',                [SettingController::class, 'testCubeAi'])->middleware('licensed:cube_ai');
 
-    // Intelligent SQLite Database Import & Migration (Software Admin Protected)
-    Route::post('/settings/sqlite-import/unlock',        [SqliteImportController::class, 'unlock'])->middleware('throttle:10,1');
-    Route::post('/settings/sqlite-import/upload',        [SqliteImportController::class, 'uploadAndInspect']);
-    Route::post('/settings/sqlite-import/preview-table', [SqliteImportController::class, 'previewTable']);
-    Route::post('/settings/sqlite-import/commit',        [SqliteImportController::class, 'commit'])->middleware('throttle:10,1');
-    Route::delete('/settings/sqlite-import/{token}',     [SqliteImportController::class, 'cancel']);
+    // Pakistan FBR Digital Invoicing & POS Fiscalization (Requires Gold or Platinum Tier)
+    Route::middleware('licensed:fbr')->group(function () {
+        Route::get('/fbr/status-summary',                    [FbrController::class, 'statusSummary']);
+        Route::post('/fbr/test-connection',                  [FbrController::class, 'testConnection']);
+        Route::post('/fbr/sale-invoices/{id}/sync',          [FbrController::class, 'syncSaleInvoice']);
+        Route::post('/fbr/sale-returns/{id}/sync',           [FbrController::class, 'syncSaleReturn']);
+        Route::post('/fbr/retry-queue',                      [FbrController::class, 'retryQueue']);
+    });
+
+    // Intelligent SQLite Database Import & Migration (Requires Platinum Tier + Software Admin Protected)
+    Route::middleware('licensed:cube_ai')->group(function () {
+        Route::post('/settings/sqlite-import/unlock',        [SqliteImportController::class, 'unlock'])->middleware('throttle:10,1');
+        Route::post('/settings/sqlite-import/upload',        [SqliteImportController::class, 'uploadAndInspect']);
+        Route::post('/settings/sqlite-import/preview-table', [SqliteImportController::class, 'previewTable']);
+        Route::post('/settings/sqlite-import/commit',        [SqliteImportController::class, 'commit'])->middleware('throttle:10,1');
+        Route::delete('/settings/sqlite-import/{token}',     [SqliteImportController::class, 'cancel']);
+    });
 
     // Theme Settings (CRUD operations require license)
     Route::put('/theme-settings/active',          [ThemeSettingController::class, 'updateActive']);
@@ -518,15 +534,17 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::post('/customer-ledger/rebuild',       [CustomerLedgerController::class, 'rebuild']);
     Route::post('/customer-ledger/settle-invoice', [CustomerLedgerController::class, 'settleInvoice']);
 
-    // Barcode Designer & Label Printing
-    Route::get('/barcodes/templates',              [\App\Http\Controllers\BarcodeController::class, 'getTemplates']);
-    Route::post('/barcodes/templates',             [\App\Http\Controllers\BarcodeController::class, 'saveTemplate']);
-    Route::put('/barcodes/templates/{id}',         [\App\Http\Controllers\BarcodeController::class, 'updateTemplate']);
-    Route::delete('/barcodes/templates/{id}',      [\App\Http\Controllers\BarcodeController::class, 'deleteTemplate']);
-    Route::get('/barcodes/products-search',        [\App\Http\Controllers\BarcodeController::class, 'searchProducts']);
-    Route::get('/barcodes/purchase-orders',        [\App\Http\Controllers\BarcodeController::class, 'getPurchaseOrders']);
-    Route::get('/barcodes/purchase-invoices',      [\App\Http\Controllers\BarcodeController::class, 'getPurchaseInvoices']);
-    Route::get('/barcodes/scan',                   [\App\Http\Controllers\BarcodeController::class, 'scanProduct']);
+    // Barcode Designer & Label Printing (Requires Gold or Platinum Tier)
+    Route::middleware('licensed:barcode')->group(function () {
+        Route::get('/barcodes/templates',              [\App\Http\Controllers\BarcodeController::class, 'getTemplates']);
+        Route::post('/barcodes/templates',             [\App\Http\Controllers\BarcodeController::class, 'saveTemplate']);
+        Route::put('/barcodes/templates/{id}',         [\App\Http\Controllers\BarcodeController::class, 'updateTemplate']);
+        Route::delete('/barcodes/templates/{id}',      [\App\Http\Controllers\BarcodeController::class, 'deleteTemplate']);
+        Route::get('/barcodes/products-search',        [\App\Http\Controllers\BarcodeController::class, 'searchProducts']);
+        Route::get('/barcodes/purchase-orders',        [\App\Http\Controllers\BarcodeController::class, 'getPurchaseOrders']);
+        Route::get('/barcodes/purchase-invoices',      [\App\Http\Controllers\BarcodeController::class, 'getPurchaseInvoices']);
+        Route::get('/barcodes/scan',                   [\App\Http\Controllers\BarcodeController::class, 'scanProduct']);
+    });
 
     // -------------------------------------------------------------------------
     // Stocktake Sessions (Physical Cycle Count & Blind Audits)
@@ -564,26 +582,30 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::delete('/stock-disposals/{id}',          [\App\Http\Controllers\StockDisposalController::class, 'destroy']);
 
     // -------------------------------------------------------------------------
-    // Cube Hybrid AI Assistant (Free-Quota Only) & Non-Destructive Task Runner
+    // Cube Hybrid AI Assistant (Free-Quota Only) & Non-Destructive Task Runner (Requires Platinum Tier)
     // -------------------------------------------------------------------------
-    Route::post('/cube/ask', [CubeAssistantController::class, 'ask'])->middleware('throttle:30,1');
-    Route::post('/cube/execute-task', [CubeAssistantController::class, 'executeTask'])->middleware('throttle:60,1');
+    Route::middleware('licensed:cube_ai')->group(function () {
+        Route::post('/cube/ask', [CubeAssistantController::class, 'ask'])->middleware('throttle:30,1');
+        Route::post('/cube/execute-task', [CubeAssistantController::class, 'executeTask'])->middleware('throttle:60,1');
+    });
 
     // -------------------------------------------------------------------------
     // Multi-PC LAN Sync Pulse, Attached Terminals Registry & Server DB Hub
     // -------------------------------------------------------------------------
     Route::get('/sync/pulse', [SyncPulseController::class, 'pulse']);
     Route::post('/sync/bump', [SyncPulseController::class, 'bump']);
-    Route::get('/terminals', [TerminalController::class, 'index']);
-    Route::put('/terminals/settings/network', [TerminalController::class, 'updateNetworkSettings']);
-    Route::put('/terminals/{id}', [TerminalController::class, 'update'])->whereNumber('id');
-    Route::delete('/terminals/{id}', [TerminalController::class, 'destroy'])->whereNumber('id');
-    Route::match(['get', 'post'], '/server/export-database', [TerminalController::class, 'exportDatabase']);
-    Route::post('/server/quick-import-database', [TerminalController::class, 'quickImportDatabase']);
-    Route::post('/server/import-database', [TerminalController::class, 'quickImportDatabase']);
-    Route::get('/server/diagnostics', [TerminalController::class, 'diagnostics']);
-    Route::post('/server/troubleshoot', [TerminalController::class, 'troubleshoot']);
-    Route::get('/server/terminal-config', [TerminalController::class, 'downloadTerminalConfig']);
+    Route::middleware('licensed:server_terminals')->group(function () {
+        Route::get('/terminals', [TerminalController::class, 'index']);
+        Route::put('/terminals/settings/network', [TerminalController::class, 'updateNetworkSettings']);
+        Route::put('/terminals/{id}', [TerminalController::class, 'update'])->whereNumber('id');
+        Route::delete('/terminals/{id}', [TerminalController::class, 'destroy'])->whereNumber('id');
+        Route::match(['get', 'post'], '/server/export-database', [TerminalController::class, 'exportDatabase']);
+        Route::post('/server/quick-import-database', [TerminalController::class, 'quickImportDatabase']);
+        Route::post('/server/import-database', [TerminalController::class, 'quickImportDatabase']);
+        Route::get('/server/diagnostics', [TerminalController::class, 'diagnostics']);
+        Route::post('/server/troubleshoot', [TerminalController::class, 'troubleshoot']);
+        Route::get('/server/terminal-config', [TerminalController::class, 'downloadTerminalConfig']);
+    });
 
     // System OTA Updates (authenticated + licensed + Admin-checked in controller)
     Route::get('/system/update-progress', [SystemUpdateController::class, 'updateProgress']);

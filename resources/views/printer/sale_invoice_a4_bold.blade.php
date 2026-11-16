@@ -153,6 +153,8 @@
     @endif
   </div>
 
+  @include('printer.partials.fbr_fiscal_footer')
+
   <div class="footer">
     @if($footerNote !== '')
       <div class="footer-note">NOTE: {{ $footerNote }}</div>

@@ -72,8 +72,12 @@ export default function ActivateLicense() {
 
   return (
     <div className="max-w-2xl mx-auto p-4 sm:p-6 text-gray-900 dark:text-slate-100">
-      <h1 className="text-2xl font-semibold mb-2">Activate License</h1>
-      <p className="text-sm text-gray-600 dark:text-slate-400 mb-6">Paste the license string below.</p>
+      <h1 className="text-2xl font-semibold mb-1">Activate Software License</h1>
+      <p className="text-sm text-gray-600 dark:text-slate-400 mb-6">
+        Paste your hardware-bound Karobar license key (<span className="font-semibold">Basic</span>,{" "}
+        <span className="font-semibold text-amber-600 dark:text-amber-400">Gold</span>, or{" "}
+        <span className="font-semibold text-indigo-600 dark:text-indigo-400">Platinum</span> tier) below.
+      </p>
 
       <div className="mb-6 border border-gray-200 dark:border-slate-700 rounded-xl p-4 bg-gray-50 dark:bg-slate-800/70">
         <div className="flex flex-wrap items-center justify-between gap-2">

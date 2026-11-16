@@ -11,20 +11,39 @@ class LicenseIssueCommand extends Command
     protected $signature = 'license:issue
                             {--machine= : Target hardware Machine ID (e.g. KRB-XXXX-XXXX-XXXX-XXXX) to permanently bind this key}
                             {--name=Karobar Licensed Store : Customer / Store Name}
-                            {--edition=Professional : License Edition (Standard, Professional, Enterprise)}
+                            {--tier= : License Tier: basic, gold, or platinum (defaults to platinum if omitted)}
+                            {--edition= : Alias for --tier (Basic, Gold, Platinum)}
                             {--days=365 : Validity in days (use 0 or --lifetime for never-expiring license)}
                             {--lifetime : Issue a lifetime license (no expiration)}
-                            {--seats=1 : Number of licensed seats/terminals}
+                            {--seats= : Number of licensed seats/terminals (defaults to 1 for Basic/Gold, 0=Unlimited for Platinum)}
                             {--lid= : Custom License ID (auto-generated if omitted)}
                             {--secret-key= : Vendor 64-byte Ed25519 Secret Key in base64url (or set KAROBAR_LICENSE_SECRET_KEY in .env)}
                             {--allow-unbound : Allow issuing an unbound key without --machine}
+                            {--list-tiers : Print available license tiers (Basic, Gold, Platinum) and their included modules}
                             {--generate-keypair : Generate a new Ed25519 Master Keypair and exit}
                             {--json : Output result as JSON}';
 
-    protected $description = 'Issue an Ed25519-signed, hardware-bound Karobar license key (KRBL.<sig>.<payload>) for a specific client Machine ID';
+    protected $description = 'Issue an Ed25519-signed, hardware-bound Karobar license key (KRBL.<sig>.<payload>) for Basic, Gold, or Platinum tier';
 
     public function handle(LicenseService $licenseService): int
     {
+        if ($this->option('list-tiers')) {
+            if ($this->option('json')) {
+                $this->line(json_encode([
+                    'tiers' => LicenseService::TIERS,
+                    'modules' => LicenseService::MODULES,
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                return self::SUCCESS;
+            }
+
+            $this->info('Karobar-App 3-Tier License System:');
+            foreach (LicenseService::TIERS as $key => $meta) {
+                $this->line("  • [{$meta['label']}] (--tier={$key}): {$meta['tagline']}");
+                $this->line('    Modules: ' . implode(', ', $meta['modules']));
+            }
+            return self::SUCCESS;
+        }
+
         if ($this->option('generate-keypair')) {
             $kp = sodium_crypto_sign_keypair();
             $sec = sodium_crypto_sign_secretkey($kp);
@@ -92,15 +111,25 @@ class LicenseIssueCommand extends Command
         $exp = $isLifetime ? null : ($now + ($days * 86400));
         $lid = trim((string) $this->option('lid')) ?: ('LIC-' . date('Ymd') . '-' . strtoupper(Str::random(4)));
 
+        $rawTierInput = trim((string) ($this->option('tier') ?: $this->option('edition') ?: 'platinum'));
+        $tier = $licenseService->resolveTier(['tier' => $rawTierInput]);
+        $tierMeta = LicenseService::TIERS[$tier] ?? LicenseService::TIERS['platinum'];
+        $seatsOption = $this->option('seats');
+        $seats = ($seatsOption !== null && $seatsOption !== '')
+            ? max(0, (int) $seatsOption)
+            : (int) ($tierMeta['default_seats'] ?? 1);
+
         $payload = [
             'iss'      => 'Karobar',
             'sub'      => 'KarobarApp',
             'ver'      => 2,
             'lid'      => $lid,
             'name'     => trim((string) $this->option('name')) ?: 'Karobar Licensed Store',
-            'Edition'  => trim((string) $this->option('edition')) ?: 'Professional',
-            'features' => ['core', 'pos', 'inventory', 'accounting', 'hr', 'reports', 'whatsapp', 'cube_ai'],
-            'seats'    => max(1, (int) $this->option('seats')),
+            'tier'     => $tier,
+            'Edition'  => $tierMeta['edition'],
+            'modules'  => $tierMeta['modules'],
+            'features' => $tierMeta['modules'],
+            'seats'    => $seats,
             'iat'      => $now,
             'nbf'      => null,
             'exp'      => $exp,
@@ -116,6 +145,9 @@ class LicenseIssueCommand extends Command
             $this->line(json_encode([
                 'ok'          => true,
                 'license_key' => $licenseKey,
+                'tier'        => $tier,
+                'tier_label'  => $tierMeta['label'],
+                'modules'     => $tierMeta['modules'],
                 'payload'     => $payload,
             ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
             return self::SUCCESS;
@@ -126,7 +158,9 @@ class LicenseIssueCommand extends Command
         $this->line($licenseKey);
         $this->line('--------------------------------------------------------------------------------');
         $this->line('Store Name : ' . $payload['name']);
-        $this->line('Edition    : ' . $payload['Edition']);
+        $this->line('Tier       : ' . $tierMeta['label'] . ' (' . $tier . ')');
+        $this->line('Modules    : ' . implode(', ', $tierMeta['modules']));
+        $this->line('Seats      : ' . ($seats <= 0 ? 'Unlimited (Multi-PC Server & Terminals)' : $seats . ' PC(s)'));
         $this->line('Machine ID : ' . ($payload['machine'] ?? 'UNBOUND'));
         $this->line('Expires    : ' . ($exp ? date('Y-m-d H:i:s', $exp) : 'Lifetime (Never)'));
 

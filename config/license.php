@@ -27,4 +27,12 @@ return [
     |
     */
     'bind_to_machine' => true,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Canonical 3-Tier License System (Basic, Gold, Platinum)
+    |--------------------------------------------------------------------------
+    */
+    'tiers' => LicenseService::TIERS,
+    'modules' => LicenseService::MODULES,
 ];
