@@ -75,7 +75,7 @@ jobs:
       - name: Publish Official GitHub Release & OTA Update Manifest
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           $Manifest = Get-Content "dist/installer/latest-release.json" -Raw | ConvertFrom-Json
           $AppVersion = $Manifest.version
@@ -125,9 +125,6 @@ jobs:
               }
           }
 
-          git tag -f $ReleaseTag $env:GITHUB_SHA
-          git push origin "refs/tags/$ReleaseTag" --force
-
           $ReleaseAssets = @(
               "dist/installer/Karobar-App-Setup.exe",
               "dist/installer/Karobar-App-Patch.zip",
@@ -143,12 +140,18 @@ jobs:
           gh release view $ReleaseTag >$null 2>&1
           if ($LASTEXITCODE -eq 0) {
               Write-Host "Updating existing GitHub Release $ReleaseTag..." -ForegroundColor Cyan
+              gh api -X PATCH "repos/$env:GITHUB_REPOSITORY/git/refs/tags/$ReleaseTag" -f sha="$env:GITHUB_SHA" -F force=true
+              if ($LASTEXITCODE -ne 0) { throw "Failed to update tag $ReleaseTag" }
               gh release edit $ReleaseTag --title $ReleaseTitle --notes-file $NotesFile --latest
+              if ($LASTEXITCODE -ne 0) { throw "Failed to edit release $ReleaseTag" }
               gh release upload $ReleaseTag $ReleaseAssets --clobber
+              if ($LASTEXITCODE -ne 0) { throw "Failed to upload assets for $ReleaseTag" }
           } else {
               Write-Host "Creating new GitHub Release $ReleaseTag..." -ForegroundColor Cyan
               gh release create $ReleaseTag $ReleaseAssets `
+                  --target $env:GITHUB_SHA `
                   --title $ReleaseTitle `
                   --notes-file $NotesFile `
                   --latest
+              if ($LASTEXITCODE -ne 0) { throw "Failed to create release $ReleaseTag" }
           }
