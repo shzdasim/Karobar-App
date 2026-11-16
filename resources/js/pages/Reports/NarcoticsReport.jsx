@@ -118,6 +118,7 @@ export default function NarcoticsReport() {
     store_license: {},
     summary: {},
     chronological_register: [],
+    product_registers: [],
     stock_ledger: [],
     dispensing_register: [],
     procurement_register: [],
@@ -160,6 +161,9 @@ export default function NarcoticsReport() {
           summary: res?.summary || {},
           chronological_register: Array.isArray(res?.chronological_register)
             ? res.chronological_register
+            : [],
+          product_registers: Array.isArray(res?.product_registers)
+            ? res.product_registers
             : [],
           stock_ledger: Array.isArray(res?.stock_ledger) ? res.stock_ledger : [],
           dispensing_register: Array.isArray(res?.dispensing_register)
@@ -360,6 +364,44 @@ export default function NarcoticsReport() {
     sortRows,
   ]);
 
+  const filteredProductRegisters = useMemo(() => {
+    return (data.product_registers || [])
+      .map((prodReg) => {
+        const prodMatch =
+          !qNorm ||
+          String(prodReg.product_name || "").toLowerCase().includes(qNorm) ||
+          String(prodReg.product_code || "").toLowerCase().includes(qNorm) ||
+          String(prodReg.formulation || "").toLowerCase().includes(qNorm) ||
+          String(prodReg.brand_name || "").toLowerCase().includes(qNorm) ||
+          String(prodReg.batches_summary || "").toLowerCase().includes(qNorm);
+
+        const entries = (prodReg.entries || []).filter((r) => {
+          if (complianceFilter === "compliant" && !r.is_rx_compliant)
+            return false;
+          if (complianceFilter === "missing_rx" && r.is_rx_compliant)
+            return false;
+          if (!qNorm || prodMatch) return true;
+          return (
+            String(r.voucher_number || "").toLowerCase().includes(qNorm) ||
+            String(r.reference_no || "").toLowerCase().includes(qNorm) ||
+            String(r.party_name || "").toLowerCase().includes(qNorm) ||
+            String(r.party_cnic_or_phone || "").toLowerCase().includes(qNorm) ||
+            String(r.party_address || "").toLowerCase().includes(qNorm) ||
+            String(r.doctor_name || "").toLowerCase().includes(qNorm) ||
+            String(r.doctor_pmdc || "").toLowerCase().includes(qNorm) ||
+            String(r.batch_number || "").toLowerCase().includes(qNorm) ||
+            String(r.pharmacist_name || "").toLowerCase().includes(qNorm)
+          );
+        });
+
+        return {
+          ...prodReg,
+          entries,
+        };
+      })
+      .filter((prodReg) => prodReg.entries.length > 0);
+  }, [data.product_registers, complianceFilter, qNorm]);
+
   const filteredStockLedger = useMemo(() => {
     const base = (data.stock_ledger || []).filter((r) => {
       if (!qNorm) return true;
@@ -369,6 +411,7 @@ export default function NarcoticsReport() {
         String(r.formulation || "").toLowerCase().includes(qNorm) ||
         String(r.brand_name || "").toLowerCase().includes(qNorm) ||
         String(r.supplier_name || "").toLowerCase().includes(qNorm) ||
+        String(r.batches_summary || "").toLowerCase().includes(qNorm) ||
         String(r.rack || "").toLowerCase().includes(qNorm)
       );
     });
@@ -549,6 +592,7 @@ export default function NarcoticsReport() {
         "Manufacturer",
         "Pack Size",
         "Vault / Rack Location",
+        "Batches & Expiry Dates",
         "Opening B/F (Units)",
         "Purchased Inward (Units)",
         "Patient Return Inward (Units)",
@@ -566,6 +610,7 @@ export default function NarcoticsReport() {
         r.brand_name,
         `1x${r.pack_size}`,
         r.rack,
+        r.batches_summary || "—",
         r.opening_qty,
         r.purchased_qty,
         r.sale_return_qty,
@@ -1166,333 +1211,676 @@ export default function NarcoticsReport() {
           })}
         </div>
 
-        {/* TAB 1: Official Pakistani Statutory Chronological Running Register (Col. 1 to Col. 11) */}
+        {/* TAB 1: Complete Single-Report Statutory Register:
+            (1) First: Master List of Each Narcotic Product Currently Held (with Each Batch & Expiry Date)
+            (2) Second: Product-by-Product Chronological Statutory Running Register (One Product at a Time) */}
         {activeTab === "chronological" && (
-          <div
-            className="ledger-excel-scroll overflow-x-auto max-h-[70vh]"
-            tabIndex={0}
-            role="region"
-            aria-label="Official Pakistani Statutory Chronological Narcotics Register"
-          >
-            <table className="ledger-excel-table w-full text-xs border-collapse">
-              <thead>
-                <tr>
-                  <th
-                    scope="col"
-                    className="w-12 text-center"
-                    aria-sort={getAriaSort("serial_no")}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => handleSort("serial_no", "Serial Number")}
-                      className="ledger-sort-btn justify-center"
-                    >
-                      Col.1 S.# {renderSortIcon("serial_no")}
-                    </button>
-                  </th>
-                  <th scope="col" aria-sort={getAriaSort("date")}>
-                    <button
-                      type="button"
-                      onClick={() => handleSort("date", "Transaction Date")}
-                      className="ledger-sort-btn"
-                    >
-                      Col.2 Date {renderSortIcon("date")}
-                    </button>
-                  </th>
-                  <th scope="col">Col.3 Bill / GRN / Rx Ref #</th>
-                  <th scope="col" aria-sort={getAriaSort("product_name")}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleSort("product_name", "Controlled Drug")
-                      }
-                      className="ledger-sort-btn"
-                    >
-                      Col.4 Controlled Drug &amp; Strength{" "}
-                      {renderSortIcon("product_name")}
-                    </button>
-                  </th>
-                  <th scope="col" aria-sort={getAriaSort("party_name")}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleSort("party_name", "Source or Patient")
-                      }
-                      className="ledger-sort-btn"
-                    >
-                      Col.5 Source (Supplier) OR Patient Name, CNIC &amp; Address{" "}
-                      {renderSortIcon("party_name")}
-                    </button>
-                  </th>
-                  <th scope="col" aria-sort={getAriaSort("doctor_name")}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleSort("doctor_name", "Prescribing Doctor")
-                      }
-                      className="ledger-sort-btn"
-                    >
-                      Col.6 Prescribing Physician (RMP, PM&amp;DC # &amp; Clinic){" "}
-                      {renderSortIcon("doctor_name")}
-                    </button>
-                  </th>
-                  <th scope="col">Col.7 Batch # &amp; Expiry</th>
-                  <th
-                    scope="col"
-                    className="text-right"
-                    aria-sort={getAriaSort("qty_in")}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => handleSort("qty_in", "Quantity Received")}
-                      className="ledger-sort-btn justify-end"
-                    >
-                      Col.8 Qty In {renderSortIcon("qty_in")}
-                    </button>
-                  </th>
-                  <th
-                    scope="col"
-                    className="text-right"
-                    aria-sort={getAriaSort("qty_out")}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => handleSort("qty_out", "Quantity Dispensed")}
-                      className="ledger-sort-btn justify-end"
-                    >
-                      Col.9 Qty Out {renderSortIcon("qty_out")}
-                    </button>
-                  </th>
-                  <th
-                    scope="col"
-                    className="text-right"
-                    aria-sort={getAriaSort("running_balance")}
-                  >
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleSort("running_balance", "Running Balance")
-                      }
-                      className="ledger-sort-btn justify-end"
-                    >
-                      Col.10 Balance in Hand {renderSortIcon("running_balance")}
-                    </button>
-                  </th>
-                  <th scope="col">Col.11 Pharmacist &amp; Rx Audit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredChronological.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={11}
-                      className="py-12 text-center text-slate-500 dark:text-slate-400"
-                    >
-                      No controlled substance register entries found for the selected criteria.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredChronological.map((r) => (
-                    <tr
-                      key={r.row_key}
-                      className={
-                        r.is_opening_row
-                          ? "bg-slate-100/80 dark:bg-slate-800/70 font-semibold"
-                          : !r.is_rx_compliant
-                          ? "bg-amber-50/40 dark:bg-amber-950/20"
-                          : "hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
-                      }
-                    >
-                      <td className="text-center font-mono text-slate-500">
-                        {r.serial_no}
-                      </td>
-                      <td className="font-mono whitespace-nowrap">{r.date}</td>
-                      <th scope="row" className="text-left font-mono">
-                        <div className="flex flex-col gap-0.5">
-                          {r.document_path ? (
-                            <button
-                              type="button"
-                              onClick={() => navigate(r.document_path)}
-                              className="inline-flex items-center gap-1 font-bold text-blue-600 hover:underline dark:text-blue-400"
-                            >
-                              {r.voucher_number}
-                              <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
-                            </button>
-                          ) : (
-                            <span className="font-bold text-slate-700 dark:text-slate-200">
-                              {r.voucher_number}
-                            </span>
-                          )}
-                          <span
-                            className={`inline-flex w-fit px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase ${
-                              r.is_opening_row
-                                ? "bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200"
-                                : r.qty_in > 0
-                                ? "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
-                                : r.event_type === "DESTRUCTION_OUT" ||
-                                  r.event_type === "QUARANTINE_OUT"
-                                ? "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300"
-                                : "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
-                            }`}
-                          >
-                            {r.event_label}
-                          </span>
-                          {r.reference_no && (
-                            <span className="text-[10px] text-slate-500 font-normal">
-                              {r.reference_no}
-                            </span>
-                          )}
-                        </div>
+          <div className="p-4 md:p-5 space-y-6">
+            {/* SECTION 1: FIRST MENTION EACH NARCOTIC PRODUCT WE CURRENTLY HAVE */}
+            <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+              <div className="bg-slate-900 dark:bg-slate-800 text-white px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <CubeIcon className="w-4 h-4 text-rose-400" />
+                  <h2 className="text-xs md:text-sm font-extrabold uppercase tracking-wider">
+                    1. Master List of Controlled / Narcotic Drugs Currently Held (Stock, Batch &amp; Expiry Summary)
+                  </h2>
+                </div>
+                <span className="text-[11px] font-semibold text-slate-300">
+                  {filteredStockLedger.length} Controlled{" "}
+                  {filteredStockLedger.length === 1 ? "Product" : "Products"} •{" "}
+                  Click any drug to jump to its register section
+                </span>
+              </div>
+
+              <div
+                className="ledger-excel-scroll overflow-x-auto"
+                tabIndex={0}
+                role="region"
+                aria-label="Master List of Controlled and Narcotic Drugs Currently Held"
+              >
+                <table className="ledger-excel-table w-full text-xs border-collapse">
+                  <thead>
+                    <tr>
+                      <th scope="col" className="w-10 text-center">
+                        #
                       </th>
-                      <td>
-                        <div className="font-bold text-slate-900 dark:text-white">
-                          {r.product_name}
-                        </div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                          {r.formulation} • 1×{r.pack_size} • {r.brand_name}
-                        </div>
-                      </td>
-                      <td>
-                        <div className="font-semibold text-slate-900 dark:text-white">
-                          {r.party_name}
-                        </div>
-                        {r.party_cnic_or_phone && (
-                          <div className="text-[11px] font-mono text-slate-600 dark:text-slate-300">
-                            CNIC/Tel: {r.party_cnic_or_phone}
-                          </div>
-                        )}
-                        {r.party_address && (
-                          <div className="text-[11px] text-slate-500">
-                            Addr: {r.party_address}
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        {r.is_opening_row ? (
-                          <span className="text-slate-400">—</span>
-                        ) : r.event_type === "DISPENSED_OUT" ? (
-                          <div>
-                            {r.doctor_name ? (
-                              <div className="font-semibold text-slate-900 dark:text-white">
-                                Dr. {r.doctor_name.replace(/^dr\.?\s*/i, "")}
-                              </div>
-                            ) : (
-                              <div className="text-rose-600 dark:text-rose-400 font-bold text-[11px]">
-                                ⚠ Doctor Not Recorded
-                              </div>
-                            )}
-                            {r.doctor_pmdc ? (
-                              <div className="text-[11px] font-mono text-emerald-700 dark:text-emerald-400 font-semibold">
-                                PM&amp;DC: {r.doctor_pmdc}
-                              </div>
-                            ) : (
-                              <div className="text-[10px] text-amber-600 dark:text-amber-400">
-                                PM&amp;DC # not entered
-                              </div>
-                            )}
-                            {r.doctor_hospital && (
-                              <div className="text-[10px] text-slate-500">
-                                {r.doctor_hospital}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div>
-                            <div className="text-slate-700 dark:text-slate-300 font-medium">
-                              {r.doctor_name}
-                            </div>
-                            {r.doctor_pmdc && (
-                              <div className="text-[10px] text-slate-500 font-mono">
-                                {r.doctor_pmdc}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td className="font-mono">
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">
-                          {r.batch_number}
-                        </span>
-                        {r.expiry && (
-                          <span className="block text-[10px] text-slate-500">
-                            Exp: {r.expiry}
-                          </span>
-                        )}
-                      </td>
-                      <td className="text-right font-mono font-bold text-blue-700 dark:text-blue-400">
-                        {r.qty_in > 0 ? (
-                          <div>
-                            <span>+{fmtInt(r.qty_in)}</span>
-                            {r.qty_in_breakdown && (
-                              <span className="block text-[10px] font-normal text-slate-500">
-                                {r.qty_in_breakdown}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="text-right font-mono font-bold text-rose-700 dark:text-rose-400">
-                        {r.qty_out > 0 ? (
-                          <div>
-                            <span>-{fmtInt(r.qty_out)}</span>
-                            {r.qty_out_breakdown && (
-                              <span className="block text-[10px] font-normal text-slate-500">
-                                {r.qty_out_breakdown}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="text-right font-mono bg-slate-50/90 dark:bg-slate-800/50">
-                        <div className="font-extrabold text-slate-900 dark:text-white text-xs">
-                          {fmtInt(r.running_balance)} U
-                        </div>
-                        <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                          {r.running_pack_breakdown}
-                        </div>
-                      </td>
-                      <td>
-                        <div className="flex flex-col gap-1">
-                          <span className="font-semibold text-slate-800 dark:text-slate-200">
-                            {r.pharmacist_name}
-                          </span>
-                          {r.event_type === "DISPENSED_OUT" ? (
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              {r.is_rx_compliant ? (
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                                  ✓ RX OK
-                                </span>
-                              ) : (
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300">
-                                  ⚠ MISSING RX
-                                </span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => openRxModal(r)}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 transition print:hidden"
-                                title="Record or update Doctor PM&DC #, Patient CNIC, Address & Prescription Ref"
-                              >
-                                <PencilSquareIcon className="w-3 h-3" />
-                                Edit Rx/CNIC
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="text-[10px] text-slate-500">
-                              {r.remarks}
-                            </span>
-                          )}
-                        </div>
-                      </td>
+                      <th scope="col" aria-sort={getAriaSort("product_name")}>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleSort("product_name", "Controlled Drug")
+                          }
+                          className="ledger-sort-btn"
+                        >
+                          Controlled Drug, Generic Salt/Strength &amp; Manufacturer{" "}
+                          {renderSortIcon("product_name")}
+                        </button>
+                      </th>
+                      <th scope="col" className="text-center">
+                        Pack
+                      </th>
+                      <th scope="col">Vault / Rack</th>
+                      <th scope="col">Batch No. &amp; Expiry Date</th>
+                      <th
+                        scope="col"
+                        className="text-right"
+                        aria-sort={getAriaSort("opening_qty")}
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleSort("opening_qty", "Opening Stock")
+                          }
+                          className="ledger-sort-btn justify-end"
+                        >
+                          Opening B/F {renderSortIcon("opening_qty")}
+                        </button>
+                      </th>
+                      <th
+                        scope="col"
+                        className="text-right"
+                        aria-sort={getAriaSort("purchased_qty")}
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleSort("purchased_qty", "Purchased Units")
+                          }
+                          className="ledger-sort-btn justify-end"
+                        >
+                          + Purchased {renderSortIcon("purchased_qty")}
+                        </button>
+                      </th>
+                      <th scope="col" className="text-right">
+                        + Pt. Ret
+                      </th>
+                      <th
+                        scope="col"
+                        className="text-right"
+                        aria-sort={getAriaSort("dispensed_qty")}
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleSort("dispensed_qty", "Dispensed Units")
+                          }
+                          className="ledger-sort-btn justify-end"
+                        >
+                          - Dispensed {renderSortIcon("dispensed_qty")}
+                        </button>
+                      </th>
+                      <th scope="col" className="text-right">
+                        - Destroyed / Ret
+                      </th>
+                      <th
+                        scope="col"
+                        className="text-right"
+                        aria-sort={getAriaSort("closing_qty")}
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleSort("closing_qty", "Closing Balance")
+                          }
+                          className="ledger-sort-btn justify-end"
+                        >
+                          Closing Balance in Hand {renderSortIcon("closing_qty")}
+                        </button>
+                      </th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {filteredStockLedger.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={11}
+                          className="py-8 text-center text-slate-500 dark:text-slate-400"
+                        >
+                          No narcotic products found for the selected criteria.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredStockLedger.map((r, idx) => {
+                        const batchesList = Array.isArray(r.batches_list)
+                          ? r.batches_list
+                          : [];
+                        const otherOut =
+                          Number(r.purchase_return_qty || 0) +
+                          Number(r.disposed_qty || 0) -
+                          Number(r.adjusted_qty || 0);
+                        return (
+                          <tr
+                            key={`master-${r.product_id}`}
+                            className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
+                          >
+                            <td className="text-center text-slate-400 font-mono">
+                              {idx + 1}
+                            </td>
+                            <th
+                              scope="row"
+                              className="text-left font-semibold text-slate-900 dark:text-slate-100"
+                            >
+                              <a
+                                href={`#narcotic-product-section-${r.product_id}`}
+                                className="group inline-flex flex-col hover:text-rose-600 dark:hover:text-rose-400"
+                              >
+                                <span className="font-bold text-slate-900 dark:text-white group-hover:text-rose-600 dark:group-hover:text-rose-400">
+                                  {r.product_name}
+                                </span>
+                                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">
+                                  {r.product_code} •{" "}
+                                  {r.formulation || "Controlled Substance"} •{" "}
+                                  {r.brand_name}
+                                </span>
+                              </a>
+                            </th>
+                            <td className="text-center font-mono text-slate-600 dark:text-slate-300">
+                              1×{r.pack_size}
+                            </td>
+                            <td className="font-mono text-slate-600 dark:text-slate-300">
+                              {r.rack}
+                            </td>
+                            <td className="font-mono">
+                              {batchesList.length > 0 ? (
+                                <div className="flex flex-col gap-1">
+                                  {batchesList.map((bItem, bIdx) => (
+                                    <div
+                                      key={`${r.product_id}-b-${bIdx}`}
+                                      className="inline-flex flex-wrap items-center gap-1.5 text-[11px]"
+                                    >
+                                      <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                                        {bItem.batch_number}
+                                      </span>
+                                      {bItem.expiry_date && (
+                                        <span className="text-slate-600 dark:text-slate-400">
+                                          Exp:{" "}
+                                          <strong className="text-slate-800 dark:text-slate-200">
+                                            {bItem.expiry_date}
+                                          </strong>
+                                        </span>
+                                      )}
+                                      {Number(bItem.quantity || 0) > 0 && (
+                                        <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
+                                          ({fmtInt(bItem.quantity)} U)
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </td>
+                            <td className="text-right font-mono font-semibold text-slate-700 dark:text-slate-200">
+                              <div>{fmtInt(r.opening_qty)}</div>
+                              <div className="text-[10px] font-normal text-slate-400">
+                                {r.opening_pack_breakdown}
+                              </div>
+                            </td>
+                            <td className="text-right font-mono text-blue-700 dark:text-blue-400 font-semibold">
+                              {r.purchased_qty > 0
+                                ? `+${fmtInt(r.purchased_qty)}`
+                                : "0"}
+                            </td>
+                            <td className="text-right font-mono text-teal-700 dark:text-teal-400">
+                              {r.sale_return_qty > 0
+                                ? `+${fmtInt(r.sale_return_qty)}`
+                                : "0"}
+                            </td>
+                            <td className="text-right font-mono text-rose-700 dark:text-rose-400 font-semibold">
+                              {r.dispensed_qty > 0
+                                ? `-${fmtInt(r.dispensed_qty)}`
+                                : "0"}
+                            </td>
+                            <td className="text-right font-mono text-purple-700 dark:text-purple-400">
+                              {otherOut > 0
+                                ? `-${fmtInt(otherOut)}`
+                                : fmtInt(otherOut)}
+                            </td>
+                            <td className="text-right font-mono bg-slate-50/70 dark:bg-slate-800/40">
+                              <div className="font-extrabold text-slate-900 dark:text-white">
+                                {fmtInt(r.closing_qty)} Units
+                              </div>
+                              <div className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold">
+                                {r.closing_pack_breakdown}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                  {filteredStockLedger.length > 0 && (
+                    <tfoot>
+                      <tr className="bg-slate-100 dark:bg-slate-800 font-extrabold text-slate-900 dark:text-white border-t-2 border-slate-300 dark:border-slate-700">
+                        <td
+                          colSpan={5}
+                          className="text-right uppercase text-[11px] tracking-wider"
+                        >
+                          Total Physical Narcotic Units Across All Controlled Drugs:
+                        </td>
+                        <td className="text-right font-mono">
+                          {fmtInt(ledgerTotals.opening)}
+                        </td>
+                        <td className="text-right font-mono text-blue-700 dark:text-blue-400">
+                          +{fmtInt(ledgerTotals.purchased)}
+                        </td>
+                        <td className="text-right font-mono text-teal-700 dark:text-teal-400">
+                          +{fmtInt(ledgerTotals.saleReturn)}
+                        </td>
+                        <td className="text-right font-mono text-rose-700 dark:text-rose-400">
+                          -{fmtInt(ledgerTotals.dispensed)}
+                        </td>
+                        <td className="text-right font-mono text-purple-700 dark:text-purple-400">
+                          {fmtInt(
+                            ledgerTotals.purchaseReturn +
+                              ledgerTotals.disposed -
+                              ledgerTotals.adjusted
+                          )}
+                        </td>
+                        <td className="text-right font-mono text-emerald-700 dark:text-emerald-400">
+                          {fmtInt(ledgerTotals.closing)} Units
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            </div>
+
+            {/* SECTION 2: PRODUCT-BY-PRODUCT CHRONOLOGICAL STATUTORY REGISTER (ONE PRODUCT AT A TIME) */}
+            <div className="space-y-5">
+              <div className="bg-slate-900 dark:bg-slate-800 text-white px-4 py-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <BookOpenIcon className="w-4 h-4 text-rose-400" />
+                  <h2 className="text-xs md:text-sm font-extrabold uppercase tracking-wider">
+                    2. Product-by-Product Official Chronological Narcotics Register (One Controlled Drug at a Time)
+                  </h2>
+                </div>
+                <span className="text-[11px] font-semibold text-slate-300">
+                  Showing {filteredProductRegisters.length} Controlled Drug{" "}
+                  {filteredProductRegisters.length === 1 ? "Section" : "Sections"} in Sequence
+                </span>
+              </div>
+
+              {filteredProductRegisters.length === 0 ? (
+                <div className="py-12 text-center text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800 rounded-xl">
+                  No controlled substance register entries found for the selected criteria.
+                </div>
+              ) : (
+                filteredProductRegisters.map((prodReg, pIdx) => {
+                  const pBatches = Array.isArray(prodReg.batches_list)
+                    ? prodReg.batches_list
+                    : [];
+                  const pEntries = Array.isArray(prodReg.entries)
+                    ? prodReg.entries
+                    : [];
+
+                  return (
+                    <div
+                      key={`prod-reg-${prodReg.product_id}`}
+                      id={`narcotic-product-section-${prodReg.product_id}`}
+                      className="border border-rose-200 dark:border-rose-900/60 rounded-xl overflow-hidden shadow-xs bg-white dark:bg-slate-900"
+                    >
+                      {/* Dedicated Drug Header Banner */}
+                      <div className="bg-rose-50/80 dark:bg-rose-950/30 border-b border-rose-200 dark:border-rose-900/60 px-4 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-md text-[11px] font-extrabold uppercase bg-rose-600 text-white">
+                              Drug #{pIdx + 1} of {filteredProductRegisters.length}
+                            </span>
+                            <h3 className="text-sm md:text-base font-extrabold text-slate-900 dark:text-white">
+                              {prodReg.product_name}
+                            </h3>
+                            {prodReg.formulation && prodReg.formulation !== "-" && (
+                              <span className="text-xs font-semibold text-rose-800 dark:text-rose-300">
+                                ({prodReg.formulation})
+                              </span>
+                            )}
+                            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                              • {prodReg.brand_name} • Code: {prodReg.product_code} • Pack: 1×{prodReg.pack_size} • {prodReg.rack}
+                            </span>
+                          </div>
+
+                          {/* Each Batch with its Expiry Date */}
+                          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                            <span className="font-bold text-slate-600 dark:text-slate-300">
+                              Batches &amp; Expiry Dates:
+                            </span>
+                            {pBatches.length > 0 ? (
+                              pBatches.map((bItem, bIdx) => (
+                                <span
+                                  key={`hdr-batch-${prodReg.product_id}-${bIdx}`}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 border border-rose-200 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200"
+                                >
+                                  <strong>{bItem.batch_number}</strong>
+                                  {bItem.expiry_date && (
+                                    <span className="text-slate-500 dark:text-slate-400">
+                                      (Exp: {bItem.expiry_date})
+                                    </span>
+                                  )}
+                                  {Number(bItem.quantity || 0) > 0 && (
+                                    <span className="text-emerald-700 dark:text-emerald-400 font-bold">
+                                      • {fmtInt(bItem.quantity)} U
+                                    </span>
+                                  )}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Product Balance Summary Pills */}
+                        <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+                          <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200">
+                            Opening B/F: <strong>{fmtInt(prodReg.opening_qty)} U</strong>
+                          </span>
+                          <span className="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300">
+                            + In: <strong>+{fmtInt(prodReg.total_in_qty)} U</strong>
+                          </span>
+                          <span className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300">
+                            - Out: <strong>-{fmtInt(prodReg.total_out_qty)} U</strong>
+                          </span>
+                          <span className="px-3 py-1 rounded-lg bg-emerald-600 text-white font-extrabold">
+                            Closing: {fmtInt(prodReg.closing_qty)} U ({prodReg.closing_pack_breakdown})
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Product's Own Chronological Running Register Table */}
+                      <div
+                        className="ledger-excel-scroll overflow-x-auto"
+                        tabIndex={0}
+                        role="region"
+                        aria-label={`Statutory Running Register for ${prodReg.product_name}`}
+                      >
+                        <table className="ledger-excel-table w-full text-xs border-collapse">
+                          <thead>
+                            <tr>
+                              <th scope="col" className="w-12 text-center">
+                                Col.1 S.#
+                              </th>
+                              <th scope="col">Col.2 Date</th>
+                              <th scope="col">Col.3 Bill / GRN / Rx Ref #</th>
+                              <th scope="col">
+                                Col.4 Source (Supplier &amp; Address) OR Patient Name, CNIC &amp; Address
+                              </th>
+                              <th scope="col">
+                                Col.5 Prescribing Physician (RMP Name, PM&amp;DC # &amp; Clinic)
+                              </th>
+                              <th scope="col">Col.6 Batch # &amp; Expiry Date</th>
+                              <th scope="col" className="text-right">
+                                Col.7 Qty In
+                              </th>
+                              <th scope="col" className="text-right">
+                                Col.8 Qty Out
+                              </th>
+                              <th scope="col" className="text-right">
+                                Col.9 Balance in Hand
+                              </th>
+                              <th scope="col">Col.10 Pharmacist &amp; Rx Audit</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pEntries.map((r) => {
+                              const rowBatches = Array.isArray(r.batches_list)
+                                ? r.batches_list
+                                : [];
+                              return (
+                                <tr
+                                  key={r.row_key}
+                                  className={
+                                    r.is_opening_row
+                                      ? "bg-slate-100/80 dark:bg-slate-800/70 font-semibold"
+                                      : !r.is_rx_compliant
+                                      ? "bg-amber-50/40 dark:bg-amber-950/20"
+                                      : "hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
+                                  }
+                                >
+                                  <td className="text-center font-mono text-slate-500">
+                                    {r.product_serial_no ?? r.serial_no}
+                                  </td>
+                                  <td className="font-mono whitespace-nowrap">
+                                    {r.date}
+                                  </td>
+                                  <th scope="row" className="text-left font-mono">
+                                    <div className="flex flex-col gap-0.5">
+                                      {r.document_path ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => navigate(r.document_path)}
+                                          className="inline-flex items-center gap-1 font-bold text-blue-600 hover:underline dark:text-blue-400"
+                                        >
+                                          {r.voucher_number}
+                                          <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
+                                        </button>
+                                      ) : (
+                                        <span className="font-bold text-slate-700 dark:text-slate-200">
+                                          {r.voucher_number}
+                                        </span>
+                                      )}
+                                      <span
+                                        className={`inline-flex w-fit px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase ${
+                                          r.is_opening_row
+                                            ? "bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200"
+                                            : r.qty_in > 0
+                                            ? "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
+                                            : r.event_type === "DESTRUCTION_OUT" ||
+                                              r.event_type === "QUARANTINE_OUT"
+                                            ? "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300"
+                                            : "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+                                        }`}
+                                      >
+                                        {r.event_label}
+                                      </span>
+                                      {r.reference_no && (
+                                        <span className="text-[10px] text-slate-500 font-normal">
+                                          {r.reference_no}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </th>
+                                  <td>
+                                    <div className="font-semibold text-slate-900 dark:text-white">
+                                      {r.party_name}
+                                    </div>
+                                    {r.party_cnic_or_phone && (
+                                      <div className="text-[11px] font-mono text-slate-600 dark:text-slate-300">
+                                        CNIC/Tel: {r.party_cnic_or_phone}
+                                      </div>
+                                    )}
+                                    {r.party_address && (
+                                      <div className="text-[11px] text-slate-500">
+                                        Addr: {r.party_address}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td>
+                                    {r.is_opening_row ? (
+                                      <span className="text-slate-400">—</span>
+                                    ) : r.event_type === "DISPENSED_OUT" ? (
+                                      <div>
+                                        {r.doctor_name ? (
+                                          <div className="font-semibold text-slate-900 dark:text-white">
+                                            Dr.{" "}
+                                            {r.doctor_name.replace(
+                                              /^dr\.?\s*/i,
+                                              ""
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <div className="text-rose-600 dark:text-rose-400 font-bold text-[11px]">
+                                            ⚠ Doctor Not Recorded
+                                          </div>
+                                        )}
+                                        {r.doctor_pmdc ? (
+                                          <div className="text-[11px] font-mono text-emerald-700 dark:text-emerald-400 font-semibold">
+                                            PM&amp;DC: {r.doctor_pmdc}
+                                          </div>
+                                        ) : (
+                                          <div className="text-[10px] text-amber-600 dark:text-amber-400">
+                                            PM&amp;DC # not entered
+                                          </div>
+                                        )}
+                                        {r.doctor_hospital && (
+                                          <div className="text-[10px] text-slate-500">
+                                            {r.doctor_hospital}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div>
+                                        <div className="text-slate-700 dark:text-slate-300 font-medium">
+                                          {r.doctor_name}
+                                        </div>
+                                        {r.doctor_pmdc && (
+                                          <div className="text-[10px] text-slate-500 font-mono">
+                                            {r.doctor_pmdc}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="font-mono">
+                                    {rowBatches.length > 0 ? (
+                                      <div className="flex flex-col gap-0.5">
+                                        {rowBatches.map((rb, rbIdx) => (
+                                          <div
+                                            key={`${r.row_key}-rb-${rbIdx}`}
+                                            className="leading-tight"
+                                          >
+                                            <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                              {rb.batch_number}
+                                            </span>
+                                            {rb.expiry_date && (
+                                              <span className="block text-[10px] text-slate-500">
+                                                Exp: {rb.expiry_date}
+                                              </span>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div>
+                                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                          {r.batch_number || "—"}
+                                        </span>
+                                        {r.expiry && (
+                                          <span className="block text-[10px] text-slate-500">
+                                            Exp: {r.expiry}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="text-right font-mono font-bold text-blue-700 dark:text-blue-400">
+                                    {r.qty_in > 0 ? (
+                                      <div>
+                                        <span>+{fmtInt(r.qty_in)}</span>
+                                        {r.qty_in_breakdown && (
+                                          <span className="block text-[10px] font-normal text-slate-500">
+                                            {r.qty_in_breakdown}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      "—"
+                                    )}
+                                  </td>
+                                  <td className="text-right font-mono font-bold text-rose-700 dark:text-rose-400">
+                                    {r.qty_out > 0 ? (
+                                      <div>
+                                        <span>-{fmtInt(r.qty_out)}</span>
+                                        {r.qty_out_breakdown && (
+                                          <span className="block text-[10px] font-normal text-slate-500">
+                                            {r.qty_out_breakdown}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      "—"
+                                    )}
+                                  </td>
+                                  <td className="text-right font-mono bg-slate-50/90 dark:bg-slate-800/50">
+                                    <div className="font-extrabold text-slate-900 dark:text-white text-xs">
+                                      {fmtInt(r.running_balance)} U
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                                      {r.running_pack_breakdown}
+                                    </div>
+                                  </td>
+                                  <td>
+                                    <div className="flex flex-col gap-1">
+                                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                        {r.pharmacist_name}
+                                      </span>
+                                      {r.event_type === "DISPENSED_OUT" ? (
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                          {r.is_rx_compliant ? (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                              ✓ RX OK
+                                            </span>
+                                          ) : (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300">
+                                              ⚠ MISSING RX
+                                            </span>
+                                          )}
+                                          <button
+                                            type="button"
+                                            onClick={() => openRxModal(r)}
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 transition print:hidden"
+                                            title="Record or update Doctor PM&DC #, Patient CNIC, Address & Prescription Ref"
+                                          >
+                                            <PencilSquareIcon className="w-3 h-3" />
+                                            Edit Rx/CNIC
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <span className="text-[10px] text-slate-500">
+                                          {r.remarks}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr className="bg-slate-100 dark:bg-slate-800 font-extrabold text-slate-900 dark:text-white border-t border-slate-300 dark:border-slate-700">
+                              <td
+                                colSpan={6}
+                                className="text-right uppercase text-[11px] tracking-wider"
+                              >
+                                Closing Balance Carried Forward (C/F) for{" "}
+                                {prodReg.product_name}:
+                              </td>
+                              <td className="text-right font-mono text-blue-700 dark:text-blue-400">
+                                +{fmtInt(prodReg.total_in_qty)}
+                              </td>
+                              <td className="text-right font-mono text-rose-700 dark:text-rose-400">
+                                -{fmtInt(prodReg.total_out_qty)}
+                              </td>
+                              <td className="text-right font-mono text-emerald-700 dark:text-emerald-400">
+                                <div>{fmtInt(prodReg.closing_qty)} Units</div>
+                                <div className="text-[10px] font-semibold">
+                                  {prodReg.closing_pack_breakdown}
+                                </div>
+                              </td>
+                              <td className="text-[10px] font-semibold text-slate-500">
+                                Verified Physical Balance
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         )}
 
@@ -1526,6 +1914,7 @@ export default function NarcoticsReport() {
                     Pack
                   </th>
                   <th scope="col">Vault / Rack</th>
+                  <th scope="col">Batch No. &amp; Expiry Date</th>
                   <th
                     scope="col"
                     className="text-right"
@@ -1614,7 +2003,7 @@ export default function NarcoticsReport() {
                 {filteredStockLedger.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={12}
+                      colSpan={13}
                       className="py-12 text-center text-slate-500 dark:text-slate-400"
                     >
                       No narcotic products found. Mark products with{" "}
@@ -1626,87 +2015,115 @@ export default function NarcoticsReport() {
                     </td>
                   </tr>
                 ) : (
-                  filteredStockLedger.map((r, idx) => (
-                    <tr
-                      key={r.product_id}
-                      className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
-                    >
-                      <td className="text-center text-slate-400 font-mono">
-                        {idx + 1}
-                      </td>
-                      <th
-                        scope="row"
-                        className="text-left font-semibold text-slate-900 dark:text-slate-100"
+                  filteredStockLedger.map((r, idx) => {
+                    const batchesList = Array.isArray(r.batches_list)
+                      ? r.batches_list
+                      : [];
+                    return (
+                      <tr
+                        key={r.product_id}
+                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
                       >
-                        <div className="flex flex-col">
-                          <span className="font-bold text-slate-900 dark:text-white">
-                            {r.product_name}
-                          </span>
-                          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">
-                            {r.product_code} • {r.formulation || "Controlled"} •{" "}
-                            {r.brand_name}
-                          </span>
-                        </div>
-                      </th>
-                      <td className="text-center font-mono text-slate-600 dark:text-slate-300">
-                        1×{r.pack_size}
-                      </td>
-                      <td className="font-mono text-slate-600 dark:text-slate-300">
-                        {r.rack}
-                      </td>
-                      <td className="text-right font-mono font-semibold text-slate-700 dark:text-slate-200">
-                        <div>{fmtInt(r.opening_qty)}</div>
-                        <div className="text-[10px] font-normal text-slate-400">
-                          {r.opening_pack_breakdown}
-                        </div>
-                      </td>
-                      <td className="text-right font-mono text-blue-700 dark:text-blue-400 font-semibold">
-                        {r.purchased_qty > 0
-                          ? `+${fmtInt(r.purchased_qty)}`
-                          : "0"}
-                      </td>
-                      <td className="text-right font-mono text-teal-700 dark:text-teal-400">
-                        {r.sale_return_qty > 0
-                          ? `+${fmtInt(r.sale_return_qty)}`
-                          : "0"}
-                      </td>
-                      <td className="text-right font-mono text-rose-700 dark:text-rose-400 font-semibold">
-                        {r.dispensed_qty > 0
-                          ? `-${fmtInt(r.dispensed_qty)}`
-                          : "0"}
-                      </td>
-                      <td className="text-right font-mono text-amber-700 dark:text-amber-400">
-                        {r.purchase_return_qty > 0
-                          ? `-${fmtInt(r.purchase_return_qty)}`
-                          : "0"}
-                      </td>
-                      <td className="text-right font-mono text-purple-700 dark:text-purple-400 font-semibold">
-                        {r.disposed_qty > 0
-                          ? `-${fmtInt(r.disposed_qty)}`
-                          : "0"}
-                      </td>
-                      <td className="text-right font-mono text-slate-600 dark:text-slate-300">
-                        {r.adjusted_qty > 0
-                          ? `+${fmtInt(r.adjusted_qty)}`
-                          : fmtInt(r.adjusted_qty)}
-                      </td>
-                      <td className="text-right font-mono bg-slate-50/70 dark:bg-slate-800/40">
-                        <div className="font-extrabold text-slate-900 dark:text-white">
-                          {fmtInt(r.closing_qty)} Units
-                        </div>
-                        <div className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold">
-                          {r.closing_pack_breakdown}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                        <td className="text-center text-slate-400 font-mono">
+                          {idx + 1}
+                        </td>
+                        <th
+                          scope="row"
+                          className="text-left font-semibold text-slate-900 dark:text-slate-100"
+                        >
+                          <div className="flex flex-col">
+                            <span className="font-bold text-slate-900 dark:text-white">
+                              {r.product_name}
+                            </span>
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">
+                              {r.product_code} • {r.formulation || "Controlled"}{" "}
+                              • {r.brand_name}
+                            </span>
+                          </div>
+                        </th>
+                        <td className="text-center font-mono text-slate-600 dark:text-slate-300">
+                          1×{r.pack_size}
+                        </td>
+                        <td className="font-mono text-slate-600 dark:text-slate-300">
+                          {r.rack}
+                        </td>
+                        <td className="font-mono">
+                          {batchesList.length > 0 ? (
+                            <div className="flex flex-col gap-0.5">
+                              {batchesList.map((bItem, bIdx) => (
+                                <div
+                                  key={`${r.product_id}-lb-${bIdx}`}
+                                  className="text-[11px]"
+                                >
+                                  <span className="font-bold text-slate-800 dark:text-slate-200">
+                                    {bItem.batch_number}
+                                  </span>
+                                  {bItem.expiry_date && (
+                                    <span className="text-slate-500 ml-1">
+                                      (Exp: {bItem.expiry_date})
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="text-right font-mono font-semibold text-slate-700 dark:text-slate-200">
+                          <div>{fmtInt(r.opening_qty)}</div>
+                          <div className="text-[10px] font-normal text-slate-400">
+                            {r.opening_pack_breakdown}
+                          </div>
+                        </td>
+                        <td className="text-right font-mono text-blue-700 dark:text-blue-400 font-semibold">
+                          {r.purchased_qty > 0
+                            ? `+${fmtInt(r.purchased_qty)}`
+                            : "0"}
+                        </td>
+                        <td className="text-right font-mono text-teal-700 dark:text-teal-400">
+                          {r.sale_return_qty > 0
+                            ? `+${fmtInt(r.sale_return_qty)}`
+                            : "0"}
+                        </td>
+                        <td className="text-right font-mono text-rose-700 dark:text-rose-400 font-semibold">
+                          {r.dispensed_qty > 0
+                            ? `-${fmtInt(r.dispensed_qty)}`
+                            : "0"}
+                        </td>
+                        <td className="text-right font-mono text-amber-700 dark:text-amber-400">
+                          {r.purchase_return_qty > 0
+                            ? `-${fmtInt(r.purchase_return_qty)}`
+                            : "0"}
+                        </td>
+                        <td className="text-right font-mono text-purple-700 dark:text-purple-400 font-semibold">
+                          {r.disposed_qty > 0
+                            ? `-${fmtInt(r.disposed_qty)}`
+                            : "0"}
+                        </td>
+                        <td className="text-right font-mono text-slate-600 dark:text-slate-300">
+                          {r.adjusted_qty > 0
+                            ? `+${fmtInt(r.adjusted_qty)}`
+                            : fmtInt(r.adjusted_qty)}
+                        </td>
+                        <td className="text-right font-mono bg-slate-50/70 dark:bg-slate-800/40">
+                          <div className="font-extrabold text-slate-900 dark:text-white">
+                            {fmtInt(r.closing_qty)} Units
+                          </div>
+                          <div className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold">
+                            {r.closing_pack_breakdown}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
               {filteredStockLedger.length > 0 && (
                 <tfoot>
                   <tr className="bg-slate-100 dark:bg-slate-800 font-extrabold text-slate-900 dark:text-white border-t-2 border-slate-300 dark:border-slate-700">
                     <td
-                      colSpan={4}
+                      colSpan={5}
                       className="text-right uppercase text-[11px] tracking-wider"
                     >
                       Total Physical Narcotic Units Across All Controlled Drugs:

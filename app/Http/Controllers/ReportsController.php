@@ -2845,6 +2845,7 @@ class ReportsController extends Controller
                     'witnessed_disposals_count'     => 0,
                 ],
                 'chronological_register'  => [],
+                'product_registers'       => [],
                 'stock_ledger'            => [],
                 'dispensing_register'     => [],
                 'procurement_register'    => [],
@@ -2852,6 +2853,58 @@ class ReportsController extends Controller
                 'batch_inventory'         => [],
                 'narcotic_products'       => $narcoticProductOptions,
             ]);
+        }
+
+        // Preload all batches for target products so every product and transaction can display
+        // each actual batch number with its expiry date (never "ALL ACTIVE LOTS").
+        $allBatches = Batch::with([
+                'product:id,name,product_code,formulation,pack_size,rack,brand_id',
+                'product.brand:id,name',
+            ])
+            ->whereIn('product_id', $targetIds)
+            ->orderByRaw('CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END ASC')
+            ->orderBy('expiry_date', 'asc')
+            ->get();
+
+        $batchExpiryLookup = [];
+        $productBatchesMap = [];
+        foreach ($targetIds as $pid) {
+            $batchExpiryLookup[$pid] = [];
+            $productBatchesMap[$pid] = [];
+        }
+
+        foreach ($allBatches as $b) {
+            $pid = (int) $b->product_id;
+            $bNum = trim((string) ($b->batch_number ?? ''));
+            $expStr = $b->expiry_date ? substr((string) $b->expiry_date, 0, 10) : null;
+            if ($bNum !== '') {
+                $bKey = strtoupper($bNum);
+                if ($expStr && empty($batchExpiryLookup[$pid][$bKey])) {
+                    $batchExpiryLookup[$pid][$bKey] = $expStr;
+                }
+                if ((int) ($b->quantity ?? 0) > 0) {
+                    $productBatchesMap[$pid][$bKey] = [
+                        'batch_number' => $bNum,
+                        'expiry_date'  => $expStr,
+                        'quantity'     => (int) ($b->quantity ?? 0),
+                    ];
+                }
+            }
+        }
+
+        // Fallback: if a product has no active (>0) batches in batches table, include any recorded batch from batches table
+        foreach ($allBatches as $b) {
+            $pid = (int) $b->product_id;
+            $bNum = trim((string) ($b->batch_number ?? ''));
+            $expStr = $b->expiry_date ? substr((string) $b->expiry_date, 0, 10) : null;
+            if ($bNum !== '' && empty($productBatchesMap[$pid])) {
+                $bKey = strtoupper($bNum);
+                $productBatchesMap[$pid][$bKey] = [
+                    'batch_number' => $bNum,
+                    'expiry_date'  => $expStr,
+                    'quantity'     => (int) ($b->quantity ?? 0),
+                ];
+            }
         }
 
         // Check if extended/optional columns exist on sale_invoices
@@ -2878,9 +2931,10 @@ class ReportsController extends Controller
             ->orderBy('id', 'asc')
             ->get();
 
-        $dispensingRegister = $saleItems->map(function ($it) {
+        $dispensingRegister = $saleItems->map(function ($it) use (&$batchExpiryLookup, &$productBatchesMap) {
             $inv = $it->saleInvoice;
             $prod = $it->product;
+            $pid = (int) $it->product_id;
             $packSize = max(1, (int) ($it->pack_size ?: ($prod->pack_size ?? 1)));
 
             $doctorName     = trim((string) ($inv->doctor_name ?? ''));
@@ -2927,6 +2981,24 @@ class ReportsController extends Controller
                 ? ($inv->date instanceof \Carbon\CarbonInterface ? $inv->date->format('Y-m-d') : substr((string) $inv->date, 0, 10))
                 : null;
 
+            $bNum = trim((string) ($it->batch_number ?? ''));
+            $expStr = $it->expiry ? substr((string) $it->expiry, 0, 10) : null;
+            if ($bNum !== '') {
+                $bKey = strtoupper($bNum);
+                if (!$expStr && !empty($batchExpiryLookup[$pid][$bKey])) {
+                    $expStr = $batchExpiryLookup[$pid][$bKey];
+                } elseif ($expStr && empty($batchExpiryLookup[$pid][$bKey])) {
+                    $batchExpiryLookup[$pid][$bKey] = $expStr;
+                }
+                if (empty($productBatchesMap[$pid][$bKey])) {
+                    $productBatchesMap[$pid][$bKey] = [
+                        'batch_number' => $bNum,
+                        'expiry_date'  => $expStr,
+                        'quantity'     => 0,
+                    ];
+                }
+            }
+
             $qty   = (int) ($it->quantity ?? 0);
             $bonus = (int) ($it->bonus ?? 0);
             $totalOut = $qty + $bonus;
@@ -2954,13 +3026,13 @@ class ReportsController extends Controller
                 'raw_pharmacist_name'       => $pharmacistName !== '' ? $pharmacistName : null,
                 'is_rx_compliant'           => $isRxCompliant,
                 'has_full_cnsa_particulars' => $hasFullCnsaParticulars,
-                'product_id'                => $it->product_id,
+                'product_id'                => $pid,
                 'product_name'              => $prod->name ?? '-',
                 'product_code'              => $prod->product_code ?? '-',
                 'formulation'               => $prod->formulation ?? null,
                 'brand_name'                => $prod->brand->name ?? '-',
-                'batch_number'              => $it->batch_number ?: '-',
-                'expiry'                    => $it->expiry ?: null,
+                'batch_number'              => $bNum !== '' ? $bNum : '-',
+                'expiry'                    => $expStr,
                 'pack_size'                 => $packSize,
                 'quantity'                  => $qty,
                 'bonus'                     => $bonus,
@@ -2968,8 +3040,9 @@ class ReportsController extends Controller
                 'pack_breakdown'            => $this->formatNarcoticPackBreakdown($totalOut, $packSize),
             ];
         })->sortBy([
-            ['date', 'desc'],
-            ['sale_invoice_id', 'desc'],
+            ['product_name', 'asc'],
+            ['date', 'asc'],
+            ['sale_invoice_id', 'asc'],
         ])->values();
 
         // 3. Inward Procurement Register (PurchaseInvoiceItem for narcotic products in period)
@@ -2987,15 +3060,36 @@ class ReportsController extends Controller
             ->orderBy('id', 'asc')
             ->get();
 
-        $procurementRegister = $purchaseItems->map(function ($it) {
+        $procurementRegister = $purchaseItems->map(function ($it) use (&$batchExpiryLookup, &$productBatchesMap) {
             $inv = $it->purchaseInvoice;
             $prod = $it->product;
+            $pid = (int) $it->product_id;
             $sup = $inv->supplier ?? null;
             $packSize = max(1, (int) ($it->pack_size ?: ($prod->pack_size ?? 1)));
 
             $dateStr = $inv && $inv->posted_date
                 ? ($inv->posted_date instanceof \Carbon\CarbonInterface ? $inv->posted_date->format('Y-m-d') : substr((string) $inv->posted_date, 0, 10))
                 : null;
+
+            $bNum = trim((string) ($it->batch ?? ''));
+            $expStr = $it->expiry ? substr((string) $it->expiry, 0, 10) : null;
+            if ($bNum !== '') {
+                $bKey = strtoupper($bNum);
+                if (!$expStr && !empty($batchExpiryLookup[$pid][$bKey])) {
+                    $expStr = $batchExpiryLookup[$pid][$bKey];
+                } elseif ($expStr && empty($batchExpiryLookup[$pid][$bKey])) {
+                    $batchExpiryLookup[$pid][$bKey] = $expStr;
+                }
+                if (empty($productBatchesMap[$pid][$bKey])) {
+                    $productBatchesMap[$pid][$bKey] = [
+                        'batch_number' => $bNum,
+                        'expiry_date'  => $expStr,
+                        'quantity'     => 0,
+                    ];
+                } elseif ($expStr && empty($productBatchesMap[$pid][$bKey]['expiry_date'])) {
+                    $productBatchesMap[$pid][$bKey]['expiry_date'] = $expStr;
+                }
+            }
 
             $qty = (int) ($it->quantity ?? 0);
             $unitBonus = (int) ($it->unit_bonus ?? 0);
@@ -3010,13 +3104,13 @@ class ReportsController extends Controller
                 'supplier_phone'          => $sup->phone ?? null,
                 'supplier_address'        => $sup->address ?? null,
                 'supplier_license_or_tax' => $sup->tax_number ?? null,
-                'product_id'              => $it->product_id,
+                'product_id'              => $pid,
                 'product_name'            => $prod->name ?? '-',
                 'product_code'            => $prod->product_code ?? '-',
                 'formulation'             => $prod->formulation ?? null,
                 'brand_name'              => $prod->brand->name ?? '-',
-                'batch_number'            => $it->batch ?: '-',
-                'expiry'                  => $it->expiry ?: null,
+                'batch_number'            => $bNum !== '' ? $bNum : '-',
+                'expiry'                  => $expStr,
                 'pack_size'               => $packSize,
                 'pack_quantity'           => (int) ($it->pack_quantity ?? 0),
                 'quantity'                => $qty,
@@ -3025,8 +3119,9 @@ class ReportsController extends Controller
                 'pack_breakdown'          => $this->formatNarcoticPackBreakdown($qty, $packSize),
             ];
         })->sortBy([
-            ['date', 'desc'],
-            ['purchase_invoice_id', 'desc'],
+            ['product_name', 'asc'],
+            ['date', 'asc'],
+            ['purchase_invoice_id', 'asc'],
         ])->values();
 
         // 4. Controlled Destruction (Form-Witness), Quarantine & Returns Log
@@ -3098,6 +3193,7 @@ class ReportsController extends Controller
         foreach ($disposalItems as $di) {
             $disp = $di->disposal;
             $prod = $di->product;
+            $pid = (int) $di->product_id;
             $packSize = max(1, (int) ($prod->pack_size ?? 1));
             $witnessName = trim((string) ($disp->witness_name ?? ''));
             $witnessDesignation = trim((string) ($disp->witness_designation ?? ''));
@@ -3106,6 +3202,24 @@ class ReportsController extends Controller
                 : null;
             $qty = (int) ($di->dispose_qty ?? 0);
 
+            $bNum = trim((string) ($di->batch_number ?? ''));
+            $expStr = $di->expiry_date ? substr((string) $di->expiry_date, 0, 10) : null;
+            if ($bNum !== '') {
+                $bKey = strtoupper($bNum);
+                if (!$expStr && !empty($batchExpiryLookup[$pid][$bKey])) {
+                    $expStr = $batchExpiryLookup[$pid][$bKey];
+                } elseif ($expStr && empty($batchExpiryLookup[$pid][$bKey])) {
+                    $batchExpiryLookup[$pid][$bKey] = $expStr;
+                }
+                if (empty($productBatchesMap[$pid][$bKey])) {
+                    $productBatchesMap[$pid][$bKey] = [
+                        'batch_number' => $bNum,
+                        'expiry_date'  => $expStr,
+                        'quantity'     => 0,
+                    ];
+                }
+            }
+
             $destructionAndReturns->push([
                 'row_key'              => 'DISP-' . $di->id,
                 'event_type'           => $disp->status === 'quarantined' ? 'QUARANTINE' : 'DESTRUCTION',
@@ -3113,12 +3227,12 @@ class ReportsController extends Controller
                 'document_id'          => $disp->id ?? null,
                 'document_number'      => $disp->disposal_number ?? '-',
                 'date'                 => $dateStr,
-                'product_id'           => $di->product_id,
+                'product_id'           => $pid,
                 'product_name'         => $prod->name ?? '-',
                 'product_code'         => $prod->product_code ?? '-',
                 'formulation'          => $prod->formulation ?? '-',
-                'batch_number'         => $di->batch_number ?: '-',
-                'expiry'               => $di->expiry_date ? substr((string) $di->expiry_date, 0, 10) : null,
+                'batch_number'         => $bNum !== '' ? $bNum : '-',
+                'expiry'               => $expStr,
                 'quantity'             => $qty,
                 'pack_breakdown'       => $this->formatNarcoticPackBreakdown($qty, $packSize),
                 'party_or_authority'   => $disp ? $disp->cause_label . ($disp->disposal_method ? ' • ' . $disp->method_label : '') : 'Controlled Destruction',
@@ -3134,11 +3248,30 @@ class ReportsController extends Controller
         foreach ($saleReturnItems as $sri) {
             $sr = $sri->saleReturn;
             $prod = $sri->product;
+            $pid = (int) $sri->product_id;
             $packSize = max(1, (int) ($prod->pack_size ?? 1));
             $dateStr = $sr && $sr->date
                 ? ($sr->date instanceof \Carbon\CarbonInterface ? $sr->date->format('Y-m-d') : substr((string) $sr->date, 0, 10))
                 : null;
             $qty = (int) ($sri->unit_return_quantity ?? 0);
+
+            $bNum = trim((string) ($sri->batch_number ?? ''));
+            $expStr = $sri->expiry ? substr((string) $sri->expiry, 0, 10) : null;
+            if ($bNum !== '') {
+                $bKey = strtoupper($bNum);
+                if (!$expStr && !empty($batchExpiryLookup[$pid][$bKey])) {
+                    $expStr = $batchExpiryLookup[$pid][$bKey];
+                } elseif ($expStr && empty($batchExpiryLookup[$pid][$bKey])) {
+                    $batchExpiryLookup[$pid][$bKey] = $expStr;
+                }
+                if (empty($productBatchesMap[$pid][$bKey])) {
+                    $productBatchesMap[$pid][$bKey] = [
+                        'batch_number' => $bNum,
+                        'expiry_date'  => $expStr,
+                        'quantity'     => 0,
+                    ];
+                }
+            }
 
             $destructionAndReturns->push([
                 'row_key'              => 'SR-' . $sri->id,
@@ -3147,12 +3280,12 @@ class ReportsController extends Controller
                 'document_id'          => $sr->id ?? null,
                 'document_number'      => $sr->posted_number ?? '-',
                 'date'                 => $dateStr,
-                'product_id'           => $sri->product_id,
+                'product_id'           => $pid,
                 'product_name'         => $prod->name ?? '-',
                 'product_code'         => $prod->product_code ?? '-',
                 'formulation'          => $prod->formulation ?? '-',
-                'batch_number'         => $sri->batch_number ?: '-',
-                'expiry'               => $sri->expiry ?: null,
+                'batch_number'         => $bNum !== '' ? $bNum : '-',
+                'expiry'               => $expStr,
                 'quantity'             => $qty,
                 'pack_breakdown'       => $this->formatNarcoticPackBreakdown($qty, $packSize),
                 'party_or_authority'   => ($sr->customer->name ?? 'Patient Return')
@@ -3169,11 +3302,30 @@ class ReportsController extends Controller
         foreach ($purchaseReturnItems as $pri) {
             $pr = $pri->purchaseReturn;
             $prod = $pri->product;
+            $pid = (int) $pri->product_id;
             $packSize = max(1, (int) ($prod->pack_size ?? 1));
             $dateStr = $pr && $pr->date
                 ? ($pr->date instanceof \Carbon\CarbonInterface ? $pr->date->format('Y-m-d') : substr((string) $pr->date, 0, 10))
                 : null;
             $qty = (int) ($pri->return_unit_quantity ?? 0);
+
+            $bNum = trim((string) ($pri->batch ?? ''));
+            $expStr = $pri->expiry ? substr((string) $pri->expiry, 0, 10) : null;
+            if ($bNum !== '') {
+                $bKey = strtoupper($bNum);
+                if (!$expStr && !empty($batchExpiryLookup[$pid][$bKey])) {
+                    $expStr = $batchExpiryLookup[$pid][$bKey];
+                } elseif ($expStr && empty($batchExpiryLookup[$pid][$bKey])) {
+                    $batchExpiryLookup[$pid][$bKey] = $expStr;
+                }
+                if (empty($productBatchesMap[$pid][$bKey])) {
+                    $productBatchesMap[$pid][$bKey] = [
+                        'batch_number' => $bNum,
+                        'expiry_date'  => $expStr,
+                        'quantity'     => 0,
+                    ];
+                }
+            }
 
             $destructionAndReturns->push([
                 'row_key'              => 'PR-' . $pri->id,
@@ -3182,12 +3334,12 @@ class ReportsController extends Controller
                 'document_id'          => $pr->id ?? null,
                 'document_number'      => $pr->posted_number ?? '-',
                 'date'                 => $dateStr,
-                'product_id'           => $pri->product_id,
+                'product_id'           => $pid,
                 'product_name'         => $prod->name ?? '-',
                 'product_code'         => $prod->product_code ?? '-',
                 'formulation'          => $prod->formulation ?? '-',
-                'batch_number'         => $pri->batch ?: '-',
-                'expiry'               => $pri->expiry ?: null,
+                'batch_number'         => $bNum !== '' ? $bNum : '-',
+                'expiry'               => $expStr,
                 'quantity'             => $qty,
                 'pack_breakdown'       => $this->formatNarcoticPackBreakdown($qty, $packSize),
                 'party_or_authority'   => ($pr->supplier->name ?? 'Authorized Distributor')
@@ -3201,7 +3353,10 @@ class ReportsController extends Controller
             ]);
         }
 
-        $destructionAndReturns = $destructionAndReturns->sortByDesc('date')->values();
+        $destructionAndReturns = $destructionAndReturns->sortBy([
+            ['product_name', 'asc'],
+            ['date', 'asc'],
+        ])->values();
 
         // 5. Product-Wise Stock Balance & Movement Sheet (Opening → Inward → Outward → Closing)
         $purchInPeriod = PurchaseInvoiceItem::selectRaw('product_id, COALESCE(SUM(quantity), 0) as qty')
@@ -3316,7 +3471,9 @@ class ReportsController extends Controller
             $dispInPeriod,
             $dispAfterPeriod,
             $adjInPeriod,
-            $adjAfterPeriod
+            $adjAfterPeriod,
+            $productBatchesMap,
+            $batchExpiryLookup
         ) {
             $pid = $prod->id;
             $packSize = max(1, (int) ($prod->pack_size ?: 1));
@@ -3342,6 +3499,28 @@ class ReportsController extends Controller
             $periodNet  = $purchasedQty + $saleReturnQty - $dispensedQty - $purchReturnQty - $disposedQty + $adjustedQty;
             $openingQty = $closingQty - $periodNet;
 
+            // Format each batch with its expiry date for this product
+            $rawBatches = array_values($productBatchesMap[$pid] ?? []);
+            $batchesList = array_map(function ($b) use ($pid, $packSize, $batchExpiryLookup) {
+                $bNum = $b['batch_number'];
+                $bKey = strtoupper($bNum);
+                $exp = $b['expiry_date'] ?: ($batchExpiryLookup[$pid][$bKey] ?? null);
+                $qty = (int) ($b['quantity'] ?? 0);
+                return [
+                    'batch_number'   => $bNum,
+                    'expiry_date'    => $exp,
+                    'quantity'       => $qty,
+                    'pack_breakdown' => $qty > 0 ? $this->formatNarcoticPackBreakdown($qty, $packSize) : null,
+                ];
+            }, $rawBatches);
+
+            $batchesSummary = !empty($batchesList)
+                ? implode(' | ', array_map(
+                    fn ($b) => $b['batch_number'] . ($b['expiry_date'] ? " (Exp: {$b['expiry_date']})" : ''),
+                    $batchesList
+                ))
+                : '—';
+
             return [
                 'product_id'             => $pid,
                 'product_code'           => $prod->product_code ?? '-',
@@ -3351,6 +3530,8 @@ class ReportsController extends Controller
                 'supplier_name'          => $prod->supplier->name ?? '-',
                 'rack'                   => $prod->rack ?: 'Double-Lock Vault',
                 'pack_size'              => $packSize,
+                'batches_list'           => $batchesList,
+                'batches_summary'        => $batchesSummary,
                 'opening_qty'            => $openingQty,
                 'opening_pack_breakdown' => $this->formatNarcoticPackBreakdown($openingQty, $packSize),
                 'purchased_qty'          => $purchasedQty,
@@ -3366,7 +3547,7 @@ class ReportsController extends Controller
         })->values();
 
         // 6. Official Pakistani Statutory Chronological Running Register (Form 9 / Schedule B, D, G & CNSA Format)
-        // Reconstructs exact running balance (Previous Balance + Qty In - Qty Out = Balance in Hand) per drug
+        // Arranged strictly ONE PRODUCT AT A TIME (Product 1 complete register, then Product 2, and so on)
         $openingByProduct = $stockLedger->pluck('opening_qty', 'product_id');
         $productMetaMap   = $stockLedger->keyBy('product_id');
 
@@ -3410,11 +3591,13 @@ class ReportsController extends Controller
         // 6b. Add Patient / Customer Returns (IN)
         foreach ($saleReturnItems as $sri) {
             $sr = $sri->saleReturn;
-            $pid = $sri->product_id;
+            $pid = (int) $sri->product_id;
             $dateStr = $sr && $sr->date
                 ? ($sr->date instanceof \Carbon\CarbonInterface ? $sr->date->format('Y-m-d') : substr((string) $sr->date, 0, 10))
                 : $fromStr;
             $qty = (int) ($sri->unit_return_quantity ?? 0);
+            $bNum = trim((string) ($sri->batch_number ?? ''));
+            $expStr = $sri->expiry ? substr((string) $sri->expiry, 0, 10) : ($bNum !== '' ? ($batchExpiryLookup[$pid][strtoupper($bNum)] ?? null) : null);
 
             $rawEventsByProduct[$pid][] = [
                 'sort_date'           => $dateStr,
@@ -3435,8 +3618,8 @@ class ReportsController extends Controller
                 'doctor_name'         => $sr->saleInvoice?->doctor_name ?? 'Return against Rx',
                 'doctor_pmdc'         => null,
                 'doctor_hospital'     => null,
-                'batch_number'        => $sri->batch_number ?: '-',
-                'expiry'              => $sri->expiry ?: null,
+                'batch_number'        => $bNum !== '' ? $bNum : '-',
+                'expiry'              => $expStr,
                 'qty_in'              => $qty,
                 'qty_out'             => 0,
                 'pharmacist_name'     => 'Dispensing Pharmacist',
@@ -3487,11 +3670,13 @@ class ReportsController extends Controller
         // 6d. Add Supplier Returns (OUT)
         foreach ($purchaseReturnItems as $pri) {
             $pr = $pri->purchaseReturn;
-            $pid = $pri->product_id;
+            $pid = (int) $pri->product_id;
             $dateStr = $pr && $pr->date
                 ? ($pr->date instanceof \Carbon\CarbonInterface ? $pr->date->format('Y-m-d') : substr((string) $pr->date, 0, 10))
                 : $fromStr;
             $qty = (int) ($pri->return_unit_quantity ?? 0);
+            $bNum = trim((string) ($pri->batch ?? ''));
+            $expStr = $pri->expiry ? substr((string) $pri->expiry, 0, 10) : ($bNum !== '' ? ($batchExpiryLookup[$pid][strtoupper($bNum)] ?? null) : null);
 
             $rawEventsByProduct[$pid][] = [
                 'sort_date'           => $dateStr,
@@ -3512,8 +3697,8 @@ class ReportsController extends Controller
                 'doctor_name'         => 'Returned to Distributor',
                 'doctor_pmdc'         => null,
                 'doctor_hospital'     => null,
-                'batch_number'        => $pri->batch ?: '-',
-                'expiry'              => $pri->expiry ?: null,
+                'batch_number'        => $bNum !== '' ? $bNum : '-',
+                'expiry'              => $expStr,
                 'qty_in'              => 0,
                 'qty_out'             => $qty,
                 'pharmacist_name'     => 'Procurement Pharmacist',
@@ -3525,13 +3710,15 @@ class ReportsController extends Controller
         // 6e. Add Controlled Destruction / Quarantine (OUT)
         foreach ($disposalItems as $di) {
             $disp = $di->disposal;
-            $pid = $di->product_id;
+            $pid = (int) $di->product_id;
             $dateStr = $disp && $disp->disposal_date
                 ? ($disp->disposal_date instanceof \Carbon\CarbonInterface ? $disp->disposal_date->format('Y-m-d') : substr((string) $disp->disposal_date, 0, 10))
                 : $fromStr;
             $qty = (int) ($di->dispose_qty ?? 0);
             $witnessName = trim((string) ($disp->witness_name ?? ''));
             $witnessDesig = trim((string) ($disp->witness_designation ?? ''));
+            $bNum = trim((string) ($di->batch_number ?? ''));
+            $expStr = $di->expiry_date ? substr((string) $di->expiry_date, 0, 10) : ($bNum !== '' ? ($batchExpiryLookup[$pid][strtoupper($bNum)] ?? null) : null);
 
             $rawEventsByProduct[$pid][] = [
                 'sort_date'           => $dateStr,
@@ -3552,8 +3739,8 @@ class ReportsController extends Controller
                 'doctor_name'         => $witnessName !== '' ? "Witness: {$witnessName}" : 'Witness Pending',
                 'doctor_pmdc'         => $witnessDesig !== '' ? $witnessDesig : null,
                 'doctor_hospital'     => null,
-                'batch_number'        => $di->batch_number ?: '-',
-                'expiry'              => $di->expiry_date ? substr((string) $di->expiry_date, 0, 10) : null,
+                'batch_number'        => $bNum !== '' ? $bNum : '-',
+                'expiry'              => $expStr,
                 'qty_in'              => 0,
                 'qty_out'             => $qty,
                 'pharmacist_name'     => $disp->disposer->name ?? ($disp->creator->name ?? 'Qualified Pharmacist'),
@@ -3565,7 +3752,7 @@ class ReportsController extends Controller
         // 6f. Add Standalone Stock Adjustments (IN or OUT)
         foreach ($adjustmentItems as $ai) {
             $adj = $ai->adjustment;
-            $pid = $ai->product_id;
+            $pid = (int) $ai->product_id;
             $diff = (int) ($ai->diff_qty ?? 0);
             if ($diff === 0) {
                 continue;
@@ -3573,6 +3760,12 @@ class ReportsController extends Controller
             $dateStr = $adj && $adj->posted_date
                 ? ($adj->posted_date instanceof \Carbon\CarbonInterface ? $adj->posted_date->format('Y-m-d') : substr((string) $adj->posted_date, 0, 10))
                 : $fromStr;
+
+            $prodBatches = $productMetaMap[$pid]['batches_list'] ?? [];
+            $adjBatchNo = count($prodBatches) === 1
+                ? $prodBatches[0]['batch_number']
+                : (!empty($prodBatches) ? ($productMetaMap[$pid]['batches_summary'] ?? '-') : '-');
+            $adjExpiry = count($prodBatches) === 1 ? ($prodBatches[0]['expiry_date'] ?? null) : null;
 
             $rawEventsByProduct[$pid][] = [
                 'sort_date'           => $dateStr,
@@ -3593,8 +3786,9 @@ class ReportsController extends Controller
                 'doctor_name'         => 'Internal Pharmacy Audit',
                 'doctor_pmdc'         => null,
                 'doctor_hospital'     => null,
-                'batch_number'        => '-',
-                'expiry'              => null,
+                'batches_list'        => $prodBatches,
+                'batch_number'        => $adjBatchNo,
+                'expiry'              => $adjExpiry,
                 'qty_in'              => $diff > 0 ? $diff : 0,
                 'qty_out'             => $diff < 0 ? abs($diff) : 0,
                 'pharmacist_name'     => 'Supervising Pharmacist',
@@ -3603,16 +3797,20 @@ class ReportsController extends Controller
             ];
         }
 
-        // Build chronological running balance rows
+        // Build product-by-product registers (one product at a time) + combined chronological_register
         $chronologicalRegister = collect();
+        $productRegisters = collect();
         $serialNo = 1;
+        $productSectionNo = 1;
 
         foreach ($targetProducts as $prod) {
             $pid = $prod->id;
-            $meta = $productMetaMap[$pid] ?? null;
+            $meta = $productMetaMap[$pid] ?? [];
             $packSize = max(1, (int) ($prod->pack_size ?: 1));
             $openingQty = (int) ($openingByProduct[$pid] ?? 0);
             $events = $rawEventsByProduct[$pid] ?? [];
+            $prodBatches = $meta['batches_list'] ?? [];
+            $prodBatchesSummary = $meta['batches_summary'] ?? '—';
 
             // Sort chronologically: date ASC, sort_order ASC, sort_id ASC
             usort($events, function ($a, $b) {
@@ -3627,12 +3825,23 @@ class ReportsController extends Controller
             });
 
             $runningBalance = $openingQty;
+            $productEntries = [];
+            $productSerialNo = 1;
+
+            // Format Opening B/F batch & expiry using actual batch(es) and expiry date(s), never "ALL ACTIVE LOTS"
+            $openingBatchNo = count($prodBatches) === 1
+                ? $prodBatches[0]['batch_number']
+                : (!empty($prodBatches) ? $prodBatchesSummary : '—');
+            $openingExpiry = count($prodBatches) === 1
+                ? ($prodBatches[0]['expiry_date'] ?? null)
+                : null;
 
             // Include Opening B/F row if product has non-zero opening stock, movements in period, or is specifically selected
-            if ($openingQty !== 0 || !empty($events) || $productId !== null) {
-                $chronologicalRegister->push([
+            if ($openingQty !== 0 || !empty($events) || $productId !== null || (int) ($meta['closing_qty'] ?? 0) !== 0) {
+                $openRow = [
                     'row_key'                => "OPEN-{$pid}",
                     'serial_no'              => $serialNo++,
+                    'product_serial_no'      => $productSerialNo++,
                     'is_opening_row'         => true,
                     'date'                   => $fromStr,
                     'event_type'             => 'OPENING_BF',
@@ -3654,8 +3863,9 @@ class ReportsController extends Controller
                     'doctor_name'            => '—',
                     'doctor_pmdc'            => null,
                     'doctor_hospital'        => null,
-                    'batch_number'           => 'ALL ACTIVE LOTS',
-                    'expiry'                 => null,
+                    'batches_list'           => $prodBatches,
+                    'batch_number'           => $openingBatchNo,
+                    'expiry'                 => $openingExpiry,
                     'qty_in'                 => 0,
                     'qty_out'                => 0,
                     'running_balance'        => $runningBalance,
@@ -3663,14 +3873,23 @@ class ReportsController extends Controller
                     'pharmacist_name'        => 'Verified B/F',
                     'is_rx_compliant'        => true,
                     'remarks'                => 'Opening Balance Brought Forward',
-                ]);
+                ];
+                $chronologicalRegister->push($openRow);
+                $productEntries[] = $openRow;
             }
 
             foreach ($events as $ev) {
                 $runningBalance = $runningBalance + (int) $ev['qty_in'] - (int) $ev['qty_out'];
-                $chronologicalRegister->push(array_merge($ev, [
+                $evBatchNo = $ev['batch_number'] ?? '-';
+                $evExpiry = $ev['expiry'] ?? null;
+                if ($evBatchNo !== '-' && !$evExpiry) {
+                    $evExpiry = $batchExpiryLookup[$pid][strtoupper(trim($evBatchNo))] ?? null;
+                }
+
+                $entryRow = array_merge($ev, [
                     'row_key'                => "{$ev['event_type']}-{$pid}-{$ev['sort_id']}",
                     'serial_no'              => $serialNo++,
+                    'product_serial_no'      => $productSerialNo++,
                     'is_opening_row'         => false,
                     'product_id'             => $pid,
                     'product_name'           => $prod->name,
@@ -3678,24 +3897,56 @@ class ReportsController extends Controller
                     'formulation'            => $prod->formulation ?? '-',
                     'brand_name'             => $prod->brand->name ?? '-',
                     'pack_size'              => $packSize,
+                    'batch_number'           => $evBatchNo,
+                    'expiry'                 => $evExpiry,
                     'qty_in_breakdown'       => $ev['qty_in'] > 0 ? $this->formatNarcoticPackBreakdown((int) $ev['qty_in'], $packSize) : null,
                     'qty_out_breakdown'      => $ev['qty_out'] > 0 ? $this->formatNarcoticPackBreakdown((int) $ev['qty_out'], $packSize) : null,
                     'running_balance'        => $runningBalance,
                     'running_pack_breakdown' => $this->formatNarcoticPackBreakdown($runningBalance, $packSize),
-                ]));
+                ]);
+                $chronologicalRegister->push($entryRow);
+                $productEntries[] = $entryRow;
             }
+
+            $totalInForProduct = (int) ($meta['purchased_qty'] ?? 0)
+                + (int) ($meta['sale_return_qty'] ?? 0)
+                + max(0, (int) ($meta['adjusted_qty'] ?? 0));
+            $totalOutForProduct = (int) ($meta['dispensed_qty'] ?? 0)
+                + (int) ($meta['purchase_return_qty'] ?? 0)
+                + (int) ($meta['disposed_qty'] ?? 0)
+                + abs(min(0, (int) ($meta['adjusted_qty'] ?? 0)));
+
+            $productRegisters->push([
+                'product_section_no'     => $productSectionNo++,
+                'product_id'             => $pid,
+                'product_code'           => $prod->product_code ?? '-',
+                'product_name'           => $prod->name,
+                'formulation'            => $prod->formulation ?? '-',
+                'brand_name'             => $prod->brand->name ?? '-',
+                'supplier_name'          => $prod->supplier->name ?? '-',
+                'rack'                   => $meta['rack'] ?? 'Double-Lock Vault',
+                'pack_size'              => $packSize,
+                'batches_list'           => $prodBatches,
+                'batches_summary'        => $prodBatchesSummary,
+                'opening_qty'            => $openingQty,
+                'opening_pack_breakdown' => $this->formatNarcoticPackBreakdown($openingQty, $packSize),
+                'purchased_qty'          => (int) ($meta['purchased_qty'] ?? 0),
+                'sale_return_qty'        => (int) ($meta['sale_return_qty'] ?? 0),
+                'dispensed_qty'          => (int) ($meta['dispensed_qty'] ?? 0),
+                'purchase_return_qty'    => (int) ($meta['purchase_return_qty'] ?? 0),
+                'disposed_qty'           => (int) ($meta['disposed_qty'] ?? 0),
+                'adjusted_qty'           => (int) ($meta['adjusted_qty'] ?? 0),
+                'total_in_qty'           => $totalInForProduct,
+                'total_out_qty'          => $totalOutForProduct,
+                'closing_qty'            => $runningBalance,
+                'closing_pack_breakdown' => $this->formatNarcoticPackBreakdown($runningBalance, $packSize),
+                'entries_count'          => count($productEntries),
+                'entries'                => $productEntries,
+            ]);
         }
 
-        // 7. Active Batch & FEFO Traceability (Physical quantities only — no monetary values)
-        $batches = Batch::with([
-                'product:id,name,product_code,formulation,pack_size,rack,brand_id',
-                'product.brand:id,name',
-            ])
-            ->whereIn('product_id', $targetIds)
-            ->where('quantity', '>', 0)
-            ->orderByRaw('CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END ASC')
-            ->orderBy('expiry_date', 'asc')
-            ->get();
+        // 7. Active Batch & FEFO Traceability (Physical quantities only — arranged by product then expiry)
+        $batches = $allBatches->where('quantity', '>', 0)->values();
 
         $batchInventory = $batches->map(function ($b) {
             $prod = $b->product;
@@ -3729,7 +3980,10 @@ class ReportsController extends Controller
                 'pack_breakdown' => $this->formatNarcoticPackBreakdown($qty, $packSize),
                 'rack'           => $b->rack ?: ($prod->rack ?: 'Double-Lock Vault'),
             ];
-        })->values();
+        })->sortBy([
+            ['product_name', 'asc'],
+            ['expiry_date', 'asc'],
+        ])->values();
 
         // 8. Executive Summary & Pakistani Regulatory Compliance Metrics (Physical Units & Audit Counts Only)
         $totalDispensingRows   = $dispensingRegister->count();
@@ -3773,6 +4027,7 @@ class ReportsController extends Controller
             'store_license'           => $storeLicense,
             'summary'                 => $summary,
             'chronological_register'  => $chronologicalRegister,
+            'product_registers'       => $productRegisters,
             'stock_ledger'            => $stockLedger,
             'dispensing_register'     => $dispensingRegister,
             'procurement_register'    => $procurementRegister,

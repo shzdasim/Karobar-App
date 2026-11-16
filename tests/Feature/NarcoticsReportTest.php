@@ -254,6 +254,23 @@ class NarcoticsReportTest extends TestCase
         $this->assertSame(10, $ledgerRow['disposed_qty']);
         $this->assertSame(100, $ledgerRow['closing_qty']);
         $this->assertSame('10 Packs (1×10)', $ledgerRow['closing_pack_breakdown']);
+        $this->assertSame('NBG-2609 (Exp: 2028-06-30)', $ledgerRow['batches_summary']);
+        $this->assertCount(1, $ledgerRow['batches_list']);
+        $this->assertSame('NBG-2609', $ledgerRow['batches_list'][0]['batch_number']);
+        $this->assertSame('2028-06-30', $ledgerRow['batches_list'][0]['expiry_date']);
+
+        // Verify product_registers is arranged one product at a time with full entries and actual batch+expiry
+        $this->assertCount(1, $payload['product_registers']);
+        $prodReg = $payload['product_registers'][0];
+        $this->assertSame('Nubiget 10mg Injection', $prodReg['product_name']);
+        $this->assertSame(20, $prodReg['opening_qty']);
+        $this->assertSame(105, $prodReg['total_in_qty']);
+        $this->assertSame(25, $prodReg['total_out_qty']);
+        $this->assertSame(100, $prodReg['closing_qty']);
+        $this->assertCount(5, $prodReg['entries']);
+        $this->assertSame('NBG-2609', $prodReg['entries'][0]['batch_number']);
+        $this->assertSame('2028-06-30', $prodReg['entries'][0]['expiry']);
+        $this->assertNotSame('ALL ACTIVE LOTS', $prodReg['entries'][0]['batch_number']);
 
         // Verify Chronological Running Balance sequence:
         // Row 0: OPENING_BF -> 20
