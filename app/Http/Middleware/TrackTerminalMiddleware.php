@@ -55,12 +55,24 @@ class TrackTerminalMiddleware
                 $ipAddress = $request->ip();
 
                 if (!$terminal) {
+                    $setting = SchemaCache::hasTable('settings') ? Setting::first() : null;
+                    $providedNetworkToken = trim((string) (
+                        $request->header('X-Network-Token')
+                        ?: $request->input('network_token')
+                        ?: ''
+                    ));
+                    $storedNetworkToken = trim((string) ($setting?->network_server_token ?? ''));
+                    $hasValidNetworkToken = $storedNetworkToken !== ''
+                        && $providedNetworkToken !== ''
+                        && hash_equals($storedNetworkToken, $providedNetworkToken);
+
+                    if ($userId === null && !$hasValidNetworkToken) {
+                        return $next($request);
+                    }
+
                     $autoAuthorize = true;
-                    if (SchemaCache::hasTable('settings') && SchemaCache::hasColumn('settings', 'terminal_auto_authorize')) {
-                        $setting = Setting::first();
-                        if ($setting && $setting->terminal_auto_authorize !== null) {
-                            $autoAuthorize = (bool) $setting->terminal_auto_authorize;
-                        }
+                    if ($setting && SchemaCache::hasColumn('settings', 'terminal_auto_authorize') && $setting->terminal_auto_authorize !== null) {
+                        $autoAuthorize = (bool) $setting->terminal_auto_authorize;
                     }
 
                     // Check license seat limit before authorizing a brand-new terminal

@@ -414,6 +414,12 @@ class TerminalController extends Controller
         $authorizedCount = collect($terminals)->where('is_authorized', true)->count();
         $seatsLimit = (int) ($licenseStatus['seats'] ?? 0);
 
+        $user = $request->user();
+        $isServerAdmin = $user && (
+            $user->hasRole(['Admin', 'admin', 'super-admin']) ||
+            $user->can('settings.update')
+        );
+
         return [
             'hostname'                => gethostname() ?: php_uname('n'),
             'os_family'               => PHP_OS_FAMILY,
@@ -432,7 +438,7 @@ class TerminalController extends Controller
             'authorized_count'        => $authorizedCount,
             'seats_limit'             => $seatsLimit > 0 ? $seatsLimit : null,
             'terminal_auto_authorize' => (bool) ($setting?->terminal_auto_authorize ?? true),
-            'network_server_token'    => $setting?->network_server_token ?? null,
+            'network_server_token'    => $isServerAdmin ? ($setting?->network_server_token ?? null) : null,
             'services'                => [
                 'database'       => true,
                 'cache'          => true,
@@ -488,11 +494,28 @@ class TerminalController extends Controller
     }
 
     /**
+     * Ensure the authenticated user is an Admin or holds settings.update permission.
+     */
+    private function authorizeServerAdmin(Request $request, string $message): void
+    {
+        $user = $request->user();
+        if (
+            !$user ||
+            (!$user->hasRole(['Admin', 'admin', 'super-admin']) &&
+                !$user->can('settings.update'))
+        ) {
+            abort(403, $message);
+        }
+    }
+
+    /**
      * GET /api/server/diagnostics
      * Full-featured Server & LAN Troubleshooter diagnostic suite.
      */
     public function diagnostics(Request $request): JsonResponse
     {
+        $this->authorizeServerAdmin($request, 'Only administrators can access server diagnostics.');
+
         $checks = [];
 
         // 1. Database Engine & Latency Check
@@ -791,6 +814,8 @@ class TerminalController extends Controller
      */
     public function downloadTerminalConfig(Request $request)
     {
+        $this->authorizeServerAdmin($request, 'Only administrators can download terminal configuration.');
+
         $lanIps = $this->detectLanIpv4Addresses();
         $port = $request->getPort() ?: 8000;
         $scheme = $request->getScheme() ?: 'http';

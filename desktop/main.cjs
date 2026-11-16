@@ -2937,6 +2937,17 @@ function sendUpdateProgress(payload) {
   }
 }
 
+function isTrustedReleaseUrl(rawUrl) {
+  try {
+    const parsed = new URL(String(rawUrl || ""));
+    if (parsed.protocol !== "https:") return false;
+    const host = parsed.hostname.toLowerCase();
+    return host === "github.com" || host.endsWith(".githubusercontent.com");
+  } catch {
+    return false;
+  }
+}
+
 ipcMain.handle("karobar:download-and-install-update", async (_event, payload = {}) => {
   const mode = payload.mode || (payload.downloadOnly ? "download" : "download_and_install");
   const isPatch =
@@ -2949,18 +2960,20 @@ ipcMain.handle("karobar:download-and-install-update", async (_event, payload = {
     .toLowerCase()
     .trim();
 
-  const downloadUrl = isPatch
-    ? payload.patchUrl ||
-      payload.patch_url ||
-      "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Patch.zip"
-    : payload.downloadUrl ||
-      payload.download_url ||
-      "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
+  const candidatePatchUrl = payload.patchUrl || payload.patch_url;
+  const candidateDownloadUrl = payload.downloadUrl || payload.download_url;
 
-  const fullInstallerUrl =
-    payload.downloadUrl ||
-    payload.download_url ||
-    "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
+  const downloadUrl = isPatch
+    ? (isTrustedReleaseUrl(candidatePatchUrl)
+        ? candidatePatchUrl
+        : "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Patch.zip")
+    : (isTrustedReleaseUrl(candidateDownloadUrl)
+        ? candidateDownloadUrl
+        : "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe");
+
+  const fullInstallerUrl = isTrustedReleaseUrl(candidateDownloadUrl)
+    ? candidateDownloadUrl
+    : "https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe";
 
   const fileExt = isPatch ? "zip" : "exe";
   let tempFilePath = path.join(os.tmpdir(), `Karobar-App-Update-${versionLabel}.${fileExt}`);

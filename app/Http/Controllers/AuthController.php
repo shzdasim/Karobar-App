@@ -204,28 +204,7 @@ public function logout(Request $request): \Illuminate\Http\JsonResponse
 public function extendSession(Request $request): JsonResponse
 {
     $minutes = max(1, min(60, (int) $request->input('minutes', 10)));
-    $bearer = $request->bearerToken();
-    $accessToken = null;
-    $user = null;
-
-    if ($bearer) {
-        if (!str_contains($bearer, '|')) {
-            $accessToken = PersonalAccessToken::where('token', hash('sha256', $bearer))->first();
-        } else {
-            [$id, $tokenPart] = explode('|', $bearer, 2);
-            $instance = PersonalAccessToken::find($id);
-            if ($instance && hash_equals($instance->token, hash('sha256', $tokenPart))) {
-                $accessToken = $instance;
-            }
-        }
-        if ($accessToken) {
-            $user = $accessToken->tokenable;
-        }
-    }
-
-    if (!$user) {
-        $user = $request->user();
-    }
+    $user = $request->user();
 
     if (!$user instanceof User) {
         return response()->json([
@@ -242,13 +221,22 @@ public function extendSession(Request $request): JsonResponse
         ], 403);
     }
 
-    $expiresAt = now()->addMinutes($minutes);
+    $accessToken = $user->currentAccessToken();
+    if ($accessToken instanceof PersonalAccessToken) {
+        if ($accessToken->expires_at && $accessToken->expires_at->isPast()) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Session has already expired. Please log in again.',
+            ], 401);
+        }
 
-    if ($accessToken) {
+        $expiresAt = now()->addMinutes($minutes);
         $accessToken->forceFill([
             'created_at' => now(),
             'expires_at' => $expiresAt,
         ])->save();
+    } else {
+        $expiresAt = now()->addMinutes($minutes);
     }
 
     $user->update([

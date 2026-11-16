@@ -62,14 +62,12 @@ use App\Http\Controllers\Api\SystemUpdateController;
 */
 Route::get('/system/version', [SystemUpdateController::class, 'version']);
 Route::get('/system/check-update', [SystemUpdateController::class, 'checkUpdate']);
-Route::get('/system/update-progress', [SystemUpdateController::class, 'updateProgress']);
-Route::post('/system/install-update', [SystemUpdateController::class, 'installUpdate']);
 
 // Multi-PC Terminal LAN Discovery & Handshake Ping (accessible prior to login for "Test Connection")
 Route::match(['get', 'post'], '/terminals/ping', [TerminalController::class, 'ping']);
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
-Route::post('/session/extend', [AuthController::class, 'extendSession'])->middleware('throttle:30,1');
+Route::post('/session/extend', [AuthController::class, 'extendSession'])->middleware(['auth:sanctum', 'token.expiry', 'throttle:30,1']);
 Route::middleware(['auth:sanctum', 'token.expiry'])->get('/user', [AuthController::class, 'user']);
 Route::middleware(['auth:sanctum', 'token.expiry'])->put('/profile', [AuthController::class, 'updateProfile']);
 Route::middleware(['auth:sanctum', 'token.expiry'])->post('/logout', [AuthController::class, 'logout']);
@@ -583,4 +581,8 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::get('/server/diagnostics', [TerminalController::class, 'diagnostics']);
     Route::post('/server/troubleshoot', [TerminalController::class, 'troubleshoot']);
     Route::get('/server/terminal-config', [TerminalController::class, 'downloadTerminalConfig']);
+
+    // System OTA Updates (authenticated + licensed + Admin-checked in controller)
+    Route::get('/system/update-progress', [SystemUpdateController::class, 'updateProgress']);
+    Route::post('/system/install-update', [SystemUpdateController::class, 'installUpdate'])->middleware('throttle:10,1');
 });

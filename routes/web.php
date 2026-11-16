@@ -369,25 +369,46 @@ Route::get('/privacy-policy', function () {
     ]);
 })->name('legal.privacy');
 
-// Local Server Control Center Quick-Launch Route (used by Single-File Server Installer & Desktop Shortcut)
-Route::get('/server-launch', function (\Illuminate\Http\Request $request) {
-    $providedKey = trim((string) $request->query('key', ''));
+// Local Server Control Center Quick-Launch Route (POST form exchange; no localhost bypass or query-string secret)
+Route::get('/server-launch', function () {
+    $csrf = csrf_token();
+    $html = <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Karobar Server Control Center</title>
+</head>
+<body style="background:#0f172a;color:#f8fafc;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+  <form method="POST" action="/server-launch" style="background:#1e293b;padding:28px;border-radius:12px;width:360px;box-shadow:0 10px 25px rgba(0,0,0,0.4);">
+    <input type="hidden" name="_token" value="{$csrf}" />
+    <h2 style="margin:0 0 8px;font-size:18px;">Karobar Server Control Center</h2>
+    <p style="color:#94a3b8;font-size:13px;margin:0 0 16px;">Enter the server launch key from <code>storage/app/server-launch.key</code>.</p>
+    <input type="password" name="key" required autocomplete="off" placeholder="Server launch key" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#f8fafc;margin-bottom:14px;" />
+    <button type="submit" style="width:100%;padding:10px 12px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-weight:600;cursor:pointer;">Launch Dashboard</button>
+  </form>
+</body>
+</html>
+HTML;
+
+    return response($html)->header('Content-Type', 'text/html; charset=UTF-8');
+})->name('server.launch');
+
+Route::post('/server-launch', function (\Illuminate\Http\Request $request) {
+    $providedKey = trim((string) $request->input('key', ''));
     $keyFile = storage_path('app/server-launch.key');
     $storedKey = is_file($keyFile) ? trim((string) @file_get_contents($keyFile)) : '';
 
-    $isLocalhost = in_array($request->ip(), ['127.0.0.1', '::1'], true);
     $keyValid = ($storedKey !== '' && $providedKey !== '' && hash_equals($storedKey, $providedKey));
-
-    if (!$keyValid && !$isLocalhost) {
+    if (!$keyValid) {
         return redirect('/server-dashboard');
     }
 
-    // Only allow localhost without explicit key if the key file exists on this server
-    if (!$keyValid && $storedKey === '') {
-        return redirect('/server-dashboard');
-    }
-
-    $admin = \App\Models\User::query()->orderBy('id')->first();
+    $admin = \App\Models\User::query()
+        ->where('status', 'active')
+        ->orderBy('id')
+        ->get()
+        ->first(fn ($u) => method_exists($u, 'hasRole') && $u->hasRole(['Admin', 'admin', 'super-admin']));
     if (!$admin) {
         return redirect('/login');
     }
@@ -428,7 +449,7 @@ Route::get('/server-launch', function (\Illuminate\Http\Request $request) {
 HTML;
 
     return response($html)->header('Content-Type', 'text/html; charset=UTF-8');
-})->name('server.launch');
+})->middleware('throttle:10,1')->name('server.launch.submit');
 
 // --- React SPA catch-all LAST and excluding /print/* and /privacy-policy etc ---
 Route::view('/{path?}', 'index')

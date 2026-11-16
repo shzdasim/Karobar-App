@@ -3,19 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Models\Setting;
+use App\Models\User;
 use App\Services\SqliteImportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Throwable;
 
 class SqliteImportController extends Controller
 {
     protected SqliteImportService $importService;
-
-    /**
-     * Special Software Admin Master Password required to unlock the SQLite Import Studio.
-     */
-    private const SOFTWARE_ADMIN_PASSWORD = 'Malik9196.';
 
     public function __construct(SqliteImportService $importService)
     {
@@ -50,16 +47,27 @@ class SqliteImportController extends Controller
     }
 
     /**
-     * Constant-time check against the Software Admin master password ("Malik9196.").
+     * Verify Software Admin password against an environment-configured bcrypt hash
+     * or the authenticated Admin user's own password.
      */
-    protected function isValidSoftwareAdminPassword(string $input): bool
+    protected function isValidSoftwareAdminPassword(string $input, ?User $user = null): bool
     {
-        if ($input === '') {
+        if (trim($input) === '') {
             return false;
         }
-        $expectedHash = hash('sha256', self::SOFTWARE_ADMIN_PASSWORD);
-        return hash_equals($expectedHash, hash('sha256', $input))
-            || hash_equals($expectedHash, hash('sha256', trim($input)));
+
+        $configuredHash = (string) env('SQLITE_IMPORT_ADMIN_HASH', '');
+        if ($configuredHash !== '') {
+            return Hash::check($input, $configuredHash)
+                || Hash::check(trim($input), $configuredHash);
+        }
+
+        if ($user instanceof User && is_string($user->password) && $user->password !== '') {
+            return Hash::check($input, $user->password)
+                || Hash::check(trim($input), $user->password);
+        }
+
+        return false;
     }
 
     /**
@@ -68,7 +76,10 @@ class SqliteImportController extends Controller
     public function generateSoftwareAdminToken(int $userId, ?string $dateStr = null): string
     {
         $date = $dateStr ?: now()->format('Y-m-d');
-        $secret = (string) (config('app.key') ?: 'karobar-sw-admin-secret');
+        $secret = (string) config('app.key');
+        if ($secret === '') {
+            throw new \RuntimeException('Application key (APP_KEY) is not configured.');
+        }
         $sig = hash_hmac('sha256', "sqlite_import_sw_admin|{$userId}|{$date}", $secret);
         return base64_encode("{$userId}|{$date}|{$sig}");
     }
@@ -89,7 +100,7 @@ class SqliteImportController extends Controller
     }
 
     /**
-     * Verify that the user is an Application Admin AND has unlocked the Software Admin gate ("Malik9196.").
+     * Verify that the user is an Application Admin AND has unlocked the Software Admin gate.
      */
     protected function authorizeSqliteImport(Request $request): void
     {
@@ -114,7 +125,7 @@ class SqliteImportController extends Controller
             ?: ''
         );
 
-        if ($directPassword !== '' && $this->isValidSoftwareAdminPassword($directPassword)) {
+        if ($directPassword !== '' && $this->isValidSoftwareAdminPassword($directPassword, $user)) {
             return;
         }
 
@@ -125,16 +136,17 @@ class SqliteImportController extends Controller
     }
 
     /**
-     * Unlock the SQLite Import Studio using the Software Admin special password ("Malik9196.").
+     * Unlock the SQLite Import Studio after verifying the Software Admin / Admin password.
      * POST /api/settings/sqlite-import/unlock
      */
     public function unlock(Request $request)
     {
         $this->authorizeApplicationAdmin($request);
 
+        $user = $request->user();
         $password = (string) ($request->input('password') ?? $request->input('software_admin_password') ?? '');
 
-        if (!$this->isValidSoftwareAdminPassword($password)) {
+        if (!$this->isValidSoftwareAdminPassword($password, $user)) {
             return response()->json([
                 'ok'      => false,
                 'message' => 'Invalid Software Admin password. Access is restricted to Software Administrators.',

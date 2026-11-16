@@ -285,8 +285,16 @@ class SystemUpdateController extends Controller
     /**
      * Return live download & installation progress for in-app update.
      */
-    public function updateProgress(): JsonResponse
+    public function updateProgress(Request $request): JsonResponse
     {
+        $user = $request->user();
+        if (!$user || !$user->hasRole(['Admin', 'admin', 'super-admin'])) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Only administrators can view system update progress.',
+            ], 403);
+        }
+
         $path = $this->progressFilePath();
         if (!is_file($path)) {
             return response()->json([
@@ -313,21 +321,58 @@ class SystemUpdateController extends Controller
     }
 
     /**
+     * Validate that an update artifact URL points to HTTPS on trusted GitHub release hosts.
+     */
+    protected function assertTrustedUpdateUrl(string $url): void
+    {
+        $parts = parse_url($url);
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = strtolower((string) ($parts['host'] ?? ''));
+
+        $allowed = $host === 'github.com' || str_ends_with($host, '.githubusercontent.com');
+        if ($scheme !== 'https' || !$allowed) {
+            throw new \RuntimeException('Untrusted update download URL.');
+        }
+    }
+
+    /**
      * Download Karobar-App-Setup.exe inside the application and optionally launch the elevated silent updater.
      * Supports mode = "download" (background download while user works) or "install" / "download_and_install".
      */
     public function installUpdate(Request $request): JsonResponse
     {
+        $user = $request->user();
+        if (!$user || !$user->hasRole(['Admin', 'admin', 'super-admin'])) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Only administrators can install system updates.',
+            ], 403);
+        }
+
         @set_time_limit(0);
         @ignore_user_abort(true);
 
         $mode = (string) ($request->input('mode') ?: 'download_and_install');
-        $isPatch = ($request->boolean('is_patch') || $request->filled('patch_url')) && !$request->boolean('force_full');
-        $downloadUrl = (string) ($isPatch
-            ? ($request->input('patch_url') ?: 'https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Patch.zip')
-            : ($request->input('download_url') ?: 'https://github.com/shzdasim/Karobar-App/releases/latest/download/Karobar-App-Setup.exe'));
-        $patchSha256 = (string) $request->input('patch_sha256');
-        $versionLabel = preg_replace('/[^a-zA-Z0-9._-]/', '', (string) ($request->input('version') ?: 'latest'));
+        $local = $this->readLocalVersion();
+        $repo = (string) ($local['repository'] ?: 'shzdasim/Karobar-App');
+        if (!preg_match('/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/', $repo)) {
+            $repo = 'shzdasim/Karobar-App';
+        }
+
+        $remote = Cache::remember(
+            'karobar_latest_release_check_' . md5($repo . '_' . $local['version'] . '_' . $local['build_number']),
+            now()->addMinutes(5),
+            fn () => $this->fetchRemoteReleaseMetadata($repo)
+        );
+
+        $isPatch = $request->boolean('is_patch') && !$request->boolean('force_full');
+        $downloadUrl = $isPatch
+            ? (string) (($remote['patch_url'] ?? '') ?: "https://github.com/{$repo}/releases/latest/download/Karobar-App-Patch.zip")
+            : (string) (($remote['download_url'] ?? '') ?: "https://github.com/{$repo}/releases/latest/download/Karobar-App-Setup.exe");
+        $patchSha256 = (string) ($remote['patch_sha256'] ?? '');
+        $versionLabel = preg_replace('/[^a-zA-Z0-9._-]/', '', (string) (($remote['version'] ?? '') ?: 'latest'));
+
+        $this->assertTrustedUpdateUrl($downloadUrl);
 
         $tempDir = sys_get_temp_dir();
         $fileExt = $isPatch ? 'zip' : 'exe';
@@ -365,8 +410,8 @@ class SystemUpdateController extends Controller
                     CURLOPT_MAXREDIRS        => 10,
                     CURLOPT_TIMEOUT          => 900,
                     CURLOPT_CONNECTTIMEOUT   => 20,
-                    CURLOPT_SSL_VERIFYPEER   => false,
-                    CURLOPT_SSL_VERIFYHOST   => 0,
+                    CURLOPT_SSL_VERIFYPEER   => true,
+                    CURLOPT_SSL_VERIFYHOST   => 2,
                     CURLOPT_USERAGENT        => 'Karobar-App-InApp-Updater/2.0',
                     CURLOPT_HTTPHEADER       => ['Accept: application/octet-stream,*/*'],
                     CURLOPT_NOPROGRESS       => false,
@@ -404,9 +449,9 @@ class SystemUpdateController extends Controller
                 fclose($fp);
 
                 if (!$ok || $httpCode !== 200 || !is_file($installerPath) || filesize($installerPath) < $minValidSize) {
-                    // Fallback to Windows curl.exe -L -k
+                    // Fallback to Windows curl.exe with TLS verification enabled
                     $cmd = sprintf(
-                        'curl.exe -L -k --fail --silent --show-error -o %s %s 2>&1',
+                        'curl.exe -L --fail --silent --show-error -o %s %s 2>&1',
                         escapeshellarg($installerPath),
                         escapeshellarg($downloadUrl)
                     );

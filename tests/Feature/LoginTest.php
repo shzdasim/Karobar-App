@@ -95,7 +95,7 @@ class LoginTest extends TestCase
         $this->getJson('/api/user')->assertUnauthorized();
     }
 
-    public function test_session_can_be_extended_by_ten_minutes_repeatedly_after_expiry(): void
+    public function test_session_can_be_extended_before_expiry_and_expired_token_is_rejected(): void
     {
         $this->freezeSecond();
         $loginRes = $this->postJson('/api/login', [
@@ -109,9 +109,9 @@ class LoginTest extends TestCase
         config(['sanctum.guard' => []]);
         $this->app['auth']->forgetGuards();
 
-        // Travel past the 24-hour mark so token is expired
-        $this->travel(1441)->minutes();
-        $this->withToken($token)->getJson('/api/user')->assertUnauthorized();
+        // Travel just before the 24-hour mark so token is still valid
+        $this->travel(1435)->minutes();
+        $this->withToken($token)->getJson('/api/user')->assertOk();
 
         // User clicks "Wait 10 Minutes" -> extends session by 10 minutes
         $extendRes = $this->withToken($token)
@@ -126,17 +126,13 @@ class LoginTest extends TestCase
         $this->app['auth']->forgetGuards();
         $this->withToken($token)->getJson('/api/user')->assertOk();
 
-        // After 11 minutes, session expires again and can be extended for another 10 minutes
+        // After 11 minutes, session expires and an expired token CANNOT be resurrected
         $this->travel(11)->minutes();
         $this->app['auth']->forgetGuards();
         $this->withToken($token)->getJson('/api/user')->assertUnauthorized();
 
         $this->withToken($token)
             ->postJson('/api/session/extend', ['minutes' => 10])
-            ->assertOk()
-            ->assertJsonPath('ok', true);
-
-        $this->app['auth']->forgetGuards();
-        $this->withToken($token)->getJson('/api/user')->assertOk();
+            ->assertUnauthorized();
     }
 }

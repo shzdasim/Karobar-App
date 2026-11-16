@@ -9,7 +9,7 @@
 #   KAROBAR_PORT=8000
 #   KAROBAR_IMPORT_SQLITE=/path/to/existing-database.sqlite
 #   KAROBAR_ADMIN_EMAIL=admin@karobar.local
-#   KAROBAR_ADMIN_PASS=admin12345
+#   KAROBAR_ADMIN_PASS=<randomly-generated-if-omitted>
 #
 # What this SINGLE file does end-to-end:
 #   1. Installs Nginx, MariaDB 10.11 LTS (InnoDB), Redis 7, PHP 8.3-FPM,
@@ -30,10 +30,10 @@ APP_DIR="${KAROBAR_APP_DIR:-/opt/karobar-server}"
 SERVER_PORT="${KAROBAR_PORT:-8000}"
 DB_NAME="${KAROBAR_DB_NAME:-karobar_erp}"
 DB_USER="${KAROBAR_DB_USER:-karobar}"
-DB_PASS="${KAROBAR_DB_PASS:-$(openssl rand -hex 12 2>/dev/null || echo 'karobar_db_secret_2026')}"
+DB_PASS="${KAROBAR_DB_PASS:-$(openssl rand -hex 16)}"
 ADMIN_NAME="${KAROBAR_ADMIN_NAME:-Store Administrator}"
 ADMIN_EMAIL="${KAROBAR_ADMIN_EMAIL:-admin@karobar.local}"
-ADMIN_PASS="${KAROBAR_ADMIN_PASS:-admin12345}"
+ADMIN_PASS="${KAROBAR_ADMIN_PASS:-$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9!@#%^*' | head -c 16)}"
 IMPORT_SQLITE="${KAROBAR_IMPORT_SQLITE:-}"
 GIT_REPO_URL="${KAROBAR_GIT_URL:-}"
 
@@ -192,7 +192,7 @@ LAN_IP="${LAN_IP:-127.0.0.1}"
 
 sed -i "s|^APP_ENV=.*|APP_ENV=production|g" "${APP_DIR}/.env"
 sed -i "s|^APP_DEBUG=.*|APP_DEBUG=false|g" "${APP_DIR}/.env"
-sed -i "s|^APP_URL=.*|APP_URL=http://${LAN_IP}:${SERVER_PORT}|g" "${APP_DIR}/.env"
+sed -i "s|^APP_URL=.*|APP_URL=https://${LAN_IP}:${SERVER_PORT}|g" "${APP_DIR}/.env"
 sed -i "s|^DB_CONNECTION=.*|DB_CONNECTION=mariadb|g" "${APP_DIR}/.env"
 sed -i "s|^[[:space:]#]*DB_HOST=.*|DB_HOST=127.0.0.1|g" "${APP_DIR}/.env"
 sed -i "s|^[[:space:]#]*DB_PORT=.*|DB_PORT=3306|g" "${APP_DIR}/.env"
@@ -233,7 +233,7 @@ if (empty(\$s->network_server_token)) {
 php artisan storage:link >/dev/null 2>&1 || true
 
 # Generate local quick-launch key for instant Server Dashboard opening
-LAUNCH_KEY="$(openssl rand -hex 24 2>/dev/null || echo 'karobar-local-launch-key')"
+LAUNCH_KEY="$(openssl rand -hex 24)"
 echo "${LAUNCH_KEY}" > "${APP_DIR}/storage/app/server-launch.key"
 chmod 640 "${APP_DIR}/storage/app/server-launch.key"
 
@@ -270,11 +270,30 @@ php_admin_value[post_max_size] = 256M
 php_admin_value[max_execution_time] = 600
 EOF
 
+mkdir -p /etc/ssl/karobar
+if [[ ! -f /etc/ssl/karobar/karobar.crt || ! -f /etc/ssl/karobar/karobar.key ]]; then
+  openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+    -keyout /etc/ssl/karobar/karobar.key \
+    -out /etc/ssl/karobar/karobar.crt \
+    -subj "/CN=${LAN_IP}" \
+    -addext "subjectAltName=IP:${LAN_IP},IP:127.0.0.1,DNS:localhost,DNS:$(hostname).local" >/dev/null 2>&1 || \
+  openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+    -keyout /etc/ssl/karobar/karobar.key \
+    -out /etc/ssl/karobar/karobar.crt \
+    -subj "/CN=${LAN_IP}" >/dev/null 2>&1
+  chmod 600 /etc/ssl/karobar/karobar.key
+fi
+
 cat >/etc/nginx/sites-available/karobar.conf <<EOF
 server {
-    listen ${SERVER_PORT} default_server;
-    listen [::]:${SERVER_PORT} default_server;
+    listen ${SERVER_PORT} ssl default_server;
+    listen [::]:${SERVER_PORT} ssl default_server;
     server_name _;
+
+    ssl_certificate /etc/ssl/karobar/karobar.crt;
+    ssl_certificate_key /etc/ssl/karobar/karobar.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
 
     root ${APP_DIR}/public;
     index index.php index.html;
@@ -363,7 +382,7 @@ shift || true
 case "\${CMD}" in
   dashboard|open)
     KEY="\$(cat "\${APP_DIR}/storage/app/server-launch.key" 2>/dev/null || echo '')"
-    URL="http://127.0.0.1:\${SERVER_PORT}/server-launch?key=\${KEY}"
+    URL="https://127.0.0.1:\${SERVER_PORT}/server-launch"
     echo "Opening Karobar Server & Terminals Dashboard: \${URL}"
     if command -v xdg-open >/dev/null 2>&1; then
       xdg-open "\${URL}" >/dev/null 2>&1 &
@@ -459,7 +478,7 @@ ufw allow OpenSSH >/dev/null 2>&1 || true
 ufw allow "${SERVER_PORT}/tcp" >/dev/null 2>&1 || true
 ufw allow 5353/udp >/dev/null 2>&1 || true
 
-DASHBOARD_LAUNCH_URL="http://127.0.0.1:${SERVER_PORT}/server-launch?key=${LAUNCH_KEY}"
+DASHBOARD_LAUNCH_URL="https://127.0.0.1:${SERVER_PORT}/server-launch"
 
 DESKTOP_ENTRY="[Desktop Entry]
 Version=1.0

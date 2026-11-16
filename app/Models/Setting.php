@@ -111,6 +111,7 @@ class Setting extends Model
         'whatsapp_access_token',
         'cube_groq_api_key',
         'cube_gemini_api_key',
+        'network_server_token',
     ];
 
     protected $appends = ['logo_url'];
