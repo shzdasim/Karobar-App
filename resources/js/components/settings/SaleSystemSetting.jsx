@@ -23,8 +23,24 @@ const STICKER_SIZE_PRESETS = [
   { value: "50x30", label: "50 × 30 mm (Medium Thermal)", width_mm: 50, height_mm: 30 },
   { value: "60x40", label: "60 × 40 mm (Large Box Label)", width_mm: 60, height_mm: 40 },
   { value: "70x35", label: "70 × 35 mm (Wide Pharmacy Label)", width_mm: 70, height_mm: 35 },
+  { value: "72x35", label: "72 × 35 mm (72mm Thermal Roll)", width_mm: 72, height_mm: 35 },
+  { value: "72x40", label: "72 × 40 mm (72mm Thermal Roll - Tall)", width_mm: 72, height_mm: 40 },
   { value: "80x50", label: "80 × 50 mm (Jumbo Bottle / Syrup)", width_mm: 80, height_mm: 50 },
   { value: "custom", label: "Custom Size (W × H mm)", width_mm: null, height_mm: null },
+];
+
+const STICKER_PRINTER_MODE_OPTIONS = [
+  { value: "receipt_roll", label: "Thermal Receipt Roll (72mm / 80mm — Upright)" },
+  { value: "label_printer", label: "Die-Cut Label Printer (Exact W × H)" },
+];
+
+const STICKER_WEIGHT_OPTIONS = [
+  { value: 400, label: "Regular (400)" },
+  { value: 500, label: "Medium (500)" },
+  { value: 600, label: "Semi-Bold (600)" },
+  { value: 700, label: "Bold (700)" },
+  { value: 800, label: "Extra Bold (800)" },
+  { value: 900, label: "Black (900)" },
 ];
 
 const STICKER_TEMPLATE_OPTIONS = [
@@ -44,6 +60,7 @@ const DEFAULT_STICKER_CONFIG = {
   preset_key: "50x25",
   width_mm: 50,
   height_mm: 25,
+  printer_mode: "receipt_roll",
   template: "classic",
   font_scale: "normal",
   font_size_header: 6.5,
@@ -51,6 +68,11 @@ const DEFAULT_STICKER_CONFIG = {
   font_size_product: 8.0,
   font_size_dosage: 7.5,
   font_size_footer: 5.5,
+  font_weight_header: 800,
+  font_weight_patient: 600,
+  font_weight_product: 900,
+  font_weight_dosage: 800,
+  font_weight_footer: 700,
   show_shop_name: true,
   show_invoice_meta: true,
   show_patient: true,
@@ -221,6 +243,9 @@ function DosageStickerDesigner({ config, storeName, disableInputs, onChange }) {
     STICKER_TEMPLATE_OPTIONS.find((t) => t.value === config.template) || STICKER_TEMPLATE_OPTIONS[0];
   const selectedFont =
     STICKER_FONT_OPTIONS.find((f) => f.value === config.font_scale) || STICKER_FONT_OPTIONS[1];
+  const selectedPrinterMode =
+    STICKER_PRINTER_MODE_OPTIONS.find((m) => m.value === config.printer_mode) ||
+    STICKER_PRINTER_MODE_OPTIONS[0];
 
   const wMm = Math.max(25, Math.min(150, Number(config.width_mm || 50)));
   const hMm = Math.max(15, Math.min(120, Number(config.height_mm || 25)));
@@ -239,6 +264,12 @@ function DosageStickerDesigner({ config, storeName, disableInputs, onChange }) {
   const pxProduct = ptToPreviewPx(config.font_size_product, 8.0);
   const pxDosage = ptToPreviewPx(config.font_size_dosage, 7.5);
   const pxFooter = ptToPreviewPx(config.font_size_footer, 5.5);
+
+  const fwHeader = Number(config.font_weight_header || 800);
+  const fwPatient = Number(config.font_weight_patient || 600);
+  const fwProduct = Number(config.font_weight_product || 900);
+  const fwDosage = Number(config.font_weight_dosage || 800);
+  const fwFooter = Number(config.font_weight_footer || 700);
 
   return (
     <div className="mt-5 pt-5 border-t border-slate-200 dark:border-slate-700/80 space-y-4">
@@ -362,6 +393,21 @@ function DosageStickerDesigner({ config, storeName, disableInputs, onChange }) {
             </div>
           </div>
 
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+              Printer Feed Mode (Fixes Sideways Printing on 72mm / 80mm Receipt Rolls)
+            </label>
+            <Select
+              options={STICKER_PRINTER_MODE_OPTIONS}
+              value={selectedPrinterMode}
+              isDisabled={disableInputs}
+              isSearchable={false}
+              styles={selectStyles}
+              menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+              onChange={(opt) => opt && onChange({ printer_mode: opt.value })}
+            />
+          </div>
+
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
             {[
               { key: "show_shop_name", label: "Store Name" },
@@ -391,7 +437,7 @@ function DosageStickerDesigner({ config, storeName, disableInputs, onChange }) {
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                Per-Field Font Sizes (pt)
+                Per-Field Font Size (pt) &amp; Boldness
               </label>
               <button
                 type="button"
@@ -403,41 +449,68 @@ function DosageStickerDesigner({ config, storeName, disableInputs, onChange }) {
                     font_size_product: 8.0,
                     font_size_dosage: 7.5,
                     font_size_footer: 5.5,
+                    font_weight_header: 800,
+                    font_weight_patient: 600,
+                    font_weight_product: 900,
+                    font_weight_dosage: 800,
+                    font_weight_footer: 700,
                   })
                 }
                 className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
               >
-                Reset Default Sizes
+                Reset Default Fonts
               </button>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+            <div className="space-y-2">
               {[
-                { key: "font_size_header", label: "Header (pt)", def: 6.5 },
-                { key: "font_size_patient", label: "Patient / Qty", def: 6.0 },
-                { key: "font_size_product", label: "Medicine Name", def: 8.0 },
-                { key: "font_size_dosage", label: "Dosage Text", def: 7.5 },
-                { key: "font_size_footer", label: "Footer / Batch", def: 5.5 },
-              ].map((fs) => (
-                <div key={fs.key}>
-                  <label className="block text-[10.5px] font-medium text-slate-500 dark:text-slate-400 mb-1">
-                    {fs.label}
-                  </label>
-                  <GlassInput
-                    type="number"
-                    step="0.5"
-                    min={4}
-                    max={28}
-                    disabled={disableInputs}
-                    value={config[fs.key] ?? fs.def}
-                    onChange={(e) =>
-                      onChange({
-                        [fs.key]: e.target.value === "" ? "" : Number(e.target.value),
-                      })
-                    }
-                    className="w-full text-xs font-mono"
-                  />
-                </div>
-              ))}
+                { key: "font_size_header", wKey: "font_weight_header", label: "Header (Store / Inv#)", def: 6.5, defW: 800 },
+                { key: "font_size_patient", wKey: "font_weight_patient", label: "Patient / Qty / Doctor", def: 6.0, defW: 600 },
+                { key: "font_size_product", wKey: "font_weight_product", label: "Medicine Name", def: 8.0, defW: 900 },
+                { key: "font_size_dosage", wKey: "font_weight_dosage", label: "Dosage Text", def: 7.5, defW: 800 },
+                { key: "font_size_footer", wKey: "font_weight_footer", label: "Footer / Batch / Exp", def: 5.5, defW: 700 },
+              ].map((fs) => {
+                const curW = Number(config[fs.wKey] ?? fs.defW);
+                const selectedWeight =
+                  STICKER_WEIGHT_OPTIONS.find((w) => w.value === curW) || STICKER_WEIGHT_OPTIONS[3];
+                return (
+                  <div
+                    key={fs.key}
+                    className="grid grid-cols-12 gap-2 items-center p-2 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-800/30"
+                  >
+                    <div className="col-span-5 text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
+                      {fs.label}
+                    </div>
+                    <div className="col-span-3">
+                      <GlassInput
+                        type="number"
+                        step="0.5"
+                        min={4}
+                        max={28}
+                        disabled={disableInputs}
+                        value={config[fs.key] ?? fs.def}
+                        onChange={(e) =>
+                          onChange({
+                            [fs.key]: e.target.value === "" ? "" : Number(e.target.value),
+                          })
+                        }
+                        className="w-full text-xs font-mono"
+                        title="Font size in pt"
+                      />
+                    </div>
+                    <div className="col-span-4">
+                      <Select
+                        options={STICKER_WEIGHT_OPTIONS}
+                        value={selectedWeight}
+                        isDisabled={disableInputs}
+                        isSearchable={false}
+                        styles={selectStyles}
+                        menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                        onChange={(opt) => opt && onChange({ [fs.wKey]: opt.value })}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -474,8 +547,8 @@ function DosageStickerDesigner({ config, storeName, disableInputs, onChange }) {
             <div>
               {(config.show_shop_name || config.show_invoice_meta) && (
                 <div
-                  style={{ fontSize: `${pxHeader}px` }}
-                  className={`flex items-center justify-between gap-2 font-extrabold uppercase leading-tight ${
+                  style={{ fontSize: `${pxHeader}px`, fontWeight: fwHeader }}
+                  className={`flex items-center justify-between gap-2 uppercase leading-tight ${
                     config.template === "bold"
                       ? "bg-slate-950 text-white px-1.5 py-0.5 -mx-1.5 -mt-1 mb-1"
                       : config.template === "minimal"
@@ -492,8 +565,8 @@ function DosageStickerDesigner({ config, storeName, disableInputs, onChange }) {
 
               {(config.show_patient || config.show_quantity || config.show_doctor) && (
                 <div
-                  style={{ fontSize: `${pxPatient}px` }}
-                  className="flex items-center justify-between gap-2 font-semibold mt-0.5 leading-tight"
+                  style={{ fontSize: `${pxPatient}px`, fontWeight: fwPatient }}
+                  className="flex items-center justify-between gap-2 mt-0.5 leading-tight"
                 >
                   <span className="truncate">
                     {config.show_patient ? "Pt: Ahmed Khan" : ""}
@@ -504,8 +577,8 @@ function DosageStickerDesigner({ config, storeName, disableInputs, onChange }) {
               )}
 
               <div
-                style={{ fontSize: `${pxProduct}px` }}
-                className="font-black truncate mt-0.5 leading-tight"
+                style={{ fontSize: `${pxProduct}px`, fontWeight: fwProduct }}
+                className="truncate mt-0.5 leading-tight"
               >
                 Tab. Panadol Extra 500mg
               </div>
@@ -513,8 +586,8 @@ function DosageStickerDesigner({ config, storeName, disableInputs, onChange }) {
 
             <div
               dir="auto"
-              style={{ fontSize: `${pxDosage}px` }}
-              className={`text-center font-extrabold rounded px-1.5 py-1 leading-snug ${
+              style={{ fontSize: `${pxDosage}px`, fontWeight: fwDosage }}
+              className={`text-center rounded px-1.5 py-1 leading-snug ${
                 config.template === "minimal"
                   ? "border border-slate-300 bg-white"
                   : "border border-slate-900 bg-slate-50"
@@ -524,8 +597,8 @@ function DosageStickerDesigner({ config, storeName, disableInputs, onChange }) {
             </div>
 
             <div
-              style={{ fontSize: `${pxFooter}px` }}
-              className="flex items-center justify-between gap-2 font-bold leading-none"
+              style={{ fontSize: `${pxFooter}px`, fontWeight: fwFooter }}
+              className="flex items-center justify-between gap-2 leading-none"
             >
               <span className="truncate">
                 {config.show_batch ? "B#: B2409" : ""}

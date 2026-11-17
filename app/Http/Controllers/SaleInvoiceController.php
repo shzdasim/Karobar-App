@@ -2004,6 +2004,9 @@ class SaleInvoiceController extends Controller
         if ($request->filled('height_mm')) {
             $stickerConfig['height_mm'] = max(15, min(120, (int) $request->input('height_mm')));
         }
+        if ($request->filled('printer_mode') && in_array($request->input('printer_mode'), ['receipt_roll', 'label_printer'], true)) {
+            $stickerConfig['printer_mode'] = $request->input('printer_mode');
+        }
 
         return view('printer.sale_invoice_dosage_labels', [
             'invoice'       => $invoice,

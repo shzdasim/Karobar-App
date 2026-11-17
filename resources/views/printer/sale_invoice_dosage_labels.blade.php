@@ -6,6 +6,7 @@
         $cfg = $stickerConfig ?? \App\Models\Setting::defaultDosageStickerConfig();
         $w = max(25, min(150, (int) ($cfg['width_mm'] ?? 50)));
         $h = max(15, min(120, (int) ($cfg['height_mm'] ?? 25)));
+        $printerMode = ($cfg['printer_mode'] ?? 'receipt_roll') === 'label_printer' ? 'label_printer' : 'receipt_roll';
         $template = $cfg['template'] ?? 'classic';
         $fontScale = $cfg['font_scale'] ?? 'normal';
         $scaleMult = $fontScale === 'compact' ? 0.9 : ($fontScale === 'large' ? 1.15 : 1.0);
@@ -15,6 +16,12 @@
         $ptProduct = round(max(4.0, min(28.0, (float) ($cfg['font_size_product'] ?? ($template === 'urdu_focus' ? 7.2 : 8.0)))) * $scaleMult, 2);
         $ptDosage  = round(max(4.0, min(28.0, (float) ($cfg['font_size_dosage'] ?? ($template === 'urdu_focus' ? 8.6 : 7.5)))) * $scaleMult, 2);
         $ptFooter  = round(max(4.0, min(28.0, (float) ($cfg['font_size_footer'] ?? 5.5))) * $scaleMult, 2);
+
+        $fwHeader  = (int) ($cfg['font_weight_header'] ?? 800);
+        $fwPatient = (int) ($cfg['font_weight_patient'] ?? 600);
+        $fwProduct = (int) ($cfg['font_weight_product'] ?? 900);
+        $fwDosage  = (int) ($cfg['font_weight_dosage'] ?? 800);
+        $fwFooter  = (int) ($cfg['font_weight_footer'] ?? 700);
 
         $showShop = (bool) ($cfg['show_shop_name'] ?? true);
         $showInvMeta = (bool) ($cfg['show_invoice_meta'] ?? true);
@@ -27,10 +34,18 @@
     @endphp
     <title>Dosage Stickers ({{ $w }}×{{ $h }}mm) — {{ $invoice->posted_number }}</title>
     <style>
+        @if($printerMode === 'label_printer')
         @page {
             size: {{ $w }}mm {{ $h }}mm;
             margin: 0;
         }
+        @else
+        /* Receipt Roll Mode (72mm / 80mm): Keep portrait orientation so Chrome does not rotate sideways */
+        @page {
+            size: portrait;
+            margin: 0;
+        }
+        @endif
         * {
             box-sizing: border-box;
             margin: 0;
@@ -50,8 +65,30 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            font-size: 13px;
+            gap: 10px;
+            flex-wrap: wrap;
+            font-size: 12.5px;
             margin-bottom: 12px;
+        }
+        .no-print-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .no-print-bar a.mode-btn {
+            background: #1e293b;
+            color: #cbd5e1;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 5px 10px;
+            font-size: 11.5px;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .no-print-bar a.mode-btn.active {
+            background: #0284c7;
+            color: #fff;
+            border-color: #38bdf8;
         }
         .no-print-bar button {
             background: #2563eb;
@@ -78,8 +115,13 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            page-break-after: always;
-            break-after: page;
+            @if($printerMode === 'label_printer')
+                page-break-after: always;
+                break-after: page;
+            @else
+                page-break-inside: avoid;
+                break-inside: avoid;
+            @endif
             overflow: hidden;
         }
         .sticker-head {
@@ -90,7 +132,7 @@
             border-bottom: {{ $template === 'minimal' ? 'none' : '0.3mm solid #000' }};
             padding-bottom: 0.5mm;
             font-size: {{ $ptHeader }}pt;
-            font-weight: 800;
+            font-weight: {{ $fwHeader }};
             text-transform: uppercase;
             @if($template === 'bold')
                 background: #000;
@@ -106,12 +148,12 @@
             justify-content: space-between;
             gap: 1mm;
             font-size: {{ $ptPatient }}pt;
-            font-weight: 600;
+            font-weight: {{ $fwPatient }};
             margin-top: 0.4mm;
         }
         .sticker-product {
             font-size: {{ $ptProduct }}pt;
-            font-weight: 900;
+            font-weight: {{ $fwProduct }};
             line-height: 1.15;
             white-space: nowrap;
             overflow: hidden;
@@ -124,7 +166,7 @@
             padding: {{ $template === 'urdu_focus' ? '1.1mm 1.4mm' : '0.7mm 1.2mm' }};
             text-align: center;
             font-size: {{ $ptDosage }}pt;
-            font-weight: 800;
+            font-weight: {{ $fwDosage }};
             line-height: 1.25;
             background: {{ $template === 'minimal' ? '#fff' : '#f8fafc' }};
         }
@@ -134,7 +176,7 @@
             justify-content: space-between;
             gap: 1mm;
             font-size: {{ $ptFooter }}pt;
-            font-weight: 700;
+            font-weight: {{ $fwFooter }};
             margin-top: 0.4mm;
             white-space: nowrap;
             overflow: hidden;
@@ -146,6 +188,23 @@
             .no-print-bar {
                 display: none !important;
             }
+            @if($printerMode === 'receipt_roll')
+            .labels-wrapper {
+                display: block;
+                width: {{ $w }}mm;
+                margin: 0 auto;
+                padding: 0;
+            }
+            .sticker {
+                border: none;
+                border-bottom: 0.35mm dashed #94a3b8;
+                margin: 0 0 2mm 0;
+            }
+            .sticker:last-child {
+                border-bottom: none;
+                margin-bottom: 0;
+            }
+            @else
             .labels-wrapper {
                 display: block;
                 padding: 0;
@@ -154,16 +213,27 @@
                 border: none;
                 margin: 0;
             }
+            @endif
         }
     </style>
 </head>
 <body>
     <div class="no-print-bar">
         <div>
-            <strong>Patient Dosage Thermal Stickers ({{ $w }}mm × {{ $h }}mm)</strong>
+            <strong>Patient Dosage Stickers ({{ $w }}mm × {{ $h }}mm)</strong>
             <span style="margin-left:8px;opacity:0.8;">Invoice: {{ $invoice->posted_number }}</span>
         </div>
-        <button type="button" onclick="window.print()">Print Stickers</button>
+        <div class="no-print-actions">
+            <a href="{{ request()->fullUrlWithQuery(['printer_mode' => 'receipt_roll', 'auto_print' => 0]) }}"
+               class="mode-btn {{ $printerMode === 'receipt_roll' ? 'active' : '' }}">
+                Receipt Roll (Upright)
+            </a>
+            <a href="{{ request()->fullUrlWithQuery(['printer_mode' => 'label_printer', 'auto_print' => 0]) }}"
+               class="mode-btn {{ $printerMode === 'label_printer' ? 'active' : '' }}">
+                Die-Cut Label Roll
+            </a>
+            <button type="button" onclick="window.print()">Print Stickers</button>
+        </div>
     </div>
 
     <div class="labels-wrapper">

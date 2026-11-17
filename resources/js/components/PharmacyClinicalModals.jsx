@@ -44,6 +44,8 @@ const STICKER_SIZE_OPTIONS = [
   { value: "50x30", label: "50 × 30 mm", width_mm: 50, height_mm: 30 },
   { value: "60x40", label: "60 × 40 mm", width_mm: 60, height_mm: 40 },
   { value: "70x35", label: "70 × 35 mm", width_mm: 70, height_mm: 35 },
+  { value: "72x35", label: "72 × 35 mm (72mm Roll)", width_mm: 72, height_mm: 35 },
+  { value: "72x40", label: "72 × 40 mm (72mm Roll)", width_mm: 72, height_mm: 40 },
   { value: "80x50", label: "80 × 50 mm", width_mm: 80, height_mm: 50 },
 ];
 
@@ -207,8 +209,9 @@ export function DosageStickersModal({ isOpen, onClose, invoice, onUpdated }) {
       }
       toast.success("Dosage instructions saved");
       if (shouldPrint) {
+        const mode = dosageStickerConfig?.printer_mode || "receipt_roll";
         window.open(
-          `/sale-invoices/${invoice.id}/dosage-labels?auto_print=1&width_mm=${activeW}&height_mm=${activeH}`,
+          `/sale-invoices/${invoice.id}/dosage-labels?auto_print=1&width_mm=${activeW}&height_mm=${activeH}&printer_mode=${mode}`,
           "_blank",
           "width=540,height=680"
         );

@@ -162,8 +162,13 @@ class PharmacyClinicalAddonsTest extends TestCase
             ->assertJsonPath('dosage_sticker_config.template', 'bold');
 
         $customStickerHtml = $this->get("/sale-invoices/{$invoiceId}/dosage-labels")->assertOk()->getContent();
-        $this->assertStringContainsString('size: 60mm 40mm;', $customStickerHtml);
+        $this->assertStringContainsString('size: portrait;', $customStickerHtml);
+        $this->assertStringContainsString('width: 60mm;', $customStickerHtml);
+        $this->assertStringContainsString('height: 40mm;', $customStickerHtml);
         $this->assertStringContainsString('Store below 25C', $customStickerHtml);
+
+        $labelPrinterHtml = $this->get("/sale-invoices/{$invoiceId}/dosage-labels?printer_mode=label_printer")->assertOk()->getContent();
+        $this->assertStringContainsString('size: 60mm 40mm;', $labelPrinterHtml);
     }
 
     public function test_optional_prescription_attachment_upload_and_delete(): void

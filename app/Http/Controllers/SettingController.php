@@ -528,26 +528,39 @@ class SettingController extends Controller
                     : $defaults['font_scale'];
 
                 $clampPt = fn ($val, $fallback) => round(max(4.0, min(28.0, (float) ($val ?? $fallback))), 1);
+                $allowedWeights = [400, 500, 600, 700, 800, 900];
+                $clampWeight = fn ($val, $fallback) => in_array((int) ($val ?? $fallback), $allowedWeights, true)
+                    ? (int) ($val ?? $fallback)
+                    : $fallback;
+                $printerMode = in_array($rawConfig['printer_mode'] ?? '', ['receipt_roll', 'label_printer'], true)
+                    ? $rawConfig['printer_mode']
+                    : $defaults['printer_mode'];
 
                 $setting->dosage_sticker_config = [
-                    'preset_key'        => mb_substr((string) ($rawConfig['preset_key'] ?? "{$w}x{$h}"), 0, 32),
-                    'width_mm'          => $w,
-                    'height_mm'         => $h,
-                    'template'          => $tpl,
-                    'font_scale'        => $scale,
-                    'font_size_header'  => $clampPt($rawConfig['font_size_header'] ?? null, $defaults['font_size_header']),
-                    'font_size_patient' => $clampPt($rawConfig['font_size_patient'] ?? null, $defaults['font_size_patient']),
-                    'font_size_product' => $clampPt($rawConfig['font_size_product'] ?? null, $defaults['font_size_product']),
-                    'font_size_dosage'  => $clampPt($rawConfig['font_size_dosage'] ?? null, $defaults['font_size_dosage']),
-                    'font_size_footer'  => $clampPt($rawConfig['font_size_footer'] ?? null, $defaults['font_size_footer']),
-                    'show_shop_name'    => (bool) ($rawConfig['show_shop_name'] ?? $defaults['show_shop_name']),
-                    'show_invoice_meta' => (bool) ($rawConfig['show_invoice_meta'] ?? $defaults['show_invoice_meta']),
-                    'show_patient'      => (bool) ($rawConfig['show_patient'] ?? $defaults['show_patient']),
-                    'show_quantity'     => (bool) ($rawConfig['show_quantity'] ?? $defaults['show_quantity']),
-                    'show_batch'        => (bool) ($rawConfig['show_batch'] ?? $defaults['show_batch']),
-                    'show_expiry'       => (bool) ($rawConfig['show_expiry'] ?? $defaults['show_expiry']),
-                    'show_doctor'       => (bool) ($rawConfig['show_doctor'] ?? $defaults['show_doctor']),
-                    'footer_note'       => mb_substr(trim((string) ($rawConfig['footer_note'] ?? $defaults['footer_note'])), 0, 120),
+                    'preset_key'          => mb_substr((string) ($rawConfig['preset_key'] ?? "{$w}x{$h}"), 0, 32),
+                    'width_mm'            => $w,
+                    'height_mm'           => $h,
+                    'printer_mode'        => $printerMode,
+                    'template'            => $tpl,
+                    'font_scale'          => $scale,
+                    'font_size_header'    => $clampPt($rawConfig['font_size_header'] ?? null, $defaults['font_size_header']),
+                    'font_size_patient'   => $clampPt($rawConfig['font_size_patient'] ?? null, $defaults['font_size_patient']),
+                    'font_size_product'   => $clampPt($rawConfig['font_size_product'] ?? null, $defaults['font_size_product']),
+                    'font_size_dosage'    => $clampPt($rawConfig['font_size_dosage'] ?? null, $defaults['font_size_dosage']),
+                    'font_size_footer'    => $clampPt($rawConfig['font_size_footer'] ?? null, $defaults['font_size_footer']),
+                    'font_weight_header'  => $clampWeight($rawConfig['font_weight_header'] ?? null, $defaults['font_weight_header']),
+                    'font_weight_patient' => $clampWeight($rawConfig['font_weight_patient'] ?? null, $defaults['font_weight_patient']),
+                    'font_weight_product' => $clampWeight($rawConfig['font_weight_product'] ?? null, $defaults['font_weight_product']),
+                    'font_weight_dosage'  => $clampWeight($rawConfig['font_weight_dosage'] ?? null, $defaults['font_weight_dosage']),
+                    'font_weight_footer'  => $clampWeight($rawConfig['font_weight_footer'] ?? null, $defaults['font_weight_footer']),
+                    'show_shop_name'      => (bool) ($rawConfig['show_shop_name'] ?? $defaults['show_shop_name']),
+                    'show_invoice_meta'   => (bool) ($rawConfig['show_invoice_meta'] ?? $defaults['show_invoice_meta']),
+                    'show_patient'        => (bool) ($rawConfig['show_patient'] ?? $defaults['show_patient']),
+                    'show_quantity'       => (bool) ($rawConfig['show_quantity'] ?? $defaults['show_quantity']),
+                    'show_batch'          => (bool) ($rawConfig['show_batch'] ?? $defaults['show_batch']),
+                    'show_expiry'         => (bool) ($rawConfig['show_expiry'] ?? $defaults['show_expiry']),
+                    'show_doctor'         => (bool) ($rawConfig['show_doctor'] ?? $defaults['show_doctor']),
+                    'footer_note'         => mb_substr(trim((string) ($rawConfig['footer_note'] ?? $defaults['footer_note'])), 0, 120),
                 ];
             }
         }
