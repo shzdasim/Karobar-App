@@ -40,9 +40,9 @@
             margin: 0;
         }
         @else
-        /* Receipt Roll Mode (72mm / 80mm): Keep portrait orientation so Chrome does not rotate sideways */
+        /* Receipt Roll Mode (72mm / 80mm): Use bare @page { margin: 0; } just like sale_invoice_thermal.blade.php
+           so Chrome uses the printer's native 72mm/80mm roll width at 1:1 scale without shrinking or rotating sideways. */
         @page {
-            size: portrait;
             margin: 0;
         }
         @endif
@@ -51,10 +51,14 @@
             margin: 0;
             padding: 0;
         }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Nastaliq Urdu", Arial, sans-serif;
+        html, body {
+            margin: 0;
+            padding: 0;
             background: #f1f5f9;
             color: #000;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Nastaliq Urdu", Arial, sans-serif;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }
@@ -108,20 +112,23 @@
         }
         .sticker {
             width: {{ $w }}mm;
-            height: {{ $h }}mm;
-            background: #fff;
-            border: 1px dashed #94a3b8;
-            padding: {{ $h >= 35 ? '2.2mm 2.8mm' : '1.4mm 2mm' }};
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
+            max-width: 100%;
             @if($printerMode === 'label_printer')
+                height: {{ $h }}mm;
                 page-break-after: always;
                 break-after: page;
             @else
+                min-height: {{ $h }}mm;
+                height: auto;
                 page-break-inside: avoid;
                 break-inside: avoid;
             @endif
+            background: #fff;
+            border: 1px dashed #94a3b8;
+            padding: {{ $h >= 35 ? '2.2mm 2.8mm' : '1.6mm 2mm' }};
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
             overflow: hidden;
         }
         .sticker-head {
@@ -182,8 +189,10 @@
             overflow: hidden;
         }
         @media print {
-            body {
+            html, body {
                 background: #fff;
+                margin: 0;
+                padding: 0;
             }
             .no-print-bar {
                 display: none !important;
@@ -191,14 +200,18 @@
             @if($printerMode === 'receipt_roll')
             .labels-wrapper {
                 display: block;
-                width: {{ $w }}mm;
-                margin: 0 auto;
+                width: 100%;
+                max-width: {{ $w }}mm;
+                margin: 0;
                 padding: 0;
             }
             .sticker {
+                width: 100%;
+                max-width: {{ $w }}mm;
                 border: none;
-                border-bottom: 0.35mm dashed #94a3b8;
-                margin: 0 0 2mm 0;
+                border-bottom: 0.35mm dashed #64748b;
+                margin: 0 0 2.5mm 0;
+                padding: 1.5mm 1.5mm 2.5mm 1.5mm;
             }
             .sticker:last-child {
                 border-bottom: none;

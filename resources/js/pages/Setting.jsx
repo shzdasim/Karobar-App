@@ -28,11 +28,13 @@ import {
   CircleStackIcon,
   ServerStackIcon,
   ShieldCheckIcon,
+  BeakerIcon,
 } from "@heroicons/react/24/solid";
 
 // Setting Components
 import GeneralSetting from "@/components/settings/GeneralSetting.jsx";
 import SaleSystemSetting from "@/components/settings/SaleSystemSetting.jsx";
+import PharmacyClinicalSetting, { DEFAULT_STICKER_CONFIG } from "@/components/settings/PharmacyClinicalSetting.jsx";
 import ThemeSetting from "@/components/settings/ThemeSetting.jsx";
 import PrinterSetting from "@/components/settings/PrinterSetting.jsx";
 import DocumentSharingSetting, {
@@ -73,6 +75,12 @@ const SETTING_GROUPS = [
         label: "Sales & Currency",
         subtitle: "Sale mode, industry & currency",
         icon: ShoppingCartIcon,
+      },
+      {
+        id: "pharmacy_clinical",
+        label: "Pharmacy & Stickers",
+        subtitle: "Dosage sticker designer & prescription scan",
+        icon: BeakerIcon,
       },
       {
         id: "fbr",
@@ -1094,6 +1102,14 @@ export default function Setting() {
               handleShopTypeChange={handleShopTypeChange}
               disableInputs={disableInputs}
               themeColors={themeColors}
+            />
+          )}
+
+          {activeTab === "pharmacy_clinical" && (
+            <PharmacyClinicalSetting
+              form={form}
+              setForm={setForm}
+              disableInputs={disableInputs}
             />
           )}
 
