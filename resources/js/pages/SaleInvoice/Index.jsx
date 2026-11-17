@@ -734,6 +734,7 @@ export default function SaleInvoicesIndex({ defaultSaleType = "" }) {
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Posted No</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Customer</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Date</th>
+                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Operator</th>
                 <th className="px-3 py-2 font-semibold text-right text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Total</th>
                 <th className="px-3 py-2 font-semibold text-center text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-40">Actions</th>
               </tr>
@@ -742,7 +743,7 @@ export default function SaleInvoicesIndex({ defaultSaleType = "" }) {
             <tbody>
               {invoices.length === 0 && !loading && (
                 <tr>
-                  <td className="px-3 py-12 text-center" colSpan={7}>
+                  <td className="px-3 py-12 text-center" colSpan={8}>
                     <div className="flex flex-col items-center gap-2">
                       <DocumentTextIcon className="w-8 h-8 text-gray-400" />
                       <p className="text-sm text-gray-500 dark:text-gray-400">No sale invoices found</p>
@@ -753,7 +754,7 @@ export default function SaleInvoicesIndex({ defaultSaleType = "" }) {
 
               {loading && (
                 <tr>
-                  <td className="px-3 py-12 text-center" colSpan={7}>
+                  <td className="px-3 py-12 text-center" colSpan={8}>
                     <div className="flex flex-col items-center gap-2">
                       <ArrowPathIcon className="w-6 h-6 text-gray-400 animate-spin" />
                       <p className="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
@@ -824,6 +825,9 @@ export default function SaleInvoicesIndex({ defaultSaleType = "" }) {
                         <CalendarIcon className="w-4 h-4 text-gray-400" />
                         <span className="text-gray-800 dark:text-gray-200">{formatDate(invoice.date)}</span>
                       </div>
+                    </td>
+                    <td className="px-3 py-3 text-xs text-gray-700 dark:text-gray-300">
+                      {invoice.salesman?.name || invoice.user?.name || "—"}
                     </td>
                     <td className="px-3 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">

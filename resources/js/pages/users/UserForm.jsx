@@ -27,6 +27,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
     name: "",
     email: "",
     password: "",
+    pin_code: "",
     status: "active",
     roles: [],
     permissions: [],
@@ -72,6 +73,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
         name: norm(initial.name),
         email: norm(initial.email),
         password: "",
+        pin_code: norm(initial.pin_code),
         status: norm(initial.status || "active"),
         roles: asArray(initial.roles)
           .map((r) => (typeof r === "string" ? r : r?.name))
@@ -91,6 +93,7 @@ export default function UserForm({ onSubmit, initial, submitting }) {
       ...form,
       name: norm(form.name),
       email: norm(form.email),
+      pin_code: norm(form.pin_code) || null,
       status: norm(form.status || "active"),
       roles: Array.from(new Set(form.roles)),
       permissions: Array.from(new Set(form.permissions)),
@@ -346,6 +349,37 @@ export default function UserForm({ onSubmit, initial, submitting }) {
               {initial && (
                 <span className="people-hint">Leave blank to keep the current password.</span>
               )}
+            </div>
+
+            <div className="people-field">
+              <label className="people-label" htmlFor="user-pin-code">
+                4-Digit Operator Code (PIN)
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="user-pin-code"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={form.pin_code}
+                  onChange={(e) => set("pin_code", e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  placeholder="e.g. 4821"
+                  className="font-mono tracking-widest"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const { data } = await axios.get("/api/operator-pins/generate");
+                      if (data?.pin_code) set("pin_code", data.pin_code);
+                    } catch {}
+                  }}
+                  className="px-2.5 py-2 text-xs font-semibold rounded-lg border border-gray-300 dark:border-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700 shrink-0 cursor-pointer"
+                >
+                  Auto
+                </button>
+              </div>
+              <span className="people-hint">Optional unique 4-digit code for counter invoice attribution.</span>
             </div>
           </div>
 

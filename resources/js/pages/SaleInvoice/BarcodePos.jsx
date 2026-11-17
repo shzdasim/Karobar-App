@@ -48,11 +48,14 @@ const FeatureGuideBot = lazy(() => import("@/components/FeatureGuideBot.jsx"));
 const CreditOverrideModal = lazy(() => import("@/components/CreditOverrideModal.jsx"));
 const DiscountOverrideModal = lazy(() => import("@/components/DiscountOverrideModal.jsx"));
 const ExpiredStockOverrideModal = lazy(() => import("@/components/ExpiredStockOverrideModal.jsx"));
+import OperatorPinModal from "@/components/OperatorPinModal.jsx";
+import { useOperatorPinPrompt } from "@/hooks/useOperatorPinPrompt.js";
 
 export default function BarcodePos() {
   const navigate = useNavigate();
   const { theme, isDark } = useTheme();
   const { isPharmacy } = useSaleSystem();
+  const operatorPin = useOperatorPinPrompt("sale_invoice");
   const { formatCurrency, currencySymbol } = useCurrency();
   const { loading: permsLoading, has } = usePermissions();
   const canCreatePosSale = !permsLoading && has("barcode-pos.create");
@@ -1037,6 +1040,16 @@ export default function BarcodePos() {
       }
     }
 
+    if (!overrideParams?.operator_pin && operatorPin.isPinEnabledForModule) {
+      operatorPin.openForAction((pin) =>
+        handleCompleteSale({
+          autoPrint,
+          overrideParams: { ...overrideParams, operator_pin: pin },
+        })
+      );
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       const payload = {
@@ -1090,7 +1103,11 @@ export default function BarcodePos() {
       const saleId = data?.id;
 
       posSound.playSuccess();
-      toast.success("Sale completed successfully!");
+      toast.success(
+        data?.operator_name
+          ? `Sale completed by ${data.operator_name}!`
+          : "Sale completed successfully!"
+      );
 
       if (autoPrint && saleId) {
         handlePrintPosReceipt(saleId);
@@ -1129,6 +1146,18 @@ export default function BarcodePos() {
       }
     } catch (err) {
       posSound.playError();
+      if (err?.response?.status === 422 && err?.response?.data?.requires_operator_pin) {
+        if (overrideParams?.operator_pin) {
+          throw err;
+        }
+        operatorPin.openForAction((pin) =>
+          handleCompleteSale({
+            autoPrint,
+            overrideParams: { ...overrideParams, operator_pin: pin },
+          })
+        );
+        return;
+      }
       if (err?.response?.status === 422 && err?.response?.data?.requires_override) {
         setCreditOverridePrompt({
           isOpen: true,
@@ -2851,6 +2880,12 @@ export default function BarcodePos() {
           onClose={() => setGuideBotOpen(false)}
         />
       </Suspense>
+
+      <OperatorPinModal
+        {...operatorPin.modalProps}
+        title="Enter 4-Digit Operator Code"
+        subtitle="Enter your 4-digit code to complete and attribute this POS sale."
+      />
     </div>
   );
 }

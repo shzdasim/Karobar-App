@@ -18,6 +18,7 @@ class User extends Authenticatable implements CanResetPassword
         'name',
         'email',
         'password',
+        'pin_code',
         'status',
         'remember_token_expires_at',
         'preferences',
@@ -25,6 +26,7 @@ class User extends Authenticatable implements CanResetPassword
 
     protected $hidden = [
         'password',
+        'pin_code',
         'remember_token',
     ];
 
@@ -32,6 +34,11 @@ class User extends Authenticatable implements CanResetPassword
         'preferences' => 'array',
         'remember_token_expires_at' => 'datetime',
     ];
+
+    public function employee()
+    {
+        return $this->hasOne(Employee::class, 'user_id');
+    }
 
     /**
      * Get a specific preference value

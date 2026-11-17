@@ -33,8 +33,13 @@ class Employee extends Model
         'bank_name',
         'bank_account_number',
         'advance_balance',
+        'pin_code',
         'status',
         'notes',
+    ];
+
+    protected $hidden = [
+        'pin_code',
     ];
 
     protected $casts = [

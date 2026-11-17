@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 class PurchaseInvoice extends Model
 {
     protected $fillable = [
+        'user_id',
+        'employee_id',
         'supplier_id',
         'purchase_order_id',
         'receipt_key',
@@ -31,6 +33,8 @@ class PurchaseInvoice extends Model
         'reversal_reason',
     ];
 
+    public function user() { return $this->belongsTo(User::class); }
+    public function employee() { return $this->belongsTo(Employee::class); }
     public function reversedBy() { return $this->belongsTo(User::class, 'reversed_by_id'); }
     public function purchaseOrder() { return $this->belongsTo(PurchaseOrder::class); }
 

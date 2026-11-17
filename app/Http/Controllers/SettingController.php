@@ -45,7 +45,19 @@ class SettingController extends Controller
             'cube_gemini_daily_limit' => 250,
         ]);
 
-        return response()->json($this->appendCubeMetadata($setting));
+        return response()->json($this->appendCubeMetadata($this->appendOperatorPinDefaults($setting)));
+    }
+
+    protected function appendOperatorPinDefaults(Setting $setting): Setting
+    {
+        if (!is_array($setting->operator_pin_modules)) {
+            $setting->operator_pin_modules = Setting::defaultOperatorPinModules();
+        }
+        $setting->require_operator_pin = (bool) ($setting->require_operator_pin ?? false);
+        $setting->operator_pin_auto_submit = $setting->operator_pin_auto_submit === null
+            ? true
+            : (bool) $setting->operator_pin_auto_submit;
+        return $setting;
     }
 
     // GET /api/sale-system
@@ -80,6 +92,13 @@ class SettingController extends Controller
             'enable_prescription_attachments'  => (bool) ($setting?->enable_prescription_attachments ?? true),
             'enable_drug_interaction_warnings' => (bool) ($setting?->enable_drug_interaction_warnings ?? true),
             'enable_cold_chain_log'            => (bool) ($setting?->enable_cold_chain_log ?? true),
+            'require_operator_pin'             => (bool) ($setting?->require_operator_pin ?? false),
+            'operator_pin_auto_submit'         => $setting && Schema::hasColumn('settings', 'operator_pin_auto_submit')
+                ? ($setting->operator_pin_auto_submit === null ? true : (bool) $setting->operator_pin_auto_submit)
+                : true,
+            'operator_pin_modules'             => $setting && Schema::hasColumn('settings', 'operator_pin_modules')
+                ? $setting->resolvedOperatorPinModules()
+                : Setting::defaultOperatorPinModules(),
         ]);
     }
 
@@ -184,6 +203,8 @@ class SettingController extends Controller
             'enable_prescription_attachments'  => ['nullable', 'boolean'],
             'enable_drug_interaction_warnings' => ['nullable', 'boolean'],
             'enable_cold_chain_log'            => ['nullable', 'boolean'],
+            'require_operator_pin'             => ['nullable', 'boolean'],
+            'operator_pin_auto_submit'         => ['nullable', 'boolean'],
             'logo'                    => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],
         ]);
 
@@ -287,7 +308,27 @@ class SettingController extends Controller
         ];
 
         // Fill non-SMTP / non-WhatsApp / non-Cube / non-FBR fields first
-        $setting->fill(collect($validated)->except(array_merge(['logo', 'remove_logo', 'share_paper_size', 'share_show_logo'], $printCalibrationFields, $smtpFields, $whatsappFields, $cubeFields, $fbrFields))->toArray());
+        $setting->fill(collect($validated)->except(array_merge(['logo', 'remove_logo', 'share_paper_size', 'share_show_logo', 'require_operator_pin', 'operator_pin_auto_submit'], $printCalibrationFields, $smtpFields, $whatsappFields, $cubeFields, $fbrFields))->toArray());
+
+        if (Schema::hasColumn('settings', 'require_operator_pin')) {
+            if ($request->has('require_operator_pin')) {
+                $setting->require_operator_pin = $request->boolean('require_operator_pin');
+            }
+            if ($request->has('operator_pin_auto_submit')) {
+                $setting->operator_pin_auto_submit = $request->boolean('operator_pin_auto_submit');
+            }
+            if ($request->has('operator_pin_modules')) {
+                $rawMods = $request->input('operator_pin_modules');
+                if (is_string($rawMods)) {
+                    $decoded = json_decode($rawMods, true);
+                    $rawMods = is_array($decoded) ? $decoded : [];
+                }
+                if (is_array($rawMods)) {
+                    $allowed = Setting::defaultOperatorPinModules();
+                    $setting->operator_pin_modules = array_values(array_intersect($allowed, $rawMods));
+                }
+            }
+        }
 
         if (Schema::hasColumn('settings', 'print_paper_width_mm')) {
             if ($request->has('print_paper_width_mm')) {

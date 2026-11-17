@@ -10,6 +10,8 @@ import BatchSearchInput from "../../components/BatchSearchInput.jsx";
 import CustomerSearch from "../../components/CustomerSearch.jsx";
 import SaleInvoiceSearch from "../../components/SaleInvoiceSearch.jsx";
 import PreShiftDrawerPromptModal from "@/components/PreShiftDrawerPromptModal.jsx";
+import OperatorPinModal from "@/components/OperatorPinModal.jsx";
+import { useOperatorPinPrompt } from "@/hooks/useOperatorPinPrompt.js";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
 import ModernDatePicker from "@/components/ModernDatePicker.jsx";
@@ -143,6 +145,7 @@ function recalcFooter(form, source = {}) {
 }
 
 export default function SaleReturnForm({ returnId, initialData, onSuccess }) {
+  const operatorPin = useOperatorPinPrompt("sale_return");
   const defaultItem = {
     id: Date.now() + Math.random(),
     product_id: "",
@@ -1194,6 +1197,13 @@ const handleSelectChange = async (field, value) => {
           };
 
       const doSave = async (dataPayload) => {
+        if (!dataPayload?.operator_pin && operatorPin.isPinEnabledForModule) {
+          operatorPin.openForAction((pin) =>
+            doSave({ ...dataPayload, operator_pin: pin })
+          );
+          return;
+        }
+
         try {
           if (returnId) {
             await axios.put(`/api/sale-returns/${returnId}`, dataPayload);
@@ -1218,6 +1228,15 @@ const handleSelectChange = async (field, value) => {
             }
           }
         } catch (e) {
+          if (e?.response?.status === 422 && e?.response?.data?.requires_operator_pin) {
+            if (dataPayload?.operator_pin) {
+              throw e;
+            }
+            operatorPin.openForAction((pin) =>
+              doSave({ ...dataPayload, operator_pin: pin })
+            );
+            return;
+          }
           console.error(e);
           invoiceErrors.showError(e);
         }
@@ -1910,6 +1929,12 @@ const handleSelectChange = async (field, value) => {
           cashDelta={drawerPrompt?.cashDelta}
         />
       </form>
+
+      <OperatorPinModal
+        {...operatorPin.modalProps}
+        title="Enter 4-Digit Operator Code"
+        subtitle="Enter your 4-digit code to save and attribute this sale return."
+      />
     </div>
   );
 }

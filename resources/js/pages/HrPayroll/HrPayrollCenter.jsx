@@ -137,6 +137,7 @@ export default function HrPayrollCenter() {
     payment_method: "cash",
     bank_name: "",
     bank_account_number: "",
+    pin_code: "",
     status: "active",
     notes: "",
   });
@@ -372,6 +373,7 @@ export default function HrPayrollCenter() {
       payment_method: "cash",
       bank_name: "",
       bank_account_number: "",
+      pin_code: "",
       status: "active",
       notes: "",
     });
@@ -407,6 +409,7 @@ export default function HrPayrollCenter() {
       payment_method: emp.payment_method || "cash",
       bank_name: emp.bank_name || "",
       bank_account_number: emp.bank_account_number || "",
+      pin_code: emp.pin_code || "",
       status: emp.status || "active",
       notes: emp.notes || "",
     });
@@ -432,6 +435,7 @@ export default function HrPayrollCenter() {
         commission_rate: Number(empForm.commission_rate || 0),
         monthly_sales_target: Number(empForm.monthly_sales_target || 0),
         target_bonus_amount: Number(empForm.target_bonus_amount || 0),
+        pin_code: empForm.pin_code ? String(empForm.pin_code).trim() : null,
       };
 
       if (editingEmployee) {
@@ -2211,7 +2215,40 @@ export default function HrPayrollCenter() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">4-Digit Operator Code (PIN)</label>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={4}
+                      value={empForm.pin_code || ""}
+                      onChange={(e) =>
+                        setEmpForm((p) => ({
+                          ...p,
+                          pin_code: e.target.value.replace(/\D/g, "").slice(0, 4),
+                        }))
+                      }
+                      placeholder="e.g. 4821"
+                      className="w-full h-9 px-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 font-mono tracking-widest"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const { data } = await axios.get("/api/operator-pins/generate");
+                          if (data?.pin_code) {
+                            setEmpForm((p) => ({ ...p, pin_code: data.pin_code }));
+                          }
+                        } catch {}
+                      }}
+                      className="h-9 px-2.5 rounded-xl border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 text-[11px] font-semibold shrink-0 cursor-pointer"
+                    >
+                      Auto
+                    </button>
+                  </div>
+                </div>
                 <div>
                   <label className="block font-semibold mb-1">Preferred Payout Method</label>
                   <select

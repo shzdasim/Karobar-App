@@ -29,6 +29,8 @@ const PreShiftDrawerPromptModal = lazy(() => import("@/components/PreShiftDrawer
 const CreditOverrideModal = lazy(() => import("@/components/CreditOverrideModal.jsx"));
 const DiscountOverrideModal = lazy(() => import("@/components/DiscountOverrideModal.jsx"));
 const ExpiredStockOverrideModal = lazy(() => import("@/components/ExpiredStockOverrideModal.jsx"));
+import OperatorPinModal from "@/components/OperatorPinModal.jsx";
+import { useOperatorPinPrompt } from "@/hooks/useOperatorPinPrompt.js";
 
 // Helper to determine text color based on background brightness
 const getContrastText = (hexColor) => {
@@ -121,6 +123,7 @@ const normalizeFormLoaded = (f) => {
 
 
 export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
+  const operatorPin = useOperatorPinPrompt("sale_invoice");
   // Helper to generate unique ID for rows
   const generateRowId = () => `row_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   const { loading: permsLoading, has } = usePermissions();
@@ -2376,6 +2379,13 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     };
 
     const executeSave = async (dataPayload, updateDrawer = null) => {
+      if (!dataPayload?.operator_pin && operatorPin.isPinEnabledForModule) {
+        operatorPin.openForAction((pin) =>
+          executeSave({ ...dataPayload, operator_pin: pin }, updateDrawer)
+        );
+        return;
+      }
+
       try {
         if (saleId) {
           if (updateDrawer !== null) {
@@ -2409,6 +2419,15 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
           else invoiceErrors.showMessage("Missing invoice ID from server response.");
         }
       } catch (err) {
+        if (err?.response?.status === 422 && err?.response?.data?.requires_operator_pin) {
+          if (dataPayload?.operator_pin) {
+            throw err;
+          }
+          operatorPin.openForAction((pin) =>
+            executeSave({ ...dataPayload, operator_pin: pin }, updateDrawer)
+          );
+          return;
+        }
         if (err?.response?.status === 422 && err?.response?.data?.requires_override) {
           setCreditOverridePrompt({
             isOpen: true,
@@ -3936,6 +3955,12 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
           />
         )}
       </Suspense>
+
+      <OperatorPinModal
+        {...operatorPin.modalProps}
+        title="Enter 4-Digit Operator Code"
+        subtitle="Enter your 4-digit code to save and attribute this sale invoice."
+      />
     </>
   );
 }

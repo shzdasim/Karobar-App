@@ -61,7 +61,14 @@ class PurchaseInvoiceController extends Controller
         $page     = max(1, (int) $request->query('page', 1));
         $perPage  = max(1, min((int) $request->query('per_page', 10), 200));
 
-        $query = PurchaseInvoice::with(['supplier']);
+        $with = ['supplier'];
+        if (\App\Support\SchemaCache::hasColumn('purchase_invoices', 'user_id')) {
+            $with[] = 'user:id,name';
+        }
+        if (\App\Support\SchemaCache::hasColumn('purchase_invoices', 'employee_id') && \Illuminate\Support\Facades\Schema::hasTable('employees')) {
+            $with[] = 'employee:id,name,employee_code';
+        }
+        $query = PurchaseInvoice::with($with);
 
         if ($qPosted !== '') {
             $query->where('posted_number', 'like', '%' . $qPosted . '%');
@@ -87,7 +94,14 @@ class PurchaseInvoiceController extends Controller
     public function show(PurchaseInvoice $purchaseInvoice)
     {
         $this->authorize('view', $purchaseInvoice);
-        $purchaseInvoice->load('supplier', 'account', 'items.product.brand', 'purchaseOrder');
+        $relations = ['supplier', 'account', 'items.product.brand', 'purchaseOrder'];
+        if (\App\Support\SchemaCache::hasColumn('purchase_invoices', 'user_id')) {
+            $relations[] = 'user:id,name';
+        }
+        if (\App\Support\SchemaCache::hasColumn('purchase_invoices', 'employee_id') && \Illuminate\Support\Facades\Schema::hasTable('employees')) {
+            $relations[] = 'employee:id,name,employee_code';
+        }
+        $purchaseInvoice->load($relations);
         app(\App\Services\ReturnEntitlement::class)->annotate('purchase', $purchaseInvoice, request()->integer('exclude_return_id') ?: null);
         return $purchaseInvoice;
     }
@@ -158,8 +172,12 @@ class PurchaseInvoiceController extends Controller
             $data['total_paid'] = $invoiceType === 'credit' ? 0 : ($data['total_amount'] ?? 0);
         }
 
+        $operator = app(\App\Services\OperatorPinService::class)->resolveOperator($request, 'purchase_invoice');
+        $operatorUser = $operator['user'] ?? $request->user();
+        $operatorEmployee = $operator['employee'] ?? null;
+
         try {
-            return DB::transaction(function () use ($data) {
+            return DB::transaction(function () use ($data, $operator, $operatorUser, $operatorEmployee) {
                 $draft = null;
                 if (!empty($data['draft_id'])) {
                     $draft = \App\Models\InvoiceDraft::lockForUpdate()->find($data['draft_id']);
@@ -202,6 +220,12 @@ class PurchaseInvoiceController extends Controller
                     $createPayload['payment_method'] = $data['payment_method'] ?? 'cash';
                 } else {
                     unset($createPayload['payment_method']);
+                }
+                if (\App\Support\SchemaCache::hasColumn('purchase_invoices', 'user_id')) {
+                    $createPayload['user_id'] = $operatorUser?->id;
+                }
+                if (\App\Support\SchemaCache::hasColumn('purchase_invoices', 'employee_id')) {
+                    $createPayload['employee_id'] = $operatorEmployee?->id;
                 }
 
                 $invoice = PurchaseInvoice::create($createPayload);
@@ -308,10 +332,13 @@ class PurchaseInvoiceController extends Controller
                     }
                 }
 
-                app(\App\Services\DocumentAuditService::class)->recordCreate($invoice->load('items.product'), Auth::user());
+                app(\App\Services\DocumentAuditService::class)->recordCreate($invoice->load('items.product'), $operatorUser);
 
                 // Return the created invoice including items and supplier for the client
-                return response()->json($invoice->load('items.product.brand', 'supplier', 'account', 'purchaseOrder'), 201);
+                $loaded = $invoice->load('items.product.brand', 'supplier', 'account', 'purchaseOrder');
+                return response()->json(array_merge($loaded->toArray(), [
+                    'operator_name' => $operator['operator_name'],
+                ]), 201);
             });
         } catch (\Illuminate\Database\QueryException $e) {
             // Likely unique-constraint violation (invoice_number / posted_number)
@@ -395,8 +422,12 @@ class PurchaseInvoiceController extends Controller
         $data['total_amount']        = $calculated['total_amount'];
         $data['items']               = $calculated['items'];
 
+        $operator = app(\App\Services\OperatorPinService::class)->resolveOperator($request, 'purchase_invoice');
+        $operatorUser = $operator['user'] ?? $request->user();
+        $operatorEmployee = $operator['employee'] ?? null;
+
         try {
-            return DB::transaction(function () use ($purchaseInvoice, $data, $auditService, $beforeSnapshot, $request) {
+            return DB::transaction(function () use ($purchaseInvoice, $data, $auditService, $beforeSnapshot, $request, $operator, $operatorUser, $operatorEmployee) {
                 $order = $purchaseInvoice->purchase_order_id
                     ? PurchaseOrder::lockForUpdate()->findOrFail($purchaseInvoice->purchase_order_id) : null;
                 if ($order) {
@@ -569,6 +600,14 @@ class PurchaseInvoiceController extends Controller
                 if (\Illuminate\Support\Facades\Schema::hasColumn('purchase_invoices', 'payment_method')) {
                     $updatePayload['payment_method'] = $data['payment_method'] ?? $purchaseInvoice->payment_method ?? 'cash';
                 }
+                if ($operator['verified_via_pin']) {
+                    if (\App\Support\SchemaCache::hasColumn('purchase_invoices', 'user_id')) {
+                        $updatePayload['user_id'] = $operatorUser?->id;
+                    }
+                    if (\App\Support\SchemaCache::hasColumn('purchase_invoices', 'employee_id')) {
+                        $updatePayload['employee_id'] = $operatorEmployee?->id;
+                    }
+                }
                 $purchaseInvoice->update($updatePayload);
 
                 $purchaseInvoice->items()->delete();
@@ -727,9 +766,12 @@ class PurchaseInvoiceController extends Controller
                     $updateDrawerFlag
                 );
 
-                $auditService->recordUpdate($purchaseInvoice->fresh(['items.product', 'supplier']), $beforeSnapshot, Auth::user(), $data['reason'] ?? 'Purchase invoice updated');
+                $auditService->recordUpdate($purchaseInvoice->fresh(['items.product', 'supplier']), $beforeSnapshot, $operatorUser, $data['reason'] ?? 'Purchase invoice updated');
 
-                return response()->json($purchaseInvoice->load('items.product.brand', 'supplier', 'account', 'purchaseOrder'));
+                $loaded = $purchaseInvoice->load('items.product.brand', 'supplier', 'account', 'purchaseOrder');
+                return response()->json(array_merge($loaded->toArray(), [
+                    'operator_name' => $operator['operator_name'],
+                ]));
             });
         } catch (\Illuminate\Database\QueryException $e) {
             // Likely unique-constraint violation (invoice_number / posted_number)
@@ -1333,7 +1375,14 @@ class PurchaseInvoiceController extends Controller
 
         // Base query with optional supplier filter
         $baseQuery = function () use ($supplierId) {
-            $query = PurchaseInvoice::with(['supplier']);
+            $with = ['supplier'];
+        if (\App\Support\SchemaCache::hasColumn('purchase_invoices', 'user_id')) {
+            $with[] = 'user:id,name';
+        }
+        if (\App\Support\SchemaCache::hasColumn('purchase_invoices', 'employee_id') && \Illuminate\Support\Facades\Schema::hasTable('employees')) {
+            $with[] = 'employee:id,name,employee_code';
+        }
+        $query = PurchaseInvoice::with($with);
             if ($supplierId) {
                 $query->where('supplier_id', $supplierId);
             }

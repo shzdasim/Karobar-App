@@ -154,7 +154,11 @@ class SaleReturnController extends Controller
         $qPosted   = trim((string) $request->query('posted'));
         $qCustomer = trim((string) $request->query('customer'));
 
-        $query = \App\Models\SaleReturn::with(['customer', 'saleInvoice'])->latest();
+        $with = ['customer', 'saleInvoice', 'user:id,name'];
+        if (\App\Support\SchemaCache::hasColumn('sale_returns', 'employee_id') && \Illuminate\Support\Facades\Schema::hasTable('employees')) {
+            $with[] = 'employee:id,name,employee_code';
+        }
+        $query = \App\Models\SaleReturn::with($with)->latest();
 
         if ($qPosted !== '') {
             $query->where('posted_number', 'like', '%' . $qPosted . '%');
@@ -178,7 +182,11 @@ class SaleReturnController extends Controller
         // view
         $this->authorize('view', $saleReturn);
 
-        return $saleReturn->load(['customer', 'saleInvoice', 'items.product', 'account']);
+        $relations = ['customer', 'saleInvoice', 'items.product', 'account', 'user:id,name'];
+        if (\App\Support\SchemaCache::hasColumn('sale_returns', 'employee_id') && \Illuminate\Support\Facades\Schema::hasTable('employees')) {
+            $relations[] = 'employee:id,name,employee_code';
+        }
+        return $saleReturn->load($relations);
     }
 
     public function store(Request $request)
@@ -213,7 +221,10 @@ class SaleReturnController extends Controller
             'items.*.sub_total'                 => 'nullable|numeric',
         ]);
 
-        $userId = Auth::id();
+        $operator = app(\App\Services\OperatorPinService::class)->resolveOperator($request, 'sale_return');
+        $operatorUser = $operator['user'] ?? Auth::user();
+        $operatorEmployee = $operator['employee'] ?? null;
+        $userId = $operatorUser?->id ?? Auth::id();
         if (!$userId) {
             abort(401, 'Unauthenticated: user_id is required');
         }
@@ -228,7 +239,7 @@ class SaleReturnController extends Controller
         $data['tax_amount']          = $calculated['tax_amount'];
         $data['total']               = $calculated['total'];
 
-        return DB::transaction(function () use ($data, $userId, $request) {
+        return DB::transaction(function () use ($data, $userId, $request, $operator, $operatorUser, $operatorEmployee) {
             app(\App\Services\ReturnEntitlement::class)->validate('sale', $data);
             // Generate posted_number server-side (concurrency-safe across multi-PC terminals)
             $posted = \App\Services\DocumentSequenceService::next(
@@ -256,6 +267,9 @@ class SaleReturnController extends Controller
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_returns', 'remarks')) {
                 $createPayload['remarks'] = $data['remarks'] ?? null;
             }
+            if (\App\Support\SchemaCache::hasColumn('sale_returns', 'employee_id')) {
+                $createPayload['employee_id'] = $operatorEmployee?->id;
+            }
             $sr = SaleReturn::create($createPayload);
 
             $this->createItemsAndIncrease($sr, $data['items']);
@@ -268,9 +282,12 @@ class SaleReturnController extends Controller
             $sr->payment_method = $data['payment_method'] ?? 'cash';
             $sr->account_id = $data['account_id'] ?? null;
 
-            $settlementService->applySaleReturnSettlement($sr, Auth::user());
+            $settlementService->applySaleReturnSettlement($sr, $operatorUser);
 
-            return $sr->load(['customer', 'saleInvoice', 'items.product']);
+            $loaded = $sr->load(['customer', 'saleInvoice', 'items.product']);
+            return response()->json(array_merge($loaded->toArray(), [
+                'operator_name' => $operator['operator_name'],
+            ]), 201);
         });
     }
 
@@ -307,7 +324,10 @@ class SaleReturnController extends Controller
             'items.*.sub_total'                 => 'nullable|numeric',
         ]);
 
-        $userId = Auth::id();
+        $operator = app(\App\Services\OperatorPinService::class)->resolveOperator($request, 'sale_return');
+        $operatorUser = $operator['user'] ?? Auth::user();
+        $operatorEmployee = $operator['employee'] ?? null;
+        $userId = $operatorUser?->id ?? Auth::id();
         if (!$userId) {
             abort(401, 'Unauthenticated: user_id is required');
         }
@@ -322,7 +342,7 @@ class SaleReturnController extends Controller
         $data['tax_amount']          = $calculated['tax_amount'];
         $data['total']               = $calculated['total'];
 
-        return DB::transaction(function () use ($saleReturn, $data, $userId, $request) {
+        return DB::transaction(function () use ($saleReturn, $data, $userId, $request, $operator, $operatorUser, $operatorEmployee) {
             $oldSnapshot = [
                 'total'           => (float) $saleReturn->total,
                 'settlement_mode' => $saleReturn->settlement_mode ?: 'cash_refund',
@@ -353,6 +373,9 @@ class SaleReturnController extends Controller
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_returns', 'remarks')) {
                 $updatePayload['remarks'] = $data['remarks'] ?? null;
             }
+            if ($operator['verified_via_pin'] && \App\Support\SchemaCache::hasColumn('sale_returns', 'employee_id')) {
+                $updatePayload['employee_id'] = $operatorEmployee?->id;
+            }
             $saleReturn->update($updatePayload);
 
             $this->createItemsAndIncrease($saleReturn, $data['items'], $originalItems);
@@ -379,10 +402,13 @@ class SaleReturnController extends Controller
                 $saleReturn,
                 $oldSnapshot,
                 $updateDrawerFlag,
-                Auth::user()
+                $operatorUser
             );
 
-            return $saleReturn->load(['customer', 'saleInvoice', 'items.product']);
+            $loaded = $saleReturn->load(['customer', 'saleInvoice', 'items.product']);
+            return response()->json(array_merge($loaded->toArray(), [
+                'operator_name' => $operator['operator_name'],
+            ]));
         });
     }
 

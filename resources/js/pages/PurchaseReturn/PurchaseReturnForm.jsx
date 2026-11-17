@@ -12,6 +12,8 @@ import BatchSearchInput from "../../components/BatchSearchInput.jsx";
 import SupplierSearch from "../../components/SupplierSearch.jsx";
 import PurchaseInvoiceSearch from "../../components/PurchaseInvoiceSearch.jsx";
 import PreShiftDrawerPromptModal from "@/components/PreShiftDrawerPromptModal.jsx";
+import OperatorPinModal from "@/components/OperatorPinModal.jsx";
+import { useOperatorPinPrompt } from "@/hooks/useOperatorPinPrompt.js";
 import { recalcItem, recalcFooter } from "../../Formula/PurchaseReturn.js";
 import { useTheme } from "@/context/ThemeContext";
 import { getThemeButtonClasses } from "@/utils/buttonStyles";
@@ -32,6 +34,7 @@ const getButtonTextColor = (primaryColor, primaryHoverColor) => {
 };
 
 export default function PurchaseReturnForm({ returnId, initialData, onSuccess }) {
+  const operatorPin = useOperatorPinPrompt("purchase_return");
   // ===== defaults =====
   const defaultItem = {
     id: Date.now() + Math.random(),
@@ -1460,6 +1463,13 @@ const handleSelectChange = async (field, value) => {
           };
 
       const doSave = async (dataPayload) => {
+        if (!dataPayload?.operator_pin && operatorPin.isPinEnabledForModule) {
+          operatorPin.openForAction((pin) =>
+            doSave({ ...dataPayload, operator_pin: pin })
+          );
+          return;
+        }
+
         try {
           if (returnId) {
             await axios.put(`/api/purchase-returns/${returnId}`, dataPayload);
@@ -1484,6 +1494,15 @@ const handleSelectChange = async (field, value) => {
             }
           }
         } catch (err) {
+          if (err?.response?.status === 422 && err?.response?.data?.requires_operator_pin) {
+            if (dataPayload?.operator_pin) {
+              throw err;
+            }
+            operatorPin.openForAction((pin) =>
+              doSave({ ...dataPayload, operator_pin: pin })
+            );
+            return;
+          }
           console.error(err);
           invoiceErrors.showError(err);
         }
@@ -2282,6 +2301,12 @@ const handleSelectChange = async (field, value) => {
           cashDelta={drawerPrompt?.cashDelta}
         />
       </form>
+
+      <OperatorPinModal
+        {...operatorPin.modalProps}
+        title="Enter 4-Digit Operator Code"
+        subtitle="Enter your 4-digit code to save and attribute this purchase return."
+      />
     </div>
   );
 }

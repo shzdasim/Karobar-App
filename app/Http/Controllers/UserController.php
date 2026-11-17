@@ -138,9 +138,13 @@ class UserController extends Controller
             ->orderBy('id', 'desc');
 
         $users = $q->paginate($perPage);
+        $items = collect($users->items())->map(function (User $u) {
+            $u->makeVisible(['pin_code']);
+            return $u;
+        })->all();
 
         return response()->json([
-            'data' => $users->items(),
+            'data' => $items,
             'meta' => [
                 'current_page' => $users->currentPage(),
                 'per_page'     => $users->perPage(),
@@ -158,12 +162,16 @@ class UserController extends Controller
             'name'          => ['required','string','max:255'],
             'email'         => ['required','email','max:255','unique:users,email'],
             'password'      => ['required','string','min:6'],
+            'pin_code'      => ['nullable','string','max:10'],
             'status'        => ['nullable', Rule::in(['active','inactive'])],
             'roles'         => ['array'],
             'roles.*'       => ['string','exists:roles,name'],
             'permissions'   => ['array'],
             'permissions.*' => ['string','exists:permissions,name'],
         ]);
+
+        $pinService = app(\App\Services\OperatorPinService::class);
+        $validatedPin = $pinService->validateUniquePin($data['pin_code'] ?? null);
 
         if (!empty($data['roles'])) {
             $this->authorizeUserAction($request, ['user.assign.roles', 'user.create']);
@@ -181,18 +189,21 @@ class UserController extends Controller
         $user->email  = $data['email'];
         $user->status = $data['status'] ?? 'active';
         $user->password = Hash::make($data['password']);
+        if (\Illuminate\Support\Facades\Schema::hasColumn('users', 'pin_code')) {
+            $user->pin_code = $validatedPin;
+        }
         $user->save();
 
         if (!empty($data['roles']))        $user->syncRoles($data['roles']);
         if (!empty($data['permissions']))  $user->syncPermissions($data['permissions']);
 
-        return response()->json($user->load('roles:id,name','permissions:id,name'), 201);
+        return response()->json($user->load('roles:id,name','permissions:id,name')->makeVisible(['pin_code']), 201);
     }
 
     public function show(Request $request, User $user)
     {
         $this->authorizeUserAction($request, ['user.view']);
-        return response()->json($user->load('roles:id,name','permissions:id,name'));
+        return response()->json($user->load('roles:id,name','permissions:id,name')->makeVisible(['pin_code']));
     }
 
     public function update(Request $request, User $user)
@@ -203,12 +214,29 @@ class UserController extends Controller
             'name'          => ['required','string','max:255'],
             'email'         => ['required','email','max:255', Rule::unique('users','email')->ignore($user->id)],
             'password'      => ['nullable','string','min:6'],
+            'pin_code'      => ['nullable','string','max:10'],
             'status'        => ['nullable', Rule::in(['active','inactive'])],
             'roles'         => ['sometimes','array'],
             'roles.*'       => ['string','exists:roles,name'],
             'permissions'   => ['sometimes','array'],
             'permissions.*' => ['string','exists:permissions,name'],
         ]);
+
+        $pinService = app(\App\Services\OperatorPinService::class);
+        $hasPinInput = array_key_exists('pin_code', $data);
+        $validatedPin = null;
+        if ($hasPinInput) {
+            $linkedEmpId = \Illuminate\Support\Facades\Schema::hasTable('employees')
+                ? \App\Models\Employee::where('user_id', $user->id)->value('id')
+                : null;
+            $validatedPin = $pinService->validateUniquePin(
+                $data['pin_code'],
+                $user->id,
+                null,
+                null,
+                $linkedEmpId ? (int) $linkedEmpId : null
+            );
+        }
 
         if (array_key_exists('roles', $data)) {
             $this->authorizeUserAction($request, ['user.assign.roles', 'user.update']);
@@ -248,7 +276,14 @@ class UserController extends Controller
         $user->email = $data['email'];
         if (isset($data['status'])) $user->status = $data['status'];
         if (!empty($data['password'])) $user->password = Hash::make($data['password']);
+        if ($hasPinInput && \Illuminate\Support\Facades\Schema::hasColumn('users', 'pin_code')) {
+            $user->pin_code = $validatedPin;
+        }
         $user->save();
+
+        if ($hasPinInput) {
+            $pinService->syncLinkedPinForUser($user, $validatedPin);
+        }
 
         if (($user->status ?? 'active') !== 'active') {
             $user->tokens()->delete();
@@ -257,7 +292,7 @@ class UserController extends Controller
         if (array_key_exists('roles', $data))        $user->syncRoles($data['roles'] ?? []);
         if (array_key_exists('permissions', $data))  $user->syncPermissions($data['permissions'] ?? []);
 
-        return response()->json($user->load('roles:id,name','permissions:id,name'));
+        return response()->json($user->load('roles:id,name','permissions:id,name')->makeVisible(['pin_code']));
     }
 
     public function destroy(User $user, Request $request)

@@ -10,6 +10,8 @@ class PurchaseReturn extends Model
     use HasFactory;
 
     protected $fillable = [
+        'user_id',
+        'employee_id',
         'supplier_id',
         'purchase_invoice_id',
         'posted_number',
@@ -40,6 +42,16 @@ class PurchaseReturn extends Model
     protected $casts = [
         'date' => 'date',
     ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function employee()
+    {
+        return $this->belongsTo(Employee::class);
+    }
 
     public function supplier()
     {

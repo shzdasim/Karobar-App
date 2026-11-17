@@ -211,7 +211,14 @@ public function index(Request $request)
     $qPosted   = trim((string) $request->query('posted'));
     $qSupplier = trim((string) $request->query('supplier'));
 
-    $query = PurchaseReturn::with(['supplier', 'purchaseInvoice'])->latest();
+    $with = ['supplier', 'purchaseInvoice'];
+    if (\App\Support\SchemaCache::hasColumn('purchase_returns', 'user_id')) {
+        $with[] = 'user:id,name';
+    }
+    if (\App\Support\SchemaCache::hasColumn('purchase_returns', 'employee_id') && \Illuminate\Support\Facades\Schema::hasTable('employees')) {
+        $with[] = 'employee:id,name,employee_code';
+    }
+    $query = PurchaseReturn::with($with)->latest();
 
     if ($qPosted !== '') {
         $query->where('posted_number', 'like', '%' . $qPosted . '%');
@@ -234,7 +241,14 @@ public function index(Request $request)
     public function show(PurchaseReturn $purchaseReturn)
     {
         $this->authorize('view', $purchaseReturn);
-        return $purchaseReturn->load(['supplier', 'purchaseInvoice', 'items.product', 'account']);
+        $relations = ['supplier', 'purchaseInvoice', 'items.product', 'account'];
+        if (\App\Support\SchemaCache::hasColumn('purchase_returns', 'user_id')) {
+            $relations[] = 'user:id,name';
+        }
+        if (\App\Support\SchemaCache::hasColumn('purchase_returns', 'employee_id') && \Illuminate\Support\Facades\Schema::hasTable('employees')) {
+            $relations[] = 'employee:id,name,employee_code';
+        }
+        return $purchaseReturn->load($relations);
     }
 
     public function store(Request $request)
@@ -280,7 +294,11 @@ public function index(Request $request)
         $data['tax_amount']          = $calculated['tax_amount'];
         $data['total']               = $calculated['total'];
 
-        return DB::transaction(function () use ($data, $request) {
+        $operator = app(\App\Services\OperatorPinService::class)->resolveOperator($request, 'purchase_return');
+        $operatorUser = $operator['user'] ?? $request->user();
+        $operatorEmployee = $operator['employee'] ?? null;
+
+        return DB::transaction(function () use ($data, $request, $operator, $operatorUser, $operatorEmployee) {
             $this->validateStockAvailability($data['items']);
             app(\App\Services\ReturnEntitlement::class)->validate('purchase', $data);
             // Generate posted_number server-side (concurrency-safe across multi-PC terminals)
@@ -293,7 +311,7 @@ public function index(Request $request)
                 true
             );
 
-            $pr = PurchaseReturn::create([
+            $createPayload = [
                 'supplier_id'         => $data['supplier_id'],
                 'posted_number'       => $posted, // assigned on save
                 'date'                => $data['date'],
@@ -305,7 +323,14 @@ public function index(Request $request)
                 'tax_percentage'      => $data['tax_percentage'] ?? 0,
                 'tax_amount'          => $data['tax_amount'] ?? 0,
                 'total'               => $data['total'],
-            ]);
+            ];
+            if (\App\Support\SchemaCache::hasColumn('purchase_returns', 'user_id')) {
+                $createPayload['user_id'] = $operatorUser?->id;
+            }
+            if (\App\Support\SchemaCache::hasColumn('purchase_returns', 'employee_id')) {
+                $createPayload['employee_id'] = $operatorEmployee?->id;
+            }
+            $pr = PurchaseReturn::create($createPayload);
 
             $this->createItemsAndReduce($pr, $data['items']);
 
@@ -317,9 +342,12 @@ public function index(Request $request)
             $pr->payment_method = $data['payment_method'] ?? 'cash';
             $pr->account_id = $data['account_id'] ?? null;
 
-            $settlementService->applyPurchaseReturnSettlement($pr, \Illuminate\Support\Facades\Auth::user());
+            $settlementService->applyPurchaseReturnSettlement($pr, $operatorUser);
 
-            return $pr->load(['supplier', 'purchaseInvoice', 'items.product']);
+            $loaded = $pr->load(['supplier', 'purchaseInvoice', 'items.product']);
+            return response()->json(array_merge($loaded->toArray(), [
+                'operator_name' => $operator['operator_name'],
+            ]), 201);
         });
     }
 
@@ -367,7 +395,11 @@ public function index(Request $request)
         $data['tax_amount']          = $calculated['tax_amount'];
         $data['total']               = $calculated['total'];
 
-        return DB::transaction(function () use ($purchaseReturn, $data, $request) {
+        $operator = app(\App\Services\OperatorPinService::class)->resolveOperator($request, 'purchase_return');
+        $operatorUser = $operator['user'] ?? $request->user();
+        $operatorEmployee = $operator['employee'] ?? null;
+
+        return DB::transaction(function () use ($purchaseReturn, $data, $request, $operator, $operatorUser, $operatorEmployee) {
             $purchaseReturn->load('items');
             $this->validateStockAvailability($data['items'], $purchaseReturn->items);
             $oldSnapshot = [
@@ -384,7 +416,7 @@ public function index(Request $request)
             $purchaseReturn->items()->delete();
 
             // Update header
-            $purchaseReturn->update([
+            $updatePayload = [
                 'supplier_id'         => $data['supplier_id'],
                 'posted_number'       => $data['posted_number'],
                 'date'                => $data['date'],
@@ -396,7 +428,16 @@ public function index(Request $request)
                 'tax_percentage'      => $data['tax_percentage'] ?? 0,
                 'tax_amount'          => $data['tax_amount'] ?? 0,
                 'total'               => $data['total'],
-            ]);
+            ];
+            if ($operator['verified_via_pin']) {
+                if (\App\Support\SchemaCache::hasColumn('purchase_returns', 'user_id')) {
+                    $updatePayload['user_id'] = $operatorUser?->id;
+                }
+                if (\App\Support\SchemaCache::hasColumn('purchase_returns', 'employee_id')) {
+                    $updatePayload['employee_id'] = $operatorEmployee?->id;
+                }
+            }
+            $purchaseReturn->update($updatePayload);
 
             // Apply new items
             $this->createItemsAndReduce($purchaseReturn, $data['items']);
@@ -423,10 +464,13 @@ public function index(Request $request)
                 $purchaseReturn,
                 $oldSnapshot,
                 $updateDrawerFlag,
-                \Illuminate\Support\Facades\Auth::user()
+                $operatorUser
             );
 
-            return $purchaseReturn->load(['supplier', 'purchaseInvoice', 'items.product']);
+            $loaded = $purchaseReturn->load(['supplier', 'purchaseInvoice', 'items.product']);
+            return response()->json(array_merge($loaded->toArray(), [
+                'operator_name' => $operator['operator_name'],
+            ]));
         });
     }
 

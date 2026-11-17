@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class SaleReturn extends Model
 {
     protected $fillable = [
-        'sale_invoice_id', 'user_id', 'customer_id', 'posted_number', 'date',
+        'sale_invoice_id', 'user_id', 'employee_id', 'customer_id', 'posted_number', 'date',
         'discount_percentage', 'discount_amount', 'tax_percentage', 'tax_amount',
         'total', 'gross_total', 'remarks', 'settlement_mode', 'payment_method', 'account_id', 'credited_amount',
         'fbr_invoice_number', 'fbr_usin', 'fbr_qr_data', 'fbr_sync_status', 'fbr_synced_at', 'fbr_error_message'
@@ -23,6 +23,9 @@ class SaleReturn extends Model
 
     public function user(){
         return $this->belongsTo(User::class);
+    }
+    public function employee(){
+        return $this->belongsTo(Employee::class);
     }
     public function customer(){
         return $this->belongsTo(Customer::class);

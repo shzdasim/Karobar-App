@@ -416,7 +416,11 @@ class SaleInvoiceController extends Controller
         $page     = max(1, (int) $request->query('page', 1));
         $perPage  = max(1, min((int) $request->query('per_page', 10), 200));
 
-        $query = SaleInvoice::with(['customer'])->orderByDesc('id');
+        $with = ['customer', 'user:id,name'];
+        if (\Illuminate\Support\Facades\Schema::hasTable('employees') && \Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'salesman_id')) {
+            $with[] = 'salesman:id,name,employee_code';
+        }
+        $query = SaleInvoice::with($with)->orderByDesc('id');
 
         if ($qCustomerId) {
             $query->where('customer_id', $qCustomerId);
@@ -444,7 +448,11 @@ class SaleInvoiceController extends Controller
         $relations = [
             'customer.regularItems.product:id,name,product_code,quantity,pack_size,unit_sale_price,pack_sale_price',
             'items.product',
+            'user:id,name',
         ];
+        if (\Illuminate\Support\Facades\Schema::hasTable('employees') && \Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'salesman_id')) {
+            $relations[] = 'salesman:id,name,employee_code';
+        }
         if (\Illuminate\Support\Facades\Schema::hasTable('doctors') && \Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'doctor_id')) {
             $relations[] = 'doctor';
         }
@@ -596,7 +604,11 @@ class SaleInvoiceController extends Controller
         $this->validateCreditLimits($data, $request);
         $dueDate = $this->resolveDueDate($data);
 
-        return DB::transaction(function () use ($data, $request, $dueDate) {
+        $operator = app(\App\Services\OperatorPinService::class)->resolveOperator($request, 'sale_invoice');
+        $operatorUser = $operator['user'] ?? $request->user();
+        $operatorEmployee = $operator['employee'] ?? null;
+
+        return DB::transaction(function () use ($data, $request, $dueDate, $operator, $operatorUser, $operatorEmployee) {
             $draft = null;
             if (!empty($data['draft_id'])) {
                 $draft = \App\Models\InvoiceDraft::lockForUpdate()->find($data['draft_id']);
@@ -628,7 +640,7 @@ class SaleInvoiceController extends Controller
             );
 
             $invoiceData = [
-                'user_id'            => $request->user()->id,
+                'user_id'            => $operatorUser->id,
                 'customer_id'        => $data['customer_id'],
                 'invoice_type'       => $data['invoice_type'] ?? 'debit',
                 'sale_type'          => $data['sale_type'] ?? 'retail',
@@ -679,9 +691,9 @@ class SaleInvoiceController extends Controller
             if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'salesman_id')) {
                 $invoiceData['salesman_id'] = !empty($request->input('salesman_id'))
                     ? (int) $request->input('salesman_id')
-                    : (\Illuminate\Support\Facades\Schema::hasTable('employees')
-                        ? \App\Models\Employee::where('user_id', $request->user()->id)->value('id')
-                        : null);
+                    : ($operatorEmployee?->id ?? (\Illuminate\Support\Facades\Schema::hasTable('employees')
+                        ? \App\Models\Employee::where('user_id', $operatorUser->id)->value('id')
+                        : null));
             }
 
             $invoice = SaleInvoice::create($invoiceData);
@@ -860,7 +872,7 @@ class SaleInvoiceController extends Controller
                 }
             }
 
-            app(\App\Services\DocumentAuditService::class)->recordCreate($invoice->load('items.product'), $request->user());
+            app(\App\Services\DocumentAuditService::class)->recordCreate($invoice->load('items.product'), $operatorUser);
 
             // Automatic FBR Fiscalization (if enabled in Settings)
             try {
@@ -885,6 +897,7 @@ class SaleInvoiceController extends Controller
                 'message'            => 'Sale Invoice created',
                 'id'                 => $invoice->id,
                 'posted_number'      => $posted,
+                'operator_name'      => $operator['operator_name'],
                 'fbr_invoice_number' => $invoice->fbr_invoice_number ?? null,
                 'fbr_sync_status'    => $invoice->fbr_sync_status ?? 'not_applicable',
                 'fbr_qr_data'        => $invoice->fbr_qr_data ?? null,
@@ -1035,7 +1048,11 @@ class SaleInvoiceController extends Controller
         $this->validateCreditLimits($data, $request, $invoice);
         $dueDate = $this->resolveDueDate($data);
 
-        return DB::transaction(function () use ($invoice, $data, $request, $auditService, $beforeSnapshot, $dueDate) {
+        $operator = app(\App\Services\OperatorPinService::class)->resolveOperator($request, 'sale_invoice');
+        $operatorUser = $operator['user'] ?? $request->user();
+        $operatorEmployee = $operator['employee'] ?? null;
+
+        return DB::transaction(function () use ($invoice, $data, $request, $auditService, $beforeSnapshot, $dueDate, $operator, $operatorUser, $operatorEmployee) {
             $invoice = SaleInvoice::lockForUpdate()->findOrFail($invoice->id);
             $allocatedOnInvoice = app(\App\Services\PaymentService::class)->getAllocatedAmountForInvoice('sale_invoice', (int) $invoice->id);
             $oldInvoiceType = $invoice->invoice_type ?? 'debit';
@@ -1143,8 +1160,16 @@ class SaleInvoiceController extends Controller
                 $updateData['doctor_id'] = !empty($data['doctor_id']) ? (int) $data['doctor_id'] : null;
             }
 
+            if ($operator['verified_via_pin']) {
+                $updateData['user_id'] = $operatorUser->id;
+            }
+
             if (array_key_exists('salesman_id', $data) && \Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'salesman_id')) {
-                $updateData['salesman_id'] = !empty($data['salesman_id']) ? (int) $data['salesman_id'] : null;
+                $updateData['salesman_id'] = !empty($data['salesman_id'])
+                    ? (int) $data['salesman_id']
+                    : ($operator['verified_via_pin'] ? $operatorEmployee?->id : null);
+            } elseif ($operator['verified_via_pin'] && $operatorEmployee && \Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'salesman_id')) {
+                $updateData['salesman_id'] = $operatorEmployee->id;
             }
 
             foreach (['doctor_pmdc', 'doctor_hospital', 'patient_cnic', 'patient_address', 'prescription_no', 'pharmacist_name'] as $regCol) {
@@ -1303,9 +1328,13 @@ class SaleInvoiceController extends Controller
                 $updateDrawerFlag
             );
 
-            $auditService->recordUpdate($invoice->fresh(['items.product', 'customer']), $beforeSnapshot, $request->user(), $data['reason'] ?? 'Sale invoice updated');
+            $auditService->recordUpdate($invoice->fresh(['items.product', 'customer']), $beforeSnapshot, $operatorUser, $data['reason'] ?? 'Sale invoice updated');
 
-            return response()->json(['message' => 'Sale Invoice updated', 'id' => $invoice->id]);
+            return response()->json([
+                'message'       => 'Sale Invoice updated',
+                'id'            => $invoice->id,
+                'operator_name' => $operator['operator_name'],
+            ]);
         });
     }
 
@@ -1819,7 +1848,11 @@ class SaleInvoiceController extends Controller
         $page = (int) $request->query('page', 1);
         $perPage = (int) $request->query('per_page', 20);
 
-        $query = SaleInvoice::with(['customer'])->orderByDesc('id');
+        $with = ['customer', 'user:id,name'];
+        if (\Illuminate\Support\Facades\Schema::hasTable('employees') && \Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'salesman_id')) {
+            $with[] = 'salesman:id,name,employee_code';
+        }
+        $query = SaleInvoice::with($with)->orderByDesc('id');
         if ($customerId) {
             $query->where('customer_id', $customerId);
         }

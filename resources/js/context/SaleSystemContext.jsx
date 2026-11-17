@@ -64,6 +64,10 @@ const FALLBACK_CONTEXT = {
   enableDosageStickers: true,
   dosageStickerConfig: DEFAULT_DOSAGE_STICKER_CONFIG,
   enablePrescriptionAttachments: true,
+  requireOperatorPin: false,
+  operatorPinAutoSubmit: true,
+  operatorPinModules: ["sale_invoice", "purchase_invoice", "sale_return", "purchase_return"],
+  isOperatorPinRequiredFor: () => false,
   isSetupCompleted: true,
   loading: false,
   refreshSaleSystem: noopRefresh,
@@ -136,6 +140,15 @@ export function SaleSystemProvider({ children }) {
   const [enablePrescriptionAttachments, setEnablePrescriptionAttachments] = useState(
     () => (typeof initialCache?.enablePrescriptionAttachments === "boolean" ? initialCache.enablePrescriptionAttachments : true)
   );
+  const [requireOperatorPin, setRequireOperatorPin] = useState(
+    () => (typeof initialCache?.requireOperatorPin === "boolean" ? initialCache.requireOperatorPin : false)
+  );
+  const [operatorPinAutoSubmit, setOperatorPinAutoSubmit] = useState(
+    () => (typeof initialCache?.operatorPinAutoSubmit === "boolean" ? initialCache.operatorPinAutoSubmit : true)
+  );
+  const [operatorPinModules, setOperatorPinModules] = useState(
+    () => (Array.isArray(initialCache?.operatorPinModules) ? initialCache.operatorPinModules : ["sale_invoice", "purchase_invoice", "sale_return", "purchase_return"])
+  );
   const [isSetupCompleted, setIsSetupCompleted] = useState(
     () => (typeof initialCache?.isSetupCompleted === "boolean" ? initialCache.isSetupCompleted : true)
   );
@@ -188,6 +201,17 @@ export function SaleSystemProvider({ children }) {
         typeof data?.enable_prescription_attachments === "boolean"
           ? data.enable_prescription_attachments
           : true;
+      const nextRequireOperatorPin =
+        typeof data?.require_operator_pin === "boolean"
+          ? data.require_operator_pin
+          : false;
+      const nextOperatorPinAutoSubmit =
+        typeof data?.operator_pin_auto_submit === "boolean"
+          ? data.operator_pin_auto_submit
+          : true;
+      const nextOperatorPinModules = Array.isArray(data?.operator_pin_modules)
+        ? data.operator_pin_modules
+        : ["sale_invoice", "purchase_invoice", "sale_return", "purchase_return"];
       const nextSetup =
         typeof data?.is_setup_completed === "boolean"
           ? data.is_setup_completed
@@ -198,6 +222,9 @@ export function SaleSystemProvider({ children }) {
       setEnableDosageStickers(nextDosageStickers);
       setDosageStickerConfig(nextDosageStickerConfig);
       setEnablePrescriptionAttachments(nextPrescriptionAttachments);
+      setRequireOperatorPin(nextRequireOperatorPin);
+      setOperatorPinAutoSubmit(nextOperatorPinAutoSubmit);
+      setOperatorPinModules(nextOperatorPinModules);
       if (typeof data?.is_setup_completed === "boolean") {
         setIsSetupCompleted(data.is_setup_completed);
       }
@@ -207,6 +234,9 @@ export function SaleSystemProvider({ children }) {
         enableDosageStickers: nextDosageStickers,
         dosageStickerConfig: nextDosageStickerConfig,
         enablePrescriptionAttachments: nextPrescriptionAttachments,
+        requireOperatorPin: nextRequireOperatorPin,
+        operatorPinAutoSubmit: nextOperatorPinAutoSubmit,
+        operatorPinModules: nextOperatorPinModules,
         isSetupCompleted: nextSetup,
       });
       setLoading(false);
@@ -271,11 +301,28 @@ export function SaleSystemProvider({ children }) {
       enableDosageStickers: shopType === "pharmacy" && enableDosageStickers,
       dosageStickerConfig,
       enablePrescriptionAttachments: shopType === "pharmacy" && enablePrescriptionAttachments,
+      requireOperatorPin,
+      operatorPinAutoSubmit,
+      operatorPinModules,
+      isOperatorPinRequiredFor: (mod) =>
+        Boolean(requireOperatorPin && Array.isArray(operatorPinModules) && operatorPinModules.includes(mod)),
       isSetupCompleted,
       loading,
       refreshSaleSystem: fetchSaleSystem,
     }),
-    [saleSystem, shopType, enableDosageStickers, dosageStickerConfig, enablePrescriptionAttachments, isSetupCompleted, loading, fetchSaleSystem]
+    [
+      saleSystem,
+      shopType,
+      enableDosageStickers,
+      dosageStickerConfig,
+      enablePrescriptionAttachments,
+      requireOperatorPin,
+      operatorPinAutoSubmit,
+      operatorPinModules,
+      isSetupCompleted,
+      loading,
+      fetchSaleSystem,
+    ]
   );
 
   return (

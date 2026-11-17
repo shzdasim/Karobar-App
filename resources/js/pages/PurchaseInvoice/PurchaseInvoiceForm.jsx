@@ -21,6 +21,8 @@ import ModernDatePicker from "@/components/ModernDatePicker.jsx";
 const ProductFormModal = lazy(() => import("../../components/ProductFormModal.jsx"));
 const InvoiceDraftsModal = lazy(() => import("@/components/InvoiceDraftsModal.jsx"));
 const PreShiftDrawerPromptModal = lazy(() => import("@/components/PreShiftDrawerPromptModal.jsx"));
+import OperatorPinModal from "@/components/OperatorPinModal.jsx";
+import { useOperatorPinPrompt } from "@/hooks/useOperatorPinPrompt.js";
 import { BuildingStorefrontIcon, TrashIcon, PlusCircleIcon, CheckIcon, LinkIcon } from "@heroicons/react/24/solid";
 
 // Six-dot grip shown on drag handles
@@ -90,6 +92,7 @@ function showAxiosError(err) {
 }
 
 export default function PurchaseInvoiceForm({ invoiceId, onSuccess, onSubmit, initialData }) {
+  const operatorPin = useOperatorPinPrompt("purchase_invoice");
   const [drawerPrompt, setDrawerPrompt] = useState(null);
   const originalInvoiceMetaRef = useRef(null);
   const nextRowKeyRef = useRef(1);
@@ -1363,6 +1366,17 @@ const contRect = container.getBoundingClientRect();
       }
 
       const doSave = async (dataPayload) => {
+        if (!dataPayload?.operator_pin && operatorPin.isPinEnabledForModule) {
+          savingRef.current = false;
+          setSaving(false);
+          operatorPin.openForAction((pin) =>
+            doSave({ ...dataPayload, operator_pin: pin })
+          );
+          return;
+        }
+
+        savingRef.current = true;
+        setSaving(true);
         try {
           // If onSubmit prop is provided, use it for API calls
           if (onSubmit) {
@@ -1419,6 +1433,15 @@ const contRect = container.getBoundingClientRect();
             onSuccess && onSuccess();
           }
         } catch (err) {
+          if (err?.response?.status === 422 && err?.response?.data?.requires_operator_pin) {
+            if (dataPayload?.operator_pin) {
+              throw err;
+            }
+            operatorPin.openForAction((pin) =>
+              doSave({ ...dataPayload, operator_pin: pin })
+            );
+            return;
+          }
           invoiceErrors.showError(err, submittedRowIndices);
         } finally {
           savingRef.current = false;
@@ -2743,6 +2766,12 @@ const contRect = container.getBoundingClientRect();
           />
         )}
       </Suspense>
+
+      <OperatorPinModal
+        {...operatorPin.modalProps}
+        title="Enter 4-Digit Operator Code"
+        subtitle="Enter your 4-digit code to save and attribute this purchase invoice."
+      />
     </form>
   );
 }

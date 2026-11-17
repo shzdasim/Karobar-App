@@ -97,6 +97,9 @@ class Setting extends Model
         'enable_prescription_attachments',
         'enable_drug_interaction_warnings',
         'enable_cold_chain_log',
+        'require_operator_pin',
+        'operator_pin_auto_submit',
+        'operator_pin_modules',
     ];
 
     protected $casts = [
@@ -133,6 +136,9 @@ class Setting extends Model
         'enable_prescription_attachments'  => 'boolean',
         'enable_drug_interaction_warnings' => 'boolean',
         'enable_cold_chain_log'            => 'boolean',
+        'require_operator_pin'             => 'boolean',
+        'operator_pin_auto_submit'         => 'boolean',
+        'operator_pin_modules'             => 'array',
     ];
 
     protected $hidden = [
@@ -192,6 +198,26 @@ class Setting extends Model
     {
         $raw = is_array($this->dosage_sticker_config) ? $this->dosage_sticker_config : [];
         return array_merge(self::defaultDosageStickerConfig(), $raw);
+    }
+
+    public static function defaultOperatorPinModules(): array
+    {
+        return [
+            'sale_invoice',
+            'purchase_invoice',
+            'sale_return',
+            'purchase_return',
+        ];
+    }
+
+    public function resolvedOperatorPinModules(): array
+    {
+        $raw = $this->operator_pin_modules;
+        if (!is_array($raw)) {
+            return self::defaultOperatorPinModules();
+        }
+        $allowed = self::defaultOperatorPinModules();
+        return array_values(array_intersect($allowed, $raw));
     }
 
     /**

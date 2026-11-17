@@ -516,6 +516,7 @@ export default function PurchaseInvoicesIndex() {
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Invoice No</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Supplier</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Date</th>
+                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Operator</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-right w-24">Amount</th>
                 {hasActions && (
                   <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider text-center w-28">Actions</th>
@@ -526,7 +527,7 @@ export default function PurchaseInvoicesIndex() {
             <tbody>
               {rows.length === 0 && !loading && (
                 <tr>
-                  <td className="px-3 py-12 text-center" colSpan={hasActions ? 8 : 7}>
+                  <td className="px-3 py-12 text-center" colSpan={hasActions ? 9 : 8}>
                     <div className="flex flex-col items-center gap-2">
                       <ClipboardDocumentListIcon className="w-8 h-8 text-gray-400" />
                       <p className="text-sm text-gray-500 dark:text-gray-400">No invoices found</p>
@@ -567,6 +568,7 @@ export default function PurchaseInvoicesIndex() {
                     </span>
                   </td>
                   <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">{formatDate(inv.posted_date)}</td>
+                  <td className="px-3 py-2.5 text-xs text-gray-700 dark:text-gray-300">{inv.employee?.name || inv.user?.name || "—"}</td>
                   <td className="px-3 py-2.5 text-right font-medium text-gray-900 dark:text-gray-100">
                     <span className={inv.status === 'reversed' ? 'line-through text-gray-400 dark:text-gray-500' : ''}>
                       {formatCurrency(Number(inv.total_amount ?? 0))}

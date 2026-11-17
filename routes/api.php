@@ -124,6 +124,11 @@ Route::middleware(['auth:sanctum', 'licensed', 'token.expiry'])->group(function 
     Route::put('/users/{user}/roles', [UserController::class, 'syncRoles']);
     Route::put('/users/{user}/permissions', [UserController::class, 'syncPermissions']);
 
+    // Operator 4-Digit PIN Management
+    Route::get('/operator-pins/directory', [\App\Http\Controllers\OperatorPinController::class, 'directory']);
+    Route::get('/operator-pins/generate',  [\App\Http\Controllers\OperatorPinController::class, 'generate']);
+    Route::put('/operator-pins/assign',    [\App\Http\Controllers\OperatorPinController::class, 'assign']);
+
     // Roles
     Route::get('/roles',          [RoleController::class, 'index']);
     Route::post('/roles',         [RoleController::class, 'store']);

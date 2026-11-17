@@ -29,6 +29,7 @@ import {
   ServerStackIcon,
   ShieldCheckIcon,
   BeakerIcon,
+  KeyIcon,
 } from "@heroicons/react/24/solid";
 
 // Setting Components
@@ -47,6 +48,7 @@ import CubeAiSetting from "@/components/settings/CubeAiSetting.jsx";
 import LicenseSetting from "@/components/settings/LicenseSetting.jsx";
 import NetworkTerminalSettings from "@/components/settings/NetworkTerminalSettings.jsx";
 import FbrSetting from "@/components/settings/FbrSetting.jsx";
+import OperatorPinSetting from "@/components/settings/OperatorPinSetting.jsx";
 
 registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);
 
@@ -81,6 +83,12 @@ const SETTING_GROUPS = [
         label: "Pharmacy & Stickers",
         subtitle: "Dosage sticker designer & prescription scan",
         icon: BeakerIcon,
+      },
+      {
+        id: "operator_pin",
+        label: "Operator 4-Digit PIN",
+        subtitle: "Counter passcode & invoice attribution",
+        icon: KeyIcon,
       },
       {
         id: "fbr",
@@ -316,6 +324,9 @@ export default function Setting() {
       preferred_printer: "",
     },
     enable_prescription_attachments: true,
+    require_operator_pin: false,
+    operator_pin_auto_submit: true,
+    operator_pin_modules: ["sale_invoice", "purchase_invoice", "sale_return", "purchase_return"],
   });
 
   const [cubeUsageSummary, setCubeUsageSummary] = useState(null);
@@ -631,6 +642,14 @@ export default function Setting() {
           data.enable_prescription_attachments !== undefined && data.enable_prescription_attachments !== null
             ? Boolean(data.enable_prescription_attachments)
             : true,
+        require_operator_pin: Boolean(data.require_operator_pin),
+        operator_pin_auto_submit:
+          data.operator_pin_auto_submit !== undefined && data.operator_pin_auto_submit !== null
+            ? Boolean(data.operator_pin_auto_submit)
+            : true,
+        operator_pin_modules: Array.isArray(data.operator_pin_modules)
+          ? data.operator_pin_modules
+          : ["sale_invoice", "purchase_invoice", "sale_return", "purchase_return"],
       });
 
       if (data.cube_usage_summary) {
@@ -768,6 +787,16 @@ export default function Setting() {
         fd.append("dosage_sticker_config", JSON.stringify(form.dosage_sticker_config));
       }
       fd.append("enable_prescription_attachments", form.enable_prescription_attachments !== false ? "1" : "0");
+      fd.append("require_operator_pin", form.require_operator_pin ? "1" : "0");
+      fd.append("operator_pin_auto_submit", form.operator_pin_auto_submit !== false ? "1" : "0");
+      fd.append(
+        "operator_pin_modules",
+        JSON.stringify(
+          Array.isArray(form.operator_pin_modules)
+            ? form.operator_pin_modules
+            : ["sale_invoice", "purchase_invoice", "sale_return", "purchase_return"]
+        )
+      );
 
       if (files.length > 0 && files[0].file) {
         fd.append("logo", files[0].file);
@@ -1121,6 +1150,14 @@ export default function Setting() {
 
           {activeTab === "pharmacy_clinical" && (
             <PharmacyClinicalSetting
+              form={form}
+              setForm={setForm}
+              disableInputs={disableInputs}
+            />
+          )}
+
+          {activeTab === "operator_pin" && (
+            <OperatorPinSetting
               form={form}
               setForm={setForm}
               disableInputs={disableInputs}

@@ -457,6 +457,7 @@ export default function PurchaseReturnsIndex() {
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Posted No</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Supplier</th>
                 <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Date</th>
+                <th className="px-3 py-2 font-semibold text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Operator</th>
                 <th className="px-3 py-2 font-semibold text-right text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider">Amount</th>
                 {hasActions && (
                   <th className="px-3 py-2 font-semibold text-center text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider w-32">Actions</th>
@@ -467,7 +468,7 @@ export default function PurchaseReturnsIndex() {
             <tbody>
               {paged.length === 0 && !loading && (
                 <tr>
-                  <td className="px-3 py-12 text-center" colSpan={hasActions ? 6 : 5}>
+                  <td className="px-3 py-12 text-center" colSpan={hasActions ? 7 : 6}>
                     <div className="flex flex-col items-center gap-2">
                       <DocumentTextIcon className="w-8 h-8 text-gray-400" />
                       <p className="text-sm text-gray-500 dark:text-gray-400">No returns found</p>
@@ -478,7 +479,7 @@ export default function PurchaseReturnsIndex() {
 
               {loading && (
                 <tr>
-                  <td className="px-3 py-12 text-center" colSpan={hasActions ? 6 : 5}>
+                  <td className="px-3 py-12 text-center" colSpan={hasActions ? 7 : 6}>
                     <div className="flex flex-col items-center gap-2">
                       <ArrowPathIcon className="w-6 h-6 text-gray-400 animate-spin" />
                       <p className="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
@@ -534,6 +535,9 @@ export default function PurchaseReturnsIndex() {
                         />
                         <span className="text-gray-800 dark:text-gray-200">{formatDate(ret.date)}</span>
                       </div>
+                    </td>
+                    <td className="px-3 py-3 text-xs text-gray-700 dark:text-gray-300">
+                      {ret.employee?.name || ret.user?.name || "—"}
                     </td>
                     <td className="px-3 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">

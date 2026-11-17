@@ -136,7 +136,7 @@ class HrPayrollController extends Controller
             });
         }
 
-        return response()->json($query->get());
+        return response()->json($query->get()->map(fn (Employee $e) => $e->makeVisible(['pin_code'])));
     }
 
     /**
@@ -173,9 +173,19 @@ class HrPayrollController extends Controller
             'payment_method'         => ['nullable', 'string', Rule::in(['cash', 'bank_transfer', 'wallet', 'cheque'])],
             'bank_name'              => ['nullable', 'string', 'max:120'],
             'bank_account_number'    => ['nullable', 'string', 'max:100'],
+            'pin_code'               => ['nullable', 'string', 'max:10'],
             'status'                 => ['nullable', 'string', Rule::in(['active', 'on_leave', 'inactive'])],
             'notes'                  => ['nullable', 'string'],
         ]);
+
+        $pinService = app(\App\Services\OperatorPinService::class);
+        $linkedUserId = !empty($validated['user_id']) ? (int) $validated['user_id'] : null;
+        $validatedPin = null;
+        if (array_key_exists('pin_code', $validated) && trim((string) ($validated['pin_code'] ?? '')) !== '') {
+            $validatedPin = $pinService->validateUniquePin($validated['pin_code'], null, null, $linkedUserId);
+        } elseif ($linkedUserId && \Illuminate\Support\Facades\Schema::hasColumn('users', 'pin_code')) {
+            $validatedPin = \App\Models\User::where('id', $linkedUserId)->value('pin_code');
+        }
 
         if (empty($validated['employee_code'])) {
             $validated['employee_code'] = Employee::generateEmployeeCode();
@@ -207,11 +217,16 @@ class HrPayrollController extends Controller
             'payment_method'         => $validated['payment_method'] ?? 'cash',
             'bank_name'              => $validated['bank_name'] ?? null,
             'bank_account_number'    => $validated['bank_account_number'] ?? null,
+            ...(\Illuminate\Support\Facades\Schema::hasColumn('employees', 'pin_code') ? ['pin_code' => $validatedPin] : []),
             'status'                 => $validated['status'] ?? 'active',
             'notes'                  => $validated['notes'] ?? null,
         ]);
 
-        return response()->json($employee->load('user:id,name,email'), 201);
+        if (array_key_exists('pin_code', $validated)) {
+            $pinService->syncLinkedPinForEmployee($employee, $validatedPin);
+        }
+
+        return response()->json($employee->load('user:id,name,email')->makeVisible(['pin_code']), 201);
     }
 
     /**
@@ -247,13 +262,36 @@ class HrPayrollController extends Controller
             'payment_method'         => ['nullable', 'string', Rule::in(['cash', 'bank_transfer', 'wallet', 'cheque'])],
             'bank_name'              => ['nullable', 'string', 'max:120'],
             'bank_account_number'    => ['nullable', 'string', 'max:100'],
+            'pin_code'               => ['nullable', 'string', 'max:10'],
             'status'                 => ['nullable', 'string', Rule::in(['active', 'on_leave', 'inactive'])],
             'notes'                  => ['nullable', 'string'],
         ]);
 
+        $pinService = app(\App\Services\OperatorPinService::class);
+        $hasPinInput = array_key_exists('pin_code', $validated);
+        $linkedUserId = !empty($validated['user_id']) ? (int) $validated['user_id'] : null;
+        if ($hasPinInput) {
+            $validated['pin_code'] = $pinService->validateUniquePin(
+                $validated['pin_code'],
+                null,
+                $employee->id,
+                $linkedUserId
+            );
+        } elseif ($linkedUserId && empty($employee->pin_code) && \Illuminate\Support\Facades\Schema::hasColumn('users', 'pin_code')) {
+            $validated['pin_code'] = \App\Models\User::where('id', $linkedUserId)->value('pin_code');
+        }
+
+        if (!\Illuminate\Support\Facades\Schema::hasColumn('employees', 'pin_code')) {
+            unset($validated['pin_code']);
+        }
+
         $employee->update($validated);
 
-        return response()->json($employee->fresh()->load('user:id,name,email'));
+        if ($hasPinInput && \Illuminate\Support\Facades\Schema::hasColumn('employees', 'pin_code')) {
+            $pinService->syncLinkedPinForEmployee($employee, $employee->pin_code);
+        }
+
+        return response()->json($employee->fresh()->load('user:id,name,email')->makeVisible(['pin_code']));
     }
 
     /**
