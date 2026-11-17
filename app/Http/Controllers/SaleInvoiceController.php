@@ -1990,7 +1990,7 @@ class SaleInvoiceController extends Controller
 
     /**
      * GET /sale-invoices/{invoice}/dosage-labels
-     * Render thermal 50x25mm bilingual (English + Urdu) patient dosage stickers for an invoice.
+     * Render thermal bilingual (English + Urdu) patient dosage stickers for an invoice.
      */
     public function printDosageLabels(Request $request, SaleInvoice $invoice)
     {
@@ -2007,11 +2007,82 @@ class SaleInvoiceController extends Controller
         if ($request->filled('printer_mode') && in_array($request->input('printer_mode'), ['receipt_roll', 'label_printer'], true)) {
             $stickerConfig['printer_mode'] = $request->input('printer_mode');
         }
+        if ($request->filled('template') && in_array($request->input('template'), ['classic', 'minimal', 'bold', 'urdu_focus'], true)) {
+            $stickerConfig['template'] = $request->input('template');
+        }
+        if ($request->filled('font_scale') && in_array($request->input('font_scale'), ['compact', 'normal', 'large'], true)) {
+            $stickerConfig['font_scale'] = $request->input('font_scale');
+        }
+        if ($request->filled('contrast_mode') && in_array($request->input('contrast_mode'), ['standard', 'high_contrast', 'extra_bold'], true)) {
+            $stickerConfig['contrast_mode'] = $request->input('contrast_mode');
+        }
+        if ($request->filled('scale_mode') && in_array($request->input('scale_mode'), ['auto', 'noscale', 'fit', 'shrink'], true)) {
+            $stickerConfig['scale_mode'] = $request->input('scale_mode');
+        }
+        if ($request->filled('margin_top_mm')) {
+            $stickerConfig['margin_top_mm'] = max(0, min(30, (int) $request->input('margin_top_mm')));
+        }
+        if ($request->filled('margin_bottom_mm')) {
+            $stickerConfig['margin_bottom_mm'] = max(0, min(40, (int) $request->input('margin_bottom_mm')));
+        }
+        if ($request->filled('margin_left_mm')) {
+            $stickerConfig['margin_left_mm'] = max(-15, min(25, (int) $request->input('margin_left_mm')));
+        }
+        if ($request->filled('margin_right_mm')) {
+            $stickerConfig['margin_right_mm'] = max(0, min(30, (int) $request->input('margin_right_mm')));
+        }
+        if ($request->filled('footer_note')) {
+            $stickerConfig['footer_note'] = mb_substr(trim((string) $request->input('footer_note')), 0, 120);
+        }
+        if ($request->has('show_shop_name')) {
+            $stickerConfig['show_shop_name'] = $request->boolean('show_shop_name');
+        }
+        if ($request->has('show_invoice_meta')) {
+            $stickerConfig['show_invoice_meta'] = $request->boolean('show_invoice_meta');
+        }
+        if ($request->has('show_patient')) {
+            $stickerConfig['show_patient'] = $request->boolean('show_patient');
+        }
+        if ($request->has('show_quantity')) {
+            $stickerConfig['show_quantity'] = $request->boolean('show_quantity');
+        }
+        if ($request->has('show_batch')) {
+            $stickerConfig['show_batch'] = $request->boolean('show_batch');
+        }
+        if ($request->has('show_expiry')) {
+            $stickerConfig['show_expiry'] = $request->boolean('show_expiry');
+        }
+        if ($request->has('show_doctor')) {
+            $stickerConfig['show_doctor'] = $request->boolean('show_doctor');
+        }
 
-        return view('printer.sale_invoice_dosage_labels', [
+        // Apply calibration properties to $setting for partials and template
+        if ($setting) {
+            $setting->print_margin_top_mm = $stickerConfig['margin_top_mm'] ?? 0;
+            $setting->print_margin_bottom_mm = $stickerConfig['margin_bottom_mm'] ?? 4;
+            $setting->print_margin_left_mm = $stickerConfig['margin_left_mm'] ?? 0;
+            $setting->print_margin_right_mm = $stickerConfig['margin_right_mm'] ?? 0;
+            $setting->print_contrast_mode = $stickerConfig['contrast_mode'] ?? 'high_contrast';
+            $setting->print_scale_mode = $stickerConfig['scale_mode'] ?? 'auto';
+            if ($request->filled('paper_width_mm')) {
+                $setting->print_paper_width_mm = max(25, min(150, (int) $request->input('paper_width_mm')));
+            }
+        }
+
+        $view = view('printer.sale_invoice_dosage_labels', [
             'invoice'       => $invoice,
             'setting'       => $setting,
             'stickerConfig' => $stickerConfig,
         ]);
+
+        if ($request->wantsJson() || $request->boolean('json')) {
+            return response()->json([
+                'ok'   => true,
+                'url'  => $request->fullUrl(),
+                'html' => $view->render(),
+            ]);
+        }
+
+        return $view;
     }
 }

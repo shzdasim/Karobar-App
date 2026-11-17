@@ -10,6 +10,7 @@ import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
 import { GlassInput } from "@/components/Glass.jsx";
 import SettingSwitch from "@/components/settings/SettingSwitch.jsx";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
+import { printSlipUrl } from "@/utils/printHelper.js";
 import {
   PrinterIcon,
   XMarkIcon,
@@ -210,11 +211,13 @@ export function DosageStickersModal({ isOpen, onClose, invoice, onUpdated }) {
       toast.success("Dosage instructions saved");
       if (shouldPrint) {
         const mode = dosageStickerConfig?.printer_mode || "receipt_roll";
-        window.open(
-          `/sale-invoices/${invoice.id}/dosage-labels?auto_print=1&width_mm=${activeW}&height_mm=${activeH}&printer_mode=${mode}`,
-          "_blank",
-          "width=540,height=680"
-        );
+        const targetPrinter = dosageStickerConfig?.preferred_printer || undefined;
+        const url = `/sale-invoices/${invoice.id}/dosage-labels?auto_print=1&width_mm=${activeW}&height_mm=${activeH}&printer_mode=${mode}&silent_print=1`;
+        await printSlipUrl(url, {
+          deviceName: targetPrinter,
+          loadingMessage: `Printing ${activeW}×${activeH}mm dosage stickers...`,
+          successMessage: "Dosage stickers sent directly to printer",
+        });
       }
     } catch (err) {
       toast.error(err?.response?.data?.message || "Failed to save dosage instructions");

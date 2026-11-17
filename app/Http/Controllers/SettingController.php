@@ -561,6 +561,17 @@ class SettingController extends Controller
                     'show_expiry'         => (bool) ($rawConfig['show_expiry'] ?? $defaults['show_expiry']),
                     'show_doctor'         => (bool) ($rawConfig['show_doctor'] ?? $defaults['show_doctor']),
                     'footer_note'         => mb_substr(trim((string) ($rawConfig['footer_note'] ?? $defaults['footer_note'])), 0, 120),
+                    'margin_top_mm'       => max(0, min(30, (int) ($rawConfig['margin_top_mm'] ?? $defaults['margin_top_mm'] ?? 0))),
+                    'margin_bottom_mm'    => max(0, min(40, (int) ($rawConfig['margin_bottom_mm'] ?? $defaults['margin_bottom_mm'] ?? 4))),
+                    'margin_left_mm'      => max(-15, min(25, (int) ($rawConfig['margin_left_mm'] ?? $defaults['margin_left_mm'] ?? 0))),
+                    'margin_right_mm'     => max(0, min(30, (int) ($rawConfig['margin_right_mm'] ?? $defaults['margin_right_mm'] ?? 0))),
+                    'contrast_mode'       => in_array($rawConfig['contrast_mode'] ?? '', ['standard', 'high_contrast', 'extra_bold'], true)
+                        ? $rawConfig['contrast_mode']
+                        : ($defaults['contrast_mode'] ?? 'high_contrast'),
+                    'scale_mode'          => in_array($rawConfig['scale_mode'] ?? '', ['auto', 'noscale', 'fit', 'shrink'], true)
+                        ? $rawConfig['scale_mode']
+                        : ($defaults['scale_mode'] ?? 'auto'),
+                    'preferred_printer'   => mb_substr(trim((string) ($rawConfig['preferred_printer'] ?? '')), 0, 100),
                 ];
             }
         }

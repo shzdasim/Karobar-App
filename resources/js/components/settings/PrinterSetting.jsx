@@ -14,6 +14,7 @@ import {
   AdjustmentsHorizontalIcon,
   CheckCircleIcon,
   ArrowPathIcon,
+  TagIcon,
 } from "@heroicons/react/24/solid";
 import {
   getDesktopPrintBridge,
@@ -134,6 +135,128 @@ const QUICK_WIDTH_PILLS_A4 = [
   { label: "210mm (Full A4)", value: 210 },
 ];
 
+const STICKER_TEMPLATES = [
+  {
+    id: "classic",
+    name: "Classic Bordered",
+    description: "Balanced bordered layout with clear divider for medicine vials & boxes",
+    icon: "DocumentTextIcon",
+    preview: "Classic bilingual dosage label with separate instruction box",
+  },
+  {
+    id: "minimal",
+    name: "Minimal Clean",
+    description: "Clean borderless design for modern hospital pharmacy labeling",
+    icon: "DocumentIcon",
+    preview: "Clean text layout without heavy box borders",
+  },
+  {
+    id: "bold",
+    name: "Bold Dark Header",
+    description: "Reverse black header with prominent shop name & patient info",
+    icon: "BoltIcon",
+    preview: "High-emphasis black banner header for fast identification",
+  },
+  {
+    id: "urdu_focus",
+    name: "Urdu-First Dosage",
+    description: "Enlarged Noto Nastaliq Urdu dosage instructions for patients",
+    icon: "ClipboardDocumentListIcon",
+    preview: "Maximum readability for Urdu-speaking patients & elders",
+  },
+];
+
+const STICKER_CALIBRATION_PRESETS = [
+  {
+    id: "sticker_72_safe",
+    label: "Fix 72mm Roll Cut-Off (72×35mm Safe)",
+    tagline: "Fits standard 72mm active printhead on 80mm POS receipt rolls",
+    values: {
+      preset_key: "72x35",
+      width_mm: 72,
+      height_mm: 35,
+      printer_mode: "receipt_roll",
+      margin_left_mm: 0,
+      margin_right_mm: 0,
+      margin_top_mm: 0,
+      margin_bottom_mm: 6,
+      font_scale: "normal",
+      contrast_mode: "high_contrast",
+    },
+  },
+  {
+    id: "sticker_50x25_diecut",
+    label: "Standard 50×25mm Die-Cut Label",
+    tagline: "Calibrates standard retail pharmacy barcode/dosage sticker rolls",
+    values: {
+      preset_key: "50x25",
+      width_mm: 50,
+      height_mm: 25,
+      printer_mode: "label_printer",
+      margin_left_mm: 0,
+      margin_right_mm: 0,
+      margin_top_mm: 0,
+      margin_bottom_mm: 0,
+      font_scale: "compact",
+      contrast_mode: "high_contrast",
+    },
+  },
+  {
+    id: "sticker_38x25_vial",
+    label: "Compact 38×25mm Vial / Strip Label",
+    tagline: "Compact sizing for small medicine ampoules, vials & eye drops",
+    values: {
+      preset_key: "38x25",
+      width_mm: 38,
+      height_mm: 25,
+      printer_mode: "label_printer",
+      margin_left_mm: 0,
+      margin_right_mm: 0,
+      margin_top_mm: 0,
+      margin_bottom_mm: 0,
+      font_scale: "compact",
+      contrast_mode: "high_contrast",
+    },
+  },
+  {
+    id: "sticker_cutter_feed_gap",
+    label: "Fix Auto-Cutter Slicing (+10mm Bottom Feed)",
+    tagline: "Adds bottom feed margin so the blade cuts between stickers",
+    values: {
+      margin_bottom_mm: 10,
+    },
+  },
+  {
+    id: "sticker_high_contrast",
+    label: "Fix Faint Print on Stickers (Pure Black + Bold)",
+    tagline: "Forces #000000 black ink & bold weights for 203 DPI thermal heads",
+    values: {
+      contrast_mode: "high_contrast",
+    },
+  },
+  {
+    id: "sticker_urdu_emphasis",
+    label: "Urdu Prescription Focus (Large & Dark)",
+    tagline: "Selects Urdu-First template with large font scale and dark contrast",
+    values: {
+      template: "urdu_focus",
+      font_scale: "large",
+      contrast_mode: "high_contrast",
+    },
+  },
+];
+
+const STICKER_SIZE_PILLS = [
+  { label: "72×35 mm (72mm Roll)", preset_key: "72x35", width_mm: 72, height_mm: 35 },
+  { label: "72×40 mm (Tall Roll)", preset_key: "72x40", width_mm: 72, height_mm: 40 },
+  { label: "50×25 mm (Std Die-Cut)", preset_key: "50x25", width_mm: 50, height_mm: 25 },
+  { label: "50×30 mm (Medium)", preset_key: "50x30", width_mm: 50, height_mm: 30 },
+  { label: "60×40 mm (Large Box)", preset_key: "60x40", width_mm: 60, height_mm: 40 },
+  { label: "70×35 mm (Wide Label)", preset_key: "70x35", width_mm: 70, height_mm: 35 },
+  { label: "80×50 mm (Jumbo Bottle)", preset_key: "80x50", width_mm: 80, height_mm: 50 },
+  { label: "38×25 mm (Compact Vial)", preset_key: "38x25", width_mm: 38, height_mm: 25 },
+];
+
 export default function PrinterSetting({
   form,
   setForm,
@@ -148,9 +271,12 @@ export default function PrinterSetting({
   const [selectedA4Template, setSelectedA4Template] = useState(
     form.a4_template || "standard"
   );
+  const [layoutCategory, setLayoutCategory] = useState(
+    form.printer_type === "a4" ? "a4" : "thermal"
+  );
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewingTemplate, setPreviewingTemplate] = useState(null);
-  const [previewingType, setPreviewingType] = useState("thermal"); // 'thermal' or 'a4'
+  const [previewingType, setPreviewingType] = useState("thermal"); // 'thermal', 'a4', 'sticker'
   const [installedPrinters, setInstalledPrinters] = useState([]);
   const [preferredDeviceName, setPreferredDeviceName] = useState(() =>
     getPreferredPrinter()
@@ -199,6 +325,81 @@ export default function PrinterSetting({
     }
   }, [isDesktopApp]);
 
+  const updateStickerConfig = (patch) => {
+    if (disableInputs) {
+      toast.error("You don't have permission to update settings.");
+      return;
+    }
+    setForm((prev) => ({
+      ...prev,
+      dosage_sticker_config: {
+        preset_key: "72x35",
+        width_mm: 72,
+        height_mm: 35,
+        printer_mode: "receipt_roll",
+        template: "classic",
+        font_scale: "normal",
+        font_size_header: 9.0,
+        font_size_patient: 8.5,
+        font_size_product: 11.0,
+        font_size_dosage: 10.5,
+        font_size_footer: 8.0,
+        font_weight_header: 800,
+        font_weight_patient: 700,
+        font_weight_product: 900,
+        font_weight_dosage: 800,
+        font_weight_footer: 700,
+        show_shop_name: true,
+        show_invoice_meta: true,
+        show_patient: true,
+        show_quantity: true,
+        show_batch: true,
+        show_expiry: true,
+        show_doctor: false,
+        footer_note: "Keep out of reach of children",
+        margin_top_mm: 0,
+        margin_bottom_mm: 4,
+        margin_left_mm: 0,
+        margin_right_mm: 0,
+        contrast_mode: "high_contrast",
+        scale_mode: "auto",
+        preferred_printer: "",
+        ...(prev?.dosage_sticker_config || {}),
+        ...patch,
+      },
+    }));
+  };
+
+  const handleResetStickerCalibration = () => {
+    if (disableInputs) {
+      toast.error("You don't have permission to update settings.");
+      return;
+    }
+    updateStickerConfig({
+      preset_key: "72x35",
+      width_mm: 72,
+      height_mm: 35,
+      printer_mode: "receipt_roll",
+      margin_top_mm: 0,
+      margin_bottom_mm: 4,
+      margin_left_mm: 0,
+      margin_right_mm: 0,
+      contrast_mode: "high_contrast",
+      scale_mode: "auto",
+      font_scale: "normal",
+    });
+    toast.success("Sticker layout calibration reset to default");
+  };
+
+  const applyStickerCalibrationPreset = (preset) => {
+    if (disableInputs) {
+      toast.error("You don't have permission to update settings.");
+      return;
+    }
+    updateStickerConfig(preset.values);
+    toast.success(`Applied preset: ${preset.label}`);
+  };
+
   const updateCalibrationFields = (patch) => {
     if (disableInputs) {
       toast.error("You don't have permission to update settings.");
@@ -245,6 +446,31 @@ export default function PrinterSetting({
   };
 
   const buildCalibratedPreviewUrl = (type, templateId, customForm = form) => {
+    if (type === "sticker") {
+      const stickerCfg = customForm?.dosage_sticker_config || {};
+      const safeTpl = templateId || stickerCfg.template || "classic";
+      const params = new URLSearchParams();
+      params.set("width_mm", String(stickerCfg.width_mm || 72));
+      params.set("height_mm", String(stickerCfg.height_mm || 35));
+      params.set("printer_mode", stickerCfg.printer_mode || "receipt_roll");
+      params.set("preset_key", stickerCfg.preset_key || "72x35");
+      params.set("font_scale", stickerCfg.font_scale || "normal");
+      params.set("contrast_mode", stickerCfg.contrast_mode || "high_contrast");
+      params.set("scale_mode", stickerCfg.scale_mode || "auto");
+      params.set("margin_top_mm", String(stickerCfg.margin_top_mm ?? 0));
+      params.set("margin_bottom_mm", String(stickerCfg.margin_bottom_mm ?? 4));
+      params.set("margin_left_mm", String(stickerCfg.margin_left_mm ?? 0));
+      params.set("margin_right_mm", String(stickerCfg.margin_right_mm ?? 0));
+      params.set("show_shop_name", stickerCfg.show_shop_name !== false ? "1" : "0");
+      params.set("show_invoice_meta", stickerCfg.show_invoice_meta !== false ? "1" : "0");
+      params.set("show_patient", stickerCfg.show_patient !== false ? "1" : "0");
+      params.set("show_quantity", stickerCfg.show_quantity !== false ? "1" : "0");
+      params.set("show_batch", stickerCfg.show_batch !== false ? "1" : "0");
+      params.set("show_expiry", stickerCfg.show_expiry !== false ? "1" : "0");
+      params.set("show_doctor", stickerCfg.show_doctor ? "1" : "0");
+      return `/print/sticker-preview/${safeTpl}?${params.toString()}`;
+    }
+
     const safeType = type === "a4" ? "a4" : "thermal";
     const safeTpl = templateId || "standard";
     const params = new URLSearchParams();
@@ -303,6 +529,18 @@ export default function PrinterSetting({
   };
 
   const handleTestTemplatePrint = async (type, templateId, templateName = "") => {
+    if (type === "sticker") {
+      const activeTpl = templateId || form.dosage_sticker_config?.template || "classic";
+      const url = buildCalibratedPreviewUrl("sticker", activeTpl, form);
+      const label = templateName ? `${templateName} (Sticker)` : `${activeTpl} sticker`;
+      const targetPrinter = form.dosage_sticker_config?.preferred_printer || "";
+      await printSlipUrl(url, {
+        deviceName: targetPrinter,
+        loadingMessage: `Sending ${label} test print to printer...`,
+        successMessage: `Test sticker (${label}) sent to printer`,
+      });
+      return;
+    }
     const activeType = type || (form.printer_type === "thermal" ? "thermal" : "a4");
     const activeTpl =
       templateId ||
@@ -318,6 +556,10 @@ export default function PrinterSetting({
   };
 
   const handleTestDirectPrint = async () => {
+    if (layoutCategory === "sticker") {
+      await handleTestTemplatePrint("sticker", form.dosage_sticker_config?.template || "classic");
+      return;
+    }
     const activeType = form.printer_type === "thermal" ? "thermal" : "a4";
     const activeTpl =
       activeType === "thermal"
@@ -608,18 +850,34 @@ export default function PrinterSetting({
       ScaleIcon,
       BoltIcon,
       QrCodeIcon,
+      TagIcon,
     };
-    return icons[iconName] || DocumentTextIcon;
+    return icons[iconName] || TagIcon;
   };
 
-  const isThermal = form.printer_type === "thermal";
-  const activeType = isThermal ? "thermal" : "a4";
-  const activeTemplateList = isThermal ? thermalTemplates : a4Templates;
-  const activeTemplateId = isThermal
+  const isSticker = layoutCategory === "sticker";
+  const isThermal = layoutCategory === "thermal" || (!isSticker && form.printer_type === "thermal");
+  const activeType = isSticker ? "sticker" : isThermal ? "thermal" : "a4";
+  const activeTemplateList = isSticker
+    ? STICKER_TEMPLATES
+    : isThermal
+    ? thermalTemplates
+    : a4Templates;
+  const activeTemplateId = isSticker
+    ? form.dosage_sticker_config?.template || "classic"
+    : isThermal
     ? form.thermal_template || selectedThermalTemplate || "standard"
     : form.a4_template || selectedA4Template || "standard";
   const activeTemplateObj =
     activeTemplateList.find((t) => t.id === activeTemplateId) || activeTemplateList[0];
+
+  const handleStickerTemplateSelect = (id) => {
+    if (disableInputs) {
+      toast.error("You don't have permission to update settings.");
+      return;
+    }
+    updateStickerConfig({ template: id });
+  };
 
   const openFixModalForTemplate = (template, type) => {
     setPreviewingTemplate(template);
@@ -1004,6 +1262,469 @@ export default function PrinterSetting({
     );
   };
 
+  const renderStickerCalibrationControls = ({ compact = false } = {}) => {
+    const stickerCfg = form.dosage_sticker_config || {};
+    const currentWidth = Number(stickerCfg.width_mm || 72);
+    const currentHeight = Number(stickerCfg.height_mm || 35);
+    const currentMode = stickerCfg.printer_mode || "receipt_roll";
+    const currentPresetKey = stickerCfg.preset_key || "72x35";
+    const currentFontScale = stickerCfg.font_scale || "normal";
+    const currentContrast = stickerCfg.contrast_mode || "high_contrast";
+    const currentScaleMode = stickerCfg.scale_mode || "auto";
+    const currentTop = Number(stickerCfg.margin_top_mm || 0);
+    const currentBottom = Number(
+      stickerCfg.margin_bottom_mm !== undefined ? stickerCfg.margin_bottom_mm : 4
+    );
+    const currentLeft = Number(stickerCfg.margin_left_mm || 0);
+    const currentRight = Number(stickerCfg.margin_right_mm || 0);
+    const currentPrinter = stickerCfg.preferred_printer || "";
+
+    return (
+      <div className="space-y-4">
+        {/* 1-Click Problem Fixer Presets */}
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/40 p-3.5">
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <div className="flex items-center gap-2">
+              <WrenchScrewdriverIcon className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                1-Click Sticker & Label Problem Fixes
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleResetStickerCalibration}
+              disabled={disableInputs}
+              className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
+              title="Reset sticker layout calibration settings to factory default"
+            >
+              <ArrowPathIcon className="w-3.5 h-3.5" />
+              <span>Reset Defaults</span>
+            </button>
+          </div>
+
+          <div
+            className={`grid gap-2 ${
+              compact ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-2"
+            }`}
+          >
+            {STICKER_CALIBRATION_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                disabled={disableInputs}
+                onClick={() => applyStickerCalibrationPreset(preset)}
+                className="text-left rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/70 hover:border-blue-500 dark:hover:border-blue-400 px-3 py-2 transition shadow-2xs"
+              >
+                <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                  {preset.label}
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
+                  {preset.tagline}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Sticker Dimensions & Media Mode */}
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700/80 p-3.5 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-100 block">
+                Label Size Presets & Printable Dimensions
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                Choose a standard pharmacy size or enter custom width & height in millimeters
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] font-semibold text-slate-500">W:</span>
+                <input
+                  type="number"
+                  min={25}
+                  max={120}
+                  step={1}
+                  disabled={disableInputs}
+                  value={currentWidth}
+                  onChange={(e) =>
+                    updateStickerConfig({
+                      width_mm: Math.max(25, Math.min(120, Number(e.target.value) || 72)),
+                    })
+                  }
+                  className="w-16 text-center text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-600 px-1.5 py-1"
+                />
+                <span className="text-xs text-slate-500">mm</span>
+              </div>
+              <span className="text-slate-400 font-bold">×</span>
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] font-semibold text-slate-500">H:</span>
+                <input
+                  type="number"
+                  min={15}
+                  max={200}
+                  step={1}
+                  disabled={disableInputs}
+                  value={currentHeight}
+                  onChange={(e) =>
+                    updateStickerConfig({
+                      height_mm: Math.max(15, Math.min(200, Number(e.target.value) || 35)),
+                    })
+                  }
+                  className="w-16 text-center text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-600 px-1.5 py-1"
+                />
+                <span className="text-xs text-slate-500">mm</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            {STICKER_SIZE_PILLS.map((pill) => {
+              const active =
+                currentPresetKey === pill.preset_key ||
+                (currentWidth === pill.width_mm && currentHeight === pill.height_mm);
+              return (
+                <button
+                  key={pill.preset_key}
+                  type="button"
+                  disabled={disableInputs}
+                  onClick={() =>
+                    updateStickerConfig({
+                      preset_key: pill.preset_key,
+                      width_mm: pill.width_mm,
+                      height_mm: pill.height_mm,
+                    })
+                  }
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold border transition ${
+                    active
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-blue-400"
+                  }`}
+                >
+                  {pill.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Media / Roll Mode */}
+          <div className="pt-2 border-t border-slate-200 dark:border-slate-700/60">
+            <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 block mb-1.5">
+              Printer Media Mode
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <label
+                className={`p-2.5 rounded-lg border cursor-pointer flex items-start gap-2.5 transition ${
+                  currentMode === "receipt_roll"
+                    ? "bg-blue-50/70 border-blue-500 dark:bg-blue-950/40 dark:border-blue-500"
+                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="sticker_printer_mode"
+                  value="receipt_roll"
+                  checked={currentMode === "receipt_roll"}
+                  onChange={() => updateStickerConfig({ printer_mode: "receipt_roll" })}
+                  disabled={disableInputs}
+                  className="mt-0.5 text-blue-600"
+                />
+                <div>
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100 block">
+                    Continuous Receipt Roll (72mm/80mm)
+                  </span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                    Separated with dash lines & auto-cutter feed guard. Standard POS thermal printers.
+                  </span>
+                </div>
+              </label>
+
+              <label
+                className={`p-2.5 rounded-lg border cursor-pointer flex items-start gap-2.5 transition ${
+                  currentMode === "label_sheet"
+                    ? "bg-blue-50/70 border-blue-500 dark:bg-blue-950/40 dark:border-blue-500"
+                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="sticker_printer_mode"
+                  value="label_sheet"
+                  checked={currentMode === "label_sheet"}
+                  onChange={() => updateStickerConfig({ printer_mode: "label_sheet" })}
+                  disabled={disableInputs}
+                  className="mt-0.5 text-blue-600"
+                />
+                <div>
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100 block">
+                    Die-Cut Label Printer (Gap / Black Mark)
+                  </span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                    1 label per page break. Zebra, Xprinter, TSC, Gprinter sticker printers.
+                  </span>
+                </div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Font Scale + Darkness & Contrast + Spooler Scaling */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700/80 p-3">
+            <label
+              htmlFor="sticker-font-scale"
+              className="text-xs font-bold text-slate-800 dark:text-slate-100 block mb-1"
+            >
+              Text Scale & Size
+            </label>
+            <select
+              id="sticker-font-scale"
+              value={currentFontScale}
+              disabled={disableInputs}
+              onChange={(e) => updateStickerConfig({ font_scale: e.target.value })}
+              className="w-full text-xs rounded-lg"
+            >
+              <option value="compact">Compact (80% - Small vials & 50×25mm)</option>
+              <option value="normal">Normal (100% - Standard 72×35mm)</option>
+              <option value="large">Large (115% - Bold elderly readable)</option>
+            </select>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-1">
+              Scales medicine name, patient and Urdu instructions.
+            </span>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700/80 p-3">
+            <label
+              htmlFor="sticker-contrast-mode"
+              className="text-xs font-bold text-slate-800 dark:text-slate-100 block mb-1"
+            >
+              Print Darkness & Contrast
+            </label>
+            <select
+              id="sticker-contrast-mode"
+              value={currentContrast}
+              disabled={disableInputs}
+              onChange={(e) => updateStickerConfig({ contrast_mode: e.target.value })}
+              className="w-full text-xs rounded-lg"
+            >
+              <option value="standard">Standard Weight</option>
+              <option value="high_contrast">
+                High Contrast — Pure Black & Bold (Recommended)
+              </option>
+              <option value="extra_bold">
+                Extra Bold — Maximum Darkness for Faint Printheads
+              </option>
+            </select>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-1">
+              Guarantees deep black Urdu Nastaliq glyphs.
+            </span>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700/80 p-3">
+            <label
+              htmlFor="sticker-scale-mode"
+              className="text-xs font-bold text-slate-800 dark:text-slate-100 block mb-1"
+            >
+              Hardware Spooler Scaling
+            </label>
+            <select
+              id="sticker-scale-mode"
+              value={currentScaleMode}
+              disabled={disableInputs}
+              onChange={(e) => updateStickerConfig({ scale_mode: e.target.value })}
+              className="w-full text-xs rounded-lg"
+            >
+              <option value="auto">Automatic (1:1 Millimeter)</option>
+              <option value="noscale">Exact 1:1 Millimeter Size (No Driver Scaling)</option>
+              <option value="fit">Fit to Printable Area</option>
+              <option value="shrink">Shrink Oversized Only</option>
+            </select>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-1">
+              Matches driver print margins without distorting stickers.
+            </span>
+          </div>
+        </div>
+
+        {/* Margins & Cutter Feed Guard */}
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700/80 p-3.5">
+          <div className="text-xs font-bold text-slate-800 dark:text-slate-100 mb-2">
+            Hardware Margins, Horizontal Alignment & Cutter Guard (mm)
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <label
+                htmlFor="sticker-margin-left"
+                className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 block mb-1"
+              >
+                Left Shift ({currentLeft}mm)
+              </label>
+              <input
+                id="sticker-margin-left"
+                type="number"
+                min={-10}
+                max={20}
+                disabled={disableInputs}
+                value={currentLeft}
+                onChange={(e) =>
+                  updateStickerConfig({
+                    margin_left_mm: Math.max(-10, Math.min(20, Number(e.target.value) || 0)),
+                  })
+                }
+                className="w-full text-xs rounded-lg"
+              />
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                -10 to +20mm
+              </span>
+            </div>
+
+            <div>
+              <label
+                htmlFor="sticker-margin-right"
+                className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 block mb-1"
+              >
+                Right SafePad ({currentRight}mm)
+              </label>
+              <input
+                id="sticker-margin-right"
+                type="number"
+                min={0}
+                max={25}
+                disabled={disableInputs}
+                value={currentRight}
+                onChange={(e) =>
+                  updateStickerConfig({
+                    margin_right_mm: Math.max(0, Math.min(25, Number(e.target.value) || 0)),
+                  })
+                }
+                className="w-full text-xs rounded-lg"
+              />
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                Prevents right edge clip
+              </span>
+            </div>
+
+            <div>
+              <label
+                htmlFor="sticker-margin-top"
+                className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 block mb-1"
+              >
+                Top Feed ({currentTop}mm)
+              </label>
+              <input
+                id="sticker-margin-top"
+                type="number"
+                min={0}
+                max={25}
+                disabled={disableInputs}
+                value={currentTop}
+                onChange={(e) =>
+                  updateStickerConfig({
+                    margin_top_mm: Math.max(0, Math.min(25, Number(e.target.value) || 0)),
+                  })
+                }
+                className="w-full text-xs rounded-lg"
+              />
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                Top spacing
+              </span>
+            </div>
+
+            <div>
+              <label
+                htmlFor="sticker-margin-bottom"
+                className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 block mb-1"
+              >
+                Cutter Guard / Bottom Feed ({currentBottom}mm)
+              </label>
+              <input
+                id="sticker-margin-bottom"
+                type="number"
+                min={0}
+                max={35}
+                disabled={disableInputs}
+                value={currentBottom}
+                onChange={(e) =>
+                  updateStickerConfig({
+                    margin_bottom_mm: Math.max(0, Math.min(35, Number(e.target.value) || 0)),
+                  })
+                }
+                className="w-full text-xs rounded-lg"
+              />
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                Prevents cutter slicing text
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Content & Field Toggles */}
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700/80 p-3.5 space-y-2">
+          <div className="text-xs font-bold text-slate-800 dark:text-slate-100 mb-1">
+            Sticker Label Content & Field Toggles
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+            {[
+              { key: "show_shop_name", label: "Store / Pharmacy Name" },
+              { key: "show_invoice_meta", label: "Invoice # & Date" },
+              { key: "show_patient", label: "Patient Name" },
+              { key: "show_quantity", label: "Quantity & Unit" },
+              { key: "show_batch", label: "Batch Number" },
+              { key: "show_expiry", label: "Expiry Date" },
+              { key: "show_doctor", label: "Doctor / Prescriber" },
+            ].map(({ key, label }) => {
+              const enabled = stickerCfg[key] !== false;
+              return (
+                <label
+                  key={key}
+                  className="inline-flex items-center gap-2 cursor-pointer text-xs text-slate-700 dark:text-slate-200"
+                >
+                  <input
+                    type="checkbox"
+                    checked={enabled}
+                    disabled={disableInputs}
+                    onChange={(e) => updateStickerConfig({ [key]: e.target.checked })}
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>{label}</span>
+                </label>
+              );
+            })}
+          </div>
+
+          {/* Preferred Printer in Desktop App */}
+          {isDesktopApp && installedPrinters.length > 0 && (
+            <div className="pt-2.5 border-t border-slate-200 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 block">
+                  Dedicated Sticker Printer Device
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Route sticker jobs directly to this label printer without affecting your receipt printer
+                </span>
+              </div>
+              <select
+                value={currentPrinter}
+                disabled={disableInputs}
+                onChange={(e) => updateStickerConfig({ preferred_printer: e.target.value })}
+                className="text-xs rounded-lg max-w-xs"
+              >
+                <option value="">Default POS / Receipt Printer</option>
+                {installedPrinters.map((p) => {
+                  const pName = typeof p === "string" ? p : p?.name || "";
+                  return (
+                    <option key={pName} value={pName}>
+                      {pName}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderTemplateGrid = ({ templates, selectedId, onSelect, type }) => (
     <div className="settings-template-grid">
       {templates.map((template) => {
@@ -1322,20 +2043,89 @@ export default function PrinterSetting({
         </div>
       </div>
 
+      {/* ===== Layout Category Switcher (Thermal Receipts | A4 Full Invoices | Dosage & Sticker Printer) ===== */}
+      <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700/80 mb-5">
+        <button
+          type="button"
+          onClick={() => {
+            setLayoutCategory("thermal");
+            if (form.printer_type !== "thermal") {
+              handleChange({ target: { name: "printer_type", value: "thermal" } });
+            }
+          }}
+          className={`flex-1 min-w-[170px] flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl text-xs font-bold transition shadow-xs ${
+            layoutCategory === "thermal"
+              ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 border border-slate-200/80 dark:border-slate-700 shadow-sm"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-slate-900/40"
+          }`}
+        >
+          <BoltIcon className="w-4 h-4 shrink-0" />
+          <div className="text-left">
+            <span className="block leading-tight">Thermal Receipts</span>
+            <span className="block text-[10px] font-normal opacity-75">80mm & 58mm Roll Slips</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setLayoutCategory("a4");
+            if (form.printer_type !== "a4") {
+              handleChange({ target: { name: "printer_type", value: "a4" } });
+            }
+          }}
+          className={`flex-1 min-w-[170px] flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl text-xs font-bold transition shadow-xs ${
+            layoutCategory === "a4"
+              ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 border border-slate-200/80 dark:border-slate-700 shadow-sm"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-slate-900/40"
+          }`}
+        >
+          <DocumentTextIcon className="w-4 h-4 shrink-0" />
+          <div className="text-left">
+            <span className="block leading-tight">A4 Invoices</span>
+            <span className="block text-[10px] font-normal opacity-75">Standard Full-Page Sheets</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setLayoutCategory("sticker");
+          }}
+          className={`flex-1 min-w-[170px] flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl text-xs font-bold transition shadow-xs ${
+            layoutCategory === "sticker"
+              ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 border border-slate-200/80 dark:border-slate-700 shadow-sm"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-slate-900/40"
+          }`}
+        >
+          <TagIcon className="w-4 h-4 shrink-0" />
+          <div className="text-left">
+            <span className="block leading-tight">Dosage Stickers & Labels</span>
+            <span className="block text-[10px] font-normal opacity-75">Pharmacy labels, rolls & die-cut</span>
+          </div>
+        </button>
+      </div>
+
       {/* ===== Template selection ===== */}
       <div className="settings-block">
         <div className="settings-block-heading">
           <div className="flex flex-wrap items-center justify-between gap-3 w-full">
             <div className="flex items-center gap-3 min-w-0">
               <div className="settings-block-icon">
-                <DocumentTextIcon />
+                {isSticker ? <TagIcon /> : <DocumentTextIcon />}
               </div>
               <div className="min-w-0">
                 <h2 className="settings-block-title">
-                  {isThermal ? "Thermal Receipt Template" : "A4 Invoice Template"}
+                  {isSticker
+                    ? "Dosage Sticker & Label Template"
+                    : isThermal
+                    ? "Thermal Receipt Template"
+                    : "A4 Invoice Template"}
                 </h2>
                 <p className="settings-block-note">
-                  Select a layout template, test print it immediately, or click Fix Layout to calibrate width & margins
+                  {isSticker
+                    ? "Select a pharmacy sticker template, preview bilingual Urdu dosage layouts, and test print directly"
+                    : "Select a layout template, test print it immediately, or click Fix Layout to calibrate width & margins"}
                 </p>
               </div>
             </div>
@@ -1362,7 +2152,14 @@ export default function PrinterSetting({
         </div>
 
         <div className="settings-body">
-          {isThermal
+          {isSticker
+            ? renderTemplateGrid({
+                templates: STICKER_TEMPLATES,
+                selectedId: activeTemplateId,
+                onSelect: handleStickerTemplateSelect,
+                type: "sticker",
+              })
+            : isThermal
             ? renderTemplateGrid({
                 templates: thermalTemplates,
                 selectedId: selectedThermalTemplate,
@@ -1379,30 +2176,77 @@ export default function PrinterSetting({
           {/* Selected Template + Quick Test & Fix Bar */}
           <div className="settings-note flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-start gap-2.5 min-w-0">
-              <DocumentTextIcon aria-hidden="true" className="shrink-0 mt-0.5" />
+              {isSticker ? (
+                <TagIcon aria-hidden="true" className="shrink-0 mt-0.5" />
+              ) : (
+                <DocumentTextIcon aria-hidden="true" className="shrink-0 mt-0.5" />
+              )}
               <div>
                 <span className="settings-note-title">
                   Selected: {activeTemplateObj?.name} Template (
-                  {isThermal ? "Thermal Receipt" : "A4 Invoice"})
+                  {isSticker
+                    ? "Dosage Sticker & Label"
+                    : isThermal
+                    ? "Thermal Receipt"
+                    : "A4 Invoice"}
+                  )
                 </span>
                 <div className="text-xs opacity-90">
-                  Active Calibration:{" "}
-                  <strong>
-                    Width{" "}
-                    {Number(form.print_paper_width_mm || 0) > 0
-                      ? `${form.print_paper_width_mm}mm`
-                      : "Template Default"}
-                  </strong>{" "}
-                  • <strong>Font {form.print_font_scale || 100}%</strong> •{" "}
-                  <strong>
-                    Contrast{" "}
-                    {form.print_contrast_mode === "high_contrast"
-                      ? "Pure Black + Bold"
-                      : form.print_contrast_mode === "extra_bold"
-                      ? "Extra Bold"
-                      : "Standard"}
-                  </strong>{" "}
-                  • <strong>Bottom Feed {form.print_margin_bottom_mm ?? 4}mm</strong>
+                  {isSticker ? (
+                    <>
+                      Active Calibration:{" "}
+                      <strong>
+                        Size {form.dosage_sticker_config?.width_mm || 72}×
+                        {form.dosage_sticker_config?.height_mm || 35}mm (
+                        {form.dosage_sticker_config?.printer_mode === "receipt_roll"
+                          ? "Receipt Roll"
+                          : "Die-Cut Label"}
+                        )
+                      </strong>{" "}
+                      •{" "}
+                      <strong>
+                        Font{" "}
+                        {form.dosage_sticker_config?.font_scale === "compact"
+                          ? "Compact 80%"
+                          : form.dosage_sticker_config?.font_scale === "large"
+                          ? "Large 115%"
+                          : "Normal 100%"}
+                      </strong>{" "}
+                      •{" "}
+                      <strong>
+                        Contrast{" "}
+                        {form.dosage_sticker_config?.contrast_mode === "high_contrast"
+                          ? "Pure Black + Bold"
+                          : form.dosage_sticker_config?.contrast_mode === "extra_bold"
+                          ? "Extra Bold"
+                          : "Standard"}
+                      </strong>{" "}
+                      •{" "}
+                      <strong>
+                        Cutter Guard {form.dosage_sticker_config?.margin_bottom_mm ?? 4}mm
+                      </strong>
+                    </>
+                  ) : (
+                    <>
+                      Active Calibration:{" "}
+                      <strong>
+                        Width{" "}
+                        {Number(form.print_paper_width_mm || 0) > 0
+                          ? `${form.print_paper_width_mm}mm`
+                          : "Template Default"}
+                      </strong>{" "}
+                      • <strong>Font {form.print_font_scale || 100}%</strong> •{" "}
+                      <strong>
+                        Contrast{" "}
+                        {form.print_contrast_mode === "high_contrast"
+                          ? "Pure Black + Bold"
+                          : form.print_contrast_mode === "extra_bold"
+                          ? "Extra Bold"
+                          : "Standard"}
+                      </strong>{" "}
+                      • <strong>Bottom Feed {form.print_margin_bottom_mm ?? 4}mm</strong>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -1414,7 +2258,7 @@ export default function PrinterSetting({
                 className="products-action products-action-primary theme-btn-primary text-xs"
               >
                 <PrinterIcon className="w-4 h-4" />
-                <span>Test Receipt Print</span>
+                <span>{isSticker ? "Test Sticker Print" : "Test Receipt Print"}</span>
               </button>
               <button
                 type="button"
@@ -1424,54 +2268,66 @@ export default function PrinterSetting({
                 <AdjustmentsHorizontalIcon className="w-4 h-4" />
                 <span>Calibrate & Fix Layout Below</span>
               </button>
-              <button
-                type="button"
-                onClick={handlePrintAlignmentRulerSlip}
-                className="products-action theme-btn-secondary text-xs"
-              >
-                <ScaleIcon className="w-4 h-4" />
-                <span>Print Width Ruler Slip</span>
-              </button>
+              {!isSticker && (
+                <button
+                  type="button"
+                  onClick={handlePrintAlignmentRulerSlip}
+                  className="products-action theme-btn-secondary text-xs"
+                >
+                  <ScaleIcon className="w-4 h-4" />
+                  <span>Print Width Ruler Slip</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* ===== Receipt Layout Fix & Printer Calibration Studio ===== */}
+      {/* ===== Receipt / Sticker Layout Fix & Printer Calibration Studio ===== */}
       <div className="settings-block" ref={calibrationSectionRef}>
         <div className="settings-block-heading">
           <div className="flex flex-wrap items-center justify-between gap-3 w-full">
             <div className="flex items-center gap-3 min-w-0">
               <div className="settings-block-icon">
-                <WrenchScrewdriverIcon />
+                {isSticker ? <TagIcon /> : <WrenchScrewdriverIcon />}
               </div>
               <div className="min-w-0">
                 <h2 className="settings-block-title">
-                  Receipt Layout Fix & Printer Calibration Studio
+                  {isSticker
+                    ? "Sticker & Label Layout Fix Studio"
+                    : "Receipt Layout Fix & Printer Calibration Studio"}
                 </h2>
                 <p className="settings-block-note">
-                  Fix right-edge price cut-off, auto-cutter slicing, faint thermal text, or paper width mismatch across all ERP receipts & ledgers
+                  {isSticker
+                    ? "Calibrate label roll width (72mm/80mm), die-cut dimensions (50×25mm), cutter guard feed, and pure-black Urdu contrast"
+                    : "Fix right-edge price cut-off, auto-cutter slicing, faint thermal text, or paper width mismatch across all ERP receipts & ledgers"}
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handlePrintAlignmentRulerSlip}
-                className="products-action theme-btn-secondary"
-                title="Prints a physical millimeter ruler (44mm to 72mm) to measure your exact thermal printhead width"
-              >
-                <ScaleIcon className="w-4 h-4" />
-                <span>Print Hardware Ruler Slip</span>
-              </button>
+              {!isSticker && (
+                <button
+                  type="button"
+                  onClick={handlePrintAlignmentRulerSlip}
+                  className="products-action theme-btn-secondary"
+                  title="Prints a physical millimeter ruler (44mm to 72mm) to measure your exact thermal printhead width"
+                >
+                  <ScaleIcon className="w-4 h-4" />
+                  <span>Print Hardware Ruler Slip</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleTestDirectPrint}
                 className="products-action products-action-primary theme-btn-primary"
               >
                 <PrinterIcon className="w-4 h-4" />
-                <span>Test Print Calibrated Receipt</span>
+                <span>
+                  {isSticker
+                    ? "Test Print Calibrated Sticker"
+                    : "Test Print Calibrated Receipt"}
+                </span>
               </button>
             </div>
           </div>
@@ -1481,7 +2337,9 @@ export default function PrinterSetting({
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
             {/* Left 7 Columns: Calibration Controls */}
             <div className="xl:col-span-7">
-              {renderCalibrationControls({ compact: false })}
+              {isSticker
+                ? renderStickerCalibrationControls({ compact: false })
+                : renderCalibrationControls({ compact: false })}
             </div>
 
             {/* Right 5 Columns: Live Calibrated Preview + Physical Millimeter Ruler */}
@@ -1492,11 +2350,19 @@ export default function PrinterSetting({
                     Live Calibrated Preview ({activeTemplateObj?.name})
                   </span>
                   <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Updates instantly as you adjust width, margins, font & contrast
+                    Updates instantly as you adjust dimensions, margins, font & contrast
                   </span>
                 </div>
                 <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
-                  {Number(form.print_paper_width_mm || 0) > 0
+                  {isSticker
+                    ? `${form.dosage_sticker_config?.width_mm || 72}×${
+                        form.dosage_sticker_config?.height_mm || 35
+                      }mm (${
+                        form.dosage_sticker_config?.printer_mode === "receipt_roll"
+                          ? "Roll Cutter"
+                          : "Die-Cut"
+                      })`
+                    : Number(form.print_paper_width_mm || 0) > 0
                     ? `${form.print_paper_width_mm}mm Printable`
                     : isThermal
                     ? "Auto Thermal Width"
@@ -1505,30 +2371,57 @@ export default function PrinterSetting({
               </div>
 
               {/* Visual Millimeter Ruler Header */}
-              {isThermal && (
-                <div className="mb-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-2.5 py-1.5 text-[10px] font-mono text-amber-900 dark:text-amber-200">
+              {isSticker ? (
+                <div className="mb-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-2.5 py-1.5 text-[10px] font-mono text-emerald-900 dark:text-emerald-200">
                   <div className="flex justify-between font-bold">
                     <span>0mm</span>
-                    <span>48mm (58 Roll)</span>
-                    <span>68mm</span>
-                    <span>72mm (80 Roll)</span>
+                    <span>38mm</span>
+                    <span>50mm (Label)</span>
+                    <span>72mm (Roll)</span>
                     <span>80mm</span>
                   </div>
-                  <div className="w-full h-1.5 bg-amber-200 dark:bg-amber-800 rounded-full mt-1 overflow-hidden">
+                  <div className="w-full h-1.5 bg-emerald-200 dark:bg-emerald-800 rounded-full mt-1 overflow-hidden">
                     <div
-                      className="h-full bg-blue-600 transition-all"
+                      className="h-full bg-emerald-600 transition-all"
                       style={{
                         width: `${Math.min(
                           100,
                           Math.max(
-                            35,
-                            ((Number(form.print_paper_width_mm || 72) || 72) / 80) * 100
+                            25,
+                            ((Number(form.dosage_sticker_config?.width_mm || 72) || 72) / 80) *
+                              100
                           )
                         )}%`,
                       }}
                     />
                   </div>
                 </div>
+              ) : (
+                isThermal && (
+                  <div className="mb-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-2.5 py-1.5 text-[10px] font-mono text-amber-900 dark:text-amber-200">
+                    <div className="flex justify-between font-bold">
+                      <span>0mm</span>
+                      <span>48mm (58 Roll)</span>
+                      <span>68mm</span>
+                      <span>72mm (80 Roll)</span>
+                      <span>80mm</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-amber-200 dark:bg-amber-800 rounded-full mt-1 overflow-hidden">
+                      <div
+                        className="h-full bg-blue-600 transition-all"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.max(
+                              35,
+                              ((Number(form.print_paper_width_mm || 72) || 72) / 80) * 100
+                            )
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )
               )}
 
               <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white overflow-hidden shadow-inner flex justify-center p-2">
@@ -1537,7 +2430,7 @@ export default function PrinterSetting({
                   src={buildCalibratedPreviewUrl(activeType, activeTemplateId, form)}
                   className="border-0 w-full"
                   style={{ minHeight: "420px" }}
-                  title="Live Calibrated Receipt Preview"
+                  title="Live Calibrated Preview"
                 />
               </div>
 
@@ -1593,7 +2486,7 @@ export default function PrinterSetting({
                   {previewingTemplate.name} Template — Test Print & Fix Layout
                 </h3>
                 <p className="settings-block-note">
-                  {previewingTemplate.description} • Adjust width, margins, font size & contrast live and test print immediately
+                  {previewingTemplate.description} • Adjust dimensions, margins, font size & contrast live and test print immediately
                 </p>
               </div>
               <button
@@ -1626,12 +2519,20 @@ export default function PrinterSetting({
             {/* Body: 2-Column Live Preview + Layout Fix Controls */}
             <div className="settings-body max-h-[75vh] overflow-y-auto">
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-                {/* Left Column: Live Receipt Preview */}
+                {/* Left Column: Live Preview */}
                 <div className="lg:col-span-5 flex flex-col items-center bg-slate-100 dark:bg-slate-900/70 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
                   <div className="w-full flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300 mb-2">
-                    <span>Live Calibrated Receipt Preview</span>
                     <span>
-                      {Number(form.print_paper_width_mm || 0) > 0
+                      {previewingType === "sticker"
+                        ? "Live Calibrated Sticker Preview"
+                        : "Live Calibrated Receipt Preview"}
+                    </span>
+                    <span>
+                      {previewingType === "sticker"
+                        ? `${form.dosage_sticker_config?.width_mm || 72}×${
+                            form.dosage_sticker_config?.height_mm || 35
+                          }mm`
+                        : Number(form.print_paper_width_mm || 0) > 0
                         ? `${form.print_paper_width_mm}mm`
                         : "Default Width"}
                     </span>
@@ -1642,6 +2543,8 @@ export default function PrinterSetting({
                       maxWidth:
                         previewingType === "a4"
                           ? "100%"
+                          : previewingType === "sticker"
+                          ? "360px"
                           : previewingTemplate.id === "minimal" ||
                             previewingTemplate.id === "compact"
                           ? "320px"
@@ -1668,7 +2571,9 @@ export default function PrinterSetting({
 
                 {/* Right Column: Interactive Layout Fix Controls */}
                 <div className="lg:col-span-7">
-                  {renderCalibrationControls({ compact: true })}
+                  {previewingType === "sticker"
+                    ? renderStickerCalibrationControls({ compact: true })
+                    : renderCalibrationControls({ compact: true })}
                 </div>
               </div>
             </div>
@@ -1691,14 +2596,16 @@ export default function PrinterSetting({
                   <span>Test Print {previewingTemplate.name}</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={handlePrintAlignmentRulerSlip}
-                  className="products-action theme-btn-secondary"
-                >
-                  <ScaleIcon className="w-4 h-4" aria-hidden="true" />
-                  <span>Print Width Ruler</span>
-                </button>
+                {previewingType !== "sticker" && (
+                  <button
+                    type="button"
+                    onClick={handlePrintAlignmentRulerSlip}
+                    className="products-action theme-btn-secondary"
+                  >
+                    <ScaleIcon className="w-4 h-4" aria-hidden="true" />
+                    <span>Print Width Ruler</span>
+                  </button>
+                )}
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -1719,7 +2626,9 @@ export default function PrinterSetting({
                       toast.error("You don't have permission to update settings.");
                       return;
                     }
-                    if (previewingType === "a4") {
+                    if (previewingType === "sticker") {
+                      updateStickerConfig({ template: previewingTemplate.id });
+                    } else if (previewingType === "a4") {
                       handleA4TemplateSelect(previewingTemplate.id);
                     } else {
                       handleTemplateSelect(previewingTemplate.id);

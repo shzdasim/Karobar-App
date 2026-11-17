@@ -272,6 +272,117 @@ Route::get('/print/a4-preview/{template}', function ($template) {
     ]);
 })->name('a4.preview');
 
+// Sticker & Label template preview route (renders patient dosage / medicine stickers)
+Route::get('/print/sticker-preview/{template?}', function (?string $template = 'classic') {
+    $validTemplates = ['classic', 'minimal', 'bold', 'urdu_focus'];
+    $selectedTemplate = in_array($template, $validTemplates, true) ? $template : 'classic';
+
+    $dbSetting = \Illuminate\Support\Facades\Schema::hasTable('settings') ? \App\Models\Setting::first() : null;
+    $baseConfig = $dbSetting?->resolvedDosageStickerConfig() ?? \App\Models\Setting::defaultDosageStickerConfig();
+
+    $req = request();
+    $w = $req->filled('width_mm') ? max(25, min(150, (int) $req->input('width_mm'))) : (int) ($baseConfig['width_mm'] ?? 50);
+    $h = $req->filled('height_mm') ? max(15, min(120, (int) $req->input('height_mm'))) : (int) ($baseConfig['height_mm'] ?? 25);
+    $printerMode = $req->input('printer_mode', $baseConfig['printer_mode'] ?? 'receipt_roll');
+    if (!in_array($printerMode, ['receipt_roll', 'label_printer'], true)) {
+        $printerMode = 'receipt_roll';
+    }
+
+    $stickerConfig = array_merge($baseConfig, [
+        'template'            => $selectedTemplate,
+        'width_mm'            => $w,
+        'height_mm'           => $h,
+        'printer_mode'        => $printerMode,
+        'preset_key'          => $req->input('preset_key', $baseConfig['preset_key'] ?? "{$w}x{$h}"),
+        'font_scale'          => $req->input('font_scale', $baseConfig['font_scale'] ?? 'normal'),
+        'contrast_mode'       => $req->input('contrast_mode', $baseConfig['contrast_mode'] ?? 'high_contrast'),
+        'scale_mode'          => $req->input('scale_mode', $baseConfig['scale_mode'] ?? 'auto'),
+        'margin_top_mm'       => (int) $req->input('margin_top_mm', $baseConfig['margin_top_mm'] ?? 0),
+        'margin_bottom_mm'    => (int) $req->input('margin_bottom_mm', $baseConfig['margin_bottom_mm'] ?? 4),
+        'margin_left_mm'      => (int) $req->input('margin_left_mm', $baseConfig['margin_left_mm'] ?? 0),
+        'margin_right_mm'     => (int) $req->input('margin_right_mm', $baseConfig['margin_right_mm'] ?? 0),
+        'show_shop_name'      => $req->has('show_shop_name') ? $req->boolean('show_shop_name') : (bool) ($baseConfig['show_shop_name'] ?? true),
+        'show_invoice_meta'   => $req->has('show_invoice_meta') ? $req->boolean('show_invoice_meta') : (bool) ($baseConfig['show_invoice_meta'] ?? true),
+        'show_patient'        => $req->has('show_patient') ? $req->boolean('show_patient') : (bool) ($baseConfig['show_patient'] ?? true),
+        'show_quantity'       => $req->has('show_quantity') ? $req->boolean('show_quantity') : (bool) ($baseConfig['show_quantity'] ?? true),
+        'show_batch'          => $req->has('show_batch') ? $req->boolean('show_batch') : (bool) ($baseConfig['show_batch'] ?? true),
+        'show_expiry'         => $req->has('show_expiry') ? $req->boolean('show_expiry') : (bool) ($baseConfig['show_expiry'] ?? true),
+        'show_doctor'         => $req->has('show_doctor') ? $req->boolean('show_doctor') : (bool) ($baseConfig['show_doctor'] ?? false),
+        'footer_note'         => (string) $req->input('footer_note', $baseConfig['footer_note'] ?? 'Keep out of reach of children'),
+    ]);
+
+    foreach (['header', 'patient', 'product', 'dosage', 'footer'] as $k) {
+        if ($req->filled("font_size_{$k}")) {
+            $stickerConfig["font_size_{$k}"] = (float) $req->input("font_size_{$k}");
+        }
+        if ($req->filled("font_weight_{$k}")) {
+            $stickerConfig["font_weight_{$k}"] = (int) $req->input("font_weight_{$k}");
+        }
+    }
+
+    // Sample Invoice & Items
+    $sampleInvoice = new \stdClass();
+    $sampleInvoice->id = 1;
+    $sampleInvoice->posted_number = 'SI-00042';
+    $sampleInvoice->date = now();
+    $sampleInvoice->doctor_name = 'Dr. Tariq Mahmood';
+    $sampleInvoice->patient_name = 'Ahmed Khan';
+    $sampleCustomer = new \stdClass();
+    $sampleCustomer->name = 'Ahmed Khan';
+    $sampleInvoice->customer = $sampleCustomer;
+
+    $items = [];
+    $item1 = new \stdClass();
+    $prod1 = new \stdClass();
+    $prod1->name = 'Tab. Panadol Extra 500mg';
+    $item1->product = $prod1;
+    $item1->quantity = 20;
+    $item1->batch_number = 'B2409';
+    $item1->expiry = '12/2027';
+    $item1->dosage_instruction = '1 + 0 + 1 • کھانے کے بعد (After Meal)';
+    $items[] = $item1;
+
+    $item2 = new \stdClass();
+    $prod2 = new \stdClass();
+    $prod2->name = 'Syp. Augmentin 156mg/5ml';
+    $item2->product = $prod2;
+    $item2->quantity = 1;
+    $item2->batch_number = 'A8102';
+    $item2->expiry = '08/2026';
+    $item2->dosage_instruction = '1 چمچ صبح و شام (1 tsp Morning & Night)';
+    $items[] = $item2;
+
+    $item3 = new \stdClass();
+    $prod3 = new \stdClass();
+    $prod3->name = 'Cap. Omeprazole 20mg';
+    $item3->product = $prod3;
+    $item3->quantity = 14;
+    $item3->batch_number = 'OM441';
+    $item3->expiry = '04/2027';
+    $item3->dosage_instruction = '1 گولی نہار منہ (1 Cap Before Breakfast)';
+    $items[] = $item3;
+
+    $sampleInvoice->items = new \Illuminate\Support\Collection($items);
+
+    $sampleSetting = new \stdClass();
+    $sampleSetting->store_name = $dbSetting?->store_name ?: 'Karobar Pharmacy';
+    $sampleSetting->phone_number = $dbSetting?->phone_number ?: '+92 300 1234567';
+    $sampleSetting->address = $dbSetting?->address ?: 'Main Commercial Area';
+    $sampleSetting->print_paper_width_mm = $w;
+    $sampleSetting->print_margin_top_mm = $stickerConfig['margin_top_mm'] ?? 0;
+    $sampleSetting->print_margin_bottom_mm = $stickerConfig['margin_bottom_mm'] ?? 4;
+    $sampleSetting->print_margin_left_mm = $stickerConfig['margin_left_mm'] ?? 0;
+    $sampleSetting->print_margin_right_mm = $stickerConfig['margin_right_mm'] ?? 0;
+    $sampleSetting->print_contrast_mode = $stickerConfig['contrast_mode'] ?? 'high_contrast';
+    $sampleSetting->print_scale_mode = $stickerConfig['scale_mode'] ?? 'auto';
+
+    return view('printer.sale_invoice_dosage_labels', [
+        'invoice'       => $sampleInvoice,
+        'setting'       => $sampleSetting,
+        'stickerConfig' => $stickerConfig,
+    ]);
+})->name('sticker.preview');
+
 // Document Sharing template preview route (renders the exact shared PDF template in A4 or Thermal size)
 Route::get('/print/share-preview/{size}/{template}', function (string $size, string $template) {
     $validSizes = ['a4', 'thermal'];

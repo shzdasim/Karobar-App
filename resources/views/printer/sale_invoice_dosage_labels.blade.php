@@ -33,6 +33,7 @@
         $footerNote = trim((string) ($cfg['footer_note'] ?? 'Keep out of reach of children'));
     @endphp
     <title>Dosage Stickers ({{ $w }}×{{ $h }}mm) — {{ $invoice->posted_number }}</title>
+    @include('printer.partials.calibration_styles')
     <style>
         @if($printerMode === 'label_printer')
         @page {
@@ -58,7 +59,7 @@
             color: #000;
         }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Nastaliq Urdu", Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", Arial, sans-serif;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }
@@ -174,8 +175,9 @@
             text-align: center;
             font-size: {{ $ptDosage }}pt;
             font-weight: {{ $fwDosage }};
-            line-height: 1.25;
+            line-height: 1.35;
             background: {{ $template === 'minimal' ? '#fff' : '#f8fafc' }};
+            font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Segoe UI', Tahoma, Arial, sans-serif;
         }
         .sticker-foot {
             display: flex;
@@ -187,6 +189,9 @@
             margin-top: 0.4mm;
             white-space: nowrap;
             overflow: hidden;
+        }
+        .roll-cutter-guard {
+            display: none;
         }
         @media print {
             html, body {
@@ -209,7 +214,7 @@
                 width: 100%;
                 max-width: {{ $w }}mm;
                 border: none;
-                border-bottom: 0.35mm dashed #64748b;
+                border-bottom: 0.35mm dashed #000;
                 margin: 0 0 2.5mm 0;
                 padding: 1.5mm 1.5mm 2.5mm 1.5mm;
             }
@@ -217,14 +222,35 @@
                 border-bottom: none;
                 margin-bottom: 0;
             }
+            .roll-cutter-guard {
+                display: block;
+                text-align: center;
+                font-size: 8px;
+                font-weight: 800;
+                color: #000;
+                padding-top: {{ max(6, (int) ($setting->print_margin_bottom_mm ?? 6)) }}mm;
+                border-top: 1px dashed #000;
+                margin-top: 2mm;
+            }
             @else
             .labels-wrapper {
                 display: block;
                 padding: 0;
+                width: {{ $w }}mm;
+                max-width: {{ $w }}mm;
             }
             .sticker {
                 border: none;
                 margin: 0;
+                width: {{ $w }}mm;
+                height: {{ $h }}mm;
+                max-height: {{ $h }}mm;
+                page-break-after: always;
+                break-after: page;
+            }
+            .sticker:last-child {
+                page-break-after: auto;
+                break-after: auto;
             }
             @endif
         }
@@ -245,7 +271,7 @@
                class="mode-btn {{ $printerMode === 'label_printer' ? 'active' : '' }}">
                 Die-Cut Label Roll
             </a>
-            <button type="button" onclick="window.print()">Print Stickers</button>
+            <button type="button" onclick="if (window.karobarDesktop && window.karobarDesktop.silentPrint) { window.karobarDesktop.silentPrint(); } else { window.print(); }">Print Stickers</button>
         </div>
     </div>
 
@@ -314,16 +340,30 @@
                 </div>
             </div>
         @endforeach
+
+        @if($printerMode === 'receipt_roll')
+            <div class="roll-cutter-guard">
+                --- CUT / TEAR HERE ---
+            </div>
+        @endif
     </div>
 
-    @if(request()->boolean('auto_print', true))
     <script>
-        window.addEventListener('load', function () {
-            setTimeout(function () {
-                window.print();
-            }, 250);
-        });
+        (function() {
+            var params = new URLSearchParams(window.location.search);
+            var isSilent = params.has('silent_print');
+            var inIframe = window.self !== window.top;
+            var isDesktop = Boolean(window.karobarDesktop || window.__karobarSilentPrintWorker || /Electron/i.test(navigator.userAgent));
+            
+            // Only trigger window.print directly if auto_print is requested AND we are in top-level browser window without desktop bridge
+            if (!isDesktop && !inIframe && !isSilent && params.get('auto_print') === '1') {
+                window.addEventListener('load', function () {
+                    setTimeout(function () {
+                        window.print();
+                    }, 250);
+                });
+            }
+        })();
     </script>
-    @endif
 </body>
 </html>

@@ -59,7 +59,13 @@
     width: {{ $calPaperWidthMm }}mm !important;
     max-width: 100% !important;
   }
-  body:not(:has(.receipt)):not(:has(.page)) {
+  .labels-wrapper {
+    max-width: {{ $calPaperWidthMm }}mm !important;
+  }
+  .sticker {
+    max-width: {{ $calPaperWidthMm }}mm !important;
+  }
+  body:not(:has(.receipt)):not(:has(.page)):not(:has(.labels-wrapper)) {
     width: {{ $calPaperWidthMm }}mm !important;
     max-width: 100% !important;
   }
@@ -73,7 +79,14 @@
     @if($calMarginLeftMm < 0) margin-left: {{ $calMarginLeftMm }}mm !important; @endif
     @if($calMarginRightMm > 0) padding-right: {{ $calMarginRightMm }}mm !important; @endif
   }
-  body:not(:has(.receipt)):not(:has(.page)) {
+  .labels-wrapper {
+    @if($calMarginTopMm !== 0) padding-top: {{ max(0, $calMarginTopMm) }}mm !important; @endif
+    @if($calMarginBottomMm > 0) padding-bottom: {{ $calMarginBottomMm }}mm !important; @endif
+    @if($calMarginLeftMm > 0) padding-left: {{ $calMarginLeftMm }}mm !important; @endif
+    @if($calMarginLeftMm < 0) margin-left: {{ $calMarginLeftMm }}mm !important; @endif
+    @if($calMarginRightMm > 0) padding-right: {{ $calMarginRightMm }}mm !important; @endif
+  }
+  body:not(:has(.receipt)):not(:has(.page)):not(:has(.labels-wrapper)) {
     @if($calMarginTopMm !== 0) padding-top: {{ max(0, $calMarginTopMm) }}mm !important; @endif
     @if($calMarginBottomMm > 0) padding-bottom: {{ $calMarginBottomMm }}mm !important; @endif
     @if($calMarginLeftMm > 0) padding-left: {{ $calMarginLeftMm }}mm !important; @endif
@@ -85,7 +98,8 @@
   .receipt .content,
   .receipt > table,
   .page,
-  body:not(:has(.receipt)):not(:has(.page)) {
+  .labels-wrapper,
+  body:not(:has(.receipt)):not(:has(.page)):not(:has(.labels-wrapper)) {
     zoom: {{ round($calFontScale / 100, 3) }};
   }
 @endif
@@ -96,11 +110,11 @@
     --muted: #000000 !important;
     --border: #000000 !important;
   }
-  body, .receipt, .page, table, th, td, div, span, p, h1, h2, h3 {
+  body, .receipt, .page, .labels-wrapper, .sticker, table, th, td, div, span, p, h1, h2, h3 {
     color: #000000 !important;
     -webkit-font-smoothing: none !important;
   }
-  .hr, .double-hr, .dotted-hr, .solid-hr, .line, th, td, .meta, .remarks, .footer-total, .footer-total .row {
+  .hr, .double-hr, .dotted-hr, .solid-hr, .line, th, td, .meta, .remarks, .footer-total, .footer-total .row, .sticker-head, .sticker-dosage-box {
     border-color: #000000 !important;
   }
   .wm img {
@@ -110,7 +124,7 @@
 @endif
 
 @if($calContrastMode === 'extra_bold')
-  body, .receipt, .page, table, th, td, div, span {
+  body, .receipt, .page, .labels-wrapper, .sticker, table, th, td, div, span {
     font-weight: 800 !important;
     text-shadow: 0.2px 0 0 #000000;
   }

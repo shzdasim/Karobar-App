@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import SettingSwitch from "@/components/settings/SettingSwitch.jsx";
 import { GlassInput } from "@/components/Glass.jsx";
 import { BeakerIcon, TagIcon, PrinterIcon } from "@heroicons/react/24/solid";
+import { printSlipUrl } from "@/utils/printHelper.js";
 
 const STICKER_SIZE_PRESETS = [
   { value: "72x35", label: "72 × 35 mm (72mm Thermal Roll)", width_mm: 72, height_mm: 35 },
@@ -70,226 +71,57 @@ export const DEFAULT_STICKER_CONFIG = {
   show_expiry: true,
   show_doctor: false,
   footer_note: "Keep out of reach of children",
+  margin_top_mm: 0,
+  margin_bottom_mm: 4,
+  margin_left_mm: 0,
+  margin_right_mm: 0,
+  contrast_mode: "high_contrast",
+  scale_mode: "auto",
+  preferred_printer: "",
 };
 
-function escapeHtml(str) {
-  return String(str ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+export function buildStickerPreviewUrl(config, storeName) {
+  const safeTpl = config?.template || "classic";
+  const params = new URLSearchParams();
+  params.set("width_mm", String(config?.width_mm || 72));
+  params.set("height_mm", String(config?.height_mm || 35));
+  params.set("printer_mode", config?.printer_mode || "receipt_roll");
+  params.set("preset_key", config?.preset_key || "72x35");
+  params.set("font_scale", config?.font_scale || "normal");
+  params.set("contrast_mode", config?.contrast_mode || "high_contrast");
+  params.set("scale_mode", config?.scale_mode || "auto");
+  params.set("margin_top_mm", String(config?.margin_top_mm ?? 0));
+  params.set("margin_bottom_mm", String(config?.margin_bottom_mm ?? 4));
+  params.set("margin_left_mm", String(config?.margin_left_mm ?? 0));
+  params.set("margin_right_mm", String(config?.margin_right_mm ?? 0));
+  params.set("show_shop_name", config?.show_shop_name !== false ? "1" : "0");
+  params.set("show_invoice_meta", config?.show_invoice_meta !== false ? "1" : "0");
+  params.set("show_patient", config?.show_patient !== false ? "1" : "0");
+  params.set("show_quantity", config?.show_quantity !== false ? "1" : "0");
+  params.set("show_batch", config?.show_batch !== false ? "1" : "0");
+  params.set("show_expiry", config?.show_expiry !== false ? "1" : "0");
+  params.set("show_doctor", config?.show_doctor ? "1" : "0");
+  if (config?.footer_note) {
+    params.set("footer_note", config.footer_note);
+  }
+  ["header", "patient", "product", "dosage", "footer"].forEach((k) => {
+    if (config[`font_size_${k}`] !== undefined) {
+      params.set(`font_size_${k}`, String(config[`font_size_${k}`]));
+    }
+    if (config[`font_weight_${k}`] !== undefined) {
+      params.set(`font_weight_${k}`, String(config[`font_weight_${k}`]));
+    }
+  });
+  return `/print/sticker-preview/${safeTpl}?${params.toString()}`;
 }
 
-function openSampleStickerPrint(config, storeName) {
-  const win = window.open("", "_blank", "width=520,height=640");
-  if (!win) {
-    toast.error("Pop-up blocked. Please allow pop-ups to print a sample sticker.");
-    return;
-  }
-
-  const w = Math.max(25, Math.min(150, Number(config.width_mm || 72)));
-  const h = Math.max(15, Math.min(120, Number(config.height_mm || 35)));
-  const printerMode = config.printer_mode === "label_printer" ? "label_printer" : "receipt_roll";
-  const template = config.template || "classic";
-  const scaleMult =
-    config.font_scale === "compact" ? 0.9 : config.font_scale === "large" ? 1.15 : 1.0;
-
-  const pt = (val, def) =>
-    Number((Math.max(4, Math.min(28, Number(val ?? def))) * scaleMult).toFixed(2));
-
-  const ptHeader = pt(config.font_size_header, 9.0);
-  const ptPatient = pt(config.font_size_patient, 8.5);
-  const ptProduct = pt(config.font_size_product, 11.0);
-  const ptDosage = pt(config.font_size_dosage, 10.5);
-  const ptFooter = pt(config.font_size_footer, 8.0);
-
-  const fwHeader = Number(config.font_weight_header || 800);
-  const fwPatient = Number(config.font_weight_patient || 700);
-  const fwProduct = Number(config.font_weight_product || 900);
-  const fwDosage = Number(config.font_weight_dosage || 800);
-  const fwFooter = Number(config.font_weight_footer || 700);
-
-  const pageCss =
-    printerMode === "label_printer"
-      ? `@page { size: ${w}mm ${h}mm; margin: 0; }`
-      : `@page { margin: 0; }`;
-
-  const headBlock =
-    config.show_shop_name || config.show_invoice_meta
-      ? `<div class="sticker-head">
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${
-            config.show_shop_name ? escapeHtml(storeName || "Karobar Pharmacy") : ""
-          }</span>
-          <span style="white-space:nowrap;">${
-            config.show_invoice_meta ? "SI-00042 • 17/11/2026" : ""
-          }</span>
-        </div>`
-      : "";
-
-  const patientBlock =
-    config.show_patient || config.show_quantity || config.show_doctor
-      ? `<div class="sticker-patient">
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            ${config.show_patient ? "Pt: Ahmed Khan" : ""}
-            ${config.show_doctor ? `${config.show_patient ? " • " : ""}Dr: Tariq` : ""}
-          </span>
-          ${config.show_quantity ? `<span style="white-space:nowrap;">Qty: 20</span>` : ""}
-        </div>`
-      : "";
-
-  const footerLeft = [
-    config.show_batch ? "B#: B2409" : "",
-    config.show_expiry ? "Exp: 12/2027" : "",
-  ]
-    .filter(Boolean)
-    .join(" • ");
-
-  win.document.open();
-  win.document.write(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Sample Dosage Sticker (${w}×${h}mm)</title>
-  <style>
-    ${pageCss}
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { margin: 0; padding: 0; background: #f1f5f9; color: #000; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Nastaliq Urdu", Arial, sans-serif;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-    .no-print-bar {
-      background: #0f172a;
-      color: #fff;
-      padding: 10px 16px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-size: 12.5px;
-      margin-bottom: 12px;
-    }
-    .no-print-bar button {
-      background: #2563eb;
-      color: #fff;
-      border: none;
-      border-radius: 6px;
-      padding: 6px 14px;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    .labels-wrapper {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding-bottom: 16px;
-    }
-    .sticker {
-      width: ${w}mm;
-      max-width: 100%;
-      ${printerMode === "label_printer" ? `height: ${h}mm;` : `min-height: ${h}mm; height: auto;`}
-      background: #fff;
-      border: 1px dashed #94a3b8;
-      padding: ${h >= 35 ? "2.2mm 2.8mm" : "1.6mm 2mm"};
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      overflow: hidden;
-    }
-    .sticker-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1.5mm;
-      border-bottom: ${template === "minimal" ? "none" : "0.3mm solid #000"};
-      padding-bottom: 0.5mm;
-      font-size: ${ptHeader}pt;
-      font-weight: ${fwHeader};
-      text-transform: uppercase;
-      ${
-        template === "bold"
-          ? "background: #000; color: #fff; padding: 0.7mm 1.2mm; margin: -1.6mm -2mm 0.6mm -2mm; border-bottom: none;"
-          : ""
-      }
-    }
-    .sticker-patient {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1mm;
-      font-size: ${ptPatient}pt;
-      font-weight: ${fwPatient};
-      margin-top: 0.4mm;
-    }
-    .sticker-product {
-      font-size: ${ptProduct}pt;
-      font-weight: ${fwProduct};
-      line-height: 1.15;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      margin: 0.6mm 0;
-    }
-    .sticker-dosage-box {
-      border: ${template === "minimal" ? "0.25mm solid #cbd5e1" : "0.35mm solid #000"};
-      border-radius: 1mm;
-      padding: ${template === "urdu_focus" ? "1.1mm 1.4mm" : "0.8mm 1.2mm"};
-      text-align: center;
-      font-size: ${ptDosage}pt;
-      font-weight: ${fwDosage};
-      line-height: 1.25;
-      background: ${template === "minimal" ? "#fff" : "#f8fafc"};
-    }
-    .sticker-foot {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1mm;
-      font-size: ${ptFooter}pt;
-      font-weight: ${fwFooter};
-      margin-top: 0.5mm;
-      white-space: nowrap;
-      overflow: hidden;
-    }
-    @media print {
-      html, body { background: #fff; margin: 0; padding: 0; }
-      .no-print-bar { display: none !important; }
-      .labels-wrapper { display: block; width: 100%; max-width: ${w}mm; margin: 0; padding: 0; }
-      .sticker { width: 100%; max-width: ${w}mm; border: none; margin: 0; }
-    }
-  </style>
-</head>
-<body>
-  <div class="no-print-bar">
-    <div><strong>Sample Sticker (${w}mm × ${h}mm)</strong> — ${
-      printerMode === "receipt_roll" ? "Receipt Roll (Upright)" : "Die-Cut Label Roll"
-    }</div>
-    <button type="button" onclick="window.print()">Print Sample</button>
-  </div>
-  <div class="labels-wrapper">
-    <div class="sticker">
-      <div>
-        ${headBlock}
-        ${patientBlock}
-        <div class="sticker-product">Tab. Panadol Extra 500mg</div>
-      </div>
-      <div class="sticker-dosage-box" dir="auto">1 + 0 + 1 • کھانے کے بعد (After Meal)</div>
-      <div class="sticker-foot">
-        <span>${escapeHtml(footerLeft)}</span>
-        ${
-          config.footer_note
-            ? `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(
-                config.footer_note
-              )}</span>`
-            : ""
-        }
-      </div>
-    </div>
-  </div>
-  <script>window.addEventListener('load', () => setTimeout(() => window.print(), 250));</script>
-</body>
-</html>`);
-  win.document.close();
+async function openSampleStickerPrint(config, storeName) {
+  const url = buildStickerPreviewUrl(config, storeName);
+  await printSlipUrl(url, {
+    deviceName: config?.preferred_printer || undefined,
+    loadingMessage: "Printing sample sticker...",
+    successMessage: "Sample sticker sent directly to printer",
+  });
 }
 
 export default function PharmacyClinicalSetting({ form, setForm, disableInputs = false }) {

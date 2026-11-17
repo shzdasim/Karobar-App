@@ -178,6 +178,13 @@ class Setting extends Model
             'show_expiry'         => true,
             'show_doctor'         => false,
             'footer_note'         => 'Keep out of reach of children',
+            'margin_top_mm'       => 0,
+            'margin_bottom_mm'    => 4,
+            'margin_left_mm'      => 0,
+            'margin_right_mm'     => 0,
+            'contrast_mode'       => 'high_contrast',
+            'scale_mode'          => 'auto',
+            'preferred_printer'   => '',
         ];
     }
 
