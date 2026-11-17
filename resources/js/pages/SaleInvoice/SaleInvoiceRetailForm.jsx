@@ -265,6 +265,14 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
               applied_scheme_id: schemeRes.scheme_id,
               applied_scheme_name: schemeRes.scheme_name,
             });
+          } else if (row.applied_scheme_id) {
+            changed = true;
+            return recalcItem({
+              ...row,
+              bonus: "",
+              applied_scheme_id: null,
+              applied_scheme_name: "",
+            });
           }
           return row;
         });

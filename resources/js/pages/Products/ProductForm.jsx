@@ -597,6 +597,109 @@ const ProductFormFields = forwardRef(({
         />
       </div>
 
+      {/* Optional Pharmacy Clinical Metadata (Drug Schedule, Default Dosage & Cold-Chain) */}
+      {isPharmacy && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-drug_schedule">
+              Drug Schedule (Optional)
+            </label>
+            <Select
+              inputId="product-drug_schedule"
+              options={[
+                { value: "otc", label: "OTC / General Medicine" },
+                { value: "schedule_g", label: "Schedule G (Medical Caution)" },
+                { value: "schedule_h", label: "Schedule H (Prescription Drug)" },
+                { value: "narcotic", label: "Controlled / Narcotic Drug" },
+              ]}
+              value={
+                [
+                  { value: "otc", label: "OTC / General Medicine" },
+                  { value: "schedule_g", label: "Schedule G (Medical Caution)" },
+                  { value: "schedule_h", label: "Schedule H (Prescription Drug)" },
+                  { value: "narcotic", label: "Controlled / Narcotic Drug" },
+                ].find(
+                  (opt) =>
+                    opt.value ===
+                    (form.drug_schedule || (form.narcotic === "yes" ? "narcotic" : "otc"))
+                ) || { value: "otc", label: "OTC / General Medicine" }
+              }
+              onChange={(opt) => {
+                const sched = opt?.value || "otc";
+                handleChange({ target: { name: "drug_schedule", value: sched } });
+                if (sched === "narcotic") {
+                  handleChange({ target: { name: "narcotic", value: "yes" } });
+                }
+              }}
+              classNamePrefix="rs"
+              isSearchable={false}
+              styles={getSmallSelectStyles(isDark)}
+              menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-default_dosage">
+              Default Patient Dosage (Optional)
+            </label>
+            <CreatableSelect
+              inputId="product-default_dosage"
+              isClearable
+              options={[
+                { value: "1 + 0 + 1 • کھانے کے بعد (After Meal)", label: "1+0+1 • کھانے کے بعد (After Meal)" },
+                { value: "1 + 1 + 1 • کھانے کے بعد (After Meal)", label: "1+1+1 • کھانے کے بعد (After Meal)" },
+                { value: "1 + 0 + 0 • صرف صبح (Morning Only)", label: "1+0+0 • صرف صبح (Morning Only)" },
+                { value: "0 + 0 + 1 • رات سوتے وقت (At Bedtime)", label: "0+0+1 • رات سوتے وقت (At Bedtime)" },
+                { value: "1 + 0 + 1 • کھانے سے پہلے (Before Meal)", label: "1+0+1 • کھانے سے پہلے (Before Meal)" },
+                { value: "SOS • بوقتِ ضرورت (As Needed)", label: "SOS • بوقتِ ضرورت (As Needed)" },
+              ]}
+              value={
+                form.default_dosage
+                  ? { value: form.default_dosage, label: form.default_dosage }
+                  : null
+              }
+              onChange={(opt) =>
+                handleChange({ target: { name: "default_dosage", value: opt?.value || "" } })
+              }
+              onCreateOption={(inputVal) =>
+                handleChange({ target: { name: "default_dosage", value: inputVal.trim() } })
+              }
+              placeholder="Select or type dosage..."
+              classNamePrefix="rs"
+              styles={getSmallSelectStyles(isDark)}
+              menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium mb-1 dark:text-slate-300" htmlFor="product-requires_cold_chain">
+              Storage Temperature (Optional)
+            </label>
+            <Select
+              inputId="product-requires_cold_chain"
+              options={[
+                { value: "0", label: "Room Temp (15°C – 25°C)" },
+                { value: "1", label: "❄️ Cold-Chain Fridge (2°C – 8°C)" },
+              ]}
+              value={
+                form.requires_cold_chain && String(form.requires_cold_chain) !== "0"
+                  ? { value: "1", label: "❄️ Cold-Chain Fridge (2°C – 8°C)" }
+                  : { value: "0", label: "Room Temp (15°C – 25°C)" }
+              }
+              onChange={(opt) =>
+                handleChange({
+                  target: { name: "requires_cold_chain", value: opt?.value === "1" ? 1 : 0 },
+                })
+              }
+              classNamePrefix="rs"
+              isSearchable={false}
+              styles={getSmallSelectStyles(isDark)}
+              menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Clean, spacious Pricing, Margins & Thresholds Grid */}
       <div className="rounded-2xl p-4 ring-1 ring-gray-200/70 dark:ring-slate-600/70 bg-white/60 dark:bg-slate-800/50 backdrop-blur-xs space-y-3">
         <div className="flex items-center justify-between border-b border-gray-200/60 dark:border-slate-700/60 pb-2">
@@ -1301,8 +1404,13 @@ export default function ProductForm({ initialData = null, onSubmitSuccess }) {
 
       const formData = new FormData();
       Object.keys(payloadForm).forEach((key) => {
-        if (payloadForm[key] !== undefined && payloadForm[key] !== null) {
-          formData.append(key, payloadForm[key]);
+        const val = payloadForm[key];
+        if (val !== undefined && val !== null && typeof val !== "object") {
+          if (typeof val === "boolean") {
+            formData.append(key, val ? "1" : "0");
+          } else {
+            formData.append(key, val);
+          }
         }
       });
 

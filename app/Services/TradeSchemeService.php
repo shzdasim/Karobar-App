@@ -48,25 +48,41 @@ class TradeSchemeService
         $packSize = max(1, (int) ($item['pack_size'] ?? 1));
         $packQty = max(0.0, (float) ($item['pack_quantity'] ?? 0));
         $unitQty = max(0, (int) ($item['unit_quantity'] ?? 0));
-        $totalUnits = (int) ($item['quantity'] ?? ($packQty * $packSize + $unitQty));
+        $rawQty = max(0, (int) ($item['quantity'] ?? 0));
 
-        $isRetail = ($saleType === 'retail')
-            || (($item['sale_type'] ?? null) === 'retail')
-            || (!array_key_exists('pack_quantity', $item) && !array_key_exists('unit_quantity', $item));
-
-        // Get product details to check brand and category targets
+        // Get product details to check brand, category, and pack_size targets
         $brandId = $item['brand_id'] ?? null;
         $categoryId = $item['category_id'] ?? null;
 
-        if ($brandId === null || $categoryId === null) {
+        if ($brandId === null || $categoryId === null || !isset($item['pack_size'])) {
             $prod = Product::select('id', 'brand_id', 'category_id', 'pack_size')->find($productId);
             if ($prod) {
-                $brandId = $prod->brand_id;
-                $categoryId = $prod->category_id;
+                $brandId = $brandId ?? $prod->brand_id;
+                $categoryId = $categoryId ?? $prod->category_id;
                 if (!isset($item['pack_size']) && $prod->pack_size) {
                     $packSize = max(1, (int) $prod->pack_size);
                 }
             }
+        }
+
+        // Determine exact totalUnits and purchasedPacks without double-counting
+        // (In Wholesale mode, pack_quantity and unit_quantity are two-way synced representations of the same quantity)
+        if ($rawQty > 0) {
+            $totalUnits = $rawQty;
+        } elseif ($unitQty > 0 && ($packQty <= 0 || (int) round($packQty * $packSize) === $unitQty)) {
+            $totalUnits = $unitQty;
+        } elseif ($packQty > 0 && $unitQty <= 0) {
+            $totalUnits = (int) round($packQty * $packSize);
+        } else {
+            $totalUnits = (int) round($packQty * $packSize) + $unitQty;
+        }
+
+        $purchasedPacks = ($packQty > 0 && (int) round($packQty * $packSize) === $totalUnits)
+            ? $packQty
+            : ($packSize > 0 ? ($totalUnits / $packSize) : 0.0);
+
+        if ($totalUnits <= 0 && $packQty <= 0) {
+            return $this->noMatch();
         }
 
         // Find best matching scheme:
@@ -101,99 +117,61 @@ class TradeSchemeService
         $bonusUnits = 0;
         $matchedSlab = null;
 
-        if ($isRetail) {
-            if ($matchedScheme->scheme_type === 'ratio') {
-                $firstSlab = $slabs->first();
-                $minQ = (float) ($firstSlab->min_qty ?? 0);
-                $bQ = (float) ($firstSlab->bonus_qty ?? 0);
+        if ($matchedScheme->scheme_type === 'ratio') {
+            $firstSlab = $slabs->first();
+            $minQ = (float) ($firstSlab->min_qty ?? 0);
+            $bQ = (float) ($firstSlab->bonus_qty ?? 0);
+            $bonusProdPackSize = max(1, (int) ($firstSlab->bonusProduct->pack_size ?? $packSize));
 
-                if ($minQ > 0 && $totalUnits >= $minQ) {
-                    $multiplier = floor($totalUnits / $minQ);
-                    if ($multiplier > 0) {
-                        $bonusUnits = (int) ($multiplier * $bQ);
-                        $matchedSlab = $firstSlab;
+            if ($minQ > 0 && $bQ > 0) {
+                if ($bonusType === 'pack') {
+                    // Pack-based ratio scheme (e.g., Buy 2 Packs, Get 1 Pack Free)
+                    if ($purchasedPacks + 1e-9 >= $minQ) {
+                        $multiplier = floor(($purchasedPacks + 1e-9) / $minQ);
+                        if ($multiplier > 0) {
+                            $packBonus = round($multiplier * $bQ, 2);
+                            $unitBonus = (int) round($packBonus * $bonusProdPackSize);
+                            $bonusUnits = $unitBonus;
+                            $matchedSlab = $firstSlab;
+                        }
                     }
-                }
-            } else {
-                // Tiered slabs
-                foreach ($slabs as $slab) {
-                    $sMin = (float) $slab->min_qty;
-                    $sMax = $slab->max_qty !== null ? (float) $slab->max_qty : null;
-
-                    $qualifying = $bonusType === 'pack' && $totalUnits >= ($sMin * $packSize)
-                        ? floor($totalUnits / $packSize)
-                        : $totalUnits;
-
-                    if ($qualifying >= $sMin && ($sMax === null || $qualifying <= $sMax)) {
-                        $bonusUnits = $bonusType === 'pack' && $totalUnits >= ($sMin * $packSize)
-                            ? (int) round((float) $slab->bonus_qty * $packSize)
-                            : (int) round((float) $slab->bonus_qty);
-                        $matchedSlab = $slab;
-                        break;
+                } else {
+                    // Unit-based ratio scheme (e.g., Buy 2 Units, Get 1 Unit Free)
+                    if ($totalUnits >= $minQ) {
+                        $multiplier = floor($totalUnits / $minQ);
+                        if ($multiplier > 0) {
+                            $unitBonus = (int) round($multiplier * $bQ);
+                            $packBonus = $bonusProdPackSize > 0 ? round($unitBonus / $bonusProdPackSize, 2) : 0.0;
+                            $bonusUnits = $unitBonus;
+                            $matchedSlab = $firstSlab;
+                        }
                     }
                 }
             }
-
-            $unitBonus = $bonusUnits;
-            $packBonus = $packSize > 0 ? round($bonusUnits / $packSize, 2) : 0.0;
         } else {
-            // Wholesale mode
-            $qualifyingPacks = $packQty + ($packSize > 0 ? $unitQty / $packSize : 0);
+            // Tiered Slabs (in Packs when bonusType === 'pack', or in Units when bonusType === 'unit')
+            $wholePurchasedPacks = floor($purchasedPacks + 1e-9);
 
-            if ($matchedScheme->scheme_type === 'ratio') {
-                $firstSlab = $slabs->first();
-                $minQ = (float) ($firstSlab->min_qty ?? 0);
-                $bQ = (float) ($firstSlab->bonus_qty ?? 0);
+            foreach ($slabs as $slab) {
+                $minQ = (float) $slab->min_qty;
+                $maxQ = $slab->max_qty !== null ? (float) $slab->max_qty : null;
+                $awarded = (float) $slab->bonus_qty;
+                $bonusProdPackSize = max(1, (int) ($slab->bonusProduct->pack_size ?? $packSize));
 
-                if ($minQ > 0) {
-                    if ($bonusType === 'pack') {
-                        if ($packQty >= $minQ) {
-                            $multiplier = floor($packQty / $minQ);
-                            $packBonus = round($multiplier * $bQ, 2);
-                            $unitBonus = (int) round($packBonus * $packSize);
-                            $bonusUnits = $unitBonus;
-                            $matchedSlab = $firstSlab;
-                        } elseif ($qualifyingPacks >= $minQ) {
-                            $multiplier = floor($qualifyingPacks / $minQ);
-                            $packBonus = round($multiplier * $bQ, 2);
-                            $unitBonus = (int) round($packBonus * $packSize);
-                            $bonusUnits = $unitBonus;
-                            $matchedSlab = $firstSlab;
-                        } elseif ($unitQty >= $minQ) {
-                            $multiplier = floor($unitQty / $minQ);
-                            $unitBonus = (int) ($multiplier * $bQ);
-                            $packBonus = $packSize > 0 ? round($unitBonus / $packSize, 2) : 0.0;
-                            $bonusUnits = $unitBonus;
-                            $matchedSlab = $firstSlab;
-                        }
-                    } else {
-                        if ($totalUnits >= $minQ) {
-                            $multiplier = floor($totalUnits / $minQ);
-                            $unitBonus = (int) ($multiplier * $bQ);
-                            $packBonus = $packSize > 0 ? round($unitBonus / $packSize, 2) : 0.0;
-                            $bonusUnits = $unitBonus;
-                            $matchedSlab = $firstSlab;
-                        }
-                    }
-                }
-            } else {
-                $qualifyingQty = $bonusType === 'pack' ? $qualifyingPacks : $totalUnits;
-                foreach ($slabs as $slab) {
-                    $minQ = (float) $slab->min_qty;
-                    $maxQ = $slab->max_qty !== null ? (float) $slab->max_qty : null;
-
-                    if ($qualifyingQty >= $minQ && ($maxQ === null || $qualifyingQty <= $maxQ)) {
-                        $awarded = (float) $slab->bonus_qty;
+                if ($bonusType === 'pack') {
+                    if ($purchasedPacks + 1e-9 >= $minQ && ($maxQ === null || $wholePurchasedPacks <= $maxQ)) {
+                        $packBonus = round($awarded, 2);
+                        $unitBonus = (int) round($packBonus * $bonusProdPackSize);
+                        $bonusUnits = $unitBonus;
                         $matchedSlab = $slab;
-                        if ($bonusType === 'pack') {
-                            $packBonus = round($awarded, 2);
-                            $unitBonus = (int) round($awarded * $packSize);
-                            $bonusUnits = $unitBonus;
-                        } else {
-                            $unitBonus = (int) round($awarded);
-                            $packBonus = $packSize > 0 ? round($awarded / $packSize, 2) : 0.0;
-                            $bonusUnits = $unitBonus;
-                        }
+                        break;
+                    }
+                } else {
+                    if ($totalUnits >= $minQ && ($maxQ === null || $totalUnits <= $maxQ)) {
+                        $unitBonus = (int) round($awarded);
+                        $packBonus = $bonusProdPackSize > 0 ? round($unitBonus / $bonusProdPackSize, 2) : 0.0;
+                        $bonusUnits = $unitBonus;
+                        $matchedSlab = $slab;
                         break;
                     }
                 }

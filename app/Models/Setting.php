@@ -92,6 +92,11 @@ class Setting extends Model
         'fbr_pos_fee_enabled',
         'fbr_pos_fee_amount',
         'fbr_auto_sync',
+        'enable_dosage_stickers',
+        'dosage_sticker_config',
+        'enable_prescription_attachments',
+        'enable_drug_interaction_warnings',
+        'enable_cold_chain_log',
     ];
 
     protected $casts = [
@@ -123,6 +128,11 @@ class Setting extends Model
         'fbr_pos_fee_enabled'     => 'boolean',
         'fbr_pos_fee_amount'      => 'float',
         'fbr_auto_sync'           => 'boolean',
+        'enable_dosage_stickers'           => 'boolean',
+        'dosage_sticker_config'            => 'array',
+        'enable_prescription_attachments'  => 'boolean',
+        'enable_drug_interaction_warnings' => 'boolean',
+        'enable_cold_chain_log'            => 'boolean',
     ];
 
     protected $hidden = [
@@ -139,6 +149,36 @@ class Setting extends Model
     public function getLogoUrlAttribute(): ?string
     {
         return $this->logo_path ? Storage::url($this->logo_path) : null;
+    }
+
+    public static function defaultDosageStickerConfig(): array
+    {
+        return [
+            'preset_key'        => '50x25',
+            'width_mm'          => 50,
+            'height_mm'         => 25,
+            'template'          => 'classic',
+            'font_scale'        => 'normal',
+            'font_size_header'  => 6.5,
+            'font_size_patient' => 6.0,
+            'font_size_product' => 8.0,
+            'font_size_dosage'  => 7.5,
+            'font_size_footer'  => 5.5,
+            'show_shop_name'    => true,
+            'show_invoice_meta' => true,
+            'show_patient'      => true,
+            'show_quantity'     => true,
+            'show_batch'        => true,
+            'show_expiry'       => true,
+            'show_doctor'       => false,
+            'footer_note'       => 'Keep out of reach of children',
+        ];
+    }
+
+    public function resolvedDosageStickerConfig(): array
+    {
+        $raw = is_array($this->dosage_sticker_config) ? $this->dosage_sticker_config : [];
+        return array_merge(self::defaultDosageStickerConfig(), $raw);
     }
 
     /**

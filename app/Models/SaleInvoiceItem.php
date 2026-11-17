@@ -33,6 +33,7 @@ class SaleInvoiceItem extends Model
         'tax_amount',
         'further_tax_amount',
         'retail_mrp',
+        'dosage_instruction',
     ];
     public function saleInvoice()
     {

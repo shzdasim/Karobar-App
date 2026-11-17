@@ -47,7 +47,27 @@ export function evaluateTradeScheme(item, activeSchemes = [], productObj = null,
 
   const packQty = Math.max(0, Number(item.pack_quantity || 0));
   const unitQty = Math.max(0, Math.floor(Number(item.unit_quantity || 0)));
-  const totalUnits = Math.max(0, Math.floor(Number(item.quantity || (packQty * packSize + unitQty))));
+  const rawQty = Math.max(0, Math.floor(Number(item.quantity || 0)));
+
+  // Determine exact totalUnits and purchasedPacks without double-counting
+  // (In Wholesale mode, pack_quantity and unit_quantity are two-way synced representations of the same quantity)
+  let totalUnits = 0;
+  if (rawQty > 0) {
+    totalUnits = rawQty;
+  } else if (unitQty > 0 && (packQty <= 0 || Math.round(packQty * packSize) === unitQty)) {
+    totalUnits = unitQty;
+  } else if (packQty > 0 && unitQty <= 0) {
+    totalUnits = Math.round(packQty * packSize);
+  } else {
+    totalUnits = Math.round(packQty * packSize) + unitQty;
+  }
+
+  const purchasedPacks =
+    packQty > 0 && Math.round(packQty * packSize) === totalUnits
+      ? packQty
+      : packSize > 0
+      ? totalUnits / packSize
+      : 0;
 
   if (totalUnits <= 0 && packQty <= 0) {
     return {
@@ -100,114 +120,71 @@ export function evaluateTradeScheme(item, activeSchemes = [], productObj = null,
   let bonusUnits = 0;
   let matchedSlab = null;
 
-  if (isRetail) {
-    // -------------------------------------------------------------
-    // RETAIL MODE: The cashier inputs totalUnits in a single column
-    // -------------------------------------------------------------
-    if (matchedScheme.scheme_type === "ratio") {
-      const firstSlab = sortedSlabs[0];
-      const minQ = Number(firstSlab?.min_qty || 0);
-      const bQ = Number(firstSlab?.bonus_qty || 0);
+  if (matchedScheme.scheme_type === "ratio") {
+    const firstSlab = sortedSlabs[0];
+    const minQ = Number(firstSlab?.min_qty || 0);
+    const bQ = Number(firstSlab?.bonus_qty || 0);
+    const bonusProdPackSize = Math.max(
+      1,
+      Number(firstSlab?.bonus_product?.pack_size || firstSlab?.bonusProduct?.pack_size || packSize)
+    );
 
-      if (minQ > 0 && totalUnits >= minQ) {
-        const multiplier = Math.floor(totalUnits / minQ);
-        if (multiplier > 0) {
-          bonusUnits = multiplier * bQ;
-          matchedSlab = firstSlab;
+    if (minQ > 0 && bQ > 0) {
+      if (bonusType === "pack") {
+        // Pack-based ratio scheme (e.g., Buy 2 Packs, Get 1 Pack Free):
+        // Customer must buy at least `minQ` packs (totalUnits >= minQ * packSize)
+        if (purchasedPacks + 1e-9 >= minQ) {
+          const multiplier = Math.floor((purchasedPacks + 1e-9) / minQ);
+          if (multiplier > 0) {
+            packBonus = Number((multiplier * bQ).toFixed(2));
+            unitBonus = Math.round(packBonus * bonusProdPackSize);
+            bonusUnits = unitBonus;
+            matchedSlab = firstSlab;
+          }
         }
-      }
-    } else {
-      // Tiered Slabs
-      for (const slab of sortedSlabs) {
-        const sMin = Number(slab.min_qty || 0);
-        const sMax = slab.max_qty !== null && slab.max_qty !== undefined && slab.max_qty !== ""
-          ? Number(slab.max_qty)
-          : null;
-
-        // If slab was configured in packs and customer bought at least sMin packs in units
-        const qualifying = bonusType === "pack" && totalUnits >= sMin * packSize
-          ? Math.floor(totalUnits / packSize)
-          : totalUnits;
-
-        if (qualifying >= sMin && (sMax === null || qualifying <= sMax)) {
-          bonusUnits = bonusType === "pack" && totalUnits >= sMin * packSize
-            ? Math.round(Number(slab.bonus_qty || 0) * packSize)
-            : Math.round(Number(slab.bonus_qty || 0));
-          matchedSlab = slab;
-          break;
+      } else {
+        // Unit-based ratio scheme (e.g., Buy 2 Units, Get 1 Unit Free):
+        if (totalUnits >= minQ) {
+          const multiplier = Math.floor(totalUnits / minQ);
+          if (multiplier > 0) {
+            unitBonus = Math.round(multiplier * bQ);
+            packBonus = bonusProdPackSize > 0 ? Number((unitBonus / bonusProdPackSize).toFixed(2)) : 0;
+            bonusUnits = unitBonus;
+            matchedSlab = firstSlab;
+          }
         }
       }
     }
-
-    unitBonus = bonusUnits;
-    packBonus = packSize > 0 ? Number((bonusUnits / packSize).toFixed(2)) : 0;
   } else {
-    // -------------------------------------------------------------
-    // WHOLESALE MODE: Dual columns (pack_quantity + unit_quantity)
-    // -------------------------------------------------------------
-    const qualifyingPacks = packQty + (packSize > 0 ? unitQty / packSize : 0);
+    // Tiered Slabs (in Packs when bonusType === 'pack', or in Units when bonusType === 'unit')
+    const wholePurchasedPacks = Math.floor(purchasedPacks + 1e-9);
 
-    if (matchedScheme.scheme_type === "ratio") {
-      const firstSlab = sortedSlabs[0];
-      const minQ = Number(firstSlab?.min_qty || 0);
-      const bQ = Number(firstSlab?.bonus_qty || 0);
-
-      if (minQ > 0) {
-        if (bonusType === "pack") {
-          if (packQty >= minQ) {
-            const multiplier = Math.floor(packQty / minQ);
-            packBonus = multiplier * bQ;
-            unitBonus = Math.round(packBonus * packSize);
-            bonusUnits = unitBonus;
-            matchedSlab = firstSlab;
-          } else if (qualifyingPacks >= minQ) {
-            // Combined packs + loose units reach min packs
-            const multiplier = Math.floor(qualifyingPacks / minQ);
-            packBonus = multiplier * bQ;
-            unitBonus = Math.round(packBonus * packSize);
-            bonusUnits = unitBonus;
-            matchedSlab = firstSlab;
-          } else if (unitQty >= minQ) {
-            // Loose units alone qualify for the ratio
-            const multiplier = Math.floor(unitQty / minQ);
-            unitBonus = multiplier * bQ;
-            packBonus = packSize > 0 ? Number((unitBonus / packSize).toFixed(2)) : 0;
-            bonusUnits = unitBonus;
-            matchedSlab = firstSlab;
-          }
-        } else {
-          // Unit bonus type
-          if (totalUnits >= minQ) {
-            const multiplier = Math.floor(totalUnits / minQ);
-            unitBonus = multiplier * bQ;
-            packBonus = packSize > 0 ? Number((unitBonus / packSize).toFixed(2)) : 0;
-            bonusUnits = unitBonus;
-            matchedSlab = firstSlab;
-          }
-        }
-      }
-    } else {
-      // Tiered Slabs
-      const qualifyingQty = bonusType === "pack" ? qualifyingPacks : totalUnits;
-
-      for (const slab of sortedSlabs) {
-        const minQ = Number(slab.min_qty || 0);
-        const maxQ = slab.max_qty !== null && slab.max_qty !== undefined && slab.max_qty !== ""
+    for (const slab of sortedSlabs) {
+      const minQ = Number(slab.min_qty || 0);
+      const maxQ =
+        slab.max_qty !== null && slab.max_qty !== undefined && slab.max_qty !== ""
           ? Number(slab.max_qty)
           : null;
+      const awarded = Number(slab.bonus_qty || 0);
+      const bonusProdPackSize = Math.max(
+        1,
+        Number(slab?.bonus_product?.pack_size || slab?.bonusProduct?.pack_size || packSize)
+      );
 
-        if (qualifyingQty >= minQ && (maxQ === null || qualifyingQty <= maxQ)) {
-          const awarded = Number(slab.bonus_qty || 0);
+      if (bonusType === "pack") {
+        if (purchasedPacks + 1e-9 >= minQ && (maxQ === null || wholePurchasedPacks <= maxQ)) {
+          packBonus = Number(awarded.toFixed(2));
+          unitBonus = Math.round(packBonus * bonusProdPackSize);
+          bonusUnits = unitBonus;
           matchedSlab = slab;
-          if (bonusType === "pack") {
-            packBonus = awarded;
-            unitBonus = Math.round(awarded * packSize);
-            bonusUnits = unitBonus;
-          } else {
-            unitBonus = Math.round(awarded);
-            packBonus = packSize > 0 ? Number((awarded / packSize).toFixed(2)) : 0;
-            bonusUnits = unitBonus;
-          }
+          break;
+        }
+      } else {
+        if (totalUnits >= minQ && (maxQ === null || totalUnits <= maxQ)) {
+          unitBonus = Math.round(awarded);
+          packBonus = bonusProdPackSize > 0 ? Number((unitBonus / bonusProdPackSize).toFixed(2)) : 0;
+          bonusUnits = unitBonus;
+          matchedSlab = slab;
           break;
         }
       }

@@ -273,6 +273,28 @@ export default function Setting() {
     fbr_pos_fee_enabled: false,
     fbr_pos_fee_amount: 1,
     fbr_auto_sync: true,
+    enable_dosage_stickers: true,
+    dosage_sticker_config: {
+      preset_key: "50x25",
+      width_mm: 50,
+      height_mm: 25,
+      template: "classic",
+      font_scale: "normal",
+      font_size_header: 6.5,
+      font_size_patient: 6.0,
+      font_size_product: 8.0,
+      font_size_dosage: 7.5,
+      font_size_footer: 5.5,
+      show_shop_name: true,
+      show_invoice_meta: true,
+      show_patient: true,
+      show_quantity: true,
+      show_batch: true,
+      show_expiry: true,
+      show_doctor: false,
+      footer_note: "Keep out of reach of children",
+    },
+    enable_prescription_attachments: true,
   });
 
   const [cubeUsageSummary, setCubeUsageSummary] = useState(null);
@@ -546,6 +568,35 @@ export default function Setting() {
           data.fbr_auto_sync !== undefined && data.fbr_auto_sync !== null
             ? Boolean(data.fbr_auto_sync)
             : true,
+        enable_dosage_stickers:
+          data.enable_dosage_stickers !== undefined && data.enable_dosage_stickers !== null
+            ? Boolean(data.enable_dosage_stickers)
+            : true,
+        dosage_sticker_config: {
+          preset_key: "50x25",
+          width_mm: 50,
+          height_mm: 25,
+          template: "classic",
+          font_scale: "normal",
+          font_size_header: 6.5,
+          font_size_patient: 6.0,
+          font_size_product: 8.0,
+          font_size_dosage: 7.5,
+          font_size_footer: 5.5,
+          show_shop_name: true,
+          show_invoice_meta: true,
+          show_patient: true,
+          show_quantity: true,
+          show_batch: true,
+          show_expiry: true,
+          show_doctor: false,
+          footer_note: "Keep out of reach of children",
+          ...(data.dosage_sticker_config || {}),
+        },
+        enable_prescription_attachments:
+          data.enable_prescription_attachments !== undefined && data.enable_prescription_attachments !== null
+            ? Boolean(data.enable_prescription_attachments)
+            : true,
       });
 
       if (data.cube_usage_summary) {
@@ -678,6 +729,11 @@ export default function Setting() {
       fd.append("fbr_pos_fee_enabled", form.fbr_pos_fee_enabled ? "1" : "0");
       fd.append("fbr_pos_fee_amount", String(form.fbr_pos_fee_amount ?? 1));
       fd.append("fbr_auto_sync", form.fbr_auto_sync !== false ? "1" : "0");
+      fd.append("enable_dosage_stickers", form.enable_dosage_stickers !== false ? "1" : "0");
+      if (form.dosage_sticker_config) {
+        fd.append("dosage_sticker_config", JSON.stringify(form.dosage_sticker_config));
+      }
+      fd.append("enable_prescription_attachments", form.enable_prescription_attachments !== false ? "1" : "0");
 
       if (files.length > 0 && files[0].file) {
         fd.append("logo", files[0].file);
@@ -1021,6 +1077,7 @@ export default function Setting() {
           {activeTab === "sale" && (
             <SaleSystemSetting
               form={form}
+              setForm={setForm}
               handleSaleSystemChange={handleSaleSystemChange}
               handleShopTypeChange={handleShopTypeChange}
               disableInputs={disableInputs}

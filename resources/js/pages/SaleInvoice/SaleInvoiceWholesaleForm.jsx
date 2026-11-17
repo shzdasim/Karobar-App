@@ -306,6 +306,19 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
               },
               "pack_bonus"
             );
+          } else if (row.applied_scheme_id) {
+            changed = true;
+            return recalcWholesaleItem(
+              {
+                ...row,
+                pack_bonus: "",
+                unit_bonus: "",
+                bonus: "",
+                applied_scheme_id: null,
+                applied_scheme_name: "",
+              },
+              "pack_bonus"
+            );
           }
           return row;
         });

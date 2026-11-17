@@ -163,7 +163,19 @@ class SaleInvoiceController extends Controller
                 'tax_amount'               => $itemTaxAmt,
                 'further_tax_amount'       => $this->f($raw['further_tax_amount'] ?? 0),
                 'retail_mrp'               => isset($raw['retail_mrp']) ? $this->f($raw['retail_mrp']) : null,
+                'dosage_instruction'       => !empty($raw['dosage_instruction'])
+                    ? trim((string) $raw['dosage_instruction'])
+                    : ($prod?->default_dosage ?: null),
             ];
+
+            if (
+                !empty($raw['save_as_product_default'])
+                && !empty($raw['dosage_instruction'])
+                && $prod
+                && \App\Support\SchemaCache::hasColumn('products', 'default_dosage')
+            ) {
+                $prod->update(['default_dosage' => trim((string) $raw['dosage_instruction'])]);
+            }
 
             $dbPayload = $itemColumns ? array_intersect_key($payload, $itemColumns) : $payload;
             $item = $invoice->items()->create($dbPayload);
@@ -520,6 +532,8 @@ class SaleInvoiceController extends Controller
             'items.*.is_custom_price'          => 'nullable|boolean',
             'items.*.applied_scheme_id'        => 'nullable|integer',
             'items.*.applied_scheme_name'      => 'nullable|string',
+            'items.*.dosage_instruction'       => 'nullable|string|max:255',
+            'items.*.save_as_product_default'  => 'nullable|boolean',
         ]);
 
         $clientSubmittedTotal = $request->has('total') && is_numeric($request->input('total'))
@@ -965,6 +979,8 @@ class SaleInvoiceController extends Controller
             'items.*.is_custom_price'          => 'nullable|boolean',
             'items.*.applied_scheme_id'        => 'nullable|integer',
             'items.*.applied_scheme_name'      => 'nullable|string',
+            'items.*.dosage_instruction'       => 'nullable|string|max:255',
+            'items.*.save_as_product_default'  => 'nullable|boolean',
         ]);
 
         $clientUpdateTotal = $request->has('total') && is_numeric($request->input('total'))
@@ -1844,5 +1860,155 @@ class SaleInvoiceController extends Controller
         });
 
         return response()->json($results);
+    }
+
+    /**
+     * PUT /api/sale-invoices/{saleInvoice}/dosages
+     * Save optional patient dosage instructions per line item (and optionally update Product default_dosage).
+     */
+    public function updateDosages(Request $request, SaleInvoice $saleInvoice)
+    {
+        $user = $request->user();
+        if (
+            !$user
+            || (
+                !$user->hasRole(['Admin', 'admin', 'super-admin'])
+                && !$user->can('sale-invoice.update')
+                && !$user->can('sale-invoice.create')
+                && !$user->can('sale-invoice.view')
+                && !$user->can('barcode-pos.create')
+            )
+        ) {
+            abort(403, 'Unauthorized');
+        }
+
+        $validated = $request->validate([
+            'items'                           => 'required|array',
+            'items.*.id'                      => 'required|integer',
+            'items.*.dosage_instruction'      => 'nullable|string|max:255',
+            'items.*.save_as_product_default' => 'nullable|boolean',
+        ]);
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('sale_invoice_items', 'dosage_instruction')) {
+            foreach ($validated['items'] as $row) {
+                $item = $saleInvoice->items()->where('id', (int) $row['id'])->first();
+                if (!$item) {
+                    continue;
+                }
+                $dosage = isset($row['dosage_instruction']) ? trim((string) $row['dosage_instruction']) : '';
+                $item->dosage_instruction = $dosage !== '' ? $dosage : null;
+                $item->save();
+
+                if (!empty($row['save_as_product_default']) && $item->product_id && \Illuminate\Support\Facades\Schema::hasColumn('products', 'default_dosage')) {
+                    Product::where('id', $item->product_id)->update([
+                        'default_dosage' => $dosage !== '' ? $dosage : null,
+                    ]);
+                }
+            }
+        }
+
+        return response()->json([
+            'ok'      => true,
+            'message' => 'Dosage instructions saved.',
+            'invoice' => $saleInvoice->fresh(['items.product', 'customer', 'user']),
+        ]);
+    }
+
+    /**
+     * POST /api/sale-invoices/{saleInvoice}/prescription
+     * Upload an optional prescription image or scan for this invoice.
+     */
+    public function uploadPrescription(Request $request, SaleInvoice $saleInvoice)
+    {
+        $user = $request->user();
+        if (
+            !$user
+            || (
+                !$user->hasRole(['Admin', 'admin', 'super-admin'])
+                && !$user->can('sale-invoice.update')
+                && !$user->can('sale-invoice.create')
+                && !$user->can('barcode-pos.create')
+            )
+        ) {
+            abort(403, 'Unauthorized');
+        }
+
+        $request->validate([
+            'prescription' => 'required|file|mimes:jpg,jpeg,png,webp,pdf|max:5120',
+            'prescription_no' => 'nullable|string|max:120',
+        ]);
+
+        if ($saleInvoice->prescription_image_path) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($saleInvoice->prescription_image_path);
+        }
+
+        $path = $request->file('prescription')->store('prescriptions', 'public');
+        $saleInvoice->prescription_image_path = $path;
+        if ($request->filled('prescription_no') && \Illuminate\Support\Facades\Schema::hasColumn('sale_invoices', 'prescription_no')) {
+            $saleInvoice->prescription_no = trim((string) $request->input('prescription_no'));
+        }
+        $saleInvoice->save();
+
+        return response()->json([
+            'ok'                      => true,
+            'message'                 => 'Prescription attached successfully.',
+            'prescription_image_path' => $saleInvoice->prescription_image_path,
+            'prescription_image_url'  => $saleInvoice->prescription_image_url,
+            'prescription_no'         => $saleInvoice->prescription_no,
+        ]);
+    }
+
+    /**
+     * DELETE /api/sale-invoices/{saleInvoice}/prescription
+     * Remove the attached prescription image/scan from an invoice.
+     */
+    public function deletePrescription(Request $request, SaleInvoice $saleInvoice)
+    {
+        $user = $request->user();
+        if (
+            !$user
+            || (
+                !$user->hasRole(['Admin', 'admin', 'super-admin'])
+                && !$user->can('sale-invoice.update')
+                && !$user->can('sale-invoice.delete')
+            )
+        ) {
+            abort(403, 'Unauthorized');
+        }
+
+        if ($saleInvoice->prescription_image_path) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($saleInvoice->prescription_image_path);
+            $saleInvoice->prescription_image_path = null;
+            $saleInvoice->save();
+        }
+
+        return response()->json([
+            'ok'      => true,
+            'message' => 'Prescription attachment removed.',
+        ]);
+    }
+
+    /**
+     * GET /sale-invoices/{invoice}/dosage-labels
+     * Render thermal 50x25mm bilingual (English + Urdu) patient dosage stickers for an invoice.
+     */
+    public function printDosageLabels(Request $request, SaleInvoice $invoice)
+    {
+        $invoice->load(['items.product', 'customer', 'user']);
+        $setting = Setting::first();
+        $stickerConfig = $setting?->resolvedDosageStickerConfig() ?? Setting::defaultDosageStickerConfig();
+
+        if ($request->filled('width_mm')) {
+            $stickerConfig['width_mm'] = max(25, min(150, (int) $request->input('width_mm')));
+        }
+        if ($request->filled('height_mm')) {
+            $stickerConfig['height_mm'] = max(15, min(120, (int) $request->input('height_mm')));
+        }
+
+        return view('printer.sale_invoice_dosage_labels', [
+            'invoice'       => $invoice,
+            'setting'       => $setting,
+            'stickerConfig' => $stickerConfig,
+        ]);
     }
 }

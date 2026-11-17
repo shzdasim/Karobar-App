@@ -15,6 +15,9 @@ Route::get('/print/sale-invoices/{invoice}', [SaleInvoiceController::class, 'pri
     ->whereNumber('invoice')
     ->middleware(['signed', 'licensed'])
     ->name('sale-invoices.print');
+Route::get('/sale-invoices/{invoice}/dosage-labels', [SaleInvoiceController::class, 'printDosageLabels'])
+    ->whereNumber('invoice')
+    ->name('sale-invoices.dosage-labels');
 Route::get('/print/cash-drawer/{session}', [\App\Http\Controllers\CashDrawerController::class, 'printThermal'])
     ->whereNumber('session')
     ->middleware(['signed', 'licensed'])

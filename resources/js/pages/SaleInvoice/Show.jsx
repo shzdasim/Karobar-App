@@ -17,6 +17,10 @@ import RecordPaymentModal from "@/components/RecordPaymentModal.jsx";
 import InvoiceDraftsModal from "@/components/InvoiceDraftsModal.jsx";
 import ShareDocumentModal from "@/components/ShareDocumentModal.jsx";
 import MakeRegularCustomerModal from "@/components/MakeRegularCustomerModal.jsx";
+import {
+  DosageStickersModal,
+  PrescriptionAttachmentModal,
+} from "@/components/PharmacyClinicalModals.jsx";
 import { useSaleSystem } from "@/context/SaleSystemContext.jsx";
 import { printSlipUrl } from "@/utils/printHelper.js";
 
@@ -55,6 +59,8 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [challanModalOpen, setChallanModalOpen] = useState(false);
   const [regularModalOpen, setRegularModalOpen] = useState(false);
+  const [dosageModalOpen, setDosageModalOpen] = useState(false);
+  const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [isReversing, setIsReversing] = useState(false);
 
   // Held Invoices & Drafts state
@@ -99,7 +105,11 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
 
 // Get theme colors
   const { theme, isDark } = useTheme();
-  const { isPharmacy } = useSaleSystem();
+  const {
+    isPharmacy,
+    enableDosageStickers,
+    enablePrescriptionAttachments,
+  } = useSaleSystem();
 
   // Memoize theme colors for performance
   const themeColors = useMemo(() => {
@@ -594,6 +604,31 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
               <PrinterIcon className="w-4 h-4" aria-hidden="true" />
               <span>Print</span>
             </button>
+
+            {isPharmacy && enableDosageStickers && (
+              <button
+                type="button"
+                onClick={() => setDosageModalOpen(true)}
+                className="h-8 px-3 text-[11px] font-bold rounded-xl transition-all duration-200 bg-white/20 hover:bg-white/30 text-white border border-white/30 flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                title="Set patient dosage instructions & print 50×25mm thermal medicine stickers"
+              >
+                <PrinterIcon className="w-4 h-4" aria-hidden="true" />
+                <span>Dosage Stickers</span>
+              </button>
+            )}
+
+            {isPharmacy && enablePrescriptionAttachments && (
+              <button
+                type="button"
+                onClick={() => setPrescriptionModalOpen(true)}
+                className="h-8 px-3 text-[11px] font-bold rounded-xl transition-all duration-200 bg-white/20 hover:bg-white/30 text-white border border-white/30 flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                title="Attach or view doctor prescription photo/scan"
+              >
+                <span>
+                  {inv?.prescription_image_url ? "✓ Prescription Scan" : "Prescription Scan"}
+                </span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -2297,6 +2332,22 @@ export default function SaleInvoiceShow({ defaultSaleType = null }) {
             setInv((prev) => ({ ...prev, customer: data.customer }));
           }
         }}
+      />
+
+      {/* Optional Pharmacy Dosage Stickers Modal */}
+      <DosageStickersModal
+        isOpen={dosageModalOpen}
+        onClose={() => setDosageModalOpen(false)}
+        invoice={inv}
+        onUpdated={(updatedInvoice) => setInv(updatedInvoice)}
+      />
+
+      {/* Optional Pharmacy Prescription Attachment Modal */}
+      <PrescriptionAttachmentModal
+        isOpen={prescriptionModalOpen}
+        onClose={() => setPrescriptionModalOpen(false)}
+        invoice={inv}
+        onUpdated={(updatedInvoice) => setInv(updatedInvoice)}
       />
     </div>
   );

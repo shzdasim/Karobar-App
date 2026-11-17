@@ -331,11 +331,11 @@ class TradeSchemeTest extends TestCase
         $this->assertEquals(290, $batch->fresh()->quantity);
     }
 
-    public function test_retail_sale_evaluates_ratio_scheme_proportionally(): void
+    public function test_pack_vs_unit_ratio_scheme_strictly_respects_bonus_type_in_retail_and_wholesale(): void
     {
-        // 2+1 ratio scheme on product with pack_size = 10
-        $scheme = TradeScheme::create([
-            'name'        => 'Panadol 2+1 Scheme',
+        // 1. 2+1 PACK ratio scheme on product with pack_size = 10
+        $packScheme = TradeScheme::create([
+            'name'        => 'Panadol 2+1 Pack Scheme',
             'scheme_type' => 'ratio',
             'target_type' => 'product',
             'target_id'   => $this->product->id,
@@ -343,40 +343,94 @@ class TradeSchemeTest extends TestCase
             'sale_type'   => 'all',
             'is_active'   => true,
         ]);
-        $scheme->slabs()->create(['min_qty' => 2, 'bonus_qty' => 1]);
+        $packScheme->slabs()->create(['min_qty' => 2, 'bonus_qty' => 1]);
 
-        $activeSchemes = $this->schemeService->getActiveSchemes('retail');
+        $activePackSchemes = $this->schemeService->getActiveSchemes('all');
 
-        // Case 1: Retail customer buys 2 units -> 1 unit bonus
-        $eval2 = $this->schemeService->evaluateBonus([
+        // Case 1A: Retail customer buys 2 loose units (0.2 packs) -> MUST NOT trigger a 2-pack scheme!
+        $evalRetail2Units = $this->schemeService->evaluateBonus([
             'product_id' => $this->product->id,
             'pack_size'  => 10,
             'quantity'   => 2,
-        ], $activeSchemes, 'retail');
+        ], $activePackSchemes, 'retail');
 
-        $this->assertTrue($eval2['matched']);
-        $this->assertEquals(1, $eval2['bonus_units']);
+        $this->assertFalse($evalRetail2Units['matched']);
+        $this->assertEquals(0, $evalRetail2Units['bonus_units']);
+        $this->assertEquals(0, $evalRetail2Units['pack_bonus']);
 
-        // Case 2: Retail customer buys 4 units -> 2 units bonus
-        $eval4 = $this->schemeService->evaluateBonus([
-            'product_id' => $this->product->id,
-            'pack_size'  => 10,
-            'quantity'   => 4,
-        ], $activeSchemes, 'retail');
+        // Case 1B: Wholesale customer buys 1 pack (synced pack_quantity=1, unit_quantity=10, quantity=10) -> MUST NOT double-count as 2 packs!
+        $evalWholesale1Pack = $this->schemeService->evaluateBonus([
+            'product_id'    => $this->product->id,
+            'pack_size'     => 10,
+            'pack_quantity' => 1,
+            'unit_quantity' => 10,
+            'quantity'      => 10,
+        ], $activePackSchemes, 'wholesale');
 
-        $this->assertTrue($eval4['matched']);
-        $this->assertEquals(2, $eval4['bonus_units']);
+        $this->assertFalse($evalWholesale1Pack['matched']);
+        $this->assertEquals(0, $evalWholesale1Pack['bonus_units']);
+        $this->assertEquals(0, $evalWholesale1Pack['pack_bonus']);
 
-        // Case 3: Retail customer buys 20 units (2 packs) -> 10 units bonus (1 full pack)
-        $eval20 = $this->schemeService->evaluateBonus([
+        // Case 1C: Wholesale customer types 2 loose units (synced pack_quantity=0.2, unit_quantity=2, quantity=2) -> MUST NOT trigger a 2-pack scheme!
+        $evalWholesale2Units = $this->schemeService->evaluateBonus([
+            'product_id'    => $this->product->id,
+            'pack_size'     => 10,
+            'pack_quantity' => 0.2,
+            'unit_quantity' => 2,
+            'quantity'      => 2,
+        ], $activePackSchemes, 'wholesale');
+
+        $this->assertFalse($evalWholesale2Units['matched']);
+        $this->assertEquals(0, $evalWholesale2Units['bonus_units']);
+
+        // Case 1D: Wholesale customer buys 2 packs (pack_quantity=2, unit_quantity=20, quantity=20) -> 1 pack free (10 units)
+        $evalWholesale2Packs = $this->schemeService->evaluateBonus([
+            'product_id'    => $this->product->id,
+            'pack_size'     => 10,
+            'pack_quantity' => 2,
+            'unit_quantity' => 20,
+            'quantity'      => 20,
+        ], $activePackSchemes, 'wholesale');
+
+        $this->assertTrue($evalWholesale2Packs['matched']);
+        $this->assertEquals(1.0, $evalWholesale2Packs['pack_bonus']);
+        $this->assertEquals(10, $evalWholesale2Packs['unit_bonus']);
+        $this->assertEquals(10, $evalWholesale2Packs['bonus_units']);
+
+        // Case 1E: Retail customer buys 20 units (2 full packs) -> 10 units bonus (1 full pack)
+        $evalRetail20Units = $this->schemeService->evaluateBonus([
             'product_id' => $this->product->id,
             'pack_size'  => 10,
             'quantity'   => 20,
-        ], $activeSchemes, 'retail');
+        ], $activePackSchemes, 'retail');
 
-        $this->assertTrue($eval20['matched']);
-        $this->assertEquals(10, $eval20['bonus_units']);
-        $this->assertEquals(1.0, $eval20['pack_bonus']);
+        $this->assertTrue($evalRetail20Units['matched']);
+        $this->assertEquals(10, $evalRetail20Units['bonus_units']);
+        $this->assertEquals(1.0, $evalRetail20Units['pack_bonus']);
+
+        // 2. Now switch scheme to bonus_type = 'unit' (Buy 2 Units, Get 1 Unit Free)
+        $packScheme->update(['bonus_type' => 'unit']);
+        $activeUnitSchemes = $this->schemeService->getActiveSchemes('all');
+
+        // Buying 2 units now awards 1 unit bonus
+        $evalUnit2 = $this->schemeService->evaluateBonus([
+            'product_id' => $this->product->id,
+            'pack_size'  => 10,
+            'quantity'   => 2,
+        ], $activeUnitSchemes, 'retail');
+
+        $this->assertTrue($evalUnit2['matched']);
+        $this->assertEquals(1, $evalUnit2['bonus_units']);
+
+        // Buying 4 units awards 2 units bonus
+        $evalUnit4 = $this->schemeService->evaluateBonus([
+            'product_id' => $this->product->id,
+            'pack_size'  => 10,
+            'quantity'   => 4,
+        ], $activeUnitSchemes, 'retail');
+
+        $this->assertTrue($evalUnit4['matched']);
+        $this->assertEquals(2, $evalUnit4['bonus_units']);
     }
 
     public function test_purchase_10_plus_1_and_sale_20_plus_1_profit_and_margin_calculation(): void

@@ -52,12 +52,25 @@ class SaleInvoice extends Model
         'further_tax_amount',
         'advance_wht_percentage',
         'advance_wht_amount',
+        'prescription_image_path',
+    ];
+
+    protected $appends = [
+        'prescription_image_url',
     ];
 
     protected $casts = [
         'fbr_synced_at'        => 'datetime',
         'fbr_response_payload' => 'array',
     ];
+
+    public function getPrescriptionImageUrlAttribute(): ?string
+    {
+        if (empty($this->prescription_image_path)) {
+            return null;
+        }
+        return \Illuminate\Support\Facades\Storage::url($this->prescription_image_path);
+    }
 
     public function reversedBy()
     {

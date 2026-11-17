@@ -153,6 +153,7 @@ class ProductController extends Controller
             'id','product_code','barcode','name','formulation','rack','storage_location_id','image',
             'category_id','brand_id','supplier_id',
             'quantity','pack_size','hs_code','tax_type','sales_tax_rate',
+            'narcotic','drug_schedule','requires_cold_chain','default_dosage',
         ];
         $selectCols = array_values(array_filter($desiredCols, fn(string $c) => isset($existingCols[$c])));
 
@@ -278,7 +279,16 @@ class ProductController extends Controller
             'further_tax_rate' => 'nullable|numeric|min:0|max:100',
             'sro_schedule_no' => 'nullable|string|max:80',
             'sro_item_serial_no' => 'nullable|string|max:40',
+            'drug_schedule' => 'nullable|string|in:otc,schedule_g,schedule_h,narcotic',
+            'requires_cold_chain' => 'nullable|boolean',
+            'default_dosage' => 'nullable|string|max:255',
         ]);
+
+        if (($validated['drug_schedule'] ?? null) === 'narcotic') {
+            $validated['narcotic'] = 'yes';
+        } elseif (($validated['narcotic'] ?? 'no') === 'yes' && empty($validated['drug_schedule'])) {
+            $validated['drug_schedule'] = 'narcotic';
+        }
 
         if (array_key_exists('formulation', $validated)) {
             $resolvedFormulation = Formulation::resolveOrCreate($validated['formulation']);
@@ -360,7 +370,16 @@ class ProductController extends Controller
             'further_tax_rate' => 'nullable|numeric|min:0|max:100',
             'sro_schedule_no' => 'nullable|string|max:80',
             'sro_item_serial_no' => 'nullable|string|max:40',
+            'drug_schedule' => 'nullable|string|in:otc,schedule_g,schedule_h,narcotic',
+            'requires_cold_chain' => 'nullable|boolean',
+            'default_dosage' => 'nullable|string|max:255',
         ]);
+
+        if (($validated['drug_schedule'] ?? null) === 'narcotic') {
+            $validated['narcotic'] = 'yes';
+        } elseif (($validated['narcotic'] ?? 'no') === 'yes' && empty($validated['drug_schedule'])) {
+            $validated['drug_schedule'] = 'narcotic';
+        }
 
         if (array_key_exists('formulation', $validated)) {
             $resolvedFormulation = Formulation::resolveOrCreate($validated['formulation']);

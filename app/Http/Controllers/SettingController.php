@@ -75,6 +75,11 @@ class SettingController extends Controller
             'fbr_enabled'             => (bool) ($setting?->fbr_enabled ?? false),
             'fbr_pos_fee_enabled'     => (bool) ($setting?->fbr_pos_fee_enabled ?? false),
             'fbr_pos_fee_amount'      => (float) ($setting?->fbr_pos_fee_amount ?? 1.00),
+            'enable_dosage_stickers'           => (bool) ($setting?->enable_dosage_stickers ?? true),
+            'dosage_sticker_config'            => $setting?->resolvedDosageStickerConfig() ?? Setting::defaultDosageStickerConfig(),
+            'enable_prescription_attachments'  => (bool) ($setting?->enable_prescription_attachments ?? true),
+            'enable_drug_interaction_warnings' => (bool) ($setting?->enable_drug_interaction_warnings ?? true),
+            'enable_cold_chain_log'            => (bool) ($setting?->enable_cold_chain_log ?? true),
         ]);
     }
 
@@ -175,6 +180,10 @@ class SettingController extends Controller
             'fbr_pos_fee_enabled'     => ['nullable', 'boolean'],
             'fbr_pos_fee_amount'      => ['nullable', 'numeric', 'min:0', 'max:500'],
             'fbr_auto_sync'           => ['nullable', 'boolean'],
+            'enable_dosage_stickers'           => ['nullable', 'boolean'],
+            'enable_prescription_attachments'  => ['nullable', 'boolean'],
+            'enable_drug_interaction_warnings' => ['nullable', 'boolean'],
+            'enable_cold_chain_log'            => ['nullable', 'boolean'],
             'logo'                    => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],
         ]);
 
@@ -486,7 +495,63 @@ class SettingController extends Controller
                 $setting->fbr_auto_sync = $request->boolean('fbr_auto_sync');
             }
         }
+
+        // Fill optional Pharmacy Clinical toggles safely if columns exist on the settings table
+        foreach ([
+            'enable_dosage_stickers',
+            'enable_prescription_attachments',
+            'enable_drug_interaction_warnings',
+            'enable_cold_chain_log',
+        ] as $pharmToggle) {
+            if (Schema::hasColumn('settings', $pharmToggle) && $request->has($pharmToggle)) {
+                $setting->{$pharmToggle} = $request->boolean($pharmToggle);
+            }
+        }
         
+        if (Schema::hasColumn('settings', 'dosage_sticker_config') && $request->has('dosage_sticker_config')) {
+            $rawConfig = $request->input('dosage_sticker_config');
+            if (is_string($rawConfig)) {
+                $decoded = json_decode($rawConfig, true);
+                $rawConfig = is_array($decoded) ? $decoded : null;
+            }
+            if (is_array($rawConfig)) {
+                $defaults = Setting::defaultDosageStickerConfig();
+                $allowedTemplates = ['classic', 'minimal', 'bold', 'urdu_focus'];
+                $allowedScales = ['compact', 'normal', 'large'];
+                $w = max(25, min(150, (int) ($rawConfig['width_mm'] ?? $defaults['width_mm'])));
+                $h = max(15, min(120, (int) ($rawConfig['height_mm'] ?? $defaults['height_mm'])));
+                $tpl = in_array($rawConfig['template'] ?? '', $allowedTemplates, true)
+                    ? $rawConfig['template']
+                    : $defaults['template'];
+                $scale = in_array($rawConfig['font_scale'] ?? '', $allowedScales, true)
+                    ? $rawConfig['font_scale']
+                    : $defaults['font_scale'];
+
+                $clampPt = fn ($val, $fallback) => round(max(4.0, min(28.0, (float) ($val ?? $fallback))), 1);
+
+                $setting->dosage_sticker_config = [
+                    'preset_key'        => mb_substr((string) ($rawConfig['preset_key'] ?? "{$w}x{$h}"), 0, 32),
+                    'width_mm'          => $w,
+                    'height_mm'         => $h,
+                    'template'          => $tpl,
+                    'font_scale'        => $scale,
+                    'font_size_header'  => $clampPt($rawConfig['font_size_header'] ?? null, $defaults['font_size_header']),
+                    'font_size_patient' => $clampPt($rawConfig['font_size_patient'] ?? null, $defaults['font_size_patient']),
+                    'font_size_product' => $clampPt($rawConfig['font_size_product'] ?? null, $defaults['font_size_product']),
+                    'font_size_dosage'  => $clampPt($rawConfig['font_size_dosage'] ?? null, $defaults['font_size_dosage']),
+                    'font_size_footer'  => $clampPt($rawConfig['font_size_footer'] ?? null, $defaults['font_size_footer']),
+                    'show_shop_name'    => (bool) ($rawConfig['show_shop_name'] ?? $defaults['show_shop_name']),
+                    'show_invoice_meta' => (bool) ($rawConfig['show_invoice_meta'] ?? $defaults['show_invoice_meta']),
+                    'show_patient'      => (bool) ($rawConfig['show_patient'] ?? $defaults['show_patient']),
+                    'show_quantity'     => (bool) ($rawConfig['show_quantity'] ?? $defaults['show_quantity']),
+                    'show_batch'        => (bool) ($rawConfig['show_batch'] ?? $defaults['show_batch']),
+                    'show_expiry'       => (bool) ($rawConfig['show_expiry'] ?? $defaults['show_expiry']),
+                    'show_doctor'       => (bool) ($rawConfig['show_doctor'] ?? $defaults['show_doctor']),
+                    'footer_note'       => mb_substr(trim((string) ($rawConfig['footer_note'] ?? $defaults['footer_note'])), 0, 120),
+                ];
+            }
+        }
+
         if ($request->has('note')) {
             $setting->note = (string) ($request->input('note') ?? '');
         }

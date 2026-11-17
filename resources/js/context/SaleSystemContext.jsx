@@ -26,6 +26,27 @@ const noopRefresh = async () => {};
 // object identity is stable across renders, so consumers don't re-render for
 // no reason. Falling back (instead of throwing) matches the convention used
 // by useTheme()/useLicense() in this codebase.
+const DEFAULT_DOSAGE_STICKER_CONFIG = {
+  preset_key: "50x25",
+  width_mm: 50,
+  height_mm: 25,
+  template: "classic",
+  font_scale: "normal",
+  font_size_header: 6.5,
+  font_size_patient: 6.0,
+  font_size_product: 8.0,
+  font_size_dosage: 7.5,
+  font_size_footer: 5.5,
+  show_shop_name: true,
+  show_invoice_meta: true,
+  show_patient: true,
+  show_quantity: true,
+  show_batch: true,
+  show_expiry: true,
+  show_doctor: false,
+  footer_note: "Keep out of reach of children",
+};
+
 const FALLBACK_CONTEXT = {
   saleSystem: DEFAULT_SALE_SYSTEM,
   hasRetail: true,
@@ -34,6 +55,9 @@ const FALLBACK_CONTEXT = {
   shopType: DEFAULT_SHOP_TYPE,
   isPharmacy: true,
   isGeneralStore: false,
+  enableDosageStickers: true,
+  dosageStickerConfig: DEFAULT_DOSAGE_STICKER_CONFIG,
+  enablePrescriptionAttachments: true,
   isSetupCompleted: true,
   loading: false,
   refreshSaleSystem: noopRefresh,
@@ -97,6 +121,15 @@ export function SaleSystemProvider({ children }) {
   const [shopType, setShopType] = useState(
     () => initialCache?.shopType || DEFAULT_SHOP_TYPE
   );
+  const [enableDosageStickers, setEnableDosageStickers] = useState(
+    () => (typeof initialCache?.enableDosageStickers === "boolean" ? initialCache.enableDosageStickers : true)
+  );
+  const [dosageStickerConfig, setDosageStickerConfig] = useState(
+    () => initialCache?.dosageStickerConfig || DEFAULT_DOSAGE_STICKER_CONFIG
+  );
+  const [enablePrescriptionAttachments, setEnablePrescriptionAttachments] = useState(
+    () => (typeof initialCache?.enablePrescriptionAttachments === "boolean" ? initialCache.enablePrescriptionAttachments : true)
+  );
   const [isSetupCompleted, setIsSetupCompleted] = useState(
     () => (typeof initialCache?.isSetupCompleted === "boolean" ? initialCache.isSetupCompleted : true)
   );
@@ -138,6 +171,17 @@ export function SaleSystemProvider({ children }) {
 
       const nextSaleSystem = data?.sale_system || DEFAULT_SALE_SYSTEM;
       const nextShopType = data?.shop_type || DEFAULT_SHOP_TYPE;
+      const nextDosageStickers =
+        typeof data?.enable_dosage_stickers === "boolean"
+          ? data.enable_dosage_stickers
+          : true;
+      const nextDosageStickerConfig = data?.dosage_sticker_config
+        ? { ...DEFAULT_DOSAGE_STICKER_CONFIG, ...data.dosage_sticker_config }
+        : DEFAULT_DOSAGE_STICKER_CONFIG;
+      const nextPrescriptionAttachments =
+        typeof data?.enable_prescription_attachments === "boolean"
+          ? data.enable_prescription_attachments
+          : true;
       const nextSetup =
         typeof data?.is_setup_completed === "boolean"
           ? data.is_setup_completed
@@ -145,12 +189,18 @@ export function SaleSystemProvider({ children }) {
 
       setSaleSystem(nextSaleSystem);
       setShopType(nextShopType);
+      setEnableDosageStickers(nextDosageStickers);
+      setDosageStickerConfig(nextDosageStickerConfig);
+      setEnablePrescriptionAttachments(nextPrescriptionAttachments);
       if (typeof data?.is_setup_completed === "boolean") {
         setIsSetupCompleted(data.is_setup_completed);
       }
       writeCachedSaleSystem(activeToken, {
         saleSystem: nextSaleSystem,
         shopType: nextShopType,
+        enableDosageStickers: nextDosageStickers,
+        dosageStickerConfig: nextDosageStickerConfig,
+        enablePrescriptionAttachments: nextPrescriptionAttachments,
         isSetupCompleted: nextSetup,
       });
       setLoading(false);
@@ -212,11 +262,14 @@ export function SaleSystemProvider({ children }) {
       shopType,
       isPharmacy: shopType === "pharmacy",
       isGeneralStore: shopType === "general_store",
+      enableDosageStickers: shopType === "pharmacy" && enableDosageStickers,
+      dosageStickerConfig,
+      enablePrescriptionAttachments: shopType === "pharmacy" && enablePrescriptionAttachments,
       isSetupCompleted,
       loading,
       refreshSaleSystem: fetchSaleSystem,
     }),
-    [saleSystem, shopType, isSetupCompleted, loading, fetchSaleSystem]
+    [saleSystem, shopType, enableDosageStickers, dosageStickerConfig, enablePrescriptionAttachments, isSetupCompleted, loading, fetchSaleSystem]
   );
 
   return (

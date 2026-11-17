@@ -43,6 +43,13 @@ class Product extends Model
         'further_tax_rate',
         'sro_schedule_no',
         'sro_item_serial_no',
+        'drug_schedule',
+        'requires_cold_chain',
+        'default_dosage',
+    ];
+
+    protected $casts = [
+        'requires_cold_chain' => 'boolean',
     ];
 
     public function storageLocation()
