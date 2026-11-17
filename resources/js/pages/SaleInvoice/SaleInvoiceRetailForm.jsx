@@ -466,6 +466,15 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
   const discRefs = useRef([]);
   const focusedOnce = useRef(false);
 
+  // refs for keyboard shortcuts
+  const patientInputRef = useRef(null);
+  const taxPercentageRef = useRef(null);
+  const taxAmountRef = useRef(null);
+  const discPercentageRef = useRef(null);
+  const discAmountRef = useRef(null);
+  const cashGivenInputRef = useRef(null);
+  const receiveInputRef = useRef(null);
+
   // scroll container ref for the items table
   const itemsScrollRef = useRef(null);
 
@@ -497,17 +506,88 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     })();
   }, [saleId]);
 
-  // Ctrl+S / Ctrl+Enter / F9 save, Ctrl+T toggle Debit/Credit, Ctrl+C customer search, Ctrl+R toggle Retail/Wholesale, Ctrl+N add row (edit mode)
+  // Keyboard shortcuts: Ctrl-operative (with F-keys and Alt fallbacks)
+  // Ctrl+Q / F7: last qty, Ctrl+D / F8: discount, Ctrl+X / Ctrl+Shift+T: tax, Ctrl+R / F4: received, Ctrl+P: patient, Ctrl+O / Ctrl+Shift+D: doctor, F6: delete row
   useEffect(() => {
     const handle = (e) => {
       const isCtrl = (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey;
+      const isCtrlShift = (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey;
+      const isAlt = e.altKey && !e.ctrlKey && !e.metaKey;
       const key = (e.key || "").toLowerCase();
-      if (isCtrl && (key === "p" || e.code === "KeyP")) {
+
+      // Ctrl+Shift+P: Save & Print invoice
+      if (isCtrlShift && (key === "p" || e.code === "KeyP")) {
         e.preventDefault();
         handleSubmit(e, { printAfterSave: true });
         return;
       }
       if (e.defaultPrevented) return;
+
+      // F6 or Ctrl+Delete / Ctrl+Backspace: Delete active repeater row and move cursor to upper row quantity/discount
+      if (
+        e.key === "F6" ||
+        (isCtrl && (key === "backspace" || key === "delete") && document.activeElement?.closest("tr.invoice-repeater-row"))
+      ) {
+        e.preventDefault();
+        deleteRowAndMove();
+        return;
+      }
+
+      // Ctrl+Q or F7 (or Alt+Q): Jump to last item quantity
+      if (e.key === "F7" || ((isCtrl || isAlt) && (key === "q" || e.code === "KeyQ"))) {
+        e.preventDefault();
+        focusLastQty();
+        return;
+      }
+
+      // Ctrl+D or F8 (or Alt+D): Jump to invoice discount % / amount
+      if (e.key === "F8" || ((isCtrl || isAlt) && (key === "d" || e.code === "KeyD"))) {
+        e.preventDefault();
+        focusDiscount();
+        return;
+      }
+
+      // Ctrl+X (when no text is selected) or Ctrl+Shift+T (or Alt+T): Jump to invoice tax % / amount
+      if (
+        (isCtrl && (key === "x" || e.code === "KeyX")) ||
+        (isCtrlShift && (key === "t" || e.code === "KeyT")) ||
+        (isAlt && (key === "t" || e.code === "KeyT"))
+      ) {
+        const sel = window.getSelection?.()?.toString?.() || "";
+        const el = document.activeElement;
+        const hasInputSel =
+          el && typeof el.selectionStart === "number" && el.selectionStart !== el.selectionEnd;
+        if (!sel && !hasInputSel) {
+          e.preventDefault();
+          focusTax();
+          return;
+        }
+      }
+
+      // Ctrl+R or F4 (or Alt+R): Jump to cash given / received
+      if (e.key === "F4" || ((isCtrl || isAlt) && (key === "r" || e.code === "KeyR"))) {
+        e.preventDefault();
+        focusReceived();
+        return;
+      }
+
+      // Ctrl+P (or Alt+P): Jump to patient name
+      if ((isCtrl || isAlt) && (key === "p" || e.code === "KeyP")) {
+        e.preventDefault();
+        focusPatient();
+        return;
+      }
+
+      // Ctrl+O or Ctrl+Shift+D or Ctrl+M (or Alt+O/Alt+M): Select doctor
+      if (
+        ((isCtrl || isAlt) && (key === "o" || e.code === "KeyO" || key === "m" || e.code === "KeyM")) ||
+        (isCtrlShift && (key === "d" || e.code === "KeyD"))
+      ) {
+        e.preventDefault();
+        focusDoctor();
+        return;
+      }
+
       if ((isCtrl && (key === "s" || e.key === "Enter")) || e.key === "F9") {
         e.preventDefault();
         handleSubmit(e);
@@ -523,7 +603,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
           e.preventDefault();
           setCustomerSearchOpen(true);
         }
-      } else if (isCtrl && key === "r" && !saleId) {
+      } else if (isCtrlShift && key === "r" && !saleId) {
         e.preventDefault();
         navigate("/sale-invoices/create/wholesale");
       } else if (isCtrl && key === "n" && saleId) {
@@ -535,7 +615,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     };
     document.addEventListener("keydown", handle);
     return () => document.removeEventListener("keydown", handle);
-  }, [form, saleId]);
+  }, [form, saleId, focusedRowIndex]);
 
   /* -------- helpers -------- */
   const to2 = (n) => Number(parseFloat(n || 0).toFixed(2));
@@ -2487,7 +2567,95 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
       } else focusCell(row + 1, COLS[0]);
     }
   };
+
+  /* -------- Keyboard Shortcut Target Handlers -------- */
+  const focusPatient = () => {
+    if (patientInputRef.current) {
+      patientInputRef.current.focus();
+      patientInputRef.current.select?.();
+    }
+  };
+
+  const focusDoctor = () => {
+    setDoctorSearchCreateMode(false);
+    setDoctorSearchOpen(true);
+  };
+
+  const focusDiscount = () => {
+    if (document.activeElement === discPercentageRef.current) {
+      discAmountRef.current?.focus();
+      discAmountRef.current?.select?.();
+    } else {
+      discPercentageRef.current?.focus();
+      discPercentageRef.current?.select?.();
+    }
+  };
+
+  const focusTax = () => {
+    if (document.activeElement === taxPercentageRef.current) {
+      taxAmountRef.current?.focus();
+      taxAmountRef.current?.select?.();
+    } else {
+      taxPercentageRef.current?.focus();
+      taxPercentageRef.current?.select?.();
+    }
+  };
+
+  const focusReceived = () => {
+    if (form.invoice_type === "credit") {
+      receiveInputRef.current?.focus();
+      receiveInputRef.current?.select?.();
+    } else {
+      cashGivenInputRef.current?.focus();
+      cashGivenInputRef.current?.select?.();
+    }
+  };
+
+  const focusLastQty = () => {
+    const lastIdx = form.items.length - 1;
+    if (lastIdx >= 0) {
+      focusCell(lastIdx, "quantity");
+    }
+  };
+
+  const deleteRowAndMove = (rowIndex, colName) => {
+    let row = Number.isInteger(rowIndex) && rowIndex >= 0 ? rowIndex : focusedRowIndex;
+    const tr = document.activeElement?.closest("tr.invoice-repeater-row");
+    if (tr && tr.dataset && tr.dataset.rowIdx !== undefined) {
+      row = Number(tr.dataset.rowIdx);
+    }
+    if (row < 0 || row >= form.items.length) return;
+
+    const isDiscount =
+      colName === "disc" ||
+      document.activeElement?.name?.includes("discount") ||
+      document.activeElement?.name?.includes("disc");
+    const targetCol = isDiscount ? "disc" : "quantity";
+
+    if (form.items.length <= 1) {
+      resetRow(0);
+      setTimeout(() => focusCell(0, "product"), 50);
+      return;
+    }
+
+    removeRow(row);
+    const targetRow = row > 0 ? row - 1 : 0;
+    setTimeout(() => {
+      focusCell(targetRow, targetCol);
+    }, 50);
+  };
+
   const onKeyNav = (e, row, col) => {
+  // F6 or Ctrl+Delete / Ctrl+Backspace inside repeater row deletes row and moves to upper row quantity/discount
+  if (
+    e.key === "F6" ||
+    ((e.ctrlKey || e.metaKey) && (e.key === "Delete" || e.key === "Backspace"))
+  ) {
+    e.preventDefault();
+    deleteRowAndMove(row, col);
+    return;
+  }
+
   // Handle Ctrl + Tab for reverse navigation
   if (e.shiftKey && e.key === "Tab") {
     e.preventDefault();
@@ -2726,6 +2894,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                 <div className="col-span-1 sm:col-span-3 lg:col-span-2">
                   <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">
                     Doctor
+                    <span className="text-[8.5px] px-1 py-0.2 rounded bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-400 font-mono ml-1 font-normal" title="Shortcut: Ctrl+O or Ctrl+Shift+D">Ctrl+O</span>
                   </label>
                   <button
                     type="button"
@@ -2741,7 +2910,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                     title={
                       form.doctor_name
                         ? `${form.doctor_name}${form.doctor_pmdc ? ` (PM&DC: ${form.doctor_pmdc})` : ""}${form.doctor_hospital ? ` — ${form.doctor_hospital}` : ""}`
-                        : "Select or add prescribing doctor..."
+                        : "Select or add prescribing doctor... (Ctrl+O)"
                     }
                   >
                     <span className="truncate font-medium">
@@ -2761,6 +2930,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                   <div className="flex items-center justify-between mb-0.5">
                     <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                       Patient
+                      <span className="text-[8.5px] px-1 py-0.2 rounded bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-400 font-mono ml-1 font-normal" title="Shortcut: Ctrl+P">Ctrl+P</span>
                     </label>
                     {(form.patient_cnic || selectedCustomer?.cnic) && (
                       <span className="text-[8.5px] font-mono text-emerald-600 dark:text-emerald-400 truncate max-w-[95px]" title={`CNIC: ${form.patient_cnic || selectedCustomer?.cnic}`}>
@@ -2769,6 +2939,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                     )}
                   </div>
                   <input
+                    ref={patientInputRef}
                     type="text"
                     name="patient_name"
                     value={form.patient_name ?? ""}
@@ -2778,6 +2949,12 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                         : "Patient Name (Auto from Customer)"
                     }
                     onChange={handleHeaderChange}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        focusLastQty();
+                      }
+                    }}
                     autoComplete="off"
                     className="w-full h-7 border border-gray-300 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100"
                   />
@@ -2918,14 +3095,18 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
               <table className="invoice-repeater-table w-full min-w-[780px] text-[11px] lg:table-fixed border-collapse" autoComplete="off">
               <thead className={`sticky top-0 z-20 ${isDark ? "bg-slate-800/95 backdrop-blur-xs border-slate-700" : "bg-white/95 backdrop-blur-xs border-gray-200"} border-b`}>
                 <tr className="[&>th]:text-left">
-                  <th className={`w-7 text-center ${isDark ? "text-rose-400" : "text-red-600"}`}>DEL</th>
+                  <th className={`w-8 text-center ${isDark ? "text-rose-400" : "text-red-600"}`} title="Delete active row (F6)">
+                    DEL <span className="text-[8px] font-mono block opacity-75 font-normal">F6</span>
+                  </th>
                   <th className="w-6 text-center sale-th-readonly">#</th>
                   <th className="min-w-[200px] w-[29.5%] sale-th-editable">Product *</th>
                   <th className="w-11 text-center sale-th-readonly" title="Pack Size (Auto)">PSize</th>
                   <th className="w-18 sale-th-editable">Batch</th>
                   <th className="w-[68px] text-center sale-th-readonly" title="Expiry Date (Auto)">Expiry</th>
                   <th className="w-13 text-center sale-th-readonly" title="Available Units (Auto)">Avail</th>
-                  <th className="w-14 text-center sale-th-editable">Qty *</th>
+                  <th className="w-14 text-center sale-th-editable" title="Last row quantity: Ctrl+Q or F7">
+                    Qty * <span className="text-[8.5px] font-mono opacity-80 font-normal">Ctrl+Q</span>
+                  </th>
                   <th className="w-12 text-center sale-th-editable" title="Free Bonus Units (Scheme or Manual override)">Bonus</th>
                   <th className="w-18 text-center sale-th-readonly" title="Unit Sale Price (Auto)">Price</th>
                   <th className="w-12 text-center sale-th-editable">Disc %</th>
@@ -2935,13 +3116,20 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
               </thead>
               <tbody className="[&>tr>td]:py-1.5 [&>tr>td]:px-1">
                 {form.items.map((it, i) => (
-                  <tr key={it.id} id={invoiceErrors.rowId(i)} aria-invalid={invoiceErrors.rowMessages(i).length > 0 || undefined} className={`invoice-repeater-row ${invoiceErrors.rowMessages(i).length ? "invoice-row-invalid" : ""} border-b ${isDark ? "border-slate-700/80" : "border-gray-100"}`}>
+                  <tr
+                    key={it.id}
+                    id={invoiceErrors.rowId(i)}
+                    data-row-idx={i}
+                    onFocusCapture={() => setFocusedRowIndex(i)}
+                    aria-invalid={invoiceErrors.rowMessages(i).length > 0 || undefined}
+                    className={`invoice-repeater-row ${invoiceErrors.rowMessages(i).length ? "invoice-row-invalid" : ""} border-b ${isDark ? "border-slate-700/80" : "border-gray-100"}`}
+                  >
                     <td className="invoice-cell-del text-center">
                       <button
                         type="button"
                         tabIndex={-1}
                         onClick={() => removeRow(i)}
-                        aria-label="Remove item" title="Remove item"
+                        aria-label="Remove item (F6)" title="Remove item (F6)"
                         className="sale-item-action sale-item-remove"
                       >
                         <TrashIcon aria-hidden="true" />
@@ -3268,7 +3456,10 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
 
                 {/* Tax % */}
                 <div className="flex items-center justify-between gap-1.5">
-                  <label className={`font-semibold text-xs shrink-0 ${isDark ? "text-slate-400" : "text-gray-500"}`}>Tax %</label>
+                  <label className={`font-semibold text-xs shrink-0 flex items-center gap-1 ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+                    <span>Tax %</span>
+                    <span className="text-[8px] px-1 py-0.2 rounded bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-400 font-mono font-normal" title="Shortcut: Ctrl+X or Ctrl+Shift+T">Ctrl+X</span>
+                  </label>
                   <div className="flex items-center gap-1">
                     {taxRatePresets.length > 0 && (
                       <div className="w-24">
@@ -3294,10 +3485,18 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                       </div>
                     )}
                     <input
+                      ref={taxPercentageRef}
                       type="text"
                       name="tax_percentage"
                       value={form.tax_percentage ?? ""}
                       onChange={handleHeaderChange}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          taxAmountRef.current?.focus();
+                          taxAmountRef.current?.select?.();
+                        }
+                      }}
                       autoComplete="off"
                       className={`w-16 h-6.5 border rounded-md px-2 text-center text-xs ${
                         isDark 
@@ -3312,10 +3511,18 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                 <div className={`flex items-center justify-between gap-1.5 border-t border-dashed pt-0.5 ${isDark ? "border-slate-700" : "border-gray-200"}`}>
                   <label className={`font-semibold text-xs shrink-0 ${isDark ? "text-slate-400" : "text-gray-500"}`}>Tax Amt</label>
                   <input
+                    ref={taxAmountRef}
                     type="text"
                     name="tax_amount"
                     value={form.tax_amount ?? ""}
                     onChange={handleHeaderChange}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        discPercentageRef.current?.focus();
+                        discPercentageRef.current?.select?.();
+                      }
+                    }}
                     autoComplete="off"
                     className={`w-24 h-6.5 border rounded-md px-2 text-right font-semibold text-xs ${
                       isDark 
@@ -3327,12 +3534,23 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
 
                 {/* Disc % */}
                 <div className="flex items-center justify-between gap-1.5">
-                  <label className={`font-semibold text-xs shrink-0 ${isDark ? "text-slate-400" : "text-gray-500"}`}>Disc %</label>
+                  <label className={`font-semibold text-xs shrink-0 flex items-center gap-1 ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+                    <span>Disc %</span>
+                    <span className="text-[8px] px-1 py-0.2 rounded bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-400 font-mono font-normal" title="Shortcut: Ctrl+D or F8">Ctrl+D</span>
+                  </label>
                   <input
+                    ref={discPercentageRef}
                     type="text"
                     name="discount_percentage"
                     value={form.discount_percentage ?? ""}
                     onChange={handleHeaderChange}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        discAmountRef.current?.focus();
+                        discAmountRef.current?.select?.();
+                      }
+                    }}
                     onBlur={(e) => {
                       const v = e.target.value;
                       if (v !== "" && v !== "-" && v !== "-.") {
@@ -3355,10 +3573,17 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                 <div className={`flex items-center justify-between gap-1.5 border-t border-dashed pt-0.5 ${isDark ? "border-slate-700" : "border-gray-200"}`}>
                   <label className={`font-semibold text-xs shrink-0 ${isDark ? "text-slate-400" : "text-gray-500"}`}>Disc Amt</label>
                   <input
+                    ref={discAmountRef}
                     type="text"
                     name="discount_amount"
                     value={form.discount_amount ?? ""}
                     onChange={handleHeaderChange}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        focusReceived();
+                      }
+                    }}
                     autoComplete="off"
                     className={`w-24 h-6.5 border rounded-md px-2 text-right font-semibold text-xs ${
                       isDark 
@@ -3405,10 +3630,12 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                 {/* Cash Tendered / Given */}
                 <div className="pt-1 border-t border-dashed" style={{ borderColor: isDark ? "#334155" : "#e2e8f0" }}>
                   <div className="flex items-center justify-between gap-1.5">
-                    <label className={`font-bold text-xs shrink-0 ${isDark ? "text-slate-200" : "text-gray-700"}`}>
-                      Cash Given
+                    <label className={`font-bold text-xs shrink-0 flex items-center gap-1 ${isDark ? "text-slate-200" : "text-gray-700"}`}>
+                      <span>Cash Given</span>
+                      <span className="text-[8px] px-1 py-0.2 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-mono font-normal" title="Shortcut: Ctrl+R or F4">Ctrl+R</span>
                     </label>
                     <input
+                      ref={cashGivenInputRef}
                       type="text"
                       inputMode="numeric"
                       placeholder={form.invoice_type === "debit" ? String(billTotal) : "0"}
@@ -3486,8 +3713,14 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                 )}
 
                 <div className="flex items-center justify-between pt-0.5">
-                  <label className={`font-semibold text-xs shrink-0 ${isDark ? "text-slate-400" : "text-gray-500"}`}>Received</label>
+                  <label className={`font-semibold text-xs shrink-0 flex items-center gap-1 ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+                    <span>Received</span>
+                    {form.invoice_type === "credit" && (
+                      <span className="text-[8px] px-1 py-0.2 rounded bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 font-mono font-normal" title="Shortcut: Ctrl+R or F4">Ctrl+R</span>
+                    )}
+                  </label>
                   <input
+                    ref={receiveInputRef}
                     type="text"
                     name="total_receive"
                     inputMode="numeric"
@@ -3505,6 +3738,12 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                         ...prev,
                         total_receive: String(Math.round(Number(prev.total_receive || 0))),
                       }));
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleSubmit(e);
+                      }
                     }}
                     autoComplete="off"
                     className={`w-24 h-6.5 border rounded-md px-2 text-right font-semibold text-xs ${
