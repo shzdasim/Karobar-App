@@ -171,7 +171,7 @@ public function nearExpiry(Request $request)
 {
     $this->authorizeDashboardAction($request, ['product.view', 'report.near-expiry-product.view']);
     $months = (int) $request->query('months', 3);
-    if (!in_array($months, [1,3,6,12,18], true)) {
+    if ($months < 1 || $months > 36) {
         $months = 3;
     }
 
@@ -214,6 +214,7 @@ public function nearExpiry(Request $request)
         'from'   => $today,
         'to'     => $to,
         'rows'   => $rows,
+        'data'   => $rows,
     ]);
 }
 

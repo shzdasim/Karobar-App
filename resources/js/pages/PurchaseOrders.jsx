@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
+import Select from "react-select";
 import { usePermissions } from "@/api/usePermissions";
 import { useCurrency } from "@/context/CurrencyContext.jsx";
+import { useTheme } from "@/context/ThemeContext.jsx";
 import ProductSearchInput from "../components/ProductSearchInput";
 import {
   ClipboardDocumentListIcon,
@@ -166,6 +168,7 @@ export default function PurchaseOrders() {
   const navigate = useNavigate();
   const { loading: permissionsLoading, has } = usePermissions();
   const { formatCurrency } = useCurrency();
+  const { isDark } = useTheme();
   const creating = location.pathname.endsWith('/create');
   const editing = location.pathname.endsWith('/edit');
   const [form, setForm] = useState(blank);
@@ -183,6 +186,103 @@ export default function PurchaseOrders() {
     d.setDate(d.getDate() + 1);
     return d.toLocaleDateString('en-CA');
   }, []);
+  const threeDaysIso = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 3);
+    return d.toLocaleDateString('en-CA');
+  }, []);
+  const sevenDaysIso = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return d.toLocaleDateString('en-CA');
+  }, []);
+
+  const supplyDayOptions = useMemo(() => [
+    { value: '', label: 'All Supply Days' },
+    { value: todayIso, label: "Today's Supply" },
+    { value: tomorrowIso, label: "Tomorrow's Supply" },
+    { value: threeDaysIso, label: 'In 3 Days' },
+    { value: sevenDaysIso, label: 'In 7 Days' },
+    { value: 'custom', label: 'Pick a Date…' },
+  ], [todayIso, tomorrowIso, threeDaysIso, sevenDaysIso]);
+
+  const currentSupplyDayOption = useMemo(() => {
+    if (!selectedDeliveryDate) return supplyDayOptions[0];
+    const match = supplyDayOptions.find((opt) => opt.value === selectedDeliveryDate);
+    if (match) return match;
+    return { value: selectedDeliveryDate, label: selectedDeliveryDate };
+  }, [selectedDeliveryDate, supplyDayOptions]);
+
+  const supplySelectStyles = useMemo(() => ({
+    control: (base, state) => ({
+      ...base,
+      minHeight: 36,
+      height: 36,
+      fontSize: "12px",
+      fontWeight: 500,
+      borderRadius: "var(--btn-radius, 8px)",
+      borderColor: state.isFocused
+        ? "var(--workspace-accent, #3b82f6)"
+        : isDark
+        ? "rgba(71,85,105,0.7)"
+        : "rgba(203,213,225,0.9)",
+      backgroundColor: isDark ? "rgba(30,41,59,0.85)" : "var(--workspace-reading-fill, #f8fafc)",
+      boxShadow: state.isFocused
+        ? "0 0 0 2px color-mix(in srgb, var(--workspace-accent) 25%, transparent)"
+        : "none",
+      cursor: "pointer",
+      "&:hover": {
+        borderColor: "var(--workspace-accent, #3b82f6)",
+      },
+    }),
+    valueContainer: (base) => ({
+      ...base,
+      height: 36,
+      padding: "0 10px",
+      display: "flex",
+      alignItems: "center",
+    }),
+    indicatorsContainer: (base) => ({ ...base, height: 36 }),
+    indicatorSeparator: () => ({ display: "none" }),
+    dropdownIndicator: (base, state) => ({
+      ...base,
+      padding: "0 8px",
+      color: state.isFocused ? "var(--workspace-accent, #3b82f6)" : isDark ? "#94a3b8" : "#64748b",
+    }),
+    input: (base) => ({ ...base, margin: 0, padding: 0, color: isDark ? "#f1f5f9" : "#0f172a" }),
+    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+    menu: (base) => ({
+      ...base,
+      borderRadius: "var(--btn-radius, 10px)",
+      overflow: "hidden",
+      backgroundColor: isDark ? "#1e293b" : "#ffffff",
+      boxShadow: isDark
+        ? "0 10px 25px -5px rgba(0,0,0,0.5)"
+        : "0 10px 25px -5px rgba(0,0,0,0.1)",
+      border: isDark ? "1px solid rgba(71,85,105,0.5)" : "1px solid rgba(226,232,240,1)",
+      minWidth: 165,
+    }),
+    option: (base, state) => ({
+      ...base,
+      fontSize: "12px",
+      fontWeight: state.isSelected ? 600 : 500,
+      padding: "7px 12px",
+      backgroundColor: state.isSelected
+        ? "var(--workspace-accent, #3b82f6)"
+        : state.isFocused
+        ? isDark
+          ? "rgba(51, 65, 85, 0.8)"
+          : "rgba(241, 245, 249, 1)"
+        : "transparent",
+      color: state.isSelected ? "#ffffff" : isDark ? "#f1f5f9" : "#0f172a",
+      cursor: "pointer",
+    }),
+    singleValue: (base) => ({
+      ...base,
+      color: isDark ? "#f1f5f9" : "#0f172a",
+      fontWeight: 600,
+    }),
+  }), [isDark]);
   const [products, setProducts] = useState([]);
   const [supplier, setSupplier] = useState(null);
   const [supplierOpen, setSupplierOpen] = useState(false);
@@ -770,52 +870,31 @@ export default function PurchaseOrders() {
               </button>
             </div>
 
-            {/* Particular Day Supply Filter */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs font-semibold text-[var(--workspace-muted)] whitespace-nowrap flex items-center gap-1">
-                <CalendarIcon className="w-3.5 h-3.5 text-[var(--workspace-accent)]" />
-                <span>Supply Day:</span>
-              </span>
+            {/* Particular Day Supply Filter with React-Select (Saves Space) */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Supply Day React-Select */}
+              <div className="w-44 shrink-0">
+                <Select
+                  options={supplyDayOptions}
+                  value={currentSupplyDayOption}
+                  onChange={(opt) => {
+                    if (!opt || opt.value === '') {
+                      setSelectedDeliveryDate('');
+                    } else if (opt.value !== 'custom') {
+                      setSelectedDeliveryDate(opt.value);
+                      setUrgencyFilter('all');
+                    }
+                    setPage(1);
+                  }}
+                  styles={supplySelectStyles}
+                  isSearchable={false}
+                  menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                  aria-label="Filter supply deliveries by day"
+                />
+              </div>
 
-              {/* Quick Today / Tomorrow Buttons */}
-              <button
-                type="button"
-                onClick={() => {
-                  const nextDate = selectedDeliveryDate === todayIso ? '' : todayIso;
-                  setSelectedDeliveryDate(nextDate);
-                  if (nextDate) setUrgencyFilter('all');
-                  setPage(1);
-                }}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
-                  selectedDeliveryDate === todayIso
-                    ? 'theme-btn-primary shadow-2xs'
-                    : 'bg-[var(--workspace-reading-fill)] hover:bg-[color-mix(in_srgb,var(--workspace-accent)_10%,transparent)] text-[var(--workspace-ink)] border border-[var(--workspace-border)]'
-                }`}
-                title="View today's supply deliveries"
-              >
-                Today
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const nextDate = selectedDeliveryDate === tomorrowIso ? '' : tomorrowIso;
-                  setSelectedDeliveryDate(nextDate);
-                  if (nextDate) setUrgencyFilter('all');
-                  setPage(1);
-                }}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
-                  selectedDeliveryDate === tomorrowIso
-                    ? 'theme-btn-primary shadow-2xs'
-                    : 'bg-[var(--workspace-reading-fill)] hover:bg-[color-mix(in_srgb,var(--workspace-accent)_10%,transparent)] text-[var(--workspace-ink)] border border-[var(--workspace-border)]'
-                }`}
-                title="View tomorrow's supply deliveries"
-              >
-                Tomorrow
-              </button>
-
-              {/* Modern Date Picker for any particular day */}
-              <div className="w-[155px]">
+              {/* Modern Date Picker for custom particular day */}
+              <div className="w-36">
                 <ModernDatePicker
                   value={selectedDeliveryDate}
                   onChange={(val) => {
@@ -825,7 +904,7 @@ export default function PurchaseOrders() {
                   }}
                   isClearable={true}
                   size="sm"
-                  placeholder="Pick day supply…"
+                  placeholder="Custom Date…"
                   ariaLabel="Select a particular day to view supply"
                 />
               </div>
@@ -837,7 +916,7 @@ export default function PurchaseOrders() {
                     setSelectedDeliveryDate('');
                     setPage(1);
                   }}
-                  className="p-1 rounded-md text-[var(--workspace-muted)] hover:text-[var(--workspace-ink)] hover:bg-[color-mix(in_srgb,var(--workspace-accent)_10%,transparent)] transition-colors"
+                  className="p-1.5 rounded-md text-[var(--workspace-muted)] hover:text-[var(--workspace-ink)] hover:bg-[color-mix(in_srgb,var(--workspace-accent)_10%,transparent)] transition-colors"
                   title="Clear supply date filter"
                   aria-label="Clear supply date filter"
                 >
