@@ -1,10 +1,34 @@
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { usePermissions } from "@/api/usePermissions";
+import { useCurrency } from "@/context/CurrencyContext.jsx";
 import ProductSearchInput from "../components/ProductSearchInput";
-import { ClipboardDocumentListIcon, PlusIcon, TrashIcon, EyeIcon, PencilSquareIcon, ArrowDownTrayIcon, DocumentTextIcon, BuildingStorefrontIcon, MagnifyingGlassIcon, ArrowsUpDownIcon, QrCodeIcon, ShareIcon } from "@heroicons/react/24/outline";
+import {
+  ClipboardDocumentListIcon,
+  PlusIcon,
+  TrashIcon,
+  EyeIcon,
+  PencilSquareIcon,
+  ArrowDownTrayIcon,
+  DocumentTextIcon,
+  BuildingStorefrontIcon,
+  MagnifyingGlassIcon,
+  ArrowsUpDownIcon,
+  QrCodeIcon,
+  ShareIcon,
+  CalendarIcon,
+  ClockIcon,
+  TruckIcon,
+  BanknotesIcon,
+  CubeIcon,
+  ExclamationTriangleIcon,
+  CheckCircleIcon,
+  XMarkIcon,
+  ArrowPathIcon,
+  CalculatorIcon,
+} from "@heroicons/react/24/outline";
 import SupplierSearch from "../components/SupplierSearch";
 import ShareDocumentModal from "../components/ShareDocumentModal";
 import ModernDatePicker from "@/components/ModernDatePicker.jsx";
@@ -22,16 +46,118 @@ const newItem = () => ({ product_id: '', ordered_packs: 1, pack_size: 1, pack_pu
 const detailLabels = ['Product', 'Brand', 'Pack Size', 'Order Packs', 'Received Units', 'Remaining Units', 'Pack Purchase Price', 'Pack Bonus', 'Unit Bonus', 'Discount %', 'Total'];
 const itemLabels = { pack_size: 'Pack Size', ordered_packs: 'Order Packs', pack_purchase_price: 'Pack Purchase Price', pack_bonus: 'Pack Bonus', unit_bonus: 'Unit Bonus', item_discount_percentage: 'Discount %' };
 const statusLabel = (s) => ({ ordered: 'Ordered', partially_received: 'Partially Received', received: 'Received', cancelled: 'Cancelled' }[s] || s);
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return "—";
+  try {
+    const parts = String(dateStr).split('-');
+    if (parts.length < 3) return dateStr;
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    const date = new Date(y, m, d);
+    if (isNaN(date.getTime())) return dateStr;
+    return date.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
+  } catch {
+    return dateStr;
+  }
+};
+
+export const formatPoNumber = (val) => {
+  if (!val) return '';
+  const str = String(val).trim();
+  if (/^PO-\d+$/i.test(str)) {
+    return str.replace(/^PO-0*(\d+)$/i, 'PO-$1');
+  }
+  if (/^\d+$/.test(str)) {
+    return `PO-${parseInt(str, 10)}`;
+  }
+  return str.replace(/^PO-0*(\d+)/i, 'PO-$1');
+};
+
+const getDeliveryUrgency = (expectedDate, status) => {
+  if (!expectedDate) return { label: "Not scheduled", type: "none", days: 0 };
+  if (status === "received") return { label: "Delivered", type: "received", days: 0 };
+  if (status === "cancelled") return { label: "Cancelled", type: "cancelled", days: 0 };
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const parts = String(expectedDate).split('-');
+  if (parts.length < 3) return { label: expectedDate, type: "none", days: 0 };
+  const target = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  target.setHours(0, 0, 0, 0);
+
+  const diffTime = target.getTime() - today.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    const overdueDays = Math.abs(diffDays);
+    return {
+      label: overdueDays === 1 ? "Overdue (1 day)" : `Overdue (${overdueDays} days)`,
+      shortLabel: `${overdueDays}d overdue`,
+      type: "overdue",
+      days: diffDays,
+      overdueDays,
+    };
+  }
+  if (diffDays === 0) {
+    return {
+      label: "Due Today",
+      shortLabel: "Today",
+      type: "today",
+      days: 0,
+    };
+  }
+  if (diffDays === 1) {
+    return {
+      label: "Due Tomorrow",
+      shortLabel: "Tomorrow",
+      type: "upcoming",
+      days: 1,
+    };
+  }
+  if (diffDays <= 3) {
+    return {
+      label: `In ${diffDays} days`,
+      shortLabel: `In ${diffDays}d`,
+      type: "upcoming",
+      days: diffDays,
+    };
+  }
+  return {
+    label: `In ${diffDays} days`,
+    shortLabel: `${diffDays}d`,
+    type: "scheduled",
+    days: diffDays,
+  };
+};
+
 const sortOptions = [
-  ['newest', 'PO Number (Newest first)'], ['oldest', 'PO Number (Oldest first)'],
-  ['date_desc', 'Date (Newest first)'], ['date_asc', 'Date (Oldest first)'],
-  ['supplier_asc', 'Supplier (A–Z)'], ['supplier_desc', 'Supplier (Z–A)'],
-  ['total_desc', 'Total Amount (High–Low)'], ['total_asc', 'Total Amount (Low–High)'],
-  ['units_desc', 'Ordered Units (High–Low)'], ['units_asc', 'Ordered Units (Low–High)'],
-  ['items_desc', 'Items (High–Low)'], ['items_asc', 'Items (Low–High)'],
-  ['status_asc', 'Status (A–Z)'], ['status_desc', 'Status (Z–A)'],
+  ['delivery_asc', 'Delivery Date (Soonest first)'],
+  ['delivery_desc', 'Delivery Date (Latest first)'],
+  ['newest', 'PO Number (Newest first)'],
+  ['oldest', 'PO Number (Oldest first)'],
+  ['date_desc', 'Order Date (Newest first)'],
+  ['date_asc', 'Order Date (Oldest first)'],
+  ['supplier_asc', 'Supplier (A–Z)'],
+  ['supplier_desc', 'Supplier (Z–A)'],
+  ['total_desc', 'Total Amount (High–Low)'],
+  ['total_asc', 'Total Amount (Low–High)'],
+  ['packs_desc', 'Ordered Packs (High–Low)'],
+  ['packs_asc', 'Ordered Packs (Low–High)'],
+  ['status_asc', 'Status (A–Z)'],
+  ['status_desc', 'Status (Z–A)'],
 ];
-const headerSorts = { 'PO Number': ['newest', 'oldest'], Date: ['date_desc', 'date_asc'], Supplier: ['supplier_asc', 'supplier_desc'], Items: ['items_desc', 'items_asc'], 'Ordered Units': ['units_desc', 'units_asc'], 'Total Amount': ['total_desc', 'total_asc'], Status: ['status_asc', 'status_desc'] };
+const headerSorts = {
+  'PO Number': ['newest', 'oldest'],
+  'Order Date': ['date_desc', 'date_asc'],
+  'Expected Delivery': ['delivery_asc', 'delivery_desc'],
+  'Supplier': ['supplier_asc', 'supplier_desc'],
+  'Ordered Packs': ['packs_desc', 'packs_asc'],
+  'Total Amount': ['total_desc', 'total_asc'],
+  'Status': ['status_asc', 'status_desc'],
+};
 const errorMessage = (e) => Object.values(e.response?.data?.errors || {}).flat().join(' ') || e.response?.data?.message || 'Unable to complete this action. Please try again.';
 
 export default function PurchaseOrders() {
@@ -39,6 +165,7 @@ export default function PurchaseOrders() {
   const location = useLocation();
   const navigate = useNavigate();
   const { loading: permissionsLoading, has } = usePermissions();
+  const { formatCurrency } = useCurrency();
   const creating = location.pathname.endsWith('/create');
   const editing = location.pathname.endsWith('/edit');
   const [form, setForm] = useState(blank);
@@ -48,11 +175,20 @@ export default function PurchaseOrders() {
   const [supplierQuery, setSupplierQuery] = useState('');
   const [supplierFilter, setSupplierFilter] = useState('');
   const [sort, setSort] = useState('newest');
+  const [urgencyFilter, setUrgencyFilter] = useState('all');
+  const [selectedDeliveryDate, setSelectedDeliveryDate] = useState('');
+  const todayIso = useMemo(() => new Date().toLocaleDateString('en-CA'), []);
+  const tomorrowIso = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toLocaleDateString('en-CA');
+  }, []);
   const [products, setProducts] = useState([]);
   const [supplier, setSupplier] = useState(null);
   const [supplierOpen, setSupplierOpen] = useState(false);
   const [sharingPoId, setSharingPoId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const inFlight = useRef(false);
@@ -149,14 +285,21 @@ export default function PurchaseOrders() {
           setOrder(data); setForm({ ...data, items: data.items.map(orderRow) }); setSupplier(data.supplier);
           setProducts(data.items.map(i => i.product));
         } else {
-          const { data } = await axios.get('/api/purchase-orders', { params: { page, supplier: supplierFilter || undefined, sort } });
+          const { data } = await axios.get('/api/purchase-orders', {
+            params: {
+              page,
+              supplier: supplierFilter || undefined,
+              sort,
+              delivery_date: selectedDeliveryDate || undefined,
+            }
+          });
           if (alive) setListing(data);
         }
       } catch (e) { if (alive) setError(errorMessage(e)); }
       finally { if (alive) setLoading(false); }
     })();
     return () => { alive = false; };
-  }, [id, creating, editing, page, supplierFilter, sort, permissionsLoading, has]);
+  }, [id, creating, editing, page, supplierFilter, sort, selectedDeliveryDate, permissionsLoading, has]);
 
   useEffect(() => {
     if (permissionsLoading || !has('purchase-order.generate')) return;
@@ -171,11 +314,12 @@ export default function PurchaseOrders() {
   }, [permissionsLoading, has, navigate]);
 
   const deleteOrder = async (po) => {
-    if (inFlight.current || !window.confirm(`Delete Purchase Order ${po.number}? This cannot be undone.`)) return;
+    const poNum = formatPoNumber(po.number || po.id);
+    if (inFlight.current || !window.confirm(`Delete Purchase Order ${poNum}? This cannot be undone.`)) return;
     inFlight.current = true; setBusy(true); setError('');
     try {
       await axios.delete(`/api/purchase-orders/${po.id}`);
-      toast.success(`Purchase Order ${po.number} deleted`);
+      toast.success(`Purchase Order ${poNum} deleted`);
       const nextPage = listing.data.length === 1 && page > 1 ? page - 1 : page;
       if (nextPage !== page) setPage(nextPage);
       else {
@@ -231,7 +375,7 @@ export default function PurchaseOrders() {
         item_discount_percentage: row.item_discount_percentage,
       })) };
       const { data } = editing ? await axios.put(`/api/purchase-orders/${id}`, payload) : await axios.post('/api/purchase-orders', payload);
-      toast.success(`Purchase Order ${data.number} saved`);
+      toast.success(`Purchase Order ${formatPoNumber(data.number || data.id)} saved`);
       navigate(`/purchase-orders/${data.id}`);
     } catch (e) { setError(errorMessage(e)); }
     finally { inFlight.current = false; setBusy(false); }
@@ -248,6 +392,23 @@ export default function PurchaseOrders() {
     return () => window.removeEventListener('keydown', onSaveShortcut);
   }, [entryMode, permissionsLoading, has, creating, supplierOpen, form, supplier]);
 
+  const refreshListing = async () => {
+    if (inFlight.current) return;
+    setIsRefreshing(true);
+    setError('');
+    try {
+      const { data } = await axios.get('/api/purchase-orders', {
+        params: { page, supplier: supplierFilter || undefined, sort }
+      });
+      setListing(data);
+      toast.success('Purchase orders refreshed');
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   const receive = async () => {
     if (inFlight.current) return;
     inFlight.current = true; setBusy(true); setError('');
@@ -258,21 +419,899 @@ export default function PurchaseOrders() {
     finally { inFlight.current = false; setBusy(false); }
   };
   const cancel = async () => {
-    if (inFlight.current || !window.confirm(`Cancel Purchase Order ${order.number}?`)) return;
+    const poNum = formatPoNumber(order?.number || order?.id);
+    if (inFlight.current || !window.confirm(`Cancel Purchase Order ${poNum}?`)) return;
     inFlight.current = true; setBusy(true);
     try { const { data } = await axios.post(`/api/purchase-orders/${id}/cancel`); setOrder(prev => ({ ...prev, ...data })); }
     catch (e) { setError(errorMessage(e)); }
     finally { inFlight.current = false; setBusy(false); }
   };
-  if (permissionsLoading) return <div className="p-6">Loading permissions…</div>;
-  if (!has('purchase-order.view') || (creating && !has('purchase-order.create')) || (editing && !has('purchase-order.update'))) return <div className="p-6">You don’t have permission to access this Purchase Order action.</div>;
+  if (permissionsLoading) return <div className="p-6 text-sm text-[var(--workspace-muted)]">Loading permissions…</div>;
+  if (!has('purchase-order.view') || (creating && !has('purchase-order.create')) || (editing && !has('purchase-order.update'))) return <div className="p-6 text-sm text-red-600">You don’t have permission to access this Purchase Order action.</div>;
+
   const rows = creating || editing ? form.items : order?.items || [];
   const visibleOrders = (listing?.data || []).filter(po => !['received', 'partially_received'].includes(po.status));
   const total = rows.reduce((s, i) => s + (creating || editing ? Number(i.ordered_packs || 0) * Number(i.pack_purchase_price || 0) : Number(i.ordered_quantity || 0) * Number(i.unit_purchase_price || 0)) * (1 - Number(i.item_discount_percentage || 0) / 100), 0);
+
+  const counts = useMemo(() => {
+    let overdue = 0;
+    let today = 0;
+    let upcoming = 0;
+    let totalCommitted = 0;
+    let totalPacks = 0;
+    let totalItems = 0;
+
+    visibleOrders.forEach(po => {
+      const urg = getDeliveryUrgency(po.expected_received_date, po.status);
+      if (urg.type === 'overdue') overdue++;
+      else if (urg.type === 'today') today++;
+      else if (urg.type === 'upcoming') upcoming++;
+
+      totalCommitted += Number(po.total_amount || 0);
+      totalPacks += Number(po.total_packs ?? po.items_sum_ordered_packs ?? 0);
+      totalItems += Number(po.items_count || 0);
+    });
+
+    return {
+      total: listing?.total ?? visibleOrders.length,
+      active: visibleOrders.length,
+      overdue,
+      today,
+      upcoming,
+      totalCommitted,
+      totalPacks,
+      totalItems,
+    };
+  }, [visibleOrders, listing]);
+
+  const displayedOrders = useMemo(() => {
+    let orders = visibleOrders;
+    if (selectedDeliveryDate) {
+      orders = orders.filter(po => String(po.expected_received_date || '').slice(0, 10) === selectedDeliveryDate);
+    }
+    if (urgencyFilter === 'all') return orders;
+    return orders.filter(po => {
+      const urg = getDeliveryUrgency(po.expected_received_date, po.status);
+      if (urgencyFilter === 'overdue') return urg.type === 'overdue';
+      if (urgencyFilter === 'today') return urg.type === 'today';
+      if (urgencyFilter === 'upcoming') return urg.type === 'upcoming' || urg.type === 'today';
+      return true;
+    });
+  }, [visibleOrders, urgencyFilter, selectedDeliveryDate]);
+
+  const daySupplyStats = useMemo(() => {
+    if (!selectedDeliveryDate) return null;
+    const orders = visibleOrders.filter(po => String(po.expected_received_date || '').slice(0, 10) === selectedDeliveryDate);
+    const totalPacks = orders.reduce((s, po) => s + Number(po.total_packs ?? po.items_sum_ordered_packs ?? 0), 0);
+    const totalAmount = orders.reduce((s, po) => s + Number(po.total_amount || 0), 0);
+    return {
+      date: selectedDeliveryDate,
+      count: orders.length,
+      totalPacks,
+      totalAmount,
+    };
+  }, [visibleOrders, selectedDeliveryDate]);
+
+  // When on the index view (not creating, editing, or viewing a single order)
+  if (!id && !creating && !editing) {
+    return (
+      <div className="space-y-4 purchase-order-documents">
+        {/* Header Hero Banner */}
+        <div className="g-card p-4 sm:p-5 flex flex-wrap justify-between items-center gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="p-3 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shrink-0">
+              <ClipboardDocumentListIcon className="h-6 w-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                  Purchase Orders
+                </h1>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
+                  {counts.active} Active
+                </span>
+                {counts.overdue > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300 dark:border-rose-800 animate-pulse">
+                    <ExclamationTriangleIcon className="w-3.5 h-3.5" />
+                    {counts.overdue} Overdue
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Monitor delivery deadlines, track supplier orders, and receive incoming inventory.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <button
+              type="button"
+              disabled={loading || isRefreshing}
+              onClick={refreshListing}
+              className="g-btn-ghost theme-btn-tertiary inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg disabled:opacity-50"
+              title="Refresh Purchase Orders"
+            >
+              <ArrowPathIcon className={`w-4 h-4 ${isRefreshing || loading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+
+            {has('purchase-order.generate') && (
+              <Link
+                to="/purchase-orders/forecast"
+                className="g-btn-secondary theme-btn-secondary inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg shadow-xs"
+                title="Smart Reorder Forecast (Ctrl+N)"
+              >
+                <CalculatorIcon className="w-4 h-4 text-blue-500" />
+                <span>New Forecast</span>
+                <kbd className="ml-1 px-1.5 py-0.5 text-[10px] font-mono bg-black/5 dark:bg-white/10 rounded">Ctrl+N</kbd>
+              </Link>
+            )}
+
+            {has('purchase-order.create') && (
+              <Link
+                to="/purchase-orders/create"
+                className="g-btn-primary theme-btn-primary inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-lg shadow-sm"
+              >
+                <PlusIcon className="w-4 h-4" />
+                <span>New Purchase Order</span>
+              </Link>
+            )}
+          </div>
+        </div>
+
+        {error && (
+          <div role="alert" className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs flex items-center justify-between">
+            <span>{error}</span>
+            <button type="button" onClick={() => setError('')} className="p-1 hover:opacity-75">
+              <XMarkIcon className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* 4 Summary KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          <div className="g-card p-4 border-l-4 border-l-[var(--workspace-accent)] flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[var(--workspace-accent)]">
+                Active Orders
+              </span>
+              <div className="p-2 rounded-lg bg-[color-mix(in_srgb,var(--workspace-accent)_12%,transparent)] text-[var(--workspace-accent)]">
+                <ClipboardDocumentListIcon className="w-4 h-4" />
+              </div>
+            </div>
+            <div>
+              <p className="text-2xl font-bold font-mono text-gray-900 dark:text-gray-100">
+                {counts.active}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Awaiting supplier delivery
+              </p>
+            </div>
+          </div>
+
+          <div
+            onClick={() => setUrgencyFilter(counts.overdue > 0 ? (urgencyFilter === 'overdue' ? 'all' : 'overdue') : (urgencyFilter === 'today' ? 'all' : 'today'))}
+            className={`g-card p-4 border-l-4 cursor-pointer transition-all hover:shadow-md ${
+              counts.overdue > 0
+                ? 'border-l-rose-500 bg-rose-50/20 dark:bg-rose-950/10'
+                : counts.today > 0
+                ? 'border-l-amber-500 bg-amber-50/20 dark:bg-amber-950/10'
+                : 'border-l-emerald-500'
+            }`}
+            title="Click to filter by delivery deadline"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className={`text-xs font-semibold uppercase tracking-wider ${
+                counts.overdue > 0
+                  ? 'text-rose-600 dark:text-rose-400'
+                  : counts.today > 0
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : 'text-emerald-600 dark:text-emerald-400'
+              }`}>
+                Delivery Urgency
+              </span>
+              <div className={`p-2 rounded-lg ${
+                counts.overdue > 0
+                  ? 'bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400'
+                  : counts.today > 0
+                  ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
+                  : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
+              }`}>
+                <TruckIcon className="w-4 h-4" />
+              </div>
+            </div>
+            <div>
+              <p className={`text-2xl font-bold font-mono ${
+                counts.overdue > 0
+                  ? 'text-rose-600 dark:text-rose-400'
+                  : counts.today > 0
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : 'text-emerald-600 dark:text-emerald-400'
+              }`}>
+                {counts.overdue > 0
+                  ? `${counts.overdue} Overdue`
+                  : counts.today > 0
+                  ? `${counts.today} Due Today`
+                  : 'On Schedule'}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {counts.overdue > 0
+                  ? `${counts.today} due today • Click to filter`
+                  : counts.today > 0
+                  ? 'Arriving today • Click to filter'
+                  : 'All shipments on track'}
+              </p>
+            </div>
+          </div>
+
+          <div className="g-card p-4 border-l-4 border-l-emerald-500 flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                Committed Value
+              </span>
+              <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+                <BanknotesIcon className="w-4 h-4" />
+              </div>
+            </div>
+            <div>
+              <p className="text-2xl font-bold font-mono text-gray-900 dark:text-gray-100">
+                {formatCurrency(counts.totalCommitted)}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Total committed purchase value
+              </p>
+            </div>
+          </div>
+
+          <div className="g-card p-4 border-l-4 border-l-[var(--workspace-accent)] flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[var(--workspace-accent)]">
+                Packs in Pipeline
+              </span>
+              <div className="p-2 rounded-lg bg-[color-mix(in_srgb,var(--workspace-accent)_12%,transparent)] text-[var(--workspace-accent)]">
+                <CubeIcon className="w-4 h-4" />
+              </div>
+            </div>
+            <div>
+              <p className="text-2xl font-bold font-mono text-gray-900 dark:text-gray-100">
+                {Number(counts.totalPacks).toLocaleString()}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Total packs awaiting delivery
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Filter and Search Bar */}
+        <div className="g-card p-4 space-y-3.5 print:hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {/* Urgency Filter Pills */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setUrgencyFilter('all');
+                  setSelectedDeliveryDate('');
+                  setPage(1);
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  urgencyFilter === 'all' && !selectedDeliveryDate
+                    ? 'theme-btn-primary shadow-xs'
+                    : 'bg-[var(--workspace-reading-fill)] hover:bg-[color-mix(in_srgb,var(--workspace-accent)_10%,transparent)] text-[var(--workspace-ink)] border border-[var(--workspace-border)]'
+                }`}
+              >
+                All Orders ({counts.active})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setUrgencyFilter(urgencyFilter === 'overdue' ? 'all' : 'overdue');
+                  setSelectedDeliveryDate('');
+                  setPage(1);
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  urgencyFilter === 'overdue'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'bg-[var(--workspace-reading-fill)] hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-[var(--workspace-border)]'
+                }`}
+              >
+                <ExclamationTriangleIcon className="w-3.5 h-3.5 text-rose-500" />
+                <span>Overdue Deliveries</span>
+                {counts.overdue > 0 && (
+                  <span className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    urgencyFilter === 'overdue' ? 'bg-white/20 text-white' : 'bg-rose-200 text-rose-900 dark:bg-rose-900 dark:text-rose-100'
+                  }`}>
+                    {counts.overdue}
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setUrgencyFilter(urgencyFilter === 'today' ? 'all' : 'today');
+                  setSelectedDeliveryDate('');
+                  setPage(1);
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  urgencyFilter === 'today'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'bg-[var(--workspace-reading-fill)] hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-[var(--workspace-border)]'
+                }`}
+              >
+                <ClockIcon className="w-3.5 h-3.5 text-amber-500" />
+                <span>Due Today</span>
+                {counts.today > 0 && (
+                  <span className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    urgencyFilter === 'today' ? 'bg-white/20 text-white' : 'bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-100'
+                  }`}>
+                    {counts.today}
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setUrgencyFilter(urgencyFilter === 'upcoming' ? 'all' : 'upcoming');
+                  setSelectedDeliveryDate('');
+                  setPage(1);
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  urgencyFilter === 'upcoming'
+                    ? 'bg-[var(--workspace-accent)] text-white shadow-xs'
+                    : 'bg-[var(--workspace-reading-fill)] hover:bg-[color-mix(in_srgb,var(--workspace-accent)_10%,transparent)] text-[var(--workspace-ink)] border border-[var(--workspace-border)]'
+                }`}
+              >
+                <TruckIcon className="w-3.5 h-3.5 text-[var(--workspace-accent)]" />
+                <span>Upcoming ({counts.upcoming})</span>
+              </button>
+            </div>
+
+            {/* Particular Day Supply Filter */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-semibold text-[var(--workspace-muted)] whitespace-nowrap flex items-center gap-1">
+                <CalendarIcon className="w-3.5 h-3.5 text-[var(--workspace-accent)]" />
+                <span>Supply Day:</span>
+              </span>
+
+              {/* Quick Today / Tomorrow Buttons */}
+              <button
+                type="button"
+                onClick={() => {
+                  const nextDate = selectedDeliveryDate === todayIso ? '' : todayIso;
+                  setSelectedDeliveryDate(nextDate);
+                  if (nextDate) setUrgencyFilter('all');
+                  setPage(1);
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  selectedDeliveryDate === todayIso
+                    ? 'theme-btn-primary shadow-2xs'
+                    : 'bg-[var(--workspace-reading-fill)] hover:bg-[color-mix(in_srgb,var(--workspace-accent)_10%,transparent)] text-[var(--workspace-ink)] border border-[var(--workspace-border)]'
+                }`}
+                title="View today's supply deliveries"
+              >
+                Today
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const nextDate = selectedDeliveryDate === tomorrowIso ? '' : tomorrowIso;
+                  setSelectedDeliveryDate(nextDate);
+                  if (nextDate) setUrgencyFilter('all');
+                  setPage(1);
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  selectedDeliveryDate === tomorrowIso
+                    ? 'theme-btn-primary shadow-2xs'
+                    : 'bg-[var(--workspace-reading-fill)] hover:bg-[color-mix(in_srgb,var(--workspace-accent)_10%,transparent)] text-[var(--workspace-ink)] border border-[var(--workspace-border)]'
+                }`}
+                title="View tomorrow's supply deliveries"
+              >
+                Tomorrow
+              </button>
+
+              {/* Modern Date Picker for any particular day */}
+              <div className="w-[155px]">
+                <ModernDatePicker
+                  value={selectedDeliveryDate}
+                  onChange={(val) => {
+                    setSelectedDeliveryDate(val || '');
+                    if (val) setUrgencyFilter('all');
+                    setPage(1);
+                  }}
+                  isClearable={true}
+                  size="sm"
+                  placeholder="Pick day supply…"
+                  ariaLabel="Select a particular day to view supply"
+                />
+              </div>
+
+              {selectedDeliveryDate && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedDeliveryDate('');
+                    setPage(1);
+                  }}
+                  className="p-1 rounded-md text-[var(--workspace-muted)] hover:text-[var(--workspace-ink)] hover:bg-[color-mix(in_srgb,var(--workspace-accent)_10%,transparent)] transition-colors"
+                  title="Clear supply date filter"
+                  aria-label="Clear supply date filter"
+                >
+                  <XMarkIcon className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {(urgencyFilter !== 'all' || selectedDeliveryDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setUrgencyFilter('all');
+                  setSelectedDeliveryDate('');
+                  setPage(1);
+                }}
+                className="text-xs text-[var(--workspace-accent)] hover:underline font-medium inline-flex items-center gap-1"
+              >
+                <XMarkIcon className="w-3.5 h-3.5" />
+                <span>Reset filters</span>
+              </button>
+            )}
+          </div>
+
+          {/* Particular Day Supply Notification Banner */}
+          {selectedDeliveryDate && (
+            <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-[color-mix(in_srgb,var(--workspace-accent)_8%,var(--workspace-surface))] border border-[color-mix(in_srgb,var(--workspace-accent)_20%,transparent)] text-xs">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="p-1 rounded-md bg-[var(--workspace-accent)] text-white">
+                  <TruckIcon className="w-3.5 h-3.5" />
+                </div>
+                <span className="font-semibold text-[var(--workspace-ink)]">
+                  Particular Day Supply for {formatDate(selectedDeliveryDate)}:
+                </span>
+                <span className="text-[var(--workspace-muted)]">
+                  {daySupplyStats?.count || 0} {(daySupplyStats?.count || 0) === 1 ? 'order' : 'orders'} scheduled
+                  {' • '}
+                  {Number(daySupplyStats?.totalPacks || 0).toLocaleString()} packs
+                  {' • '}
+                  {formatCurrency(daySupplyStats?.totalAmount || 0)} committed value
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDeliveryDate('');
+                  setPage(1);
+                }}
+                className="inline-flex items-center gap-1 font-semibold text-[var(--workspace-accent)] hover:underline shrink-0"
+              >
+                <XMarkIcon className="w-3.5 h-3.5" />
+                <span>Show All Days</span>
+              </button>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3 pt-0.5">
+            <div className="flex-1 min-w-[260px] relative">
+              <MagnifyingGlassIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
+              <input
+                type="search"
+                value={supplierQuery}
+                onChange={e => setSupplierQuery(e.target.value)}
+                placeholder="Search by supplier name, PO number (e.g. PO-3 or 3), or reference…"
+                aria-label="Search purchase orders"
+                className="w-full h-9 pl-9 pr-8 rounded-lg border border-[var(--workspace-border)] bg-[var(--workspace-reading-fill)] text-xs text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:outline-hidden focus:ring-2 focus:ring-[var(--workspace-accent)]"
+              />
+              {supplierQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSupplierQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                  aria-label="Clear search"
+                >
+                  <XMarkIcon className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                <ArrowsUpDownIcon className="w-3.5 h-3.5" />
+                <span>Sort by:</span>
+              </span>
+              <select
+                value={sort}
+                onChange={e => { setSort(e.target.value); setPage(1); }}
+                aria-label="Sort purchase orders"
+                className="h-9 px-2.5 rounded-lg border border-[var(--workspace-border)] bg-[var(--workspace-reading-fill)] text-xs font-medium text-gray-800 dark:text-gray-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500 cursor-pointer"
+              >
+                {sortOptions.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Orders Table Panel */}
+        <div className="g-card overflow-hidden products-panel purchase-invoice-catalog purchase-order-catalog">
+          <div className="products-catalog-heading px-5 py-3.5 border-b border-[var(--workspace-border)] flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+                <ClipboardDocumentListIcon className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  Purchase Order Records
+                </h2>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                  {loading ? (
+                    <span className="inline-flex items-center gap-1">
+                      <ArrowPathIcon className="w-3 h-3 animate-spin" />
+                      Loading records…
+                    </span>
+                  ) : (
+                    `Showing ${displayedOrders.length} of ${counts.total} orders`
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="purchase-invoice-table-scroll overflow-x-auto" tabIndex={0} role="region" aria-label="Purchase order list" aria-busy={busy || loading}>
+            <table className="w-full text-xs text-left">
+              <thead className="bg-[var(--workspace-surface)] text-[var(--workspace-muted)] font-semibold border-b border-[var(--workspace-border)] sticky top-0 z-10 shadow-xs">
+                <tr>
+                  {['PO Number', 'Order Date', 'Expected Delivery', 'Supplier', 'Ordered Packs', 'Total Amount', 'Receipts', 'Status', 'Actions'].map(h => {
+                    const pair = headerSorts[h];
+                    const active = pair && pair.includes(sort);
+                    const dir = active ? (sort === pair[0] ? '↓' : '↑') : '';
+                    const align = h === 'Actions' ? 'text-right pr-5' : h === 'Total Amount' ? 'text-right' : 'text-left';
+                    return (
+                      <th
+                        className={`px-3 py-2.5 text-xs font-semibold uppercase tracking-wider ${align}`}
+                        key={h}
+                        aria-sort={active ? (sort.endsWith('_asc') || sort === 'oldest' ? 'ascending' : 'descending') : undefined}
+                      >
+                        {pair ? (
+                          <button
+                            type="button"
+                            onClick={() => { setSort(sort === pair[0] ? pair[1] : pair[0]); setPage(1); }}
+                            className={`inline-flex items-center gap-1 font-semibold uppercase tracking-wider cursor-pointer hover:text-[var(--workspace-accent)] ${h === 'Total Amount' ? 'ml-auto' : ''}`}
+                          >
+                            <span>{h}</span>
+                            {dir && <span aria-hidden="true" className="font-bold">{dir}</span>}
+                          </button>
+                        ) : h}
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--workspace-border)]">
+                {displayedOrders.length === 0 && !loading && (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center">
+                      <ClipboardDocumentListIcon className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
+                      <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                        {selectedDeliveryDate
+                          ? `No supplies scheduled for ${formatDate(selectedDeliveryDate)}`
+                          : urgencyFilter !== 'all'
+                          ? `No ${urgencyFilter} purchase orders found`
+                          : supplierFilter
+                          ? `No orders matching "${supplierFilter}"`
+                          : 'No active purchase orders'}
+                      </h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">
+                        {selectedDeliveryDate
+                          ? 'There are no purchase order deliveries arriving on this particular date.'
+                          : urgencyFilter !== 'all'
+                          ? `There are no purchase orders matching the selected ${urgencyFilter} urgency criteria.`
+                          : supplierFilter
+                          ? 'Try refining your search terms or clearing the filter.'
+                          : 'Create a new purchase order or generate one using the smart reorder forecast.'}
+                      </p>
+                      <div className="mt-4 flex items-center justify-center gap-2">
+                        {(urgencyFilter !== 'all' || supplierFilter || selectedDeliveryDate) && (
+                          <button
+                            type="button"
+                            onClick={() => { setUrgencyFilter('all'); setSupplierQuery(''); setSelectedDeliveryDate(''); setPage(1); }}
+                            className="g-btn-secondary theme-btn-secondary text-xs px-3 py-1.5"
+                          >
+                            Reset Filters
+                          </button>
+                        )}
+                        {has('purchase-order.create') && (
+                          <Link
+                            to="/purchase-orders/create"
+                            className="g-btn-primary theme-btn-primary text-xs px-3 py-1.5 inline-flex items-center gap-1.5"
+                          >
+                            <PlusIcon className="w-3.5 h-3.5" />
+                            <span>New Purchase Order</span>
+                          </Link>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+
+                {displayedOrders.map(po => {
+                  const urg = getDeliveryUrgency(po.expected_received_date, po.status);
+                  const isOverdue = urg.type === 'overdue';
+                  const poNum = formatPoNumber(po.number || po.id);
+
+                  return (
+                    <tr
+                      key={po.id}
+                      className={`hover:bg-[color-mix(in_srgb,var(--workspace-accent)_5%,transparent)] transition-colors ${
+                        isOverdue ? 'purchase-order-row-overdue bg-rose-50/20 dark:bg-rose-950/10' : ''
+                      }`}
+                    >
+                      {/* PO Number & Reference */}
+                      <td data-label="PO Number" className="px-3 py-2.5">
+                        <div className="flex flex-col">
+                          <Link
+                            to={`/purchase-orders/${po.id}`}
+                            className="font-bold text-xs text-[var(--workspace-accent)] hover:underline"
+                            title={`View details for ${poNum}`}
+                          >
+                            {poNum}
+                          </Link>
+                          {po.reference && (
+                            <span className="text-[10px] text-gray-500 dark:text-gray-400 truncate max-w-[120px]" title={`Ref: ${po.reference}`}>
+                              Ref: {po.reference}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Order Date */}
+                      <td data-label="Order Date" className="px-3 py-2.5 whitespace-nowrap">
+                        <span className="text-xs text-gray-700 dark:text-gray-300 font-medium">
+                          {formatDate(po.date)}
+                        </span>
+                      </td>
+
+                      {/* Expected Delivery Date (Prominently Highlighted & Clickable to view that day's supply) */}
+                      <td data-label="Expected Delivery" className="px-3 py-2.5 whitespace-nowrap">
+                        <div className="flex flex-col gap-1 items-start">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const d = String(po.expected_received_date || '').slice(0, 10);
+                              if (d) {
+                                setSelectedDeliveryDate(d);
+                                setUrgencyFilter('all');
+                                setPage(1);
+                              }
+                            }}
+                            className="flex items-center gap-1.5 font-semibold text-xs text-gray-900 dark:text-gray-100 hover:text-[var(--workspace-accent)] hover:underline text-left cursor-pointer transition-colors"
+                            title={`Filter and view all supplies scheduled for ${formatDate(po.expected_received_date)}`}
+                          >
+                            <CalendarIcon className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                            <span>{formatDate(po.expected_received_date)}</span>
+                          </button>
+
+                          {/* Urgency Badge */}
+                          {urg.type === 'overdue' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold tracking-tight bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                              <ExclamationTriangleIcon className="w-3 h-3 text-rose-600 dark:text-rose-400 shrink-0" />
+                              <span>{urg.label}</span>
+                            </span>
+                          )}
+                          {urg.type === 'today' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold tracking-tight bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                              <ClockIcon className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                              <span>Due Today</span>
+                            </span>
+                          )}
+                          {urg.type === 'upcoming' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                              <TruckIcon className="w-3 h-3 text-blue-500 shrink-0" />
+                              <span>{urg.label}</span>
+                            </span>
+                          )}
+                          {urg.type === 'scheduled' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] text-gray-500 dark:text-slate-400 bg-gray-100 dark:bg-slate-800 border border-gray-200 dark:border-slate-700">
+                              <span>{urg.label}</span>
+                            </span>
+                          )}
+                          {urg.type === 'none' && (
+                            <span className="text-[10px] text-gray-400 dark:text-slate-500 italic">Not scheduled</span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Supplier */}
+                      <td data-label="Supplier" className="px-3 py-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <BuildingStorefrontIcon className="w-4 h-4 text-gray-400 shrink-0" />
+                          <span className="font-semibold text-xs text-gray-900 dark:text-gray-100">
+                            {po.supplier?.name || '—'}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Ordered Packs */}
+                      <td data-label="Ordered Packs" className="px-3 py-2.5 tabular-nums text-xs text-gray-700 dark:text-gray-300 font-semibold">
+                        {Number(po.total_packs ?? po.items_sum_ordered_packs ?? 0).toLocaleString()} packs
+                      </td>
+
+                      {/* Total Amount */}
+                      <td data-label="Total Amount" className="px-3 py-2.5 text-right tabular-nums font-bold text-xs text-gray-900 dark:text-gray-100">
+                        {formatCurrency(Number(po.total_amount || 0))}
+                      </td>
+
+                      {/* Receipts */}
+                      <td data-label="Receipts" className="px-3 py-2.5 whitespace-nowrap">
+                        {po.invoices?.length > 0 ? (
+                          <Link
+                            to={`/purchase-orders/${po.id}`}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 hover:bg-emerald-200 transition-colors"
+                            title={`View ${po.invoices.length} receipt invoice(s)`}
+                          >
+                            <CheckCircleIcon className="w-3.5 h-3.5" />
+                            <span>{po.invoices.length} {po.invoices.length === 1 ? 'Receipt' : 'Receipts'}</span>
+                          </Link>
+                        ) : (
+                          <span className="text-[11px] text-gray-400 dark:text-slate-500">None yet</span>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td data-label="Status" className="px-3 py-2.5 whitespace-nowrap">
+                        <span className="purchase-order-status" data-status={po.status}>
+                          {statusLabel(po.status)}
+                        </span>
+                      </td>
+
+                      {/* Properly Placed Action Buttons */}
+                      <td data-label="Actions" className="px-3 py-2.5 text-right">
+                        <div className="purchase-order-index-actions flex items-center justify-end gap-1.5 flex-nowrap">
+                          {/* Primary CTA: Receive Delivery into Invoice */}
+                          {po.status === 'ordered' && has('purchase-invoice.create') && (
+                            <Link
+                              to={`/purchase-invoices/create?purchase_order_id=${po.id}`}
+                              className="purchase-order-action purchase-order-action-primary shrink-0"
+                              title={`Receive delivery for ${poNum} into Purchase Invoice (GRN)`}
+                              aria-label={`Receive delivery for ${poNum}`}
+                            >
+                              <ArrowDownTrayIcon aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
+                              <span>Receive</span>
+                            </Link>
+                          )}
+
+                          {!!po.invoices?.length && (
+                            <Link
+                              to={`/purchase-orders/${po.id}`}
+                              className="purchase-order-action shrink-0 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800"
+                              title={`View receipt history for ${poNum}`}
+                              aria-label={`View receipts for ${poNum}`}
+                            >
+                              <DocumentTextIcon aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
+                              <span>Receipts</span>
+                            </Link>
+                          )}
+
+                          {/* Secondary Icon Actions */}
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            {/* View / Print */}
+                            <Link
+                              to={`/purchase-orders/${po.id}`}
+                              className="products-row-action"
+                              title={`View & Print ${poNum}`}
+                              aria-label={`View Purchase Order ${poNum}`}
+                            >
+                              <EyeIcon aria-hidden="true" className="w-4 h-4" />
+                            </Link>
+
+                            {/* Share / WhatsApp PDF */}
+                            <button
+                              type="button"
+                              onClick={() => setSharingPoId(po.id)}
+                              className="products-row-action text-emerald-600 dark:text-emerald-400"
+                              title={`Share ${poNum} via WhatsApp or Email PDF`}
+                              aria-label={`Share Purchase Order ${poNum}`}
+                            >
+                              <ShareIcon aria-hidden="true" className="w-4 h-4" />
+                            </button>
+
+                            {/* Barcode labels */}
+                            {(has('barcode.view') || has('barcode.print')) && (
+                              <Link
+                                to={`/barcode-labels?purchase_order_id=${po.id}`}
+                                className="products-row-action text-indigo-600 dark:text-indigo-400"
+                                title={`Print Barcodes for ${poNum}`}
+                                aria-label={`Print Barcodes for ${poNum}`}
+                              >
+                                <QrCodeIcon aria-hidden="true" className="w-4 h-4" />
+                              </Link>
+                            )}
+
+                            {/* Edit (only if unreceived) */}
+                            {po.status === 'ordered' && !po.invoices?.length && has('purchase-order.update') && (
+                              <Link
+                                to={`/purchase-orders/${po.id}/edit`}
+                                className="products-row-action text-amber-600 dark:text-amber-400"
+                                title={`Edit ${poNum}`}
+                                aria-label={`Edit Purchase Order ${poNum}`}
+                              >
+                                <PencilSquareIcon aria-hidden="true" className="w-4 h-4" />
+                              </Link>
+                            )}
+
+                            {/* Delete (only if unreceived & has delete permission) */}
+                            {!po.invoices?.length && ['ordered', 'cancelled'].includes(po.status) && has('purchase-order.delete') && (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => deleteOrder(po)}
+                                className="products-row-action products-row-action-danger"
+                                title={`Delete ${poNum}`}
+                                aria-label={`Delete Purchase Order ${poNum}`}
+                              >
+                                <TrashIcon aria-hidden="true" className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination Footer */}
+          {listing && (
+            <div className="purchase-entry-footer flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-t border-[var(--workspace-border)] bg-gray-50/50 dark:bg-slate-800/30">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                Page {listing.current_page} of {listing.last_page} ({counts.total} total orders)
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center px-3 py-1.5 text-xs font-semibold rounded-lg disabled:opacity-50"
+                  disabled={page <= 1}
+                  onClick={() => setPage(page - 1)}
+                >
+                  Previous
+                </button>
+                <span className="text-xs font-medium px-2">
+                  {page}
+                </span>
+                <button
+                  type="button"
+                  className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center px-3 py-1.5 text-xs font-semibold rounded-lg disabled:opacity-50"
+                  disabled={page >= listing.last_page}
+                  onClick={() => setPage(page + 1)}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <ShareDocumentModal
+          isOpen={Boolean(sharingPoId)}
+          onClose={() => setSharingPoId(null)}
+          documentType="purchase_order"
+          documentId={sharingPoId}
+        />
+        <style>{`@media print { body * { visibility: hidden; } .purchase-order-documents, .purchase-order-documents * { visibility: visible; } .purchase-order-documents { position: absolute; left: 0; top: 0; width: 100%; color: black; background: white; } .purchase-order-documents .print\\:hidden, .purchase-order-documents .print\\:hidden * { display: none; } .purchase-order-documents .g-card { background: white; box-shadow: none; backdrop-filter: none; } }`}</style>
+      </div>
+    );
+  }
+
   return <div className="purchase-entry-page space-y-4 purchase-order-documents">
     <div className={`purchase-entry g-card overflow-hidden space-y-4 ${order && !editing ? "purchase-order-show" : entryMode ? "purchase-order-entry" : ""}`}>
       <div className="purchase-entry-header purchase-entry-banner flex flex-wrap justify-between gap-3 items-center px-5 py-4">
-        <div className="flex items-center gap-3"><div className="purchase-entry-icon p-2.5 rounded-xl"><ClipboardDocumentListIcon className="h-6 w-6" /></div><h1 className="purchase-entry-title text-xl font-semibold">{creating ? 'New Purchase Order' : editing ? `Edit ${order?.number || 'Purchase Order'}` : order?.number || 'Purchase Orders'}</h1></div>
+        <div className="flex items-center gap-3"><div className="purchase-entry-icon p-2.5 rounded-xl"><ClipboardDocumentListIcon className="h-6 w-6" /></div><h1 className="purchase-entry-title text-xl font-semibold">{creating ? 'New Purchase Order' : editing ? `Edit ${formatPoNumber(order?.number || order?.id) || 'Purchase Order'}` : formatPoNumber(order?.number || order?.id) || 'Purchase Orders'}</h1></div>
         <div className="flex flex-wrap gap-2 print:hidden">
           {has('purchase-order.generate') && <Link className="g-btn-secondary theme-btn-secondary inline-flex items-center justify-center gap-2 disabled:opacity-50" to="/purchase-orders/forecast" title="New Forecast (Ctrl+N)"><span>New Forecast</span> <kbd className="text-[10px] opacity-70">Ctrl+N</kbd></Link>}
           {order && !editing && order.status === 'ordered' && has('purchase-invoice.create') && <button className="g-btn-primary theme-btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={busy} onClick={receive}><ArrowDownTrayIcon className="w-4 h-4" /><span>{busy ? 'Preparing…' : 'Receive Delivery'}</span></button>}
@@ -360,63 +1399,7 @@ export default function PurchaseOrders() {
           <button type="button" className="g-btn-secondary theme-btn-secondary inline-flex items-center justify-center gap-2 disabled:opacity-50" onClick={() => setSharingPoId(order.id)}><ShareIcon className="w-4 h-4" /><span>Share / Email PDF</span></button>
           <button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" onClick={() => printCurrentView()}>Print Order</button>
         </div>
-      </> : listing && <>
-        <div className="px-3 flex flex-wrap items-end gap-3 print:hidden">
-          <label className="flex-1 min-w-[220px] text-xs font-medium space-y-1">
-            <span className="block text-[var(--workspace-muted)]">Supplier</span>
-            <div className="relative flex items-center">
-              <MagnifyingGlassIcon aria-hidden="true" className="w-4 h-4 absolute left-2.5 pointer-events-none opacity-60" />
-              <input type="search" value={supplierQuery} onChange={e => setSupplierQuery(e.target.value)} placeholder="Search by supplier name…" aria-label="Search purchase orders by supplier name" className="w-full h-9 pl-8 pr-3 rounded-lg border border-[var(--workspace-border)] bg-[var(--workspace-reading-fill)] text-xs" />
-            </div>
-          </label>
-          <label className="min-w-[210px] text-xs font-medium space-y-1">
-            <span className="inline-flex items-center gap-1 text-[var(--workspace-muted)]"><ArrowsUpDownIcon aria-hidden="true" className="w-3.5 h-3.5" />Sort by</span>
-            <select value={sort} onChange={e => { setSort(e.target.value); setPage(1); }} aria-label="Sort purchase orders" className="w-full h-9 px-2.5 rounded-lg border border-[var(--workspace-border)] bg-[var(--workspace-reading-fill)] text-xs">
-              {sortOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
-        </div>
-        <div className="products-panel purchase-invoice-catalog purchase-order-catalog">
-          <div className="purchase-invoice-table-scroll" tabIndex={0} role="region" aria-label="Purchase order list" aria-busy={busy || loading}>
-            <table className="w-full text-xs"><colgroup>{[10, 9, 16, 5, 8, 10, 6, 11, 25].map((width, index) => <col key={index} style={{ width: `${width}%` }} />)}</colgroup>
-              <thead className="sticky top-0 z-10 shadow-xs"><tr>
-                {['PO Number', 'Date', 'Supplier', 'Items', 'Ordered Units', 'Total Amount', 'Receipts', 'Status', 'Actions'].map(h => {
-                  const pair = headerSorts[h];
-                  const active = pair && pair.includes(sort);
-                  const dir = active ? (sort === pair[0] ? '↓' : '↑') : '';
-                  const align = h === 'Actions' ? 'text-center' : h === 'Total Amount' ? 'text-right' : 'text-left';
-                  return <th className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider ${align}`} key={h} aria-sort={active ? (sort.endsWith('_asc') || sort === 'oldest' ? 'ascending' : 'descending') : undefined}>
-                    {pair ? <button type="button" onClick={() => { setSort(sort === pair[0] ? pair[1] : pair[0]); setPage(1); }} className={`inline-flex items-center gap-1 font-semibold uppercase tracking-wider cursor-pointer hover:text-[var(--workspace-accent)] ${h === 'Total Amount' ? 'ml-auto' : ''}`}>{h}{dir && <span aria-hidden="true">{dir}</span>}</button> : h}
-                  </th>;
-                })}
-              </tr></thead>
-              <tbody>{visibleOrders.map(po => <tr key={po.id}>
-                <td data-label="PO Number" className="px-3 py-2.5 font-semibold">{po.number}</td>
-                <td data-label="Date" className="px-3 py-2.5 whitespace-nowrap">{po.date}</td>
-                <td data-label="Supplier" className="px-3 py-2.5">{po.supplier?.name}</td>
-                <td data-label="Items" className="px-3 py-2.5 tabular-nums">{po.items_count}</td>
-                <td data-label="Ordered Units" className="px-3 py-2.5 tabular-nums">{po.items_sum_ordered_quantity}</td>
-                <td data-label="Total Amount" className="px-3 py-2.5 text-right tabular-nums font-semibold">{Number(po.total_amount || 0).toFixed(2)}</td>
-                <td data-label="Receipts" className="px-3 py-2.5 tabular-nums">{po.invoices?.length || 0}</td>
-                <td data-label="Status" className="px-3 py-2.5"><span className="purchase-order-status" data-status={po.status}>{statusLabel(po.status)}</span></td>
-                <td data-label="Actions" className="px-3 py-2.5"><div className="purchase-order-index-actions">
-                  <Link className="purchase-order-action theme-btn-tertiary" to={`/purchase-orders/${po.id}`} title={`View / Print ${po.number}`} aria-label={`View Purchase Order ${po.number}`}><EyeIcon aria-hidden="true" className="w-4 h-4" /><span>View / Print</span></Link>
-                  <button type="button" className="purchase-order-action theme-btn-secondary" onClick={() => setSharingPoId(po.id)} title={`Share ${po.number} via WhatsApp or Email PDF`} aria-label={`Share Purchase Order ${po.number}`}><ShareIcon aria-hidden="true" className="w-4 h-4" /><span>Share / PDF</span></button>
-                  {(has('barcode.view') || has('barcode.print')) && <Link className="purchase-order-action theme-btn-tertiary" to={`/barcode-labels?purchase_order_id=${po.id}`} title={`Print Barcodes for ${po.number}`} aria-label={`Print Barcodes for ${po.number}`}><QrCodeIcon aria-hidden="true" className="w-4 h-4" /><span>Barcodes</span></Link>}
-                  {po.status === 'ordered' && !po.invoices?.length && <>
-                    {has('purchase-order.update') && <Link className="purchase-order-action theme-btn-secondary" to={`/purchase-orders/${po.id}/edit`} title={`Edit ${po.number}`} aria-label={`Edit Purchase Order ${po.number}`}><PencilSquareIcon aria-hidden="true" className="w-4 h-4" /><span>Edit</span></Link>}
-                  </>}
-                  {po.status === 'ordered' && has('purchase-invoice.create') && <Link className="purchase-order-action purchase-order-action-primary theme-btn-primary" to={`/purchase-invoices/create?purchase_order_id=${po.id}`} title={`Receive ${po.number}`} aria-label={`Receive Purchase Order ${po.number}`}><ArrowDownTrayIcon aria-hidden="true" className="w-4 h-4" /><span>Receive Delivery</span></Link>}
-                  {!po.invoices?.length && ['ordered', 'cancelled'].includes(po.status) && has('purchase-order.delete') && <button className="purchase-order-action purchase-order-action-danger theme-btn-danger" disabled={busy} onClick={() => deleteOrder(po)} title={`Delete ${po.number}`} aria-label={`Delete Purchase Order ${po.number}`}><TrashIcon aria-hidden="true" className="w-4 h-4" /><span>Delete</span></button>}
-                  {!!po.invoices?.length && has('purchase-invoice.view') && <Link className="purchase-order-action theme-btn-tertiary" to={`/purchase-orders/${po.id}`} title={`View receipts for ${po.number}`} aria-label={`View receipt history for ${po.number}`}><DocumentTextIcon aria-hidden="true" className="w-4 h-4" /><span>Receipts</span></Link>}
-                </div></td>
-              </tr>)}</tbody>
-            </table>
-          </div>
-        </div>
-        {!visibleOrders.length && <p className="px-5 text-sm text-[var(--workspace-muted)]">{supplierFilter ? `No Purchase Orders found for supplier "${supplierFilter}".` : 'No Purchase Orders yet. Create an order or start from a forecast.'}</p>}
-        <div className="purchase-entry-footer flex gap-3 items-center px-5 py-4"><button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={page <= 1} onClick={() => setPage(page-1)}>Previous</button><span>Page {listing.current_page} of {listing.last_page}</span><button className="g-btn-ghost theme-btn-tertiary inline-flex items-center justify-center gap-2 disabled:opacity-50" disabled={page >= listing.last_page} onClick={() => setPage(page+1)}>Next</button></div>
-      </>}
+      </> : null}
     </div>
     <ShareDocumentModal
       isOpen={Boolean(sharingPoId)}

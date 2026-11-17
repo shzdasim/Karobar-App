@@ -2986,23 +2986,25 @@ body {
 .purchase-order-status[data-status="received"] { color: var(--color-success, #16a34a); background: color-mix(in srgb, var(--color-success, #16a34a) 12%, transparent); }
 .purchase-order-status[data-status="cancelled"] { color: var(--workspace-muted); background: var(--workspace-reading-fill); }
 
-/* Fit the PO index to its workspace instead of the invoice table's 64rem minimum. */
-.purchase-order-catalog { min-width: 0; container-type: inline-size; }
-.purchase-order-catalog .purchase-invoice-table-scroll table { min-width: 0; width: 100%; table-layout: fixed; }
-.purchase-order-catalog .purchase-invoice-table-scroll :is(th, td) { padding: 0.4rem 0.35rem; font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
-.purchase-order-catalog .products-row-action { width: 28px; height: 28px; border-radius: 7px; }
-.purchase-order-index-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; width: 100%; }
-.purchase-order-catalog .purchase-order-action { display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; min-height: 30px; padding: 5px 7px; font-size: 11px; font-weight: 600; line-height: 1.2; text-decoration: none; cursor: pointer; }
-.purchase-order-catalog .purchase-order-action:not([class*="theme-btn"]) { border: 1px solid var(--workspace-border); border-radius: 7px; background: var(--workspace-surface); color: var(--workspace-ink); transition: background 150ms, border-color 150ms; }
+/* Fit the PO index to its workspace with modern responsive layout */
+.purchase-order-catalog { min-width: 0; }
+.purchase-order-catalog .purchase-invoice-table-scroll table { min-width: 860px; width: 100%; border-collapse: separate; border-spacing: 0; }
+.purchase-order-catalog .purchase-invoice-table-scroll :is(th, td) { padding: 0.65rem 0.75rem; font-size: 12px; vertical-align: middle; }
+.purchase-order-catalog .products-row-action { width: 30px; height: 30px; border-radius: var(--btn-radius, 8px); }
+.purchase-order-index-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; width: 100%; }
+.purchase-order-row-overdue { border-left: 3px solid #f43f5e !important; }
+.purchase-order-catalog .purchase-order-action { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; min-height: 28px; padding: 4px 8px; font-size: 11px; font-weight: 600; line-height: 1.2; text-decoration: none; cursor: pointer; border-radius: var(--btn-radius, 7px); transition: all 150ms ease; }
+.purchase-order-catalog .purchase-order-action:not([class*="theme-btn"]) { border: 1px solid var(--workspace-border); background: var(--workspace-surface); color: var(--workspace-ink); }
 .purchase-order-catalog .purchase-order-action svg { width: 14px; height: 14px; flex-shrink: 0; }
 .purchase-order-catalog .purchase-order-action span { overflow-wrap: normal; word-break: normal; }
 .purchase-order-catalog .purchase-order-action:not([class*="theme-btn"]):hover { background: color-mix(in srgb, var(--workspace-accent) 10%, var(--workspace-surface)); border-color: var(--workspace-accent); }
-.purchase-order-catalog .purchase-order-action-primary:not([class*="theme-btn"]) { color: var(--workspace-accent); background: color-mix(in srgb, var(--workspace-accent) 8%, var(--workspace-surface)); }
+.purchase-order-catalog .purchase-order-action-primary:not([class*="theme-btn"]) { color: #fff; background: var(--color-success, #16a34a); border-color: var(--color-success, #16a34a); }
+.purchase-order-catalog .purchase-order-action-primary:not([class*="theme-btn"]):hover { background: #15803d; border-color: #15803d; }
 .purchase-order-catalog .purchase-order-action-danger:not([class*="theme-btn"]) { color: var(--color-danger, #dc2626); }
 .purchase-order-catalog .purchase-order-action-danger:not([class*="theme-btn"]):hover { background: color-mix(in srgb, var(--color-danger, #dc2626) 10%, var(--workspace-surface)); border-color: var(--color-danger, #dc2626); }
 .purchase-order-catalog .purchase-order-action:focus-visible { outline: 2px solid var(--workspace-accent); outline-offset: 2px; }
 .purchase-order-catalog .purchase-order-action:disabled { opacity: 0.5; cursor: not-allowed; }
-.purchase-order-catalog .purchase-order-status { white-space: normal; padding: 0.2rem 0.35rem; }
+.purchase-order-catalog .purchase-order-status { white-space: nowrap; padding: 0.25rem 0.5rem; }
 @container (max-width: 640px) {
   .purchase-order-catalog colgroup, .purchase-order-catalog thead { display: none; }
   .purchase-order-catalog table, .purchase-order-catalog tbody { display: block; width: 100%; }

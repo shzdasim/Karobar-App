@@ -627,6 +627,9 @@ class PurchaseOrderWorkflowTest extends TestCase
 
         $byDateAsc = $this->getJson('/api/purchase-orders?sort=date_asc')->assertOk()->json('data');
         $this->assertSame([$second->id, $first->id], array_column($byDateAsc, 'id'));
+
+        $byDeliveryDate = $this->getJson('/api/purchase-orders?delivery_date=2026-10-15')->assertOk()->json('data');
+        $this->assertSame([$second->id], array_column($byDeliveryDate, 'id'));
     }
 
     public function test_user_demands_can_be_created_with_multiple_products_at_once(): void

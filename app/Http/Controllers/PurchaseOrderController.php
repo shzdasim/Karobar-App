@@ -17,6 +17,9 @@ class PurchaseOrderController extends Controller
         $totalAmount = \App\Models\PurchaseOrderItem::query()
             ->selectRaw('COALESCE(SUM(ordered_quantity * unit_purchase_price * (1 - COALESCE(item_discount_percentage, 0) / 100.0)), 0)')
             ->whereColumn('purchase_order_items.purchase_order_id', 'purchase_orders.id');
+        $totalPacks = \App\Models\PurchaseOrderItem::query()
+            ->selectRaw('COALESCE(SUM(ordered_quantity / NULLIF(pack_size, 0)), 0)')
+            ->whereColumn('purchase_order_items.purchase_order_id', 'purchase_orders.id');
         $supplierName = \App\Models\Supplier::query()
             ->select('name')
             ->whereColumn('suppliers.id', 'purchase_orders.supplier_id')
@@ -26,24 +29,45 @@ class PurchaseOrderController extends Controller
             ->whereNotIn('purchase_orders.status', ['received', 'partially_received'])
             ->withCount('items')
             ->withSum('items', 'ordered_quantity')
-            ->selectSub($totalAmount, 'total_amount');
+            ->selectSub($totalAmount, 'total_amount')
+            ->selectSub($totalPacks, 'total_packs');
 
-        $supplier = trim((string) ($request->query('supplier') ?? $request->query('search') ?? $request->query('q') ?? ''));
+        $supplier = trim((string) ($request->query('supplier') ?? ''));
+        $search = trim((string) ($request->query('search') ?? $request->query('q') ?? ''));
         if ($supplier !== '') {
             $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $supplier) . '%';
             $query->whereHas('supplier', fn ($q) => $q->where('name', 'like', $like));
+        } elseif ($search !== '') {
+            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search) . '%';
+            $query->where(function ($q) use ($like, $search) {
+                $q->whereHas('supplier', fn ($sq) => $sq->where('name', 'like', $like))
+                  ->orWhere('purchase_orders.reference', 'like', $like);
+                $cleanPo = preg_replace('/[^0-9]/', '', $search);
+                if ($cleanPo !== '') {
+                    $q->orWhere('purchase_orders.id', (int) $cleanPo);
+                }
+            });
+        }
+
+        $deliveryDate = trim((string) ($request->query('delivery_date') ?? $request->query('expected_received_date') ?? $request->query('expected_date') ?? ''));
+        if ($deliveryDate !== '') {
+            $query->whereDate('purchase_orders.expected_received_date', $deliveryDate);
         }
 
         match ((string) $request->query('sort', 'newest')) {
             'oldest' => $query->orderBy('purchase_orders.id'),
             'date_desc' => $query->orderByDesc('purchase_orders.date')->orderByDesc('purchase_orders.id'),
             'date_asc' => $query->orderBy('purchase_orders.date')->orderBy('purchase_orders.id'),
+            'delivery_desc' => $query->orderByDesc('purchase_orders.expected_received_date')->orderByDesc('purchase_orders.id'),
+            'delivery_asc' => $query->orderBy('purchase_orders.expected_received_date')->orderBy('purchase_orders.id'),
             'supplier_asc' => $query->orderBy($supplierName)->orderByDesc('purchase_orders.id'),
             'supplier_desc' => $query->orderByDesc($supplierName)->orderByDesc('purchase_orders.id'),
             'total_desc' => $query->orderByDesc('total_amount')->orderByDesc('purchase_orders.id'),
             'total_asc' => $query->orderBy('total_amount')->orderByDesc('purchase_orders.id'),
-            'units_desc' => $query->orderByDesc('items_sum_ordered_quantity')->orderByDesc('purchase_orders.id'),
-            'units_asc' => $query->orderBy('items_sum_ordered_quantity')->orderByDesc('purchase_orders.id'),
+            'packs_desc' => $query->orderByDesc('total_packs')->orderByDesc('purchase_orders.id'),
+            'packs_asc' => $query->orderBy('total_packs')->orderByDesc('purchase_orders.id'),
+            'units_desc' => $query->orderByDesc('total_packs')->orderByDesc('purchase_orders.id'),
+            'units_asc' => $query->orderBy('total_packs')->orderByDesc('purchase_orders.id'),
             'items_desc' => $query->orderByDesc('items_count')->orderByDesc('purchase_orders.id'),
             'items_asc' => $query->orderBy('items_count')->orderByDesc('purchase_orders.id'),
             'status_asc' => $query->orderBy('purchase_orders.status')->orderByDesc('purchase_orders.id'),
