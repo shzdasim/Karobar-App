@@ -3047,7 +3047,7 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                 />
               </div>
 
-              <div className="col-span-2 sm:col-span-3 lg:col-span-7">
+              <div className={`col-span-2 sm:col-span-3 ${taxRatePresets.length > 0 ? "lg:col-span-5" : "lg:col-span-7"}`}>
                 <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">Remarks</label>
                 <input
                   type="text"
@@ -3059,6 +3059,44 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                   className="w-full h-7 border border-gray-300 dark:border-slate-600 rounded-md px-2 text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100"
                 />
               </div>
+
+              {taxRatePresets.length > 0 && (
+                <div className="col-span-1 sm:col-span-2 lg:col-span-2">
+                  <label className="flex items-center justify-between text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">
+                    <span>Tax Preset</span>
+                    <span className="text-[8.5px] font-medium lowercase opacity-75">optional</span>
+                  </label>
+                  <Select
+                    options={[
+                      { value: "", label: "None (0%)" },
+                      ...taxRatePresets.map((tr) => ({
+                        value: String(Number(tr.rate)),
+                        label: `${tr.code} (${Number(tr.rate)}%)`,
+                      })),
+                    ]}
+                    value={
+                      form.tax_percentage !== "" && form.tax_percentage !== undefined && form.tax_percentage !== null
+                        ? taxRatePresets
+                            .map((tr) => ({
+                              value: String(Number(tr.rate)),
+                              label: `${tr.code} (${Number(tr.rate)}%)`,
+                            }))
+                            .find((o) => Number(o.value) === Number(form.tax_percentage)) || null
+                        : null
+                    }
+                    placeholder="Select Tax..."
+                    onChange={(opt) => {
+                      handleHeaderChange({
+                        target: { name: "tax_percentage", value: opt?.value ?? "" },
+                      });
+                    }}
+                    styles={paymentSelectStyles}
+                    isSearchable={false}
+                    classNamePrefix="rs"
+                    menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                  />
+                </div>
+              )}
 
               <div className="col-span-1 sm:col-span-1 lg:col-span-2">
                 <label className="flex items-center justify-between text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">
@@ -3460,51 +3498,26 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
                     <span>Tax %</span>
                     <span className="text-[8px] px-1 py-0.2 rounded bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-400 font-mono font-normal" title="Shortcut: Ctrl+X or Ctrl+Shift+T">Ctrl+X</span>
                   </label>
-                  <div className="flex items-center gap-1">
-                    {taxRatePresets.length > 0 && (
-                      <div className="w-24">
-                        <Select
-                          options={taxRatePresets.map((tr) => ({
-                            value: String(Number(tr.rate)),
-                            label: `${tr.code} (${Number(tr.rate)}%)`,
-                          }))}
-                          value={null}
-                          placeholder="Preset"
-                          onChange={(opt) => {
-                            if (opt?.value !== undefined) {
-                              handleHeaderChange({
-                                target: { name: "tax_percentage", value: opt.value },
-                              });
-                            }
-                          }}
-                          styles={paymentSelectStyles}
-                          isSearchable={false}
-                          classNamePrefix="rs"
-                          menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-                        />
-                      </div>
-                    )}
-                    <input
-                      ref={taxPercentageRef}
-                      type="text"
-                      name="tax_percentage"
-                      value={form.tax_percentage ?? ""}
-                      onChange={handleHeaderChange}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          taxAmountRef.current?.focus();
-                          taxAmountRef.current?.select?.();
-                        }
-                      }}
-                      autoComplete="off"
-                      className={`w-16 h-6.5 border rounded-md px-2 text-center text-xs ${
-                        isDark 
-                          ? "border-slate-600 bg-slate-700 text-slate-200" 
-                          : "border-gray-200 text-gray-800"
-                      }`}
-                    />
-                  </div>
+                  <input
+                    ref={taxPercentageRef}
+                    type="text"
+                    name="tax_percentage"
+                    value={form.tax_percentage ?? ""}
+                    onChange={handleHeaderChange}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        taxAmountRef.current?.focus();
+                        taxAmountRef.current?.select?.();
+                      }
+                    }}
+                    autoComplete="off"
+                    className={`w-24 h-6.5 border rounded-md px-2 text-center text-xs ${
+                      isDark 
+                        ? "border-slate-600 bg-slate-700 text-slate-200" 
+                        : "border-gray-200 text-gray-800"
+                    }`}
+                  />
                 </div>
 
                 {/* Tax Amt */}

@@ -3214,7 +3214,7 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
                   />
                 </div>
 
-                <div className="col-span-2 sm:col-span-2 lg:col-span-5">
+                <div className={`col-span-2 sm:col-span-2 ${taxRatePresets.length > 0 ? "lg:col-span-4" : "lg:col-span-5"}`}>
                   <label className="block text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">
                     Remarks / Delivery Note
                   </label>
@@ -3229,7 +3229,45 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
                   />
                 </div>
 
-                <div className="col-span-2 sm:col-span-2 lg:col-span-4">
+                {taxRatePresets.length > 0 && (
+                  <div className="col-span-1 sm:col-span-2 lg:col-span-2">
+                    <label className="flex items-center justify-between text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">
+                      <span>Tax Preset</span>
+                      <span className="text-[8.5px] font-medium lowercase opacity-75">optional</span>
+                    </label>
+                    <Select
+                      options={[
+                        { value: "", label: "None (0%)" },
+                        ...taxRatePresets.map((tr) => ({
+                          value: String(Number(tr.rate)),
+                          label: `${tr.code} (${Number(tr.rate)}%)`,
+                        })),
+                      ]}
+                      value={
+                        form.tax_percentage !== "" && form.tax_percentage !== undefined && form.tax_percentage !== null
+                          ? taxRatePresets
+                              .map((tr) => ({
+                                value: String(Number(tr.rate)),
+                                label: `${tr.code} (${Number(tr.rate)}%)`,
+                              }))
+                              .find((o) => Number(o.value) === Number(form.tax_percentage)) || null
+                          : null
+                      }
+                      placeholder="Select Tax..."
+                      onChange={(opt) => {
+                        handleHeaderChange({
+                          target: { name: "tax_percentage", value: opt?.value ?? "" },
+                        });
+                      }}
+                      styles={paymentSelectStyles}
+                      isSearchable={false}
+                      classNamePrefix="rs"
+                      menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                    />
+                  </div>
+                )}
+
+                <div className={`col-span-2 sm:col-span-2 ${taxRatePresets.length > 0 ? "lg:col-span-3" : "lg:col-span-4"}`}>
                   <label className="flex items-center justify-between text-[9.5px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">
                     <span>Order Breakdown</span>
                     <span className="text-[8.5px] font-medium lowercase opacity-75">live</span>
@@ -4000,35 +4038,10 @@ export default function SaleInvoiceWholesaleForm({ saleId, onSuccess }) {
                       </div>
 
                       <div>
-                        <div className="flex items-center justify-between mb-0.5">
-                          <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">
-                            <span>Tax %</span>
-                            <span className="text-[8px] px-1 py-0.2 rounded bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-400 font-mono font-normal ml-1" title="Shortcut: Ctrl+X or Ctrl+Shift+T">Ctrl+X</span>
-                          </label>
-                          {taxRatePresets.length > 0 && (
-                            <div className="w-24">
-                              <Select
-                                options={taxRatePresets.map((tr) => ({
-                                  value: String(Number(tr.rate)),
-                                  label: `${tr.code} (${Number(tr.rate)}%)`,
-                                }))}
-                                value={null}
-                                placeholder="Preset"
-                                onChange={(opt) => {
-                                  if (opt?.value !== undefined) {
-                                    handleHeaderChange({
-                                      target: { name: "tax_percentage", value: opt.value },
-                                    });
-                                  }
-                                }}
-                                styles={paymentSelectStyles}
-                                isSearchable={false}
-                                classNamePrefix="rs"
-                                menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-                              />
-                            </div>
-                          )}
-                        </div>
+                        <label className="block text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-0.5">
+                          <span>Tax %</span>
+                          <span className="text-[8px] px-1 py-0.2 rounded bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-400 font-mono font-normal ml-1" title="Shortcut: Ctrl+X or Ctrl+Shift+T">Ctrl+X</span>
+                        </label>
                         <input
                           ref={taxPercentageRef}
                           type="text"
