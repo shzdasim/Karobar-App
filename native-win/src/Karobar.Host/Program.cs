@@ -106,28 +106,7 @@ public static class Program
 
 #if WINDOWS_DESKTOP
             splashForm.Close();
-            var mainForm = new NativeWebView2Form(mainWin, windowManager, hostServer.DesktopBridge);
-
-            windowManager.OnWindowCreated = childWin =>
-            {
-                if (childWin.Id == mainWin.Id || childWin.IsOffscreenPrintWorker) return;
-                if (mainForm.IsDisposed) return;
-
-                void SpawnChildForm()
-                {
-                    var childForm = new NativeWebView2Form(childWin, windowManager, hostServer.DesktopBridge);
-                    childForm.Show();
-                }
-
-                if (mainForm.InvokeRequired)
-                {
-                    mainForm.BeginInvoke((Action)SpawnChildForm);
-                }
-                else
-                {
-                    SpawnChildForm();
-                }
-            };
+            var mainForm = new NativeWaseelaMainForm(networkConfig, windowManager, hostServer);
 
             windowManager.OnQuitRequested = () =>
             {
