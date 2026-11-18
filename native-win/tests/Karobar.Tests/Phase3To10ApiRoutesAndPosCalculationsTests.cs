@@ -388,7 +388,16 @@ public class Phase3To10ApiRoutesAndPosCalculationsTests
         try
         {
             var sourceFactory = new DbConnectionFactory();
-            File.Copy(sourceFactory.SqlitePath, tempSqlite, overwrite: true);
+            if (File.Exists(sourceFactory.SqlitePath) && new FileInfo(sourceFactory.SqlitePath).Length > 0)
+            {
+                File.Copy(sourceFactory.SqlitePath, tempSqlite, overwrite: true);
+            }
+            else
+            {
+                var initFactory = new DbConnectionFactory(explicitSqlitePath: tempSqlite);
+                var initBootstrapper = new DatabaseBootstrapper(initFactory);
+                await initBootstrapper.EnsureSchemaReadyAsync();
+            }
 
             var services = new ServiceCollection();
             services.AddKarobarApi(explicitSqlitePath: tempSqlite);

@@ -469,7 +469,7 @@ public class CashDrawerService
         }
 
         SyncPulseService.Bump("drawer");
-        var closed = await _db.QuerySingleOrDefaultAsync("SELECT * FROM cash_drawer_sessions WHERE id = @id", new { id = sessionId })!;
+        var closed = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM cash_drawer_sessions WHERE id = @id", new { id = sessionId }))!;
         await AttachUserAsync(closed);
         var txns = await _db.QueryListAsync(
             "SELECT * FROM cash_drawer_transactions WHERE session_id = @id ORDER BY created_at ASC, id ASC",

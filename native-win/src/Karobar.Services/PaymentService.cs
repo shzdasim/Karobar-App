@@ -232,7 +232,7 @@ public class PaymentService
                 userId);
         }
 
-        var finalPayment = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId })!;
+        var finalPayment = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
         return await EnrichPaymentAsync(finalPayment);
     }
 
@@ -455,7 +455,7 @@ public class PaymentService
                 userId);
         }
 
-        var finalPayment = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId })!;
+        var finalPayment = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
         return await EnrichPaymentAsync(finalPayment);
     }
 
@@ -587,7 +587,7 @@ public class PaymentService
 
         await _auditService.RecordReversalAsync("payment", paymentId, payment, userId, reason);
 
-        var updated = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId })!;
+        var updated = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
         return await EnrichPaymentAsync(updated);
     }
 
@@ -633,7 +633,7 @@ public class PaymentService
                 upd["account_id"] = accountId.Value;
             }
             await _db.UpdateAsync("payments", paymentId, upd);
-            var depRow = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId })!;
+            var depRow = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
             return await EnrichPaymentAsync(depRow);
         }
 
@@ -680,7 +680,7 @@ public class PaymentService
             }
 
             await _db.UpdateAsync("payments", paymentId, upd);
-            var clrRow = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId })!;
+            var clrRow = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
             return await EnrichPaymentAsync(clrRow);
         }
 
@@ -697,7 +697,7 @@ public class PaymentService
             ["bounced_at"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
         });
 
-        var bouncedRow = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId })!;
+        var bouncedRow = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
         return await EnrichPaymentAsync(bouncedRow);
     }
 
@@ -846,7 +846,7 @@ public class PaymentService
             ["unapplied_amount"] = newUnapplied
         });
 
-        var updatedPayment = await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId })!;
+        var updatedPayment = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM payments WHERE id = @id", new { id = paymentId }))!;
         await _auditService.RecordUpdateAsync("payment", paymentId, lockedPayment, updatedPayment, userId, $"Allocated {totalNewAllocated} of unapplied credit to invoices");
         return await EnrichPaymentAsync(updatedPayment);
     }

@@ -116,7 +116,7 @@ public class ExpenseService
             await _accountService.SyncCashDrawerBalanceAsync(drawerSession);
         }
 
-        var created = await _db.QuerySingleOrDefaultAsync("SELECT * FROM expenses WHERE id = @id", new { id = expenseId })!;
+        var created = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM expenses WHERE id = @id", new { id = expenseId }))!;
         return await EnrichExpenseAsync(created);
     }
 
@@ -300,7 +300,7 @@ public class ExpenseService
             }
         }
 
-        var updated = await _db.QuerySingleOrDefaultAsync("SELECT * FROM expenses WHERE id = @id", new { id = expenseId })!;
+        var updated = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM expenses WHERE id = @id", new { id = expenseId }))!;
         return await EnrichExpenseAsync(updated);
     }
 

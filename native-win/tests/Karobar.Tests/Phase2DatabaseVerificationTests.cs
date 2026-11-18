@@ -64,18 +64,40 @@ public class Phase2DatabaseVerificationTests
     [Fact]
     public async Task Existing_Database_Sqlite_Passes_100_Percent_Schema_And_DbSet_Verification()
     {
-        var factory = new DbConnectionFactory();
-        File.Exists(factory.SqlitePath).Should().BeTrue($"database.sqlite should exist at {factory.SqlitePath}");
+        var tempSqlite = Path.Combine(Path.GetTempPath(), $"karobar_qa_schema_{Guid.NewGuid():N}.sqlite");
+        try
+        {
+            var defaultFactory = new DbConnectionFactory();
+            if (File.Exists(defaultFactory.SqlitePath) && new FileInfo(defaultFactory.SqlitePath).Length > 0)
+            {
+                File.Copy(defaultFactory.SqlitePath, tempSqlite, overwrite: true);
+            }
+            else
+            {
+                var bootstrapFactory = new DbConnectionFactory(explicitSqlitePath: tempSqlite);
+                var initBootstrapper = new DatabaseBootstrapper(bootstrapFactory);
+                await initBootstrapper.EnsureSchemaReadyAsync();
+            }
 
-        var bootstrapper = new DatabaseBootstrapper(factory);
-        var verification = await bootstrapper.VerifySchemaCompatibilityAsync();
+            var factory = new DbConnectionFactory(explicitSqlitePath: tempSqlite);
+            File.Exists(factory.SqlitePath).Should().BeTrue($"database.sqlite should exist at {factory.SqlitePath}");
 
-        verification.MissingTables.Should().BeEmpty("Every entity [Table] must exist in database.sqlite");
-        verification.MissingColumns.Should().BeEmpty("Every entity [Column] must exist in database.sqlite");
-        verification.DbSetErrors.Should().BeEmpty("Every DbSet<T> must query cleanly against database.sqlite");
-        verification.IsCompatible.Should().BeTrue();
-        verification.VerifiedTableCount.Should().BeGreaterThanOrEqualTo(68);
-        verification.VerifiedDbSetCount.Should().BeGreaterThanOrEqualTo(68);
+            var bootstrapper = new DatabaseBootstrapper(factory);
+            var verification = await bootstrapper.VerifySchemaCompatibilityAsync();
+
+            verification.MissingTables.Should().BeEmpty("Every entity [Table] must exist in database.sqlite");
+            verification.MissingColumns.Should().BeEmpty("Every entity [Column] must exist in database.sqlite");
+            verification.DbSetErrors.Should().BeEmpty("Every DbSet<T> must query cleanly against database.sqlite");
+            verification.IsCompatible.Should().BeTrue();
+            verification.VerifiedTableCount.Should().BeGreaterThanOrEqualTo(68);
+            verification.VerifiedDbSetCount.Should().BeGreaterThanOrEqualTo(68);
+        }
+        finally
+        {
+            try { if (File.Exists(tempSqlite)) File.Delete(tempSqlite); } catch { /* ignore */ }
+            try { if (File.Exists(tempSqlite + "-wal")) File.Delete(tempSqlite + "-wal"); } catch { /* ignore */ }
+            try { if (File.Exists(tempSqlite + "-shm")) File.Delete(tempSqlite + "-shm"); } catch { /* ignore */ }
+        }
     }
 
     [Fact]
@@ -85,7 +107,16 @@ public class Phase2DatabaseVerificationTests
         try
         {
             var sourceFactory = new DbConnectionFactory();
-            File.Copy(sourceFactory.SqlitePath, tempSqlite, overwrite: true);
+            if (File.Exists(sourceFactory.SqlitePath) && new FileInfo(sourceFactory.SqlitePath).Length > 0)
+            {
+                File.Copy(sourceFactory.SqlitePath, tempSqlite, overwrite: true);
+            }
+            else
+            {
+                var initFactory = new DbConnectionFactory(explicitSqlitePath: tempSqlite);
+                var initBootstrapper = new DatabaseBootstrapper(initFactory);
+                await initBootstrapper.EnsureSchemaReadyAsync();
+            }
 
             var testFactory = new DbConnectionFactory(explicitSqlitePath: tempSqlite);
             await using var conn = await testFactory.OpenConnectionAsync();

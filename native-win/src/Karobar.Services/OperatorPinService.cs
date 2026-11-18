@@ -302,15 +302,16 @@ public class OperatorPinService
         }
 
         // Only Employee matched
-        var empStatus = matchedEmp!.GetValueOrDefault("status")?.ToString() ?? "active";
-        var empName = matchedEmp.GetValueOrDefault("name")?.ToString() ?? "Employee";
+        var nonNullEmp = matchedEmp!;
+        var empStatus = nonNullEmp.GetValueOrDefault("status")?.ToString() ?? "active";
+        var empName = nonNullEmp.GetValueOrDefault("name")?.ToString() ?? "Employee";
         if (empStatus.Equals("inactive", StringComparison.OrdinalIgnoreCase))
         {
             throw CreatePinChallenge($"Employee '{empName}' is inactive.", module);
         }
 
         Dictionary<string, object?>? resolvedUser = null;
-        if (matchedEmp.TryGetValue("user_id", out var empUidObj) && empUidObj != null && long.TryParse(empUidObj.ToString(), out var empUid))
+        if (nonNullEmp.TryGetValue("user_id", out var empUidObj) && empUidObj != null && long.TryParse(empUidObj.ToString(), out var empUid))
         {
             resolvedUser = await _db.QuerySingleOrDefaultAsync("SELECT * FROM users WHERE id = @id", new { id = empUid });
             if (resolvedUser != null)
@@ -328,8 +329,8 @@ public class OperatorPinService
         {
             ["user"] = finalUser,
             ["user_id"] = finalUser?.GetValueOrDefault("id"),
-            ["employee"] = matchedEmp,
-            ["employee_id"] = matchedEmp.GetValueOrDefault("id"),
+            ["employee"] = nonNullEmp,
+            ["employee_id"] = nonNullEmp.GetValueOrDefault("id"),
             ["operator_name"] = empName,
             ["verified_via_pin"] = true
         };

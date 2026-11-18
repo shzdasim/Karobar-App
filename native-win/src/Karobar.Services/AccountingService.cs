@@ -338,7 +338,7 @@ public class AccountingService
             }
         }
 
-        var entry = await _db.QuerySingleOrDefaultAsync("SELECT * FROM journal_entries WHERE id = @id", new { id = entryId })!;
+        var entry = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM journal_entries WHERE id = @id", new { id = entryId }))!;
         return await EnrichJournalEntryAsync(entry);
     }
 
@@ -424,7 +424,7 @@ public class AccountingService
             ["reversal_reason"] = reason.Trim()
         });
 
-        var updated = await _db.QuerySingleOrDefaultAsync("SELECT * FROM journal_entries WHERE id = @id", new { id = entryId })!;
+        var updated = (await _db.QuerySingleOrDefaultAsync("SELECT * FROM journal_entries WHERE id = @id", new { id = entryId }))!;
         return await EnrichJournalEntryAsync(updated);
     }
 
