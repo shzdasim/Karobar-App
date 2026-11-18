@@ -452,12 +452,14 @@ export default function TopNavigation() {
         </div>
       </div>
 
-      <Suspense fallback={null}>
-        <FeatureGuideBot
-          isOpen={guideBotOpen}
-          onClose={() => setGuideBotOpen(false)}
-        />
-      </Suspense>
+      {guideBotOpen && (
+        <Suspense fallback={null}>
+          <FeatureGuideBot
+            isOpen={guideBotOpen}
+            onClose={() => setGuideBotOpen(false)}
+          />
+        </Suspense>
+      )}
 
       {/* Fixed Position Dropdown Overlay - Enhanced with dynamic theme colors */}
       {openDropdown && (() => {

@@ -1265,12 +1265,14 @@ export default function Topbar({
         )}
       </Suspense>
 
-      <Suspense fallback={null}>
-        <FeatureGuideBot
-          isOpen={guideBotOpen}
-          onClose={() => setGuideBotOpen(false)}
-        />
-      </Suspense>
+      {guideBotOpen && (
+        <Suspense fallback={null}>
+          <FeatureGuideBot
+            isOpen={guideBotOpen}
+            onClose={() => setGuideBotOpen(false)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -1005,9 +1005,15 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     }
   }, [saleId]);
 
-  // Real-time stock sync listeners
+  // Real-time stock sync listeners (defer background-window refreshes until visible)
   useEffect(() => {
+    let pendingRefresh = false;
     const handleInventoryChange = () => {
+      if (typeof document !== "undefined" && document.hidden) {
+        pendingRefresh = true;
+        return;
+      }
+      pendingRefresh = false;
       refreshActiveInvoiceStock();
     };
 
@@ -1015,7 +1021,8 @@ export default function SaleInvoiceRetailForm({ saleId, onSuccess }) {
     window.addEventListener("karobar:products-updated", handleInventoryChange);
 
     const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
+      if (document.visibilityState === "visible" && pendingRefresh) {
+        pendingRefresh = false;
         refreshActiveInvoiceStock();
       }
     };

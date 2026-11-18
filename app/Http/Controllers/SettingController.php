@@ -1362,14 +1362,14 @@ class SettingController extends Controller
                 'success_count' => (int) ($groqUsage?->success_count ?? 0),
                 'failure_count' => (int) ($groqUsage?->failure_count ?? 0),
                 'status'        => (string) ($groqUsage?->status ?? 'ready'),
-                'has_env_key'   => trim((string) env('GROQ_API_KEY', '')) !== '',
+                'has_env_key'   => trim((string) (config('services.groq.api_key') ?: getenv('GROQ_API_KEY') ?: '')) !== '',
             ],
             'gemini' => [
                 'request_count' => (int) ($geminiUsage?->request_count ?? 0),
                 'success_count' => (int) ($geminiUsage?->success_count ?? 0),
                 'failure_count' => (int) ($geminiUsage?->failure_count ?? 0),
                 'status'        => (string) ($geminiUsage?->status ?? 'ready'),
-                'has_env_key'   => trim((string) env('GEMINI_API_KEY', '')) !== '',
+                'has_env_key'   => trim((string) (config('services.gemini.api_key') ?: getenv('GEMINI_API_KEY') ?: '')) !== '',
             ],
         ];
 

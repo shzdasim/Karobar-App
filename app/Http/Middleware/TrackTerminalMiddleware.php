@@ -54,6 +54,7 @@ class TrackTerminalMiddleware
                 $userId = $request->user()?->id;
                 $ipAddress = $request->ip();
 
+                $needsDbUpdate = true;
                 if (!$terminal) {
                     $setting = SchemaCache::hasTable('settings') ? Setting::first() : null;
                     $providedNetworkToken = trim((string) (
@@ -133,15 +134,18 @@ class TrackTerminalMiddleware
                     }
                 }
 
-                // Record instant sub-second presence in Cache/Redis for the Server Dashboard
-                Cache::put("karobar:terminal:online:{$terminal->id}", [
-                    'terminal_id'  => $terminal->id,
-                    'terminal_uid' => $terminal->terminal_uid,
-                    'ip_address'   => $ipAddress,
-                    'user_id'      => $userId ?? $terminal->current_user_id,
-                    'seen_at'      => now()->toIso8601String(),
-                    'seen_ts'      => now()->timestamp,
-                ], 30);
+                // Throttle presence cache writes (with CACHE_STORE=file, writing on every API request causes heavy disk I/O)
+                $onlineCacheKey = "karobar:terminal:online:{$terminal->id}";
+                if ($needsDbUpdate || !Cache::has($onlineCacheKey)) {
+                    Cache::put($onlineCacheKey, [
+                        'terminal_id'  => $terminal->id,
+                        'terminal_uid' => $terminal->terminal_uid,
+                        'ip_address'   => $ipAddress,
+                        'user_id'      => $userId ?? $terminal->current_user_id,
+                        'seen_at'      => now()->toIso8601String(),
+                        'seen_ts'      => now()->timestamp,
+                    ], 30);
+                }
 
                 $request->attributes->set('terminal', $terminal);
                 app()->instance('current_terminal', $terminal);

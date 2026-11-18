@@ -67,6 +67,9 @@ class ProductController extends Controller
         }
 
         if ($q !== '') {
+            if (\Illuminate\Support\Facades\DB::getDriverName() === 'sqlite' && !str_contains($q, '%') && !str_contains($q, '_')) {
+                $query->whereRaw('name COLLATE NOCASE >= ? AND name COLLATE NOCASE < ?', [$q, $q . "\xEF\xBF\xBD"]);
+            }
             $query->where('name', 'like', $q.'%');
         }
 

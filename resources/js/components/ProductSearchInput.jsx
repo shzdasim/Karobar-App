@@ -234,7 +234,8 @@ const ProductSearchInput = forwardRef(
     useEffect(() => {
       if (!effectiveRefreshProducts) return undefined;
       const handler = () => {
-        if (isOpen) {
+        globalProductQueryCache.clear();
+        if (isOpen && (typeof document === "undefined" || !document.hidden)) {
           Promise.resolve(effectiveRefreshProducts(search)).catch(() => {});
         }
       };
@@ -251,7 +252,7 @@ const ProductSearchInput = forwardRef(
     useEffect(() => {
       if (!effectiveRefreshProducts || !isOpen) return;
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => effectiveRefreshProducts(search), 120);
+      debounceRef.current = setTimeout(() => effectiveRefreshProducts(search), 60);
       return () => clearTimeout(debounceRef.current);
     }, [search, effectiveRefreshProducts, isOpen]);
 

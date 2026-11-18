@@ -927,7 +927,8 @@ class PurchaseInvoiceController extends Controller
 
     public function reverse(Request $request, $id)
     {
-        $purchaseInvoice = PurchaseInvoice::with(['items.product', 'supplier'])->findOrFail($id);
+        /** @var PurchaseInvoice $purchaseInvoice */
+        $purchaseInvoice = PurchaseInvoice::with(['items.product', 'supplier'])->findOrFail((int) $id);
         $this->authorize('reverse', $purchaseInvoice);
 
         $validated = $request->validate([

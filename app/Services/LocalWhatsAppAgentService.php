@@ -513,7 +513,7 @@ class LocalWhatsAppAgentService
      */
     public function resolveNodeBinary(): string
     {
-        $envBinary = trim((string) (getenv('WHATSAPP_NODE_BINARY') ?: getenv('NODE_BINARY') ?: env('WHATSAPP_NODE_BINARY', '')));
+        $envBinary = trim((string) (getenv('WHATSAPP_NODE_BINARY') ?: getenv('NODE_BINARY') ?: config('services.whatsapp.node_binary', '')));
         if ($envBinary !== '' && is_file($envBinary)) {
             return $envBinary;
         }

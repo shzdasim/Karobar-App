@@ -247,7 +247,6 @@ export default function BarcodePos() {
     try {
       const res = await axios.get("/api/products/search", {
         params: { q, limit: 150 },
-        cache: false,
       });
       const list = Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : [];
       setProducts(list);
@@ -261,18 +260,32 @@ export default function BarcodePos() {
     fetchProducts();
   }, [fetchProducts]);
 
-  // Real-time stock sync listeners for POS
+  // Real-time stock sync listeners for POS (defer background-window refreshes until visible)
   useEffect(() => {
+    let pendingRefresh = false;
     const handleInventoryChange = () => {
+      if (typeof document !== "undefined" && document.hidden) {
+        pendingRefresh = true;
+        return;
+      }
+      pendingRefresh = false;
       fetchProducts();
+    };
+    const handleVisibilityOrFocus = () => {
+      if (pendingRefresh && (typeof document === "undefined" || !document.hidden)) {
+        pendingRefresh = false;
+        fetchProducts();
+      }
     };
     window.addEventListener("karobar:inventory-changed", handleInventoryChange);
     window.addEventListener("karobar:products-updated", handleInventoryChange);
-    window.addEventListener("focus", handleInventoryChange);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    window.addEventListener("focus", handleVisibilityOrFocus);
     return () => {
       window.removeEventListener("karobar:inventory-changed", handleInventoryChange);
       window.removeEventListener("karobar:products-updated", handleInventoryChange);
-      window.removeEventListener("focus", handleInventoryChange);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
     };
   }, [fetchProducts]);
 
@@ -2875,10 +2888,12 @@ export default function BarcodePos() {
           />
         )}
 
-        <FeatureGuideBot
-          isOpen={guideBotOpen}
-          onClose={() => setGuideBotOpen(false)}
-        />
+        {guideBotOpen && (
+          <FeatureGuideBot
+            isOpen={guideBotOpen}
+            onClose={() => setGuideBotOpen(false)}
+          />
+        )}
       </Suspense>
 
       <OperatorPinModal

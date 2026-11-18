@@ -740,7 +740,7 @@ body:has(.workspace-shell) { transform: none; }
 .dashboard-page table :is(td, th) { border-color: var(--workspace-border); }
 .workspace-shell :is(button, a, input, select, [role="button"], [role="tab"]):focus-visible { outline: 2px solid var(--workspace-accent); outline-offset: 2px; }
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .workspace-sidebar, .workspace-topbar, .workspace-tabbar { background: var(--workspace-navigation-fill); -webkit-backdrop-filter: blur(10px) saturate(125%); backdrop-filter: blur(10px) saturate(125%); }
+  .workspace-sidebar, .workspace-topbar, .workspace-tabbar { background: var(--workspace-navigation-fill); -webkit-backdrop-filter: none; backdrop-filter: none; }
   .dashboard-page .dashboard-panel { background: linear-gradient(135deg, color-mix(in srgb, var(--workspace-surface) 14%, transparent), transparent 65%), var(--workspace-panel-fill); }
 }
 @media (max-width: 1023px) {

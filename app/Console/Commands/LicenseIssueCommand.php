@@ -79,7 +79,7 @@ class LicenseIssueCommand extends Command
             return self::FAILURE;
         }
 
-        $secretB64u = trim((string) ($this->option('secret-key') ?: env('KAROBAR_LICENSE_SECRET_KEY', '')));
+        $secretB64u = trim((string) ($this->option('secret-key') ?: config('app.license_secret_key') ?: getenv('KAROBAR_LICENSE_SECRET_KEY') ?: ''));
         if ($secretB64u === '') {
             $siblingKeygen = dirname(base_path()) . DIRECTORY_SEPARATOR . 'Karobar-License-Generator' . DIRECTORY_SEPARATOR . 'keygen.php';
             if (is_file($siblingKeygen)) {

@@ -38,15 +38,29 @@ class AppServiceProvider extends ServiceProvider
         $applySqlitePragmas = static function ($connection): void {
             try {
                 if ($connection && $connection->getDriverName() === 'sqlite') {
-                    $connection->unprepared(
-                        "PRAGMA busy_timeout = 30000;\n"
-                        . "PRAGMA journal_mode = WAL;\n"
+                    $dbName = (string) ($connection->getDatabaseName() ?? '');
+                    $isMemory = $dbName === '' || $dbName === ':memory:';
+                    $walMarker = $isMemory
+                        ? null
+                        : sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'karobar_sqlite_wal_' . md5($dbName) . '.flag';
+
+                    $pragmas = "PRAGMA busy_timeout = 30000;\n"
                         . "PRAGMA synchronous = NORMAL;\n"
-                        . "PRAGMA wal_autocheckpoint = 1000;\n"
                         . "PRAGMA temp_store = MEMORY;\n"
                         . "PRAGMA cache_size = -65536;\n"
-                        . "PRAGMA mmap_size = 268435456;"
-                    );
+                        . "PRAGMA mmap_size = 268435456;";
+
+                    // journal_mode = WAL is persistent in the SQLite file header; avoid acquiring a header lock on every request
+                    if ($isMemory || ($walMarker && !is_file($walMarker))) {
+                        $pragmas = "PRAGMA journal_mode = WAL;\n"
+                            . "PRAGMA wal_autocheckpoint = 1000;\n"
+                            . $pragmas;
+                        if ($walMarker) {
+                            @file_put_contents($walMarker, '1');
+                        }
+                    }
+
+                    $connection->unprepared($pragmas);
                 }
             } catch (\Throwable) {
                 // Ignore if connection is not ready

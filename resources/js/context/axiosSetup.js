@@ -100,7 +100,65 @@ function cloneResponse(res) {
   return { ...res, data: clonedData };
 }
 
+const PERSISTED_BOOT_CACHE_PREFIX = "karobar_boot_api_v1:";
+
+function isLongTtlUrl(url) {
+  if (typeof url !== "string") return false;
+  return LONG_TTL_PATTERNS.some((rx) => rx.test(url));
+}
+
+function readPersistedBootCache(cacheKey) {
+  try {
+    const raw = localStorage.getItem(PERSISTED_BOOT_CACHE_PREFIX + cacheKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.expiresAt > Date.now() && parsed.data !== undefined) {
+      return {
+        status: 200,
+        statusText: "OK",
+        headers: {},
+        config: {},
+        data: parsed.data,
+      };
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return null;
+}
+
+function writePersistedBootCache(cacheKey, data, expiresAt) {
+  try {
+    localStorage.setItem(
+      PERSISTED_BOOT_CACHE_PREFIX + cacheKey,
+      JSON.stringify({ data, expiresAt })
+    );
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function clearPersistedBootCache(prefix = null) {
+  try {
+    const toRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(PERSISTED_BOOT_CACHE_PREFIX)) {
+        if (!prefix || k.includes(prefix)) {
+          toRemove.push(k);
+        }
+      }
+    }
+    for (const k of toRemove) {
+      localStorage.removeItem(k);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export function clearApiCache(prefix = null) {
+  clearPersistedBootCache(prefix);
   if (!prefix) {
     inflightGetMap.clear();
     responseCacheMap.clear();
@@ -266,6 +324,18 @@ export function initAxiosAuth() {
       return Promise.resolve(cloneResponse(cached.response));
     }
 
+    const isBootEndpoint = isLongTtlUrl(url);
+    if (isBootEndpoint) {
+      const persisted = readPersistedBootCache(cacheKey);
+      if (persisted) {
+        responseCacheMap.set(cacheKey, {
+          response: cloneResponse(persisted),
+          expiresAt: now + ttl,
+        });
+        return Promise.resolve(cloneResponse(persisted));
+      }
+    }
+
     if (!hasAbortControl) {
       const existingInflight = inflightGetMap.get(cacheKey);
       if (existingInflight) {
@@ -284,10 +354,14 @@ export function initAxiosAuth() {
             const oldestKey = responseCacheMap.keys().next().value;
             if (oldestKey) responseCacheMap.delete(oldestKey);
           }
+          const expiresAt = Date.now() + ttl;
           responseCacheMap.set(cacheKey, {
             response: cloneResponse(res),
-            expiresAt: Date.now() + ttl,
+            expiresAt,
           });
+          if (isBootEndpoint) {
+            writePersistedBootCache(cacheKey, res.data, expiresAt);
+          }
         }
         return res;
       })

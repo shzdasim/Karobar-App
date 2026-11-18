@@ -123,4 +123,8 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    'sqlite_import_admin_hash' => env('SQLITE_IMPORT_ADMIN_HASH', ''),
+
+    'license_secret_key' => env('KAROBAR_LICENSE_SECRET_KEY', ''),
+
 ];

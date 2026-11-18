@@ -47,6 +47,15 @@ return [
         'template_name'        => env('WHATSAPP_TEMPLATE_NAME'),
         'template_language'    => env('WHATSAPP_TEMPLATE_LANGUAGE', 'en_US'),
         'auto_fallback'        => env('WHATSAPP_AUTO_FALLBACK', true),
+        'node_binary'          => env('WHATSAPP_NODE_BINARY', env('NODE_BINARY', '')),
+    ],
+
+    'groq' => [
+        'api_key' => env('GROQ_API_KEY', ''),
+    ],
+
+    'gemini' => [
+        'api_key' => env('GEMINI_API_KEY', ''),
     ],
 
 ];

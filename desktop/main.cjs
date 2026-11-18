@@ -206,9 +206,19 @@ function buildRuntimeEnv(port) {
   const extraPaths = [path.dirname(phpBin), path.dirname(nodeBin)].filter(
     (p) => p && p !== "."
   );
+  const manifestFile = path.join(APP_ROOT, "public", "build", "manifest.json");
+  const hotFile = path.join(APP_ROOT, "public", "hot");
+  const isProdDesktop =
+    app.isPackaged || (fs.existsSync(manifestFile) && !fs.existsSync(hotFile) && !process.env.KAROBAR_DEV_HMR);
 
   return {
     ...process.env,
+    ...(isProdDesktop
+      ? {
+          APP_DEBUG: "false",
+          LOG_LEVEL: "warning",
+        }
+      : {}),
     APP_URL: `http://127.0.0.1:${port}`,
     WHATSAPP_NODE_BINARY: nodeBin,
     NODE_BINARY: nodeBin,
@@ -485,6 +495,38 @@ async function startBackendServices() {
   const WORKER_COUNT = Math.min(8, Math.max(4, (os.cpus && os.cpus().length) || 4));
   cachedSpaHtmlBuffer = null;
   phpWorkerPool = [];
+  const gatewayApiCache = new Map();
+  const gatewayInflightMap = new Map();
+
+  const getGatewayCacheTtlMs = (req) => {
+    if (req.method !== "GET") return 0;
+    const rawUrl = String(req.url || "");
+    if (/^\/api\/sync\/pulse(\?|$)/.test(rawUrl)) {
+      return 1500;
+    }
+    if (req.headers?.["x-skip-cache"]) return 0;
+    if (
+      /^\/api\/(sale-system|theme-settings\/active|currency|license\/status|me|user|settings|brands|categories)(\?|$)/.test(
+        rawUrl
+      )
+    ) {
+      return 30000;
+    }
+    if (/^\/api\/(products\/search|customers\/search|suppliers\/search)(\?|$)/.test(rawUrl)) {
+      return 15000;
+    }
+    if (/^\/api\/(cash-drawer\/current|accounts)(\?|$)/.test(rawUrl)) {
+      return 4000;
+    }
+    return 0;
+  };
+
+  const getGatewayCacheKey = (req) => {
+    const auth = String(req.headers?.authorization || "").slice(-24);
+    const term = String(req.headers?.["x-terminal-id"] || "");
+    return `${auth}|${term}|${req.url}`;
+  };
+
   let nextPortCandidate = activePort + 1;
   for (let i = 0; i < WORKER_COUNT; i++) {
     const wPort = await findFreePort(nextPortCandidate);
@@ -522,11 +564,42 @@ async function startBackendServices() {
         return;
       }
 
+      const isMutatingMethod =
+        req.method === "POST" ||
+        req.method === "PUT" ||
+        req.method === "PATCH" ||
+        req.method === "DELETE";
+
+      if (isMutatingMethod) {
+        gatewayApiCache.clear();
+      }
+
+      const apiCacheTtlMs = getGatewayCacheTtlMs(req);
+      const apiCacheKey = apiCacheTtlMs > 0 ? getGatewayCacheKey(req) : null;
+
+      if (apiCacheKey) {
+        const hit = gatewayApiCache.get(apiCacheKey);
+        if (hit && hit.expiresAt > Date.now()) {
+          res.writeHead(hit.statusCode, hit.headers);
+          res.end(hit.buffer);
+          return;
+        }
+        const inflightWaiters = gatewayInflightMap.get(apiCacheKey);
+        if (inflightWaiters) {
+          inflightWaiters.push(res);
+          return;
+        }
+      }
+
       const worker = selectLeastBusyWorker();
       if (!worker) {
         res.writeHead(503, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ message: "Backend worker unavailable" }));
         return;
+      }
+
+      if (apiCacheKey) {
+        gatewayInflightMap.set(apiCacheKey, []);
       }
 
       worker.activeRequests++;
@@ -581,6 +654,59 @@ async function startBackendServices() {
             return;
           }
 
+          if (apiCacheKey) {
+            const chunks = [];
+            proxyRes.on("data", (chunk) => chunks.push(chunk));
+            proxyRes.on("end", () => {
+              const fullBuf = Buffer.concat(chunks);
+              const clientHeaders = { ...proxyRes.headers };
+              delete clientHeaders.connection;
+              delete clientHeaders["keep-alive"];
+              const statusCode = proxyRes.statusCode || 200;
+
+              if (statusCode === 200 && contentType.includes("application/json")) {
+                if (gatewayApiCache.size > 200) {
+                  const oldest = gatewayApiCache.keys().next().value;
+                  if (oldest) gatewayApiCache.delete(oldest);
+                }
+                gatewayApiCache.set(apiCacheKey, {
+                  statusCode,
+                  headers: clientHeaders,
+                  buffer: fullBuf,
+                  expiresAt: Date.now() + apiCacheTtlMs,
+                });
+              }
+
+              res.writeHead(statusCode, clientHeaders);
+              res.end(fullBuf);
+
+              const waiters = gatewayInflightMap.get(apiCacheKey) || [];
+              gatewayInflightMap.delete(apiCacheKey);
+              for (const waiterRes of waiters) {
+                try {
+                  if (!waiterRes.headersSent) {
+                    waiterRes.writeHead(statusCode, clientHeaders);
+                  }
+                  waiterRes.end(fullBuf);
+                } catch {}
+              }
+              done();
+            });
+            proxyRes.on("close", () => {
+              gatewayInflightMap.delete(apiCacheKey);
+              done();
+            });
+            proxyRes.on("error", () => {
+              gatewayInflightMap.delete(apiCacheKey);
+              done();
+            });
+            return;
+          }
+
+          if (isMutatingMethod) {
+            proxyRes.on("end", () => gatewayApiCache.clear());
+          }
+
           const clientHeaders = { ...proxyRes.headers };
           delete clientHeaders.connection;
           delete clientHeaders["keep-alive"];
@@ -594,15 +720,31 @@ async function startBackendServices() {
 
       proxyReq.on("error", () => {
         done();
+        const errPayload = JSON.stringify({ message: "Local PHP worker busy, retrying..." });
         if (!res.headersSent) {
           res.writeHead(502, { "Content-Type": "application/json" });
         }
-        res.end(JSON.stringify({ message: "Local PHP worker busy, retrying..." }));
+        res.end(errPayload);
+        if (apiCacheKey) {
+          const waiters = gatewayInflightMap.get(apiCacheKey) || [];
+          gatewayInflightMap.delete(apiCacheKey);
+          for (const waiterRes of waiters) {
+            try {
+              if (!waiterRes.headersSent) {
+                waiterRes.writeHead(502, { "Content-Type": "application/json" });
+              }
+              waiterRes.end(errPayload);
+            } catch {}
+          }
+        }
       });
 
       req.pipe(proxyReq);
       req.on("aborted", () => {
         done();
+        if (apiCacheKey) {
+          gatewayInflightMap.delete(apiCacheKey);
+        }
         proxyReq.destroy();
       });
     });
@@ -610,11 +752,13 @@ async function startBackendServices() {
     gatewayServer.listen(activePort, "127.0.0.1", () => resolve());
   });
 
-  // Precompile Blade templates, routes, and events in the background for native-speed PHP responses
+  // Precompile Blade templates, routes, events, and config in the background for native-speed PHP responses
   try {
     const isProductionBuild =
       app.isPackaged || (fs.existsSync(manifestFile) && !fs.existsSync(hotFile) && !process.env.KAROBAR_DEV_HMR);
-    const cacheArgs = isProductionBuild
+    const cacheArgs = app.isPackaged
+      ? ["config:cache", "view:cache", "route:cache", "event:cache"]
+      : isProductionBuild
       ? ["view:cache", "route:cache", "event:cache"]
       : ["view:cache"];
     for (const cmd of cacheArgs) {
@@ -1297,6 +1441,8 @@ function createAppWindow(routePath = "/", options = {}) {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      v8CacheOptions: "code",
+      spellcheck: false,
     },
   });
 
