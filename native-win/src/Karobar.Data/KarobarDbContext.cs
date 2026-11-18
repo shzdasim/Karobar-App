@@ -374,8 +374,32 @@ public class KarobarDbContext : DbContext
         modelBuilder.Entity<CubeProviderUsage>().HasIndex(x => new { x.Provider, x.UsageDate }).IsUnique();
 
         // ---------------------------------------------------------------------
-        // 5. Tolerant SQLite Value Converters for DateTime & Decimal
+        // 5. Tolerant SQLite Value Converters & Default Column Values
         // ---------------------------------------------------------------------
+        modelBuilder.Entity<Brand>()
+            .Property(x => x.ExpiryReturnPolicy)
+            .HasDefaultValue("before_expiry");
+
+        modelBuilder.Entity<Supplier>()
+            .Property(x => x.ExpiryReturnPolicy)
+            .HasDefaultValue("before_expiry");
+
+        modelBuilder.Entity<Supplier>()
+            .Property(x => x.TaxStatus)
+            .HasDefaultValue("registered");
+
+        modelBuilder.Entity<Product>()
+            .Property(x => x.Narcotic)
+            .HasDefaultValue("no");
+
+        modelBuilder.Entity<Product>()
+            .Property(x => x.TaxType)
+            .HasDefaultValue("exempt");
+
+        modelBuilder.Entity<User>()
+            .Property(x => x.Status)
+            .HasDefaultValue("active");
+
         var dateConverter = new ValueConverter<DateTime, string>(
             v => v.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             s => ParseSqliteDateTime(s) ?? DateTime.MinValue);
@@ -394,6 +418,17 @@ public class KarobarDbContext : DbContext
 
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
+            var clrType = entityType.ClrType;
+            object? defaultInstance = null;
+            try
+            {
+                defaultInstance = Activator.CreateInstance(clrType);
+            }
+            catch
+            {
+                // ignore if no parameterless constructor
+            }
+
             foreach (var property in entityType.GetProperties())
             {
                 var colName = property.GetColumnName() ?? property.Name;
@@ -406,6 +441,30 @@ public class KarobarDbContext : DbContext
                 else if (property.ClrType == typeof(DateTime?))
                 {
                     property.SetValueConverter(isPureDate ? nullableDateConverter : nullableDateTimeConverter);
+                }
+
+                // Ensure SQLite DDL created via EnsureCreatedAsync() includes SQL DEFAULT clauses
+                // for all non-primary-key value types and C# property initializers so raw SQL INSERTs
+                // omitting optional columns never fail with NOT NULL constraint errors.
+                if (!property.IsPrimaryKey() && !property.IsForeignKey() && property.GetDefaultValue() == null && property.GetDefaultValueSql() == null)
+                {
+                    if (defaultInstance != null && property.PropertyInfo != null)
+                    {
+                        var propVal = property.PropertyInfo.GetValue(defaultInstance);
+                        if (propVal != null && property.ClrType == typeof(string))
+                        {
+                            property.SetDefaultValue(propVal);
+                        }
+                        else if (property.ClrType == typeof(bool))
+                        {
+                            property.SetDefaultValueSql((propVal is bool b && b) ? "1" : "0");
+                        }
+                        else if (property.ClrType == typeof(int) || property.ClrType == typeof(long) || property.ClrType == typeof(decimal) || property.ClrType == typeof(double))
+                        {
+                            var numStr = Convert.ToString(propVal ?? 0, CultureInfo.InvariantCulture) ?? "0";
+                            property.SetDefaultValueSql(numStr);
+                        }
+                    }
                 }
             }
         }

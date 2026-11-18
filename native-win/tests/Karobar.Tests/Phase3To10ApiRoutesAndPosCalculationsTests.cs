@@ -437,11 +437,14 @@ public class Phase3To10ApiRoutesAndPosCalculationsTests
             });
             var brandId = await db.InsertAsync("brands", new Dictionary<string, object?>
             {
-                ["name"] = $"QA Brand {Guid.NewGuid():N}"
+                ["name"] = $"QA Brand {Guid.NewGuid():N}",
+                ["expiry_return_policy"] = "before_expiry"
             });
             var supplierId = await db.InsertAsync("suppliers", new Dictionary<string, object?>
             {
-                ["name"] = $"QA Supplier {Guid.NewGuid():N}"
+                ["name"] = $"QA Supplier {Guid.NewGuid():N}",
+                ["tax_status"] = "registered",
+                ["expiry_return_policy"] = "before_expiry"
             });
             var productId = await db.InsertAsync("products", new Dictionary<string, object?>
             {
@@ -460,7 +463,12 @@ public class Phase3To10ApiRoutesAndPosCalculationsTests
                 ["whole_sale_pack_price"] = 120.0,
                 ["whole_sale_unit_price"] = 12.0,
                 ["max_discount"] = 15.0,
-                ["quantity"] = 100
+                ["quantity"] = 100,
+                ["narcotic"] = "no",
+                ["tax_type"] = "exempt",
+                ["sales_tax_rate"] = 0.0,
+                ["further_tax_rate"] = 0.0,
+                ["requires_cold_chain"] = 0
             });
 
             var calcService = new InvoiceCalculationService(db);

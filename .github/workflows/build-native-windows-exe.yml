@@ -36,6 +36,12 @@ jobs:
           node-version: "22"
           cache: "npm"
 
+      - name: Build React 19 SPA & Cube Knowledge Bundle
+        shell: pwsh
+        run: |
+          npm ci
+          npm run build
+
       - name: Run Native Automated Verification Suite (Karobar.Tests)
         shell: pwsh
         run: |
@@ -46,6 +52,7 @@ jobs:
         shell: pwsh
         env:
           KAROBAR_APP_VERSION: ${{ inputs.app_version }}
+          KAROBAR_SKIP_NPM_BUILD: "1"
         run: ./native-win/build-native-win.ps1
 
       - name: Attest Build Provenance to GitHub (shzdasim/Karobar-App)
