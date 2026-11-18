@@ -7,17 +7,18 @@ public static class Program
     public const string ApplicationDisplayName = "Karobar-App Native";
     public const string ExecutableFileName = "Karobar-Native.exe";
 
-    public static async Task<int> Main(string[] args)
+    [STAThread]
+    public static int Main(string[] args)
     {
         var parsed = CommandLineRouter.Parse(args);
 
         // 1. Headless CLI execution (`--cli <command>` or `artisan <command>`)
         if (parsed.Mode == HostLaunchMode.HeadlessCli)
         {
-            return await CommandLineRouter.ExecuteHeadlessCliAsync(parsed.CliArguments);
+            return CommandLineRouter.ExecuteHeadlessCliAsync(parsed.CliArguments).GetAwaiter().GetResult();
         }
 
-        // 2. Single-Instance Named Windows Mutex (`Global\KarobarAppErpV2Mutex`)
+        // 2. Single-Instance Named Windows Mutex (`Global\KarobarNativeErpV2Mutex`)
         using var instanceLock = AcquireSingleInstanceLock(out var isFirstInstance);
         if (!isFirstInstance)
         {
@@ -27,80 +28,132 @@ public static class Program
 
         var networkConfig = new NetworkConfigManager();
         var windowManager = new WebView2WindowManager(networkConfig);
-        await using var hostServer = new KestrelHostServer(networkConfig, windowManager);
-
         using var shutdownCts = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            shutdownCts.Cancel();
-        };
-        windowManager.OnQuitRequested = () => shutdownCts.Cancel();
-
-        // 3. Headless Server Mode (`--server-only` / `--headless`)
-        if (parsed.Mode == HostLaunchMode.HeadlessServer)
-        {
-            await hostServer.StartAsync(parsed.ExplicitPort, shutdownCts.Token);
-            try
-            {
-                await Task.Delay(Timeout.Infinite, shutdownCts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                // Graceful exit
-            }
-            return 0;
-        }
-
-        // 4. Normal Native Desktop Launch
-        windowManager.CreateSplashWindow();
-        if (OperatingSystem.IsWindows())
-        {
-            _ = hostServer.DesktopBridge.GetPrintersAsync(forceRefresh: true);
-        }
-
-        var isOfflineTerminal = false;
-        if (networkConfig.IsTerminalMode())
-        {
-            var cfg = networkConfig.LoadNetworkConfig();
-            var ping = await networkConfig.TestServerConnectionAsync(cfg.ServerUrl, cfg.TerminalName, cancellationToken: shutdownCts.Token);
-            if (!ping.Ok)
-            {
-                isOfflineTerminal = true;
-                // Start local server so terminal-offline.html and window.karobarDesktop IPC remain available
-                await hostServer.StartAsync(parsed.ExplicitPort, shutdownCts.Token);
-            }
-        }
-        else
-        {
-            await hostServer.StartAsync(parsed.ExplicitPort, shutdownCts.Token);
-        }
-
-        windowManager.CreateSystemTray();
-        windowManager.PrewarmPrintWindow();
-        var mainWin = windowManager.CreateMainWindow();
-
-        if (isOfflineTerminal)
-        {
-            windowManager.LoadTerminalOfflineFallback(mainWin);
-        }
-
-        // If launched inside a non-interactive verification test with KAROBAR_EXIT_AFTER_BOOT=1, exit cleanly after boot
-        if (string.Equals(Environment.GetEnvironmentVariable("KAROBAR_EXIT_AFTER_BOOT"), "1", StringComparison.OrdinalIgnoreCase))
-        {
-            return 0;
-        }
+        var hostServer = new KestrelHostServer(networkConfig, windowManager);
 
         try
         {
-            await Task.Delay(Timeout.Infinite, shutdownCts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            // Normal exit
-        }
+            Console.CancelKeyPress += (_, e) =>
+            {
+                e.Cancel = true;
+                shutdownCts.Cancel();
+            };
 
-        return 0;
+            // 3. Headless Server Mode (`--server-only` / `--headless`)
+            if (parsed.Mode == HostLaunchMode.HeadlessServer)
+            {
+                windowManager.OnQuitRequested = () => shutdownCts.Cancel();
+                hostServer.StartAsync(parsed.ExplicitPort, shutdownCts.Token).GetAwaiter().GetResult();
+                try
+                {
+                    Task.Delay(Timeout.Infinite, shutdownCts.Token).GetAwaiter().GetResult();
+                }
+                catch (OperationCanceledException)
+                {
+                    // Graceful exit
+                }
+                return 0;
+            }
+
+            // 4. Normal Native Desktop Launch
+            windowManager.CreateSplashWindow();
+            if (OperatingSystem.IsWindows())
+            {
+                _ = hostServer.DesktopBridge.GetPrintersAsync(forceRefresh: true);
+            }
+
+#if WINDOWS_DESKTOP
+            System.Windows.Forms.Application.SetHighDpiMode(System.Windows.Forms.HighDpiMode.PerMonitorV2);
+            System.Windows.Forms.Application.EnableVisualStyles();
+            System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
+
+            using var splashForm = new NativeSplashForm(windowManager.ResolveIconPath());
+            splashForm.Show();
+            System.Windows.Forms.Application.DoEvents();
+#endif
+
+            var isOfflineTerminal = false;
+            if (networkConfig.IsTerminalMode())
+            {
+                var cfg = networkConfig.LoadNetworkConfig();
+                var ping = networkConfig.TestServerConnectionAsync(cfg.ServerUrl, cfg.TerminalName, cancellationToken: shutdownCts.Token)
+                    .GetAwaiter().GetResult();
+                if (!ping.Ok)
+                {
+                    isOfflineTerminal = true;
+                    hostServer.StartAsync(parsed.ExplicitPort, shutdownCts.Token).GetAwaiter().GetResult();
+                }
+            }
+            else
+            {
+                hostServer.StartAsync(parsed.ExplicitPort, shutdownCts.Token).GetAwaiter().GetResult();
+            }
+
+            windowManager.CreateSystemTray();
+            windowManager.PrewarmPrintWindow();
+            var mainWin = windowManager.CreateMainWindow();
+
+            if (isOfflineTerminal)
+            {
+                windowManager.LoadTerminalOfflineFallback(mainWin);
+            }
+
+            // If launched inside a non-interactive verification test with KAROBAR_EXIT_AFTER_BOOT=1, exit cleanly after boot
+            if (string.Equals(Environment.GetEnvironmentVariable("KAROBAR_EXIT_AFTER_BOOT"), "1", StringComparison.OrdinalIgnoreCase))
+            {
+                return 0;
+            }
+
+#if WINDOWS_DESKTOP
+            splashForm.Close();
+            var mainForm = new NativeWebView2Form(mainWin, windowManager, hostServer.DesktopBridge);
+
+            windowManager.OnWindowCreated = childWin =>
+            {
+                if (childWin.Id == mainWin.Id || childWin.IsOffscreenPrintWorker) return;
+                if (mainForm.IsDisposed) return;
+
+                void SpawnChildForm()
+                {
+                    var childForm = new NativeWebView2Form(childWin, windowManager, hostServer.DesktopBridge);
+                    childForm.Show();
+                }
+
+                if (mainForm.InvokeRequired)
+                {
+                    mainForm.BeginInvoke((Action)SpawnChildForm);
+                }
+                else
+                {
+                    SpawnChildForm();
+                }
+            };
+
+            windowManager.OnQuitRequested = () =>
+            {
+                shutdownCts.Cancel();
+                try { System.Windows.Forms.Application.Exit(); } catch { }
+            };
+
+            System.Windows.Forms.Application.Run(mainForm);
+#else
+            windowManager.OnQuitRequested = () => shutdownCts.Cancel();
+            try
+            {
+                Task.Delay(Timeout.Infinite, shutdownCts.Token).GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException)
+            {
+                // Normal exit
+            }
+#endif
+
+            return 0;
+        }
+        finally
+        {
+            hostServer.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
     }
 
     public static Mutex? AcquireSingleInstanceLock(out bool createdNew)

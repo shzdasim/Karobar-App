@@ -79,6 +79,7 @@ public sealed class AppWindowInstance : IDisposable
     public IntPtr Hwnd { get; set; }
     public Process? NativeHostProcess { get; set; }
     public Action<string>? WebMessageSender { get; set; }
+    public Action<string>? UrlNavigator { get; set; }
 
     public AppWindowInstance(
         int id,
@@ -140,6 +141,7 @@ public sealed class AppWindowInstance : IDisposable
     {
         if (IsDestroyed) return;
         Url = newUrl;
+        UrlNavigator?.Invoke(newUrl);
         WebMessageSender?.Invoke(JsonSerializer.Serialize(new
         {
             type = "ipc-event",
@@ -235,6 +237,7 @@ public sealed class WebView2WindowManager : IDisposable
     public event Action<DesktopEventEnvelope>? OnDesktopEventDispatched;
     public Func<Task>? OnRunBackupRequested { get; set; }
     public Action? OnQuitRequested { get; set; }
+    public Action<AppWindowInstance>? OnWindowCreated { get; set; }
 
     private static string ResolveSharedWebView2UserDataFolder()
     {
@@ -457,6 +460,7 @@ public sealed class WebView2WindowManager : IDisposable
                 win.Focus();
                 CloseSplashWindow();
                 UpdateApplicationMenus();
+                OnWindowCreated?.Invoke(win);
             }
 
             return win;

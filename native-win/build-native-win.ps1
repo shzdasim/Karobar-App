@@ -69,6 +69,8 @@ dotnet publish $HostProjectPath `
     -p:PublishSingleFile=true `
     -p:IncludeNativeLibrariesForSelfExtract=true `
     -p:EnableCompressionInSingleFile=true `
+    -p:DebugType=none `
+    -p:DebugSymbols=false `
     -p:Version=$AppVersion `
     -o $PublishDir
 
@@ -84,17 +86,29 @@ New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
 
 Copy-Item -Path "$PublishDir\*" -Destination $StageDir -Recurse -Force
 
+# Remove any stray .pdb debug symbols and ensure only a single Karobar-Native.exe binary exists in StageDir
+Get-ChildItem -Path $StageDir -Filter "*.pdb" -Recurse -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 $PublishedHostExe = Join-Path $StageDir "Karobar.Host.exe"
 $TargetAppExe     = Join-Path $StageDir "Karobar-Native.exe"
 if ((Test-Path $PublishedHostExe) -and (-not (Test-Path $TargetAppExe))) {
-    Copy-Item -Path $PublishedHostExe -Destination $TargetAppExe -Force
+    Move-Item -Path $PublishedHostExe -Destination $TargetAppExe -Force
+} elseif ((Test-Path $PublishedHostExe) -and (Test-Path $TargetAppExe)) {
+    Remove-Item -Path $PublishedHostExe -Force
 }
 
-foreach ($dir in @("public", "resources", "scripts")) {
+foreach ($dir in @("public", "resources\views", "scripts")) {
     $src = Join-Path $RepoRoot $dir
     if (Test-Path $src) {
-        Copy-Item -Path $src -Destination (Join-Path $StageDir $dir) -Recurse -Force
+        $dest = Join-Path $StageDir $dir
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null
+        Copy-Item -Path $src -Destination $dest -Recurse -Force
     }
+}
+
+$CubeKnowledgeSrc = Join-Path $RepoRoot "storage\app\cube-knowledge.json"
+if (Test-Path $CubeKnowledgeSrc) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $StageDir "storage\app") | Out-Null
+    Copy-Item -Path $CubeKnowledgeSrc -Destination (Join-Path $StageDir "storage\app\cube-knowledge.json") -Force
 }
 
 $DesktopStage = Join-Path $StageDir "desktop"
