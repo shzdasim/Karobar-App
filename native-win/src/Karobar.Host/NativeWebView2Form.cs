@@ -149,7 +149,8 @@ public sealed class NativeWebView2Form : Form
                     e.Name,
                     onSilentPrintIntercepted: async printUrl =>
                     {
-                        await _desktopBridge.PrintUrlAsync(printUrl, new Dictionary<string, object?> { ["silent"] = true });
+                        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(new { url = printUrl, silent = true }));
+                        await _desktopBridge.PrintUrlAsync(doc.RootElement);
                     });
 
                 if (decision != "allow-preview")
