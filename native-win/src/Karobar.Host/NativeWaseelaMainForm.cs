@@ -57,7 +57,7 @@ public sealed class NativeWaseelaMainForm : Form
 
         var bootstrapper = new DatabaseBootstrapper(new DbConnectionFactory());
         bootstrapper.EnsureSchemaReady();
-        _db = new KarobarDb(bootstrapper.SqlitePath, bootstrapper.ProjectRoot);
+        _db = new KarobarDb(explicitSqlitePath: bootstrapper.SqlitePath);
         _calcService = new InvoiceCalculationService(_db);
 
         Text = "Karobar-App Native ERP (Pure Windows Desktop Edition — Waseela Speed)";
@@ -588,13 +588,15 @@ public sealed class NativeWaseelaMainForm : Form
         {
             var unitPrice = AccountService.ToDecimal(r.GetValueOrDefault("unit_sale_price"));
             if (unitPrice <= 0m) unitPrice = AccountService.ToDecimal(r.GetValueOrDefault("pack_sale_price"));
-            _posProductLookupGrid.Rows.Add(
-                r["id"],
-                r.GetValueOrDefault("name"),
-                r.GetValueOrDefault("formulation") ?? "-",
+            _posProductLookupGrid.Rows.Add(new object[]
+            {
+                r["id"] ?? 0,
+                r.GetValueOrDefault("name")?.ToString() ?? "-",
+                r.GetValueOrDefault("formulation")?.ToString() ?? "-",
                 r.GetValueOrDefault("quantity") ?? 0,
                 unitPrice.ToString("0.00"),
-                r.GetValueOrDefault("rack") ?? "-");
+                r.GetValueOrDefault("rack")?.ToString() ?? "-"
+            });
         }
     }
 
@@ -665,7 +667,8 @@ public sealed class NativeWaseelaMainForm : Form
         var expiry = batch?.GetValueOrDefault("expiry_date")?.ToString() ?? "-";
         var avail = ProductAvailableQty(product, batch);
 
-        _posGrid.Rows.Add(
+        _posGrid.Rows.Add(new object[]
+        {
             pid,
             product.GetValueOrDefault("name")?.ToString() ?? "Item",
             batchNo,
@@ -674,7 +677,8 @@ public sealed class NativeWaseelaMainForm : Form
             1,
             unitPrice.ToString("0.00"),
             "0",
-            unitPrice.ToString("0.00"));
+            unitPrice.ToString("0.00")
+        });
 
         RecalculatePosTotals();
     }
@@ -762,7 +766,7 @@ public sealed class NativeWaseelaMainForm : Form
                 ProductName = row.Cells["ProductName"].Value?.ToString() ?? "Item",
                 Quantity = qty,
                 Price = price,
-                DiscountPercentage = discPct,
+                ItemDiscountPercentage = discPct,
                 SubTotal = subTotal,
                 BatchNumber = batchNo,
                 Expiry = expiry
@@ -1147,9 +1151,11 @@ public sealed class NativeWaseelaMainForm : Form
 
     private void OpenHybridWebViewWindow(string route)
     {
-        var win = _windowManager.CreateAppWindow(route, new AppWindowOptions { Title = $"Karobar Native — {route}" });
-        var webForm = new NativeWebView2Form(win, _windowManager, _hostServer.DesktopBridge);
-        webForm.Show();
+        var baseUrl = _networkConfig.GetAppBaseUrl();
+        var fullUrl = route.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+            ? route
+            : $"{baseUrl}{(route.StartsWith('/') ? "" : "/")}{route}";
+        WebView2WindowManager.TryOpenExternalUrl(fullUrl);
     }
 
     // =========================================================================
@@ -1244,6 +1250,53 @@ public sealed class NativeWaseelaMainForm : Form
     private sealed record ComboItem(long Id, string Label)
     {
         public override string ToString() => Label;
+    }
+}
+/// <summary>
+/// Frameless native Windows Splash Form shown for &lt;1 second while Kestrel &amp; SQLite initialize.
+/// </summary>
+public sealed class NativeSplashForm : Form
+{
+    public NativeSplashForm(string? iconPath)
+    {
+        FormBorderStyle = FormBorderStyle.None;
+        StartPosition = FormStartPosition.CenterScreen;
+        Width = 480;
+        Height = 280;
+        TopMost = true;
+        ShowInTaskbar = false;
+        BackColor = Color.FromArgb(15, 23, 42);
+
+        if (!string.IsNullOrWhiteSpace(iconPath) && File.Exists(iconPath) && iconPath.EndsWith(".ico", StringComparison.OrdinalIgnoreCase))
+        {
+            try { Icon = new Icon(iconPath); } catch { }
+        }
+
+        var titleLabel = new Label
+        {
+            Text = "Karobar-App Native",
+            ForeColor = Color.FromArgb(248, 250, 252),
+            Font = new Font("Segoe UI", 22F, FontStyle.Bold),
+            AutoSize = false,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Dock = DockStyle.Top,
+            Height = 130,
+            Padding = new Padding(0, 45, 0, 0)
+        };
+
+        var subLabel = new Label
+        {
+            Text = "Starting Native Windows C# / .NET 9 Engine…",
+            ForeColor = Color.FromArgb(56, 189, 248),
+            Font = new Font("Segoe UI", 10.5F, FontStyle.Regular),
+            AutoSize = false,
+            TextAlign = ContentAlignment.TopCenter,
+            Dock = DockStyle.Fill,
+            Padding = new Padding(0, 12, 0, 0)
+        };
+
+        Controls.Add(subLabel);
+        Controls.Add(titleLabel);
     }
 }
 #endif
