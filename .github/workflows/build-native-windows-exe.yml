@@ -1,8 +1,8 @@
-name: Build & Release Karobar-App Native (.NET 9 + WebView2 Standalone Windows .exe)
+name: Build & Release Karobar-App Native WPF/WinForms Edition (Waseela Speed)
 
 on:
   push:
-    branches: [native-windows-app]
+    branches: [native-windows-wpf]
   workflow_dispatch:
     inputs:
       app_version:
@@ -81,8 +81,8 @@ jobs:
           $Manifest = Get-Content "dist/installer/latest-native-release.json" -Raw | ConvertFrom-Json
           $AppVersion = $Manifest.version
           $BuildNumber = $Manifest.build_number
-          $ReleaseTag = "native-v$AppVersion"
-          $ReleaseTitle = "Karobar-App Native v$AppVersion (Build #$BuildNumber)"
+          $ReleaseTag = "native-wpf-v$AppVersion"
+          $ReleaseTitle = "Karobar-App Native Desktop Edition v$AppVersion (Build #$BuildNumber — Pure Win32/DataGrid UI)"
           $BundleZip = "dist/installer/Karobar-Native-Setup-Bundle.zip"
           if (Test-Path $BundleZip) { Remove-Item -Force $BundleZip }
 

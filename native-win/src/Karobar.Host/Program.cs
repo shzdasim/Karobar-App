@@ -106,7 +106,7 @@ public static class Program
 
 #if WINDOWS_DESKTOP
             splashForm.Close();
-            var mainForm = new NativeWebView2Form(mainWin, windowManager, hostServer.DesktopBridge);
+            var mainForm = new NativeWaseelaMainForm(networkConfig, windowManager, hostServer);
 
             windowManager.OnWindowCreated = childWin =>
             {
