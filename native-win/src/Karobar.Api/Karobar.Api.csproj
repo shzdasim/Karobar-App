@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Karobar.Api</RootNamespace>
+    <AssemblyName>Karobar.Api</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Karobar.Core\Karobar.Core.csproj" />
+    <ProjectReference Include="..\Karobar.Data\Karobar.Data.csproj" />
+    <ProjectReference Include="..\Karobar.Services\Karobar.Services.csproj" />
+    <ProjectReference Include="..\Karobar.Printing\Karobar.Printing.csproj" />
+    <ProjectReference Include="..\Karobar.Background\Karobar.Background.csproj" />
+  </ItemGroup>
+</Project>

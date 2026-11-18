@@ -1,0 +1,132 @@
+name: Build & Release Karobar-App Native (.NET 9 + WebView2 Standalone Windows .exe)
+
+on:
+  push:
+    branches: [native-windows-app]
+  workflow_dispatch:
+    inputs:
+      app_version:
+        description: "Optional Custom Version (leave 'auto' for 2.0.<build_number>)"
+        required: false
+        default: "auto"
+
+jobs:
+  build-native-windows-exe:
+    name: Compile & Release Karobar-Native-Setup.exe (Win64 .NET 9)
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 10
+
+      - name: Setup .NET 9.0 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Setup Node.js 22 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Run Native Automated Verification Suite (Karobar.Tests)
+        shell: pwsh
+        run: |
+          dotnet test native-win/Karobar.Native.sln -c Release -m:1
+
+      - name: Build Native Windows Single-Binary & Inno Setup Installer (Karobar-Native-Setup.exe)
+        shell: pwsh
+        env:
+          KAROBAR_APP_VERSION: ${{ inputs.app_version }}
+        run: ./native-win/build-native-win.ps1
+
+      - name: Attest Build Provenance to GitHub (shzdasim/Karobar-App)
+        uses: actions/attest-build-provenance@v2
+        continue-on-error: true
+        with:
+          subject-path: "dist/installer/Karobar-Native-Setup.exe"
+
+      - name: Upload Karobar-Native-Setup.exe Standalone Installer Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Karobar-Native-Setup-Installer
+          path: |
+            dist/installer/Karobar-Native-Setup.exe
+            dist/installer/Karobar-Native-Patch.zip
+            dist/installer/MalikAsimShahzad-KarobarERP.cer
+            dist/installer/Install-Karobar-Native.bat
+            dist/installer/latest-native-release.json
+          retention-days: 30
+
+      - name: Publish Separate Native Windows GitHub Release (native-v<version>)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          $Manifest = Get-Content "dist/installer/latest-native-release.json" -Raw | ConvertFrom-Json
+          $AppVersion = $Manifest.version
+          $BuildNumber = $Manifest.build_number
+          $ReleaseTag = "native-v$AppVersion"
+          $ReleaseTitle = "Karobar-App Native v$AppVersion (Build #$BuildNumber)"
+          $BundleZip = "dist/installer/Karobar-Native-Setup-Bundle.zip"
+          if (Test-Path $BundleZip) { Remove-Item -Force $BundleZip }
+
+          $BundleItems = @(
+              "dist/installer/Karobar-Native-Setup.exe",
+              "dist/installer/MalikAsimShahzad-KarobarERP.cer",
+              "dist/installer/Install-Karobar-Native.bat"
+          ) | Where-Object { Test-Path $_ }
+
+          Compress-Archive -Path $BundleItems -DestinationPath $BundleZip -Force
+
+          $RecentChanges = $Manifest.notes
+          $ReleaseNotes = @"
+          ## Karobar-App Native v$AppVersion (Build #$BuildNumber — Standalone C#/.NET 9 + WebView2 Edition)
+          **Author & Developer:** Malik Asim Shahzad ([@shzdasim](https://github.com/shzdasim))
+
+          ### Standalone Native Windows Release (`Karobar-Native-Setup.exe`)
+          - **100% Separate Standalone Identity:** Installs into `C:\Program Files\Karobar-App-Native` (`Karobar-Native.exe`) with its own AppId, mutex (`Global\KarobarNativeErpV2Mutex`), `%APPDATA%\Karobar-App-Native` profile, and Kestrel port (`18960`), so it can run side-by-side on the same PC with the Electron edition (`Karobar-App.exe`) without any conflict.
+          - **Pure Native C#/.NET 9 + Embedded Kestrel + WebView2:** Zero PHP runtime required.
+          - **Abuzar Waseela & SQLite Migration Built-In:** Supports direct import of existing Karobar SQLite databases and Abuzar Waseela schemas.
+
+          ### What's New in Build #$BuildNumber
+          $RecentChanges
+          "@
+
+          $NotesFile = "dist/installer/native-release-notes.md"
+          Set-Content -Path $NotesFile -Value $ReleaseNotes -Encoding UTF8
+
+          $ReleaseAssets = @(
+              "dist/installer/Karobar-Native-Setup.exe",
+              "dist/installer/Karobar-Native-Patch.zip",
+              "dist/installer/Karobar-Native-Setup-Bundle.zip",
+              "dist/installer/latest-native-release.json",
+              "dist/installer/MalikAsimShahzad-KarobarERP.cer",
+              "dist/installer/Install-Karobar-Native.bat"
+          ) | Where-Object { Test-Path $_ }
+
+          gh release view $ReleaseTag >$null 2>&1
+          if ($LASTEXITCODE -eq 0) {
+              Write-Host "Updating existing Native GitHub Release $ReleaseTag..." -ForegroundColor Cyan
+              gh api -X PATCH "repos/$env:GITHUB_REPOSITORY/git/refs/tags/$ReleaseTag" -f sha="$env:GITHUB_SHA" -F force=true
+              if ($LASTEXITCODE -ne 0) { throw "Failed to update tag $ReleaseTag" }
+              gh release edit $ReleaseTag --title $ReleaseTitle --notes-file $NotesFile --latest=false
+              if ($LASTEXITCODE -ne 0) { throw "Failed to edit release $ReleaseTag" }
+              gh release upload $ReleaseTag $ReleaseAssets --clobber
+              if ($LASTEXITCODE -ne 0) { throw "Failed to upload assets for $ReleaseTag" }
+          } else {
+              Write-Host "Creating new Native GitHub Release $ReleaseTag..." -ForegroundColor Cyan
+              gh release create $ReleaseTag $ReleaseAssets `
+                  --target $env:GITHUB_SHA `
+                  --title $ReleaseTitle `
+                  --notes-file $NotesFile `
+                  --latest=false
+              if ($LASTEXITCODE -ne 0) { throw "Failed to create release $ReleaseTag" }
+          }

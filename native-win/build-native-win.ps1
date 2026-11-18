@@ -1,0 +1,277 @@
+<#
+.SYNOPSIS
+    Automated Native Windows Single-Binary (.NET 9 + Kestrel + WebView2) Build,
+    Authenticode Code Signing & Zero-Data-Loss Inno Setup Release Pipeline for Karobar-App Native.
+.DESCRIPTION
+    1. Stamps `public/version.json` with the current version & build number (`2.0.<run_number>`)
+    2. Builds the Vite React 19 SPA (`npm run build`)
+    3. Publishes `Karobar.Host` as a single self-contained Windows x64 binary (`Karobar-Native.exe`)
+    4. Stages the React frontend bundle, print templates, and optional WhatsApp sidecar runtime
+    5. Signs `Karobar-Native.exe` with `desktop/MalikAsimShahzad-CodeSign.pfx`
+    6. Compiles `native-win/installer/Karobar-Native-Setup.iss` via Inno Setup 6 into
+       `dist/installer/Karobar-Native-Setup.exe` and generates `dist/installer/latest-native-release.json`
+#>
+
+$ErrorActionPreference = "Stop"
+
+# Resolve Repository Root whether invoked from `native-win/` or `native-win/installer/`
+$ScriptDir = $PSScriptRoot
+if ((Split-Path -Leaf $ScriptDir) -ieq "installer") {
+    $RepoRoot = Resolve-Path (Join-Path $ScriptDir "..\..")
+} else {
+    $RepoRoot = Resolve-Path (Join-Path $ScriptDir "..")
+}
+Set-Location $RepoRoot
+
+$BuildNumber = if ($env:GITHUB_RUN_NUMBER) { [int]$env:GITHUB_RUN_NUMBER } else { 1 }
+$AppVersion  = if ($env:KAROBAR_APP_VERSION -and $env:KAROBAR_APP_VERSION -ne "" -and $env:KAROBAR_APP_VERSION -ne "auto") { $env:KAROBAR_APP_VERSION } else { "2.0.$BuildNumber" }
+$CommitSha   = if ($env:GITHUB_SHA) { $env:GITHUB_SHA.Substring(0, 7) } else { "local" }
+$ReleasedAt  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+$RepoSlug    = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { "shzdasim/Karobar-App" }
+
+Write-Host "==> [0/6] Stamping Karobar-App Native Version Metadata: v$AppVersion (Build #$BuildNumber, Commit $CommitSha)..." -ForegroundColor Cyan
+$VersionMeta = [ordered]@{
+    app_name     = "Karobar-App Native"
+    version      = $AppVersion
+    build_number = $BuildNumber
+    commit_sha   = $CommitSha
+    repository   = $RepoSlug
+    released_at  = $ReleasedAt
+    runtime      = "native-dotnet9-win-x64"
+}
+$VersionMetaJson = $VersionMeta | ConvertTo-Json -Depth 4
+Set-Content -Path (Join-Path $RepoRoot "public\version.json") -Value $VersionMetaJson -Encoding UTF8
+
+$DistDir         = Join-Path $RepoRoot "dist"
+$CacheDir        = Join-Path $DistDir "cache"
+$PublishDir      = Join-Path $DistDir "native-publish"
+$StageDir        = Join-Path $DistDir "native-stage"
+$InstallerOutDir = Join-Path $DistDir "installer"
+
+New-Item -ItemType Directory -Force -Path $CacheDir, $StageDir, $InstallerOutDir | Out-Null
+
+Write-Host "==> [1/6] Building React 19 SPA Frontend Assets (npm run build)..." -ForegroundColor Cyan
+if (-not $env:KAROBAR_SKIP_NPM_BUILD) {
+    npm ci
+    npm run build
+}
+
+Write-Host "==> [2/6] Publishing Karobar.Host (.NET 9 Single-Binary Self-Contained win-x64 -> Karobar-Native.exe)..." -ForegroundColor Cyan
+if (Test-Path $PublishDir) {
+    Remove-Item -Recurse -Force $PublishDir
+}
+
+$HostProjectPath = Join-Path $RepoRoot "native-win\src\Karobar.Host\Karobar.Host.csproj"
+dotnet publish $HostProjectPath `
+    -c Release `
+    -r win-x64 `
+    --self-contained true `
+    -p:PublishSingleFile=true `
+    -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:EnableCompressionInSingleFile=true `
+    -p:Version=$AppVersion `
+    -o $PublishDir
+
+if ($LASTEXITCODE -ne 0) {
+    throw "dotnet publish failed with exit code $LASTEXITCODE"
+}
+
+Write-Host "==> [3/6] Staging Native Application Payload into dist/native-stage..." -ForegroundColor Cyan
+if (Test-Path $StageDir) {
+    Remove-Item -Recurse -Force $StageDir
+}
+New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
+
+Copy-Item -Path "$PublishDir\*" -Destination $StageDir -Recurse -Force
+
+$PublishedHostExe = Join-Path $StageDir "Karobar.Host.exe"
+$TargetAppExe     = Join-Path $StageDir "Karobar-Native.exe"
+if ((Test-Path $PublishedHostExe) -and (-not (Test-Path $TargetAppExe))) {
+    Copy-Item -Path $PublishedHostExe -Destination $TargetAppExe -Force
+}
+
+foreach ($dir in @("public", "resources", "scripts")) {
+    $src = Join-Path $RepoRoot $dir
+    if (Test-Path $src) {
+        Copy-Item -Path $src -Destination (Join-Path $StageDir $dir) -Recurse -Force
+    }
+}
+
+$DesktopStage = Join-Path $StageDir "desktop"
+New-Item -ItemType Directory -Force -Path $DesktopStage | Out-Null
+foreach ($dFile in @("splash.html", "terminal-offline.html", "icon.ico", "icon.png", "MalikAsimShahzad-KarobarERP.cer")) {
+    $dSrc = Join-Path $RepoRoot "desktop\$dFile"
+    if (Test-Path $dSrc) {
+        Copy-Item -Path $dSrc -Destination (Join-Path $DesktopStage $dFile) -Force
+    }
+}
+
+$SumatraSrc = Join-Path $RepoRoot "desktop\node_modules\pdf-to-printer\dist\SumatraPDF-3.4.6-32.exe"
+if (Test-Path $SumatraSrc) {
+    Copy-Item -Path $SumatraSrc -Destination (Join-Path $DesktopStage "SumatraPDF.exe") -Force
+}
+
+# Clean dev/test artifacts so upgrades NEVER overwrite end-user database.sqlite or .env
+Remove-Item -Path (Join-Path $StageDir "public\hot") -Force -ErrorAction SilentlyContinue
+Remove-Item -Path (Join-Path $StageDir "public\storage") -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path `
+    (Join-Path $StageDir "database"), `
+    (Join-Path $StageDir "storage\app\public"), `
+    (Join-Path $StageDir "storage\app\backups"), `
+    (Join-Path $StageDir "storage\app\whatsapp-agent"), `
+    (Join-Path $StageDir "storage\backups"), `
+    (Join-Path $StageDir "storage\logs") | Out-Null
+
+Write-Host "==> [4/6] Verifying Native CLI Pre-Install Machine ID Engine..." -ForegroundColor Cyan
+if ($IsWindows -or $env:OS -eq "Windows_NT") {
+    $TestMidOut = Join-Path $CacheDir "native-machine-id.txt"
+    if (Test-Path $TestMidOut) { Remove-Item -Force $TestMidOut }
+    & $TargetAppExe --cli license:machine-id --out="$TestMidOut"
+    if (Test-Path $TestMidOut) {
+        $DetectedTestMid = (Get-Content $TestMidOut -Raw).Trim()
+        Write-Host "    Verified Native Machine ID: $DetectedTestMid" -ForegroundColor Green
+    }
+}
+
+Write-Host "==> [5/6] Code Signing Executable with Authenticode Certificate (MalikAsimShahzad-CodeSign.pfx)..." -ForegroundColor Cyan
+$RepoPfxPath = Join-Path $RepoRoot "desktop\MalikAsimShahzad-CodeSign.pfx"
+$RepoCerPath = Join-Path $RepoRoot "desktop\MalikAsimShahzad-KarobarERP.cer"
+$PfxPath     = Join-Path $CacheDir "MalikAsimShahzad-CodeSign.pfx"
+$CerPath     = Join-Path $DesktopStage "MalikAsimShahzad-KarobarERP.cer"
+$PfxPasswordPlain = if ($env:WINDOWS_CERT_PASSWORD) { $env:WINDOWS_CERT_PASSWORD } else { "KarobarSign2026!" }
+$PfxPasswordSec   = ConvertTo-SecureString -String $PfxPasswordPlain -Force -AsPlainText
+
+if ($env:WINDOWS_CERT_PFX_BASE64) {
+    [IO.File]::WriteAllBytes($PfxPath, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX_BASE64))
+    $SigningCert = Import-PfxCertificate -FilePath $PfxPath -CertStoreLocation "Cert:\CurrentUser\My" -Password $PfxPasswordSec
+    Export-Certificate -Cert $SigningCert -FilePath $CerPath -Force | Out-Null
+} elseif ((Test-Path $RepoPfxPath) -and (Test-Path $RepoCerPath)) {
+    Copy-Item -Path $RepoPfxPath -Destination $PfxPath -Force
+    Copy-Item -Path $RepoCerPath -Destination $CerPath -Force
+    $SigningCert = Import-PfxCertificate -FilePath $PfxPath -CertStoreLocation "Cert:\CurrentUser\My" -Password $PfxPasswordSec
+} else {
+    $SigningCert = New-SelfSignedCertificate `
+        -Type CodeSigningCert `
+        -Subject "CN=Malik Asim Shahzad (shzdasim), O=Malik Asim Shahzad, OU=https://github.com/shzdasim/Karobar-App, C=PK" `
+        -FriendlyName "Malik Asim Shahzad - Karobar-App Developer Certificate" `
+        -KeyAlgorithm RSA `
+        -KeyLength 2048 `
+        -HashAlgorithm "SHA256" `
+        -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.17={text}URL=https://github.com/shzdasim/Karobar-App") `
+        -CertStoreLocation "Cert:\CurrentUser\My" `
+        -NotAfter (Get-Date).AddYears(5)
+
+    Export-PfxCertificate -Cert $SigningCert -FilePath $PfxPath -Password $PfxPasswordSec -Force | Out-Null
+    Export-Certificate -Cert $SigningCert -FilePath $CerPath -Force | Out-Null
+}
+
+if (Test-Path $CerPath) {
+    Copy-Item -Path $CerPath -Destination (Join-Path $InstallerOutDir "MalikAsimShahzad-KarobarERP.cer") -Force
+}
+
+$SignToolExe = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+    Sort-Object FullName -Descending |
+    Select-Object -First 1 -ExpandProperty FullName
+
+function Invoke-KarobarAuthenticodeSign([string]$TargetExe) {
+    if (-not (Test-Path $TargetExe)) { return }
+    Write-Host "    Signing executable: $(Split-Path -Leaf $TargetExe)" -ForegroundColor Gray
+    if ($SignToolExe -and (Test-Path $SignToolExe)) {
+        & $SignToolExe sign /f $PfxPath /p $PfxPasswordPlain /fd SHA256 /d "Karobar-App Native - Malik Asim Shahzad" /du "https://github.com/shzdasim/Karobar-App" /tr "http://timestamp.digicert.com" /td SHA256 $TargetExe
+        if ($LASTEXITCODE -ne 0) {
+            & $SignToolExe sign /f $PfxPath /p $PfxPasswordPlain /fd SHA256 /d "Karobar-App Native - Malik Asim Shahzad" /du "https://github.com/shzdasim/Karobar-App" $TargetExe
+        }
+    } elseif ($SigningCert) {
+        $sigRes = Set-AuthenticodeSignature -FilePath $TargetExe -Certificate $SigningCert -HashAlgorithm SHA256 -TimestampServer "http://timestamp.digicert.com"
+        if ($sigRes.Status -ne "Valid") {
+            Set-AuthenticodeSignature -FilePath $TargetExe -Certificate $SigningCert -HashAlgorithm SHA256 | Out-Null
+        }
+    }
+}
+
+Invoke-KarobarAuthenticodeSign $TargetAppExe
+Invoke-KarobarAuthenticodeSign $PublishedHostExe
+
+Write-Host "==> [6/6] Compiling Inno Setup 6 Native Windows Installer (Karobar-Native-Setup.iss)..." -ForegroundColor Cyan
+$IsccCandidates = @(
+    "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+    "C:\Program Files\Inno Setup 6\ISCC.exe",
+    "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+)
+$IsccExe = $IsccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $IsccExe) {
+    $IsccExe = (Get-Command "ISCC.exe" -ErrorAction SilentlyContinue).Source
+}
+if (-not $IsccExe) {
+    throw "Inno Setup 6 (ISCC.exe) not found. Install via: winget install JRSoftware.InnoSetup"
+}
+
+$IssPath = Join-Path $RepoRoot "native-win\installer\Karobar-Native-Setup.iss"
+if ($SignToolExe -and (Test-Path $SignToolExe)) {
+    $SignCmd = "`$q$SignToolExe`$q sign /f `$q$PfxPath`$q /p `$q$PfxPasswordPlain`$q /fd SHA256 /d `$qKarobar-App Native - Malik Asim Shahzad`$q /du `$qhttps://github.com/shzdasim/Karobar-App`$q `$f"
+    & $IsccExe "/DMyAppVersion=$AppVersion" "/DSignToolEnabled=1" "/Skarobarsign=$SignCmd" $IssPath
+} else {
+    & $IsccExe "/DMyAppVersion=$AppVersion" $IssPath
+}
+if ($LASTEXITCODE -ne 0) {
+    throw "Inno Setup compilation failed with exit code $LASTEXITCODE"
+}
+
+$FinalInstallerExe = Join-Path $InstallerOutDir "Karobar-Native-Setup.exe"
+Invoke-KarobarAuthenticodeSign $FinalInstallerExe
+
+# Generate 1-Click Certificate Trust & Native Installer Launcher (Install-Karobar-Native.bat)
+$HelperBatPath = Join-Path $InstallerOutDir "Install-Karobar-Native.bat"
+$HelperBatContent = @"
+@echo off
+title Karobar-App Native v$AppVersion - Verified Publisher Installer
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Requesting Administrator privileges to trust developer certificate...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    exit /b
+)
+cd /d "%~dp0"
+echo [1/3] Trusting Developer Certificate: Malik Asim Shahzad (https://github.com/shzdasim/Karobar-App)...
+certutil.exe -addstore -f "Root" "%~dp0MalikAsimShahzad-KarobarERP.cer" >nul 2>&1
+certutil.exe -addstore -f "TrustedPublisher" "%~dp0MalikAsimShahzad-KarobarERP.cer" >nul 2>&1
+echo [2/3] Clearing browser download security zone mark...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -Path '%~dp0' | Unblock-File -ErrorAction SilentlyContinue"
+echo [3/3] Launching Signed Karobar-App Native Setup Wizard...
+start "" "%~dp0Karobar-Native-Setup.exe"
+"@
+Set-Content -Path $HelperBatPath -Value $HelperBatContent -Encoding ASCII
+
+# Package differential OTA patch zip and latest-native-release.json manifest
+$PatchZipPath = Join-Path $InstallerOutDir "Karobar-Native-Patch.zip"
+if (Test-Path $PatchZipPath) { Remove-Item -Force $PatchZipPath }
+Compress-Archive -Path "$StageDir\*" -DestinationPath $PatchZipPath -CompressionLevel Optimal -Force
+
+$PatchSize   = (Get-Item $PatchZipPath).Length
+$PatchSha256 = (Get-FileHash -Path $PatchZipPath -Algorithm SHA256).Hash.ToLower()
+
+$LatestReleaseManifest = [ordered]@{
+    app_name          = "Karobar-App Native"
+    version           = $AppVersion
+    build_number      = $BuildNumber
+    commit_sha        = $CommitSha
+    release_name      = "Karobar-App Native v$AppVersion (Build #$BuildNumber)"
+    released_at       = $ReleasedAt
+    notes             = "Native Windows C#/.NET 9 + Kestrel + WebView2 Single-Binary Release."
+    download_url      = "https://github.com/$RepoSlug/releases/latest/download/Karobar-Native-Setup.exe"
+    bundle_url        = "https://github.com/$RepoSlug/releases/latest/download/Karobar-Native-Setup-Bundle.zip"
+    patch_url         = "https://github.com/$RepoSlug/releases/latest/download/Karobar-Native-Patch.zip"
+    patch_size        = [int64]$PatchSize
+    patch_sha256      = $PatchSha256
+    min_patch_version = "2.0.0"
+    release_url       = "https://github.com/$RepoSlug/releases/latest"
+    zero_data_loss    = $true
+}
+Set-Content -Path (Join-Path $InstallerOutDir "latest-native-release.json") -Value ($LatestReleaseManifest | ConvertTo-Json -Depth 4) -Encoding UTF8
+
+Write-Host "================================================================================" -ForegroundColor Green
+Write-Host "SUCCESS! Native Windows Single-Binary & Code-Signed Installer generated at:" -ForegroundColor Green
+Write-Host "  dist\installer\Karobar-Native-Setup.exe (v$AppVersion, Build #$BuildNumber)" -ForegroundColor Yellow
+Write-Host "  dist\installer\Karobar-Native-Patch.zip" -ForegroundColor Yellow
+Write-Host "  dist\installer\latest-native-release.json" -ForegroundColor Yellow
+Write-Host "================================================================================" -ForegroundColor Green

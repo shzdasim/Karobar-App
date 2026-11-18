@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Karobar-App — Server Connection</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      width: 100%;
+      max-width: 540px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(239, 68, 68, 0.15);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #ffffff;
+    }
+    p.sub {
+      font-size: 14px;
+      color: #94a3b8;
+      line-height: 1.5;
+      margin-bottom: 24px;
+    }
+    .field {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #cbd5e1;
+      margin-bottom: 6px;
+    }
+    input {
+      width: 100%;
+      padding: 11px 14px;
+      border-radius: 10px;
+      border: 1px solid #475569;
+      background: #0f172a;
+      color: #f8fafc;
+      font-size: 14px;
+      outline: none;
+    }
+    input:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    }
+    .status-box {
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      margin-bottom: 18px;
+      display: none;
+    }
+    .status-box.ok {
+      display: block;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      color: #6ee7b7;
+    }
+    .status-box.err {
+      display: block;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #fca5a5;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 10px;
+      padding: 11px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      transition: opacity 0.15s ease;
+    }
+    button:hover { opacity: 0.92; }
+    .btn-primary {
+      background: #2563eb;
+      color: #ffffff;
+      flex: 1;
+    }
+    .btn-secondary {
+      background: #334155;
+      color: #f1f5f9;
+    }
+    .btn-ghost {
+      width: 100%;
+      margin-top: 12px;
+      background: transparent;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge"><span class="dot"></span> Terminal Disconnected from Store Server</div>
+    <h1>Cannot Reach Karobar Linux Server</h1>
+    <p class="sub">
+      This PC is configured as a <strong>Multi-PC POS Terminal</strong>, but the central Store Server is currently unreachable on your local network (LAN).
+    </p>
+
+    <div id="statusBox" class="status-box"></div>
+
+    <div class="field">
+      <label for="serverUrl">Store Server LAN URL</label>
+      <input id="serverUrl" type="text" placeholder="http://192.168.1.10:8000" />
+    </div>
+
+    <div class="field">
+      <label for="terminalName">This Terminal / Counter Name</label>
+      <input id="terminalName" type="text" placeholder="Counter 1 — Main POS" />
+    </div>
+
+    <div class="actions">
+      <button class="btn-secondary" id="testBtn" type="button">Test Connection</button>
+      <button class="btn-primary" id="connectBtn" type="button">Save &amp; Connect to Server</button>
+    </div>
+
+    <button class="btn-ghost" id="standaloneBtn" type="button">
+      Switch to Standalone Local PC Mode (Use Local SQLite Database)
+    </button>
+  </div>
+
+  <script>
+    const serverUrlInput = document.getElementById("serverUrl");
+    const terminalNameInput = document.getElementById("terminalName");
+    const statusBox = document.getElementById("statusBox");
+    const testBtn = document.getElementById("testBtn");
+    const connectBtn = document.getElementById("connectBtn");
+    const standaloneBtn = document.getElementById("standaloneBtn");
+
+    function setStatus(type, msg) {
+      statusBox.className = "status-box " + (type === "ok" ? "ok" : "err");
+      statusBox.textContent = msg;
+    }
+
+    async function init() {
+      if (!window.karobarDesktop || !window.karobarDesktop.getNetworkConfig) return;
+      try {
+        const cfg = await window.karobarDesktop.getNetworkConfig();
+        serverUrlInput.value = cfg.serverUrl || "http://192.168.1.10:8000";
+        terminalNameInput.value = cfg.terminalName || "Counter 1";
+      } catch (e) {}
+    }
+
+    testBtn.addEventListener("click", async () => {
+      const url = serverUrlInput.value.trim();
+      if (!url) {
+        setStatus("err", "Please enter the Linux Server URL (e.g. http://192.168.1.10:8000).");
+        return;
+      }
+      setStatus("ok", "Testing connection to " + url + " ...");
+      try {
+        const res = await window.karobarDesktop.testServerConnection({
+          serverUrl: url,
+          terminalName: terminalNameInput.value.trim(),
+        });
+        if (res && res.ok) {
+          setStatus(
+            "ok",
+            "Connected to " + (res.storeName || "Karobar Server") + " (" + (res.dbDriver || "DB") + ", " + (res.latencyMs || 1) + "ms)!"
+          );
+        } else {
+          setStatus("err", (res && res.error) || "Could not connect to server.");
+        }
+      } catch (err) {
+        setStatus("err", err.message || "Connection test failed.");
+      }
+    });
+
+    connectBtn.addEventListener("click", async () => {
+      const url = serverUrlInput.value.trim();
+      if (!url) {
+        setStatus("err", "Please enter the Linux Server URL.");
+        return;
+      }
+      setStatus("ok", "Saving terminal configuration and connecting...");
+      try {
+        await window.karobarDesktop.saveNetworkConfig({
+          mode: "terminal",
+          serverUrl: url,
+          terminalName: terminalNameInput.value.trim() || "Counter 1",
+          relaunch: true,
+        });
+      } catch (err) {
+        setStatus("err", err.message || "Failed to save configuration.");
+      }
+    });
+
+    standaloneBtn.addEventListener("click", async () => {
+      setStatus("ok", "Switching to Standalone Local PC Mode...");
+      try {
+        await window.karobarDesktop.saveNetworkConfig({
+          mode: "standalone",
+          relaunch: true,
+        });
+      } catch (err) {
+        setStatus("err", err.message || "Failed to switch mode.");
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>

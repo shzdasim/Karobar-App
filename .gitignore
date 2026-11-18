@@ -55,3 +55,9 @@ Thumbs.db
 /SECURITY_REPORT.md
 /LINUX_SERVER_CREDENTIALS.md
 *_CREDENTIALS.md
+/native-win/src/*/bin/
+/native-win/src/*/obj/
+/native-win/tests/*/bin/
+/native-win/tests/*/obj/
+/.local/
+/Library/

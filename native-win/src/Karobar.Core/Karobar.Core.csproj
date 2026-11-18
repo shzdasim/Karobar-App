@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Karobar.Core</RootNamespace>
+    <AssemblyName>Karobar.Core</AssemblyName>
+  </PropertyGroup>
+</Project>

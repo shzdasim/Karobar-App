@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Karobar.Host</RootNamespace>
+    <AssemblyName>Karobar.Host</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Karobar.Core\Karobar.Core.csproj" />
+    <ProjectReference Include="..\Karobar.Data\Karobar.Data.csproj" />
+    <ProjectReference Include="..\Karobar.Services\Karobar.Services.csproj" />
+    <ProjectReference Include="..\Karobar.Printing\Karobar.Printing.csproj" />
+    <ProjectReference Include="..\Karobar.Background\Karobar.Background.csproj" />
+    <ProjectReference Include="..\Karobar.Api\Karobar.Api.csproj" />
+  </ItemGroup>
+</Project>
