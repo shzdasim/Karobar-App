@@ -965,7 +965,7 @@ export default function Topbar({
               </span>
             </button>
 
-            {/* Cash Drawer Register (Ctrl+D) — Financial Accounts moved to Windows Native Topbar & User Menu */}
+            {/* Cash Drawer Register (Ctrl+D) */}
             {permsLoading ? (
               <div
                 aria-hidden="true"
@@ -1021,6 +1021,57 @@ export default function Topbar({
               )
             )}
 
+            {/* Financial Accounts (Ctrl+A) */}
+            {!permsLoading && has("account.view") && (
+              <button
+                type="button"
+                onClick={() => setAccountsModalOpen(true)}
+                aria-label="Financial Accounts"
+                title={`Financial Accounts: ${
+                  accountsStatus.loading ? "Loading…" : formatCurrency(accountsStatus.total_balance)
+                } (Ctrl+A)`}
+                className="inline-flex items-center gap-1.5 h-9 px-2 sm:px-2.5 text-xs font-semibold rounded-xl border border-blue-500/25 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 transition-all duration-150 cursor-pointer shrink-0 whitespace-nowrap"
+              >
+                <BuildingLibraryIcon className="w-4 h-4 shrink-0" />
+                {accountsStatus.loading ? (
+                  <span className="hidden xl:inline-block kd-skeleton-bone h-3 w-14 rounded-full" />
+                ) : (
+                  <span className="hidden xl:inline font-bold">
+                    {formatCurrency(accountsStatus.total_balance)}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* License Viewer */}
+            <button
+              type="button"
+              onClick={() => setLicenseViewerOpen(true)}
+              aria-label="License Viewer"
+              title={`Software License: ${licLoading ? "Checking…" : licValid ? leftTxt : "Not Activated — Click to Activate"}`}
+              className={`inline-flex items-center gap-1.5 h-9 px-2 sm:px-2.5 text-xs font-semibold rounded-xl border transition-all duration-150 cursor-pointer shrink-0 whitespace-nowrap ${
+                licLoading || licValid
+                  ? "bg-emerald-500/10 border-emerald-500/25 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
+                  : "bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400"
+              }`}
+            >
+              <ClockIcon className="w-4 h-4 shrink-0" />
+              <span className="hidden xl:inline font-semibold">
+                {licLoading ? "…" : licValid ? leftTxt : "Activate"}
+              </span>
+            </button>
+
+            {/* Keyboard Shortcuts (?) */}
+            <button
+              type="button"
+              onClick={() => setShortcutsModalOpen(true)}
+              aria-label="Keyboard Shortcuts"
+              title="Keyboard Shortcuts (?)"
+              className="inline-flex items-center justify-center h-9 w-9 rounded-xl bg-slate-100/80 dark:bg-slate-800/70 hover:bg-slate-200/70 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700/80 text-slate-600 dark:text-slate-300 transition-all duration-150 cursor-pointer shrink-0"
+            >
+              <CommandLineIcon className="w-4 h-4 shrink-0" />
+            </button>
+
             <div className="hidden sm:block mx-0.5 h-5 w-px bg-slate-300/60 dark:bg-slate-700/60 shrink-0" />
 
             {/* Notification Bell */}
@@ -1056,7 +1107,7 @@ export default function Topbar({
               <ThemeToggle />
             </div>
 
-            {/* User & Tools Menu (holds Profile, Financial Accounts, New Window, License Viewer, Shortcuts, Updates, Logout) */}
+            {/* User Menu (Profile, Check for Updates, Logout) */}
             <div className="relative shrink-0">
               <button
                 ref={btnRef}
@@ -1084,7 +1135,7 @@ export default function Topbar({
                   ref={menuRef}
                   role="menu"
                   className={[
-                    "absolute right-0 mt-2 w-60 rounded-xl overflow-hidden shadow-xl border border-slate-200 dark:border-slate-700",
+                    "absolute right-0 mt-2 w-56 rounded-xl overflow-hidden shadow-xl border border-slate-200 dark:border-slate-700",
                     "workspace-user-menu",
                     navigationStyle === 'topbar' ? 'z-1000000' : 'z-50',
                   ].join(" ")}
@@ -1098,74 +1149,6 @@ export default function Topbar({
                     className="workspace-user-menu-item flex items-center justify-between gap-2"
                   >
                     <span>Profile ({user?.name || "User"})</span>
-                  </button>
-
-                  {has("account.view") && (
-                    <button
-                      role="menuitem"
-                      onClick={() => {
-                        setOpen(false);
-                        setAccountsModalOpen(true);
-                      }}
-                      className="workspace-user-menu-item flex items-center justify-between gap-2"
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        <BuildingLibraryIcon className="w-4 h-4 text-blue-500 shrink-0" />
-                        <span>Financial Accounts</span>
-                      </span>
-                      <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400">
-                        {accountsStatus.loading ? "…" : formatCurrency(accountsStatus.total_balance)}
-                      </span>
-                    </button>
-                  )}
-
-                  {(onOpenCurrentInNewWindow || onOpenCurrentInSubWindow) && (
-                    <button
-                      role="menuitem"
-                      onClick={() => {
-                        setOpen(false);
-                        (onOpenCurrentInNewWindow || onOpenCurrentInSubWindow)?.();
-                      }}
-                      className="workspace-user-menu-item flex items-center justify-between gap-2"
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        <span aria-hidden="true" className="text-sm leading-none">⧉</span>
-                        <span>Open in New Window</span>
-                      </span>
-                      <kbd className="text-[10px] font-mono opacity-65">Ctrl+Shift+N</kbd>
-                    </button>
-                  )}
-
-                  <button
-                    role="menuitem"
-                    onClick={() => {
-                      setOpen(false);
-                      setLicenseViewerOpen(true);
-                    }}
-                    className="workspace-user-menu-item flex items-center justify-between gap-2"
-                  >
-                    <span className="inline-flex items-center gap-2">
-                      <ClockIcon className="w-4 h-4 text-emerald-500 shrink-0" />
-                      <span>License Viewer</span>
-                    </span>
-                    <span className="text-[11px] font-semibold opacity-75">
-                      {licLoading ? "…" : licValid ? leftTxt : "Activate"}
-                    </span>
-                  </button>
-
-                  <button
-                    role="menuitem"
-                    onClick={() => {
-                      setOpen(false);
-                      setShortcutsModalOpen(true);
-                    }}
-                    className="workspace-user-menu-item flex items-center justify-between gap-2"
-                  >
-                    <span className="inline-flex items-center gap-2">
-                      <CommandLineIcon className="w-4 h-4 text-slate-500 shrink-0" />
-                      <span>Keyboard Shortcuts</span>
-                    </span>
-                    <kbd className="text-[10px] font-mono opacity-65">?</kbd>
                   </button>
 
                   <button
